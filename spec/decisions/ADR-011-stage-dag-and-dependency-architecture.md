@@ -49,6 +49,24 @@ Inputs, used as given and not reopened:
   IR PR #138 rewrites FR-031's Status section only. IR #140 amends the
   Behavior sentence and AC-3 and removes `replay_with_native_runtime`.
 
+Implementing tickets. This record names them as the changes that realize its
+decisions. It does not design their content.
+
+| Ticket | Realizes |
+|---|---|
+| #213 | Canonical identity, typestate, outcome, provenance, bound and `Capability` value types that the stage outputs carry |
+| #185 | The only capability registry and router (E7 selection) |
+| #222 | Boundedness on stage edges: finite, bounded and unbounded requests and their typed refusal |
+| #231 | Typed proof-result, witness and replay envelopes on E8 and E9 |
+| #214 | The S2 forms producer and the check/evaluate split for function application |
+| #215 | Exact-pin and current-head integration lanes |
+| #216 | The single checked-package path gate |
+| #217, #218 | The proof spine through E5 to E9 for function application, then frames and scoped clauses |
+| #225 | Lifecycle and CLI orchestration design (§5) |
+| #122 / #232 | Lifecycle and CLI implementation |
+| #230 | Bounded lifecycle conformance slice |
+| #226 | Architecture-drift gates that enforce §3, §6 and §7 |
+
 Terms used below:
 
 - **Stage**: a step with one owner, one admitted input type and one output
@@ -186,7 +204,9 @@ source text or CST to recover meaning (§3 FB-01).
 
 Every stage returns a structured result: its output, or a refusal with typed
 causes and catalog codes. #211 decides the canonical outcome and refusal
-types. The rules below decide only what may cross an edge.
+types, and #213 implements them. #222 implements boundedness on the edges and
+#231 the typed proof-result, witness and replay envelopes on E8 and E9. The
+rules below decide only what may cross an edge.
 
 | Edge | On error | May partial output escape? |
 |---|---|---|
@@ -231,7 +251,7 @@ Non-goals).
 | FB-09 | A CLI command makes a semantic decision, or reads diagnostic text | §5 | none known |
 | FB-10 | A proof gate claims a module over which it discharges no proposition | §2.3 | RT `src/exact/` (RT #53) |
 | FB-11 | A dependency or test-time edge that closes a cycle between QSL, IR, RT and CG | §7.1 | QSL ⇄ CG and QSL ⇄ RT test-time cycles (OBS-040) |
-| FB-12 | Capability negotiation in S3 | AD-016: QSL admission negotiates nothing. #210 owns the capability-selection contract. | composed `requests::report` (ADR-010 OBS-003, a #210 item) |
+| FB-12 | Capability negotiation in S3 | AD-016: QSL admission negotiates nothing. #210 owns the capability-selection contract, #213 the `Capability` value type, and #185 is the only registry and router. | composed `requests::report` (ADR-010 OBS-003, a #210 item) |
 
 ## 4. Checking precedes lowering
 
@@ -241,7 +261,7 @@ Non-goals).
   output types are private to their stage modules, so no other module can
   build a checked value. An S4 reader (I2) re-establishes the checked state
   only by verifying the package identity it reads. #211 decides the typestate
-  encoding and the verification rule.
+  encoding and the verification rule, and #213 implements them.
 - Exactly one type carries each stage output. Two public types named
   `CheckedPackage` with different meanings (ADR-010 OBS-017, DA-04) break
   this rule. The native-v1 type retires with seam SEAM-1 (§6.2), and #211
@@ -250,6 +270,10 @@ Non-goals).
   wrapped as the next stage's type in a failed state.
 
 ## 5. CLI and library orchestration
+
+#225 owns the lifecycle and CLI orchestration design. #122 and its bounded
+child #232 implement it, and #230 is the conformance slice. The rules below are
+the stage-boundary constraints that design must meet.
 
 - `command` calls stage APIs in DAG order and makes no semantic decision. It
   contains no parsing, name resolution, typing, definedness, capability or
@@ -265,6 +289,8 @@ Non-goals).
   is reachable only through the CLI.
 - Lifecycle surfaces (package cache, providers, plugins, AOT and JIT) are
   #225's design. They call the same stage APIs and may not bypass §3.
+- #29 (CLI parse and dispatch) and #133 (parsing `quire` fences, input I3)
+  land inside these rules.
 
 ## 6. Module DAG
 
@@ -387,7 +413,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after `quire-exact` lands |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5) | #217 (AD-016 WP9) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
-| QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | #213 (AD-016 WP5a and WP5b) |
+| QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | AD-016 WP5a and WP5b, ahead of #213 |
 
 Rules:
 
@@ -417,7 +443,7 @@ never justifies a crate.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
 |---|---|---|---|---|---|
-| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf. QSL, RT and CG depend on it. | The kernel types in the AD-016 Shared-type row and the scalar and collection operations over them | 1st (#213) | none: the QSL `value` kernel and the RT `src/exact` kernel parts are replaced in one change per repository |
+| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf. QSL, RT and CG depend on it. | The kernel types in the AD-016 Shared-type row and the scalar and collection operations over them | 1st (AD-016 WP5a and WP5b) | none: the QSL `value` kernel and the RT `src/exact` kernel parts are replaced in one change per repository |
 | M-1 | Make `diagnostic` a foundation module | F, depending on K only | codes, typed causes, locus | 2nd (#213) | none |
 | M-2 | Move `model` below `check` | 3, depending on K and F only | `model`, `model::intake` | after X-1 | none |
 | M-3 | Add S2 `forms` and retire SEAM-5 | 2 | parsed form types per family (#210) | #214 | none: `LoweredSourceGraph` is deleted in the same change |
@@ -477,8 +503,8 @@ architecture.
 | 3 | Model-bound construct | I1 intake, S3 `model`, S4 `model_population` | `model::intake`, `model` | FCD emitter (AD-016 scenario 5) | read FCD types outside `model::intake`; re-derive the bound after S4 |
 | 4 | Scoped protocol clause (frame or scoped anchor) | S2, S3 clause checker, S4 v2 clause and frame node, E7 frame obligation (`unsupported` until IR #109) | `forms`, `check`, `package` | IR `ClauseKind` and frame lowering, RT observation kind, CG harness (AD-016 scenarios 2 and 7) | emit through `protocol_artifact` without S3 (FB-03) |
 | 5 | Temporal operator | S2, S3 temporal checker, S4 v2 temporal form, S6a temporal evaluator | `forms`, `check`, `package`, temporal evaluator | IR temporal admission from v2 (not QSL types, FB-05) | import a wire module from `temporal`. #210 and #222 decide boundedness. |
-| 6 | Unbounded request | S3 records the extent. S4 carries it. E7 settles `requires-bound` or `unsupported` with no oracle or harness. | `check`, `package` | IR `requires-bound` row (AD-016 scenario 4) | narrow the domain silently; report `proved` for an unbounded claim |
-| 7 | New backend | E7 only: consumes S5 IR, settles dispositions, emits artifacts, returns typed outcomes. If it replays, it replays through S6a via E9. | none | the backend repository; QSpec for any new wire | parse QSL; depend on QSL types other than the S6a entry; mint spans or identities (FB-01, FB-05) |
+| 6 | Unbounded request | S3 records the extent. S4 carries it. E7 settles `requires-bound` or `unsupported` with no oracle or harness (#222 boundedness, #185 routing). | `check`, `package` | IR `requires-bound` row (AD-016 scenario 4) | narrow the domain silently; report `proved` for an unbounded claim |
+| 7 | New backend | E7 only: registers with #185, consumes S5 IR, settles dispositions, emits artifacts, returns typed outcomes in #231 envelopes. If it replays, it replays through S6a via E9. | none | the backend repository; QSpec for any new wire | parse QSL; depend on QSL types other than the S6a entry; mint spans or identities (FB-01, FB-05) |
 
 ## Questions handed to sibling tickets
 
