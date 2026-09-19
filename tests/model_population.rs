@@ -30,9 +30,8 @@ use quire_spec_language::model::normalize::{
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
     AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    InvocationDelta, LookupKey, LookupObject, LookupOutcome, MemberFieldValues,
-    PopulationAdmissionLimits, PopulationBinding, PopulationDocument, PopulationMember,
-    ReferenceKey, TypedReference,
+    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
+    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -280,10 +279,12 @@ fn reference_key(
     }
 }
 
-/// A well-formed [`LookupKey`] naming a well-formed candidate member
-/// identity (`LookupObject::Member`): `universe`'s own raw bytes (a
-/// `LookupKey`'s `universe` is compared to `binding`'s own by raw bytes, see
-/// `LookupKey`'s own doc comment), never a bridged `EffectiveId`.
+/// A [`LookupKey`] naming a well-formed (valid UTF-8) candidate member
+/// identity: `universe`'s own raw bytes (a `LookupKey`'s `universe` is
+/// compared to `binding`'s own by raw bytes, see `LookupKey`'s own doc
+/// comment), never a bridged `EffectiveId`; `object`'s own UTF-8 bytes,
+/// never a caller-asserted classification -- `lookup` itself decides
+/// well-formedness from these same bytes.
 fn lookup_key(
     static_type: DeclarationKey,
     universe: &EffectiveId,
@@ -294,7 +295,7 @@ fn lookup_key(
         static_type,
         universe: universe.as_bytes().to_vec(),
         type_identity: type_identity.clone(),
-        object: LookupObject::Member(object.to_owned()),
+        object: object.as_bytes().to_vec(),
     }
 }
 
@@ -695,6 +696,93 @@ fn l03_lookup_refused_mode() {
         other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
     }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+}
+
+/// #166 review finding L3: `refused` mode's absence detail must report a
+/// malformed (non-UTF-8) identity as distinguishable from a well-formed
+/// identity string -- never `"c9 is not a member..."` prose that could be
+/// mistaken for a real, well-formed object identity that merely happens to
+/// contain non-printable characters. `lookup` reports it as
+/// `"identity bytes 0x<hex> (not UTF-8)"`, a shape no real member's own
+/// identity string (always valid UTF-8, `PopulationDocument`'s member
+/// records) can ever produce.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+
+    let malformed = LookupKey {
+        static_type: DeclarationKey::fixture("model.A"),
+        universe: universe.as_bytes().to_vec(),
+        type_identity: a.clone(),
+        object: vec![0xFF, 0xFE],
+    };
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &binding,
+        &DeclarationKey::fixture("model.A"),
+        &malformed,
+        AbsenceMode::Refused,
+        &mut meter,
+    );
+    match outcome {
+        LookupOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AbsentKey {
+                    key: vec![0xFF, 0xFE],
+                }
+            );
+            assert_eq!(
+                refusal.detail,
+                "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"
+            );
+        }
+        other => panic!("expected Refused(invalid_runtime_input/absent-key), got {other:?}"),
+    }
+}
+
+/// #166 review finding M2: `LookupKey.object`'s raw bytes are the only
+/// input `lookup` uses to decide well-formedness -- there is no separate
+/// caller-asserted classification to get out of sync with them. A present
+/// member's identity, passed through as plain UTF-8 bytes (exactly how
+/// [`bridge_lookup_key`](quire_spec_language::value) and [`lookup_key`]
+/// both build it), is found.
+#[test]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+
+    let ra = LookupKey {
+        static_type: DeclarationKey::fixture("model.A"),
+        universe: universe.as_bytes().to_vec(),
+        type_identity: a.clone(),
+        object: b"a1".to_vec(),
+    };
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &binding,
+        &DeclarationKey::fixture("model.A"),
+        &ra,
+        AbsenceMode::Undefined,
+        &mut meter,
+    );
+    assert_eq!(
+        outcome,
+        LookupOutcome::Completed(Some(TypedReference::new(
+            DeclarationKey::fixture("model.A"),
+            reference_key(&universe, &a, "a1")
+        )))
+    );
 }
 
 /// TC-198 L03's final vector: `lookup<M::B>(p, ra)` refuses `ill_typed`/
