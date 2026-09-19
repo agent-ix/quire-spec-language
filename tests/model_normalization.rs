@@ -720,6 +720,44 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
     }
 }
 
+/// #196 review finding 3: model-complete.md's "Populations" row ("Each
+/// member type names an object type or a process... `missing_declaration`/
+/// `missing-name`"). A `Population` record naming a member type that is not
+/// a declared object type refuses instead of being silently accepted.
+#[trace("TC-195")]
+#[test]
+fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignored() {
+    let mut domain_package = fixture_f1();
+    domain_package.records.push(DomainPackageRecord::Population(
+        quire_spec_language::model::domain_package::PopulationRecord {
+            key: DeclarationKey::fixture("model.pop.p1"),
+            member_types: vec![
+                DeclarationKey::fixture("model.A"),
+                DeclarationKey::fixture("model.no-such-type"),
+            ],
+            extent: quire_spec_language::model::domain_package::Extent::Closed,
+        },
+    ));
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal,
+                ModelRefusal {
+                    code: quire_spec_language::diagnostic::Code::MissingDeclaration,
+                    cause: ModelRefusalCause::UnknownPopulationMemberType {
+                        population: DeclarationKey::fixture("model.pop.p1"),
+                        type_name: DeclarationKey::fixture("model.no-such-type"),
+                    },
+                    detail: "population model.pop.p1 names member type model.no-such-type, \
+                              which is not a declared object type"
+                        .to_string(),
+                }
+            );
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
 #[trace("TC-195")]
 #[test]
 fn unsupported_interface_version_refuses_before_any_charge() {
