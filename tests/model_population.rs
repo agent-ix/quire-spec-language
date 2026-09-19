@@ -30,8 +30,9 @@ use quire_spec_language::model::normalize::{
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
     AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
-    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    InvocationDelta, LookupKey, LookupObject, LookupOutcome, MemberFieldValues,
+    PopulationAdmissionLimits, PopulationBinding, PopulationDocument, PopulationMember,
+    ReferenceKey, TypedReference,
 };
 use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
@@ -218,7 +219,7 @@ fn view_of(domain_package: &DomainPackage) -> EffectiveView {
 /// The effective identity of the type-level declaration named `identity`.
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
     let original = DeclarationKey::fixture(identity);
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
@@ -276,6 +277,24 @@ fn reference_key(
         universe: universe.clone(),
         type_identity: type_identity.clone(),
         object: object.to_owned(),
+    }
+}
+
+/// A well-formed [`LookupKey`] naming a well-formed candidate member
+/// identity (`LookupObject::Member`): `universe`'s own raw bytes (a
+/// `LookupKey`'s `universe` is compared to `binding`'s own by raw bytes, see
+/// `LookupKey`'s own doc comment), never a bridged `EffectiveId`.
+fn lookup_key(
+    static_type: DeclarationKey,
+    universe: &EffectiveId,
+    type_identity: &EffectiveId,
+    object: &str,
+) -> LookupKey {
+    LookupKey {
+        static_type,
+        universe: universe.as_bytes().to_vec(),
+        type_identity: type_identity.clone(),
+        object: LookupObject::Member(object.to_owned()),
     }
 }
 
@@ -550,10 +569,7 @@ fn l03_lookup_undefined_mode() {
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rb = LookupKey {
-        static_type: DeclarationKey::fixture("model.B"),
-        key: reference_key(&universe, &b, "b1"),
-    };
+    let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
@@ -574,10 +590,7 @@ fn l03_lookup_undefined_mode() {
 
     // `rc` is bound to `q` (document P2), never admitted into `p`, so it is
     // absent from `p`'s binding.
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
@@ -612,10 +625,7 @@ fn l03_lookup_empty_mode() {
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rb = LookupKey {
-        static_type: DeclarationKey::fixture("model.B"),
-        key: reference_key(&universe, &b, "b1"),
-    };
+    let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
     let present = lookup(
         &binding,
@@ -634,10 +644,7 @@ fn l03_lookup_empty_mode() {
     assert_eq!(meter_present.consumed(LimitKind::WorkUnits), 2);
     assert_eq!(meter_present.consumed(LimitKind::ResultUnits), 2);
 
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter_absent = Meter::new(SCALAR_UNLIMITED);
     let absent = lookup(
         &binding,
@@ -666,10 +673,7 @@ fn l03_lookup_refused_mode() {
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let rc = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "c9"),
-    };
+    let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -709,10 +713,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
-    let ra = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&universe, &a, "a1"),
-    };
+    let ra = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "a1");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -754,10 +755,12 @@ fn l04_lookup_foreign_universe_refuses() {
     let foreign_universe = object_universe(&other).unwrap().identity();
     assert_ne!(&foreign_universe, binding.universe());
 
-    let rx = LookupKey {
-        static_type: DeclarationKey::fixture("model.A"),
-        key: reference_key(&foreign_universe, &a, "a1"),
-    };
+    let rx = lookup_key(
+        DeclarationKey::fixture("model.A"),
+        &foreign_universe,
+        &a,
+        "a1",
+    );
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let outcome = lookup(
         &binding,
@@ -1026,7 +1029,7 @@ fn l06_cardinality_bound_and_incomplete() {
 // a second domain package parameter for either one to exercise. The reachable
 // sibling of this defect class — a `LookupKey` naming a foreign universe,
 // independent of which domain package is bound — stays covered by
-// `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.key.universe`
+// `l04_lookup_foreign_universe_refuses` above, whose `LookupKey.universe`
 // field a caller can still set to anything regardless of the bound domain package.
 
 /// TC-198's own admission-time `modelIdentity` check: a population document
@@ -1087,8 +1090,8 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 /// this) to prove the check compares the full `DomainPackageRef` header,
 /// not just `identity`.
 ///
-/// Mutation used: narrowed the check from `view.model_selection !=
-/// domain_package.model_selection` to `view.model_selection.identity !=
+/// Mutation used: narrowed the check from `view.model_selection() !=
+/// domain_package.model_selection` to `view.model_selection().identity !=
 /// domain_package.model_selection.identity`, which let this version-only
 /// mismatch admit instead of refusing — red as expected, reverted.
 #[test]
@@ -1113,7 +1116,7 @@ fn l05_view_from_a_different_bundle_version_refuses_at_admission() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    actual: OfferedSelection::View(view.model_selection().clone()),
                     expected: domain_package.model_selection.clone(),
                 }
             );
@@ -1153,7 +1156,7 @@ fn l05_view_from_a_domain_package_with_a_different_digest_refuses_at_admission()
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection.clone()),
+                    actual: OfferedSelection::View(view.model_selection().clone()),
                     expected: domain_package.model_selection.clone(),
                 }
             );

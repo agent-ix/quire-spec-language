@@ -23,28 +23,28 @@
 //! it only bridges identities and materializes the already-charged,
 //! already-ordered result as a [`Value`].
 //!
-//! Two malformed-reference cases can never even become a well-formed
-//! [`ReferenceKey`]: a universe that is not the model's own 32 bytes, or an
-//! object identity that is not valid UTF-8. An earlier version of this module
-//! substituted a derived value for the malformed bytes (the universe's own
-//! bit-complement; a lossy UTF-8 decode of the identity) and delegated to
-//! [`lookup`] as if the reference had always carried that substitute. The
-//! universe substitution is sound -- a bit-complement of a real 32-byte
-//! universe can never equal it -- but the identity substitution is not: the
+//! # Malformed references
+//!
+//! A checked `Reference<T>` value's identity triple is supplied by an
+//! untrusted producer, so not every component is well-formed: its universe
+//! ([`UniverseIdentity`]) or object identity ([`ObjectIdentity`]) may carry
+//! bytes no real [`PopulationBinding`] could ever admit. [`bridge_lookup_key`]
+//! never substitutes a derived value for either component and cannot itself
+//! fail: [`lookup`] decides the outcome for a well-formed and a malformed
+//! reference alike, in its own single order (`type_conforms(S, T)`, then
+//! `lookup.key`, then the universe check, then membership or absence -- see
+//! [`LookupKey`]'s own doc comment). A universe is carried as its raw bytes
+//! rather than a bridged [`EffectiveId`]: a length other than 32 can never
+//! equal a real universe, so [`lookup`]'s own byte comparison already decides
+//! it correctly with no separate malformed case. An object identity becomes
+//! [`LookupObject::Member`] when it is valid UTF-8 (every real population
+//! member's own identity is a JSON string, `PopulationDocument`'s member
+//! records), or [`LookupObject::NonMember`] otherwise -- carrying the
+//! identity's own raw bytes, never a lossily decoded substitute, since a
 //! lossy decode of arbitrary invalid bytes can coincide with a real, validly
 //! admitted member's own identity string (`String::from_utf8_lossy(&[0xFF,
-//! 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value a population is free to admit),
-//! which would let a producer-supplied malformed reference be mistaken for
-//! that member across all three absence modes. [`evaluate_lookup`] now takes
-//! no substitution at all for either component: [`bridge_reference`] reports
-//! which component (if any) cannot be losslessly bridged, and
-//! [`evaluate_unresolvable_lookup`] then decides `type_conforms(S, T)` first,
-//! charges `lookup.key` once, and dispatches directly to the same outcome
-//! [`lookup`] itself would reach for a structurally-absent member --
-//! `foreign-universe` for a malformed universe (reporting the bytes the
-//! caller actually supplied), or the mode's own absence outcome for a
-//! malformed identity -- without ever constructing a key that could alias a
-//! real member.
+//! 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value a population is free to admit)
+//! and so could let a malformed reference be mistaken for that member.
 //!
 //! # The TypeEnvironment island
 //!
@@ -56,13 +56,12 @@
 //! [`PopulationBinding`], never from a checked package's static types) can.
 //! `allInstances`/`lookup`'s own conformance decisions
 //! ([`all_instances`]/[`lookup`]) run entirely inside
-//! `crate::model::population`, which does carry that graph;
-//! [`evaluate_unresolvable_lookup`]'s own conformance decision, needed for
-//! the malformed-reference short-circuit above, goes through
-//! [`crate::model::population::conforms`], a narrow `pub(crate)` door onto
-//! the same graph -- evaluation-time-only, since a [`PopulationBinding`] is
-//! already in scope here. Three FR-153/FR-149 obligations that would need
-//! this graph at *check* time still cannot get it, tracked at
+//! `crate::model::population`, which does carry that graph -- including,
+//! for a malformed reference, the short-circuit above, since [`lookup`]
+//! itself decides `type_conforms(S, T)` before any charge for every
+//! reference it is called with, well-formed or not. Three FR-153/FR-149
+//! obligations that would need this graph at *check* time still cannot get
+//! it, tracked at
 //! <https://github.com/agent-ix/quire-spec-language/issues/164>: `deref(r).f`
 //! display-name resolution, TC-198 L08 upcast equality, and refusing
 //! `lookup<T>(p, r)` at check time when `r`'s declared type does not conform
@@ -74,11 +73,11 @@ use crate::diagnostic::Code;
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
-    all_instances, conforms, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
-    PopulationBinding, ReferenceKey,
+    all_instances, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupObject,
+    LookupOutcome, PopulationBinding, ReferenceKey,
 };
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
+use super::accounting::Meter;
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
 use super::node::NodeKey;
@@ -109,51 +108,28 @@ fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, Stop> {
     Ok(ObjectReference::new(universe, object_type, identity))
 }
 
-/// Which of `reference`'s two identity-triple components (see the module
-/// docs) could not be losslessly bridged into a well-formed [`ReferenceKey`]
-/// -- so [`evaluate_lookup`] must decide the outcome directly
-/// ([`evaluate_unresolvable_lookup`]) rather than build a key and delegate to
-/// [`lookup`].
-enum Unbridgeable {
-    /// Not exactly 32 bytes: every real binding's own universe
-    /// (`crate::model::normalize::object_universe`) is exactly 32 bytes, so a
-    /// `reference` whose universe is any other length can never name it.
-    Universe,
-    /// Not valid UTF-8: every real population member's own object identity
-    /// (`crate::model::population::PopulationDocument`'s member records) is a
-    /// JSON string, so a `reference` whose identity bytes are not valid UTF-8
-    /// can never name one. Carries the reference's own universe -- already
-    /// losslessly parsed by `bridge_reference` -- so
-    /// `evaluate_unresolvable_lookup` can check it against `binding`'s own
-    /// universe before deciding absence, exactly as `lookup` checks the
-    /// universe before membership. Never re-derived or re-parsed: this is
-    /// the same bytes `bridge_reference` already validated once.
-    Identity { universe: EffectiveId },
-}
-
-/// The reverse FR-143 byte transfer of an [`ObjectReference`] into a model
-/// [`ReferenceKey`], or which component made that impossible. No
-/// substitution: an earlier version of this bridge substituted a derived
-/// value for either malformed component and delegated to [`lookup`] as if
-/// the reference had always carried it, which is unsound for the identity
-/// case (see the module docs) and is not attempted here at all.
-fn bridge_reference(reference: &ObjectReference) -> Result<ReferenceKey, Unbridgeable> {
-    let universe: [u8; 32] = reference
-        .universe()
-        .as_bytes()
-        .try_into()
-        .map_err(|_| Unbridgeable::Universe)?;
-    let universe = EffectiveId::from_digest_bytes(universe);
-    let object = String::from_utf8(reference.identity().as_bytes().to_vec()).map_err(|_| {
-        Unbridgeable::Identity {
-            universe: universe.clone(),
-        }
-    })?;
-    Ok(ReferenceKey {
+/// The FR-143 byte transfer of `reference`'s own identity triple into a
+/// [`LookupKey`] for [`lookup`], paired with `static_type`. Always succeeds
+/// (see the module docs): `reference`'s universe is carried as its raw
+/// bytes, never bridged into an [`EffectiveId`]; `reference`'s most-specific
+/// type is always well-formed ([`NodeKey`] is a fixed 32-byte digest
+/// already); `reference`'s own object identity becomes
+/// [`LookupObject::Member`] when it is valid UTF-8, or
+/// [`LookupObject::NonMember`] -- carrying the raw bytes, never a lossily
+/// decoded substitute -- otherwise.
+fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -> LookupKey {
+    let universe = reference.universe().as_bytes().to_vec();
+    let type_identity = EffectiveId::from_digest_bytes(*reference.object_type().as_bytes());
+    let object = match String::from_utf8(reference.identity().as_bytes().to_vec()) {
+        Ok(object) => LookupObject::Member(object),
+        Err(err) => LookupObject::NonMember(err.into_bytes()),
+    };
+    LookupKey {
+        static_type,
         universe,
-        type_identity: EffectiveId::from_digest_bytes(*reference.object_type().as_bytes()),
+        type_identity,
         object,
-    })
+    }
 }
 
 /// A one-time reverse index of `binding`'s own
@@ -245,22 +221,7 @@ pub(crate) fn evaluate_lookup(
     let target = resolve_target(&catalog, target)?;
     let static_type = resolve_target(&catalog, static_type)?;
 
-    let key = match bridge_reference(&reference) {
-        Ok(key) => key,
-        Err(failure) => {
-            return evaluate_unresolvable_lookup(
-                binding,
-                &static_type,
-                &target,
-                &reference,
-                failure,
-                absence,
-                result_type,
-                meter,
-            )
-        }
-    };
-    let lookup_key = LookupKey { static_type, key };
+    let lookup_key = bridge_lookup_key(static_type, &reference);
     match lookup(binding, &target, &lookup_key, absence, meter) {
         LookupOutcome::Completed(Some(typed)) => {
             let found = Value::Reference(to_object_reference(typed.key())?);
@@ -296,107 +257,5 @@ fn option_payload(result_type: &ValueType) -> Result<ValueType, Stop> {
     match result_type {
         ValueType::Option(payload) => Ok((**payload).clone()),
         _ => Err(invariant()),
-    }
-}
-
-/// Lowercase hex of `bytes`, for a refusal detail that must report exactly
-/// what the caller supplied, never a derived or substituted value.
-fn hex_bytes(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// `reference` could not be bridged into a well-formed [`ReferenceKey`]
-/// (`failure` says which component); decide the outcome [`lookup`] itself
-/// would reach for a structurally-absent member, without ever constructing a
-/// key that could alias a real one. Mirrors [`lookup`]'s own ordering
-/// exactly: `type_conforms(S, T)` before any charge, then `lookup.key`, then
-/// the universe check, then the outcome -- `foreign-universe` for a
-/// malformed universe, or for a malformed identity naming another universe
-/// (`bridge_reference` still parses the universe on that path), or the
-/// mode's own absence outcome (with `empty` mode's extra
-/// `lookup.result-retain`) for a malformed identity naming this binding's
-/// own universe.
-#[allow(clippy::too_many_arguments)]
-fn evaluate_unresolvable_lookup(
-    binding: &PopulationBinding,
-    static_type: &DeclarationKey,
-    target: &DeclarationKey,
-    reference: &ObjectReference,
-    failure: Unbridgeable,
-    absence: AbsenceMode,
-    result_type: &ValueType,
-    meter: &mut Meter,
-) -> Result<Value, Stop> {
-    match conforms(binding, static_type, target) {
-        Ok(true) => {}
-        Ok(false) => {
-            return Err(model_refusal(ModelRefusal {
-                code: Code::IllTyped,
-                cause: ModelRefusalCause::TypeMismatch,
-                detail: format!("{} does not conform to {}", static_type.node, target.node),
-            }))
-        }
-        Err(refusal) => return Err(model_refusal(refusal)),
-    }
-
-    if let Err(incomplete) =
-        meter.charge(Charge::new(ChargePoint::LookupKey).size(LimitKind::ValueOccurrences, 1))
-    {
-        return Err(Stop::Incomplete(incomplete));
-    }
-
-    match failure {
-        Unbridgeable::Universe => Err(model_refusal(ModelRefusal {
-            code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignUniverse {
-                actual: reference.universe().as_bytes().to_vec(),
-                expected: binding.universe().clone(),
-            },
-            detail: format!(
-                "reference key names universe {}, not the binding's {}",
-                hex_bytes(reference.universe().as_bytes()),
-                binding.universe().hex()
-            ),
-        })),
-        Unbridgeable::Identity { universe } if universe != *binding.universe() => {
-            Err(model_refusal(ModelRefusal {
-                code: Code::ForeignReference,
-                cause: ModelRefusalCause::ForeignUniverse {
-                    actual: universe.as_bytes().to_vec(),
-                    expected: binding.universe().clone(),
-                },
-                detail: format!(
-                    "reference key names universe {}, not the binding's {}",
-                    universe.hex(),
-                    binding.universe().hex()
-                ),
-            }))
-        }
-        Unbridgeable::Identity { .. } => match absence {
-            AbsenceMode::Undefined => Err(Stop::Undefined(Undefined::AbsentKey)),
-            AbsenceMode::Refused => Err(model_refusal(ModelRefusal {
-                code: Code::InvalidRuntimeInput,
-                cause: ModelRefusalCause::AbsentKey {
-                    key: reference.identity().as_bytes().to_vec(),
-                },
-                detail: format!(
-                    "{} is not a member of the bound population",
-                    hex_bytes(reference.identity().as_bytes())
-                ),
-            })),
-            AbsenceMode::Empty => {
-                if let Err(incomplete) = meter.charge(
-                    Charge::new(ChargePoint::LookupResultRetain)
-                        .size(LimitKind::ValueOccurrences, 1)
-                        .results(1),
-                ) {
-                    return Err(Stop::Incomplete(incomplete));
-                }
-                Ok(OptionValue::from_admitted(
-                    option_payload(result_type)?,
-                    None,
-                ))
-            }
-        },
     }
 }

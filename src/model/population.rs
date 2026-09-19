@@ -139,7 +139,7 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
-use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::key::{hex, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
@@ -418,13 +418,48 @@ pub struct PopulationDocument {
     pub members: Vec<PopulationMember>,
 }
 
-/// A `lookup<T>(p, r) absent m` key parameter: `r: Reference<S>`.
+/// A `lookup<T>(p, r) absent m` key parameter: `r: Reference<S>`'s own
+/// realized identity triple, read directly off `r`'s checked value. `r` is
+/// supplied by an untrusted producer, so not every component is necessarily
+/// well-formed: `universe` is compared against `binding`'s own by raw bytes
+/// (a length other than 32 can never equal a real universe, so [`lookup`]'s
+/// own byte comparison already decides it correctly with no separate
+/// malformed case); `object` is [`LookupObject`], which does carry one,
+/// because a lossy decode of malformed identity bytes risks colliding with a
+/// real member's own identity (see [`LookupObject`]'s own doc comment).
+/// `type_identity` is always well-formed (`crate::value::node::NodeKey` is a
+/// fixed 32-byte digest already, so there is nothing to bridge).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {
     /// `r`'s own static type `S`.
     pub static_type: DeclarationKey,
-    /// `r`'s realized reference key.
-    pub key: ReferenceKey,
+    /// `r`'s realized reference's universe, exactly as supplied.
+    pub universe: Vec<u8>,
+    /// `r`'s realized reference's most-specific type.
+    pub type_identity: EffectiveId,
+    /// `r`'s realized reference's own declared object identity.
+    pub object: LookupObject,
+}
+
+/// The realized object-identity component of a [`LookupKey`]: either a
+/// well-formed candidate identity, or `NonMember`, which can never equal an
+/// admitted member's own identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LookupObject {
+    /// A well-formed candidate identity (valid UTF-8); may or may not name
+    /// an admitted member.
+    Member(String),
+    /// The reference's raw identity bytes could not be losslessly decoded to
+    /// a well-formed identity string. Every real population member's own
+    /// object identity is a JSON string (`PopulationDocument`'s member
+    /// records), so this can never equal one -- unlike a lossy decode of the
+    /// same bytes, which risks coinciding with a real, validly admitted
+    /// member's own identity string (`String::from_utf8_lossy(&[0xFF,
+    /// 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value a population is free to
+    /// admit). Carries the raw bytes exactly as supplied, so a `refused`-mode
+    /// absence detail reports what the caller actually sent, never a
+    /// substituted or lossily decoded string.
+    NonMember(Vec<u8>),
 }
 
 /// `lookup`'s absence mode, part of the query and never inferred from a
@@ -493,7 +528,7 @@ pub struct PopulationBinding {
     /// to its FR-150-derived [`EffectiveId`]. Computed once here from
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
     /// rather than discarded): the FR-143 reference-identity bridge
-    /// (`crate::value::expression::model_query`) needs this exact
+    /// (`crate::value::model_query`) needs this exact
     /// correspondence to translate a checked `Reference<T>`'s `T`
     /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
     /// back into the `DeclarationKey` [`all_instances`]/[`lookup`] take, for
@@ -617,16 +652,16 @@ pub fn admit_binding(
     declared_maximum: Option<u64>,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
-    if view.model_selection != domain_package.model_selection {
+    if *view.model_selection() != domain_package.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
-                actual: OfferedSelection::View(view.model_selection.clone()),
+                actual: OfferedSelection::View(view.model_selection().clone()),
                 expected: domain_package.model_selection.clone(),
             },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting domain package's {}",
-                view.model_selection.identity, domain_package.model_selection.identity
+                view.model_selection().identity, domain_package.model_selection.identity
             ),
         });
     }
@@ -704,12 +739,12 @@ pub fn admit_binding(
         Err(refusal) => return AdmissionOutcome::Refused(refusal),
     };
 
-    // Indexed once, not re-scanned per member: `view.declarations` and
+    // Indexed once, not re-scanned per member: `view.declarations()` and
     // `admitted` would otherwise each be linearly searched per member,
     // making admission O(n^2) against the O(n) `binding.member` charges it
     // records.
     let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view
-        .declarations
+        .declarations()
         .iter()
         .filter(|entry| entry.preimage.owner_effective_type.is_none())
         .map(|entry| (entry.preimage.original.clone(), entry.effective_id.clone()))
@@ -1237,7 +1272,7 @@ fn enforce_frame(
             // conform to a declared `creates` grant.
             let mut allowed = false;
             for grant in &declared.effect.creates {
-                if conforms(post, post_type, grant)? {
+                if type_conforms(&post.generals, post_type, grant)? {
                     allowed = true;
                     break;
                 }
@@ -1283,7 +1318,7 @@ fn enforce_frame(
         // conform to a declared `deletes` grant.
         let mut allowed = false;
         for grant in &declared.effect.deletes {
-            if conforms(pre, pre_type, grant)? {
+            if type_conforms(&pre.generals, pre_type, grant)? {
                 allowed = true;
                 break;
             }
@@ -1607,10 +1642,33 @@ fn charge_result_retain(meter: &mut ScalarMeter, occ: u64) -> Result<(), ScalarI
     )
 }
 
-/// `lookup<T>(p, r) absent m`: `r`'s presence in `binding`, per `mode`.
-/// Charges `lookup.key` once per call; a present result then charges
-/// `lookup.result-retain` with `value_occurrences`/`result_units` = 1 for a
-/// bare `Reference<T>` (`undefined`/`refused` modes) or = 2 for an
+/// One [`ModelRefusal`]/`Code::ForeignReference` for a reference key naming a
+/// universe other than `binding`'s own. `actual` is the raw universe bytes
+/// exactly as supplied -- not always a well-formed 32-byte identity (see
+/// [`ModelRefusalCause::ForeignUniverse`]'s own doc comment).
+fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::ForeignReference,
+        cause: ModelRefusalCause::ForeignUniverse {
+            actual: actual.to_vec(),
+            expected: binding.universe().clone(),
+        },
+        detail: format!(
+            "reference key names universe {}, not the binding's {}",
+            hex(actual),
+            binding.universe().hex()
+        ),
+    }
+}
+
+/// `lookup<T>(p, r) absent m`: `r`'s presence in `binding`, per `mode`, in
+/// one order for a well-formed and a malformed reference alike --
+/// `type_conforms(S, T)`, then the `lookup.key` charge, then the universe
+/// check, then membership or absence (see [`LookupKey`]'s own doc comment
+/// for how `r`'s own components carry a malformed universe or object
+/// identity). Charges `lookup.key` once per call; a present result then
+/// charges `lookup.result-retain` with `value_occurrences`/`result_units` = 1
+/// for a bare `Reference<T>` (`undefined`/`refused` modes) or = 2 for an
 /// `Option<Reference<T>>` (`empty` mode, the wrapper plus the reference); an
 /// absent `empty`-mode result still retains 1 (the `none` wrapper alone),
 /// while an absent `undefined`/`refused`-mode result retains nothing at all
@@ -1643,22 +1701,26 @@ pub fn lookup(
         return LookupOutcome::Incomplete(incomplete);
     }
 
-    if r.key.universe != *binding.universe() {
-        return LookupOutcome::Refused(ModelRefusal {
-            code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignUniverse {
-                actual: r.key.universe.as_bytes().to_vec(),
-                expected: binding.universe().clone(),
-            },
-            detail: format!(
-                "reference key names universe {}, not the binding's {}",
-                r.key.universe.hex(),
-                binding.universe().hex()
-            ),
-        });
+    if r.universe.as_slice() != binding.universe().as_bytes().as_slice() {
+        return LookupOutcome::Refused(foreign_universe(binding, &r.universe));
     }
 
-    if binding.members().contains_key(&r.key) {
+    let present = match &r.object {
+        LookupObject::Member(object) => {
+            let key = ReferenceKey {
+                universe: binding.universe().clone(),
+                type_identity: r.type_identity.clone(),
+                object: object.clone(),
+            };
+            binding.members().contains_key(&key).then_some(key)
+        }
+        // Every real population member's own identity is valid UTF-8
+        // (`PopulationDocument`'s member records), so a `NonMember` key can
+        // never equal one; see [`LookupObject`]'s own doc comment.
+        LookupObject::NonMember(_) => None,
+    };
+
+    if let Some(key) = present {
         let occ = if matches!(mode, AbsenceMode::Empty) {
             2
         } else {
@@ -1667,18 +1729,22 @@ pub fn lookup(
         if let Err(incomplete) = charge_result_retain(meter, occ) {
             return LookupOutcome::Incomplete(incomplete);
         }
-        return LookupOutcome::Completed(Some(TypedReference::new(t.clone(), r.key.clone())));
+        return LookupOutcome::Completed(Some(TypedReference::new(t.clone(), key)));
     }
 
     match mode {
         AbsenceMode::Undefined => LookupOutcome::Undefined,
-        AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal {
-            code: Code::InvalidRuntimeInput,
-            cause: ModelRefusalCause::AbsentKey {
-                key: r.key.object.clone().into_bytes(),
-            },
-            detail: format!("{} is not a member of the bound population", r.key.object),
-        }),
+        AbsenceMode::Refused => {
+            let (key, display) = match &r.object {
+                LookupObject::Member(object) => (object.clone().into_bytes(), object.clone()),
+                LookupObject::NonMember(bytes) => (bytes.clone(), hex(bytes)),
+            };
+            LookupOutcome::Refused(ModelRefusal {
+                code: Code::InvalidRuntimeInput,
+                cause: ModelRefusalCause::AbsentKey { key },
+                detail: format!("{display} is not a member of the bound population"),
+            })
+        }
         AbsenceMode::Empty => {
             if let Err(incomplete) = charge_result_retain(meter, 1) {
                 return LookupOutcome::Incomplete(incomplete);
@@ -1686,26 +1752,4 @@ pub fn lookup(
             LookupOutcome::Completed(None)
         }
     }
-}
-
-/// Whether `s` conforms to `t` under `binding`'s own admitted generalization
-/// graph -- a `pub(crate)` door onto [`type_conforms`], which stays
-/// `pub(super)`, because `binding.generals` is private to this module. Exists
-/// only for `crate::value::model_query`'s malformed-reference short-circuit
-/// (FR-153: a reference whose universe or object-identity bytes cannot be
-/// losslessly bridged into a well-formed [`LookupKey`] still has to decide
-/// `type_conforms(S, T)` *before any charge*, [`lookup`]'s own ordering,
-/// without ever substituting a derived value for the malformed bytes and
-/// risking it aliasing a real member -- see that module's docs). This is
-/// evaluation-time only: it does nothing for the check-time "TypeEnvironment
-/// island" gap tracked at
-/// <https://github.com/agent-ix/quire-spec-language/issues/164>, which is
-/// about the *checker* having no generalization data before any
-/// `PopulationBinding` exists.
-pub(crate) fn conforms(
-    binding: &PopulationBinding,
-    s: &DeclarationKey,
-    t: &DeclarationKey,
-) -> Result<bool, ModelRefusal> {
-    type_conforms(&binding.generals, s, t)
 }

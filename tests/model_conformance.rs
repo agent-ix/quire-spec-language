@@ -179,7 +179,7 @@ fn bundle_h(mut records: Vec<DomainPackageRecord>) -> DomainPackage {
 /// `identity` — mirrors `tests/model_normalization.rs`'s own helper, which
 /// this integration-test binary cannot import directly.
 fn find_type<'a>(view: &'a EffectiveView, identity: &str) -> &'a ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none()
@@ -196,7 +196,7 @@ fn find_member<'a>(
     owner: &EffectiveId,
     original_identity: &str,
 ) -> &'a ViewEntry {
-    view.declarations
+    view.declarations()
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == Some(owner)
@@ -299,7 +299,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
     );
 
     let visible_members_at_b: Vec<_> = view
-        .declarations
+        .declarations()
         .iter()
         .filter(|entry| {
             entry.preimage.owner_effective_type.as_ref() == Some(&owner_b) && entry.visible
