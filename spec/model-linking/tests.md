@@ -239,7 +239,7 @@ the module carrying its `#[trace]` tag. TC-115 has eleven merged public Rust
 controls in `tests/composed_admission_stages.rs` covering the declared static
 components, requested clause/capability report and historical package/runner
 boundary. Every FR-036 criterion except AC-9 (TC-148, #131) has a tagged test; FR-036-AC-6's test runs
-over the four-member vocabulary that #213 replaces. Names resolved at this
+over the four-member request vocabulary the source declares today. Names resolved at this
 stage grant no checked or executable package. Status records local runs, not
 ecosystem acceptance. FR-036-AC-6 names FR-057 capability kinds. TC-115's merged controls
 use the four-member request vocabulary in

@@ -108,3 +108,7 @@ Every finding left open or raised in round 2 across SR-490..SR-497 is fixed in t
 | SR-490 FND-002..005 | FR-036-AC-9 exception noted; TC-153 `null` expectation; TC-155 non-advertising named backend; TC-155 file renamed. |
 | SR-492 FND-009, FND-012, FND-013 | US-002 exercises FR-057; FR-146 replaces `SumCase`; FR-057 carries the missing qualifiers and states that FR-290 governs where it abbreviates. |
 | SR-497 FND-009, FND-011 | FR-036 retention SHALL has the compiler as subject; claim-form and tool-absence routing rules are SHALL statements. |
+
+## Re-pin to quire-specification 55d2fcc
+
+After quire-specification#135 merged, FR-057 was re-pinned from `046d1bd` to `55d2fcc`. The only normative change between the two was the post-probe tool change. FR-057 adds a case-table row for a tool changed after a passing probe (FR-331 result `failed` with `unsupported_projection`/`tool-unavailable`). FR-057-AC-9 and TC-155 step 7 now route that result as well. The #237 PR reviewer checked these against FR-290 at `55d2fcc`.
