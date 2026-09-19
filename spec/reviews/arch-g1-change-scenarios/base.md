@@ -52,3 +52,14 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | FND-001 | low | The story, requirement and six test-coverage rules do not apply to ADR rows. Their decisions are verified by SR-498 and by #226 drift gates. | ADR-011, ADR-012, ADR-013 |
 | FND-002 | low | Two id schemes share the letter `S`: ADR-011 stages `S0` to `S8` and ADR-012 seams `S1` to `S9`. Each record defines its own, and SR-498 cites seams as "ADR-012 §5.1 S5". Readers must keep the record prefix. | ADR-011:179, ADR-012:386 |
 | FND-003 | low | Two id schemes share `T-`: ADR-011 "Tickets to open" `T-1` to `T-12` and ADR-013 §3.1 `T-1` to `T-9`. Cite them as `ADR-011 T-n` and `ADR-013 T-n`. | ADR-011:913, ADR-013:660 |
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is resolved: SR-498 is the verification of the ADR rows, as the
+  finding states. No text change is needed.
+- FND-002 and FND-003 are resolved: SR-498 cites seams and ticket rows with
+  their record prefix ("ADR-012 §5.1 S5", "ADR-011 T-10", "ADR-013 T-8").
+
+Verdict after Round 3: ACCEPT.

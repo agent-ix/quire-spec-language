@@ -78,3 +78,18 @@ fix. The other findings are not blocking.
 - FND-002 stays open: the SHALL keeps the #245 wording the coordinator ruled.
 
 Verdict after Round 2: ACCEPT WITH FINDINGS.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-002 is resolved: the SHALL keeps the #245 wording the owner ruled.
+- FND-005 and FND-006 are Remaining work: #247.
+- FND-007, FND-008, FND-010 and FND-011 are Remaining work: #185, in the
+  FR-057 re-homing `/specify` pass.
+- FND-009 is resolved (#212 rulings, 2026-09-19, MD-2): the run-level refusal carries
+  `invalid_capability`/`unknown-backend`, and FR-290's per-item row stays
+  as CG's guard.
+- FND-001, FND-003 and FND-004 were resolved in Round 2.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.

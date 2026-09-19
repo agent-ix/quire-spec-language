@@ -118,3 +118,23 @@ accepted. FND-008 to FND-012 (low) may follow.
   counted.
 
 Verdict after Round 2: ACCEPT WITH FINDINGS.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-003: the `CatalogCode` part is resolved (#212 rulings, 2026-09-19, SR-501 FND-003): ADR-011
+  now follows ADR-013 T-6, with `CatalogCode` in F `diagnostic`. The K row's
+  missing QC-15 id types are Remaining work: #247.
+- FND-004 is Remaining work: #247.
+- FND-005 is resolved (#212 rulings, 2026-09-19, SR-500 FND-007): a `check` limit is
+  `StageFailure::Limit(LimitExceeded)`, category `incomplete`, and
+  `Incomplete` is an S6a outcome only.
+- FND-006 is Remaining work: #231.
+- FND-009 and FND-010 are Remaining work: #247.
+- FND-011 is resolved (#212 rulings, 2026-09-19, FND-014): DA-08 names the layer-3 `check` core.
+- FND-012 is resolved (#212 rulings, 2026-09-19, SR-500 FND-002): ADR-012 §2 says the preimage
+  includes the declaring package's `name@version`.
+- FND-001, FND-002, FND-007 and FND-008 were resolved in Round 2.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.

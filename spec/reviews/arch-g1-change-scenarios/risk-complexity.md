@@ -103,3 +103,27 @@ The failure-domain analysis of this gate is a sibling record in this
 directory. The overlap with this analysis is FND-003 and FND-009. In both, a
 proof or replay verdict depends on an input that no record pins: a shared
 kernel helper, or an unstated compile limit.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is Remaining work: #216.
+- FND-002 is Remaining work: CG #87. #212 does not wait on it (#212 rulings, 2026-09-19,
+  SR-502 FND-001).
+- FND-003 is resolved (#212 rulings, 2026-09-19, SR-500 FND-001): ADR-013 O-13 forbids a CG oracle
+  from computing its expectation with the kernel operation under proof.
+- FND-004 is resolved (#212 rulings, 2026-09-19, FND-006): the shared-helper set is computed from
+  the build and checked by #219. The per-helper run cost is Remaining work:
+  #219.
+- FND-005 is Remaining work: #214.
+- FND-006 is resolved (#212 rulings, 2026-09-19, SR-504 FND-006): the lane deletions name the
+  implementation tickets.
+- FND-007 is Remaining work: #213.
+- FND-008 is Remaining work: IR #141 and CG #86.
+- FND-009 is resolved (#212 rulings, 2026-09-19, FND-012): the E9 recompile runs under the proved
+  package's recorded stage limits.
+- FND-010 is resolved (#212 rulings, 2026-09-19, SR-504 FND-006): SEAM-3 says the last lane PR
+  deletes the remainder.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.

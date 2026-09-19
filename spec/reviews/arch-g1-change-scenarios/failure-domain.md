@@ -102,3 +102,49 @@ needs a #211 decision and should be listed as remaining work under scenario 6.
   Remaining work: #244.
 
 Verdict after Round 2: ACCEPT WITH FINDINGS.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is resolved (#212 rulings, 2026-09-19, SR-500 FND-001): ADR-011 §2.3 carries the fix
+  text, ADR-013 O-13 limits CG oracles to kernel types and never the
+  operation under proof, and SR-498 scenario 1 uses the fix wording.
+- FND-002 is resolved (#212 rulings, 2026-09-19, SR-500 FND-002): node ids are content-addressed
+  with O-07 occurrences in ADR-011 E3, ADR-012 §2 and ADR-013 O-04. The packet
+  and the E7 obligation identity carry the failing node's occurrence key, and
+  E9 resolves spans by it. Remaining work: agent-ix/quire-specification#141
+  (QC-8).
+- FND-003 is resolved (#212 rulings, 2026-09-19, FND-003): ADR-013 O-04 names the domain package's
+  `name@version` for a `ModelOwner` node, and SR-498 scenario 4 cites it.
+- FND-004 was resolved in Round 2.
+- FND-005 is resolved (#212 rulings, 2026-09-19 and addendum, FND-005): a vacuous `Proved` maps to
+  `KaniOutcomeKind::Inconclusive` with cause `kani_vacuous_proof` in O-16
+  and C-09, and a run mutation of the map turns C-09 red. Remaining work:
+  agent-ix/quire-contract-ir#146, agent-ix/quire-specification#141.
+- FND-006 is resolved (#212 rulings, 2026-09-19, FND-006): ADR-011 §2.3 computes the shared-helper
+  set from the build, and #219 compares it with the checked-in set.
+- FND-007 is resolved (#212 rulings, 2026-09-19, SR-500 FND-007): a family `check` limit is
+  `StageFailure::Limit(LimitExceeded)` in ADR-012 §2, §6, §8 and §13.5 and in
+  ADR-013 T-4.
+- FND-008 is resolved (#212 rulings, 2026-09-19, FND-008): S6a returns
+  `Result<FamilyOutcome, InternalFault>`, `replay` and `route` return
+  `Result<Staged<T>, StageFailure<C>>`, and the E9 row has an internal-fault
+  case.
+- FND-009 is resolved (#212 rulings, 2026-09-19, FND-009): the outcome→verdict map is fixed by
+  QSpec per O-16 category and is not a request member (ADR-011 E9, ADR-013
+  O-26, O-27, C-12, QC-8). Remaining work: agent-ix/quire-specification#141.
+- FND-010 is resolved (#212 rulings, 2026-09-19, FND-010): ADR-011 §4 keeps `CheckedPackage`'s
+  fields and constructor private, `value::expression` names it by one
+  `pub use`, and a `compile_fail` test shows it cannot construct it.
+- FND-011 is resolved (#212 rulings, 2026-09-19, FND-011): the E5 row passes the expected
+  `package_id` from E4's `EmittedPackage` beside the bytes.
+- FND-012 is resolved (#212 rulings, 2026-09-19, FND-012): the E9 recompile runs under the proved
+  package's recorded stage limits, and a limit refusal carries
+  `LimitExceeded`.
+- FND-013 is resolved (#212 rulings, 2026-09-19, FND-013): a dependency's `WireNodeId` resolves
+  through the recompiled dependency package's source map.
+- FND-014 is resolved (#212 rulings, 2026-09-19, FND-014): ADR-013 DA-04, DA-08 and the sibling
+  record citation are fixed.
+
+Verdict after Round 3: ACCEPT.

@@ -83,3 +83,24 @@ It can be fixed in this PR by the text in FND-005.
 | FND-009 | low | The repository that lands the `replay` facade differs. ADR-011 T-2 gives the skeleton spine, which lands the QSL layer-6 `replay` module, to "CG, with QSL M-4" (ADR-011:918, 591, 651). ADR-013 TK-01 gives the same module to "QSL, spine then #214" (ADR-013:888). **Fix:** make T-2's owner "CG and QSL: QSL lands `replay` (TK-01), CG lands the adapter", or split T-2. | ADR-011:591, 651, 918; ADR-013:888 |
 | FND-010 | low | ADR-012 never names the `replay` facade as the executor surface. Its §8 Replay row says the `evaluate` hook is "reached through the QSL complete-V1 executor" (ADR-012:613). §12.3 says replay goes "through the existing QSL `evaluate` hooks" (ADR-012:799). ADR-011 makes the layer-6 `replay` facade the only CG-facing surface (ADR-011:418, 584-591). **Fix:** cite the ADR-011 layer-6 `replay` facade in both ADR-012 cells. | ADR-011:418, 584-591; ADR-012:613, 799 |
 | FND-011 | low | Stale owner and path cells. ADR-013 §9 says DA-04 "`value::expression::CheckedPackage` canonical for S4" and DA-08 "one checked clause kind in `value::expression`" (ADR-013:908, 912). ADR-013's own T-1 and O-10 place them in layer-4 `package` and the layer-3 `check` core (ADR-013:244, 660; ADR-011:470). ADR-011 still names the S4 type `value::expression::CheckedPackage` (ADR-011:107, 236). ADR-013 O-08 gives frame semantics to "the frame family (decided in #210)" (ADR-013:220), but ADR-012 has no frame family: frames belong to `ProtocolClause` (ADR-012:126). **Fix:** align the four cells to T-1, O-10 and ADR-012 §1. | ADR-011:107, 236, 470; ADR-012:126; ADR-013:220, 244, 660, 908, 912 |
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is resolved (#212 rulings, 2026-09-19, SR-505 FND-001): `route` computes candidates and
+  routes the settled items, and CG `negotiate_*` settles. ADR-011 §2.1 and
+  ADR-012 §7.1 and §7.2 say so.
+- FND-002: the ADR-011 side is resolved (#212 rulings, 2026-09-19, SR-502 FND-002), since M-6e names
+  the family implementation tickets. The ADR-012 #185 claim is Remaining
+  work: #247.
+- FND-003 is Remaining work: #185.
+- FND-004 is Remaining work: #225.
+- FND-005 is resolved (#212 rulings, 2026-09-19, SR-500 FND-001): ADR-013 O-13 carries rule 8 for
+  CG oracles. ADR-011 T-10 already carried it after Round 2.
+- FND-006 is Remaining work: #231.
+- FND-007, FND-008, FND-009 and FND-010 are Remaining work: #247.
+- FND-011 is resolved (#212 rulings, 2026-09-19, FND-010 and FND-014): ADR-011 names the S4 type
+  `CheckedPackage` in layer-4 `package`, and ADR-013 DA-04 and DA-08 match.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.
