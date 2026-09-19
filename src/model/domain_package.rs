@@ -26,7 +26,7 @@ pub struct Multiplicity {
     pub unique: bool,
 }
 
-/// An object type export: `{key, interfaceFeatures}`.
+/// An object type export: `{key, interfaceFeatures, supertypes}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
     /// This type's original declaration key.
@@ -36,9 +36,17 @@ pub struct ObjectTypeRecord {
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
     pub interface_features: Option<Vec<DeclarationKey>>,
+    /// This type's declared `supertypes[]` (`model-complete.md`:155): every
+    /// entry names an object type of the package this type directly
+    /// generalizes to. An inline property of the object type itself, not a
+    /// separate record (QSpec's own shape; `model-complete.md`:155/159/160
+    /// and :270/271) -- there is no producer key of its own for one
+    /// generalization edge.
+    pub supertypes: Vec<DeclarationKey>,
 }
 
-/// A field member of an object type: `{key, owner, value_type, multiplicity}`.
+/// A field member of an object type: `{key, owner, value_type, multiplicity,
+/// subsets, redefines}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldMemberRecord {
     /// This member's own original declaration key.
@@ -49,18 +57,16 @@ pub struct FieldMemberRecord {
     pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
-}
-
-/// A supertype record: `{key, specific, general}` (`specific`
-/// generalizes to `general`; `specific` is the more derived type).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SupertypeRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The specific (more derived) type's original declaration key.
-    pub specific: DeclarationKey,
-    /// The general (less derived) type's original declaration key.
-    pub general: DeclarationKey,
+    /// This field's declared `subsets[]` (`model-complete.md`:161): every
+    /// entry names a field of the owning type or of a supertype whose
+    /// runtime values this field's are a subset of. An inline property of
+    /// the field itself (QSpec's own shape), never a separate record.
+    pub subsets: Vec<DeclarationKey>,
+    /// This field's declared `redefines` (`model-complete.md`:162): the
+    /// inherited field or operation this member redefines, or `None` when
+    /// it declares no redefinition. An inline property of the field itself
+    /// (QSpec's own shape), never a separate record.
+    pub redefines: Option<DeclarationKey>,
 }
 
 /// A scalar type export bound to a closed `Int[lower,upper]` domain
@@ -186,20 +192,11 @@ pub struct OperationMemberRecord {
     /// family member for redefinition-conformance checking, just never a
     /// candidate.
     pub has_body: bool,
-}
-
-/// A redefinition record: `{key, owner, redefining, redefined}` — `owner`
-/// declares `redefining`, which redefines the inherited `redefined` member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RedefinitionRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The redefining member's owning object type.
-    pub owner: DeclarationKey,
-    /// The redefining (more derived) member's original declaration key.
-    pub redefining: DeclarationKey,
-    /// The redefined (inherited) member's original declaration key.
-    pub redefined: DeclarationKey,
+    /// This operation's declared `redefines` (`model-complete.md`:162): the
+    /// inherited operation this member redefines, or `None` when it
+    /// declares no redefinition. An inline property of the operation itself
+    /// (QSpec's own shape), never a separate record.
+    pub redefines: Option<DeclarationKey>,
 }
 
 /// FCD FR-114 component record: FR-152's Part candidate.
@@ -292,20 +289,6 @@ pub struct RelationshipRecord {
     pub direction: RelationshipDirection,
 }
 
-/// A subsetting record: `{key, owner, subsetting, subsetted}` — `owner`
-/// declares `subsetting`, whose runtime values are a subset of `subsetted`'s.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubsettingRecord {
-    /// This record's own original declaration key.
-    pub key: DeclarationKey,
-    /// The subsetting member's owning object type.
-    pub owner: DeclarationKey,
-    /// The subsetting feature's original declaration key.
-    pub subsetting: DeclarationKey,
-    /// The subsetted feature's original declaration key.
-    pub subsetted: DeclarationKey,
-}
-
 /// FR-153's population declaration extent: `closed` or `open`. Object
 /// closure holds exactly when a population's extent is `closed`
 /// (FR-153:68); `open` is admission's own `incomplete_population`
@@ -343,16 +326,10 @@ pub enum DomainPackageRecord {
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type.
     FieldMember(FieldMemberRecord),
-    /// A supertype relationship between two object types.
-    Supertype(SupertypeRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
     OperationMember(OperationMemberRecord),
-    /// An explicit redefinition of an inherited field or operation member.
-    Redefinition(RedefinitionRecord),
-    /// An explicit subsetting of another feature.
-    Subsetting(SubsettingRecord),
     /// FCD FR-114 component (FR-152 Part candidate).
     Component(ComponentRecord),
     /// FCD FR-114 endpoint (FR-152 Port candidate).
@@ -369,11 +346,8 @@ impl DomainPackageRecord {
         match self {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
-            Self::Supertype(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
-            Self::Redefinition(record) => &record.key,
-            Self::Subsetting(record) => &record.key,
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,

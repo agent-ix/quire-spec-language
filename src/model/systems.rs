@@ -210,11 +210,8 @@ pub fn classify(
                 }
             }
             DomainPackageRecord::FieldMember(_)
-            | DomainPackageRecord::Supertype(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
-            | DomainPackageRecord::Redefinition(_)
-            | DomainPackageRecord::Subsetting(_)
             | DomainPackageRecord::Population(_) => {}
         }
     }

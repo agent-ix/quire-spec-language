@@ -14,7 +14,7 @@ use quire_spec_language::model::accounting::{
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord, RedefinitionRecord, SupertypeRecord,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord,
 };
 use quire_spec_language::model::key::{
     DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_REDEFINE,
@@ -32,19 +32,38 @@ const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     unique: true,
 };
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
 fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageRecord {
+    field_member_redefining(identity, owner, value_type, None, vec![])
+}
+
+/// `field_member`, plus this field's own inline `redefines`
+/// (`model-complete.md`:162) and `subsets` (`model-complete.md`:161)
+/// properties -- never a separate redefinition or subsetting record.
+fn field_member_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -52,6 +71,17 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
 /// no postcondition -- enough to exist as a redefinable member without
 /// pulling in `crate::model::dispatch`/`conformance`'s own richer fixtures.
 fn operation_member(identity: &str, owner: &str) -> DomainPackageRecord {
+    operation_member_redefining(identity, owner, None)
+}
+
+/// `operation_member`, plus this operation's own inline `redefines`
+/// (`model-complete.md`:162) property -- never a separate redefinition
+/// record.
+fn operation_member_redefining(
+    identity: &str,
+    owner: &str,
+    redefines: Option<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
@@ -65,28 +95,7 @@ fn operation_member(identity: &str, owner: &str) -> DomainPackageRecord {
         has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body: true,
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -99,14 +108,13 @@ fn fixture_f1() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("n01"),
         vec![
-            object_type("ix://test/orders/A"),
-            object_type("ix://test/orders/B"),
+            object_type("ix://test/orders/A", vec![]),
+            object_type("ix://test/orders/B", vec!["ix://test/orders/A"]),
             field_member(
                 "ix://test/orders/A/x",
                 "ix://test/orders/A",
                 "ix://test/orders/A",
             ),
-            supertype("model.gen.B-A", "ix://test/orders/B", "ix://test/orders/A"),
         ],
     )
 }
@@ -116,22 +124,13 @@ fn fixture_f1() -> DomainPackage {
 /// `D` -> `B`, `D` -> `C`.
 fn fixture_f2() -> DomainPackage {
     let mut records = fixture_f1().records;
-    records.push(object_type("ix://test/orders/C"));
-    records.push(object_type("ix://test/orders/D"));
-    records.push(supertype(
-        "model.gen.C-A",
+    records.push(object_type(
         "ix://test/orders/C",
-        "ix://test/orders/A",
+        vec!["ix://test/orders/A"],
     ));
-    records.push(supertype(
-        "model.gen.D-B",
+    records.push(object_type(
         "ix://test/orders/D",
-        "ix://test/orders/B",
-    ));
-    records.push(supertype(
-        "model.gen.D-C",
-        "ix://test/orders/D",
-        "ix://test/orders/C",
+        vec!["ix://test/orders/B", "ix://test/orders/C"],
     ));
     DomainPackage::new(DomainPackageRef::fixture("n02"), records)
 }
@@ -143,27 +142,19 @@ fn fixture_f2() -> DomainPackage {
 /// and `C`.
 fn fixture_n06_conflict() -> DomainPackage {
     let mut records = fixture_f2().records;
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.B.x2",
         "ix://test/orders/B",
         "ix://test/orders/A",
+        Some("ix://test/orders/A/x"),
+        vec![],
     ));
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.C.x3",
         "ix://test/orders/C",
         "ix://test/orders/A",
-    ));
-    records.push(redefinition(
-        "model.redef.B",
-        "ix://test/orders/B",
-        "model.B.x2",
-        "ix://test/orders/A/x",
-    ));
-    records.push(redefinition(
-        "model.redef.C",
-        "ix://test/orders/C",
-        "model.C.x3",
-        "ix://test/orders/A/x",
+        Some("ix://test/orders/A/x"),
+        vec![],
     ));
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06"), records)
 }
@@ -174,16 +165,12 @@ fn fixture_n06_conflict() -> DomainPackage {
 /// other redefiner of `A.x` and the conflict resolves.
 fn fixture_n06_resolved() -> DomainPackage {
     let mut records = fixture_n06_conflict().records;
-    records.push(field_member(
+    records.push(field_member_redefining(
         "model.D.x4",
         "ix://test/orders/D",
         "ix://test/orders/A",
-    ));
-    records.push(redefinition(
-        "model.redef.D",
-        "ix://test/orders/D",
-        "model.D.x4",
-        "ix://test/orders/A/x",
+        Some("ix://test/orders/A/x"),
+        vec![],
     ));
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06"), records)
 }
@@ -196,13 +183,13 @@ fn fixture_n06_resolved() -> DomainPackage {
 /// at `D`.
 fn fixture_n06_conflict_with_unreachable_redefiner() -> DomainPackage {
     let mut records = fixture_n06_conflict().records;
-    records.push(object_type("model.E"));
-    records.push(field_member("model.E.y", "model.E", "ix://test/orders/A"));
-    records.push(redefinition(
-        "model.redef.E",
-        "model.E",
+    records.push(object_type("model.E", vec![]));
+    records.push(field_member_redefining(
         "model.E.y",
-        "ix://test/orders/A/x",
+        "model.E",
+        "ix://test/orders/A",
+        Some("ix://test/orders/A/x"),
+        vec![],
     ));
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06e"), records)
 }
@@ -217,28 +204,27 @@ fn fixture_n06_conflict_with_unreachable_redefiner() -> DomainPackage {
 /// `ix://n06/...` sorts before `ix://test/orders/D` (`n` < `t`).
 fn fixture_n06_conflict_with_a_second_diamond_sorting_first() -> DomainPackage {
     let mut records = fixture_n06_conflict().records;
-    records.push(object_type("ix://n06/M"));
-    records.push(object_type("ix://n06/M1"));
-    records.push(object_type("ix://n06/M2"));
-    records.push(object_type("ix://n06/B9"));
-    records.push(field_member("ix://n06/M/w", "ix://n06/M", "ix://n06/M"));
-    records.push(supertype("model.gen.M1-M", "ix://n06/M1", "ix://n06/M"));
-    records.push(supertype("model.gen.M2-M", "ix://n06/M2", "ix://n06/M"));
-    records.push(supertype("model.gen.B9-M1", "ix://n06/B9", "ix://n06/M1"));
-    records.push(supertype("model.gen.B9-M2", "ix://n06/B9", "ix://n06/M2"));
-    records.push(field_member("ix://n06/M1/w1", "ix://n06/M1", "ix://n06/M"));
-    records.push(field_member("ix://n06/M2/w2", "ix://n06/M2", "ix://n06/M"));
-    records.push(redefinition(
-        "model.redef.M1",
-        "ix://n06/M1",
-        "ix://n06/M1/w1",
-        "ix://n06/M/w",
+    records.push(object_type("ix://n06/M", vec![]));
+    records.push(object_type("ix://n06/M1", vec!["ix://n06/M"]));
+    records.push(object_type("ix://n06/M2", vec!["ix://n06/M"]));
+    records.push(object_type(
+        "ix://n06/B9",
+        vec!["ix://n06/M1", "ix://n06/M2"],
     ));
-    records.push(redefinition(
-        "model.redef.M2",
-        "ix://n06/M2",
+    records.push(field_member("ix://n06/M/w", "ix://n06/M", "ix://n06/M"));
+    records.push(field_member_redefining(
+        "ix://n06/M1/w1",
+        "ix://n06/M1",
+        "ix://n06/M",
+        Some("ix://n06/M/w"),
+        vec![],
+    ));
+    records.push(field_member_redefining(
         "ix://n06/M2/w2",
-        "ix://n06/M/w",
+        "ix://n06/M2",
+        "ix://n06/M",
+        Some("ix://n06/M/w"),
+        vec![],
     ));
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n06.two-diamonds"),
@@ -254,41 +240,30 @@ fn fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant(
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.rank02"),
         vec![
-            object_type("model.A"),
-            object_type("model.E"),
-            object_type("model.Da"),
+            object_type("model.A", vec![]),
+            object_type("model.E", vec![]),
+            object_type("model.Da", vec!["model.E"]),
             field_member("model.A.x", "model.A", "model.A"),
-            supertype("model.gen.Da-E", "model.Da", "model.E"),
-            field_member("model.E.y", "model.E", "model.A"),
-            redefinition("model.redef.Ey", "model.E", "model.E.y", "model.A.x"),
+            field_member_redefining("model.E.y", "model.E", "model.A", Some("model.A.x"), vec![]),
         ],
     )
 }
 
-/// `E` (`<- A`, so `A.x` IS an effective member of `E`) declares
-/// `redef.Ez` (`E`, `Z.w` redefines `A.x`) where the redefining member
-/// `Z.w` is owned by unrelated type `Z`, so `Z.w` is not itself an
-/// effective member of `E`. `Da` (`<- E`) inherits the identical record and
-/// fails the identical "redefining member not an effective member" check
-/// for the identical reason. `Da` sorts before `E` in `type_keys`'
-/// ascending identity order.
-fn fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant() -> DomainPackage
-{
-    DomainPackage::new(
-        DomainPackageRef::fixture("bundle.rank03"),
-        vec![
-            object_type("model.A"),
-            object_type("model.Z"),
-            object_type("model.E"),
-            object_type("model.Da"),
-            field_member("model.A.x", "model.A", "model.A"),
-            supertype("model.gen.E-A", "model.E", "model.A"),
-            supertype("model.gen.Da-E", "model.Da", "model.E"),
-            field_member("model.Z.w", "model.Z", "model.A"),
-            redefinition("model.redef.Ez", "model.E", "model.Z.w", "model.A.x"),
-        ],
-    )
-}
+// `fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant`
+// (and its consuming test,
+// `n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant`)
+// are dropped, not adapted: they relied on a separate `RedefinitionRecord`
+// declaring an `owner` (`model.E`) independent of the redefining member's own
+// real owner (`model.Z`), to construct a member reachable at `owner` by name
+// but not by actual ownership. Under QSpec's inline `redefines` property
+// (`model-complete.md`:162), a redefining member's `redefines` is always
+// evaluated at its own `owner` field (`src/model/normalize.rs`'s
+// `apply_redefinitions`: `let Some(path) = owner_paths.get(owner) else {
+// continue };` immediately followed by using that same `owner` to reach
+// `type_key`), and a member declared with a given `owner` is by construction
+// always an effective member of that same `owner` -- so "redefining member
+// not an effective member of the owner its own record names" is no longer a
+// reachable code path (F1: aligning with QSpec is pre-approved).
 
 /// A second, independently-built instance of the same ranking shape as
 /// `fixture_n06_conflict_with_unreachable_redefiner`: the
@@ -305,22 +280,27 @@ fn fixture_conflict_check_owner_sorts_before_redefinition_check_owner() -> Domai
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.rank01"),
         vec![
-            object_type("model.G"),
-            object_type("model.H"),
-            object_type("model.I"),
-            object_type("model.J"),
-            object_type("model.K"),
+            object_type("model.G", vec![]),
+            object_type("model.H", vec!["model.G"]),
+            object_type("model.I", vec!["model.G"]),
+            object_type("model.J", vec!["model.H", "model.I"]),
+            object_type("model.K", vec![]),
             field_member("model.G.g", "model.G", "model.G"),
-            supertype("model.gen.H-G", "model.H", "model.G"),
-            supertype("model.gen.I-G", "model.I", "model.G"),
-            supertype("model.gen.J-H", "model.J", "model.H"),
-            supertype("model.gen.J-I", "model.J", "model.I"),
-            field_member("model.H.h2", "model.H", "model.G"),
-            field_member("model.I.i3", "model.I", "model.G"),
-            redefinition("model.redef.h2", "model.H", "model.H.h2", "model.G.g"),
-            redefinition("model.redef.i3", "model.I", "model.I.i3", "model.G.g"),
-            field_member("model.K.k", "model.K", "model.G"),
-            redefinition("model.redef.k", "model.K", "model.K.k", "model.G.g"),
+            field_member_redefining(
+                "model.H.h2",
+                "model.H",
+                "model.G",
+                Some("model.G.g"),
+                vec![],
+            ),
+            field_member_redefining(
+                "model.I.i3",
+                "model.I",
+                "model.G",
+                Some("model.G.g"),
+                vec![],
+            ),
+            field_member_redefining("model.K.k", "model.K", "model.G", Some("model.G.g"), vec![]),
         ],
     )
 }
@@ -334,14 +314,17 @@ fn fixture_r07_same_owner_contending_redefiners() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.r07"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.B.z", "model.B", "model.A"),
-            field_member("model.B.z2", "model.B", "model.A"),
-            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
-            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+            field_member_redefining("model.B.z", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining(
+                "model.B.z2",
+                "model.B",
+                "model.A",
+                Some("model.A.x"),
+                vec![],
+            ),
         ],
     )
 }
@@ -357,18 +340,19 @@ fn fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test() -> DomainP
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.r07d"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.C-A", "model.C", "model.A"),
-            supertype("model.gen.B-C", "model.B", "model.C"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.C"]),
+            object_type("model.C", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.C.w", "model.C", "model.A"),
-            field_member("model.B.z", "model.B", "model.A"),
-            field_member("model.B.z2", "model.B", "model.A"),
-            redefinition("model.redef.w", "model.C", "model.C.w", "model.A.x"),
-            redefinition("model.redef.z", "model.B", "model.B.z", "model.A.x"),
-            redefinition("model.redef.z2", "model.B", "model.B.z2", "model.A.x"),
+            field_member_redefining("model.C.w", "model.C", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining("model.B.z", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining(
+                "model.B.z2",
+                "model.B",
+                "model.A",
+                Some("model.A.x"),
+                vec![],
+            ),
         ],
     )
 }
@@ -806,42 +790,22 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
     }
 }
 
-#[trace("TC-195")]
-#[test]
-fn a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignored() {
-    let mut domain_package = fixture_f1();
-    domain_package.records.push(supertype(
-        "model.gen.orphan",
-        "model.no-such-type",
-        "ix://test/orders/A",
-    ));
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal.code,
-                quire_spec_language::diagnostic::Code::DanglingReference
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::UnknownSpecific {
-                    supertype: DeclarationKey::fixture("model.gen.orphan"),
-                    specific: DeclarationKey::fixture("model.no-such-type"),
-                }
-            );
-        }
-        other => panic!("expected Refused, got {other:?}"),
-    }
-}
+// `a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignored`
+// is dropped, not adapted: under QSpec's inline `supertypes[]` property
+// (`model-complete.md`:155), `specific` is always the owning
+// `ObjectTypeRecord`'s own key, already indexed from that identical record --
+// an "unknown specific" is structurally unreachable from
+// `validate_references` now (see its `ObjectType` arm's own comment), unlike
+// the separate-record shape a standalone `Supertype` producer key once
+// allowed (F1: aligning with QSpec is pre-approved).
 
 #[trace("TC-195")]
 #[test]
 fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() {
     let mut domain_package = fixture_f1();
-    domain_package.records.push(supertype(
-        "model.gen.orphan",
-        "ix://test/orders/A",
-        "model.no-such-type",
-    ));
+    domain_package
+        .records
+        .push(object_type("model.orphan", vec!["model.no-such-type"]));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
@@ -851,7 +815,7 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::UnknownGeneral {
-                    supertype: DeclarationKey::fixture("model.gen.orphan"),
+                    supertype: DeclarationKey::fixture("model.orphan"),
                     general: DeclarationKey::fixture("model.no-such-type"),
                 }
             );
@@ -926,9 +890,9 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
                 }
             );
             assert!(refusal.detail.contains("ix://test/orders/B"));
-            assert!(refusal.detail.contains("model.redef.B"));
+            assert!(refusal.detail.contains("model.B.x2"));
             assert!(refusal.detail.contains("ix://test/orders/C"));
-            assert!(refusal.detail.contains("model.redef.C"));
+            assert!(refusal.detail.contains("model.C.x3"));
             assert!(refusal.detail.contains("ix://test/orders/A/x"));
         }
         other => panic!("expected Refused, got {other:?}"),
@@ -1182,19 +1146,24 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     );
 }
 
-// Retagged (PR #144 review finding #1): a dangling redefinition target
-// refuses with a named cause, closer to AC-3 than to AC-1 (which is about
-// linking a normalized identity to its contributing declarations — there
-// is no normalized identity here at all, only a refusal).
+// A dangling redefinition target refuses with a named cause, closer to AC-3
+// than to AC-1 (which is about linking a normalized identity to its
+// contributing declarations — there is no normalized identity here at all,
+// only a refusal). Under QSpec's inline `redefines` property
+// (`model-complete.md`:162), the redefining side is always a real declared
+// member (it IS the record), so only the redefined *target* can dangle;
+// `record` in the refusal below names the redefining member's own key, not a
+// separate redefinition record's key (there is no longer one).
 #[trace("TC-195", "FR-150-AC-3")]
 #[test]
 fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() {
     let mut domain_package = fixture_f2();
-    domain_package.records.push(redefinition(
-        "model.redef.orphan",
+    domain_package.records.push(field_member_redefining(
+        "model.B.orphan",
         "ix://test/orders/B",
-        "model.B.no-such-member",
-        "ix://test/orders/A/x",
+        "ix://test/orders/A",
+        Some("model.A.no-such-member"),
+        vec![],
     ));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
@@ -1205,11 +1174,11 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::UnknownMember {
-                    record: DeclarationKey::fixture("model.redef.orphan"),
-                    member: DeclarationKey::fixture("model.B.no-such-member"),
+                    record: DeclarationKey::fixture("model.B.orphan"),
+                    member: DeclarationKey::fixture("model.A.no-such-member"),
                 }
             );
-            assert!(refusal.detail.contains("model.B.no-such-member"));
+            assert!(refusal.detail.contains("model.A.no-such-member"));
         }
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -1227,7 +1196,10 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
 fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.conflict-object-type"),
-        vec![object_type("model.T"), object_type("model.T")],
+        vec![
+            object_type("model.T", vec![]),
+            object_type("model.T", vec![]),
+        ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
@@ -1259,7 +1231,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.conflict-field-member"),
         vec![
-            object_type("model.A"),
+            object_type("model.A", vec![]),
             field_member("model.A.x", "model.A", "model.A"),
             field_member("model.A.x", "model.A", "model.A"),
         ],
@@ -1284,6 +1256,79 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     }
 }
 
+/// FR-154: "Intake reports every declaration refusal in node order, and
+/// then no later phase runs. Within one node, every check of the table that
+/// fails reports, in table order." A record's own dangling-reference check
+/// (row 4, `missing-name` in FR-154's own vocabulary -- `UnknownOwner` here)
+/// is reported for an *earlier* node even though a *later* node's
+/// duplicate-key check (row 6, `conflicting-binding`) would otherwise also
+/// fail -- node order dominates table/row order, and `validate_references`
+/// never runs a standalone collision pre-pass over every record before
+/// checking any one node's own dangling references.
+#[trace("TC-195", "FR-154")]
+#[test]
+fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_conflicting_binding() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-order-dangling-first"),
+        vec![
+            field_member("model.A.y", "model.no-such-owner", "model.A.y"),
+            object_type("model.B", vec![]),
+            object_type("model.B", vec![]),
+        ],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::DanglingReference
+            );
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::UnknownOwner {
+                    member: DeclarationKey::fixture("model.A.y"),
+                    owner: DeclarationKey::fixture("model.no-such-owner"),
+                }
+            );
+        }
+        other => panic!("expected Refused(dangling_reference/unknown-owner), got {other:?}"),
+    }
+}
+
+/// The same fixture, records in the other order: the two conflicting `B`
+/// nodes now come first, so the second `B` record's own duplicate-key check
+/// reports at node 2, before `validate_references` ever reaches node 3's
+/// dangling owner -- node order, not a fixed global row order, decides
+/// which refusal wins.
+#[trace("TC-195", "FR-154")]
+#[test]
+fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-order-conflict-first"),
+        vec![
+            object_type("model.B", vec![]),
+            object_type("model.B", vec![]),
+            field_member("model.A.y", "model.no-such-owner", "model.A.y"),
+        ],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConflictingBinding {
+                    key: DeclarationKey::fixture("model.B"),
+                }
+            );
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
+        }
+    }
+}
+
 /// FR-321: "Missing required properties, duplicate keys, out-of-domain
 /// values and non-canonical encodings refuse before consumption." An empty
 /// `package`/`node`/`identity`/`version` string is schema `minLength`-invalid
@@ -1298,7 +1343,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
 fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.n04-empty-node"),
-        vec![object_type("")],
+        vec![object_type("", vec![])],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
@@ -1320,7 +1365,7 @@ fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
 fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-identity");
     model_selection.identity.clear();
-    let domain_package = DomainPackage::new(model_selection, vec![object_type("model.A")]);
+    let domain_package = DomainPackage::new(model_selection, vec![object_type("model.A", vec![])]);
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
@@ -1335,31 +1380,78 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
     }
 }
 
-/// PR #140 F1 regression: 15 types in a chain, each specific type generalizing
-/// to its predecessor via TWO parallel generalization records (43 records
-/// total: 15 `ObjectType` + 28 `Supertype`) — the exact shape the review
-/// reproduced (diamond/parallel generalization causes an ancestor-path count
-/// exponential in chain depth). Under a tight budget this must return a typed
-/// `Incomplete` quickly rather than enumerate every path first. On `759968d`
-/// this exact 43-record shape took ~51s (unbounded `ancestor_paths`); it must
-/// complete in low single-digit seconds here.
-fn fixture_deep_parallel_generalization_chain() -> DomainPackage {
-    let mut records: Vec<DomainPackageRecord> = (0..15)
-        .map(|i| object_type(&format!("model.T{i}")))
-        .collect();
-    for i in 1..15 {
-        records.push(supertype(
-            &format!("model.gen.T{i}-T{}-a", i - 1),
-            &format!("model.T{i}"),
-            &format!("model.T{}", i - 1),
-        ));
-        records.push(supertype(
-            &format!("model.gen.T{i}-T{}-b", i - 1),
-            &format!("model.T{i}"),
-            &format!("model.T{}", i - 1),
-        ));
+/// The same phase-1 check, over an empty domain package `version`.
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn n04_empty_model_selection_version_refuses_malformed_declaration() {
+    let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
+    model_selection.version.clear();
+    let domain_package = DomainPackage::new(model_selection, vec![object_type("model.A", vec![])]);
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/malformed-declaration), got {other:?}")
+        }
     }
-    assert_eq!(records.len(), 43, "15 types + 28 generalizations");
+}
+
+/// The same phase-1 check, over a `DeclarationKey` with an empty `package`.
+#[trace("TC-195", "FR-150-AC-3")]
+#[test]
+fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n04-empty-package"),
+        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: DeclarationKey {
+                package: String::new(),
+                node: "model.A".to_owned(),
+            },
+            interface_features: None,
+            supertypes: Vec::new(),
+        })],
+    );
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Refused(refusal) => {
+            assert_eq!(
+                refusal.code,
+                quire_spec_language::diagnostic::Code::InvalidModelBinding
+            );
+            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+        }
+        other => {
+            panic!("expected Refused(invalid_model_binding/malformed-declaration), got {other:?}")
+        }
+    }
+}
+
+/// 15 types in a chain, each specific type generalizing to its predecessor
+/// via TWO parallel entries in its own inline `supertypes[]`
+/// (`model-complete.md`:155) naming the identical ancestor twice (15 records
+/// total, one `ObjectType` per type -- there is no separate `Supertype`
+/// record to double under QSpec's inline shape, so the duplication moves
+/// into each type's own `supertypes` vec instead) — the exact shape the
+/// original review reproduced (diamond/parallel generalization causes an
+/// ancestor-path count exponential in chain depth). Under a tight budget
+/// this must return a typed `Incomplete` quickly rather than enumerate every
+/// path first. Unbounded `ancestor_paths` took ~51s over this exact shape;
+/// it must complete in low single-digit seconds here.
+fn fixture_deep_parallel_generalization_chain() -> DomainPackage {
+    let mut records: Vec<DomainPackageRecord> = vec![object_type("model.T0", vec![])];
+    for i in 1..15 {
+        let prev = format!("model.T{}", i - 1);
+        records.push(object_type(&format!("model.T{i}"), vec![&prev, &prev]));
+    }
+    assert_eq!(
+        records.len(),
+        15,
+        "15 types, each with two parallel supertypes[] entries"
+    );
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.deep-parallel-chain"),
         records,
@@ -1371,7 +1463,7 @@ fn fixture_deep_parallel_generalization_chain() -> DomainPackage {
 fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
     let domain_package = fixture_deep_parallel_generalization_chain();
     let tight = ModelNormalizationLimits {
-        declaration_records: 43,
+        declaration_records: 15,
         derivation_facts: 1,
         effective_declarations: 1,
         dispatch_candidates: 0,
@@ -1540,6 +1632,41 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
 }
 
+/// F1: a member's own inline `subsets` property adds no extra
+/// `normalize.record` charge -- `value-accounting.md:489` charges one
+/// `normalize.record` per IR node, and `normalize.record` here charges
+/// exactly the domain package's own four declared records (`A`, `A.x`, `B`,
+/// `B.y`; `records.len()`). `model.B.y`'s `subsets: ["model.A.x"]` names the
+/// relationship inline on `B.y`'s own record; there is no separate
+/// `Subsetting` record (deleted under F1) to admit, and thus no extra
+/// charge to omit.
+#[trace("TC-195", "FR-150-AC-1")]
+#[test]
+fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f1-subsets-charge"),
+        vec![
+            object_type("model.A", vec![]),
+            field_member("model.A.x", "model.A", "model.A"),
+            object_type("model.B", vec![]),
+            field_member_redefining("model.B.y", "model.B", "model.A", None, vec!["model.A.x"]),
+        ],
+    );
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    match outcome {
+        NormalizeOutcome::Completed(_) => {}
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    let record_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|c| **c == ChargePoint::NormalizeRecord)
+        .count();
+    assert_eq!(record_charges, domain_package.records.len());
+    assert_eq!(record_charges, 4);
+}
+
 /// TC-195 N02: five `normalize.record` (`A`, `B`, `C`, `D`, `A/x`; F2's four
 /// `Supertype` records are not declarations of their own), fifteen
 /// `normalize.fact` charges (five phase-2 qualify facts for A, B, C, D and
@@ -1593,10 +1720,8 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.r01"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.A-B", "model.A", "model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec!["model.B"]),
+            object_type("model.B", vec!["model.A"]),
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
@@ -1609,7 +1734,7 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
                 refusal.cause,
                 ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.gen.B-A"),
+                    via: DeclarationKey::fixture("model.B"),
                 }
             );
             assert!(
@@ -1638,12 +1763,9 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.r01b"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.A-C", "model.A", "model.C"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
-            supertype("model.gen.B-C", "model.B", "model.C"),
+            object_type("model.A", vec!["model.C"]),
+            object_type("model.B", vec!["model.C"]),
+            object_type("model.C", vec!["model.B"]),
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
@@ -1656,7 +1778,7 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
                 refusal.cause,
                 ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.C"),
-                    via: DeclarationKey::fixture("model.gen.B-C"),
+                    via: DeclarationKey::fixture("model.B"),
                 }
             );
             assert!(
@@ -1684,22 +1806,13 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
 /// hand-verified `f(o)`/`m` values below, not derived from a fresh fixture.
 fn fixture_single_redefiner_no_conflict() -> DomainPackage {
     let mut records = fixture_f1().records;
-    records.push(object_type("model.B2"));
-    records.push(supertype(
-        "model.gen.B2-A",
-        "model.B2",
-        "ix://test/orders/A",
-    ));
-    records.push(field_member(
+    records.push(object_type("model.B2", vec!["ix://test/orders/A"]));
+    records.push(field_member_redefining(
         "model.B2.x2",
         "model.B2",
         "ix://test/orders/A",
-    ));
-    records.push(redefinition(
-        "model.redef.single",
-        "model.B2",
-        "model.B2.x2",
-        "ix://test/orders/A/x",
+        Some("ix://test/orders/A/x"),
+        vec![],
     ));
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.single-redefiner"),
@@ -1715,32 +1828,25 @@ fn fixture_single_redefiner_no_conflict() -> DomainPackage {
 /// `MAX_CONFORMANCE_DEPTH` (128) computing a dominance closure no single
 /// redefiner ever needs.
 fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
+    let parent_ids: Vec<String> = (0..n_parents.saturating_sub(1))
+        .map(|i| format!("model.P{i}"))
+        .collect();
     let mut records = vec![
-        object_type("model.Base"),
+        object_type("model.Base", vec![]),
         field_member("model.Base.x", "model.Base", "model.Base"),
     ];
-    for i in 0..n_parents.saturating_sub(1) {
-        records.push(object_type(&format!("model.P{i}")));
+    for id in &parent_ids {
+        records.push(object_type(id, vec![]));
     }
-    records.push(object_type("model.Owner"));
-    records.push(supertype(
-        "model.gen.Owner-Base",
+    let mut owner_supertypes: Vec<&str> = vec!["model.Base"];
+    owner_supertypes.extend(parent_ids.iter().map(String::as_str));
+    records.push(object_type("model.Owner", owner_supertypes));
+    records.push(field_member_redefining(
+        "model.Owner.x2",
         "model.Owner",
         "model.Base",
-    ));
-    for i in 0..n_parents.saturating_sub(1) {
-        records.push(supertype(
-            &format!("model.gen.Owner-P{i}"),
-            "model.Owner",
-            &format!("model.P{i}"),
-        ));
-    }
-    records.push(field_member("model.Owner.x2", "model.Owner", "model.Base"));
-    records.push(redefinition(
-        "model.redef.wide",
-        "model.Owner",
-        "model.Owner.x2",
-        "model.Base.x",
+        Some("model.Base.x"),
+        vec![],
     ));
     DomainPackage::new(
         DomainPackageRef::fixture(format!("bundle.wide-{n_parents}")),
@@ -2089,34 +2195,29 @@ fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
 /// wins outright.
 fn fixture_wide_ancestry_contested_redefiners(n_parents: usize) -> DomainPackage {
     let mut records = vec![
-        object_type("model.G000"),
+        object_type("model.G000", vec![]),
         field_member("model.G000.x", "model.G000", "model.G000"),
-        field_member("model.G000.w", "model.G000", "model.G000"),
-        redefinition(
-            "model.redef.w",
-            "model.G000",
+        field_member_redefining(
             "model.G000.w",
-            "model.G000.x",
+            "model.G000",
+            "model.G000",
+            Some("model.G000.x"),
+            vec![],
         ),
     ];
-    for i in 1..n_parents {
-        records.push(object_type(&format!("model.G{i:03}")));
+    let parent_ids: Vec<String> = (1..n_parents).map(|i| format!("model.G{i:03}")).collect();
+    for id in &parent_ids {
+        records.push(object_type(id, vec![]));
     }
-    records.push(object_type("model.O"));
-    records.push(supertype("model.gen.O-G000", "model.O", "model.G000"));
-    for i in 1..n_parents {
-        records.push(supertype(
-            &format!("model.gen.O-G{i:03}"),
-            "model.O",
-            &format!("model.G{i:03}"),
-        ));
-    }
-    records.push(field_member("model.O.z", "model.O", "model.G000"));
-    records.push(redefinition(
-        "model.redef.z",
-        "model.O",
+    let mut owner_supertypes: Vec<&str> = vec!["model.G000"];
+    owner_supertypes.extend(parent_ids.iter().map(String::as_str));
+    records.push(object_type("model.O", owner_supertypes));
+    records.push(field_member_redefining(
         "model.O.z",
-        "model.G000.x",
+        "model.O",
+        "model.G000",
+        Some("model.G000.x"),
+        vec![],
     ));
     DomainPackage::new(
         DomainPackageRef::fixture(format!("bundle.wide-contested-{n_parents}")),
@@ -2202,12 +2303,10 @@ fn fixture_operation_redefinition() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             operation_member("model.A.op", "model.A"),
-            operation_member("model.B.op2", "model.B"),
-            redefinition("model.redef.op", "model.B", "model.B.op2", "model.A.op"),
+            operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
         ],
     )
 }
@@ -2298,14 +2397,11 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef-conflict"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             operation_member("model.A.op", "model.A"),
-            operation_member("model.B.op2", "model.B"),
-            operation_member("model.B.op3", "model.B"),
-            redefinition("model.redef.op2", "model.B", "model.B.op2", "model.A.op"),
-            redefinition("model.redef.op3", "model.B", "model.B.op3", "model.A.op"),
+            operation_member_redefining("model.B.op2", "model.B", Some("model.A.op")),
+            operation_member_redefining("model.B.op3", "model.B", Some("model.A.op")),
         ],
     )
 }
@@ -2404,10 +2500,11 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
 ///
 /// Cross-checked by running the crate directly: with every other limit
 /// unlimited, this domain package completes at exactly `work_units = 89`
-/// (`normalize.record` charges only its nine declaration records -- three
-/// object types, three fields and three operation members; its six
-/// `Supertype`/`Redefinition` records state relationships, not declarations
-/// of their own, and are never charged -- plus the field redefinition
+/// (`normalize.record` charges its nine declaration records -- three
+/// object types, three fields and three operation members; `B`'s and `C`'s
+/// own `supertypes[]` entries and every member's own `redefines` property
+/// are inline on those same nine records, not separate declarations of
+/// their own, so there is nothing else to charge -- plus the field redefinition
 /// group's own six phase-4 redefine facts, `+6`: two at `B` for `redef.z1`
 /// reaching only `B`, and four at `C` for `redef.z1`/`redef.z2` both
 /// reaching `C`; the operation group's own two records contribute no facts
@@ -2431,21 +2528,27 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.field-op-order"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.z", "model.A", "model.A"),
-            field_member("model.B.z1", "model.B", "model.A"),
-            field_member("model.C.z2", "model.C", "model.A"),
-            redefinition("model.redef.z1", "model.B", "model.B.z1", "model.A.z"),
-            redefinition("model.redef.z2", "model.C", "model.C.z2", "model.A.z"),
+            field_member_redefining(
+                "model.B.z1",
+                "model.B",
+                "model.A",
+                Some("model.A.z"),
+                vec![],
+            ),
+            field_member_redefining(
+                "model.C.z2",
+                "model.C",
+                "model.A",
+                Some("model.A.z"),
+                vec![],
+            ),
             operation_member("model.A.a", "model.A"),
-            operation_member("model.C.a2", "model.C"),
-            operation_member("model.C.a3", "model.C"),
-            redefinition("model.redef.a2", "model.C", "model.C.a2", "model.A.a"),
-            redefinition("model.redef.a3", "model.C", "model.C.a3", "model.A.a"),
+            operation_member_redefining("model.C.a2", "model.C", Some("model.A.a")),
+            operation_member_redefining("model.C.a3", "model.C", Some("model.A.a")),
         ],
     );
 
@@ -2495,10 +2598,8 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
 /// before phase 4 ever gets a turn.
 fn fixture_n06_conflict_with_unrelated_cycle() -> DomainPackage {
     let mut records = fixture_n06_conflict().records;
-    records.push(object_type("model.Y"));
-    records.push(object_type("model.Z"));
-    records.push(supertype("model.gen.Y-Z", "model.Y", "model.Z"));
-    records.push(supertype("model.gen.Z-Y", "model.Z", "model.Y"));
+    records.push(object_type("model.Y", vec!["model.Z"]));
+    records.push(object_type("model.Z", vec!["model.Y"]));
     DomainPackage::new(DomainPackageRef::fixture("bundle.n06-cycle"), records)
 }
 
@@ -2518,7 +2619,7 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
                 refusal.cause,
                 ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.Y"),
-                    via: DeclarationKey::fixture("model.gen.Z-Y"),
+                    via: DeclarationKey::fixture("model.Z"),
                 },
                 "phase 3's own refusal must win over phase 4's undominated-\
                  redefiner derivation-conflict, matching FR-150's \
@@ -2679,8 +2780,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
                         ],
                     },
                     detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
-                              [ix://test/orders/B, model.redef.B, ix://test/orders/A/x] and \
-                              [ix://test/orders/C, model.redef.C, ix://test/orders/A/x]"
+                              [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
+                              [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
                         .to_string(),
                 }
             );
@@ -2872,8 +2973,8 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                         ],
                     },
                     detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
-                              [ix://n06/M1, model.redef.M1, ix://n06/M/w] and \
-                              [ix://n06/M2, model.redef.M2, ix://n06/M/w]"
+                              [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
+                              [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
                         .to_string(),
                 }
             );
@@ -2912,32 +3013,5 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
     }
 }
 
-/// `E`'s own resolution and `Da`'s own resolution (`Da <- E`) both fail the
-/// identical "redefining member not an effective member" check for the
-/// identical record, so both rank identically -- `Da` sorts before `E`, but
-/// the refusal still names `E`, the record's own owning type, since the
-/// check always ranks and names the record's own owner, never the
-/// resolving `type_key`.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
-#[test]
-fn n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant() {
-    let domain_package =
-        fixture_unreachable_redefiner_reached_by_owner_and_an_earlier_sorted_descendant();
-    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal,
-                ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::DanglingReference,
-                    cause: ModelRefusalCause::RedefinitionUnreachable {
-                        member: DeclarationKey::fixture("model.Z.w"),
-                        owner: DeclarationKey::fixture("model.E"),
-                    },
-                    detail: "redefining member model.Z.w is not an effective member of model.E"
-                        .to_string(),
-                }
-            );
-        }
-        other => panic!("expected Refused(RedefinitionUnreachable) naming E, got {other:?}"),
-    }
-}
+// `n06_unreachable_redefiner_refusal_names_the_records_owning_type_not_a_tied_descendant`
+// is dropped along with its fixture above; see that comment.

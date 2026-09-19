@@ -136,8 +136,8 @@ use crate::diagnostic::Code;
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, OperationEffect,
-    SubsettingRecord, SupertypeRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
+    OperationEffect,
 };
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{
@@ -412,7 +412,7 @@ pub struct PopulationMember {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
     /// The document's own declared `modelIdentity`, which must name the
-    /// binding's `DomainPackageRef` export identity.
+    /// binding's `DomainPackageRef` identity.
     pub model_identity: String,
     /// Member records, in document order.
     pub members: Vec<PopulationMember>,
@@ -487,7 +487,7 @@ pub struct PopulationBinding {
     /// fix, not a new charge: the same "compute an index once at admission
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
-    generals: HashMap<DeclarationKey, Vec<SupertypeRecord>>,
+    generals: HashMap<DeclarationKey, Vec<DeclarationKey>>,
     /// Every declared object type of `domain_package`'s effective view, `DeclarationKey`
     /// to its FR-150-derived [`EffectiveId`]. Computed once here from
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
@@ -528,8 +528,7 @@ impl PopulationBinding {
         &self.domain_package.model_selection
     }
 
-    /// The `DomainPackageRef` export identity this binding was admitted
-    /// against.
+    /// The `DomainPackageRef` identity this binding was admitted against.
     pub fn model_identity(&self) -> &str {
         &self.domain_package.model_selection.identity
     }
@@ -793,15 +792,31 @@ pub fn admit_binding(
         None
     }
 
-    let subsetting_records: Vec<&SubsettingRecord> = domain_package
+    /// One subsetting edge derived from a field member's own inline
+    /// `subsets[]` property (`model-complete.md`:161, QSpec's own shape, not
+    /// a separate subsetting record): `owner` declares `subsetting`, whose
+    /// runtime values must be a subset of `subsetted`'s.
+    struct SubsettingEdge<'a> {
+        owner: &'a DeclarationKey,
+        subsetting: &'a DeclarationKey,
+        subsetted: &'a DeclarationKey,
+    }
+    let subsetting_edges: Vec<SubsettingEdge<'_>> = domain_package
         .records
         .iter()
         .filter_map(|record| match record {
-            DomainPackageRecord::Subsetting(subsetting) => Some(subsetting),
+            DomainPackageRecord::FieldMember(field) if !field.subsets.is_empty() => Some(field),
             _ => None,
         })
+        .flat_map(|field: &FieldMemberRecord| {
+            field.subsets.iter().map(move |subsetted| SubsettingEdge {
+                owner: &field.owner,
+                subsetting: &field.key,
+                subsetted,
+            })
+        })
         .collect();
-    if !subsetting_records.is_empty() {
+    if !subsetting_edges.is_empty() {
         let member_by_object: HashMap<&str, &PopulationMember> = document
             .members
             .iter()
@@ -828,19 +843,19 @@ pub fn admit_binding(
                     ),
                 });
             }
-            let mut applicable: Vec<&SubsettingRecord> = Vec::new();
-            for record in &subsetting_records {
-                match type_conforms(&generals, original_type, &record.owner) {
-                    Ok(true) => applicable.push(record),
+            let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
+            for edge in &subsetting_edges {
+                match type_conforms(&generals, original_type, edge.owner) {
+                    Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
                 }
             }
-            applicable.sort_by(|a, b| a.key.cmp(&b.key));
+            applicable.sort_by(|a, b| a.subsetting.cmp(b.subsetting));
 
-            for record in applicable {
-                let subsetting_values = values_of(member, &record.subsetting);
-                let subsetted_values = values_of(member, &record.subsetted);
+            for edge in applicable {
+                let subsetting_values = values_of(member, edge.subsetting);
+                let subsetted_values = values_of(member, edge.subsetted);
                 for value in subsetting_values {
                     let n = length_amount(subsetted_values.len());
                     if let Err(incomplete) = meter.charge(
@@ -854,17 +869,17 @@ pub fn admit_binding(
                             code: Code::InvalidRuntimeInput,
                             cause: ModelRefusalCause::SubsettingViolation {
                                 object: key.object.clone(),
-                                record: record.key.clone(),
-                                subsetting: record.subsetting.clone(),
-                                subsetted: record.subsetted.clone(),
+                                record: edge.subsetting.clone(),
+                                subsetting: edge.subsetting.clone(),
+                                subsetted: edge.subsetted.clone(),
                             },
                             detail: format!(
                                 "object {}'s {} names {value}, not among its {} values \
-                                 (subsetting record {})",
+                                 (subsetting field {})",
                                 key.object,
-                                record.subsetting.node,
-                                record.subsetted.node,
-                                record.key.node
+                                edge.subsetting.node,
+                                edge.subsetted.node,
+                                edge.subsetting.node
                             ),
                         });
                     }
@@ -1095,8 +1110,9 @@ fn field_values_equal(
     pre == post
 }
 
-/// Walks `field`'s redefinition chain (`redefining -> redefined`, one
-/// `DomainPackageRecord::Redefinition` hop at a time), returning `true` as soon as
+/// Walks `field`'s redefinition chain (one member's own inline `redefines`
+/// hop at a time — `model-complete.md`:162, QSpec's own shape, not a
+/// separate redefinition record), returning `true` as soon as
 /// `admits` accepts `field` itself or some ancestor it reaches, `false` once
 /// the chain ends with no accepted link. model-complete.md:56: the
 /// redefining feature replaces "the *one* inherited redefined feature", so a
@@ -1137,10 +1153,11 @@ pub(super) fn redefinition_reaches(
             return true;
         }
         let Some(redefined) = records.iter().find_map(|record| match record {
-            DomainPackageRecord::Redefinition(redefinition)
-                if redefinition.redefining == current =>
-            {
-                Some(redefinition.redefined.clone())
+            DomainPackageRecord::FieldMember(member) if member.key == current => {
+                member.redefines.clone()
+            }
+            DomainPackageRecord::OperationMember(member) if member.key == current => {
+                member.redefines.clone()
             }
             _ => None,
         }) else {

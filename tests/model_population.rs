@@ -20,8 +20,7 @@ use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord, RedefinitionRecord, SubsettingRecord,
-    SupertypeRecord,
+    ObjectTypeRecord, OperationEffect, PopulationRecord,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
@@ -56,19 +55,38 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn object_type(identity: &str) -> DomainPackageRecord {
+fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        supertypes: supertypes
+            .into_iter()
+            .map(DeclarationKey::fixture)
+            .collect(),
     })
 }
 
 fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageRecord {
+    field_member_redefining(identity, owner, value_type, None, vec![])
+}
+
+/// `field_member`, plus this field's own inline `redefines`
+/// (`model-complete.md`:162) and `subsets` (`model-complete.md`:161)
+/// properties -- never a separate redefinition or subsetting record.
+fn field_member_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
         value_type: DeclarationKey::fixture(value_type),
         multiplicity: MULTIPLICITY_0_1,
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -78,6 +96,21 @@ fn field_member_mult(
     value_type: &str,
     lower: u64,
     upper: Option<u64>,
+) -> DomainPackageRecord {
+    field_member_mult_redefining(identity, owner, value_type, lower, upper, None, vec![])
+}
+
+/// `field_member_mult`, plus this field's own inline `redefines` and
+/// `subsets` properties -- never a separate redefinition or subsetting
+/// record.
+fn field_member_mult_redefining(
+    identity: &str,
+    owner: &str,
+    value_type: &str,
+    lower: u64,
+    upper: Option<u64>,
+    redefines: Option<&str>,
+    subsets: Vec<&str>,
 ) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
@@ -89,42 +122,8 @@ fn field_member_mult(
             ordered: false,
             unique: true,
         },
-    })
-}
-
-fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
-    DomainPackageRecord::Supertype(SupertypeRecord {
-        key: DeclarationKey::fixture(identity),
-        specific: DeclarationKey::fixture(specific),
-        general: DeclarationKey::fixture(general),
-    })
-}
-
-fn subsetting(
-    identity: &str,
-    owner: &str,
-    subsetting: &str,
-    subsetted: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Subsetting(SubsettingRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        subsetting: DeclarationKey::fixture(subsetting),
-        subsetted: DeclarationKey::fixture(subsetted),
-    })
-}
-
-fn redefinition(
-    identity: &str,
-    owner: &str,
-    redefining: &str,
-    redefined: &str,
-) -> DomainPackageRecord {
-    DomainPackageRecord::Redefinition(RedefinitionRecord {
-        key: DeclarationKey::fixture(identity),
-        owner: DeclarationKey::fixture(owner),
-        redefining: DeclarationKey::fixture(redefining),
-        redefined: DeclarationKey::fixture(redefined),
+        subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
+        redefines: redefines.map(DeclarationKey::fixture),
     })
 }
 
@@ -166,10 +165,9 @@ fn fixture_f1_with_extent(extent: Extent) -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n01"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
             population_record(P1_POPULATION, &["model.A", "model.B"], extent),
         ],
     )
@@ -186,7 +184,7 @@ fn fixture_f1() -> DomainPackage {
 fn fixture_other_universe() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n02"),
-        vec![object_type("model.A")],
+        vec![object_type("model.A", vec![])],
     )
 }
 
@@ -344,10 +342,6 @@ fn l01_all_instances_selects_subtype_population_once() {
             &reference_key(&universe, &a, "a2"),
             &reference_key(&universe, &b, "b1"),
         ],
-        // #131's DeclarationKey reshape and the #197 RULE_INHERIT/RULE_REDEFINE
-        // fact-input fix (ancestor_paths pushes `record.general`, redefine
-        // facts input `edge.redefining`) each changed every effective id
-        // here, and with them `type_identity`'s ascending order between A and B.
         "canonical reference-key order: every A member precedes every B member"
     );
     // Outputs clause: a typed reference to the queried type, bounded [0, 3]
@@ -1467,16 +1461,17 @@ fn r06_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.r06pop"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member_mult("model.A.all", "model.A", "model.A", 0, Some(5)),
-            field_member_mult("model.A.some", "model.A", "model.B", 0, Some(3)),
-            subsetting(
-                "model.subset.some-all",
-                "model.A",
+            field_member_mult_redefining(
                 "model.A.some",
-                "model.A.all",
+                "model.A",
+                "model.B",
+                0,
+                Some(3),
+                None,
+                vec!["model.A.all"],
             ),
             population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
@@ -1518,20 +1513,19 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
                 refusal.cause,
                 ModelRefusalCause::SubsettingViolation {
                     object: "a1".to_owned(),
-                    record: DeclarationKey::fixture("model.subset.some-all"),
+                    record: DeclarationKey::fixture("model.A.some"),
                     subsetting: DeclarationKey::fixture("model.A.some"),
                     subsetted: DeclarationKey::fixture("model.A.all"),
                 }
             );
             assert!(refusal.detail.contains("a1"));
             assert!(refusal.detail.contains("a3"));
-            assert!(refusal.detail.contains("model.A.some"));
-            assert!(refusal.detail.contains("model.A.all"));
             assert!(
-                refusal.detail.contains("model.subset.some-all"),
-                "the detail must name the subsetting record, got: {}",
+                refusal.detail.contains("model.A.some"),
+                "the detail must name the subsetting field, got: {}",
                 refusal.detail
             );
+            assert!(refusal.detail.contains("model.A.all"));
         }
         other => {
             panic!("expected Refused(invalid_runtime_input/subsetting-violation), got {other:?}")
@@ -1955,7 +1949,7 @@ fn ordering_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.ordering"),
         vec![
-            object_type("model.A"),
+            object_type("model.A", vec![]),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.ordered"),
                 owner: DeclarationKey::fixture("model.A"),
@@ -1966,6 +1960,8 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: true,
                     unique: true,
                 },
+                subsets: Vec::new(),
+                redefines: None,
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.A.unordered"),
@@ -1977,6 +1973,8 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: false,
                     unique: true,
                 },
+                subsets: Vec::new(),
+                redefines: None,
             }),
             population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
@@ -2110,12 +2108,10 @@ fn redefinition_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.B.x", "model.B", "model.A"),
-            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
             population_record(P1_POPULATION, &["model.A", "model.B"], Extent::Closed),
         ],
     )
@@ -2130,16 +2126,12 @@ fn redefinition_chain_bundle() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.chain"),
         vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            object_type("model.C"),
-            supertype("model.gen.B-A", "model.B", "model.A"),
-            supertype("model.gen.C-B", "model.C", "model.B"),
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
             field_member("model.A.x", "model.A", "model.A"),
-            field_member("model.B.x", "model.B", "model.A"),
-            field_member("model.C.x", "model.C", "model.A"),
-            redefinition("model.redef.B.x-A.x", "model.B", "model.B.x", "model.A.x"),
-            redefinition("model.redef.C.x-B.x", "model.C", "model.C.x", "model.B.x"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining("model.C.x", "model.C", "model.A", Some("model.B.x"), vec![]),
             population_record(
                 P1_POPULATION,
                 &["model.A", "model.B", "model.C"],
@@ -2149,17 +2141,12 @@ fn redefinition_chain_bundle() -> DomainPackage {
     )
 }
 
-/// Item 7: a field write is covered by `effect.modifies` when it
-/// "reaches one through redefinition records" (FR-151's own effect-
+/// Item 7: a field write is covered by `effect.modifies` when it reaches one
+/// through a member's own inline `redefines` property (FR-151's own effect-
 /// inclusion rule), not only by an exact key match. The operation declares
 /// only the redefined ancestor member, `model.A.x`; the population document
-/// writes the redefining member, `model.B.x` -- admitted because it reaches
-/// `model.A.x` through the one `RedefinitionRecord` above.
-///
-/// Mutation used: in `field_write_covered`, removed the `bundle.records...`
-/// redefinition-reaching branch (direct match only). This test went red as
-/// expected (`Refused(frame_violation/unauthorized-change)` instead of
-/// `Admitted`); reverted.
+/// writes the redefining member, `model.B.x` -- admitted because `model.B.x`
+/// itself names `model.A.x` as its `redefines` target above.
 #[test]
 #[trace("FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
@@ -2299,7 +2286,7 @@ fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.package"),
         vec![
-            object_type("model.A"),
+            object_type("model.A", vec![]),
             field_member("model.A.x", "model.A", "model.A"),
             population_record(P1_POPULATION, &["model.A"], Extent::Closed),
         ],
