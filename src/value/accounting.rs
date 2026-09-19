@@ -251,11 +251,14 @@ pub enum ChargePoint {
     LookupResultRetain,
     /// `population.visit`.
     PopulationVisit,
+    /// `dispatch.select`: one dispatched `receiver.member(args)` call
+    /// (FR-151, TC-196 D06).
+    DispatchSelect,
 }
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 55] = [
+    pub const ALL: [Self; 56] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -311,6 +314,7 @@ impl ChargePoint {
         Self::LookupKey,
         Self::LookupResultRetain,
         Self::PopulationVisit,
+        Self::DispatchSelect,
     ];
 
     /// Normative identifier.
@@ -371,6 +375,7 @@ impl ChargePoint {
             Self::LookupKey => "lookup.key",
             Self::LookupResultRetain => "lookup.result-retain",
             Self::PopulationVisit => "population.visit",
+            Self::DispatchSelect => "dispatch.select",
         }
     }
 

@@ -2137,13 +2137,13 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     .unwrap();
     let package = PackageDeclarations {
         types,
-        functions: vec![FunctionDeclaration {
-            name: "pick".to_owned(),
-            parameters: vec![("n".to_owned(), int_type(0, 1))],
-            result: ValueType::Integer,
-            measure: None,
-            body: operand("n"),
-        }],
+        functions: vec![FunctionDeclaration::new(
+            "pick".to_owned(),
+            vec![("n".to_owned(), int_type(0, 1))],
+            ValueType::Integer,
+            None,
+            operand("n"),
+        )],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())

@@ -16,16 +16,20 @@ use super::super::enumeration::{EnumDeclaration, EnumValue};
 use super::super::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
 use super::super::ieee::AdmittedIeeeProfile;
 use super::super::integer::Integer;
+use super::super::node::NodeKey;
 use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::quantity::{check_comparable, result_unit, UnitOperation};
 use super::super::rational::Rational;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+use super::ir::{
+    Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
+};
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
 use super::syntax::{
-    Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    FunctionDeclaration,
 };
 use crate::model::population::AbsenceMode;
 
@@ -112,6 +116,34 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
+    /// resolve to, keyed by the receiver's static type and the member name.
+    /// Built by the caller (the `crate::model` bridge); the checker only
+    /// resolves against it.
+    pub dispatch_operations: Vec<DispatchOperation>,
+    /// The checked dispatch tables `dispatch_operations` indexes into, ready
+    /// for the evaluator. Built by the same caller, with function indices
+    /// already resolved against `functions`.
+    pub dispatch_tables: Vec<DispatchTable>,
+}
+
+/// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
+/// whose receiver's static type is `receiver_type` and whose member name is
+/// `member` resolves to this signature, checked against `parameters` and
+/// `result`, and its call site becomes a [`super::ir::NodeKind::Dispatch`]
+/// naming `table` (an index into the package's `dispatch_tables`).
+#[derive(Clone, Debug)]
+pub struct DispatchOperation {
+    /// The receiver's required static type.
+    pub receiver_type: NodeKey,
+    /// The unqualified member name a dispatch call site names.
+    pub member: String,
+    /// The declared parameter types, in order.
+    pub parameters: Vec<ValueType>,
+    /// The declared result type.
+    pub result: ValueType,
+    /// The dispatch table this operation's call sites resolve to.
+    pub table: usize,
 }
 
 /// Everything names resolve against, apart from function bodies.
@@ -122,6 +154,7 @@ pub(crate) struct Scope {
     pub(crate) aliases: Vec<(String, ValueType)>,
     pub(crate) model_operations: Vec<String>,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    pub(crate) dispatch_operations: Vec<DispatchOperation>,
 }
 
 /// A function's declared signature.
@@ -130,6 +163,11 @@ pub(crate) struct Signature {
     pub(crate) name: String,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) result: ValueType,
+    /// Whether an ordinary named [`Expression::Call`] may resolve to this
+    /// signature (TC-196 D07's bypass: a crate-internal FR-151 synthesized
+    /// dispatch candidate body or precondition clause is never callable by
+    /// plain name, only reachable through a real dispatched call).
+    pub(crate) callable_by_name: bool,
 }
 
 /// Whether a [`Local`] is an operation/function parameter (bound once, for
@@ -164,13 +202,13 @@ pub(crate) struct Typer<'a> {
     depth: u64,
     locals: Vec<Local>,
     slots: usize,
-    /// Whether this declaration is an operation's postcondition, the only
-    /// clause kind `pre(...)` is legal in (FR-153's own anchor table;
+    /// The clause this declaration is (FR-151's dispatch-call restriction;
+    /// also the only signal `pre(...)` needs: `pre(...)` is legal exactly in
+    /// [`ClauseKind::Postcondition`] -- FR-153's own anchor table;
     /// shared-grammar.md's "self, result and pre(...) are caller-side anchor
-    /// operations"). `false` for a function body, its `decreases` measure,
-    /// or a standalone `check_expression` call; `pre(...)` refuses
-    /// `wrong_snapshot`/`wrong-anchor` in every one of those.
-    postcondition: bool,
+    /// operations" -- and refused `wrong_snapshot`/`wrong-anchor` in every
+    /// other clause kind, including a standalone `check_expression` call).
+    clause_kind: ClauseKind,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -290,7 +328,7 @@ impl<'a> Typer<'a> {
         signatures: &'a [Signature],
         limits: CheckingLimits,
         nodes: &'a mut u64,
-        postcondition: bool,
+        clause_kind: ClauseKind,
     ) -> Self {
         Self {
             scope,
@@ -300,7 +338,7 @@ impl<'a> Typer<'a> {
             depth: 0,
             locals: Vec::new(),
             slots: 0,
-            postcondition,
+            clause_kind,
         }
     }
 
@@ -756,7 +794,7 @@ impl<'a> Typer<'a> {
                 // at runtime over a population with no attached pre anchor
                 // (`evaluate.rs`'s `select_anchor`) -- never a `pre(...)`
                 // written in the wrong clause.
-                if !self.postcondition {
+                if self.clause_kind != ClauseKind::Postcondition {
                     return Err(refuse(
                         location,
                         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
@@ -918,6 +956,11 @@ impl<'a> Typer<'a> {
                 reference,
                 absence,
             } => self.lookup(target, population, reference, *absence, location),
+            Expression::Dispatch {
+                receiver,
+                member,
+                arguments,
+            } => self.dispatch_call(receiver, member, arguments, location),
         }
     }
 
@@ -1464,7 +1507,7 @@ impl<'a> Typer<'a> {
             .signatures
             .iter()
             .enumerate()
-            .filter(|(_, signature)| signature.name == name)
+            .filter(|(_, signature)| signature.name == name && signature.callable_by_name)
             .map(|(index, _)| index)
             .collect();
         if let Some(&function) = functions.first() {
@@ -1534,6 +1577,140 @@ impl<'a> Typer<'a> {
                 Err(ineligible(location))
             }
             None => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
+        }
+    }
+
+    /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
+    /// only checks inside an invariant, precondition or postcondition
+    /// (TC-196 D07); the receiver is `self`, a `deref(...)` result or
+    /// another `Reference<T>` value, and `member` resolves statically
+    /// against `T`'s exposed dispatch-eligible operations.
+    fn dispatch_call(
+        &mut self,
+        receiver: &Expression,
+        member: &str,
+        arguments: &[Expression],
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        if !matches!(
+            self.clause_kind,
+            ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition
+        ) {
+            return Err(ineligible(location));
+        }
+        let receiver_location = location.child(0);
+        let receiver_node = if let Expression::Deref(inner) = receiver {
+            self.enter(&receiver_location)?;
+            let inner = self.infer(inner, None, &receiver_location.child(0))?;
+            self.leave();
+            inner
+        } else {
+            self.infer(receiver, None, &receiver_location)?
+        };
+        let ValueType::Reference(receiver_type) = receiver_node.value_type else {
+            return Err(ineligible(location));
+        };
+        let Some((operation_index, operation)) = self
+            .scope
+            .dispatch_operations
+            .iter()
+            .enumerate()
+            .find(|(_, operation)| {
+                operation.receiver_type == receiver_type && operation.member == member
+            })
+        else {
+            return Err(ineligible(location));
+        };
+        if operation.parameters.len() != arguments.len() {
+            return Err(mismatch(location));
+        }
+        let mut typed_arguments = Vec::with_capacity(arguments.len());
+        for (index, (argument, parameter)) in
+            arguments.iter().zip(&operation.parameters).enumerate()
+        {
+            typed_arguments.push(self.check_dispatch_argument(
+                argument,
+                parameter,
+                &location.child(index + 1),
+            )?);
+        }
+        Ok(node(
+            NodeKind::Dispatch {
+                receiver: Box::new(receiver_node),
+                table: operation.table,
+                operation: operation_index,
+                arguments: typed_arguments,
+            },
+            operation.result.clone(),
+            location,
+        ))
+    }
+
+    /// A dispatch call argument against its declared parameter type
+    /// (`quire.model.dispatch.single/v1`: "its arguments are type-checked
+    /// statically against `o`'s signature with reference upcasts only").
+    /// Unlike [`Self::check_as`], this never calls [`coerce`]: an ordinary
+    /// call admits an `Integer`/`Int[..]` argument into a wider or
+    /// differently-bounded `Int[..]` parameter, which a dispatch call must
+    /// not. This checker has no object-type generalization
+    /// data of its own (`TypeEnvironment` carries none), so a `Reference<T>`
+    /// argument is admitted only where `T` exactly matches the declared
+    /// parameter — the reflexive case of "upcast only," never a wider
+    /// admission than the spec allows.
+    fn check_dispatch_argument(
+        &mut self,
+        expression: &Expression,
+        required: &ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        match expression {
+            Expression::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                self.enter(location)?;
+                let condition =
+                    self.check_as(condition, &ValueType::Boolean, &location.child(0))?;
+                let then = self.check_dispatch_argument(then, required, &location.child(1))?;
+                let otherwise =
+                    self.check_dispatch_argument(otherwise, required, &location.child(2))?;
+                self.leave();
+                Ok(node(
+                    NodeKind::If {
+                        condition: Box::new(condition),
+                        then: Box::new(then),
+                        otherwise: Box::new(otherwise),
+                    },
+                    required.clone(),
+                    location,
+                ))
+            }
+            Expression::Let { name, value, body } => {
+                self.enter(location)?;
+                let value = self.infer(value, None, &location.child(0))?;
+                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
+                let body = self.check_dispatch_argument(body, required, &location.child(1))?;
+                self.unbind(1);
+                self.leave();
+                Ok(node(
+                    NodeKind::Let {
+                        slot,
+                        value: Box::new(value),
+                        body: Box::new(body),
+                    },
+                    required.clone(),
+                    location,
+                ))
+            }
+            _ => {
+                let typed = self.infer(expression, Some(required), location)?;
+                if &typed.value_type == required {
+                    Ok(typed)
+                } else {
+                    Err(mismatch(location))
+                }
+            }
         }
     }
 

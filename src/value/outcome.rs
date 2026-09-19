@@ -9,6 +9,7 @@ use super::accounting::Incomplete;
 use super::collection::{CardinalityBound, CollectionKind};
 use super::expression::WrongSnapshotCause;
 use super::ieee::IeeeFlags;
+use super::reference::ObjectReference;
 use crate::diagnostic::Code;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -56,7 +57,7 @@ impl<T> Outcome<T> {
 }
 
 /// Why an operation is undefined.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Undefined {
     /// A divisor is (normalized) zero.
     DivisionByZero,
@@ -72,6 +73,29 @@ pub enum Undefined {
     /// reason: `r` is not a member of the bound population, and the query
     /// names no mathematical value for that case.
     AbsentKey,
+    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
+    /// linked candidate's effective precondition (its own, or the nearest
+    /// redefinition ancestor's, disjoined per FR-151-AC's redefinition rule)
+    /// evaluated to `false`; the call's result is not a mathematical value
+    /// for that receiver. Carries the `precondition-false`
+    /// (`native-diagnostics.md`) payload.
+    PreconditionFalse(Box<PreconditionFailure>),
+}
+
+/// The `precondition-false` payload (`native-diagnostics.md`): the called
+/// effective operation, the selected method's effective identity, the
+/// receiver reference and the call locus. The call locus is the evaluator's
+/// own [`crate::value::expression::evaluate::Evaluation::location`], not
+/// repeated here.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PreconditionFailure {
+    /// The called effective operation's unqualified member name.
+    pub operation: String,
+    /// The selected method's effective identity: the redefinition candidate
+    /// the receiver's most-specific runtime type actually linked to.
+    pub selected: String,
+    /// The receiver reference the call was made on.
+    pub receiver: ObjectReference,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.

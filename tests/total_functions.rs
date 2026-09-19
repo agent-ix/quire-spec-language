@@ -125,16 +125,16 @@ fn function(
     measure: Option<Expression>,
     body: Expression,
 ) -> FunctionDeclaration {
-    FunctionDeclaration {
-        name: spelling.to_owned(),
-        parameters: parameters
+    FunctionDeclaration::new(
+        spelling.to_owned(),
+        parameters
             .iter()
             .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
             .collect(),
         result,
         measure,
         body,
-    }
+    )
 }
 
 fn declarations(

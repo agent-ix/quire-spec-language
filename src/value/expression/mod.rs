@@ -32,16 +32,19 @@ pub(crate) use facts::{established_field_fact, Established};
 pub(crate) use ir::{Connective, Node, NodeKind, OrderedKind};
 
 pub use check::{
-    CheckingLimits, DepthAboveMaximum, EnumBinding, PackageDeclarations, MAX_CHECKING_DEPTH,
+    CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
+    MAX_CHECKING_DEPTH,
 };
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
-pub use ir::{CollectionLoss, CollectionProperty};
+pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
+    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin, ProvedInterval,
+    WrongSnapshotCause,
 };
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
+    FieldInitializer, FunctionDeclaration,
 };
 
 /// How a standalone expression is checked.
@@ -68,6 +71,7 @@ struct CheckedFunction {
 pub struct CheckedPackage {
     scope: Scope,
     functions: Vec<CheckedFunction>,
+    dispatch_tables: Vec<DispatchTable>,
 }
 
 /// A checked standalone expression over named parameters.
@@ -155,6 +159,73 @@ fn root(origin: Origin) -> Location {
     }
 }
 
+fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> CheckRefusal {
+    CheckRefusal {
+        location,
+        cause: CheckCause::InvalidDispatchDeclaration(detail),
+    }
+}
+
+/// One dispatch-table function index against the dispatch operation it must
+/// conform to: `expected_arity` is the receiver plus every declared
+/// argument, `result` is `Boolean` for a precondition (clause or combinator)
+/// and the operation's own declared result for a body — validates every
+/// dispatch table/candidate index and signature arity/type upfront, rather
+/// than trusting a caller-supplied table at evaluation time. A function that
+/// exists (valid `index`) is located at its own real
+/// [`Origin::Body`]; an out-of-range `index` names no real declaration to
+/// point at, so it is located at [`Origin::Expression`] instead.
+fn validate_dispatch_function(
+    functions: &[FunctionDeclaration],
+    index: usize,
+    call_parameters: &[ValueType],
+    result: &ValueType,
+    role: DispatchFunctionRole,
+) -> Result<(), CheckRefusal> {
+    let Some(function) = functions.get(index) else {
+        return Err(invalid_dispatch(
+            root(Origin::Expression),
+            InvalidDispatchDeclaration::FunctionOutOfRange { role, index },
+        ));
+    };
+    let location = root(Origin::Body {
+        function: function.name.clone(),
+        index,
+    });
+    let expected_arity = call_parameters.len() + 1;
+    if function.parameters.len() != expected_arity {
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::Arity {
+                role,
+                index,
+                declared: function.parameters.len(),
+                expected: expected_arity,
+            },
+        ));
+    }
+    let mismatched = function
+        .parameters
+        .iter()
+        .skip(1)
+        .map(|(_, value_type)| value_type)
+        .zip(call_parameters)
+        .any(|(declared, expected)| declared != expected);
+    if mismatched {
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::ParameterType { role, index },
+        ));
+    }
+    if &function.result != result {
+        return Err(invalid_dispatch(
+            location,
+            InvalidDispatchDeclaration::ResultType { role, index },
+        ));
+    }
+    Ok(())
+}
+
 impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
@@ -189,13 +260,63 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        for operation in &self.dispatch_operations {
+            let Some(table) = self.dispatch_tables.get(operation.table) else {
+                refusals.push(invalid_dispatch(
+                    root(Origin::Expression),
+                    InvalidDispatchDeclaration::TableOutOfRange {
+                        member: operation.member.clone(),
+                        table: operation.table,
+                    },
+                ));
+                continue;
+            };
+            for (_, candidate) in table.entries() {
+                if let Err(refusal) = validate_dispatch_function(
+                    &self.functions,
+                    candidate.body,
+                    &operation.parameters,
+                    &operation.result,
+                    DispatchFunctionRole::Body,
+                ) {
+                    refusals.push(refusal);
+                }
+                if let Some(precondition) = candidate.precondition {
+                    if let Err(refusal) = validate_dispatch_function(
+                        &self.functions,
+                        precondition,
+                        &operation.parameters,
+                        &ValueType::Boolean,
+                        DispatchFunctionRole::Precondition,
+                    ) {
+                        refusals.push(refusal);
+                    }
+                }
+                for &clause in &candidate.precondition_clauses {
+                    if let Err(refusal) = validate_dispatch_function(
+                        &self.functions,
+                        clause,
+                        &operation.parameters,
+                        &ValueType::Boolean,
+                        DispatchFunctionRole::PreconditionClause,
+                    ) {
+                        refusals.push(refusal);
+                    }
+                }
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         let scope = Scope {
             types: self.types,
             enums: self.enums,
             aliases: self.aliases,
             model_operations: self.model_operations,
             ieee_profile: self.ieee_profile,
+            dispatch_operations: self.dispatch_operations,
         };
+        let dispatch_tables = self.dispatch_tables;
         let signatures: Vec<Signature> = self
             .functions
             .iter()
@@ -203,6 +324,7 @@ impl PackageDeclarations {
                 name: function.name.clone(),
                 parameters: function.parameters.clone(),
                 result: function.result.clone(),
+                callable_by_name: function.callable_by_name,
             })
             .collect();
         let mut nodes = 0_u64;
@@ -210,10 +332,13 @@ impl PackageDeclarations {
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let typed = (|| {
-                // A function body is never an operation's postcondition, so
-                // `pre(...)` refuses here (see `Typer::postcondition`'s own
-                // doc).
-                let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes, false);
+                let mut typer = Typer::new(
+                    &scope,
+                    &signatures,
+                    limits,
+                    &mut nodes,
+                    function.clause_kind,
+                );
                 bind_parameters(&mut typer, &function.parameters, &location)?;
                 typer.check_declared_type(&function.result, &location)?;
                 let body = typer.check_as(&function.body, &function.result, &location)?;
@@ -224,7 +349,16 @@ impl PackageDeclarations {
                             function: function.name.clone(),
                             index,
                         });
-                        let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes, false);
+                        // A `decreases` measure is always checked as
+                        // `ClauseKind::Body` (`syntax.rs`'s own doc: "A
+                        // function body, an operation body, or a `decreases`
+                        // measure"), never `function.clause_kind`: FR-151's
+                        // dispatch-call restriction gates on the *body's*
+                        // context, and a measure is its own, always-Body
+                        // context regardless of what the body itself is
+                        // checked as.
+                        let mut typer =
+                            Typer::new(&scope, &signatures, limits, &mut nodes, ClauseKind::Body);
                         bind_parameters(&mut typer, &function.parameters, &at)?;
                         Some(typer.infer(measure, None, &at)?)
                     }
@@ -238,6 +372,7 @@ impl PackageDeclarations {
                         name: function.name,
                         parameters: function.parameters,
                         result: function.result,
+                        callable_by_name: function.callable_by_name,
                     },
                     body,
                     measure,
@@ -258,11 +393,15 @@ impl PackageDeclarations {
         let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(functions.len());
         for function in &functions {
             let parameters = function.signature.parameters.len();
-            let mut body = Definedness::new(parameters);
+            let mut body =
+                Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations);
             let checked = body
                 .check(&function.body)
                 .and_then(|()| match &function.measure {
-                    Some(measure) => Definedness::new(parameters).check(measure),
+                    Some(measure) => {
+                        Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations)
+                            .check(measure)
+                    }
                     None => Ok(()),
                 });
             if let Err(refusal) = checked {
@@ -287,16 +426,22 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        Ok(CheckedPackage { scope, functions })
+        Ok(CheckedPackage {
+            scope,
+            functions,
+            dispatch_tables,
+        })
     }
 }
 
 impl CheckedPackage {
     /// Check a standalone expression over `parameters`, against `expected`
-    /// when given. `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here:
-    /// this is not an operation's postcondition, the only clause FR-153's
-    /// anchor table admits it in. Use [`Self::check_postcondition_expression`]
-    /// to check a real postcondition, where `pre(...)` is legal.
+    /// when given, as a function or operation body (`ClauseKind::Body`).
+    /// `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here: this is not
+    /// an operation's postcondition, the only clause FR-153's anchor table
+    /// admits it in. Use [`Self::check_postcondition_expression`] to check a
+    /// real postcondition, where `pre(...)` is legal, or
+    /// [`Self::check_clause_expression`] for any other [`ClauseKind`].
     pub fn check_expression(
         &self,
         parameters: Vec<(String, ValueType)>,
@@ -305,14 +450,22 @@ impl CheckedPackage {
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
-        self.check_expression_as(parameters, expression, expected, mode, limits, false)
+        self.check_clause_expression(
+            parameters,
+            expression,
+            expected,
+            ClauseKind::Body,
+            mode,
+            limits,
+        )
     }
 
-    /// Check a standalone expression as an operation's postcondition:
-    /// identical to [`Self::check_expression`], except `pre(...)` is legal
-    /// (FR-153's own anchor table; shared-grammar.md's caller-side anchor
-    /// operations), subject to its own eligible-operand rule (FR-042's
-    /// Behavior clause, `Typer`'s `Expression::Pre` arm).
+    /// Check a standalone expression as an operation's postcondition
+    /// (`ClauseKind::Postcondition`): identical to [`Self::check_expression`],
+    /// except `pre(...)` is legal (FR-153's own anchor table;
+    /// shared-grammar.md's caller-side anchor operations), subject to its
+    /// own eligible-operand rule (FR-042's Behavior clause, `Typer`'s
+    /// `Expression::Pre` arm).
     ///
     /// `self`/`result`, shared-grammar.md's other two caller-side anchor
     /// operations (line 500/604, alongside `pre(...)`), are out of scope
@@ -334,17 +487,29 @@ impl CheckedPackage {
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
-        self.check_expression_as(parameters, expression, expected, mode, limits, true)
+        self.check_clause_expression(
+            parameters,
+            expression,
+            expected,
+            ClauseKind::Postcondition,
+            mode,
+            limits,
+        )
     }
 
-    fn check_expression_as(
+    /// Check a standalone expression over `parameters` as `clause_kind`,
+    /// against `expected` when given. FR-151's dispatch-call restriction
+    /// (TC-196 D06/D07) gates on `clause_kind`, not on syntax alone; `pre(...)`
+    /// is legal exactly when `clause_kind` is [`ClauseKind::Postcondition`]
+    /// (`Typer`'s `Expression::Pre` arm).
+    pub fn check_clause_expression(
         &self,
         parameters: Vec<(String, ValueType)>,
         expression: &Expression,
         expected: Option<&ValueType>,
+        clause_kind: ClauseKind,
         mode: CheckMode,
         limits: CheckingLimits,
-        postcondition: bool,
     ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let signatures: Vec<Signature> = self
@@ -353,7 +518,7 @@ impl CheckedPackage {
             .map(|function| function.signature.clone())
             .collect();
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes, postcondition);
+        let mut typer = Typer::new(&self.scope, &signatures, limits, &mut nodes, clause_kind);
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {
@@ -364,7 +529,12 @@ impl CheckedPackage {
         };
         let slots = typer.slots();
         if mode == CheckMode::Linked {
-            Definedness::new(parameters.len()).check(&root)?;
+            Definedness::new(
+                parameters.len(),
+                &self.dispatch_tables,
+                &self.scope.dispatch_operations,
+            )
+            .check(&root)?;
         }
         Ok(CheckedExpression {
             parameters,
@@ -400,6 +570,7 @@ impl CheckedPackage {
             .map(|function| Callable {
                 body: &function.body,
                 slots: function.slots,
+                name: &function.signature.name,
             })
             .collect()
     }
@@ -452,7 +623,15 @@ impl CheckedPackage {
         Ok(())
     }
 
-    /// Call the named function: `function.call`, then its body.
+    /// Call the named function: `function.call`, then its body. Refused
+    /// `InputRefusal::UnknownFunction` for a name [`Self::function`] finds
+    /// but whose `callable_by_name` is `false` — the same refusal an
+    /// undeclared name gets, not a distinct one — so this public runtime
+    /// entry point cannot reach a crate-internal FR-151 synthesized dispatch
+    /// candidate body or effective precondition by name any more than an
+    /// ordinary checked `Expression::Call` can (`check.rs`'s own
+    /// `callable_by_name` gate, TC-196 D07's bypass this closes at the other
+    /// entry point).
     pub fn call(
         &self,
         function: &str,
@@ -462,15 +641,18 @@ impl CheckedPackage {
     ) -> Result<Evaluation, InputRefusal> {
         let (_, checked) = self
             .function(function)
+            .filter(|(_, checked)| checked.signature.callable_by_name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_owned()))?;
         Self::validate(&checked.signature.parameters, &arguments, objects)?;
         let callables = self.callables();
-        Ok(Machine::new(&self.scope, &callables, objects, meter).run(
-            &checked.body,
-            checked.slots,
-            arguments,
-            true,
-        ))
+        Ok(Machine::new(
+            &self.scope,
+            &callables,
+            objects,
+            meter,
+            &self.dispatch_tables,
+        )
+        .run(&checked.body, checked.slots, arguments, true))
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.
@@ -483,11 +665,13 @@ impl CheckedPackage {
     ) -> Result<Evaluation, InputRefusal> {
         Self::validate(&expression.parameters, &arguments, objects)?;
         let callables = self.callables();
-        Ok(Machine::new(&self.scope, &callables, objects, meter).run(
-            &expression.root,
-            expression.slots,
-            arguments,
-            false,
-        ))
+        Ok(Machine::new(
+            &self.scope,
+            &callables,
+            objects,
+            meter,
+            &self.dispatch_tables,
+        )
+        .run(&expression.root, expression.slots, arguments, false))
     }
 }
