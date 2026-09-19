@@ -80,7 +80,7 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(SupertypeRecord {
         key: DeclarationKey::fixture(identity),
         specific: DeclarationKey::fixture(specific),
@@ -89,7 +89,10 @@ fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackag
 }
 
 /// TC-195 F1, imported as `M` by TC-198 (see `tests/model_population.rs`):
-/// types `A`, `B`; field `A.x` of `A`; generalization `B -> A`.
+/// types `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own
+/// FR-153 population declaration `model.pop.p1` (member types `A`, `B`),
+/// closed, which [`admit_binding`]/[`admit_invocation`] resolve by
+/// [`p1_population_key`] rather than take as a caller-supplied record.
 fn fixture_f1() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n01"),
@@ -97,7 +100,15 @@ fn fixture_f1() -> DomainPackage {
             object_type("model.A"),
             object_type("model.B"),
             field_member("model.A.x", "model.A", "model.A"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
+            supertype("model.gen.B-A", "model.B", "model.A"),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: DeclarationKey::fixture("model.pop.p1"),
+                member_types: vec![
+                    DeclarationKey::fixture("model.A"),
+                    DeclarationKey::fixture("model.B"),
+                ],
+                extent: Extent::Closed,
+            }),
         ],
     )
 }
@@ -140,16 +151,10 @@ fn p1(model_identity: &str) -> PopulationDocument {
     }
 }
 
-/// The closed population declaration backing [`p1`]/[`p1_minus_a2`].
-fn p1_population() -> PopulationRecord {
-    PopulationRecord {
-        key: DeclarationKey::fixture("model.pop.p1"),
-        member_types: vec![
-            DeclarationKey::fixture("model.A"),
-            DeclarationKey::fixture("model.B"),
-        ],
-        extent: Extent::Closed,
-    }
+/// [`fixture_f1`]'s own `model.pop.p1` declaration key, backing [`p1`]/
+/// [`p1_minus_a2`].
+fn p1_population_key() -> DeclarationKey {
+    DeclarationKey::fixture("model.pop.p1")
 }
 
 fn admitted_binding(
@@ -162,7 +167,7 @@ fn admitted_binding(
         domain_package,
         view,
         document,
-        &p1_population(),
+        &p1_population_key(),
         GeneralizationClosure::Closed,
         Some(3),
         &mut admission,
@@ -240,7 +245,7 @@ fn l07_scenario() -> Scenario {
         creates: Vec::new(),
         deletes: vec![DeclarationKey::fixture("model.A")],
     };
-    let population = p1_population();
+    let population = p1_population_key();
     let context = InvocationContext {
         domain_package: &domain_package,
         view: &view,

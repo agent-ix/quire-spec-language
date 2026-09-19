@@ -32,7 +32,7 @@ pub struct Multiplicity {
 /// An object type export: `{key, interfaceFeatures}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
-    /// This type's original producer key.
+    /// This type's original declaration key.
     pub key: DeclarationKey,
     /// `Some(features)` when the producer supplies `interfaceFeatures`
     /// (FR-152's Interface kind), `None` when it does not. `Some(vec![])`
@@ -44,11 +44,11 @@ pub struct ObjectTypeRecord {
 /// A field member of an object type: `{key, owner, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldMemberRecord {
-    /// This member's own original producer key.
+    /// This member's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning object type's original producer key.
+    /// The owning object type's original declaration key.
     pub owner: DeclarationKey,
-    /// The declared value type's original producer key.
+    /// The declared value type's original declaration key.
     pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
@@ -58,11 +58,11 @@ pub struct FieldMemberRecord {
 /// generalizes to `general`; `specific` is the more derived type).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupertypeRecord {
-    /// This record's own original producer key.
+    /// This record's own original declaration key.
     pub key: DeclarationKey,
-    /// The specific (more derived) type's original producer key.
+    /// The specific (more derived) type's original declaration key.
     pub specific: DeclarationKey,
-    /// The general (less derived) type's original producer key.
+    /// The general (less derived) type's original declaration key.
     pub general: DeclarationKey,
 }
 
@@ -73,7 +73,7 @@ pub struct SupertypeRecord {
 /// for a scalar redefinition, not a general scalar type system.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
-    /// This type's own original producer key.
+    /// This type's own original declaration key.
     pub key: DeclarationKey,
     /// Inclusive lower bound.
     pub lower: i64,
@@ -84,9 +84,9 @@ pub struct ScalarTypeRecord {
 /// One operation parameter: `{key, value_type, multiplicity}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationParameterRecord {
-    /// This parameter's own original producer key.
+    /// This parameter's own original declaration key.
     pub key: DeclarationKey,
-    /// The declared parameter value type's original producer key.
+    /// The declared parameter value type's original declaration key.
     pub value_type: DeclarationKey,
     /// The declared parameter multiplicity.
     pub multiplicity: Multiplicity,
@@ -96,7 +96,7 @@ pub struct OperationParameterRecord {
 /// entirely when the operation has no result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationResult {
-    /// The declared result value type's original producer key.
+    /// The declared result value type's original declaration key.
     pub value_type: DeclarationKey,
     /// The declared result multiplicity.
     pub multiplicity: Multiplicity,
@@ -166,9 +166,9 @@ impl PostconditionClause {
 /// An operation member of an object type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
-    /// This member's own original producer key.
+    /// This member's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning object type's original producer key (the receiver type).
+    /// The owning object type's original declaration key (the receiver type).
     pub owner: DeclarationKey,
     /// Declared parameters, in signature order.
     pub parameters: Vec<OperationParameterRecord>,
@@ -195,25 +195,25 @@ pub struct OperationMemberRecord {
 /// declares `redefining`, which redefines the inherited `redefined` member.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RedefinitionRecord {
-    /// This record's own original producer key.
+    /// This record's own original declaration key.
     pub key: DeclarationKey,
     /// The redefining member's owning object type.
     pub owner: DeclarationKey,
-    /// The redefining (more derived) member's original producer key.
+    /// The redefining (more derived) member's original declaration key.
     pub redefining: DeclarationKey,
-    /// The redefined (inherited) member's original producer key.
+    /// The redefined (inherited) member's original declaration key.
     pub redefined: DeclarationKey,
 }
 
 /// FCD FR-114 component record: FR-152's Part candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentRecord {
-    /// This component's own original producer key.
+    /// This component's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning composite type's original producer key
+    /// The owning composite type's original declaration key
     /// (`owningTypeIdentity`).
     pub owning_type: DeclarationKey,
-    /// The declared part type's original producer key (`typeIdentity`).
+    /// The declared part type's original declaration key (`typeIdentity`).
     pub value_type: DeclarationKey,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
@@ -236,12 +236,12 @@ pub enum PortDirection {
 /// FCD FR-114 endpoint record: FR-152's Port candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointRecord {
-    /// This endpoint's own original producer key.
+    /// This endpoint's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning component's original producer key
+    /// The owning component's original declaration key
     /// (`owningComponentIdentity`).
     pub owning_component: DeclarationKey,
-    /// The declared interface type's original producer key (`typeIdentity`).
+    /// The declared interface type's original declaration key (`typeIdentity`).
     pub value_type: DeclarationKey,
     /// `Some(direction)` when the producer supplies the `port-direction`
     /// capability (FR-152's Port kind requires it); `None` when it does not.
@@ -280,7 +280,7 @@ pub enum RelationshipDirection {
 /// with no kind.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
-    /// This relationship's own original producer key.
+    /// This relationship's own original declaration key.
     pub key: DeclarationKey,
     /// The source end.
     pub source: RelationshipEnd,
@@ -299,13 +299,13 @@ pub struct RelationshipRecord {
 /// declares `subsetting`, whose runtime values are a subset of `subsetted`'s.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubsettingRecord {
-    /// This record's own original producer key.
+    /// This record's own original declaration key.
     pub key: DeclarationKey,
     /// The subsetting member's owning object type.
     pub owner: DeclarationKey,
-    /// The subsetting feature's original producer key.
+    /// The subsetting feature's original declaration key.
     pub subsetting: DeclarationKey,
-    /// The subsetted feature's original producer key.
+    /// The subsetted feature's original declaration key.
     pub subsetted: DeclarationKey,
 }
 
@@ -331,9 +331,9 @@ pub enum Extent {
 /// parameter).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationRecord {
-    /// This record's own original producer key.
+    /// This record's own original declaration key.
     pub key: DeclarationKey,
-    /// The population's declared member types' original producer keys.
+    /// The population's declared member types' original declaration keys.
     pub member_types: Vec<DeclarationKey>,
     /// The population's declared extent.
     pub extent: Extent,
@@ -367,7 +367,7 @@ pub enum DomainPackageRecord {
 }
 
 impl DomainPackageRecord {
-    /// This record's own original producer key.
+    /// This record's own original declaration key.
     pub fn key(&self) -> &DeclarationKey {
         match self {
             Self::ObjectType(record) => &record.key,
