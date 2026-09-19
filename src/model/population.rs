@@ -1065,9 +1065,9 @@ fn field_values_equal(
 /// returns `false`, never loops -- past that bound, so a malformed bundle
 /// with a redefinition cycle cannot hang this walk.
 ///
-/// Shared with `crate::model::conformance`'s own effect-escape check
-/// (`check_operation_redefinition`'s "Effect" axis), which had the identical
-/// one-hop gap this function fixes here (QSL #171). Taking a
+/// Shared by [`field_write_covered`] here and by
+/// `crate::model::conformance`'s effect-escape check
+/// (`check_operation_redefinition`'s "Effect" axis). Taking a
 /// [`BundleRecord`] slice rather than a whole [`Bundle`] lets either call
 /// site pass its own already-available `&bundle.records`. Equality is
 /// `ProducerKey`'s derived `PartialEq` (`authority`, `identity`, `revision`,
@@ -1077,11 +1077,7 @@ fn field_values_equal(
 /// `enforce_frame_refuses_a_field_write_at_a_revision_the_declared_grant_does_not_name`
 /// here (`tests/model_population.rs`) and by
 /// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name`
-/// at the `conformance` call site (`tests/model_conformance.rs`); only the
-/// `conformance` closure changed comparison this way -- this module's own
-/// `field_write_covered` already compared full keys before QSL #171, so
-/// [`field_write_covered`]'s behavior is unchanged by this change, only its
-/// walk's reach (one hop to unbounded, both fixed here together).
+/// at the `conformance` call site (`tests/model_conformance.rs`).
 pub(super) fn redefinition_reaches(
     records: &[BundleRecord],
     field: &ProducerKey,
