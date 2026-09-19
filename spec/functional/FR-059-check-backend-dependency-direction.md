@@ -49,8 +49,8 @@ The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
 
 The check SHALL report CG's normal dependency on QSL as the one FB-05
-exception; a *dev* dependency from CG on QSL is not the stated exception and
-SHALL be reported.
+exception. The check SHALL report a *dev* dependency from CG on QSL, since a
+dev dependency is not the stated exception.
 
 The check SHALL combine normal and dev edges into one directed graph for
 FB-11, and SHALL report a cycle exactly once regardless of its rotation or
