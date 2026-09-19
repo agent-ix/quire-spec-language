@@ -173,27 +173,6 @@ pub enum ModelRefusalCause {
         /// The owner it is not an effective member of.
         owner: DeclarationKey,
     },
-    /// A domain package record's producer interface is neither normalized nor a
-    /// recognized refusal (outside FR-150's supported wire range).
-    UnsupportedWire {
-        /// The unsupported producer interface version. A wire version
-        /// string, not a [`DeclarationKey`]: every site supplies the plain
-        /// `interface_version` field, not a producer key.
-        version: String,
-    },
-    /// A domain package record has no producer revision to select.
-    WrongModelSelection {
-        /// The record with no producer revision.
-        key: DeclarationKey,
-    },
-    /// A producer key's digest domain does not match
-    /// [`crate::model::key::PRODUCER_DIGEST_DOMAIN`].
-    DigestDomainMismatch {
-        /// The producer key.
-        key: DeclarationKey,
-        /// Its actual (wrong) digest domain.
-        domain: String,
-    },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
     UnsuppliedProducerRecord,
@@ -535,9 +514,6 @@ impl ModelRefusalCause {
             Self::UnknownMember { .. } => "unknown-member",
             Self::DerivationConflict { .. } => "derivation-conflict",
             Self::RedefinitionUnreachable { .. } => "redefinition-unreachable",
-            Self::UnsupportedWire { .. } => "unsupported-wire",
-            Self::WrongModelSelection { .. } => "wrong-model-selection",
-            Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
             Self::ConformanceDepth { .. } => "conformance-depth",
             Self::VarianceResult => "variance-result",
@@ -648,9 +624,6 @@ mod tests {
             ModelRefusalCause::UnknownMember { .. } => "unknown-member",
             ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
             ModelRefusalCause::RedefinitionUnreachable { .. } => "redefinition-unreachable",
-            ModelRefusalCause::UnsupportedWire { .. } => "unsupported-wire",
-            ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
-            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
             ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
             ModelRefusalCause::VarianceResult => "variance-result",
@@ -750,14 +723,6 @@ mod tests {
             ModelRefusalCause::RedefinitionUnreachable {
                 member: key("p"),
                 owner: key("p"),
-            },
-            ModelRefusalCause::UnsupportedWire {
-                version: String::new(),
-            },
-            ModelRefusalCause::WrongModelSelection { key: key("p") },
-            ModelRefusalCause::DigestDomainMismatch {
-                key: key("p"),
-                domain: String::new(),
             },
             ModelRefusalCause::UnsuppliedProducerRecord,
             ModelRefusalCause::ConformanceDepth { from: key("p") },

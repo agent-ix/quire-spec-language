@@ -335,7 +335,7 @@ fn evaluate_unresolvable_lookup(
                 cause: ModelRefusalCause::TypeMismatch,
                 detail: format!(
                     "{} does not conform to {}",
-                    static_type.identity, target.identity
+                    static_type.node, target.node
                 ),
             }))
         }

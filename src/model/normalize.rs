@@ -199,11 +199,10 @@ use crate::model::accounting::{
 use crate::model::conformance::generals_by_specific;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, SupertypeRecord,
-    INTERFACE_VERSION_1_3_0,
 };
 use crate::model::key::{
     digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
-    PRODUCER_DIGEST_DOMAIN, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
 
@@ -580,7 +579,7 @@ fn ancestor_paths(
                 },
                 detail: format!(
                     "ancestor path from {} exceeds {MAX_GENERALIZATION_DEPTH} generalization records",
-                    root_key.identity
+                    root_key.node
                 ),
             });
         }
@@ -618,7 +617,7 @@ fn ancestor_paths(
             {
                 chain.rotate_left(least);
             }
-            let listing: Vec<&str> = chain.iter().map(|key| key.identity.as_str()).collect();
+            let listing: Vec<&str> = chain.iter().map(|key| key.node.as_str()).collect();
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
@@ -627,8 +626,8 @@ fn ancestor_paths(
                 },
                 detail: format!(
                     "{} generalizes back to itself via {}, through the cycle [{}]",
-                    ancestor_key.identity,
-                    record.key.identity,
+                    ancestor_key.node,
+                    record.key.node,
                     listing.join(", ")
                 ),
             });
@@ -738,7 +737,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "field member {} names owner {}, which is not a declared object type",
-                        member.key.identity, member.owner.identity
+                        member.key.node, member.owner.node
                     ),
                 });
             }
@@ -751,7 +750,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "generalization {} names specific {}, which is not a declared object type",
-                        general.key.identity, general.specific.identity
+                        general.key.node, general.specific.node
                     ),
                 });
             }
@@ -764,7 +763,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "generalization {} names general {}, which is not a declared object type",
-                        general.key.identity, general.general.identity
+                        general.key.node, general.general.node
                     ),
                 });
             }
@@ -778,7 +777,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "operation member {} names owner {}, which is not a declared object type",
-                        op.key.identity, op.owner.identity
+                        op.key.node, op.owner.node
                     ),
                 });
             }
@@ -796,9 +795,9 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} parameter {} names value type {}, which is not a declared type",
-                                op.key.identity,
-                                parameter.key.identity,
-                                parameter.value_type.identity
+                                op.key.node,
+                                parameter.key.node,
+                                parameter.value_type.node
                             ),
                         });
                     }
@@ -816,7 +815,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} result names value type {}, which is not a declared type",
-                                op.key.identity, result.value_type.identity
+                                op.key.node, result.value_type.node
                             ),
                         });
                     }
@@ -831,7 +830,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} effect writes {}, which is not a declared field member",
-                                op.key.identity, field.identity
+                                op.key.node, field.node
                             ),
                         });
                     }
@@ -846,7 +845,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "operation {} effect names type {}, which is not a declared object type",
-                                op.key.identity, target.identity
+                                op.key.node, target.node
                             ),
                         });
                     }
@@ -863,7 +862,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "redefinition {} names owner {}, which is not a declared object type",
-                        redefinition.key.identity, redefinition.owner.identity
+                        redefinition.key.node, redefinition.owner.node
                     ),
                 });
             }
@@ -880,7 +879,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "redefinition {} names {}, which is not a declared field or operation member",
-                                redefinition.key.identity, member.identity
+                                redefinition.key.node, member.node
                             ),
                         });
                     }
@@ -897,7 +896,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                     },
                     detail: format!(
                         "subsetting {} names owner {}, which is not a declared object type",
-                        subsetting.key.identity, subsetting.owner.identity
+                        subsetting.key.node, subsetting.owner.node
                     ),
                 });
             }
@@ -914,7 +913,7 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                             },
                             detail: format!(
                                 "subsetting {} names {}, which is not a declared field or operation member",
-                                subsetting.key.identity, member.identity
+                                subsetting.key.node, member.node
                             ),
                         });
                     }
@@ -1609,7 +1608,7 @@ fn apply_redefinitions(
                 for edge in &edges {
                     let mut dominated_by_another = false;
                     for other in &edges {
-                        if other.owner.identity == edge.owner.identity {
+                        if other.owner.node == edge.owner.node {
                             continue;
                         }
                         if owner_dominates(
@@ -1628,11 +1627,11 @@ fn apply_redefinitions(
                 let same_owner = !most_derived.is_empty()
                     && most_derived
                         .iter()
-                        .all(|edge| edge.owner.identity == most_derived[0].owner.identity);
+                        .all(|edge| edge.owner.node == most_derived[0].owner.node);
                 let candidate = if same_owner {
                     let mut redefiners: Vec<String> = most_derived
                         .iter()
-                        .map(|edge| edge.redefining.identity.clone())
+                        .map(|edge| edge.redefining.node.clone())
                         .collect();
                     redefiners.sort();
                     ModelRefusal {
@@ -1640,10 +1639,10 @@ fn apply_redefinitions(
                         cause: ModelRefusalCause::RedefinitionTarget,
                         detail: format!(
                             "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                            most_derived[0].owner.identity,
+                            most_derived[0].owner.node,
                             most_derived.len(),
                             redefiners.join(", "),
-                            target_key.identity
+                            target_key.node
                         ),
                     }
                 } else {
@@ -1651,9 +1650,9 @@ fn apply_redefinitions(
                         .iter()
                         .map(|edge| {
                             let mut path: Vec<String> =
-                                edge.path.iter().map(|key| key.identity.clone()).collect();
-                            path.push(edge.record_key.identity.clone());
-                            path.push(target_key.identity.clone());
+                                edge.path.iter().map(|key| key.node.clone()).collect();
+                            path.push(edge.record_key.node.clone());
+                            path.push(target_key.node.clone());
                             format!("[{}]", path.join(", "))
                         })
                         .collect();
@@ -1666,9 +1665,9 @@ fn apply_redefinitions(
                         },
                         detail: format!(
                             "type {} has {} undominated redefinitions of {}: {}",
-                            type_key.identity,
+                            type_key.node,
                             edges.len(),
-                            target_key.identity,
+                            target_key.node,
                             edge_paths.join(" and ")
                         ),
                     }
@@ -1722,7 +1721,7 @@ fn apply_redefinitions(
                     },
                     detail: format!(
                         "redefinition target {} is not an effective member of {}",
-                        target_key.identity, least_edge.owner.identity
+                        target_key.node, least_edge.owner.node
                     ),
                 },
             );
@@ -1767,7 +1766,7 @@ fn apply_redefinitions(
                             },
                             detail: format!(
                                 "redefining member {} is not an effective member of {}",
-                                edge.redefining.identity, edge.owner.identity
+                                edge.redefining.node, edge.owner.node
                             ),
                         },
                     );
@@ -2009,127 +2008,13 @@ fn charge_all(
     Ok(())
 }
 
-/// Every producer key `record` itself declares or refers to.
-fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
-    match record {
-        DomainPackageRecord::ObjectType(record) => vec![&record.key],
-        DomainPackageRecord::FieldMember(record) => {
-            vec![&record.key, &record.owner, &record.value_type]
-        }
-        DomainPackageRecord::Supertype(record) => {
-            vec![&record.key, &record.specific, &record.general]
-        }
-        DomainPackageRecord::ScalarType(record) => vec![&record.key],
-        DomainPackageRecord::OperationMember(record) => {
-            let mut keys = vec![&record.key, &record.owner];
-            for parameter in &record.parameters {
-                keys.push(&parameter.key);
-                keys.push(&parameter.value_type);
-            }
-            if let Some(result) = &record.result {
-                keys.push(&result.value_type);
-            }
-            for field in &record.effect.modifies {
-                keys.push(field);
-            }
-            for target in record.effect.creates.iter().chain(&record.effect.deletes) {
-                keys.push(target);
-            }
-            keys
-        }
-        DomainPackageRecord::Redefinition(record) => {
-            vec![
-                &record.key,
-                &record.owner,
-                &record.redefining,
-                &record.redefined,
-            ]
-        }
-        DomainPackageRecord::Subsetting(record) => {
-            vec![
-                &record.key,
-                &record.owner,
-                &record.subsetting,
-                &record.subsetted,
-            ]
-        }
-        DomainPackageRecord::Component(record) => {
-            vec![&record.key, &record.owning_type, &record.value_type]
-        }
-        DomainPackageRecord::Endpoint(record) => {
-            vec![&record.key, &record.owning_component, &record.value_type]
-        }
-        DomainPackageRecord::Relationship(record) => {
-            vec![
-                &record.key,
-                &record.source.type_identity,
-                &record.target.type_identity,
-            ]
-        }
-        DomainPackageRecord::Population(record) => {
-            let mut keys = vec![&record.key];
-            keys.extend(record.member_types.iter());
-            keys
-        }
-    }
-}
-
-/// Whether `revision` is absent: FR-150 admits `Revision` as a required
-/// struct (there is no wire-optional variant in this typed `DomainPackage`), so
-/// "absent" is the caller supplying an empty namespace or value rather than
-/// a real revision label (PR #140 F6).
-fn revision_is_absent(revision: &crate::model::key::Revision) -> bool {
-    revision.namespace.is_empty() || revision.value.is_empty()
-}
-
-/// Phase-1 decode checks common to every entry point: the claimed producer
-/// interface version, every referenced key's absent revision
-/// (TC-195 N04, PR #140 F6) and digest domain (TC-195 N05). All refuse
-/// before any charge; no effective view is exposed.
-fn decode_check(domain_package: &DomainPackage) -> Result<(), ModelRefusal> {
-    let version = &domain_package
-        .model_selection
-        .contract_version
-        .interface_version;
-    if version != INTERFACE_VERSION_1_3_0 {
-        return Err(ModelRefusal {
-            code: Code::UnknownWire,
-            cause: ModelRefusalCause::UnsupportedWire {
-                version: version.clone(),
-            },
-            detail: format!(
-                "producer interface {version} is not supported; only {INTERFACE_VERSION_1_3_0} is normalized"
-            ),
-        });
-    }
-    for record in &domain_package.records {
-        for key in referenced_keys(record) {
-            if revision_is_absent(&key.revision) {
-                return Err(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::WrongModelSelection { key: key.clone() },
-                    detail: format!("{} has no producer revision", key.identity),
-                });
-            }
-            if key.digest.domain != PRODUCER_DIGEST_DOMAIN {
-                return Err(ModelRefusal {
-                    code: Code::StaleDependency,
-                    cause: ModelRefusalCause::DigestDomainMismatch {
-                        key: key.clone(),
-                        domain: key.digest.domain.clone(),
-                    },
-                    detail: format!(
-                        "{} digest domain is {}; expected {PRODUCER_DIGEST_DOMAIN}",
-                        key.identity, key.digest.domain
-                    ),
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
+///
+/// This entry point takes an already-parsed [`DomainPackage`]: the FR-154
+/// byte-level intake checks (digest domain, package digest and
+/// ModelSelection identity/version against admitted package bytes) run
+/// before a caller builds one, and are not repeated here (Remaining work:
+/// #131 wires a real Semantic IR 2.0.0 intake in front of this entry point).
 pub fn normalize(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
@@ -2146,9 +2031,6 @@ pub fn normalize_with_meter(
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
     let mut meter = Meter::new(limits);
-    if let Err(refusal) = decode_check(domain_package) {
-        return (NormalizeOutcome::Refused(refusal), meter);
-    }
     let built = match build(domain_package, &limits) {
         Ok(built) => built,
         Err(refusal) => return (NormalizeOutcome::Refused(refusal), meter),

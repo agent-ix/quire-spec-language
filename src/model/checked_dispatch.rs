@@ -197,7 +197,7 @@ fn depth_exceeded(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
         },
         detail: format!(
             "effective-precondition ancestry for {} exceeded {MAX_ANCESTOR_DEPTH} redefinition steps",
-            candidate.identity
+            candidate.node
         ),
     }))
 }
@@ -718,7 +718,7 @@ pub fn checked_dispatch_operation(
         )?;
         let index = functions.len();
         functions.push(FunctionDeclaration::clause(
-            format!("{}.precondition", member.identity),
+            format!("{}.precondition", member.node),
             parameters,
             ValueType::Boolean,
             None,
@@ -755,7 +755,7 @@ pub fn checked_dispatch_operation(
                     .ok_or_else(|| missing(candidate, MissingClauseField::OwnPrecondition))?;
                 let index = functions.len();
                 functions.push(FunctionDeclaration::clause(
-                    format!("{}.precondition.effective", candidate.identity),
+                    format!("{}.precondition.effective", candidate.node),
                     parameters.clone(),
                     ValueType::Boolean,
                     None,
@@ -783,7 +783,7 @@ pub fn checked_dispatch_operation(
             require_expression(&clauses.own_body, candidate, MissingClauseField::OwnBody)?;
         let index = functions.len();
         functions.push(FunctionDeclaration::clause(
-            candidate.identity.clone(),
+            candidate.node.clone(),
             parameters,
             result,
             None,
@@ -942,7 +942,7 @@ mod tests {
         let redefinitions: Vec<RedefinitionRecord> = parents
             .iter()
             .map(|parent| RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.fanout.redef-{}", parent.identity)),
+                key: DeclarationKey::fixture(format!("model.fanout.redef-{}", parent.node)),
                 owner: candidate.clone(),
                 redefining: candidate.clone(),
                 redefined: parent.clone(),
@@ -995,7 +995,7 @@ mod tests {
                 .own_precondition
                 .insert(child.clone(), Expression::Boolean(true));
             redefinitions.push(RedefinitionRecord {
-                key: DeclarationKey::fixture(format!("model.wide.redef-{}", child.identity)),
+                key: DeclarationKey::fixture(format!("model.wide.redef-{}", child.node)),
                 owner: child.clone(),
                 redefining: child.clone(),
                 redefined: root.clone(),
