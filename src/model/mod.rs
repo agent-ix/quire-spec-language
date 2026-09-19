@@ -14,6 +14,7 @@
 
 pub mod accounting;
 pub mod bundle;
+pub mod checked_dispatch;
 pub mod conformance;
 pub mod dispatch;
 pub mod key;
