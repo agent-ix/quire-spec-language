@@ -257,3 +257,12 @@ names the owner that holds the remaining work.
 | FND-018 | Fixed: the §14.2 #86 bullet adds the §7.4 solver-absence test, the CG S6 enum matches and the string-edge scan. |
 | FND-019 | Routed: the RT enum-match ticket is the RT owner's (§14.1 RT row). It is open until the RT owner files it. |
 | FND-020 | Fixed: §14.2 states that the disposition exit cases run in a test harness downstream of CG, so there is no #225 edge. |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-002, FND-008, FND-015, FND-016, FND-017, FND-018 and FND-020 are
+confirmed fixed in §14.1 and §14.2. FND-019 is routed with an owner (the RT
+owner) and a trigger (the owner files the ticket). The §11 L1-D1 edges still
+match ADR-011 22fa948 and now include #213 and QSpec #115 for #187. No new
+dependency finding. The open PR findings are in SR-474.

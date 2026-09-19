@@ -151,3 +151,11 @@ names the owner that holds the remaining work.
 | --- | --- |
 | FND-002 | Fixed: the arrow-7 key is a typed `QualifiedName` (ADR-013 O-11, by owner ruling), and AD-016 arrow 7 is kept, so there is no QSpec amendment (§8, §13.2 Q1). The candidate-set field is QSpec's (§13.4). The CG and IR tickets are Codegen #86 and Contract IR #141. |
 | FND-004 | Fixed in 6b9a603: the QSL `negotiate_*` copy removal belongs to #185 in §14.1, §14.2 and OBS-004, matching ADR-010 §7. |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-002 and FND-004 are confirmed fixed. One new scope finding is
+open: ADR-012 assigns the capability vocabulary to #229, while ADR-011 and
+ADR-013 assign it to QSpec #134 (FR-290), with #229 aligning QSL to it
+(SR-474 PR-N1). The open PR findings are in SR-474.

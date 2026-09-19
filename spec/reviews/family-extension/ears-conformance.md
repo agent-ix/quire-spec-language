@@ -163,3 +163,10 @@ names the owner that holds the remaining work.
 | FND-023 | Fixed: §10 reads "PR #59 does not wait on #210". |
 | FND-024 | Fixed: §5.2 states that the CLI edge refuses an unknown name and forms no request. `negotiate_*` settles `invalid-request` for a request that reaches it. |
 | FND-025 | Fixed: §1.1 applies the rules per `Requirements` entry, settles the most restrictive result, and defines "within" (bounded within both modes, unbounded within unbounded only). |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-010, FND-012, FND-015 and FND-022 to FND-025 are confirmed
+fixed. Negative phrasings remain at ADR-012:234, :254 and :487 (SR-474
+PR-L10). The open PR findings are in SR-474.

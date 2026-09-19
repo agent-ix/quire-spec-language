@@ -181,3 +181,11 @@ names the owner that holds the remaining work.
 | FND-014 | Fixed: §9 names the `#[string_edge]` tool attribute and the `xtask string-edge` scan. #214 owns it (§14.1), and IR, CG and RT run the same scan (§14.2). |
 | FND-015 | Fixed: §7.2 has the orchestrating binary pass every registered `BackendId` through CG's conversion before negotiation, and refuse the run if one has no CG kind. |
 | FND-016 | Fixed: §5.3 states that S1–S4 and their match sites are in the one QSL crate (§1). Cross-repository seams are probed in their own repositories. |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-002, FND-004, FND-006 and FND-013 to FND-016 are confirmed
+fixed. One effect of FND-006 is still open: after the S1 row moved the hook
+calls to S2 and S3 arms, §13.5 still says "every S1 dispatch seam has one arm
+per family" (SR-474 PR-N4). The open PR findings are in SR-474.

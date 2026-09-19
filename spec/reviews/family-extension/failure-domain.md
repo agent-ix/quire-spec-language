@@ -144,3 +144,11 @@ names the owner that holds the remaining work.
 | FND-012 | Fixed: §2 and §7.2 step 1 send every requested item, with or without `Requirements`, to `negotiate_*` exactly once. |
 | FND-013 | Fixed: §5.2 separates the paths. A CLI argument naming an unknown backend is refused at the edge and forms no request. A request that names one settles `invalid-request`. |
 | FND-014 | Fixed: §12.3 states the mixed-mode case, and QSpec #134 records `invalid-request` with no preference order as the rule. |
+
+## PR review (QSL PR #234, delta 43677c9..10664aa)
+
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-008, FND-009 and FND-011 to FND-014 are confirmed fixed. For
+FND-009, the `Relation` arm is `Refused(FamilyNotNativelyEvaluable)`, category
+`refusal`, which agrees with ADR-013 O-16 at 4152eb8. ADR-011 22fa948:801-804
+still says `unsupported` (SR-474 PR-N3). The open PR findings are in SR-474.
