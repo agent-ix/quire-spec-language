@@ -93,3 +93,16 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
 - FND-001, FND-003 and FND-004 were resolved in Round 2.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-005 is resolved (#247): ADR-011 §2.3 rule 8 says "expectation" and
+  "the function under proof" throughout, and "the modules it claims" for the
+  claimed-module list.
+- FND-006 is closed as satisfied (#247 ruling). No text change.
+- FND-007, FND-008, FND-010 and FND-011 stay Remaining work: #185.
+
+Verdict after Round 4: ACCEPT WITH FINDINGS.

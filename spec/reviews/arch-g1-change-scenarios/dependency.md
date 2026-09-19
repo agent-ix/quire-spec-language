@@ -216,3 +216,24 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
 - FND-010 and FND-011 are Remaining work: #247.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-003 is resolved (#212 round-2 ruling): the #185 and #217 end-to-end
+  disposition test runs in CG over the candidate-set wire and the v2 bytes as
+  data, at the pinned QSL revision, and never calls `route`. QSL tests only
+  `route`'s candidate-set output (ADR-012 §5.3).
+- FND-005 is resolved (#212 round-2 ruling): `ProjectionTarget` and
+  `--target` are deleted with SEAM-1. The backend is chosen only by
+  `BackendId`.
+- FND-010 is resolved (#247): ADR-012 §12.1 gives IR arms over IR's own
+  `ValueType` (C-05), with no IR → `quire-exact` edge.
+- FND-011 is resolved (#247): the K row lists the QC-15 id types.
+- The orchestrating driver crate is ADR-011 T-13, implemented by #248; #225
+  accepts its design.
+- FND-007 (#243), FND-008 (#240) and FND-009 (#213) stay Remaining work.
+
+Verdict after Round 4: ACCEPT WITH FINDINGS.

@@ -63,3 +63,12 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
   their record prefix ("ADR-012 §5.1 S5", "ADR-011 T-10", "ADR-013 T-8").
 
 Verdict after Round 3: ACCEPT.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- No open findings. The round-2 rulings change no SR-499 disposition.
+
+Verdict after Round 4: ACCEPT.

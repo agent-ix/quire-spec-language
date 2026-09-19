@@ -148,3 +148,32 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
 - FND-003, FND-005 and FND-006 were resolved in Round 2.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-003 is resolved (#212 round-2 ruling): a check is discharged only when
+  the backend reports it proved or SUCCESS. UNREACHABLE checks, and every
+  status other than SUCCESS, are not counted as discharged.
+- FND-004 is resolved (#212 round-2 ruling): every run mutation is checked in
+  with the diff, the exact command and the failing check output. A mutant
+  that does not fail the proof fails the gate, with no allow-list (ADR-011
+  §2.3). #219 enforces it.
+- FND-005 is resolved: agent-ix/quire-contract-codegen#88's scope is amended
+  with the rule-8 items, and SR-498 scenario 1 cites it.
+- FND-007 is resolved (#212 round-2 ruling): a backend with no per-check
+  status counts one check per proved obligation.
+- FND-009 is resolved (#247): the R-06 static check names the E9
+  `QualifiedName` lookup as its one exception (ADR-013 §2).
+- FND-012 is resolved (#212 round-2 ruling): the end-to-end disposition test
+  runs in CG over wire and never calls `route` (ADR-012 §5.3).
+- FND-013 is resolved (editorial): ADR-011 §3 and ADR-013 R-09 put R-09 in
+  the #216 and #219 interim inspection walk until #226 lands.
+- FND-008 is Remaining work: #215. FND-014 is Remaining work: #226. Each
+  needs an owner ruling, which #212 reports.
+- FND-010 is Remaining work: agent-ix/quire-contract-ir#144. FND-011 is
+  Remaining work: #219.
+
+Verdict after Round 4: ACCEPT WITH FINDINGS.

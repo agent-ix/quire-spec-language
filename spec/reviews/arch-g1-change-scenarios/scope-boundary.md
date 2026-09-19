@@ -104,3 +104,30 @@ Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments
   `CheckedPackage` in layer-4 `package`, and ADR-013 DA-04 and DA-08 match.
 
 Verdict after Round 3: ACCEPT WITH FINDINGS.
+
+## Round 4
+
+Dispositions after the #212 round-2 rulings, 2026-09-19 (issue #212, round-2
+comment), and the #247 editorial alignments.
+
+- FND-002 is resolved (#247): #185 removes the `requests` backend
+  disposition from QSL, and #213 S-1 removes the QSL `negotiate_*` copies
+  (ADR-011 §6.2, ADR-012 §14.1, ADR-013 §7).
+- FND-003 is resolved (#212 round-2 ruling): `ProjectionTarget` and
+  `--target` are deleted with SEAM-1, and the backend is chosen only by
+  `BackendId`.
+- FND-004 is resolved (#212 round-2 ruling): the orchestrating driver crate
+  is ADR-011 T-13, implemented by #248. #225 accepts its design.
+- FND-006 is resolved (#212 round-2 ruling): the #231 envelopes live in the
+  layer-6 `replay` public API.
+- FND-007 is resolved (#247): ADR-012 names `RefusalRecord` in F
+  `diagnostic` as the shared part.
+- FND-008 is resolved (#247): ADR-011 §10 row 7 names CG, whose
+  `negotiate_*` arm settles every disposition.
+- FND-009 is resolved (#247): T-2 names QSL #243 for the `replay` facade and
+  agent-ix/quire-contract-codegen#87 for the replay adapter, matching
+  ADR-013 TK-01.
+- FND-010 is resolved (#247): ADR-012 §8 and §12.3 cite the layer-6
+  `replay` facade.
+
+Verdict after Round 4: ACCEPT.
