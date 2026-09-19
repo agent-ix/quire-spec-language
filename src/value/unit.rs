@@ -8,6 +8,14 @@
 //! The units of one dimension node form an acyclic graph with exactly one
 //! targetless canonical root; each edge maps
 //! `target_value = scale × source_value + offset` exactly.
+//!
+//! `UnitGraph::admit` mints these node ids the same way `value::expression::
+//! check` mints checked-expression node ids (ADR-013 O-04): this module is
+//! one of ADR-011 §1's S3 "today" implementers, colocated with its own
+//! domain type rather than living in `check`, exactly as `value::library` is.
+//! No check-stage caller invokes it yet (#118 scoped identity semantics
+//! only); today it is exercised only by this crate's own tests (ADR-011 §1,
+//! #211).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
