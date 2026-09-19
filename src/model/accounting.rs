@@ -12,8 +12,8 @@
 /// limit and never means unlimited.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ModelNormalizationLimits {
-    /// High-water count of decoded producer records.
-    pub producer_records: u64,
+    /// High-water count of decoded declaration records.
+    pub declaration_records: u64,
     /// High-water count of derivation facts.
     pub derivation_facts: u64,
     /// High-water count of effective declarations.
@@ -29,7 +29,7 @@ pub struct ModelNormalizationLimits {
 impl ModelNormalizationLimits {
     /// A limit set large enough that no charge in this rung is denied.
     pub const UNLIMITED: Self = Self {
-        producer_records: u64::MAX,
+        declaration_records: u64::MAX,
         derivation_facts: u64::MAX,
         effective_declarations: u64::MAX,
         dispatch_candidates: u64::MAX,
@@ -41,8 +41,8 @@ impl ModelNormalizationLimits {
 /// One counter of [`ModelNormalizationLimits`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LimitKind {
-    /// `producer_records`.
-    ProducerRecords,
+    /// `declaration_records`.
+    DeclarationRecords,
     /// `derivation_facts`.
     DerivationFacts,
     /// `effective_declarations`.
@@ -58,7 +58,7 @@ pub enum LimitKind {
 impl LimitKind {
     /// Every counter, in `ModelNormalizationLimitsV1` field order.
     pub const ALL: [Self; 6] = [
-        Self::ProducerRecords,
+        Self::DeclarationRecords,
         Self::DerivationFacts,
         Self::EffectiveDeclarations,
         Self::DispatchCandidates,
@@ -69,7 +69,7 @@ impl LimitKind {
     /// Normative member name.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::ProducerRecords => "producer_records",
+            Self::DeclarationRecords => "declaration_records",
             Self::DerivationFacts => "derivation_facts",
             Self::EffectiveDeclarations => "effective_declarations",
             Self::DispatchCandidates => "dispatch_candidates",
@@ -85,7 +85,7 @@ impl LimitKind {
 
     fn index(self) -> usize {
         match self {
-            Self::ProducerRecords => 0,
+            Self::DeclarationRecords => 0,
             Self::DerivationFacts => 1,
             Self::EffectiveDeclarations => 2,
             Self::DispatchCandidates => 3,
@@ -96,7 +96,7 @@ impl LimitKind {
 
     fn limit(self, limits: &ModelNormalizationLimits) -> u64 {
         match self {
-            Self::ProducerRecords => limits.producer_records,
+            Self::DeclarationRecords => limits.declaration_records,
             Self::DerivationFacts => limits.derivation_facts,
             Self::EffectiveDeclarations => limits.effective_declarations,
             Self::DispatchCandidates => limits.dispatch_candidates,

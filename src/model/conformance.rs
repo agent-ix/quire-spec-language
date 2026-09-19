@@ -69,11 +69,11 @@
 //!   #173.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -944,8 +944,7 @@ pub fn check_field_refinement_obligation(
 
     let writer = index.operations.values().find(|operation| {
         operation.effect.modifies.iter().any(|field| {
-            field.node == record.redefined.node
-                || field.node == record.redefining.node
+            field.node == record.redefined.node || field.node == record.redefining.node
         })
     });
     let Some(writer) = writer else {
@@ -1087,9 +1086,7 @@ pub fn resolve_redefinition_target(
     let mut valid: Vec<DeclarationKey> = Vec::new();
 
     for record in &index.redefinitions {
-        if record.owner.node != owner.node
-            || record.redefining.node != redefining.node
-        {
+        if record.owner.node != owner.node || record.redefining.node != redefining.node {
             continue;
         }
         candidates.push((record.key.clone(), record.redefined.clone()));
@@ -1106,10 +1103,7 @@ pub fn resolve_redefinition_target(
 
     let mut distinct: Vec<DeclarationKey> = Vec::new();
     for target in &valid {
-        if !distinct
-            .iter()
-            .any(|existing| existing.node == target.node)
-        {
+        if !distinct.iter().any(|existing| existing.node == target.node) {
             distinct.push(target.clone());
         }
     }

@@ -183,11 +183,11 @@
 //! `normalize.hash` charges never run once this refusal is pending.
 #![allow(
     clippy::large_enum_variant,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
 )]
 #![allow(
     clippy::result_large_err,
-    reason = "cold refusal path; ModelRefusalCause carries ProducerKeys inline, matching state::evaluation's typed-failure precedent"
+    reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
 use std::collections::{HashMap, HashSet};
@@ -745,11 +745,11 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownSpecific {
-                        generalization: general.key.clone(),
+                        supertype: general.key.clone(),
                         specific: general.specific.clone(),
                     },
                     detail: format!(
-                        "generalization {} names specific {}, which is not a declared object type",
+                        "supertype {} names specific {}, which is not a declared object type",
                         general.key.node, general.specific.node
                     ),
                 });
@@ -758,11 +758,11 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 return Err(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownGeneral {
-                        generalization: general.key.clone(),
+                        supertype: general.key.clone(),
                         general: general.general.clone(),
                     },
                     detail: format!(
-                        "generalization {} names general {}, which is not a declared object type",
+                        "supertype {} names general {}, which is not a declared object type",
                         general.key.node, general.general.node
                     ),
                 });
@@ -920,14 +920,32 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Result<
                 }
             }
             DomainPackageRecord::FieldMember(_) | DomainPackageRecord::Supertype(_) => {}
-            // FR-152 systems-model records and FR-153 population
-            // declarations validate their own references independently
-            // (crate::model::systems, crate::model::population); FR-150's
-            // phase 1 does not concern itself with them.
+            // FR-152 systems-model records validate their own references
+            // independently (crate::model::systems); FR-150's phase 1 does
+            // not concern itself with them.
             DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Relationship(_)
-            | DomainPackageRecord::Population(_) => {}
+            | DomainPackageRecord::Relationship(_) => {}
+            // model-complete.md's "Populations" row: each member type names
+            // a declared object type; a missing one refuses
+            // `missing_declaration`/`missing-name`.
+            DomainPackageRecord::Population(population) => {
+                for type_name in &population.member_types {
+                    if !index.types.contains(type_name) {
+                        return Err(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::UnknownPopulationMemberType {
+                                population: population.key.clone(),
+                                type_name: type_name.clone(),
+                            },
+                            detail: format!(
+                                "population {} names member type {}, which is not a declared object type",
+                                population.key.node, type_name.node
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -1919,7 +1937,7 @@ fn charge_all(
     for index in 0..domain_package.records.len() {
         meter.charge(
             Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::ProducerRecords, length_amount(index + 1)),
+                .size(LimitKind::DeclarationRecords, length_amount(index + 1)),
         )?;
     }
 

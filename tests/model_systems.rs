@@ -69,7 +69,7 @@ fn field_member(
     )
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+fn supertype(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
     DomainPackageRecord::Supertype(
         quire_spec_language::model::domain_package::SupertypeRecord {
             key: DeclarationKey::fixture(identity),
@@ -158,7 +158,7 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackag
         object_type("model.Tank", None),
         object_type("model.Flow", Some(vec!["model.Flow.rate"])),
         object_type("model.Flow2", Some(vec!["model.Flow.rate"])),
-        generalization("model.gen.Flow2-Flow", "model.Flow2", "model.Flow"),
+        supertype("model.gen.Flow2-Flow", "model.Flow2", "model.Flow"),
         field_member("model.Flow.rate", "model.Flow", "model.Count", one()),
         component("model.Sys.pump", "model.Sys", "model.Pump", one()),
         component("model.Sys.tank", "model.Sys", "model.Tank", one()),
@@ -658,4 +658,3 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     .expect_err("model.Sys.pump no longer resolves to any kind");
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }
-
