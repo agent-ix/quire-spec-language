@@ -207,11 +207,11 @@ The shared contract is the minimum every family implements. It has six parts.
 
 | Part | Contract | Representation owner |
 |---|---|---|
-| Identity | Every checked node carries a stable identity, minted by QSL at check time as a function of the node's normalized content and its declaration path. It is derived from content and path alone, so it is independent of counters, display strings and collection positions. | ADR-013 O-04 (DA-02); package identity O-02 |
-| Provenance | Every checked node maps to its source span through a source map keyed by that identity. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
+| Identity | Every checked node carries a stable identity, minted by QSL at check time. It is content-addressed over the ADR-013 O-04 preimage, which includes the declaring package's `name@version`, so it is independent of counters, display strings and collection positions. Structurally identical nodes share one id. Each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). | ADR-013 O-04 (DA-02) and O-07; package identity O-02 |
+| Provenance | Every checked node occurrence maps to its source span through a source map keyed by its occurrence key. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
 | Requirements | A pure function of a checked node returns `Requirements`. It holds the item's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). | kinds from QSpec #134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
-| Structured outcome | A family `check` returns the checked node, a refusal with a family-typed cause, or `Incomplete` when a limit or the meter is exhausted. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is the kernel `Refusal` |
+| Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is the kernel `Refusal` |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
 
 Design-level shape of the contract:
@@ -223,7 +223,7 @@ trait FamilyContract {
     type Checked;           // checked payload with identity and provenance
     type Cause: CatalogCoded;
     fn check(form: Self::Form, cx: &mut CheckContext)
-        -> CheckOutcome<Self::Checked, Self::Cause>;    // checked | refused | incomplete
+        -> CheckOutcome<Self::Checked, Self::Cause>;    // checked | refused | limit
     fn requirements(checked: &Self::Checked) -> Option<Requirements>;
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
@@ -461,7 +461,7 @@ independent of registration order.
 | Decision | Question | Owner and stage | Input → output | Failure | Does not imply |
 |---|---|---|---|---|---|
 | Syntax admission | Is this text a well-formed form of an admitted edition? | QSL parser; family productions | source → family `Form` | parse diagnostic; no form | that the form type-checks |
-| Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `Incomplete`; no checked node | that any backend supports it |
+| Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `StageFailure::Limit(LimitExceeded)`; no checked node | that any backend supports it |
 | Backend capability | Which registered backends advertise the item's capability kind, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
 | Runtime availability | Is the selected backend's tool present at the pinned version? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor → available tool identity or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
 
@@ -483,7 +483,7 @@ Consequences of the separation:
 |---|---|---|
 | Family | `Requirements` of each checked node (§2) | each family |
 | Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
-| Registry | a value built from descriptors; computes candidate sets and routes each `supported` item to its backend | #185 |
+| Registry | a value built from descriptors, read by QSL `route` (ADR-011 layer R): `route` computes each item's candidate set before E7 and, after negotiation, routes each item settled `supported` to its backend | #185 |
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; Codegen #86) |
 
 `BackendDescriptor`, the candidate set and `Capability` cross repository
@@ -529,9 +529,11 @@ runs:
 2. **Target-neutral IR.** IR lowers the checked item (AD-016 arrows 2 and 3).
 3. **Negotiation.** CG `negotiate_*` receives the IR form, the item's extent
    and the candidate set, and settles exactly one disposition.
-4. **Routing.** The registry routes each `supported` item to its one
-   candidate's backend-specific generation, which follows target-neutral IR
-   (AD-016 arrows 4 and 5). It routes nothing else.
+4. **Routing.** QSL `route` routes each item that `negotiate_*` settled
+   `supported` to its one candidate's backend-specific generation, which
+   follows target-neutral IR (AD-016 arrows 4 and 5). It routes nothing else.
+   Each step has one owner: `route` computes candidates and routes, and CG
+   `negotiate_*` settles.
 
 | Candidate set | Disposition settled by `negotiate_*` |
 |---|---|
@@ -546,9 +548,11 @@ implication backend, or a temporal backend for #188) contributes a descriptor,
 a CG `negotiate_*` arm, and its own generation and runner. CG maps the
 descriptor's `BackendId` to its closed backend kind through one total
 conversion. Before any negotiation, the orchestrating binary passes every
-registered `BackendId` through that conversion once. When one has no CG kind,
-it refuses the run and names the identity, so a configuration error is not
-settled item by item as `invalid-request`.
+registered `BackendId` through that conversion once. When any has no CG kind,
+it refuses the run with `invalid_capability`/`unknown-backend`, naming each
+unconverted `BackendId` in bytewise order. That refusal is command-level, and
+#225 renders it. FR-290's per-item `invalid-request` row stays as CG's guard
+for requests formed outside the driver.
 
 Selection computes candidates, and `negotiate_*` settles. The candidate set is
 a function of the requirements and the registry's contents alone. A routed
@@ -623,7 +627,7 @@ Two rules apply at every stage.
 
 Each family result maps to the eight ADR-013 O-16 categories through the
 three outcome families of O-16. `check` refusals are the refusal category.
-`Incomplete` is the incomplete category. `evaluate` returns the kernel
+A `check` limit failure and an S6a `Incomplete` are the incomplete category. `evaluate` returns the kernel
 `Outcome<T>`. Dispositions come from CG. Proof results come from IR's
 `KaniOutcomeKind` map. No family adds a category.
 
@@ -865,7 +869,7 @@ item 6, §7.2).
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, `Incomplete` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (`FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the code to the category); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (`FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the code to the category); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on

@@ -127,3 +127,24 @@ the four records has criterion rows.
   and Consequences edits.
 
 Verdict after Round 2: ACCEPT WITH FINDINGS.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is resolved (#212 rulings, 2026-09-19, SR-500 FND-001): ADR-013 O-13 and ADR-011 §2.3
+  take the expectation for a kernel operation from the QSpec vectors or a
+  specification model that calls no `quire-exact` operation.
+- FND-002 is resolved (#212 rulings, 2026-09-19, FND-006): the shared-helper set is computed from
+  the build, checked in, and compared by #219.
+- FND-004, FND-007 and FND-011 are Remaining work: #219.
+- FND-008 is Remaining work: #215.
+- FND-009 is Remaining work: #247.
+- FND-010 is Remaining work: IR #144 (ADR-013 TK-04).
+- FND-012 is Remaining work: #225. The replay crossing test has its home in
+  QSL (#212 rulings, 2026-09-19, MD-1).
+- FND-013 is Remaining work: #216.
+- FND-014 is Remaining work: #226.
+- FND-003, FND-005 and FND-006 were resolved in Round 2.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.

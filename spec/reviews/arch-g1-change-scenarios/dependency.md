@@ -192,3 +192,27 @@ graph TD
   non-goal lines.
 - Built the crate, module and ticket graphs from the ADR text and the issue
   bodies. Checked each for cycles by hand.
+
+## Round 3
+
+Dispositions after the #212 rulings, 2026-09-19 (issue #212, newest two comments).
+
+- FND-001 is resolved (#212 rulings, 2026-09-19, SR-502 FND-001): #212 does not wait on CG #87.
+  ADR-011 Decision 12 and §1.1 make the skeleton result evidence that #212
+  cites where one exists, not an edge.
+- FND-002 is resolved (#212 rulings, 2026-09-19, SR-502 FND-002): each M-6 lane deletion, SEAM-2,
+  SEAM-3 and the T-3 exit criteria name the implementation tickets that land
+  the replacement.
+- FND-003 is Remaining work: #185 and #225.
+- FND-004 is resolved (#212 rulings, 2026-09-19, SR-505 FND-001): `route` computes candidates
+  before E7, CG `negotiate_*` settles at E7, and `route` then routes the
+  items settled `supported`.
+- FND-005 is Remaining work: #185.
+- FND-006 is resolved (#212 rulings, 2026-09-19, SR-501 FND-003 and FND-014): `CatalogCode` is in
+  F `diagnostic`, and DA-08 names the `check` core.
+- FND-007 is Remaining work: #243.
+- FND-008 is Remaining work: #240.
+- FND-009 is Remaining work: #213.
+- FND-010 and FND-011 are Remaining work: #247.
+
+Verdict after Round 3: ACCEPT WITH FINDINGS.
