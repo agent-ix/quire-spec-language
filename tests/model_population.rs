@@ -935,7 +935,7 @@ fn l05_foreign_type_refuses() {
 #[trace("TC-198", "FR-153-AC-3")]
 fn l05b_member_type_not_covered_by_population_member_types_refuses() {
     let mut domain_package = fixture_f1();
-    domain_package.records.push(object_type("model.C"));
+    domain_package.records.push(object_type("model.C", vec![]));
 
     let view = view_of(&domain_package);
     let mut document = p1("test/orders");
