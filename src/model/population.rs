@@ -419,16 +419,23 @@ pub struct PopulationDocument {
 }
 
 /// A `lookup<T>(p, r) absent m` key parameter: `r: Reference<S>`'s own
-/// realized identity triple, read directly off `r`'s checked value. `r` is
-/// supplied by an untrusted producer, so not every component is necessarily
-/// well-formed: `universe` is compared against `binding`'s own by raw bytes
-/// (a length other than 32 can never equal a real universe, so [`lookup`]'s
-/// own byte comparison already decides it correctly with no separate
-/// malformed case); `object` is [`LookupObject`], which does carry one,
-/// because a lossy decode of malformed identity bytes risks colliding with a
-/// real member's own identity (see [`LookupObject`]'s own doc comment).
-/// `type_identity` is always well-formed (`crate::value::node::NodeKey` is a
-/// fixed 32-byte digest already, so there is nothing to bridge).
+/// realized identity triple, read directly off `r`'s checked value, exactly
+/// as supplied. `r` is supplied by an untrusted producer, so not every
+/// component is necessarily well-formed, and [`lookup`] itself -- never this
+/// type -- decides which: `universe` is compared against `binding`'s own by
+/// raw bytes (a length other than 32 can never equal a real universe, so
+/// [`lookup`]'s own byte comparison already decides it correctly with no
+/// separate malformed case); `object` is raw identity bytes, and [`lookup`]
+/// only treats them as a candidate member identity when they are valid
+/// UTF-8 -- every real population member's own object identity is a JSON
+/// string (`PopulationDocument`'s member records), so bytes that are not
+/// valid UTF-8 can never equal one. This type carries no `Vec<u8>`-typed
+/// classification of its own (no public "this identity is malformed"
+/// constructor) precisely so a caller cannot assert a false classification
+/// for well-formed bytes and force a present member to read as absent, or
+/// the reverse. `type_identity` is always well-formed
+/// (`crate::value::node::NodeKey` is a fixed 32-byte digest already, so
+/// there is nothing to bridge).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {
     /// `r`'s own static type `S`.
@@ -437,29 +444,10 @@ pub struct LookupKey {
     pub universe: Vec<u8>,
     /// `r`'s realized reference's most-specific type.
     pub type_identity: EffectiveId,
-    /// `r`'s realized reference's own declared object identity.
-    pub object: LookupObject,
-}
-
-/// The realized object-identity component of a [`LookupKey`]: either a
-/// well-formed candidate identity, or `NonMember`, which can never equal an
-/// admitted member's own identity.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LookupObject {
-    /// A well-formed candidate identity (valid UTF-8); may or may not name
-    /// an admitted member.
-    Member(String),
-    /// The reference's raw identity bytes could not be losslessly decoded to
-    /// a well-formed identity string. Every real population member's own
-    /// object identity is a JSON string (`PopulationDocument`'s member
-    /// records), so this can never equal one -- unlike a lossy decode of the
-    /// same bytes, which risks coinciding with a real, validly admitted
-    /// member's own identity string (`String::from_utf8_lossy(&[0xFF,
-    /// 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value a population is free to
-    /// admit). Carries the raw bytes exactly as supplied, so a `refused`-mode
-    /// absence detail reports what the caller actually sent, never a
-    /// substituted or lossily decoded string.
-    NonMember(Vec<u8>),
+    /// `r`'s realized reference's own declared object identity, exactly as
+    /// supplied -- well-formed (valid UTF-8) or not. [`lookup`] alone decides
+    /// which.
+    pub object: Vec<u8>,
 }
 
 /// `lookup`'s absence mode, part of the query and never inferred from a
@@ -1705,19 +1693,19 @@ pub fn lookup(
         return LookupOutcome::Refused(foreign_universe(binding, &r.universe));
     }
 
-    let present = match &r.object {
-        LookupObject::Member(object) => {
+    // `lookup` alone decides whether `r.object` is a candidate member
+    // identity (valid UTF-8, see `LookupKey`'s own doc comment) or can never
+    // name one at all -- never a caller-asserted classification.
+    let present = match std::str::from_utf8(&r.object) {
+        Ok(object) => {
             let key = ReferenceKey {
                 universe: binding.universe().clone(),
                 type_identity: r.type_identity.clone(),
-                object: object.clone(),
+                object: object.to_owned(),
             };
             binding.members().contains_key(&key).then_some(key)
         }
-        // Every real population member's own identity is valid UTF-8
-        // (`PopulationDocument`'s member records), so a `NonMember` key can
-        // never equal one; see [`LookupObject`]'s own doc comment.
-        LookupObject::NonMember(_) => None,
+        Err(_) => None,
     };
 
     if let Some(key) = present {
@@ -1735,13 +1723,21 @@ pub fn lookup(
     match mode {
         AbsenceMode::Undefined => LookupOutcome::Undefined,
         AbsenceMode::Refused => {
-            let (key, display) = match &r.object {
-                LookupObject::Member(object) => (object.clone().into_bytes(), object.clone()),
-                LookupObject::NonMember(bytes) => (bytes.clone(), hex(bytes)),
+            let display = match std::str::from_utf8(&r.object) {
+                Ok(object) => object.to_owned(),
+                // Distinguishable from a well-formed identity string, which
+                // this format can never itself produce: no JSON string
+                // (`PopulationDocument`'s own member identity shape)
+                // contains "(not UTF-8)" as a literal suffix of a bare hex
+                // run, since a JSON string is already valid UTF-8 by
+                // construction.
+                Err(_) => format!("identity bytes 0x{} (not UTF-8)", hex(&r.object)),
             };
             LookupOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
-                cause: ModelRefusalCause::AbsentKey { key },
+                cause: ModelRefusalCause::AbsentKey {
+                    key: r.object.clone(),
+                },
                 detail: format!("{display} is not a member of the bound population"),
             })
         }

@@ -29,22 +29,24 @@
 //! untrusted producer, so not every component is well-formed: its universe
 //! ([`UniverseIdentity`]) or object identity ([`ObjectIdentity`]) may carry
 //! bytes no real [`PopulationBinding`] could ever admit. [`bridge_lookup_key`]
-//! never substitutes a derived value for either component and cannot itself
-//! fail: [`lookup`] decides the outcome for a well-formed and a malformed
-//! reference alike, in its own single order (`type_conforms(S, T)`, then
-//! `lookup.key`, then the universe check, then membership or absence -- see
-//! [`LookupKey`]'s own doc comment). A universe is carried as its raw bytes
-//! rather than a bridged [`EffectiveId`]: a length other than 32 can never
-//! equal a real universe, so [`lookup`]'s own byte comparison already decides
-//! it correctly with no separate malformed case. An object identity becomes
-//! [`LookupObject::Member`] when it is valid UTF-8 (every real population
-//! member's own identity is a JSON string, `PopulationDocument`'s member
-//! records), or [`LookupObject::NonMember`] otherwise -- carrying the
-//! identity's own raw bytes, never a lossily decoded substitute, since a
-//! lossy decode of arbitrary invalid bytes can coincide with a real, validly
-//! admitted member's own identity string (`String::from_utf8_lossy(&[0xFF,
-//! 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value a population is free to admit)
-//! and so could let a malformed reference be mistaken for that member.
+//! never substitutes a derived value for either component, never classifies
+//! either one itself, and cannot itself fail: it hands [`LookupKey`] `r`'s
+//! own raw bytes exactly as supplied, and [`lookup`] alone decides the
+//! outcome for a well-formed and a malformed reference alike, in its own
+//! single order (`type_conforms(S, T)`, then `lookup.key`, then the universe
+//! check, then membership or absence -- see [`LookupKey`]'s own doc
+//! comment). A universe is carried as its raw bytes rather than a bridged
+//! [`EffectiveId`]: a length other than 32 can never equal a real universe,
+//! so [`lookup`]'s own byte comparison already decides it correctly with no
+//! separate malformed case. An object identity is carried as its own raw
+//! bytes too, never a lossily decoded substitute: [`lookup`] treats them as
+//! a candidate member identity only when they are valid UTF-8 (every real
+//! population member's own identity is a JSON string, `PopulationDocument`'s
+//! member records), since a lossy decode of arbitrary invalid bytes can
+//! coincide with a real, validly admitted member's own identity string
+//! (`String::from_utf8_lossy(&[0xFF, 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value
+//! a population is free to admit) and so could let a malformed reference be
+//! mistaken for that member.
 //!
 //! # The TypeEnvironment island
 //!
@@ -73,8 +75,8 @@ use crate::diagnostic::Code;
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
-    all_instances, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupObject,
-    LookupOutcome, PopulationBinding, ReferenceKey,
+    all_instances, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
+    PopulationBinding, ReferenceKey,
 };
 
 use super::accounting::Meter;
@@ -110,25 +112,16 @@ fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, Stop> {
 
 /// The FR-143 byte transfer of `reference`'s own identity triple into a
 /// [`LookupKey`] for [`lookup`], paired with `static_type`. Always succeeds
-/// (see the module docs): `reference`'s universe is carried as its raw
-/// bytes, never bridged into an [`EffectiveId`]; `reference`'s most-specific
-/// type is always well-formed ([`NodeKey`] is a fixed 32-byte digest
-/// already); `reference`'s own object identity becomes
-/// [`LookupObject::Member`] when it is valid UTF-8, or
-/// [`LookupObject::NonMember`] -- carrying the raw bytes, never a lossily
-/// decoded substitute -- otherwise.
+/// (see the module docs): every component is carried as `reference`'s own
+/// raw bytes, exactly as supplied, never bridged, classified or substituted
+/// here -- [`lookup`] alone decides whether `universe` or `object` is
+/// well-formed.
 fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -> LookupKey {
-    let universe = reference.universe().as_bytes().to_vec();
-    let type_identity = EffectiveId::from_digest_bytes(*reference.object_type().as_bytes());
-    let object = match String::from_utf8(reference.identity().as_bytes().to_vec()) {
-        Ok(object) => LookupObject::Member(object),
-        Err(err) => LookupObject::NonMember(err.into_bytes()),
-    };
     LookupKey {
         static_type,
-        universe,
-        type_identity,
-        object,
+        universe: reference.universe().as_bytes().to_vec(),
+        type_identity: EffectiveId::from_digest_bytes(*reference.object_type().as_bytes()),
+        object: reference.identity().as_bytes().to_vec(),
     }
 }
 
