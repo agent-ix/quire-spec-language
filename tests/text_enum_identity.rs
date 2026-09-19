@@ -586,7 +586,7 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         mutated(&|v| v["owner"]["export"] = json!("E")),
         mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b"})),
         mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": null})),
-        // The old model-owner shape (`authority`, `identity`, `export`) is
+        // A model owner naming `authority` and `export` instead of `node` is
         // refused: `node` is required and absent, and `authority`/`export`
         // are unknown members.
         mutated(&|v| {
