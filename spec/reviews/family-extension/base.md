@@ -125,3 +125,22 @@ New findings from the delta or from a cross-record contradiction (round 2):
 | PR-N5 | low | The SR-476 FND-018 closure names its trigger (the merge of #235 and #236) but no owner. SR-477 FND-019 names both an owner (the RT owner) and a trigger (the owner files the ticket). | integrity.md:267 |
 
 PR review verdict at 10664aa: CHANGES (PR-N1, PR-N2, PR-N3).
+
+### Author response (after PR review round 2)
+
+Fixed in the commit that carries this section, under Agent A's rulings:
+
+| ID | Response |
+| --- | --- |
+| PR-N1 | Fixed: QSpec #134 (FR-290, QSpec PR #135 at 046d1bd) owns the capability vocabulary and wire spelling. #229 (QSL PR #237) aligns QSL's specification to it and holds the claim form → kind table (FR-057). The Context table, the consumption sentence, the §2 Requirements row, S7, §5.2, OBS-012, DA-11, §12.1, §12.2, §13.3, §13.4 and §13.5 all say so. |
+| PR-N2 | Fixed: the §9 RT row keys the function lookup by the checked declaration node id (`NodeKey`, ADR-013 O-04), and the checker resolves the name (R-06). The QSL row names the replay executor entry as the one lookup by `QualifiedName` that R-06 allows. |
+| PR-N3 | Routed to ADR-011 (#209), per Agent A. |
+| PR-N4 | Fixed: §13.5 says the S2 and S3 hook matches have one arm per family, and the S1 stage-participation table has one entry per family. |
+| PR-N5 | Fixed: SR-476 FND-018 names Agent A (the coordinator) as owner, triggered by the merge of #235 and #236. |
+| PR-L7 | Fixed: §13.4 Q2 is deleted. QSpec #134 scope item 4 settles it, and FR-331 in QSpec PR #135 carries the candidate set. |
+| PR-L10 | Fixed: §2, §3 and §7.1 state what is (closed-enum dispatch, the leading-token selection, the registry passed as an argument). |
+
+Also applied, from the #229 author's questions:
+- Candidate matching is on kind alone, and CG `negotiate_*` compares the mode (§1.1, §7.2).
+- The `Relation` refinement gates (#191, #192) emit `operation-contract` claims, one per clause implication. `refinement` is for refinement between protocols (§3).
+- Each family records the Requirements for its own claim forms. The ADR cites FR-057 for the table (§2).
