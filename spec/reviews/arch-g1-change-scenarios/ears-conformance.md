@@ -103,6 +103,20 @@ comment), and the #247 editorial alignments.
   "the function under proof" throughout, and "the modules it claims" for the
   claimed-module list.
 - FND-006 is closed as satisfied (#247 ruling). No text change.
-- FND-007, FND-008, FND-010 and FND-011 stay Remaining work: #185.
+- FND-007 and FND-008 are resolved (#212 round-2 rulings): ADR-011 E3 and
+  ADR-012 §13.5 key each `capability_report` entry by occurrence key with
+  `request_index` as their bytewise order, and a duplicate `BackendId`
+  registration follows FR-057 (the existing registration stands).
+- FND-010 and FND-011 stay Remaining work: #185.
 
 Verdict after Round 4: ACCEPT WITH FINDINGS.
+
+## Round 6
+
+Dispositions after the #212 round-4 rulings, 2026-09-19 (issue #212, round-4
+comment).
+
+- FND-007 and FND-008 are resolved, as recorded in Round 4.
+- FND-010 and FND-011 stay Remaining work: #185.
+
+Verdict after Round 6: ACCEPT WITH FINDINGS.

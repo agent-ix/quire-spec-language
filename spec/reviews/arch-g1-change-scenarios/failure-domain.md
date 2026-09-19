@@ -165,3 +165,18 @@ comment), and the #247 editorial alignments.
   `StageFailure::Refused` cause, never `inconclusive` (ADR-011 E9).
 
 Verdict after Round 4: ACCEPT.
+
+## Round 6
+
+Dispositions after the #212 round-4 rulings, 2026-09-19 (issue #212, round-4
+comment).
+
+- The Round 4 `InputRefusal` note is refined: `CheckedPackage::call` admits
+  arguments before S6a and returns `Result<FamilyOutcome, CallFailure>`, with
+  `CallFailure { Input(InputRefusal), Fault(InternalFault) }`. S6a returns
+  `Result<FamilyOutcome, InternalFault>`. `replay` carries `Input` as a
+  `StageFailure::Refused` cause and `Fault` as an internal fault (ADR-011
+  §2.3, E6, E9; ADR-013 T-4). AD-016 arrow 7 is stale here. Remaining work:
+  agent-ix/quire-specification#141.
+
+Verdict after Round 6: ACCEPT.

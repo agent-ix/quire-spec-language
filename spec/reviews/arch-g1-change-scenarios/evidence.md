@@ -195,6 +195,19 @@ comment).
   `xtask string-edge` allow-list entry names the user value it compares and
   selects no behaviour (ADR-012 §9, §12).
 - FND-010 is Remaining work: agent-ix/quire-contract-ir#144. FND-011 is
-  Remaining work: #219.
+  resolved (#212 round-4 ruling; see Round 6).
 
 Verdict after Round 5: ACCEPT WITH FINDINGS.
+
+## Round 6
+
+Dispositions after the #212 round-4 rulings, 2026-09-19 (issue #212, round-4
+comment).
+
+- FND-011 is resolved (#212 round-4 ruling): a surviving `cargo mutants`
+  mutant in any listed mapping fails the gate, with no allow-list. ADR-012
+  §5.3 states the rule once, and ADR-013 §4 mirrors it. C-06, C-09, C-15 and
+  C-20 carry the same `cargo mutants` evidence as C-05.
+- FND-010 is Remaining work: agent-ix/quire-contract-ir#144.
+
+Verdict after Round 6: ACCEPT WITH FINDINGS.
