@@ -150,6 +150,45 @@ and unary `-` are exact interval arithmetic on their operand intervals; and
 every other integer form, such as a call, division, `count`, `sum` or `fold`,
 has its declared result type's interval. No other reasoning is admitted.
 
+A `Rational[..]` expression has a numerator interval `N` and a positive
+denominator interval `D`, both over mathematical integers, and never a value
+interval. A literal `rational(n,d)` has the points of its normalized `n/d`; a
+stable path has its declared `[n1,n2]` and `[d1,d2]`; an `Integer` or `Int[..]`
+operand of a rational `/` (`quire.op.rational.div`, which promotes it
+exactly to `n/1` under FR-149) has its integer interval over `[1,1]`; and every other
+rational form, such as a call, `sum`, `fold` or `convert`, has its declared
+result type's intervals. When every operand of `+`, `-`, `*`, `/` or unary `-`
+has point intervals and the divisor point is nonzero, the result has the points
+of its exact normalized value. Otherwise, for operands `a/b` in (`Na`, `Da`) and
+`c/d` in (`Nc`, `Dc`), the raw intervals are exact interval arithmetic:
+`Na×Dc + Nc×Da` or `Na×Dc - Nc×Da` over `Da×Dc` for `+` and `-`; `Na×Nc` over
+`Da×Dc` for `*`; `-Na` over `Da` for unary `-`; and for `/` the numerator
+`Na×Dc` when `Nc` is positive, `-(Na×Dc)` when `Nc` is negative and their hull
+otherwise, over `Da×M`, where `M` is the magnitude interval of `Nc` with zero
+removed exactly: `[min|Nc|, max|Nc|]` when `Nc` excludes zero and
+`[1, max|Nc|]` when it contains zero. The normalized result intervals follow
+from the raw `[l,h]` over `[p,q]`: the numerator is `[1,h]` when `l > 0`,
+`[l,-1]` when `h < 0` and `[l,h]` otherwise, and the denominator is `[1,1]` when
+`l = h = 0` and `[1,q]` otherwise. A `/` whose divisor interval `Nc` contains
+zero first requires the nonzero obligation below; without it the quotient is
+`refused { code: undefined_expression, cause: unproved-nonzero }` and has no
+interval, never an infinite, clamped or approximated one. A rational range
+obligation holds when the normalized numerator interval lies inside `[n1,n2]`
+and the denominator interval inside `[d1,d2]` of the required type; it is the
+obligation of an FR-149 rational narrowing (`quire.op.rational.narrow`), as the
+range obligation is of a range narrowing (`quire.op.numeric.narrow`), and
+neither narrowing ever rounds. A
+comparison `x != rational(0,1)` or `rational(0,1) != x` for a rational stable
+path `x` records a nonzero fact for `x` on its true outcome, and `=` on its
+false outcome; no other rational comparison yields a fact.
+
+A `Decimal[..]` divisor satisfies the nonzero obligation only as a
+`decimal(c,s)` literal with `c != 0`. A quantity divisor has no admitted
+nonzero proof form: every FR-142 quantity division in a linked body is
+`refused { code: undefined_expression, cause: unproved-nonzero }` at the
+division, whatever guard encloses it, and only direct kernel evaluation decides
+a zero quantity divisor, as the FR-142 undefined outcome.
+
 The obligations are discharged as follows. A range obligation holds when the
 expression's interval lies inside the required type's interval. A nonzero
 obligation holds when the operand's interval excludes zero or the operand is a
@@ -164,7 +203,9 @@ a divisor that may be zero in FR-140, FR-142, FR-044 or FR-147
 (`unproved-nonzero`); a zero base with a negative integer exponent, whose base
 carries the nonzero obligation (`unproved-nonzero`); `value(e)` without a proved
 `present(e)` (`unproved-presence`); `reduce` without a proved `size(c) >= 1`
-under FR-145 (`unproved-range`). Each obligation applies on a path
+under FR-145 (`unproved-range`); an FR-149 range or rational narrowing whose
+converted value is not proved a member of its target type (`unproved-range`).
+Each obligation applies on a path
 that can execute, and an unproved one is
 `refused { code: undefined_expression, cause: ... }` at that operation when the
 body is linked.
@@ -229,6 +270,7 @@ Complete-V1 outcome.
 | FR-146-AC-6 | Each call charges `function.call` after argument evaluation and before binding, and an unproved partial-operation precondition refuses as `undefined_expression` while runtime typed refusals propagate. | Test (TC-191) |
 | FR-146-AC-7 | A missing, mismatched or undecreasing measure in a recursive component is `undefined_expression` with cause `unproved-decrease`, a non-recursive function needs no measure, and a call to a non-function declaration or an undeclared name refuses with its named code. | Test (TC-191) |
 | FR-146-AC-8 | Definedness and decrease proofs admit exactly the closed measure elements, guard facts, interval rules and decrease forms, `deref` and IEEE-to-`Rational` conversion have no body obligation, a duplicate function name is `ambiguous_declaration`, and a checking bound exceeded is `resource_exhausted`. | Test (TC-191) |
+| FR-146-AC-9 | Rational `+`, `-`, `*`, `/` and unary `-` range proofs use exactly the numerator and denominator interval rules, a rational divisor whose numerator interval contains zero is `unproved-nonzero` without a nonzero fact, and every quantity division in a linked body is `unproved-nonzero`. | Test (TC-191) |
 
 ## Dependencies
 

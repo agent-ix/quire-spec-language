@@ -21,9 +21,10 @@ explicit typed environment and population closure bound to the request.
 ## Inputs
 
 A population binding (package typed binding role `population`) with its anchor,
-declared maximum `N` and bound FCD FR-121 population document; the FR-150
-effective view and ModelSelection; the requested type; and, for lookup, a key
-reference and absence mode.
+declared maximum `N`, its population declaration from the admitted domain
+package and its runtime member records; the FR-150 effective view and
+ModelSelection; the requested type; and, for lookup, a key reference and
+absence mode.
 
 ## Outputs
 
@@ -41,38 +42,44 @@ grammar and the selected `quire.model.complete/v1` definition (rules
 
 ## Environment key and closure
 
-A population binding is bound to one FCD FR-121 population document, whose
-FR-119 identity, revision and digest are the closure authority. Its
-`modelIdentity` must name the binding's ModelSelection, otherwise
-`foreign_reference`/`foreign-model-selection`. Each member's key is
+A population binding is bound to one population declaration. The population
+declaration is declared by a `population` artifact and lists its member types
+and its extent. Its declaration key must belong to the binding's
+ModelSelection, otherwise `foreign_reference`/`foreign-model-selection`. The
+runtime member records are observation input; each names its object identity
+and the declaration key of its most-specific type. Each member's key is
 `(ModelSelection key, effective type identity of the member's most-specific
 type, FR-204 reference triple)`. Effective identities are used after
 normalization; original identities appear only in provenance. Duplicate member
 records collapse only when their keys and member digests are equal; otherwise,
 and whenever two members share universe and object identity with different
 types, binding admission refuses `invalid_runtime_input`/`conflicting-identity`.
-A member type absent from the effective view is `foreign_reference`/`foreign-type`.
-After the uncharged `modelIdentity` and closure checks, binding admission is
+A member type not covered by the population declaration's member types is
+`foreign_reference`/`foreign-type`. A member whose most-specific type is
+abstract is `invalid_runtime_input`/`abstract-instance`.
+After the uncharged model-selection and closure checks, binding admission is
 metered by `PopulationAdmissionLimitsV1` of `quire.value.accounting/v1`: each
-member in document order is charged `binding.member` and then checked for
-foreign type and for duplicate collapse or conflicting identity, and each
+member in input order is charged `binding.member` and then checked for
+foreign type, abstract type and for duplicate collapse or conflicting identity, and each
 subsetting value set is charged `binding.subset-value` before its FR-151 check.
 Admission stops at the first refusal, and a denied charge is incomplete with no
 binding.
 
-Object closure holds exactly when the population document has `closedWorld:
-true`; otherwise `incomplete_population`/`incomplete-scope`. Subtype closure holds
-exactly when the ModelSelection's bundle header has `generalizationClosure:
-closed`; otherwise `incomplete_population`/`unclosed-subtypes`. Both are decided at
-binding admission before any admission charge, and no partial collection is
-returned.
+Object closure holds exactly when the population declaration's extent is
+`closed`; otherwise `incomplete_population`/`incomplete-scope`. Subtype closure
+for a queried type `T` holds exactly when every effective type that conforms to
+`T` is covered by the population declaration's member types; otherwise
+`incomplete_population`/`unclosed-subtypes`. A member type covers itself and
+every type that conforms to it. Object closure is decided at binding admission
+before any admission charge, subtype closure before the query's first charge,
+and no partial collection is returned.
 
 `allInstances<T>(p)` requires `p` to be a population binding with a declared
 maximum `N`, otherwise `ill_typed`/`operator-ineligible`, and `T` to be a model
 `object` type, otherwise `ill_typed`/`type-mismatch`. Its type is
 `Set<Reference<T>>[0,N]`. It contains every member whose most-specific type
 conforms to `T`, once by reference key, in canonical reference-key order; the
-producer's member order is never observable. `population.visit` is charged for
+input member order is never observable. `population.visit` is charged for
 every member walked, whether or not it conforms to `T`. A selected count above `N` is
 `cardinality_out_of_bound`/`above-maximum` after `collection.bound`; a denied
 charge is `incomplete` with no collection.
@@ -108,6 +115,7 @@ deleted in the post state keeps its pre most-specific type. Charges are the
 | FR-153-AC-5 | All-instances includes closed subtype populations exactly once and emits no partial population when closure is unknown. | Test (TC-198) |
 | FR-153-AC-6 | A subtype object seen through supertype and subtype queries has one reference key whose type component is its most-specific type. | Test (TC-198) |
 | FR-153-AC-7 | `pre(allInstances<T>(p))` in a postcondition reads the pre population, and a deleted object keeps its pre type. | Test (TC-198) |
+| FR-153-AC-8 | `allInstances<T>(p)`'s result is exactly `Set<Reference<T>>[0,N]`, typed to the queried `T` and bounded by `p`'s declared maximum `N`. Lookup's present result is `Reference<T>` in the `undefined` and `refused` modes and `Option<Reference<T>>` in the `empty` mode, in every case typed to the queried `T`. | Test (TC-198) |
 
 ## Dependencies
 

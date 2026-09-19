@@ -21,27 +21,26 @@ rules over a closed declaration set.
 
 ## Inputs
 
-The effective view of FR-150, its generalization, subsetting and redefinition
-records, producer interface `1.3.0` operation signatures and typed
-multiplicities, authored contract clauses and operation bodies, and the selected
-`quire.model.complete/v1` definition.
+The effective view of FR-150; the declared supertypes, subsets and redefines of
+its declarations; operation signatures, frames and typed multiplicities; the
+`abstract` member of each object type; authored contract clauses and operation
+bodies; and the selected `quire.model.complete/v1` definition.
 
 ## Outputs
 
 Validated effective declarations and a linked dispatch table, or a located
-cycle, incompatibility, unproved refinement, ambiguity or incomplete-closure
-refusal.
+cycle, incompatibility, unproved refinement or ambiguity refusal.
 
 ## Behavior
 
 Type `S` conforms to type `T` exactly when `S` and `T` are the same effective
-type or a chain of supplied generalization records leads from `S` to `T`. `S`
+type or a chain of declared supertypes leads from `S` to `T`. `S`
 is strictly narrower than `T` exactly when it is a proper descendant of `T` in
 that closed graph; equal shapes of distinct declarations never make one
 narrower. Redefinition retains correspondence and cannot weaken inherited
 contracts. Dispatch selects, for each closed subtype, the unique undominated
-method; registration, source or record order never resolves ambiguity, and no
-linearization is applied.
+method; registration, source or declaration order never resolves ambiguity,
+and no linearization is applied. An abstract type has no direct instances.
 
 ## Conformance rules
 
@@ -76,10 +75,10 @@ feature's type (`ill_typed`/`subsetting-type`) and its multiplicity conforms
 (`ill_typed`/`multiplicity-narrowing`).
 
 Rule `quire.model.conformance.effect/v1`: an effect set is the operation's
-producer-supplied frame `{fieldWrites, creates, deletes}`. The redefining effect
-is included in the redefined effect exactly when each written field is a
-written field of the redefined effect or reaches one through redefinition
-records, and each created or deleted type conforms to some created or deleted
+declared frame `{modifies, creates, deletes}`. The redefining effect
+is included in the redefined effect exactly when each modified field is a
+modified field of the redefined effect or reaches one through `redefines`
+links, and each created or deleted type conforms to some created or deleted
 type, respectively, of the redefined effect. A create or delete of a subtype is
 covered by a grant for its supertype. Any other entry is `effect-escape`, one
 refusal per entry. The same inclusion governs FR-013 frames under inheritance.
@@ -133,7 +132,8 @@ A body is supplied by an `operation-body` declaration.
 At link time, the family of `o` is `o`'s original declaration together with
 every redefining operation reaching a subtype of `T`; its members that have a
 body are the candidates. For every effective type `S` conforming to `T` in the
-closed generalization graph, the applicable candidates are those whose
+closed supertype graph that is not abstract, the applicable candidates are
+those whose
 effective owner `S` conforms to. Candidate `p` dominates candidate `q` exactly
 when `p`'s owner is strictly narrower than `q`'s owner. The unique undominated
 applicable candidate is linked for `S`. No applicable candidate is
@@ -145,10 +145,8 @@ paths is one candidate by original identity. Each subtype is charged as
 each dominance-pair enumeration as `dispatch.dominance`. Linking is exhaustive
 under the limits: it reports every no-applicable and every ambiguous subtype of
 every called operation, in charge order, and then produces no dispatch table.
-A ModelSelection whose `generalizationClosure` is not `closed` has no dispatch
-table: linking returns the incomplete outcome
-`incomplete_population`/`unclosed-method-set`, not a refusal, before any
-dispatch charge. Every ambiguity is therefore a link-time refusal.
+The subtype set is closed because every supertype edge is a member of the
+admitted domain package. Every ambiguity is therefore a link-time refusal.
 
 Dispatch edges are call-graph edges. For each dispatched call, the FR-146
 call graph has an edge from the declaration containing the call (a function,
@@ -176,13 +174,15 @@ type.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-151-AC-1 | A compatible specialization/redefinition yields one effective member with complete provenance. | Test (TC-196) |
-| FR-151-AC-2 | An inheritance cycle or incompatible variance refuses with its named cause and the contributing records; a weakened invariant is not expressible because effective invariants are conjunctions. | Test (TC-196) |
-| FR-151-AC-3 | Zero or multiple undominated methods for any closed subtype refuse at link time with `ambiguous_dispatch`, every such subtype is reported, an open generalization closure is incomplete with `unclosed-method-set`, and a call-graph cycle through a dispatch edge refuses `definition-cycle`. | Test (TC-196) |
+| FR-151-AC-2 | An inheritance cycle or incompatible variance refuses with its named cause and the contributing declarations; a weakened invariant is not expressible because effective invariants are conjunctions. | Test (TC-196) |
+| FR-151-AC-3 | Zero or multiple undominated methods for any concrete closed subtype refuse at link time with `ambiguous_dispatch`, every such subtype is reported, an abstract subtype is never a dispatch target, and a call-graph cycle through a dispatch edge refuses `definition-cycle`. | Test (TC-196) |
 | FR-151-AC-4 | Parameter, result, multiplicity and effect variance are checked and reported independently, and pre/postconditions are combined by construction. | Test (TC-196) |
 | FR-151-AC-5 | Registration and source order cannot change the selected method or resolve an ambiguity. | Test (TC-196) |
 | FR-151-AC-6 | A narrowing field redefinition written by an exposed operation without an FR-146 establishing fact refuses `unproved-refinement` with its obligation. | Test (TC-196) |
 | FR-151-AC-7 | A false selected precondition yields `undefined` for the call and never selects a less specific method. | Test (TC-196) |
 | FR-151-AC-8 | Dispatch charges at their exact bound complete and the one-less run is incomplete at the named charge point. | Test (TC-196) |
+| FR-151-AC-9 | A subsetting feature whose type or multiplicity fails to conform to the subsetted feature refuses `ill_typed` with `subsetting-type` or `multiplicity-narrowing` and names both declarations; a conforming pair retains each declaration's own provenance in the effective view. | Test (TC-196) |
+| FR-151-AC-10 | At binding admission over a closed population, an object whose subsetting-feature values are not a subset of its subsetted-feature values refuses `invalid_runtime_input`/`subsetting-violation`, charged as `binding.subset-value` and with no evaluation charge. | Test (TC-196) |
 
 ## Dependencies
 

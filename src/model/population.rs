@@ -86,7 +86,7 @@
 //! - the FR-151 operation frame (`quire.model.conformance.effect/v1`):
 //!   every created and deleted object identity's most-specific type must
 //!   conform to a declared `creates`/`deletes` grant, and every changed
-//!   field on a surviving object must be a declared `fieldWrites` member
+//!   field on a surviving object must be a declared `modifies` member
 //!   (directly, or reaching one through a redefinition record — FR-151's own
 //!   effect-inclusion rule). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
@@ -1103,16 +1103,16 @@ pub(super) fn redefinition_reaches(
 }
 
 /// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.field_writes`, directly or because it
+/// member) is covered by `effect.modifies`, directly or because it
 /// "reaches one through redefinition records" -- FR-151's own effect-
 /// inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
 /// operation's own declared writes rather than to a redefining operation's
 /// writes against its redefined ancestor's. Walks the full chain
-/// ([`redefinition_reaches`]), not just one hop: `field_writes: [model.A.x]`
+/// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`
 /// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
 fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &ProducerKey) -> bool {
     redefinition_reaches(&bundle.records, field, |candidate| {
-        effect.field_writes.contains(candidate)
+        effect.modifies.contains(candidate)
     })
 }
 
@@ -1131,7 +1131,7 @@ fn field_write_covered(bundle: &Bundle, effect: &OperationEffect, field: &Produc
 /// `pre` and `post` but with a *different* most-specific type is a type
 /// change, decided before either classification runs, immediately below.
 /// FR-151's effect vocabulary grants exactly three kinds of authorized
-/// change -- `fieldWrites`, `creates`, `deletes` -- and none of them is a
+/// change -- `modifies`, `creates`, `deletes` -- and none of them is a
 /// retype; FR-143's own "Object references" clause additionally treats the
 /// most-specific type as part of a reference's snapshot-supplied identity
 /// triple, alongside the universe and declared object identity, never a
@@ -1200,7 +1200,7 @@ fn enforce_frame(
                 format!(
                     "invocation changes object {object}'s most-specific type from {} to {} \
                      between pre and post, which no operation frame may authorize (FR-151's \
-                     effect grants cover fieldWrites/creates/deletes only)",
+                     effect grants cover modifies/creates/deletes only)",
                     pre_type.identity, post_type.identity
                 ),
             ));
@@ -1267,7 +1267,7 @@ fn enforce_frame(
                 },
                 format!(
                     "invocation changes object {}'s field {}, outside the operation's declared \
-                     fieldWrites frame",
+                     modifies frame",
                     pre_member.object, field.identity
                 ),
             ));

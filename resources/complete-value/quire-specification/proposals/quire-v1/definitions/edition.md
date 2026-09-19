@@ -9,7 +9,7 @@ semantic revision remains proposed and is not adopted or fully implemented.**
 The compiler inventory binds this exact definition artifact; source headers
 select `language "ix:native" edition "1-draft";`. The artifact byte digest,
 definition revision and language/edition remain distinct. This draft includes
-the corrected static/runtime prerequisites and producer/native correspondence.
+the corrected static/runtime prerequisites and the domain package import.
 Historical `0-draft` sources retain their separate identity.
 
 This is a working definition in one coherent draft. Required definitions and
@@ -41,7 +41,7 @@ Only the rule files explicitly selected below and transitive required definition
 are normative dependencies. Their external/background links do not silently add
 unversioned rules. Source-model and observation contracts remain explicit
 parameters of the linked package; neither this definition nor a profile supplies
-missing producer authority.
+a missing domain package or observation contract.
 
 ## Selected rule files
 

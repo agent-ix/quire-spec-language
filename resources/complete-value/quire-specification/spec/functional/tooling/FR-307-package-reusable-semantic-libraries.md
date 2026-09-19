@@ -67,6 +67,24 @@ bind the same qualifier, each use is
 `refused { code: ambiguous_declaration, cause: ambiguous-name }` and lists both
 import paths.
 
+`a::Name` resolves in two steps. First `a` resolves to exactly one package:
+the library package whose import binds qualifier `a`, selected by its locked
+version and `package_id`. Then `Name` resolves only through that package's
+FR-322 `declaration` members: `qualified_name` is the package-local declaration
+path, and the export node is the single node of that package whose
+`declaration.qualified_name` equals the path `Name` spells, compared segment by
+segment and byte for byte, with no case folding, Unicode normalization, suffix
+match or search in another package. This covers scalar, composite and bounded
+types, functions, declared value constants, models, protocols, claims and every
+nominal kind; builtin and anonymous nodes carry no declaration and are never
+exports. No
+node of the library carrying that name is
+`refused { code: missing_declaration, cause: missing-name }`. The linker never
+recovers an export from source occurrences, source-map regions, display text,
+node order or a node's body; a library whose own graph carries a duplicated
+name or a declaration that disagrees with its nominal qualified declaration is
+already refused by the FR-322 reader and exports nothing.
+
 Resolution takes the transitive import closure in declaration order. When two
 dependency paths reach library identity `L`, they unify only when they name the
 same version and `package_id`. Any other combination is
@@ -87,8 +105,7 @@ recomputes it before resolution. A migrated package that reuses its source's
 "migration" whose preimage is unchanged yields the identical package and
 identity, and is not a migration.
 Evidence keyed by the old package or export identity keeps that key and is never
-relabeled. No library-level migration correspondence record is defined beyond
-FR-322's CheckedPackage V1-to-V2 migration record.
+relabeled. No library-level migration correspondence record is defined.
 
 ## Acceptance Criteria
 
