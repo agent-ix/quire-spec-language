@@ -299,13 +299,13 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
     let target = ValueType::Reference(node_key(&scenario.a));
     PackageDeclarations {
         types: types(scenario),
-        functions: vec![FunctionDeclaration {
-            name: "F".to_owned(),
-            parameters: vec![("p".to_owned(), ValueType::Population(3))],
-            result: ValueType::Integer,
-            measure: None,
-            body: Expression::Size(Box::new(all_instances(target))),
-        }],
+        functions: vec![FunctionDeclaration::new(
+            "F",
+            vec![("p".to_owned(), ValueType::Population(3))],
+            ValueType::Integer,
+            None,
+            Expression::Size(Box::new(all_instances(target))),
+        )],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
@@ -320,7 +320,7 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
 /// `AllInstances` node itself, not the bare parameter `p`) as the call's
 /// argument -- FR-042-AC-1's `pre(P(self.version, delta))` analogue, legal
 /// because the eligible read happens before the call, not inside `F2`'s own
-/// body (which, like `F`'s, is checked with `postcondition: false` and could
+/// body (which, like `F`'s, is checked as `ClauseKind::Body` and could
 /// never see `pre(...)` regardless).
 fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
     let element = ValueType::Reference(node_key(&scenario.a));
@@ -331,13 +331,13 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
     ));
     PackageDeclarations {
         types: types(scenario),
-        functions: vec![FunctionDeclaration {
-            name: "F2".to_owned(),
-            parameters: vec![("elements".to_owned(), elements_type)],
-            result: ValueType::Integer,
-            measure: None,
-            body: Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
-        }],
+        functions: vec![FunctionDeclaration::new(
+            "F2",
+            vec![("elements".to_owned(), elements_type)],
+            ValueType::Integer,
+            None,
+            Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
+        )],
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())

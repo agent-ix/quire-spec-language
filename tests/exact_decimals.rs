@@ -778,13 +778,20 @@ const DEFERRED_FAMILIES: [&str; 7] = [
 /// test can tell "implemented elsewhere" apart from "unimplemented anywhere".
 const IMPLEMENTED_ELSEWHERE_POINTS: [&str; 2] = ["binding.member", "binding.subset-value"];
 
+/// `dispatch.select` charge points genuinely implemented by
+/// `crate::value::accounting::ChargePoint` (FR-151, TC-196 D06), even though
+/// the rest of the `dispatch` family (link-time `dispatch.candidate`,
+/// `dispatch.dominance`, `dispatch.subtype`) stays deferred past #120. Read
+/// by [`is_deferred`] so `vendored_charge_points()` does not filter this one
+/// point out of the family-level `dispatch` deferral.
+const IMPLEMENTED_IN_DEFERRED_FAMILY: [&str; 1] = ["dispatch.select"];
+
 /// Every charge point genuinely unimplemented anywhere in this crate, in
 /// ascending order.
 const DEFERRED_POINTS: [&str; 21] = [
     "conformance.axis",
     "dispatch.candidate",
     "dispatch.dominance",
-    "dispatch.select",
     "dispatch.subtype",
     "graph.edge",
     "graph.expand",
@@ -836,6 +843,9 @@ fn charge_point_codes(text: &str) -> Vec<String> {
 }
 
 fn is_deferred(code: &str) -> bool {
+    if IMPLEMENTED_IN_DEFERRED_FAMILY.contains(&code) {
+        return false;
+    }
     code.split_once('.')
         .is_some_and(|(family, _)| DEFERRED_FAMILIES.contains(&family))
 }

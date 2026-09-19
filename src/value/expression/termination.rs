@@ -5,9 +5,9 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use super::super::composite::ValueType;
-use super::facts::{ArgumentShape, CallSite};
+use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{Node, NodeKind, Slot};
-use super::refusal::{CheckCause, CheckRefusal, MeasureObligation};
+use super::refusal::{CheckCause, CheckRefusal, Location, MeasureObligation};
 
 /// One element of a measure, naming the parameter it measures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,12 +120,58 @@ pub(crate) fn check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
         let recursive =
             component.len() > 1 || reachable.get(first).is_some_and(|set| set.contains(&first));
         if recursive {
+            if let Some(refusal) = dispatch_cycle_refusal(members, &component) {
+                refusals.push(refusal);
+                continue;
+            }
             if let Err(refusal) = check_component(members, &component) {
                 refusals.push(refusal);
             }
         }
     }
     refusals
+}
+
+/// FR-151 (TC-196 D08): `refused { code: invalid_package, cause:
+/// definition-cycle }` for a strongly connected component containing a
+/// dispatch edge, before any measure-decrease obligation is even attempted.
+/// Operation bodies and contract clauses have no `decreases` form, so this
+/// is checked ahead of, and instead of, [`check_component`]; an ordinary
+/// (all-[`EdgeKind::Ordinary`]) component is entirely unaffected.
+fn dispatch_cycle_refusal(members: &[Member<'_>], component: &[usize]) -> Option<CheckRefusal> {
+    let mut located: Vec<((usize, usize), Location)> = component
+        .iter()
+        .filter_map(|&caller| members.get(caller).map(|member| (caller, member)))
+        .flat_map(|(caller, member)| {
+            member
+                .calls
+                .iter()
+                .filter(move |call| {
+                    call.kind == EdgeKind::Dispatch && component.contains(&call.callee)
+                })
+                .map(move |call| ((caller, call.callee), call.location.clone()))
+        })
+        .collect();
+    if located.is_empty() {
+        return None;
+    }
+    located.sort_by_key(|(edge, _)| *edge);
+    let location = located.first().map(|(_, location)| location.clone())?;
+    let mut edges: Vec<(usize, usize)> = located.into_iter().map(|(edge, _)| edge).collect();
+    edges.dedup();
+    let named_edges: Vec<(String, String)> = edges
+        .into_iter()
+        .filter_map(|(caller, callee)| {
+            Some((
+                members.get(caller)?.name.to_owned(),
+                members.get(callee)?.name.to_owned(),
+            ))
+        })
+        .collect();
+    Some(CheckRefusal {
+        location,
+        cause: CheckCause::DefinitionCycle { edges: named_edges },
+    })
 }
 
 /// The component path from `from` back to `to`, by breadth-first search.

@@ -82,7 +82,7 @@
 //! [`ancestor_paths`]: only *reachability* between two specific owners, never
 //! every path between them. Two earlier attempts got this wrong: reusing
 //! [`ancestor_paths`] itself under a budget that silently reset on every
-//! call (PR #144 review finding #4, QSL #145), and then delegating to
+//! call (QSL #145), and then delegating to
 //! [`crate::model::conformance::ancestor_closure`]'s bounded
 //! (`MAX_CONFORMANCE_DEPTH`-ceiling) walk, which counts *breadth* (total
 //! distinct nodes visited) against a ceiling named for depth — a wide but

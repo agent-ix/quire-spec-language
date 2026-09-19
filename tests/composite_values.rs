@@ -725,13 +725,13 @@ mod checked {
         parameters: &[(&str, ValueType)],
         body: Expression,
     ) -> FunctionDeclaration {
-        FunctionDeclaration {
-            name: spelling.to_owned(),
-            parameters: owned(parameters),
-            result: ValueType::Integer,
-            measure: None,
+        FunctionDeclaration::new(
+            spelling.to_owned(),
+            owned(parameters),
+            ValueType::Integer,
+            None,
             body,
-        }
+        )
     }
 
     fn owned(parameters: &[(&str, ValueType)]) -> Vec<(String, ValueType)> {

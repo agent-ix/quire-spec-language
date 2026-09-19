@@ -16,8 +16,11 @@ use super::super::equality::EqualityOperator;
 use super::super::integer::{Integer, IntegerInterval};
 use super::super::numeric::ArithmeticOperator;
 use super::super::numeric::OrderingOperator;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, Slot, Visit};
-use super::refusal::{CheckCause, CheckRefusal, Location, Obligation, ProvedInterval};
+use super::check::DispatchOperation;
+use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, Slot, Visit};
+use super::refusal::{
+    CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
+};
 
 /// One step of a stable path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -63,12 +66,23 @@ pub(crate) enum ArgumentShape {
     Other,
 }
 
+/// Whether a call-graph edge is an ordinary named call or an FR-151 dispatch
+/// edge (TC-196 D08). A cycle containing a dispatch edge is refused
+/// `definition-cycle` before the measure logic runs; an ordinary cycle keeps
+/// its existing measure-decrease obligations unaffected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EdgeKind {
+    Ordinary,
+    Dispatch,
+}
+
 /// One reachable call.
 #[derive(Clone, Debug)]
 pub(crate) struct CallSite {
     pub(crate) callee: usize,
     pub(crate) location: Location,
     pub(crate) arguments: Vec<ArgumentShape>,
+    pub(crate) kind: EdgeKind,
 }
 
 /// One end of an extended integer interval.
@@ -356,16 +370,24 @@ impl Relation {
 }
 
 /// The definedness walker of one declaration.
-pub(crate) struct Definedness {
+pub(crate) struct Definedness<'a> {
     pub(crate) calls: Vec<CallSite>,
     parameters: usize,
+    dispatch_tables: &'a [DispatchTable],
+    dispatch_operations: &'a [DispatchOperation],
 }
 
-impl Definedness {
-    pub(crate) fn new(parameters: usize) -> Self {
+impl<'a> Definedness<'a> {
+    pub(crate) fn new(
+        parameters: usize,
+        dispatch_tables: &'a [DispatchTable],
+        dispatch_operations: &'a [DispatchOperation],
+    ) -> Self {
         Self {
             calls: Vec::new(),
             parameters,
+            dispatch_tables,
+            dispatch_operations,
         }
     }
 
@@ -864,7 +886,62 @@ impl Definedness {
                     callee: *function,
                     location: node.location.clone(),
                     arguments,
+                    kind: EdgeKind::Ordinary,
                 });
+                Ok(())
+            }
+            NodeKind::Dispatch {
+                receiver,
+                table,
+                operation,
+                arguments,
+            } => {
+                self.walk(receiver, facts)?;
+                for argument in arguments {
+                    self.walk(argument, facts)?;
+                }
+                // Defense in depth: `PackageDeclarations::check`'s own
+                // upfront validation already refuses an out-of-range
+                // operation or table index before any node is walked, so
+                // this should be unreachable — but silently treating either
+                // as "no edges" would hide real call-graph edges rather
+                // than refuse, so both still report a typed refusal. The
+                // operation lookup happens once, up front, so the failure
+                // path can read its `member` without cloning it on every
+                // ordinary dispatch-node walk.
+                let table_index = *table;
+                let operation_index = *operation;
+                let Some(declared_operation) = self.dispatch_operations.get(operation_index) else {
+                    return Err(CheckRefusal {
+                        location: node.location.clone(),
+                        cause: CheckCause::InvalidDispatchDeclaration(
+                            InvalidDispatchDeclaration::OperationOutOfRange {
+                                operation: operation_index,
+                            },
+                        ),
+                    });
+                };
+                let callees = self
+                    .dispatch_tables
+                    .get(table_index)
+                    .map(DispatchTable::callees)
+                    .ok_or_else(|| CheckRefusal {
+                        location: node.location.clone(),
+                        cause: CheckCause::InvalidDispatchDeclaration(
+                            InvalidDispatchDeclaration::TableOutOfRange {
+                                member: declared_operation.member.clone(),
+                                table: table_index,
+                            },
+                        ),
+                    })?;
+                for callee in callees {
+                    self.calls.push(CallSite {
+                        callee,
+                        location: node.location.clone(),
+                        arguments: Vec::new(),
+                        kind: EdgeKind::Dispatch,
+                    });
+                }
                 Ok(())
             }
             _ => {
@@ -910,7 +987,7 @@ pub(crate) struct Established {
 /// they actually prove is decided by this same arithmetic a real checked
 /// postcondition already runs, never restated from a clause's own literal.
 pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Established {
-    let checker = Definedness::new(self_slot + 1);
+    let checker = Definedness::new(self_slot + 1, &[], &[]);
     let (when_true, _) = checker.outcomes(condition, &Facts::default());
     let Some(facts) = when_true else {
         return Established::default();
