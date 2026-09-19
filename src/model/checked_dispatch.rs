@@ -94,8 +94,8 @@ use crate::model::dispatch::{
 use crate::model::key::ProducerKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::{
-    BinaryOperator, ClauseKind, DispatchCandidate, DispatchOperation, DispatchTable, Expression,
-    FieldInitializer, FunctionDeclaration, NodeKey, PackageDeclarations, ValueType,
+    BinaryOperator, DeclaredClauseKind, DispatchCandidate, DispatchOperation, DispatchTable,
+    Expression, FieldInitializer, FunctionDeclaration, NodeKey, PackageDeclarations, ValueType,
 };
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
@@ -166,9 +166,9 @@ pub enum DispatchBridgeRefusal {
         field: MissingClauseField,
     },
     /// `object_keys` has no entry for a linked table's subtype. A distinct
-    /// variant from [`Self::MissingClauseData`] (finding #172-9): the key
-    /// missing an entry here is a *subtype*, not an operation, so it earns
-    /// its own field name instead of overloading `operation`.
+    /// variant from [`Self::MissingClauseData`]: the key missing an entry
+    /// here is a *subtype*, not an operation, so it earns its own field name
+    /// instead of overloading `operation`.
     MissingObjectKey {
         /// The subtype missing an entry.
         subtype: Box<ProducerKey>,
@@ -263,7 +263,7 @@ fn declaration_order(bundle: &Bundle) -> BTreeMap<ProducerKey, usize> {
 
 /// `candidate` together with every operation reaching it by any chain of
 /// [`RedefinitionRecord`]s, however many parents each step has (every
-/// matching record, not `.find()`'s first match alone — finding #172-5): the
+/// matching record, not `.find()`'s first match alone): the
 /// full static FR-146 reachability set [`ancestor_closure`] needs for
 /// [`DispatchCandidate::precondition_clauses`]. Bounded breadth-first walk
 /// over an explicit queue, never native recursion; refuses at the depth
@@ -303,10 +303,9 @@ fn ancestor_closure(
 /// any ancestor makes it so); `Some(terms)` where every term is a real,
 /// non-absent clause still contributing — `terms[0]` is always `candidate`'s
 /// own clause, and every later element is an ancestor's contributing clause,
-/// substituted from that ancestor's parameter names into `candidate`'s own
-/// (finding #172-5: "substitute parameters/receiver when importing an
-/// ancestor clause" — the receiver is `parameters[0]`, substituted the same
-/// way as every other parameter). Memoized per candidate, since a diamond of
+/// substituted from that ancestor's parameter names into `candidate`'s own —
+/// the receiver is `parameters[0]`, substituted the same way as every other
+/// parameter. Memoized per candidate, since a diamond of
 /// redefinitions can reach the same ancestor from several paths; bounded by
 /// `depth`, the current call's own redefinition-chain distance from the
 /// *top-level* candidate this walk started at (0 there, incremented once per
@@ -724,7 +723,7 @@ pub fn checked_dispatch_operation(
             ValueType::Boolean,
             None,
             body,
-            ClauseKind::Precondition,
+            DeclaredClauseKind::Precondition,
         ));
         authored_index.insert(member.clone(), index);
     }
@@ -761,7 +760,7 @@ pub fn checked_dispatch_operation(
                     ValueType::Boolean,
                     None,
                     combined,
-                    ClauseKind::Precondition,
+                    DeclaredClauseKind::Precondition,
                 ));
                 index
             };
@@ -789,7 +788,7 @@ pub fn checked_dispatch_operation(
             result,
             None,
             own_body,
-            ClauseKind::Body,
+            DeclaredClauseKind::Body,
         ));
         body_index.insert(candidate.clone(), index);
     }
@@ -819,8 +818,8 @@ pub fn checked_dispatch_operation(
         ));
     }
     // `distinct.len()` is a real candidate count, never a value near
-    // `u64::MAX`; the fallback only avoids a lossy `as` cast (finding
-    // #172-9), it is not a reachable refusal path.
+    // `u64::MAX`; the fallback only avoids a lossy `as` cast and is not a
+    // reachable refusal path.
     let candidate_count = u64::try_from(distinct.len()).unwrap_or(u64::MAX);
     let checked_table = DispatchTable::new(entries, candidate_count);
 
@@ -865,7 +864,7 @@ mod tests {
     use crate::model::normalize::ModelRefusalCause;
     use crate::value::{Expression, ValueType};
 
-    /// Finding #172-5: `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
+    /// `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
     /// rather than silently truncating the closure. A straight redefinition
     /// chain one step past the bound (`op[N]` redefines `op[N-1]`, ...,
     /// `op[1]` redefines `op[0]`) must be refused
@@ -919,6 +918,43 @@ mod tests {
         let closure = ancestor_closure(&shallow_redefinitions, shallow_deepest)
             .expect("a chain exactly at MAX_ANCESTOR_DEPTH must not be refused");
         assert_eq!(closure.len(), shallow_keys.len());
+    }
+
+    /// `ancestor_closure` tracks `depth` per queue entry (this
+    /// redefinition-chain step's own distance from `candidate`), not a
+    /// running count of every node the whole walk has visited: a candidate
+    /// with more direct parents than [`MAX_ANCESTOR_DEPTH`] — every one of
+    /// them one step away, none of them chained — must not be refused just
+    /// because the total node count crosses the bound. Reverting `depth` to
+    /// a shared visited-node counter would still pass
+    /// `ancestor_closure_refuses_past_the_depth_bound_instead_of_truncating`
+    /// (a straight chain visits exactly one node per depth step, so the two
+    /// metrics coincide there); this fan-out shape is the one that tells
+    /// them apart.
+    #[test]
+    fn ancestor_closure_does_not_refuse_a_wide_family_with_many_direct_parents() {
+        let candidate = ProducerKey::fixture("model.fanout.candidate");
+        let parent_count = MAX_ANCESTOR_DEPTH + 2;
+        let parents: Vec<ProducerKey> = (0..parent_count)
+            .map(|index| ProducerKey::fixture(format!("model.fanout.parent{index}")))
+            .collect();
+        let redefinitions: Vec<RedefinitionRecord> = parents
+            .iter()
+            .map(|parent| RedefinitionRecord {
+                key: ProducerKey::fixture(format!("model.fanout.redef-{}", parent.identity)),
+                owner: candidate.clone(),
+                redefining: candidate.clone(),
+                redefined: parent.clone(),
+            })
+            .collect();
+
+        let closure = ancestor_closure(&redefinitions, &candidate).unwrap_or_else(|refusal| {
+            panic!(
+                "a one-hop walk to {parent_count} direct parents must not exhaust the \
+                 depth bound just because the total node count exceeds it, got {refusal:?}"
+            )
+        });
+        assert_eq!(closure.len(), parent_count + 1);
     }
 
     /// A family with more precondition-bearing members than

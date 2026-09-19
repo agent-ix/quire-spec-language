@@ -263,6 +263,12 @@ pub enum DispatchFunctionRole {
 /// than a free-form summary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum InvalidDispatchDeclaration {
+    /// A `NodeKind::Dispatch` node's own `operation` index names no
+    /// operation in the package's own `dispatch_operations`.
+    OperationOutOfRange {
+        /// The out-of-range operation index.
+        operation: usize,
+    },
     /// A dispatch operation names a `table` index past the package's own
     /// `dispatch_tables`.
     TableOutOfRange {

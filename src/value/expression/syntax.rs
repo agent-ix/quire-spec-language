@@ -94,6 +94,34 @@ pub enum ClauseKind {
     Body,
 }
 
+/// The [`ClauseKind`] a [`FunctionDeclaration::clause`] entry may declare.
+/// [`ClauseKind::Postcondition`] has no variant here: `pre(...)` legality
+/// belongs to `CheckedPackage::check_postcondition_expression`'s own
+/// `pre_anchor`/population wiring, which no `PackageDeclarations::functions`
+/// entry ever has, so the type itself rules the case out instead of a
+/// runtime check on an otherwise-valid `ClauseKind` value.
+///
+/// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DeclaredClauseKind {
+    /// A model invariant clause.
+    Invariant,
+    /// An operation's precondition clause.
+    Precondition,
+    /// A function body, an operation body, or a `decreases` measure.
+    Body,
+}
+
+impl From<DeclaredClauseKind> for ClauseKind {
+    fn from(kind: DeclaredClauseKind) -> Self {
+        match kind {
+            DeclaredClauseKind::Invariant => Self::Invariant,
+            DeclaredClauseKind::Precondition => Self::Precondition,
+            DeclaredClauseKind::Body => Self::Body,
+        }
+    }
+}
+
 /// One value expression.
 #[derive(Clone, Debug)]
 pub enum Expression {
@@ -418,18 +446,16 @@ impl FunctionDeclaration {
     /// A declaration checked as `clause_kind`, never reachable through an
     /// ordinary named [`Expression::Call`]: an invariant or precondition
     /// clause, or (crate-internal) a synthesized FR-151 dispatch candidate
-    /// body or effective precondition. Never [`ClauseKind::Postcondition`]:
-    /// `pre(...)` is legal exactly there, and this crate has no checked
-    /// "operation" declaration to bind a package function's `clause_kind` to
-    /// one — the only path that can actually stand behind a real
-    /// postcondition (its own `pre_anchor`/population wiring, FR-153's
-    /// eligible-operand rule) is
-    /// [`CheckedPackage::check_postcondition_expression`], a standalone
-    /// expression check outside `PackageDeclarations::functions` entirely.
-    /// Admitting it here would let any caller assembling a package hand an
-    /// ordinary function `pre(...)` legality it never earned. Panics if
-    /// asked for it — every call site controls `clause_kind` itself, so this
-    /// is a caller bug, not data this API must tolerate.
+    /// body or effective precondition. `clause_kind` is
+    /// [`DeclaredClauseKind`], not [`ClauseKind`]: admitting
+    /// `ClauseKind::Postcondition` here would let any caller assembling a
+    /// package hand an ordinary function `pre(...)` legality it never
+    /// earned — `pre(...)` is legal only behind a real postcondition's own
+    /// `pre_anchor`/population wiring
+    /// ([`CheckedPackage::check_postcondition_expression`], a standalone
+    /// expression check outside `PackageDeclarations::functions` entirely),
+    /// which no package function has — so `DeclaredClauseKind` leaves that
+    /// case unrepresentable rather than accepting it and refusing later.
     ///
     /// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
     pub fn clause(
@@ -438,21 +464,15 @@ impl FunctionDeclaration {
         result: ValueType,
         measure: Option<Expression>,
         body: Expression,
-        clause_kind: ClauseKind,
+        clause_kind: DeclaredClauseKind,
     ) -> Self {
-        assert!(
-            clause_kind != ClauseKind::Postcondition,
-            "FunctionDeclaration::clause must never be given ClauseKind::Postcondition; \
-             check a real postcondition through CheckedPackage::check_postcondition_expression \
-             instead"
-        );
         Self {
             name: name.into(),
             parameters,
             result,
             measure,
             body,
-            clause_kind,
+            clause_kind: clause_kind.into(),
             callable_by_name: false,
         }
     }

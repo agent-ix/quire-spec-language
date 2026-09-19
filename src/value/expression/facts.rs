@@ -901,22 +901,26 @@ impl<'a> Definedness<'a> {
                     self.walk(argument, facts)?;
                 }
                 // Defense in depth: `PackageDeclarations::check`'s own
-                // upfront validation already refuses an out-of-range table
-                // index before any node is walked, so this should be
-                // unreachable — but silently treating a missing table as
-                // "no edges" would hide real call-graph edges rather than
-                // refuse, so this still reports a typed refusal instead of
-                // `unwrap_or_default`. The member name comes from this
-                // node's own `operation` index (the same field `ir.rs`'s
-                // own doc warns must not be re-derived by searching for a
-                // table match), never a placeholder, so a refusal this
-                // deep still names the operation actually being checked.
+                // upfront validation already refuses an out-of-range
+                // operation or table index before any node is walked, so
+                // this should be unreachable — but silently treating either
+                // as "no edges" would hide real call-graph edges rather
+                // than refuse, so both still report a typed refusal. The
+                // operation lookup happens once, up front, so the failure
+                // path can read its `member` without cloning it on every
+                // ordinary dispatch-node walk.
                 let table_index = *table;
-                let member = self
-                    .dispatch_operations
-                    .get(*operation)
-                    .map(|declared| declared.member.clone())
-                    .unwrap_or_default();
+                let operation_index = *operation;
+                let Some(declared_operation) = self.dispatch_operations.get(operation_index) else {
+                    return Err(CheckRefusal {
+                        location: node.location.clone(),
+                        cause: CheckCause::InvalidDispatchDeclaration(
+                            InvalidDispatchDeclaration::OperationOutOfRange {
+                                operation: operation_index,
+                            },
+                        ),
+                    });
+                };
                 let callees = self
                     .dispatch_tables
                     .get(table_index)
@@ -925,7 +929,7 @@ impl<'a> Definedness<'a> {
                         location: node.location.clone(),
                         cause: CheckCause::InvalidDispatchDeclaration(
                             InvalidDispatchDeclaration::TableOutOfRange {
-                                member,
+                                member: declared_operation.member.clone(),
                                 table: table_index,
                             },
                         ),
