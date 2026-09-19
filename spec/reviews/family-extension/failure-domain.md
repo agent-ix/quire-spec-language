@@ -42,10 +42,10 @@ behaviour after a refused clause, overlapping parser entries, unknown wire tags
 under cross-repository version skew, a named but unregistered backend, the line
 between absence and run failure, and partial package emission.
 
-Verdict: REJECT. One high finding (FND-001) contradicts AD-016 and makes
-`requires-bound` unreachable for scenario 5 of #212. It can be fixed by editing
-§1.1, §5.2 and §7.2 without changing an owner. All other findings are
-non-blocking.
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). Round 1 was REJECT
+because FND-001 made `requires-bound` unreachable. The revision resolves
+FND-001. One new medium finding (FND-012) and some low residue remain; see
+"Round 2".
 
 ## Method
 
@@ -101,3 +101,31 @@ non-blocking.
 | Topology | The family DAG is acyclic and its placement is deferred to #209. The builder state machine is incomplete after a refusal (FND-004). Cross-repository enum skew is not covered (FND-006). The candidate-set cases are incomplete for mode (FND-001). |
 | Ownership | No finding asks ADR-012 to decide #229, #213, #185, #222, #209 or #211 content. Each fix states a contract and cites the owner. |
 | Rules | No compatibility layer. §13.4 Q4 asks the owner rather than designing one. Current-state wording. Mermaid labels contain no `;`. No string dispatch after the edge (§9). No monolithic routine (§4). |
+
+## Round 2
+
+Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: REJECT.
+
+| ID | Round-1 severity | Status | Note |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | §7.2 step 1 matches candidates on capability kind alone. §1.1 gives `negotiate_*` the extent rules: `requires-bound` for an unbounded extent on a bounded-only candidate with an available finite bound, `unsupported` (warned) without one, never `supported`. §5.2, §7.3 and the Alternatives entry agree. Never-narrowed rule kept. |
+| FND-002 | medium | resolved | §2 makes declarations, the type environment and limits read-only. Only the meter, the diagnostic sink and the scope stack are mutable. Identity is a function of normalized content and declaration path, never a counter. The reversed-order test obligation is not listed in §3 (residue, no finding). |
+| FND-003 | medium | resolved | §2 Structured outcome adds `Incomplete` for limit or meter exhaustion, and §8 maps it to the incomplete category. |
+| FND-004 | medium | resolved | §4.2 is a runtime state machine with an explicit arm per (state, clause kind) pair. Out-of-order leaves the state unchanged. A refused in-order clause advances. `finish` runs a cross-clause check only over successfully checked clauses. |
+| FND-005 | medium | resolved | §3 keys the entry table by a closed leading-token kind enum (seam S2), one production per entry, with no ordered trial. |
+| FND-006 | medium | resolved | §9: an unknown wire tag is a typed refusal of the v2 reader, never a skipped node. |
+| FND-007 | medium | resolved | §5.2 row and §7.2 unknown-backend class settle `invalid-request` naming the identity. See new FND-013 for the dual path. |
+| FND-008 | medium | partial | §7.1 adds the pinned tool identity to `BackendDescriptor`. §7.4 defines absence as the pre-run probe result (missing tool or pin mismatch). It still does not state that a failure after the tool starts (crash, timeout) maps through S8, not §7.4. Residue is low. Fix: add one sentence to §7.4. |
+| FND-009 | low | partial | `ReferenceEvaluation` is a separate trait, and S1 has an explicit `Relation` `unsupported` arm. §8 Replay still does not say what a `Relation` claim does at replay. `evaluate` still returns `Outcome<Value>` for state-observing families. |
+| FND-010 | low | resolved | §2: `package` is all-or-nothing. |
+| FND-011 | low | partial | §12.3 adds the backend change set. It does not record the effect that an overlapping registration turns requests that name no backend into `invalid-request`. Only Consequences mentions it. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | medium | An item without `Requirements` has no disposition path. §2 says "A claim that needs no backend capability yields no `Requirements` value and is not negotiated". §7.2 builds candidates from `Requirements`, so a proof or execute request for such an item has no candidate set and never reaches `negotiate_*`. It then gets no disposition and no accounting record. That breaks AD-016's terminal-disposition rule and its completeness test on zero records (§7.3 cites it). §12.1 also has a CG `negotiate_*` arm that returns `unsupported` for sum/case, and §12.2 has a Requirements row of "none", so these items can reach CG in the change sets but not by §2's rule. Fix: in §2, drop "and is not negotiated". State that every requested item reaches `negotiate_*` exactly once. In §7.2 step 1, add the case for an item with no capability kinds: the candidate set is the named backend, or every registrant when none is named. The IR-form arm (S6) then settles it, for example `unsupported` with a catalog code until a harness exists. | ADR-012 §2 Requirements row, §7.2, §7.3, §12.1, §12.2 · AD-016 terminal-disposition rule and completeness test |
+| FND-013 | low | Two failure points for an unknown `BackendId`. §9 resolves a `BackendId` at the CLI edge by registry lookup and refuses an unknown name there. §5.2 and §7.2 settle the same case as `invalid-request` in `negotiate_*`, "unless the CLI edge refused it first". The observed outcome, and whether an accounting record exists, then depend on the entry path. Fix: in §9, let the CLI edge check only the syntax of a `BackendId`, and leave registry membership to §7.2, so `invalid-request` is the one outcome. Or state that a CLI refusal happens before any request exists and so creates no `request_index`. | ADR-012 §5.2 row 3, §7.2, §9 · QSpec FR-290 as amended by PR #133 |
+| FND-014 | low | Mixed-mode ambiguity. Candidates match on kind alone, so an unbounded-mode backend and a bounded-only backend for the same kind make every unbounded request that names no backend `invalid-request`, although only one candidate could settle `supported`. This follows from the stated rule and is raised with the owner in §13.4 Q2. Fix: state this case in §7.2 or §12.3 so #212 scenario 7 records it. | ADR-012 §1.1, §7.2, §12.3, §13.4 Q2 |
+
+Round 2 verdict: ACCEPT WITH FINDINGS

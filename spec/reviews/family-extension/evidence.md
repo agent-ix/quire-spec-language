@@ -43,10 +43,10 @@ correct. The gaps are in the evidence.
 - **#212:** the record gives evidence for only three of the seven gate
   scenarios.
 
-Verdict: **ACCEPT WITH FINDINGS**. There is no `high` finding. Every #210
-acceptance bullet has a design answer, and no finding contradicts AD-016,
-PR #133 or the fixed ownership. The eight `medium` findings should be fixed
-before #212, because #212 needs tests and evidence for every scenario.
+Verdict: **ACCEPT WITH FINDINGS** (round 2, commit 8fb238b). Round 1 was
+also ACCEPT WITH FINDINGS. The revision resolves most findings. FND-005
+(solver-absence test) and FND-008 (§12 change-set measurement) stay open at
+medium; see "Round 2".
 
 ## Method
 
@@ -112,3 +112,32 @@ before #212, because #212 needs tests and evidence for every scenario.
 - **Ownership:** no finding moves an owner. Each fix either names evidence
   within the owners §14 already lists (#214, #213, #185, and the IR, CG and
   RT tickets) or names the AD-016 heads workspace as the cross-repo carrier.
+
+## Round 2
+
+Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: ACCEPT WITH
+FINDINGS.
+
+| ID | Round-1 severity | Status | Note |
+|----|------------------|--------|------|
+| FND-001 | medium | partial | §5.3 states the mechanism and oracle: a probe variant behind the `seam-probe` feature, an `xtask seam-probe` that compares E0004 locations with a checked-in list, run in the full gate. Residue (low): once #209 splits crates, E0004 in the defining crate stops a downstream crate from compiling, so its seams are never reported. The record does not say how the probe reaches seams in a downstream crate. |
+| FND-002 | medium | resolved | §5.1 denies `clippy::wildcard_enum_match_arm` and `clippy::match_wildcard_for_single_variants` in seam modules, and bans `#[non_exhaustive]` on S1–S9. |
+| FND-003 | medium | partial | §14 gives the S7 seam probe to #185. Residue (low): §5.3 still says "The owners of S5–S9 build the same probe … when those seams exist", which contradicts §14 for S7 and names no IR, CG or RT carrier. The AD-016 heads drift checks 1 and 7 are not named as the cross-repository evidence. |
+| FND-004 | medium | partial | §11 and §14 add the CG `negotiate_*` ticket to #185's exit, #188 and #189. §5.3 gives #185 one unit test per §5.2 row, including the empty candidate set. Residue (low): no integration test in the heads workspace is named for §7.3 (`unsupported` with the warning, no artifact, one record per `request_index`). §3's absent-capability corpus case still has no stated place to run. |
+| FND-005 | medium | open | §7.4 still names no test. The ADR-010 §2.1 baseline (IT-010 panics through `expect("cargo-kani 0.67.0 must be installed")`) is not mentioned, and no ticket is named to replace it. The negative claims (no probe before routing, no fallback, no downgrade) have no evidence. Fix: in §7.4, name a `fault-injection` test with cargo-kani absent from `PATH` and with a mismatched pin. It asserts the #229 outcome naming backend, tool identity and claim, that no other candidate runs, and that no probe runs before routing. Name the ticket that replaces the IT-010 `expect` (#217 or the CG ticket) in §14. |
+| FND-006 | medium | resolved | §5.3 Registry: permutation property test, `cargo-deny` ban on `inventory`, `linkme` and `ctor`, a lint gate for `static`, `OnceLock` and `thread_local!`, one unit test per §5.2 row. |
+| FND-007 | medium | partial | Consequences maps scenarios 2, 3, 5 and 7 to evidence, including the scenario 5 `negotiate_*` tests and the scenario 7 metamorphic byte-identity test. Residue (low): scenarios 1 and 6 use §4.3 and §8 of this record but are not mapped, and the architecture check that the checker does not depend on the registry type is not named. |
+| FND-008 | medium | open | §12 still says "A row outside the table is a defect" and "No other family's module changes", with no way to measure it. Fix: in §12's lead-in, name an `inspection` of each row against the #209 module map at #212, and an `architecture-conformance` changed-paths check on the #221 and #223 landing PRs (the WP11 re-walk AD-016 schedules), with its owning ticket. |
+| FND-009 | low | partial | §12.1 adds `case` evaluation on each variant, §12.2 adds runtime `frame_violation` evaluation, and §12.1 drops S7. §12.1 still names no QSpec #115 vector. |
+| FND-010 | low | resolved | §4.2 defines `accept(state, clause) -> (state, ClauseResult)` with an explicit arm per pair. §3 lists builder ordering tests. |
+| FND-011 | low | resolved | §9 adds the `#[string_edge]` marker and a lint gate on string comparisons outside it. §3 lists wire totality tests. See new FND-014. |
+| FND-012 | low | resolved | §5.3 extends mapping mutants to S1 and S4 `catalog_code()`. |
+| FND-013 | low | resolved | Consequences scenario 5 names the bound round trip from IR `KaniOutcome` to the FR-331 record. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+|----|----------|---------|------|
+| FND-014 | low | The §9 `#[string_edge]` lint gate has no owner and no mechanism. Clippy has no such lint, so it needs a custom lint (for example dylint) or an `xtask` scan. "Every string comparison outside a marked function" also catches comparisons of user values that select no behaviour. Fix: in §14, give the gate to #214 for QSL. State that it flags string comparisons and matches on string literals in non-test code outside `#[string_edge]` functions, with an allow-list for value comparisons. | ADR-012 §9, §14 |
+
+Round 2 verdict: ACCEPT WITH FINDINGS

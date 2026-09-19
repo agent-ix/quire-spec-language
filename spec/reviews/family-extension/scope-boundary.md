@@ -54,9 +54,9 @@ states. Several work-hand-off rows name tickets whose scope excludes that work.
 In two places the ADR decides a #229 question and then asks #229 the same
 question. Cross-repository interface changes have no named QSpec contract owner.
 
-Verdict: REJECT. FND-001 is blocking (high) because it contradicts AD-016 and
-PR #133. Its fix is one sentence. After FND-001 is fixed, the remaining
-findings would support ACCEPT WITH FINDINGS.
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
+at 048deb3 was REJECT, because FND-001 (high) contradicted AD-016 and PR #133.
+Round 2 finds FND-001 resolved; see Round 2.
 
 ## Method
 
@@ -103,3 +103,40 @@ Boundary allocation used:
 | FND-009 | low | §10 OBS-013 and §13.4 Q1 route the FR-290 wording fix ("quire-spec-language's Kani backend") "via QSpec #116". QSpec #116 is closed. PR #133 closed it and kept that phrase in FR-290. Fix: route the edit to a named open QSpec issue, or have #229 raise it as part of its FR-290 alignment, and cite that issue in both places. | ADR-012 §10 OBS-013, §13.4 Q1; QSpec #116 (closed); QSpec PR #133 |
 | FND-010 | low | The §2 typing-context row says "context type decided in #211". `CheckContext` is a QSL-internal part of the family contract, and #211's object list does not include it. The row already fixes its contents (resolved declarations, type environment, scope stack, limits, meter), and §13.1 Q4 correctly asks #209 where it lives. Fix: set the representation owner to "this record (contents); placement in #209; the identity, limit and meter types it holds are decided in #211 and #222". | ADR-012 §2, §13.1 Q4; #211 Objects requiring decisions |
 | FND-011 | low | §13.4 Q4 asks the owner whether "any compatibility" for four-kind QSL artifacts is wanted. That question is in #229's scope ("compatibility behavior for older four-kind QSL artifacts"), and PR #133 left it "to #229". Fix: move Q4 to §13.3 as a question for #229, and keep this record's current statement that it designs no reader. | ADR-012 §13.3, §13.4 Q4; #229 Scope; QSpec PR #133 |
+
+## Round 2
+
+Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
+round-1 findings above, using
+`git diff 048deb3 8fb238b -- spec/decisions/`. The revision was checked
+against the fixed ownership chains (#209, #211, #229, #213, #185 and #222),
+against QSpec AD-016, against FR-290 and AD-010 as amended by merged QSpec PR
+#133, and against the #214 issue body and ADR-010 §7. Round-1 verdict: REJECT
+(FND-001 high).
+
+### Round-1 findings
+
+| ID | Round-1 severity | Status | Note |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | Consequences reads "one descriptor plus one CG `negotiate_*` arm and its runner". The §7.2 "exactly one" row is the CG `negotiate_*` arm for the backend's kind (S9). §7.2 states that every settlement is an arm of CG `negotiate_*`, whichever repository implements the backend, and that a backend outside CG contributes a CG arm. §7.1 and the Alternatives reject a second negotiation point. This matches AD-016 and PR #133's FR-290 and AD-010 text. |
+| FND-002 | medium | partial | (a) The candidate set is now a field of the QSpec FR-331 negotiation request, and §13.4 Q3 asks which QSpec issue owns it. That is correctly routed. (b) The arrow-7 executor key is still routed only to #211 (§8, §13.2 Q1). Changing AD-016's `CheckedPackage::call(function: &str, …)` is a QSpec contract change, and no QSpec owner is named. The IR, CG and RT tickets in §14.1 are still "to be opened by the owner", with no number. Residual severity: medium. Fix: in §13.2 Q1, add "and the QSpec issue that amends AD-016 arrow 7", or add it as a §13.4 owner question. Name the CG `negotiate_*` ticket and the IR ticket by number, or state in Consequences that #212 cannot pass scenarios 5 and 7 until they exist. |
+| FND-003 | medium | resolved | §1 and §14.1 give each migration to its implementation owners, with the mapping ticket as design input: `StateModel` → #120, #121, #164 via #220; `SumCase` → #187 via #221; `TemporalTrace` → #188, #189 via #222; `ProtocolClause` → #218 via #223; `Relation` → #191, #192, #198 via #223. #214 is limited to the function-application arms, and the remaining `Value` forms go to #120, #164, #170 and #175. |
+| FND-004 | medium | open | The QSL `negotiate_*` copy removal moved from #213 to #214 (§14.1, §14.2), not to #185. ADR-010 §7 still maps OBS-004 to #185. #214's body limits it to function application as "the sole representative family" and says it "does not modify unrelated family internals". `value::ieee` and `value::division` are `Value` operator internals, not function application. So two records name different owners, and the new owner's scope excludes the work. Residual severity: medium. Fix: give the removal to #185 in §14.1 and §14.2, next to the composed-linker removal. If #214 is intended, add a §13.4 owner question to amend ADR-010 §7 and #214's scope together. |
+| FND-005 | medium | resolved | (a) §5.2's unknown-kind row reads "handled by #229's unknown-kind rule; this record adds nothing", and the duplicate question is gone. (b) `Requirements` records extent and bound as data. §13.3 Q2 now states what §7 needs from #229 ((capability kind, mode) advertisements), which is a routed input, not a second decision. |
+| FND-006 | medium | resolved | The #229 row in Context now includes "how a family declares, a backend advertises and a request selects a capability", and says #229 consumes §6 and §7.1. §10 DA-11 states "#210 owns DA-11; #229 is its secondary owner for the vocabulary". |
+| FND-007 | medium | resolved | OBS-012 now reads AD-016's "QSL `Capability` = language admission" as values recorded during admission that decide nothing. "Is not a capability" is removed. |
+| FND-008 | low | resolved | §7.4 names #229 as the owner of the solver-absence result, with #222 confirming its boundedness reading. §13.3 Q1 asks the same. The sentence with no referent is gone. |
+| FND-009 | low | resolved | §10 OBS-013 routes the FR-290 wording edit through #229. §13.3 Q5 notes that QSpec #116 is closed and that the edit needs an open QSpec issue. |
+| FND-010 | low | resolved | The §2 typing-context owner is "contents: this record; placement: decided in #209". |
+| FND-011 | low | resolved | The four-kind compatibility question moved to §13.3 Q4 for #229. The record designs no reader. |
+
+### New findings
+
+None. The revision stays inside #210. The new §1 "Implementation owners"
+column, the §11 "Waits instead on" edges and §14.2's issue-body amendments are
+routed to the owner after #212, and the record edits no issue. It adds no
+compatibility layer, no fallback and no second negotiation point. It cites
+the #222 bound design, the #229 vocabulary and absence policy, the #213 type
+and the #185 registry as "decided in", and it does not redesign them.
+
+Round 2 verdict: ACCEPT WITH FINDINGS

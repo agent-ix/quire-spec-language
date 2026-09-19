@@ -59,8 +59,10 @@ The other findings are medium or low:
 - work handed to #213 outside its scope;
 - stale or unprefixed citations.
 
-Verdict: REJECT. FND-001 is high and contradicts AD-016 and PR #133. Fix
-FND-001, then address FND-002 to FND-009 before the #212 gate.
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). Round 1 was REJECT
+because FND-001 contradicted AD-016 and PR #133. The revision resolves
+FND-001. FND-005 is partly open (the mode vocabulary owner), and three new low
+findings remain; see "Round 2".
 
 ## Findings
 
@@ -142,3 +144,36 @@ FND-001, then address FND-002 to FND-009 before the #212 gate.
   registry equality. Evaluation purity: `requirements` is a pure function and
   the checker never reads the registry. Topological robustness: the family DAG
   is acyclic, and placement is left to #209.
+
+## Round 2
+
+Reviewed ADR-012 at 8fb238b (diff from 048deb3), with ADR-013 at the
+`qsl-arch12` worktree head for the sibling questions. Round-1 verdict: REJECT.
+
+| ID | Round-1 severity | Status | Note |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | Candidates match on capability kind alone (§7.2 step 1). §1.1 gives `negotiate_*` the extent rules: `requires-bound` with an available finite bound, `unsupported` (warned) without one, never `supported`. §5.2, §7.3 and Alternatives agree with AD-016 and PR #133. |
+| FND-002 | medium | resolved | §7.2: "Every settlement is an arm of CG `negotiate_*`, whichever repository implements the backend". A non-CG backend contributes a descriptor, a CG arm and its runner. Consequences reads "one CG `negotiate_*` arm". |
+| FND-003 | medium | resolved | §10 OBS-012 states how it reads AD-016's row: values are recorded during admission and decide nothing. |
+| FND-004 | medium | resolved | §12.1 needs no capability kind, and S7 is dropped. §12.2 Requirements is conditional on §13.3 Q3. §13.3 Q3 and §13.4 Q1 must be settled before #212, each with a named owner. |
+| FND-005 | medium | partial | §13.5 answers ADR-011's three questions and Q210-1 to Q210-4. The Context table places the bound representation (#222 selects, #213 implements, #211 DA-12 owns). §1.1 now agrees with ADR-013 O-20 that CG settles the mode. Still open: ADR-013 O-20's Owner row says "The mode vocabulary and its family rules are decided in #210 with #222". ADR-012 decides no mode vocabulary. It sends the extent vocabulary to #222 and the mode advertisement question to #229 (§13.3 Q2), and §13.5 says only "This agrees with O-20". The (capability kind, mode) pairs of §1.1 and §7.1 therefore have no deciding owner in either record. Fix: in §13.5's Q210-2 row, state that the mode vocabulary (bounded, unbounded) and its rules are decided in #222, and ask #211 to change ADR-013 O-20's Owner row to #222. Or decide the two-value mode set in §1.1. |
+| FND-006 | medium | resolved | §12.1 and §12.2 gain QSpec catalog and re-vendor rows, a QSpec wire row, and Witness and replay rows. §4.2 has the anchor transition. |
+| FND-007 | medium | resolved | `ReferenceEvaluation` is a separate trait. S1 has an explicit `Relation` arm returning a typed `unsupported` refusal. `&mut CheckContext` is used in both places. |
+| FND-008 | medium | resolved | §14 gives the QSL `negotiate_*` removal to #214 and adds a `TemporalTrace` row (#188, #189 via #222). |
+| FND-009 | low | resolved | §7.2 defines backend-specific generation after target-neutral IR, in the order candidates, IR, `negotiate_*`, routing. |
+| FND-010 | low | resolved | Unknown `BackendId` settles `invalid-request` (§5.2, §7.2). See new FND-017. |
+| FND-011 | low | resolved | §4.2 diagram is marked illustrative and cites the grammar. It adds `Header → Post`, `Framed → [*]` and the anchor state, and defines the state after a refusal. |
+| FND-012 | low | resolved | §9 lists source lexing as an edge. §3 keys the entry table on token kinds. |
+| FND-013 | low | resolved | Context states ADR-010's `QSL:<path>:<line>` form at de627b5. §4.3 and §9 use it. |
+| FND-014 | low | resolved | (a) §7.4 names #229. (b) OBS-003 states the target state. (c) Q4 moved to §13.3 for #229. |
+| FND-015 | low | resolved | Status names ADR-012 as the `/specify` output and links the review set. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-016 | low | §2 contradicts the terminal-disposition rule for items with no capability. §2 says such a claim "yields no `Requirements` value and is not negotiated", while §7.3 applies AD-016's completeness test (one accounting record per `request_index`) and §12.1 gives sum/case a CG `negotiate_*` arm. A requested item without `Requirements` then has no disposition. Fix: see SR-475 FND-012. Drop "and is not negotiated" and define its candidate set in §7.2. | ADR-012 §2, §7.2, §7.3, §12.1 · AD-016 terminal-disposition rule |
+| FND-017 | low | §9 and §7.2 disagree on where an unknown `BackendId` fails. §9 says an open-set identity "is resolved by a lookup in the registry value, and an unknown name is refused" at the edge. §7.2 marks it unknown-backend and `negotiate_*` settles `invalid-request`. §5.2 joins them with "unless the CLI edge refused it first". Fix: let the edge check only syntax, and leave membership to §7.2. | ADR-012 §5.2, §7.2, §9 |
+| FND-018 | low | ADR-011 and ADR-013 are cited by item (ADR-013 O-16, O-19, O-20, Q210-n) but neither is on this branch, and the frontmatter has no edge to them. The citations cannot be resolved from the repository at 8fb238b. Fix: add `relates_to` edges and links once ADR-011 and ADR-013 are on main, or name their branches and revisions in Context. | ADR-012 Context, §1.1, §8, §13.2, §13.5 |
+
+Round 2 verdict: ACCEPT WITH FINDINGS

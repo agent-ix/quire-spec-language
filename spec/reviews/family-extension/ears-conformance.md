@@ -53,8 +53,9 @@ registry behaviour before #185, the builder behaviour before #214, and the
 absent-capability and solver-absence outcomes before #213. FR-036 must also
 be revised before #185 (FND-013).
 
-Verdict: ACCEPT WITH FINDINGS. FND-001 and FND-002 must be resolved before
-#212 applies scenario 7 and before #185 or the CG negotiation ticket starts.
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
+at 048deb3 was also ACCEPT WITH FINDINGS, with FND-001 and FND-002 (high) to
+be resolved before #212 scenario 7. Round 2 finds both resolved; see Round 2.
 
 ## Method
 
@@ -101,3 +102,48 @@ Verdict: ACCEPT WITH FINDINGS. FND-001 and FND-002 must be resolved before
 | FND-020 | low | Decision 1 says mode is "a typed axis that every family declares", but §1.1 says "a family does not own a mode" and that each checked node states its mode through `Requirements`. Fix: "a typed axis carried in every checked node's `Requirements`". | ADR-012 Decision 1, §1.1 |
 | FND-021 | low | §11's test says a ticket waits on #185 "only when" an exit criterion is registry behaviour, but the table uses the test in both directions (kept and relaxed). Fix: "if and only if". | ADR-012 §11 |
 | FND-022 | low | §1's "No family calls another family's checking or lowering internals" does not define "internals", so it can only be checked by reading the code. Fix: state that a family module exports only its checked types and its contract implementation, and that everything else is private to the module, so the compiler enforces the rule. | ADR-012 §1 |
+
+## Round 2
+
+Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
+round-1 findings above, using
+`git diff 048deb3 8fb238b -- spec/decisions/`. Each revised normative
+statement was checked again for one subject, one condition and one observable
+response. Round-1 verdict: ACCEPT WITH FINDINGS (FND-001 and FND-002 high).
+
+### Round-1 findings
+
+| ID | Round-1 severity | Status | Note |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | Candidates now match on capability kind alone (§1.1, §7.2 step 1). `negotiate_*` compares the extent with the candidate's advertised modes. An unbounded extent on a bounded-only backend settles `requires-bound` when a finite bound is available, and `unsupported` (warned) when none is. It never settles `supported`. The Alternatives reject matching on (kind, mode). |
+| FND-002 | high | resolved | Decision 6, §6, §7.1, §7.2 and Consequences agree: every settlement is an arm of CG `negotiate_*`, and a backend contributes a descriptor plus a CG arm. §6 names the candidate owner (#185 registry) and the disposition owner (CG `negotiate_*`) separately. |
+| FND-003 | medium | resolved | §2: the capability set is non-empty by type. A claim that needs no capability yields no `Requirements` and is not negotiated. |
+| FND-004 | medium | resolved | §4.2: one `accept(state, clause)` step with an explicit arm for every pair and no `_` arm. An out-of-order clause leaves the state unchanged, and later clauses are still checked. |
+| FND-005 | medium | resolved | Diagnostics are ordered by builder state, then by source position within a state. `finish` runs a cross-clause check only when every clause it reads was checked successfully. |
+| FND-006 | medium | resolved | The diagram is labelled illustrative. The admitted sequences are the grammar's, and the missing edges are added. |
+| FND-007 | medium | resolved | `evaluate` is in `ReferenceEvaluation`. The S1 `Relation` arm returns a typed `unsupported` refusal with a catalog code. |
+| FND-008 | medium | resolved | §5.3 names the `seam-probe` feature and the `xtask` E0004 comparison. §5.1 forbids `#[non_exhaustive]` on S1–S9. |
+| FND-009 | medium | resolved | §5.2 defers the unknown-kind case to #229's rule. The duplicate question is gone. |
+| FND-010 | medium | partial | §7.2 step 4 routes only `supported` items, so `requires-bound` and `invalid-request` items get no generation. But §8's second rule still lists only "refused or settled `unsupported`", which is narrower than the AD-016 terminal-disposition rule it cites. Residual severity: low. Fix: "An item refused, or settled `requires-bound`, `unsupported` or `invalid-request`, emits no substitute artifact at any later stage." |
+| FND-011 | medium | resolved | §9 lists the edges and adds the `#[string_edge]` marker and lint gate. It allows a closed enum or a typed identity. An unregistered `BackendId` is refused naming it. |
+| FND-012 | medium | partial | Decision 4 now reads "Registering a backend (the open seam) fails explicitly through the registry, never by a silent default (§5.2)". Read alone, it still says that registering a backend fails. §5.2 gives the testable cases. Residual severity: low. Fix: "At the open seam, each §5.2 case yields its explicit outcome, never a first-wins or last-wins default." |
+| FND-013 | medium | resolved | §10 OBS-003 cites FR-036 (line 97, AC-5, AC-6). §14.1 has the FR-036 amendment and TC-115 rewrite before #185 starts. |
+| FND-014 | medium | resolved | §14.1 "Requirements needed before implementation starts" names the registry FR and FR-036 amendment (#185), the capability and outcome FRs (#213), and the family-contract and seam-probe FR from §2, §4 and §5 (#214). |
+| FND-015 | low | open | §4.3 still says "every arm makes exactly one call … and holds no semantic logic of its own", without saying whether a wrapping constructor or `?` counts as logic. |
+| FND-016 | low | resolved | The warning names every unmet capability kind (§7.2, §7.3). |
+| FND-017 | low | resolved | §7.4: solver absence is a property of an item already settled `supported` and routed. It maps to an FR-331 result that #229 decides. |
+| FND-018 | low | resolved | §9 has an "OBS-014 site" column with five "yes" rows, and §10 OBS-014 cites them. |
+| FND-019 | low | resolved | Consequences reads "does not vary". §10 OBS-013 reads "needs a QSpec edit, routed through #229". |
+| FND-020 | low | resolved | Decision 1 and §1.1 both say every family records extent as data in `Requirements`. |
+| FND-021 | low | resolved | §11 reads "if and only if". |
+| FND-022 | low | open | §1 still does not define "internals". It says a family reads another family only through its "public checked types and the shared context", but it does not require everything else to be private to the module. |
+
+### New findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-023 | low | §10's QSpec PR #59 row says "PR #59 no longer waits on #210", which narrates a change. Fix: "PR #59 does not wait on #210." | ADR-012 §10 |
+| FND-024 | low | The §5.2 row for an unregistered `BackendId` settles `invalid-request` "unless the CLI edge refused it first". §9 and the `--target` row say the CLI always resolves the backend argument by registry lookup and refuses an unknown name. So the same input has two stated outcomes, and only one produces an FR-331 record. Fix: state that the CLI edge refuses an unknown name, and that `negotiate_*` settles `invalid-request` only for a request that reaches it by another path (a wire-decoded request). | ADR-012 §5.2, §9 |
+| FND-025 | low | Extent is per `Requirements` entry (§2), but §1.1 and §7.2 step 3 compare "the claim's extent" or "the item's extent", in the singular. They do not say which extent governs when entries differ. "Within an advertised mode" and "the form's own disposition" are also undefined for a bounded extent on a backend that advertises only unbounded mode. Fix: state that `negotiate_*` applies the §1.1 rules per entry and that the item settles the most restrictive result. Define "within" (bounded is within bounded and unbounded modes, unbounded only within unbounded). | ADR-012 §1.1, §2, §7.2 |
+
+Round 2 verdict: ACCEPT WITH FINDINGS
