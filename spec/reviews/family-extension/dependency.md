@@ -51,10 +51,12 @@ The medium findings are dependency edges the record implies but does not state:
   (FND-007).
 - #229's scope overlaps DA-11 (FND-008).
 
-Verdict: **ACCEPT WITH FINDINGS** (round 2, commit 8fb238b). Round 1 was
-REJECT until FND-001 was fixed. The revision resolves FND-001 and most medium
-findings. FND-002 and FND-008 are partly resolved with low residue, and one new
-low finding remains; see "Round 2".
+Verdict: **ACCEPT WITH FINDINGS** (round 3, delta 924f239..9045cd5). Round 1
+was REJECT until FND-001 was fixed. Round 2 (8fb238b) resolved it. Round 3
+confirms Codegen #86 as the CG prerequisite and resolves the unnumbered-ticket
+residue. It opens one medium finding (FND-016: no edges recorded for Contract
+IR #141 and QSpec #134, and the #212 pre-gate edges) and four low ones; see
+"Round 3".
 
 ## Findings
 
@@ -175,3 +177,66 @@ New findings:
 | FND-015 | low | Pre-gate edges are stated in prose only. §13.3 Q3 (kinds for frame and sum/case) and §13.4 Q1 (FR-290 vocabulary for value, state and temporal claims) must be answered before #212, which makes #229 and a QSpec issue prerequisites of #212. §14.2 lists edges to add after #212 but not these. The QSpec issue for Q1, and the one for the FR-331 candidate-set field (§13.4 Q3), have no number. Fix: add to §14.2 "#212: add #229 (Q3, Q1) and the QSpec issue for Q1 as prerequisites", and ask the owner to open or name the QSpec issues before #212. | ADR-012 §13.3 Q3, §13.4 Q1 and Q3, §14.2 · #212 · #229 |
 
 Round 2 verdict: ACCEPT WITH FINDINGS
+
+## Round 3 (delta 924f239..9045cd5)
+
+Reviewed only the ADR-012 changes in 924f239 and 9045cd5. The ticket bodies of
+Codegen #86, Contract IR #141 and QSpec #134 (all open) were read with
+`gh issue view`. The L1-D1 edges and placements were checked against ADR-011 at
+e62a39f (QSL PR #235).
+
+Edges the delta introduces or makes concrete:
+
+- Codegen #86 → prerequisite of #185's exit, #188 closure, #189 closure and
+  #217 (§11, §14.1, §14.2). This matches #86's body ("QSL #188 and #189 wait
+  on this"; "#212 scenarios 5 and 7 depend on it").
+- Contract IR #141 → owner of S6 intake decoding and the removal of the `as_str()`
+  sites that run after intake (§5.1, §9, §14.1). No ticket is recorded as
+  waiting on it (FND-016).
+- QSpec #134 → prerequisite of #212 (§13.4 Q1). It is the vocabulary source
+  for #229 (Context), the S6, S7 and S9 enum sets (§10 OBS-033) and the FR-331
+  candidate-set field (§13.4 Q3).
+- ADR-011 consistency: its L1-D1 edges (#186 → #231; #187, #198 → #212, #214;
+  #191, #192 → #212; #188, #189, #217, #223 keep #185) equal §11. The `route`
+  placement (layer R, after ADR-011 S4 and before E7) adds no ticket edge. The
+  driver crate adds an edge to #225 (FND-020).
+
+Prior open, partial or delta-affected findings:
+
+| ID | Prior status | Status | Note |
+|---|---|---|---|
+| FND-002 | partial | partial | Residue 2 is resolved. The CG ticket exists as Codegen #86, cites #212 scenarios 5 and 7, and §13.4 Q4 is removed. Residue 1 is still open (low). The IR form of the claim that `negotiate_*` takes is not named as a prerequisite of #188 and #189 closure. Contract IR #141 decodes existing vocabularies; the temporal IR form comes from IR #109 with #218 and #223 (§13.5). |
+| FND-008 | partial | partial | Unaffected by the delta. §13.3 still has no question asking #229 to confirm that it consumes §6 and §7.1. |
+| FND-015 | open (low) | partial, superseded by FND-016 | The QSpec issues now have a number, QSpec #134, for both the §13.4 Q1 vocabulary and the Q3 FR-331 field. The pre-gate edges #212 → #229 and #212 → #134 are still in prose only. §14.2 does not list them. |
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+|---|---|---|---|
+| FND-016 | medium | Contract IR #141 and QSpec #134 have no recorded edges. (a) §14.1 gives the CG S6 enum matches (§9 row: `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"`) to Codegen #86. Those matches need IR's decoded tag and form enums from Contract IR #141, so #86 waits on #141 for that item. Neither §14.1 nor §14.2 states the edge. #141 is listed with no dependent at all. (b) §10 OBS-033 says the enum sets follow the vocabulary as widened by QSpec #134. Both ticket bodies say the same ("should follow #134's vocabulary rather than anticipating it"). No edge #134 → #86 or #134 → #141 is recorded. So #185's exit, #188, #189 and #217 depend on #134 through #86, and the record does not show it. (c) #212 → #229 and #212 → QSpec #134 are stated only in §13.3 Q3 and §13.4 Q1 prose (round-2 FND-015). Fix: in §14.1, write "Codegen #86 (CG S6 matches) waits on Contract IR #141; #86 and #141 take their S6, S7 and S9 variant sets from QSpec #134". In §14.2, add "#212: add #229 and QSpec #134 as prerequisites". State whether #212 judges scenarios 5 and 7 on #86 and #141 being opened (done) or landed. | ADR-012 §9, §10 OBS-033, §13.4 Q1, §14.1, §14.2 · Codegen #86 "Related" · Contract IR #141 "Related" · QSpec #134 |
+| FND-017 | low | §14.2 leaves #185 out of the Codegen #86 amendment. §11 and §14.1 make #185's own exit criterion wait on #86 (round-2 option 2). The §14.2 #185 bullet lists only the linker removal, the QSL copy removal, FR-036 and the registry evidence, and the #86 bullet names #188, #189 and #217. Fix: change the §14.2 bullet to "#185 (exit corpus case), #188, #189, #217: add Codegen #86 as a prerequisite". | ADR-012 §11, §14.1, §14.2 |
+| FND-018 | low | §14.1 hands Codegen #86 work that its body does not include. #86 does not list the solver-absence fault-injection test (§7.4, which replaces the IT-010 `expect` panic). It also does not list the CG string-compare removal (§9 CG row). #86's "Asked for" covers the closed kind, the candidate set, `requires-bound`, `invalid-request` and the S9 gate test. Fix: add a §14.2 bullet "Codegen #86: add the §7.4 solver-absence test and the §9 CG enum matches", or give those items to a named CG ticket. | ADR-012 §7.4, §9, §14.1, §14.2 · Codegen #86 "Asked for" |
+| FND-019 | low | The RT ticket is still unnumbered ("RT ticket, to be opened by the RT owner", §14.1). S6 names RT op selection as a consumer (§5.1), and §10 OBS-033 says "RT owns its edits". Contract IR #141's gate test ("fails if a wire string is matched after intake") covers IR only. RT string dispatch after intake therefore has no gate and no ticket that #212 scenario 7 can point to. Fix: ask the RT owner to open the ticket before #212. Or record, with a measurement, that RT has no string dispatch after intake, and drop the row. | ADR-012 §5.1 S6, §10 OBS-033, §14.1 · Contract IR #141 "Asked for" 3 |
+| FND-020 | low | 9045cd5 introduces an edge to #225 that §11 and §14 do not record. §7.1 now says only the orchestrating binary calls QSL `route` and then CG, and #225 places that binary. #185's exit corpus case and the #188 and #189 closures settle an item through `route` and CG `negotiate_*` (ADR-011: "settle an item through `route` and E7"). They therefore need something that calls both. Per ADR-010's layer table, #225 is a Layer 5 design ticket. Without a statement, #185's exit appears to wait on Layer 5. Fix: state in §11 that these corpus cases run in a test harness crate downstream of CG, independent of the #225 driver, or add #225 as a prerequisite and accept the reordering. | ADR-012 §7.1, §11, §14.1 · ADR-011 §6.1 "driver", "Answers to ADR-012 §13.1" (e62a39f) · ADR-010 layer table (#225) |
+
+Round 3 verdict: ACCEPT WITH FINDINGS. The delta resolves the unnumbered CG and
+IR ticket residue (round-2 FND-002 residue 2 and the numbering half of
+FND-015). Its #86 edges agree with the ticket bodies, and its placements agree
+with ADR-011 at e62a39f. One medium finding remains: FND-016, the missing
+#141 and #134 edges and the #212 pre-gate edges. Four low findings remain.
+
+### Author response (after round 3)
+
+FND-016, FND-017 and FND-020 are addressed in the ADR commit that follows
+9045cd5:
+- §14.1 records #86 → #141 and #86/#141 → QSpec #134.
+- §14.2 adds:
+  - #212 → #229 and QSpec #134;
+  - #185 exit → #86;
+  - the #86 body amendments.
+- #212 judges scenarios 5 and 7 on #86 and #141 being open.
+- Disposition exit cases run in a test harness downstream of CG, so there is
+  no #225 edge.
+
+FND-018 is covered by the #86 body amendment in §14.2. FND-019 (the RT ticket)
+stays with the RT owner.
