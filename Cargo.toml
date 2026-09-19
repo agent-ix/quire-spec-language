@@ -15,8 +15,9 @@ default-run = "quire-spec"
 [features]
 default = []
 quire-extraction = ["dep:quire-rs"]
-# Test-only fixture constructors (`ProducerKey::fixture`, `ModelSelection::fixture`,
-# `ProducerDigest::of_identity`) that derive a digest from a display identity —
+# Test-only fixture constructors (`DeclarationKey::fixture`,
+# `DomainPackageRef::fixture`, `DomainPackageRef::fixture_with_version`) that
+# derive a digest from a display identity —
 # never enabled in a production build; `cargo test --all-features` turns it on
 # so integration tests in `tests/` can reach them (PR #140 F13).
 test-support = []
@@ -54,8 +55,9 @@ name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
 
 # These integration tests call the `test-support`-gated fixture constructors
-# (`ProducerKey::fixture`, `ModelSelection::fixture`, `ProducerDigest::of_identity`)
-# documented above `test-support`. Declaring `required-features` here — rather
+# (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
+# `DomainPackageRef::fixture_with_version`) documented above `test-support`.
+# Declaring `required-features` here — rather
 # than gating the calls inside each test file — keeps a default-feature
 # `cargo clippy --all-targets`/`cargo test` build (no `test-support`) skipping
 # these targets outright instead of failing to compile them (#154).
