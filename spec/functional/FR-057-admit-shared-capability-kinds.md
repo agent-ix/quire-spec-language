@@ -36,7 +36,7 @@ checking, lowering, proof or execution, and it negotiates nothing.
 ## Admitted vocabulary
 
 Capability vocabulary `quire.capability-kind/v1` is the FR-290 Values table at
-quire-specification revision `046d1bd`
+quire-specification revision `55d2fcc`
 ([quire-specification#135](https://github.com/agent-ix/quire-specification/pull/135)).
 It admits these ten labels and no others. The labels, their meanings, their
 families and their spelling are FR-290's. QSL defines no local alias,
@@ -269,6 +269,7 @@ These cases are distinct. None of them is reported as another.
 | Unbounded extent on a bounded-only candidate, no finite bound | Negotiation | `unsupported`, warned; `unsupported_projection`/`unbounded-extent`. |
 | Several candidates and no named backend, an unregistered or arm-less named backend, inconsistent candidates, or no extent classification | Negotiation | `invalid-request`, with its `invalid_capability` cause. |
 | Solver or tool absence: the routed backend's adapter probe finds its pinned tool missing or mismatched, errors or exceeds its limit | Run of a `supported` item | FR-331 result `unsupported`, warned, naming the kind, backend and expected and actual tool identity; `unsupported_projection`/`tool-unavailable`. |
+| Tool changed after a passing probe, before the run completes | Run of a `supported` item | FR-331 result `failed`, naming the expected and actual tool identity; `unsupported_projection`/`tool-unavailable`. The result `failed`, not the cause, distinguishes it from absence found at probe. |
 | Timeout | Run of a `supported` item | A run result mapped by the IR outcome map, never a disposition. |
 | Hold | Nowhere | No stage produces a hold. |
 
@@ -283,7 +284,7 @@ The QSL composed linker SHALL NOT produce a refusal from backend state.
 The routing SHALL keep a tool-absence item's `supported` disposition, SHALL
 NOT re-route it to another candidate and SHALL NOT re-run it under another
 mode. A tool that changes after a passing probe records the FR-331 result
-`failed` (FR-290). Artifacts the item emitted before
+`failed` with `unsupported_projection`/`tool-unavailable` (FR-290). Artifacts the item emitted before
 the probe are retained and carry no verdict. The probe's placement belongs to
 quire-contract-codegen.
 
@@ -315,13 +316,13 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode, or repeating a registered identity, is refused with `invalid_capability` and its cause, keyed by backend identity, and advertises nothing. Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
-| FR-057-AC-9 | Given a supplied run result that is a timeout, or FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable`, routing keeps the item's `supported` disposition, reports it as neither a refusal nor a hold, and does not re-route it to another candidate or mode. Recording the tool-absence result itself is quire-specification FR-290-AC-8's evidence. | Test (TC-155) |
+| FR-057-AC-9 | Given a supplied run result that is a timeout, FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable`, or FR-331 `failed` with that cause after a passing probe, routing keeps the item's `supported` disposition, reports it as neither a refusal nor a hold, and does not re-route it to another candidate or mode. Recording either tool result itself is quire-specification FR-290-AC-8's evidence. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; a nested expression adds no kind; a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153) |
 
 ## Dependencies
 
 - quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) at
-  revision `046d1bd` owns the ten labels, their meanings and families, the
+  revision `55d2fcc` owns the ten labels, their meanings and families, the
   claim-form assignment, (kind, mode) advertisement, the candidate-set rule and
   the tool-absence result. Its FR-290-AC-4 owns the backend-absence settlement
   at negotiation.
@@ -340,7 +341,7 @@ checker's definition permissions. Their ownership is decided in #211.
   FR-057-AC-1 to AC-5, AC-7 and AC-10 have no #222 prerequisite; only `requires-bound` and the
   `unbounded-extent` case are #222's.
 - Where this requirement abbreviates FR-290 (diagnostic payloads, report
-  order, `inconsistent-candidates` coverage), FR-290 at `046d1bd` governs.
+  order, `inconsistent-candidates` coverage), FR-290 at `55d2fcc` governs.
 - #210 decides which family records which requirements. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL
   types named for capabilities.
