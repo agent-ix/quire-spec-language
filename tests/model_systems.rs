@@ -12,12 +12,12 @@
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
-use quire_spec_language::model::bundle::{
-    Bundle, BundleRecord, ComponentRecord, EndpointRecord, ModelSelection, Multiplicity,
+use quire_spec_language::model::domain_package::{
+    DomainPackage, DomainPackageRecord, ComponentRecord, EndpointRecord, DomainPackageRef, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, PortDirection, RelationshipDirection,
     RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
-use quire_spec_language::model::key::ProducerKey;
+use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{ModelRefusal, ModelRefusalCause};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
@@ -37,44 +37,44 @@ fn one() -> Multiplicity {
     mult(1, Some(1))
 }
 
-fn object_type(identity: &str, interface_features: Option<Vec<&str>>) -> BundleRecord {
-    BundleRecord::ObjectType(ObjectTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn object_type(identity: &str, interface_features: Option<Vec<&str>>) -> DomainPackageRecord {
+    DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: DeclarationKey::fixture(identity),
         interface_features: interface_features
-            .map(|features| features.into_iter().map(ProducerKey::fixture).collect()),
+            .map(|features| features.into_iter().map(DeclarationKey::fixture).collect()),
     })
 }
 
-fn scalar_type(identity: &str, lower: i64, upper: i64) -> BundleRecord {
-    BundleRecord::ScalarType(ScalarTypeRecord {
-        key: ProducerKey::fixture(identity),
+fn scalar_type(identity: &str, lower: i64, upper: i64) -> DomainPackageRecord {
+    DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: DeclarationKey::fixture(identity),
         lower,
         upper,
     })
 }
 
-fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> BundleRecord {
-    BundleRecord::FieldMember(quire_spec_language::model::bundle::FieldMemberRecord {
-        key: ProducerKey::fixture(identity),
-        owner: ProducerKey::fixture(owner),
-        value_type: ProducerKey::fixture(value_type),
+fn field_member(identity: &str, owner: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
+    DomainPackageRecord::FieldMember(quire_spec_language::model::domain_package::FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: m,
     })
 }
 
-fn generalization(identity: &str, specific: &str, general: &str) -> BundleRecord {
-    BundleRecord::Generalization(quire_spec_language::model::bundle::GeneralizationRecord {
-        key: ProducerKey::fixture(identity),
-        specific: ProducerKey::fixture(specific),
-        general: ProducerKey::fixture(general),
+fn generalization(identity: &str, specific: &str, general: &str) -> DomainPackageRecord {
+    DomainPackageRecord::Supertype(quire_spec_language::model::domain_package::SupertypeRecord {
+        key: DeclarationKey::fixture(identity),
+        specific: DeclarationKey::fixture(specific),
+        general: DeclarationKey::fixture(general),
     })
 }
 
-fn component(identity: &str, owning_type: &str, value_type: &str, m: Multiplicity) -> BundleRecord {
-    BundleRecord::Component(ComponentRecord {
-        key: ProducerKey::fixture(identity),
-        owning_type: ProducerKey::fixture(owning_type),
-        value_type: ProducerKey::fixture(value_type),
+fn component(identity: &str, owning_type: &str, value_type: &str, m: Multiplicity) -> DomainPackageRecord {
+    DomainPackageRecord::Component(ComponentRecord {
+        key: DeclarationKey::fixture(identity),
+        owning_type: DeclarationKey::fixture(owning_type),
+        value_type: DeclarationKey::fixture(value_type),
         multiplicity: m,
         has_part_signature: true,
     })
@@ -86,11 +86,11 @@ fn endpoint(
     value_type: &str,
     direction: Option<PortDirection>,
     m: Multiplicity,
-) -> BundleRecord {
-    BundleRecord::Endpoint(EndpointRecord {
-        key: ProducerKey::fixture(identity),
-        owning_component: ProducerKey::fixture(owning_component),
-        value_type: ProducerKey::fixture(value_type),
+) -> DomainPackageRecord {
+    DomainPackageRecord::Endpoint(EndpointRecord {
+        key: DeclarationKey::fixture(identity),
+        owning_component: DeclarationKey::fixture(owning_component),
+        value_type: DeclarationKey::fixture(value_type),
         direction,
         multiplicity: m,
     })
@@ -104,15 +104,15 @@ fn relationship(
     target_m: Multiplicity,
     category: &str,
     direction: RelationshipDirection,
-) -> BundleRecord {
-    BundleRecord::Relationship(RelationshipRecord {
-        key: ProducerKey::fixture(identity),
+) -> DomainPackageRecord {
+    DomainPackageRecord::Relationship(RelationshipRecord {
+        key: DeclarationKey::fixture(identity),
         source: RelationshipEnd {
-            type_identity: ProducerKey::fixture(source),
+            type_identity: DeclarationKey::fixture(source),
             multiplicity: source_m,
         },
         target: RelationshipEnd {
-            type_identity: ProducerKey::fixture(target),
+            type_identity: DeclarationKey::fixture(target),
             multiplicity: target_m,
         },
         category: category.to_owned(),
@@ -120,10 +120,10 @@ fn relationship(
     })
 }
 
-fn operation_run() -> BundleRecord {
-    BundleRecord::OperationMember(OperationMemberRecord {
-        key: ProducerKey::fixture("model.Pump.run"),
-        owner: ProducerKey::fixture("model.Pump"),
+fn operation_run() -> DomainPackageRecord {
+    DomainPackageRecord::OperationMember(OperationMemberRecord {
+        key: DeclarationKey::fixture("model.Pump.run"),
+        owner: DeclarationKey::fixture("model.Pump"),
         parameters: vec![],
         result: None,
         effect: OperationEffect::default(),
@@ -133,10 +133,10 @@ fn operation_run() -> BundleRecord {
     })
 }
 
-/// TC-197 fixture Y (bundle `bundle.y`), field-for-field. `mutate` edits the
-/// base record set before the bundle is built, so every Y02-Y06 variant is
+/// TC-197 fixture Y (domain package `bundle.y`), field-for-field. `mutate` edits the
+/// base record set before the domain package is built, so every Y02-Y06 variant is
 /// this same fixture with exactly the one documented change.
-fn fixture_y(mutate: impl FnOnce(&mut Vec<BundleRecord>)) -> Bundle {
+fn fixture_y(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackage {
     let mut records = vec![
         scalar_type("model.Count", 0, 9),
         object_type("model.Sys", None),
@@ -201,7 +201,7 @@ fn fixture_y(mutate: impl FnOnce(&mut Vec<BundleRecord>)) -> Bundle {
         ),
     ];
     mutate(&mut records);
-    Bundle::new(ModelSelection::fixture("bundle.y"), records)
+    DomainPackage::new(DomainPackageRef::fixture("bundle.y"), records)
 }
 
 fn unlimited_meter() -> Meter {
@@ -209,13 +209,13 @@ fn unlimited_meter() -> Meter {
 }
 
 fn find_relationship<'a>(
-    records: &'a mut [BundleRecord],
+    records: &'a mut [DomainPackageRecord],
     identity: &str,
 ) -> &'a mut RelationshipRecord {
     records
         .iter_mut()
         .find_map(|record| match record {
-            BundleRecord::Relationship(relationship) if relationship.key.identity == identity => {
+            DomainPackageRecord::Relationship(relationship) if relationship.key.identity == identity => {
                 Some(relationship)
             }
             _ => None,
@@ -223,21 +223,21 @@ fn find_relationship<'a>(
         .unwrap_or_else(|| panic!("fixture Y has no relationship {identity}"))
 }
 
-fn find_endpoint<'a>(records: &'a mut [BundleRecord], identity: &str) -> &'a mut EndpointRecord {
+fn find_endpoint<'a>(records: &'a mut [DomainPackageRecord], identity: &str) -> &'a mut EndpointRecord {
     records
         .iter_mut()
         .find_map(|record| match record {
-            BundleRecord::Endpoint(endpoint) if endpoint.key.identity == identity => Some(endpoint),
+            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.identity == identity => Some(endpoint),
             _ => None,
         })
         .unwrap_or_else(|| panic!("fixture Y has no endpoint {identity}"))
 }
 
-fn find_component<'a>(records: &'a mut [BundleRecord], identity: &str) -> &'a mut ComponentRecord {
+fn find_component<'a>(records: &'a mut [DomainPackageRecord], identity: &str) -> &'a mut ComponentRecord {
     records
         .iter_mut()
         .find_map(|record| match record {
-            BundleRecord::Component(component) if component.key.identity == identity => {
+            DomainPackageRecord::Component(component) if component.key.identity == identity => {
                 Some(component)
             }
             _ => None,
@@ -252,9 +252,9 @@ fn find_component<'a>(records: &'a mut [BundleRecord], identity: &str) -> &'a mu
 #[trace("TC-197")]
 #[test]
 fn y01_every_kind_resolves_to_its_exact_producer_key() {
-    let bundle = fixture_y(|_| {});
+    let domain_package = fixture_y(|_| {});
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     assert!(classification.refusals.is_empty());
 
     for (required, identity) in [
@@ -264,7 +264,7 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
         (Kind::Connection, "model.Sys.pipe"),
         (Kind::Allocation, "model.Pump.alloc"),
     ] {
-        let key = ProducerKey::fixture(identity);
+        let key = DeclarationKey::fixture(identity);
         let resolved = resolve_kind(&classification, required, &key).unwrap_or_else(|refusal| {
             panic!("resolve({required:?}, {identity}) refused: {refusal:?}")
         });
@@ -273,9 +273,9 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
 
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) => {}
@@ -283,7 +283,7 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
     match check_allocation(
         &classification,
-        &ProducerKey::fixture("model.Pump.alloc"),
+        &DeclarationKey::fixture("model.Pump.alloc"),
         &mut meter,
     ) {
         AllocationCheckOutcome::Admitted => {}
@@ -294,14 +294,14 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
 #[trace("TC-197", "FR-152-AC-2")]
 #[test]
 fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
-    let bundle = fixture_y(|_| {});
+    let domain_package = fixture_y(|_| {});
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
 
     let refusal = resolve_kind(
         &classification,
         Kind::Port,
-        &ProducerKey::fixture("model.Sys.pump"),
+        &DeclarationKey::fixture("model.Sys.pump"),
     )
     .expect_err("model.Sys.pump is a Part, not a Port");
     assert_eq!(refusal.code, Code::InvalidModelBinding);
@@ -312,7 +312,7 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     let refusal = resolve_kind(
         &classification,
         Kind::Allocation,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
     )
     .expect_err("model.Sys.pipe is a Connection, not an Allocation");
     assert_eq!(refusal.code, Code::InvalidModelBinding);
@@ -320,15 +320,15 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     assert!(refusal.detail.contains("required kind Allocation"));
     assert!(refusal.detail.contains("actual kind Connection"));
 
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Pump.alloc")
             .target
-            .type_identity = ProducerKey::fixture("model.Sys.pump.out");
+            .type_identity = DeclarationKey::fixture("model.Sys.pump.out");
     });
-    let classification = classify(&bundle, &mut unlimited_meter()).expect("classify admitted");
+    let classification = classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
     match check_allocation(
         &classification,
-        &ProducerKey::fixture("model.Pump.alloc"),
+        &DeclarationKey::fixture("model.Pump.alloc"),
         &mut unlimited_meter(),
     ) {
         AllocationCheckOutcome::Refused(refusal) => {
@@ -347,17 +347,17 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03a_swapped_connection_ends_refuse_on_port_direction() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         let pipe = find_relationship(records, "model.Sys.pipe");
-        pipe.source.type_identity = ProducerKey::fixture("model.Sys.tank.in");
-        pipe.target.type_identity = ProducerKey::fixture("model.Sys.pump.out");
+        pipe.source.type_identity = DeclarationKey::fixture("model.Sys.tank.in");
+        pipe.target.type_identity = DeclarationKey::fixture("model.Sys.pump.out");
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -366,8 +366,8 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
             assert_eq!(
                 failures[0].cause,
                 ModelRefusalCause::PortDirection {
-                    source: ProducerKey::fixture("model.Sys.tank.in"),
-                    target: ProducerKey::fixture("model.Sys.pump.out"),
+                    source: DeclarationKey::fixture("model.Sys.tank.in"),
+                    target: DeclarationKey::fixture("model.Sys.pump.out"),
                 }
             );
         }
@@ -378,16 +378,16 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03b_target_to_source_against_the_declared_ports_refuses() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe").direction =
             RelationshipDirection::TargetToSource;
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -400,16 +400,16 @@ fn y03b_target_to_source_against_the_declared_ports_refuses() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03c_bidirectional_against_non_inout_ports_refuses() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe").direction =
             RelationshipDirection::Bidirectional;
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -422,18 +422,18 @@ fn y03c_bidirectional_against_non_inout_ports_refuses() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03d_bidirectional_with_both_ports_inout_admits() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe").direction =
             RelationshipDirection::Bidirectional;
         find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::InOut);
         find_endpoint(records, "model.Sys.tank.in").direction = Some(PortDirection::InOut);
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) => {}
@@ -444,15 +444,15 @@ fn y03d_bidirectional_with_both_ports_inout_admits() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y03e_undirected_is_never_a_connection_direction() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe").direction = RelationshipDirection::Undirected;
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -474,17 +474,17 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     // retyping the flow TARGET (tank.in) to Flow2 asks whether the
     // unrelated-in-that-direction model.Flow conforms to model.Flow2: it
     // does not.
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_endpoint(records, "model.Sys.tank.in").value_type =
-            ProducerKey::fixture("model.Flow2");
+            DeclarationKey::fixture("model.Flow2");
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     let before = meter.consumed(quire_spec_language::model::accounting::LimitKind::WorkUnits);
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -507,16 +507,16 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
 
     // Retyping the flow SOURCE (pump.out) to Flow2 instead: Flow2 conforms
     // to Flow directly, so the connection admits.
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_endpoint(records, "model.Sys.pump.out").value_type =
-            ProducerKey::fixture("model.Flow2");
+            DeclarationKey::fixture("model.Flow2");
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) => {}
@@ -534,17 +534,17 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
 #[trace("TC-197", "FR-152-AC-6")]
 #[test]
 fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe")
             .target
             .multiplicity = mult(0, Some(2));
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &bundle,
+        &domain_package,
         &classification,
-        &ProducerKey::fixture("model.Sys.pipe"),
+        &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
     ) {
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
@@ -574,11 +574,11 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
 #[trace("TC-197", "FR-152-AC-2")]
 #[test]
 fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
-    let bundle = fixture_y(|records| {
+    let domain_package = fixture_y(|records| {
         find_component(records, "model.Sys.pump").has_part_signature = false;
     });
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
 
     assert_eq!(classification.refusals.len(), 3);
     let cascade: Vec<(&Code, ModelRefusalCause)> = classification
@@ -612,7 +612,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
 
     match check_allocation(
         &classification,
-        &ProducerKey::fixture("model.Pump.alloc"),
+        &DeclarationKey::fixture("model.Pump.alloc"),
         &mut meter,
     ) {
         AllocationCheckOutcome::Refused(refusal) => {
@@ -628,7 +628,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     let refusal = resolve_kind(
         &classification,
         Kind::Part,
-        &ProducerKey::fixture("model.Sys.pump"),
+        &DeclarationKey::fixture("model.Sys.pump"),
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
@@ -643,32 +643,32 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
 #[trace("TC-197")]
 #[test]
 fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let revision_1 = ProducerKey::fixture("model.Sys.pump");
-    let mut revision_2 = ProducerKey::fixture("model.Sys.pump");
+    let revision_1 = DeclarationKey::fixture("model.Sys.pump");
+    let mut revision_2 = DeclarationKey::fixture("model.Sys.pump");
     revision_2.revision.value = "2".to_owned();
 
-    let bundle = Bundle::new(
-        ModelSelection::fixture("bundle.f2-systems-revision"),
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.f2-systems-revision"),
         vec![
             object_type("model.Pump", None),
-            BundleRecord::Component(ComponentRecord {
+            DomainPackageRecord::Component(ComponentRecord {
                 key: revision_1.clone(),
-                owning_type: ProducerKey::fixture("model.Sys"),
-                value_type: ProducerKey::fixture("model.Pump"),
+                owning_type: DeclarationKey::fixture("model.Sys"),
+                value_type: DeclarationKey::fixture("model.Pump"),
                 multiplicity: one(),
                 has_part_signature: true,
             }),
-            BundleRecord::Component(ComponentRecord {
+            DomainPackageRecord::Component(ComponentRecord {
                 key: revision_2.clone(),
-                owning_type: ProducerKey::fixture("model.Sys"),
-                value_type: ProducerKey::fixture("model.Pump"),
+                owning_type: DeclarationKey::fixture("model.Sys"),
+                value_type: DeclarationKey::fixture("model.Pump"),
                 multiplicity: one(),
                 has_part_signature: false,
             }),
         ],
     );
     let mut meter = unlimited_meter();
-    let classification = classify(&bundle, &mut meter).expect("classify admitted");
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
 
     // Revision "2" (no part-signature) must never silently overwrite
     // revision "1" (has one) in `SystemsClassification`'s maps.

@@ -15,8 +15,8 @@
 //!   through a dispatch edge (TC-196 D08): that needs the call graph itself,
 //!   which nothing in this crate constructs. A caller with a real call graph
 //!   can still use this module's linked table as one input to that check.
-//! - `generalizationClosure` is not a [`crate::model::bundle::Bundle`] or
-//!   `ModelSelection` field: adding one would perturb every effective-view
+//! - `generalizationClosure` is not a [`crate::model::domain_package::DomainPackage`] or
+//!   `DomainPackageRef` field: adding one would perturb every effective-view
 //!   digest this rung already ships. [`link_dispatch`] takes it as an
 //!   explicit parameter instead (TC-196 D05).
 //! - Work-unit costs for `dispatch.candidate`/`dispatch.dominance` do not
@@ -32,7 +32,7 @@
 //!   [`crate::model::normalize::EffectiveView`] already ships them:
 //!   ascending by effective type identity. This module depends on that view
 //!   only for ordering (never for redefinition/effect data, which it reads
-//!   from the [`crate::model::bundle::Bundle`] directly, mirroring
+//!   from the [`crate::model::domain_package::DomainPackage`] directly, mirroring
 //!   `conformance`'s independence from phase 4's exposure machinery).
 #![allow(
     clippy::result_large_err,
@@ -43,9 +43,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
-use crate::model::bundle::{Bundle, BundleRecord, OperationMemberRecord, RedefinitionRecord};
+use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord, RedefinitionRecord};
 use crate::model::conformance::{generals_by_specific, type_conforms};
-use crate::model::key::ProducerKey;
+use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 
 /// Bounds the family-closure walk `link_dispatch` performs over
@@ -54,8 +54,8 @@ use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 /// `resource_exhausted` refusal.
 const MAX_DISPATCH_DEPTH: usize = 128;
 
-/// Whether a [`crate::model::bundle::ModelSelection`]'s generalization graph
-/// is closed. See the module docs: this is not a `Bundle` field.
+/// Whether a [`crate::model::domain_package::DomainPackageRef`]'s generalization graph
+/// is closed. See the module docs: this is not a `DomainPackage` field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GeneralizationClosure {
     /// Every generalization edge relevant to this operation is admitted.
@@ -69,9 +69,9 @@ pub enum GeneralizationClosure {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DominancePair {
     /// The dominating candidate's own original key.
-    pub dominant: ProducerKey,
+    pub dominant: DeclarationKey,
     /// The dominated candidate's own original key.
-    pub dominated: ProducerKey,
+    pub dominated: DeclarationKey,
 }
 
 /// One subtype that failed to link: `ambiguous_dispatch`/`no-applicable`
@@ -80,14 +80,14 @@ pub struct DominancePair {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubtypeRefusal {
     /// The subtype this refusal is about.
-    pub subtype: ProducerKey,
+    pub subtype: DeclarationKey,
     /// Always `Code::AmbiguousDispatch` (FR-151-AC-3 names it explicitly).
     pub code: Code,
     /// FR-151's cause tag: [`ModelRefusalCause::NoApplicable`] or
     /// [`ModelRefusalCause::MultipleUndominated`].
     pub cause: ModelRefusalCause,
     /// Every applicable candidate's own original key, in enumeration order.
-    pub candidates: Vec<ProducerKey>,
+    pub candidates: Vec<DeclarationKey>,
     /// Every strict dominance pair found among the applicable candidates
     /// (empty for `no-applicable`).
     pub dominance_pairs: Vec<DominancePair>,
@@ -97,22 +97,22 @@ pub struct SubtypeRefusal {
 /// undominated candidate linked for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DispatchTable {
-    entries: Vec<(ProducerKey, ProducerKey)>,
+    entries: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 impl DispatchTable {
     /// Every `(subtype, linked candidate)` entry, in subtype enumeration
     /// order.
-    pub fn entries(&self) -> &[(ProducerKey, ProducerKey)] {
+    pub fn entries(&self) -> &[(DeclarationKey, DeclarationKey)] {
         &self.entries
     }
 
     /// The candidate linked for `subtype`, if this table has an entry for it.
-    /// Matches on the full [`ProducerKey`], never the display identity
+    /// Matches on the full [`DeclarationKey`], never the display identity
     /// alone (finding #2): two subtypes sharing an identity but differing
     /// in revision must resolve independently, not "first identity match
     /// wins."
-    pub fn linked_for(&self, subtype: &ProducerKey) -> Option<&ProducerKey> {
+    pub fn linked_for(&self, subtype: &DeclarationKey) -> Option<&DeclarationKey> {
         self.entries
             .iter()
             .find(|(s, _)| s == subtype)
@@ -130,7 +130,7 @@ pub struct UnclosedMethodSet {
     /// Always [`ModelRefusalCause::UnclosedMethodSet`].
     pub cause: ModelRefusalCause,
     /// The operation this incomplete linking attempt was for.
-    pub operation: ProducerKey,
+    pub operation: DeclarationKey,
 }
 
 /// The substantive result of one successful linking pass.
@@ -161,52 +161,52 @@ pub enum LinkCheckOutcome {
 }
 
 struct DispatchIndex {
-    operations: HashMap<ProducerKey, OperationMemberRecord>,
+    operations: HashMap<DeclarationKey, OperationMemberRecord>,
     redefinitions: Vec<RedefinitionRecord>,
-    generals_by_specific: HashMap<ProducerKey, Vec<crate::model::bundle::GeneralizationRecord>>,
+    generals_by_specific: HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
 }
 
 impl DispatchIndex {
-    fn build(bundle: &Bundle) -> Self {
+    fn build(domain_package: &DomainPackage) -> Self {
         let mut operations = HashMap::new();
         let mut redefinitions = Vec::new();
-        for record in &bundle.records {
+        for record in &domain_package.records {
             match record {
-                BundleRecord::OperationMember(operation) => {
+                DomainPackageRecord::OperationMember(operation) => {
                     operations.insert(operation.key.clone(), operation.clone());
                 }
-                BundleRecord::Redefinition(redefinition) => {
+                DomainPackageRecord::Redefinition(redefinition) => {
                     redefinitions.push(redefinition.clone());
                 }
-                BundleRecord::ObjectType(_)
-                | BundleRecord::FieldMember(_)
-                | BundleRecord::Generalization(_)
-                | BundleRecord::ScalarType(_)
-                | BundleRecord::Subsetting(_)
-                | BundleRecord::Component(_)
-                | BundleRecord::Endpoint(_)
-                | BundleRecord::Relationship(_) => {}
+                DomainPackageRecord::ObjectType(_)
+                | DomainPackageRecord::FieldMember(_)
+                | DomainPackageRecord::Supertype(_)
+                | DomainPackageRecord::ScalarType(_)
+                | DomainPackageRecord::Subsetting(_)
+                | DomainPackageRecord::Component(_)
+                | DomainPackageRecord::Endpoint(_)
+                | DomainPackageRecord::Relationship(_) => {}
             }
         }
         Self {
             operations,
             redefinitions,
-            generals_by_specific: generals_by_specific(bundle),
+            generals_by_specific: generals_by_specific(domain_package),
         }
     }
 }
 
 /// The family of `original`: `original` itself together with every
 /// redefining operation reaching it, by any chain of redefinition records,
-/// sorted ascending by [`ProducerKey`] for deterministic reporting.
+/// sorted ascending by [`DeclarationKey`] for deterministic reporting.
 /// Bounded task stack, never native recursion, over caller-supplied records.
 fn build_family(
     index: &DispatchIndex,
-    original: &ProducerKey,
-) -> Result<Vec<ProducerKey>, ModelRefusal> {
+    original: &DeclarationKey,
+) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut family = vec![original.clone()];
-    let mut frontier: Vec<ProducerKey> = vec![original.clone()];
-    let mut visited: HashSet<ProducerKey> = HashSet::new();
+    let mut frontier: Vec<DeclarationKey> = vec![original.clone()];
+    let mut visited: HashSet<DeclarationKey> = HashSet::new();
     visited.insert(original.clone());
     let mut steps: usize = 0;
     while let Some(target) = frontier.pop() {
@@ -237,9 +237,9 @@ fn build_family(
 /// Whether `p` (by its owner) strictly dominates `q`: `p`'s owner is a
 /// proper descendant of `q`'s owner.
 fn dominates(
-    generals_by_specific: &HashMap<ProducerKey, Vec<crate::model::bundle::GeneralizationRecord>>,
-    p_owner: &ProducerKey,
-    q_owner: &ProducerKey,
+    generals_by_specific: &HashMap<DeclarationKey, Vec<crate::model::domain_package::SupertypeRecord>>,
+    p_owner: &DeclarationKey,
+    q_owner: &DeclarationKey,
 ) -> Result<bool, ModelRefusal> {
     if p_owner == q_owner {
         return Ok(false);
@@ -252,9 +252,9 @@ fn dominates(
 /// this pass's exact scope (link-time only; no runtime selection, no
 /// call-graph cycle detection).
 pub fn link_dispatch(
-    bundle: &Bundle,
+    domain_package: &DomainPackage,
     view: &EffectiveView,
-    original: &ProducerKey,
+    original: &DeclarationKey,
     closure: GeneralizationClosure,
     meter: &mut Meter,
 ) -> LinkCheckOutcome {
@@ -266,7 +266,7 @@ pub fn link_dispatch(
         });
     }
 
-    let index = DispatchIndex::build(bundle);
+    let index = DispatchIndex::build(domain_package);
     let Some(receiver_operation) = index.operations.get(original) else {
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
@@ -282,7 +282,7 @@ pub fn link_dispatch(
         Ok(family) => family,
         Err(refusal) => return LinkCheckOutcome::Refused(refusal),
     };
-    let mut candidates: Vec<ProducerKey> = family
+    let mut candidates: Vec<DeclarationKey> = family
         .into_iter()
         .filter(|member| index.operations.get(member).is_some_and(|op| op.has_body))
         .collect();
@@ -290,8 +290,8 @@ pub fn link_dispatch(
 
     // Every effective type conforming to the receiver type, in ascending
     // effective-identity order (the view's own order): type-level entries
-    // only, filtered by bundle-level conformance to `receiver_type`.
-    let mut subtypes: Vec<ProducerKey> = Vec::new();
+    // only, filtered by domain-package-level conformance to `receiver_type`.
+    let mut subtypes: Vec<DeclarationKey> = Vec::new();
     for entry in &view.declarations {
         if entry.preimage.owner_effective_type.is_some() {
             continue; // a member entry, not a type entry.
@@ -309,7 +309,7 @@ pub fn link_dispatch(
     }
 
     let mut candidate_charges: u64 = 0;
-    let mut table: Vec<(ProducerKey, ProducerKey)> = Vec::new();
+    let mut table: Vec<(DeclarationKey, DeclarationKey)> = Vec::new();
     let mut refusals: Vec<SubtypeRefusal> = Vec::new();
 
     for subtype in &subtypes {
@@ -317,7 +317,7 @@ pub fn link_dispatch(
             return LinkCheckOutcome::Incomplete(incomplete);
         }
 
-        let mut applicable: Vec<ProducerKey> = Vec::new();
+        let mut applicable: Vec<DeclarationKey> = Vec::new();
         for candidate in &candidates {
             candidate_charges += 1;
             if let Err(incomplete) = meter.charge(
@@ -363,7 +363,7 @@ pub fn link_dispatch(
             return LinkCheckOutcome::Incomplete(incomplete);
         }
         let mut dominance_pairs: Vec<DominancePair> = Vec::new();
-        let mut dominated: HashSet<ProducerKey> = HashSet::new();
+        let mut dominated: HashSet<DeclarationKey> = HashSet::new();
         for p in &applicable {
             let Some(p_record) = index.operations.get(p) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
@@ -402,7 +402,7 @@ pub fn link_dispatch(
                 }
             }
         }
-        let undominated: Vec<ProducerKey> = applicable
+        let undominated: Vec<DeclarationKey> = applicable
             .iter()
             .filter(|c| !dominated.contains(*c))
             .cloned()

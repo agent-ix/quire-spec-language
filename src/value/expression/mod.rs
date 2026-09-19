@@ -474,7 +474,7 @@ impl CheckedPackage {
     /// (`syntax.rs`) has no `Self_`/`Result` variant to even lower a
     /// reference to either into, and nothing in this crate's own value
     /// layer defines a checked "operation" declaration with a result-type
-    /// binding contract (`crate::model::bundle`'s `PostconditionClause` is
+    /// binding contract (`crate::model::domain_package`'s `PostconditionClause` is
     /// a different, model-layer structure, never lowered through this
     /// `Expression`/`Typer`/`Node` pipeline). Binding `result` needs that
     /// missing declaration shape first; this method is deliberately silent
