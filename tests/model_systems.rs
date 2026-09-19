@@ -23,7 +23,7 @@ use quire_spec_language::model::normalize::{
 };
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
-    ConnectionCheckOutcome, ConnectionOutcome, Kind,
+    ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind,
 };
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
@@ -663,6 +663,50 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
+}
+
+/// The bidirectional interface-type condition compares `flow_source` and
+/// `flow_target` by their full `DeclarationKey`: two ports whose value
+/// types share a display node but declare it in different packages are not
+/// the same interface type. `model.Sys.pump.out` and `model.Sys.tank.in`
+/// both name a value type with node `model.Count`, one in `test/orders`
+/// and one in `other/pkg`.
+#[trace("TC-197", "FR-152-AC-4", "FR-152-AC-6")]
+#[test]
+fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node() {
+    let domain_package = fixture_y(|records| {
+        find_relationship(records, "model.Sys.pipe").direction =
+            RelationshipDirection::Bidirectional;
+        find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::InOut);
+        find_endpoint(records, "model.Sys.tank.in").direction = Some(PortDirection::InOut);
+        find_endpoint(records, "model.Sys.pump.out").value_type =
+            DeclarationKey::fixture("model.Count");
+        find_endpoint(records, "model.Sys.tank.in").value_type = DeclarationKey {
+            package: "other/pkg".to_owned(),
+            node: "model.Count".to_owned(),
+        };
+    });
+    let mut meter = unlimited_meter();
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
+    match check_connection(
+        &domain_package,
+        &classification,
+        &DeclarationKey::fixture("model.Sys.pipe"),
+        &mut meter,
+    ) {
+        ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
+            assert_eq!(
+                failures,
+                vec![ConditionFailure {
+                    condition: "interface-type",
+                    code: Code::IllTyped,
+                    cause: ModelRefusalCause::TypeMismatch,
+                    detail: "model.Count does not conform to model.Count".to_owned(),
+                }]
+            );
+        }
+        other => panic!("expected an interface-type refusal, got {other:?}"),
+    }
 }
 
 /// FR-154: "Two nodes share one identity" refuses
