@@ -223,7 +223,7 @@ fn build_family(
                 },
                 detail: format!(
                     "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
-                    original.identity
+                    original.node
                 ),
             });
         }
@@ -280,7 +280,7 @@ pub fn link_dispatch(
             cause: ModelRefusalCause::UnknownOriginal {
                 original: original.clone(),
             },
-            detail: format!("{} is not a declared operation member", original.identity),
+            detail: format!("{} is not a declared operation member", original.node),
         });
     };
     let receiver_type = receiver_operation.owner.clone();
@@ -339,7 +339,7 @@ pub fn link_dispatch(
                     cause: ModelRefusalCause::UnknownCandidate {
                         candidate: candidate.clone(),
                     },
-                    detail: format!("{} is not a declared operation member", candidate.identity),
+                    detail: format!("{} is not a declared operation member", candidate.node),
                 });
             };
             let candidate_owner = &candidate_record.owner;
@@ -378,7 +378,7 @@ pub fn link_dispatch(
                     cause: ModelRefusalCause::UnknownCandidate {
                         candidate: p.clone(),
                     },
-                    detail: format!("{} is not a declared operation member", p.identity),
+                    detail: format!("{} is not a declared operation member", p.node),
                 });
             };
             let p_owner = &p_record.owner;
@@ -392,7 +392,7 @@ pub fn link_dispatch(
                         cause: ModelRefusalCause::UnknownCandidate {
                             candidate: q.clone(),
                         },
-                        detail: format!("{} is not a declared operation member", q.identity),
+                        detail: format!("{} is not a declared operation member", q.node),
                     });
                 };
                 let q_owner = &q_record.owner;

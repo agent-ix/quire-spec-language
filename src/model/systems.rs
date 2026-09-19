@@ -232,7 +232,7 @@ pub fn classify(
         let kind = if component.has_part_signature {
             Kind::Part
         } else {
-            refusals.push(unsupplied("part-signature", &component.key.identity));
+            refusals.push(unsupplied("part-signature", &component.key.node));
             Kind::None
         };
         component_kinds.insert(component.key.clone(), kind);
@@ -242,7 +242,7 @@ pub fn classify(
         charge_kind(meter)?;
         let kind = match &endpoint.direction {
             None => {
-                refusals.push(unsupplied("port-direction", &endpoint.key.identity));
+                refusals.push(unsupplied("port-direction", &endpoint.key.node));
                 Kind::None
             }
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
@@ -252,14 +252,14 @@ pub fn classify(
                             item: endpoint.key.clone(),
                             missing: endpoint.owning_component.clone(),
                         },
-                        &endpoint.owning_component.identity,
-                        &endpoint.key.identity,
+                        &endpoint.owning_component.node,
+                        &endpoint.key.node,
                     ));
                     Kind::None
                 }
                 Some(&Kind::Part) => Kind::Port,
                 Some(&owner_kind) => {
-                    refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.identity));
+                    refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.node));
                     Kind::None
                 }
             },
@@ -290,8 +290,8 @@ pub fn classify(
                                     relationship: relationship.key.clone(),
                                     missing: end.type_identity.clone(),
                                 },
-                                &end.type_identity.identity,
-                                &format!("{} end of {}", label, relationship.key.identity),
+                                &end.type_identity.node,
+                                &format!("{} end of {}", label, relationship.key.node),
                             ));
                             ends_ok = false;
                         }
@@ -300,7 +300,7 @@ pub fn classify(
                             refusals.push(wrong_export(
                                 Kind::Port,
                                 end_kind,
-                                &format!("{} end of {}", label, relationship.key.identity),
+                                &format!("{} end of {}", label, relationship.key.node),
                             ));
                             ends_ok = false;
                         }
@@ -372,7 +372,7 @@ pub fn resolve_kind(
     } else if actual == Kind::None {
         Err(unsupplied_or_wrong(required, key))
     } else {
-        Err(wrong_export(required, actual, &key.identity))
+        Err(wrong_export(required, actual, &key.node))
     }
 }
 
@@ -382,7 +382,7 @@ fn unsupplied_or_wrong(required: Kind, key: &DeclarationKey) -> ModelRefusal {
         cause: ModelRefusalCause::UnsuppliedProducerRecord,
         detail: format!(
             "{} does not resolve to the required kind {}",
-            key.identity,
+            key.node,
             required.as_str()
         ),
     }
@@ -447,7 +447,7 @@ pub fn check_connection(
             cause: ModelRefusalCause::WrongExport,
             detail: format!(
                 "{} is not a Connection; the connection rule does not apply",
-                relationship_key.identity
+                relationship_key.node
             ),
         });
     }
@@ -459,7 +459,7 @@ pub fn check_connection(
             },
             detail: format!(
                 "{} is not a declared relationship",
-                relationship_key.identity
+                relationship_key.node
             ),
         });
     };
@@ -471,7 +471,7 @@ pub fn check_connection(
             },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
-                relationship.source.type_identity.identity
+                relationship.source.type_identity.node
             ),
         });
     };
@@ -483,7 +483,7 @@ pub fn check_connection(
             },
             detail: format!(
                 "{} names an end that is not a declared endpoint",
-                relationship.target.type_identity.identity
+                relationship.target.type_identity.node
             ),
         });
     };
@@ -537,7 +537,7 @@ pub fn check_connection(
             },
             detail: format!(
                 "direction {:?}: source {} is not compatible with target {}",
-                relationship.direction, source_port.key.identity, target_port.key.identity
+                relationship.direction, source_port.key.node, target_port.key.node
             ),
         });
     }
@@ -552,7 +552,7 @@ pub fn check_connection(
         relationship.direction,
         crate::model::domain_package::RelationshipDirection::Bidirectional
     ) {
-        flow_source.value_type.identity == flow_target.value_type.identity
+        flow_source.value_type.node == flow_target.value_type.node
     } else {
         match type_conforms(&generals, &flow_source.value_type, &flow_target.value_type) {
             Ok(conforms) => conforms,
@@ -566,7 +566,7 @@ pub fn check_connection(
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} does not conform to {}",
-                flow_source.value_type.identity, flow_target.value_type.identity
+                flow_source.value_type.node, flow_target.value_type.node
             ),
         });
     }
@@ -630,7 +630,7 @@ pub fn check_allocation(
             cause: ModelRefusalCause::WrongExport,
             detail: format!(
                 "{} is not an Allocation; the allocation rule does not apply",
-                relationship_key.identity
+                relationship_key.node
             ),
         });
     }
@@ -645,7 +645,7 @@ pub fn check_allocation(
             },
             detail: format!(
                 "{} is not a declared relationship",
-                relationship_key.identity
+                relationship_key.node
             ),
         });
     };
@@ -656,7 +656,7 @@ pub fn check_allocation(
         AllocationCheckOutcome::Refused(wrong_export(
             Kind::Part,
             target_kind,
-            &relationship.target.type_identity.identity,
+            &relationship.target.type_identity.node,
         ))
     }
 }

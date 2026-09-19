@@ -531,7 +531,7 @@ impl PopulationBinding {
     /// The `DomainPackageRef` export identity this binding was admitted
     /// against.
     pub fn model_identity(&self) -> &str {
-        &self.domain_package.model_selection.export.identity
+        &self.domain_package.model_selection.identity
     }
 
     /// This binding's own object universe.
@@ -592,9 +592,9 @@ pub enum AdmissionOutcome {
 /// values' own `model_selection` headers instead — the same closed-catalog
 /// `foreign_reference`/`foreign-model-selection` cause the `modelIdentity`
 /// check below already uses for a DomainPackageRef-key mismatch, and the same
-/// boundary this crate already trusts at that check (`export.identity`
+/// boundary this crate already trusts at that check (`identity`
 /// without content verification) — comparing the *full* header rather than
-/// only `export.identity` so a revision-only divergence is caught too.
+/// only `identity` so a version-only divergence is caught too.
 pub fn admit_binding(
     domain_package: &DomainPackage,
     view: &EffectiveView,
@@ -613,11 +613,11 @@ pub fn admit_binding(
             },
             detail: format!(
                 "effective view was normalized under model selection {}, not the admitting domain package's {}",
-                view.model_selection.export.identity, domain_package.model_selection.export.identity
+                view.model_selection.identity, domain_package.model_selection.identity
             ),
         });
     }
-    if document.model_identity != domain_package.model_selection.export.identity {
+    if document.model_identity != domain_package.model_selection.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
@@ -626,7 +626,7 @@ pub fn admit_binding(
             },
             detail: format!(
                 "population document names modelIdentity {}, not the binding's {}",
-                document.model_identity, domain_package.model_selection.export.identity
+                document.model_identity, domain_package.model_selection.identity
             ),
         });
     }
@@ -634,11 +634,11 @@ pub fn admit_binding(
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::IncompleteScope {
-                selection: domain_package.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.identity.clone(),
             },
             detail: format!(
                 "population {} for {} does not declare extent: closed",
-                population.key.identity, domain_package.model_selection.export.identity
+                population.key.node, domain_package.model_selection.identity
             ),
         });
     }
@@ -646,7 +646,7 @@ pub fn admit_binding(
         return AdmissionOutcome::UnknownClosure(ModelRefusal {
             code: Code::IncompletePopulation,
             cause: ModelRefusalCause::UnclosedSubtypes {
-                selection: domain_package.model_selection.export.identity.clone(),
+                selection: domain_package.model_selection.identity.clone(),
                 type_name: document
                     .members
                     .first()
@@ -654,11 +654,11 @@ pub fn admit_binding(
             },
             detail: format!(
                 "model selection {} naming {} does not have a closed generalization graph",
-                domain_package.model_selection.export.identity,
+                domain_package.model_selection.identity,
                 document
                     .members
                     .first()
-                    .map(|member| member.type_identity.identity.as_str())
+                    .map(|member| member.type_identity.node.as_str())
                     .unwrap_or("<no members>")
             ),
         });
@@ -703,7 +703,7 @@ pub fn admit_binding(
                 },
                 detail: format!(
                     "member {} names type {}, absent from the effective view",
-                    member.object, member.type_identity.identity
+                    member.object, member.type_identity.node
                 ),
             });
         };
@@ -789,7 +789,7 @@ pub fn admit_binding(
                     },
                     detail: format!(
                         "object {} declares field {} more than once in its field_values",
-                        key.object, field.identity
+                        key.object, field.node
                     ),
                 });
             }
@@ -827,9 +827,9 @@ pub fn admit_binding(
                                 "object {}'s {} names {value}, not among its {} values \
                                  (subsetting record {})",
                                 key.object,
-                                record.subsetting.identity,
-                                record.subsetted.identity,
-                                record.key.identity
+                                record.subsetting.node,
+                                record.subsetted.node,
+                                record.key.node
                             ),
                         });
                     }
@@ -1199,7 +1199,7 @@ fn enforce_frame(
                     format!(
                         "invocation creates object {object} of type {}, outside the operation's \
                          declared creates frame",
-                        post_type.identity
+                        post_type.node
                     ),
                 ));
             }
@@ -1217,7 +1217,7 @@ fn enforce_frame(
                     "invocation changes object {object}'s most-specific type from {} to {} \
                      between pre and post, which no operation frame may authorize (FR-151's \
                      effect grants cover modifies/creates/deletes only)",
-                    pre_type.identity, post_type.identity
+                    pre_type.node, post_type.node
                 ),
             ));
         }
@@ -1245,7 +1245,7 @@ fn enforce_frame(
                 format!(
                     "invocation deletes object {object} of type {}, outside the operation's \
                      declared deletes frame",
-                    pre_type.identity
+                    pre_type.node
                 ),
             ));
         }
@@ -1284,7 +1284,7 @@ fn enforce_frame(
                 format!(
                     "invocation changes object {}'s field {}, outside the operation's declared \
                      modifies frame",
-                    pre_member.object, field.identity
+                    pre_member.object, field.node
                 ),
             ));
         }
@@ -1433,7 +1433,7 @@ pub fn all_instances(
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
-            detail: format!("{} is not a model object type", t.identity),
+            detail: format!("{} is not a model object type", t.node),
         });
     }
 
@@ -1581,7 +1581,7 @@ pub fn lookup(
                 cause: ModelRefusalCause::TypeMismatch,
                 detail: format!(
                     "{} does not conform to {}",
-                    r.static_type.identity, t.identity
+                    r.static_type.node, t.node
                 ),
             })
         }

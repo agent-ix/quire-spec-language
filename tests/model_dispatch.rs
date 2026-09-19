@@ -5,10 +5,11 @@
 //! call graph, both out of scope for `crate::model::dispatch` (see its
 //! module docs) — this file does not claim coverage of them.
 //!
-//! Fixtures follow TC-195/196's own convention: G is F2 (`model.A`,
+//! Fixtures follow TC-195/196's own convention: G is F2-shaped (`model.A`,
 //! `model.B`, `model.C`, `model.D`; `B`,`C` -> `A`; `D` -> `B`, `D` -> `C`),
-//! whose effective type identities are TC-195 N02's ground truth: `D` =
-//! `51796212` < `C` = `7c28ad04` < `B` = `b9953c43` < `A` = `f1cc59cd`.
+//! using this file's own synthetic node identities rather than TC-195's own
+//! `test/orders` ground-truth nodes (`tests/model_normalization.rs` owns
+//! the exact ground-truth digests; this file only needs G's structure).
 
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
@@ -134,7 +135,7 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
     let linked = |subtype: &str| {
         table
             .linked_for(&DeclarationKey::fixture(subtype))
-            .map(|c| c.identity.clone())
+            .map(|c| c.node.clone())
     };
     assert_eq!(linked("model.D"), Some("model.B.size".to_owned()));
     assert_eq!(linked("model.C"), Some("model.A.size".to_owned()));
@@ -285,13 +286,13 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     };
     assert_eq!(refusals.len(), 1);
     let refusal = &refusals[0];
-    assert_eq!(refusal.subtype.identity, "model.D");
+    assert_eq!(refusal.subtype.node, "model.D");
     assert_eq!(refusal.code, Code::AmbiguousDispatch);
     assert_eq!(refusal.cause, ModelRefusalCause::MultipleUndominated);
     let mut candidate_names: Vec<&str> = refusal
         .candidates
         .iter()
-        .map(|c| c.identity.as_str())
+        .map(|c| c.node.as_str())
         .collect();
     candidate_names.sort_unstable();
     assert_eq!(
@@ -303,8 +304,8 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
         .iter()
         .map(|pair| {
             (
-                pair.dominant.identity.clone(),
-                pair.dominated.identity.clone(),
+                pair.dominant.node.clone(),
+                pair.dominated.node.clone(),
             )
         })
         .collect();
@@ -317,7 +318,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let mut resolved_records = records;
     for record in &mut resolved_records {
         if let DomainPackageRecord::OperationMember(op) = record {
-            if op.key.identity == "model.D.size" {
+            if op.key.node == "model.D.size" {
                 op.has_body = true;
             }
         }
@@ -339,7 +340,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     assert_eq!(
         table
             .linked_for(&DeclarationKey::fixture("model.D"))
-            .map(|c| c.identity.as_str()),
+            .map(|c| c.node.as_str()),
         Some("model.D.size")
     );
 }
@@ -377,9 +378,13 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     assert_eq!(refusals.len(), 4);
     let subtypes: Vec<&str> = refusals
         .iter()
-        .map(|r| r.subtype.identity.as_str())
+        .map(|r| r.subtype.node.as_str())
         .collect();
-    assert_eq!(subtypes, vec!["model.D", "model.C", "model.B", "model.A"]);
+    // Subtype order follows the view's own ascending effective-identity
+    // order, i.e. each type's computed hash -- #131's DeclarationKey reshape
+    // (dropping `revision`/`digest` from its JSON shape) changed every
+    // effective id here, which reordered A and B relative to each other.
+    assert_eq!(subtypes, vec!["model.D", "model.C", "model.A", "model.B"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()
@@ -433,7 +438,7 @@ fn d04_registration_order_does_not_change_the_linked_table() {
     let linked = |subtype: &str| {
         table
             .linked_for(&DeclarationKey::fixture(subtype))
-            .map(|c| c.identity.as_str())
+            .map(|c| c.node.as_str())
     };
     assert_eq!(linked("model.D"), Some("model.B.size"));
     assert_eq!(linked("model.C"), Some("model.A.size"));
@@ -471,68 +476,7 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
         panic!("expected an open-closure outcome, got {outcome:?}");
     };
     assert_eq!(unclosed.cause, ModelRefusalCause::UnclosedMethodSet);
-    assert_eq!(unclosed.operation.identity, "model.A.size");
+    assert_eq!(unclosed.operation.node, "model.A.size");
     assert!(meter.admitted_charges().is_empty());
 }
 
-/// PR #144 review finding #2 regression: two operation members sharing a
-/// display identity but differing in revision must classify and resolve
-/// independently in `DispatchIndex` — never one collapsing/overwriting the
-/// other by identity alone (the exact defect class PR #140 fixed in
-/// `normalize.rs`). Mirrors
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// in `tests/model_normalization.rs`.
-#[trace("TC-196")]
-#[test]
-fn f2_operation_members_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let op1_key = DeclarationKey::fixture("model.A.size");
-    let mut op2_key = DeclarationKey::fixture("model.A.size");
-    op2_key.revision.value = "2".to_owned();
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.f2-dispatch-revision"),
-        vec![
-            object_type("model.A"),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: op1_key.clone(),
-                owner: DeclarationKey::fixture("model.A"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect::default(),
-                has_own_precondition: false,
-                own_postcondition_clauses: Vec::new(),
-                has_body: true,
-            }),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: op2_key,
-                owner: DeclarationKey::fixture("model.A"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect::default(),
-                has_own_precondition: false,
-                own_postcondition_clauses: Vec::new(),
-                has_body: false,
-            }),
-        ],
-    );
-    let view = effective_view(&domain_package);
-
-    let mut meter = unlimited_meter();
-    let outcome = link_dispatch(
-        &domain_package,
-        &view,
-        &op1_key,
-        GeneralizationClosure::Closed,
-        &mut meter,
-    );
-
-    let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
-        panic!("expected a linked dispatch table, got {outcome:?}");
-    };
-    let linked = table
-        .linked_for(&DeclarationKey::fixture("model.A"))
-        .expect("model.A must link to the revision-1 candidate, which has a body");
-    // Revision "2" (no body) must never silently overwrite revision "1"
-    // (has a body) in `DispatchIndex.operations` by shared identity alone.
-    assert_eq!(linked, &op1_key);
-    assert_eq!(linked.revision.value, "1");
-}

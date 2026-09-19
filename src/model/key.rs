@@ -2,8 +2,10 @@
 //! FR-150 producer keys and QSL-derived `quire.model.*` identity domains.
 //!
 //! An original declaration identity is the producer key the correspondence
-//! supplies (`model-complete.md`, "Identity domains"). Every QSL-derived
-//! identity is SHA-256 over the RFC 8785 JCS bytes of a schema-valid preimage,
+//! supplies: `{package, node, digest_domain: "sha256-jcs"}`, the domain
+//! package identity and the IR node identity (`model-complete.md`, "Identity
+//! domains"). Every QSL-derived identity is SHA-256 over the RFC 8785 JCS
+//! bytes of a schema-valid preimage,
 //! built here as a `serde_json::Value`: `serde_json::Map` is a `BTreeMap`
 //! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
 //! already emits ascending-key, whitespace-free bytes for every ASCII member
@@ -16,8 +18,9 @@ use sha2::{Digest, Sha256};
 use crate::model::refusal::ModelRefusalCause;
 use crate::value::length_amount;
 
-/// Digest domain of every producer digest selection (`filament-canonical-json-1`).
-pub const PRODUCER_DIGEST_DOMAIN: &str = "filament-canonical-json-1";
+/// The fixed digest domain of a declaration key and a domain package
+/// selection (`model-complete.md`, "Identity domains").
+pub const SHA256_JCS_DIGEST_DOMAIN: &str = "sha256-jcs";
 
 /// Digest domain of one effective declaration (`quire.model.effective-declaration/v1`).
 pub const EFFECTIVE_DECLARATION_DOMAIN: &str = "quire.model.effective-declaration/v1";
@@ -57,121 +60,42 @@ pub const RULE_REDEFINE: RuleRef = RuleRef {
     revision: "1-draft.1",
 };
 
-/// A namespaced producer revision label (FCD FR-113).
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Revision {
-    /// The revision namespace, e.g. `filament-core-data/producer-object-revision-1`.
-    pub namespace: String,
-    /// The revision value within that namespace.
-    pub value: String,
-}
-
-impl Revision {
-    /// A revision in the standard producer-object-revision namespace.
-    pub fn producer_object(value: impl Into<String>) -> Self {
-        Self {
-            namespace: "filament-core-data/producer-object-revision-1".to_owned(),
-            value: value.into(),
-        }
-    }
-
-    fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert(
-            "namespace".to_owned(),
-            Value::String(self.namespace.clone()),
-        );
-        object.insert("value".to_owned(), Value::String(self.value.clone()));
-        Value::Object(object)
-    }
-}
-
-/// A producer digest selection: `{domain, sha256}`.
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProducerDigest {
-    /// The digest domain; every fixture in this rung is `filament-canonical-json-1`.
-    pub domain: String,
-    /// The lowercase 64-hex SHA-256 digest.
-    pub sha256: [u8; 32],
-}
-
-impl ProducerDigest {
-    /// A `filament-canonical-json-1` digest over `identity`'s exact UTF-8 bytes,
-    /// following TC-195's fixture convention.
-    ///
-    /// Test-only (PR #140 F13): this derives a digest from a display
-    /// identity, which is exactly the name-derived-identity defect this
-    /// engine exists to exclude. Gated behind `test-support` so a production
-    /// caller cannot reach it; `cargo test --all-features` enables it for
-    /// `tests/model_normalization.rs`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn of_identity(identity: &str) -> Self {
-        Self {
-            domain: PRODUCER_DIGEST_DOMAIN.to_owned(),
-            sha256: Sha256::digest(identity.as_bytes()).into(),
-        }
-    }
-
-    fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert("domain".to_owned(), Value::String(self.domain.clone()));
-        object.insert("sha256".to_owned(), Value::String(hex(&self.sha256)));
-        Value::Object(object)
-    }
-}
-
-impl fmt::Debug for ProducerDigest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProducerDigest")
-            .field("domain", &self.domain)
-            .field("sha256", &hex(&self.sha256))
-            .finish()
-    }
-}
-
-/// One producer's original-declaration key: `{authority, identity, revision, digest}`.
+/// One original declaration key: `{package, node, digest_domain: "sha256-jcs"}`
+/// (`model-complete.md`, "Identity domains"; `model-effective-declaration.schema.json`,
+/// `$defs.DeclarationKey`). A declaration key carries no digest: two versions
+/// of one domain package with equal nodes yield equal declaration keys.
 ///
-/// Ordering matches `model-complete.md`: `authority`, `identity`,
-/// `revision.namespace`, `revision.value`, `digest.domain`, `digest.sha256`,
-/// each as UTF-8 bytes, a proper prefix first. Field declaration order below
-/// gives exactly that comparison under `derive(Ord)`.
+/// Ordering matches `model-complete.md`: `package`, then `node`, each as
+/// UTF-8 bytes, a proper prefix first. Field declaration order below gives
+/// exactly that comparison under `derive(Ord)`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationKey {
-    /// The correspondence `ProducerObject.authority` (FCD FR-116).
-    pub authority: String,
-    /// The original declaration's producer identity string.
-    pub identity: String,
-    /// The namespaced producer revision.
-    pub revision: Revision,
-    /// The `filament-canonical-json-1` digest selection.
-    pub digest: ProducerDigest,
+    /// The domain package identity (FR-154).
+    pub package: String,
+    /// The IR node identity.
+    pub node: String,
 }
 
 impl DeclarationKey {
-    /// A `filament-core-data` key over `identity`, following TC-195/196/197/198's
-    /// fixture convention: revision value `"1"`, digest over `identity`'s bytes.
-    ///
-    /// Test-only (PR #140 F13): see [`ProducerDigest::of_identity`].
+    /// A `test/orders` key over `node`, following TC-195's fixture
+    /// convention: every TC-195 fixture is a domain package with identity
+    /// `test/orders`.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(identity: impl Into<String>) -> Self {
-        let identity = identity.into();
+    pub fn fixture(node: impl Into<String>) -> Self {
         Self {
-            authority: "filament-core-data".to_owned(),
-            digest: ProducerDigest::of_identity(&identity),
-            revision: Revision::producer_object("1"),
-            identity,
+            package: "test/orders".to_owned(),
+            node: node.into(),
         }
     }
 
     pub(super) fn to_json(&self) -> Value {
         let mut object = Map::new();
+        object.insert("package".to_owned(), Value::String(self.package.clone()));
+        object.insert("node".to_owned(), Value::String(self.node.clone()));
         object.insert(
-            "authority".to_owned(),
-            Value::String(self.authority.clone()),
+            "digest_domain".to_owned(),
+            Value::String(SHA256_JCS_DIGEST_DOMAIN.to_owned()),
         );
-        object.insert("identity".to_owned(), Value::String(self.identity.clone()));
-        object.insert("revision".to_owned(), self.revision.to_json());
-        object.insert("digest".to_owned(), self.digest.to_json());
         Value::Object(object)
     }
 }
@@ -355,7 +279,7 @@ impl EffectiveDeclarationPreimage {
                     },
                     format!(
                         "{} derivation fact at position {position} has ordinal {}, not {position}",
-                        self.original.identity, fact.ordinal
+                        self.original.node, fact.ordinal
                     ),
                 ));
             }
@@ -371,7 +295,7 @@ impl EffectiveDeclarationPreimage {
                         },
                         format!(
                             "{} derivation retains the same input path at positions {earlier} and {later}",
-                            self.original.identity
+                            self.original.node
                         ),
                     ));
                 }

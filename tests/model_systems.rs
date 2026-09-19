@@ -230,7 +230,7 @@ fn find_relationship<'a>(
         .iter_mut()
         .find_map(|record| match record {
             DomainPackageRecord::Relationship(relationship)
-                if relationship.key.identity == identity =>
+                if relationship.key.node == identity =>
             {
                 Some(relationship)
             }
@@ -246,7 +246,7 @@ fn find_endpoint<'a>(
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.identity == identity => {
+            DomainPackageRecord::Endpoint(endpoint) if endpoint.key.node == identity => {
                 Some(endpoint)
             }
             _ => None,
@@ -261,7 +261,7 @@ fn find_component<'a>(
     records
         .iter_mut()
         .find_map(|record| match record {
-            DomainPackageRecord::Component(component) if component.key.identity == identity => {
+            DomainPackageRecord::Component(component) if component.key.node == identity => {
                 Some(component)
             }
             _ => None,
@@ -659,49 +659,3 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
 }
 
-/// PR #144 review finding #2 regression: two components sharing a display
-/// identity but differing in revision must classify and resolve
-/// independently — never one collapsing/overwriting the other by identity
-/// alone (the exact defect class PR #140 fixed in `normalize.rs`). Mirrors
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// in `tests/model_normalization.rs`.
-#[trace("TC-197")]
-#[test]
-fn f2_components_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let revision_1 = DeclarationKey::fixture("model.Sys.pump");
-    let mut revision_2 = DeclarationKey::fixture("model.Sys.pump");
-    revision_2.revision.value = "2".to_owned();
-
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.f2-systems-revision"),
-        vec![
-            object_type("model.Pump", None),
-            DomainPackageRecord::Component(ComponentRecord {
-                key: revision_1.clone(),
-                owning_type: DeclarationKey::fixture("model.Sys"),
-                value_type: DeclarationKey::fixture("model.Pump"),
-                multiplicity: one(),
-                has_part_signature: true,
-            }),
-            DomainPackageRecord::Component(ComponentRecord {
-                key: revision_2.clone(),
-                owning_type: DeclarationKey::fixture("model.Sys"),
-                value_type: DeclarationKey::fixture("model.Pump"),
-                multiplicity: one(),
-                has_part_signature: false,
-            }),
-        ],
-    );
-    let mut meter = unlimited_meter();
-    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
-
-    // Revision "2" (no part-signature) must never silently overwrite
-    // revision "1" (has one) in `SystemsClassification`'s maps.
-    let resolved = resolve_kind(&classification, Kind::Part, &revision_1)
-        .expect("revision \"1\" has the part-signature capability");
-    assert_eq!(resolved.key, revision_1);
-
-    let refusal = resolve_kind(&classification, Kind::Part, &revision_2)
-        .expect_err("revision \"2\" does not have the part-signature capability");
-    assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
-}

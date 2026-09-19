@@ -288,7 +288,7 @@ fn walk_ancestors<B>(
                 cause: ModelRefusalCause::ConformanceDepth { from: s.clone() },
                 detail: format!(
                     "{label} {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
-                    s.identity
+                    s.node
                 ),
             });
         }
@@ -379,7 +379,7 @@ pub fn check_field_redefinition(
             ModelRefusalCause::UnknownRedefining {
                 member: record.redefining.clone(),
             },
-            &record.redefining.identity,
+            &record.redefining.node,
             "redefining field",
         ));
     };
@@ -388,7 +388,7 @@ pub fn check_field_redefinition(
             ModelRefusalCause::UnknownRedefined {
                 member: record.redefined.clone(),
             },
-            &record.redefined.identity,
+            &record.redefined.node,
             "redefined field",
         ));
     };
@@ -410,7 +410,7 @@ pub fn check_field_redefinition(
             cause: ModelRefusalCause::VarianceResult,
             detail: format!(
                 "{} does not conform to {}",
-                redefining.value_type.identity, redefined.value_type.identity
+                redefining.value_type.node, redefined.value_type.node
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -457,7 +457,7 @@ pub fn check_subsetting(
             ModelRefusalCause::UnknownSubsetting {
                 member: record.subsetting.clone(),
             },
-            &record.subsetting.identity,
+            &record.subsetting.node,
             "subsetting field",
         ));
     };
@@ -466,7 +466,7 @@ pub fn check_subsetting(
             ModelRefusalCause::UnknownSubsetted {
                 member: record.subsetted.clone(),
             },
-            &record.subsetted.identity,
+            &record.subsetted.node,
             "subsetted field",
         ));
     };
@@ -491,7 +491,7 @@ pub fn check_subsetting(
             },
             detail: format!(
                 "{} does not conform to {}",
-                subsetting.value_type.identity, subsetted.value_type.identity
+                subsetting.value_type.node, subsetted.value_type.node
             ),
         }),
         Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -536,7 +536,7 @@ pub fn check_operation_redefinition(
             ModelRefusalCause::UnknownRedefining {
                 member: record.redefining.clone(),
             },
-            &record.redefining.identity,
+            &record.redefining.node,
             "redefining operation",
         ));
     };
@@ -545,7 +545,7 @@ pub fn check_operation_redefinition(
             ModelRefusalCause::UnknownRedefined {
                 member: record.redefined.clone(),
             },
-            &record.redefined.identity,
+            &record.redefined.node,
             "redefined operation",
         ));
     };
@@ -592,7 +592,7 @@ pub fn check_operation_redefinition(
                     },
                     detail: format!(
                         "parameter {display_index}: expected {} to conform to {}",
-                        dp.value_type.identity, rp.value_type.identity
+                        dp.value_type.node, rp.value_type.node
                     ),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -632,7 +632,7 @@ pub fn check_operation_redefinition(
                     cause: ModelRefusalCause::VarianceResult,
                     detail: format!(
                         "{} does not conform to {}",
-                        rr.value_type.identity, dr.value_type.identity
+                        rr.value_type.node, dr.value_type.node
                     ),
                 }),
                 Err(refusal) => return ConformanceCheckOutcome::Refused(refusal),
@@ -689,7 +689,7 @@ pub fn check_operation_redefinition(
                 },
                 detail: format!(
                     "write {} is not covered by the redefined effect",
-                    write.identity
+                    write.node
                 ),
             });
         }
@@ -717,7 +717,7 @@ pub fn check_operation_redefinition(
                     cause: ModelRefusalCause::EffectEscape {
                         field: entry.clone(),
                     },
-                    detail: format!("{} is not covered by the redefined effect", entry.identity),
+                    detail: format!("{} is not covered by the redefined effect", entry.node),
                 });
             }
         }
@@ -906,7 +906,7 @@ pub fn check_field_refinement_obligation(
             ModelRefusalCause::UnknownRedefining {
                 member: record.redefining.clone(),
             },
-            &record.redefining.identity,
+            &record.redefining.node,
             "redefining field",
         ));
     };
@@ -915,12 +915,12 @@ pub fn check_field_refinement_obligation(
             ModelRefusalCause::UnknownRedefined {
                 member: record.redefined.clone(),
             },
-            &record.redefined.identity,
+            &record.redefined.node,
             "redefined field",
         ));
     };
 
-    let same_type = redefining.value_type.identity == redefined.value_type.identity;
+    let same_type = redefining.value_type.node == redefined.value_type.node;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
     let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
 
@@ -944,8 +944,8 @@ pub fn check_field_refinement_obligation(
 
     let writer = index.operations.values().find(|operation| {
         operation.effect.modifies.iter().any(|field| {
-            field.identity == record.redefined.identity
-                || field.identity == record.redefining.identity
+            field.node == record.redefined.node
+                || field.node == record.redefining.node
         })
     });
     let Some(writer) = writer else {
@@ -955,8 +955,8 @@ pub fn check_field_refinement_obligation(
 
     let mut clauses: Vec<&PostconditionClause> = writer.own_postcondition_clauses.iter().collect();
     for redefinition in &index.redefinitions {
-        if redefinition.redefined.identity == writer.key.identity
-            && redefinition.owner.identity == record.owner.identity
+        if redefinition.redefined.node == writer.key.node
+            && redefinition.owner.node == record.owner.node
         {
             if let Some(overriding) = index.operations.get(&redefinition.redefining) {
                 clauses.extend(overriding.own_postcondition_clauses.iter());
@@ -964,7 +964,7 @@ pub fn check_field_refinement_obligation(
         }
     }
     let names_field = |key: &DeclarationKey| -> bool {
-        key.identity == record.redefined.identity || key.identity == record.redefining.identity
+        key.node == record.redefined.node || key.node == record.redefining.node
     };
 
     // FR-146's own rule: a projection onto the field a narrowing redefinition
@@ -989,7 +989,7 @@ pub fn check_field_refinement_obligation(
                 cause: ModelRefusalCause::UnprovedRefinement,
                 detail: format!(
                     "{} narrows the multiplicity of {} with no establishing presence fact (obligation field-presence)",
-                    record.redefining.identity, record.redefined.identity
+                    record.redefining.node, record.redefined.node
                 ),
             }]))
         };
@@ -1002,7 +1002,7 @@ pub fn check_field_refinement_obligation(
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows a collection upper bound, which no FR-146 fact form expresses (obligation no-proof-form)",
-                record.redefining.identity
+                record.redefining.node
             ),
         }]));
     }
@@ -1044,7 +1044,7 @@ pub fn check_field_refinement_obligation(
                     cause: ModelRefusalCause::UnprovedRefinement,
                     detail: format!(
                         "no establishing interval fact for {} (obligation field-domain)",
-                        record.redefining.identity
+                        record.redefining.node
                     ),
                 }])),
             }
@@ -1055,7 +1055,7 @@ pub fn check_field_refinement_obligation(
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
                 "{} narrows an object-typed domain, which no FR-146 fact form expresses (obligation no-proof-form)",
-                record.redefining.identity
+                record.redefining.node
             ),
         }])),
     }
@@ -1087,8 +1087,8 @@ pub fn resolve_redefinition_target(
     let mut valid: Vec<DeclarationKey> = Vec::new();
 
     for record in &index.redefinitions {
-        if record.owner.identity != owner.identity
-            || record.redefining.identity != redefining.identity
+        if record.owner.node != owner.node
+            || record.redefining.node != redefining.node
         {
             continue;
         }
@@ -1108,7 +1108,7 @@ pub fn resolve_redefinition_target(
     for target in &valid {
         if !distinct
             .iter()
-            .any(|existing| existing.identity == target.identity)
+            .any(|existing| existing.node == target.node)
         {
             distinct.push(target.clone());
         }

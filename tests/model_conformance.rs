@@ -172,7 +172,7 @@ fn find_type<'a>(view: &'a EffectiveView, identity: &str) -> &'a ViewEntry {
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none()
-                && entry.preimage.original.identity == identity
+                && entry.preimage.original.node == identity
         })
         .unwrap_or_else(|| panic!("no effective type {identity} in {view:?}"))
 }
@@ -189,7 +189,7 @@ fn find_member<'a>(
         .iter()
         .find(|entry| {
             entry.preimage.owner_effective_type.as_ref() == Some(owner)
-                && entry.preimage.original.identity == original_identity
+                && entry.preimage.original.node == original_identity
         })
         .unwrap_or_else(|| panic!("no member {original_identity} owned by {owner:?} in {view:?}"))
 }
@@ -1059,62 +1059,6 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
     }
 }
 
-/// PR #144 review finding #2 regression: two field members sharing a
-/// display identity but differing in revision must both survive
-/// independently in `ConformanceIndex.fields` — never one collapsing/
-/// overwriting the other by identity alone (the exact defect class PR #140
-/// fixed in `normalize.rs`). Mirrors
-/// `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
-/// in `tests/model_normalization.rs`.
-#[trace("TC-196")]
-#[test]
-fn f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive() {
-    let revision_1 = DeclarationKey::fixture("model.A.x");
-    let mut revision_2 = DeclarationKey::fixture("model.A.x");
-    revision_2.revision.value = "2".to_owned();
-
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.y"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.y"),
-        redefined: revision_2.clone(),
-    };
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.f2-conformance-revision"),
-        vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            // revision "1": a narrow {0,1} upper bound. If the index ever
-            // collapsed onto this record instead of `revision_2` (the
-            // record.redefined actually names), the redefining {0,3} field
-            // below would wrongly fail to narrow it.
-            DomainPackageRecord::FieldMember(FieldMemberRecord {
-                key: revision_1,
-                owner: DeclarationKey::fixture("model.A"),
-                value_type: DeclarationKey::fixture("model.A"),
-                multiplicity: mult(0, Some(1)),
-            }),
-            // revision "2": the actual redefinition target, a wider {0,5}
-            // upper bound that the redefining field genuinely narrows.
-            DomainPackageRecord::FieldMember(FieldMemberRecord {
-                key: revision_2,
-                owner: DeclarationKey::fixture("model.A"),
-                value_type: DeclarationKey::fixture("model.A"),
-                multiplicity: mult(0, Some(5)),
-            }),
-            field_member("model.B.y", "model.B", "model.A", mult(0, Some(3))),
-        ],
-    );
-
-    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    match check_field_redefinition(&domain_package, &record, &mut meter) {
-        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible) => {}
-        other => {
-            panic!("expected Compatible against revision \"2\"'s {{0,5}} bound, got {other:?}")
-        }
-    }
-}
-
 /// QSL #171: `check_operation_redefinition`'s effect axis must walk a
 /// field's *full* redefinition chain, not just one hop, exactly like
 /// `redefinition_reaches` already does for the runtime frame check (QSL
@@ -1180,89 +1124,6 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
     assert_eq!(
         check_operation_redefinition(&domain_package, &record, &mut meter),
         ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible)
-    );
-}
-
-/// PR #177 review finding 1: the effect axis's `redefinition_reaches` call
-/// must compare `DeclarationKey`s by their full derived `PartialEq`
-/// (`authority`, `identity`, `revision`, `digest`), not `.identity` alone --
-/// a write naming `model.A.x` at revision "2" does not reach a grant for
-/// `model.A.x` at revision "1", even though both share the display identity
-/// `model.A.x`. Before this PR the effect axis compared `.identity` only, so
-/// this exact scenario wrongly admitted; every other fixture in this file
-/// uses `DeclarationKey::fixture`'s revision "1" on both the write and the
-/// grant, so none of them can tell full-key equality apart from
-/// identity-only comparison the way this one does.
-///
-/// Mutation used: in `check_operation_redefinition`'s effect closure,
-/// compared `redefined.effect.modifies.iter().any(|w| w.identity ==
-/// candidate.identity)` instead of `.contains(candidate)`. Every other test
-/// in this file stayed green; this one went from `Refused` to `Compatible`;
-/// reverted.
-#[trace("TC-196", "FR-151-AC-4")]
-#[test]
-fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_revision_the_grant_does_not_name() {
-    let mut write_at_revision_2 = DeclarationKey::fixture("model.A.x");
-    write_at_revision_2.revision.value = "2".to_owned();
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("bundle.redef.op-revision"),
-        vec![
-            object_type("model.A"),
-            object_type("model.B"),
-            generalization("model.gen.B-A", "model.B", "model.A"),
-            field_member("model.A.x", "model.A", "model.A", mult(0, Some(1))),
-            operation(
-                "model.A.op",
-                "model.A",
-                vec![],
-                None,
-                vec!["model.A.x"],
-                vec![],
-                vec![],
-                vec![],
-            ),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: DeclarationKey::fixture("model.B.op"),
-                owner: DeclarationKey::fixture("model.B"),
-                parameters: vec![],
-                result: None,
-                effect: OperationEffect {
-                    modifies: vec![write_at_revision_2.clone()],
-                    creates: Vec::new(),
-                    deletes: Vec::new(),
-                },
-                has_own_precondition: false,
-                own_postcondition_clauses: vec![],
-                has_body: true,
-            }),
-            redefinition(
-                "model.redef.B.op-A.op",
-                "model.B",
-                "model.B.op",
-                "model.A.op",
-            ),
-        ],
-    );
-    let record = RedefinitionRecord {
-        key: DeclarationKey::fixture("model.redef.B.op-A.op"),
-        owner: DeclarationKey::fixture("model.B"),
-        redefining: DeclarationKey::fixture("model.B.op"),
-        redefined: DeclarationKey::fixture("model.A.op"),
-    };
-    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(
-        check_operation_redefinition(&domain_package, &record, &mut meter),
-        ConformanceCheckOutcome::Completed(ConformanceOutcome::Refused(vec![AxisFailure {
-            axis: "effect",
-            code: Code::IllTyped,
-            cause: ModelRefusalCause::EffectEscape {
-                field: write_at_revision_2.clone(),
-            },
-            detail: format!(
-                "write {} is not covered by the redefined effect",
-                write_at_revision_2.identity
-            ),
-        }]))
     );
 }
 
