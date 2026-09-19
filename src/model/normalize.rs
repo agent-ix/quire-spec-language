@@ -17,29 +17,28 @@
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
 //! — FR-153 territory, not yet implemented anywhere in this crate (see
 //! `crate::model::conformance`'s own module doc).
-//! **Operation-member** redefinition (TC-196 R02–R08) also builds no phase
+//! **Operation-member** redefinition (TC-196 R02–R08) builds no *view* entry
 //! here: `crate::model::conformance` constructs its own
 //! [`EffectiveDeclarationPreimage`] directly over the domain package's
 //! [`crate::model::domain_package::OperationMemberRecord`]'s own `redefines`
 //! property for FR-151's conformance checking, so this pass — which exists to
-//! grow [`EffectiveView`] itself — has nothing to add for operations. This
-//! split is a scope decision recorded here, not a silent gap: extending
-//! this pass to also normalize operation-member redefinition into the view
-//! is future work, tracked by the PR that made this decision. This scope
-//! decision covers only the *view* this pass grows: the `m + r`
+//! grow [`EffectiveView`] itself — has no member to add for operations. This
+//! split is a scope decision recorded here, not a silent gap. It covers only
+//! the *view* this pass grows, though: the `m + r`
 //! `normalize.redefinition-check` charge below still prices every
 //! redefining member and every effective member the spec names,
-//! operation and field alike (QSL #145), and the
-//! `Σ (c − 1) × f(o)` `normalize.conflict-check` charge below prices a
-//! contested operation target (`c >= 2` redefining operation members
-//! reaching the same target) exactly as it prices a contested field target
-//! (QSL #145) — neither charge is itself
-//! an operation-redefinition normalization pass. Detecting and *resolving*
-//! a contested operation target — deciding which of several competing
-//! operation redefiners wins, the way this pass's own field-redefinition
-//! dominance search does — is not implemented anywhere in this crate today:
-//! `crate::model::conformance`'s own module doc names the same gap for its
-//! side of this split. Remaining work: #173.
+//! operation and field alike (QSL #145), and a contested operation target
+//! (`c >= 2` redefining operation members reaching the same target) is
+//! detected and resolved by the identical proper-descendant dominance search
+//! this pass's own field-redefinition contention uses (#173): a winner if
+//! one redefiner's owner dominates every other, otherwise a typed
+//! `redefinition-target`/`derivation-conflict` refusal, naming every
+//! competing redefiner exactly as the field case does, and priced by the
+//! same `Σ (c − 1) × f(o)` `normalize.conflict-check` charge (QSL #145).
+//! Resolving a contested operation target this way builds no
+//! [`EffectiveView`] member entry and touches no `member_preimages`/`hidden`
+//! state: the view stays field-only, as above; only the ambiguity check
+//! itself is shared.
 //!
 //! This engine takes a [`DomainPackage`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -1466,10 +1465,15 @@ fn record_phase4_refusal(
     }
 }
 
-/// Phase 4 (TC-195 N06): field redefinition only — operation-member
-/// redefinition is out of scope here (see the module docs); `conformance`
-/// resolves that case directly against its own [`EffectiveDeclarationPreimage`]
-/// values instead of this pass's exposure bookkeeping.
+/// Phase 4 (TC-195 N06): grows [`EffectiveView`] for field redefinition
+/// only — operation-member redefinition contributes no view entry here (see
+/// the module docs); `conformance` resolves each operation redefinition's
+/// own conformance axes directly against its own
+/// [`EffectiveDeclarationPreimage`] values instead of this pass's exposure
+/// bookkeeping. This function still detects and resolves *contention* — two
+/// or more redefiners of the same target — for operation members as well as
+/// fields (#173), sharing [`resolve_redefinition_contest`]'s dominance
+/// search; see this function's own operation-edges loop below.
 ///
 /// For every field member's own `redefines` property reachable at `type_key` (declared on
 /// `type_key` itself or a generalization ancestor, per `paths` — already
@@ -1521,12 +1525,13 @@ fn apply_redefinitions(
     // `normalize.redefinition-check`'s own charge sequence does not come
     // from either list: it is `build`'s own domain-package-wide pass over every
     // redefining member, field and operation alike; `all_edges`
-    // (field-only) is scoped purely to this type's own conflict
-    // *resolution*, exactly as the module docs describe. `operation_edges`
-    // feeds only the contention *charge* below (QSL #145): operation-member
-    // redefinition is still never resolved here —
-    // `crate::model::conformance` resolves it
-    // directly (see the module docs) — but a contested operation target
+    // (field-only) feeds this type's own field conflict *resolution and
+    // view growth*, exactly as the module docs describe. `operation_edges`
+    // feeds the contention *charge* below (QSL #145) and, like `all_edges`,
+    // its own dominance-search *resolution* (#173) — but never
+    // `member_preimages`/`hidden`/view growth: `crate::model::conformance`
+    // still checks each operation redefinition's own conformance axes
+    // directly (see the module docs), and a contested operation target
     // (`c >= 2`) still owes `normalize.conflict-check`'s own
     // `value-accounting.md:456` price, exactly as a contested field target
     // does.
@@ -1646,146 +1651,42 @@ fn apply_redefinitions(
             // `owner_ancestor_sets` already holds every owner in the domain package's
             // own proper-ancestor set (QSL #145: derived once, build-wide,
             // from phase 3's own `type_paths` rather than a fresh,
-            // separately bounded walk here) -- the
-            // winner search and its undominated-owner fallback below each
-            // compare every edge's owner against every other edge's owner,
-            // but TC-196 R07's own documented shape — several redefining
-            // members sharing one contending owner — means distinct owners
-            // are frequently far fewer than edges, and the same owner
-            // recurs across many types and targets within one build; both
-            // are plain `O(1)` set lookups against the already-built map.
-            let mut winner: Option<usize> = None;
-            for i in 0..edges.len() {
-                let mut dominates_all = true;
-                for j in 0..edges.len() {
-                    if i == j {
-                        continue;
-                    }
-                    if !owner_dominates(
-                        accounting.owner_ancestor_sets,
-                        &edges[i].owner,
-                        &edges[j].owner,
-                    ) {
-                        dominates_all = false;
-                        break;
-                    }
-                }
-                if dominates_all {
-                    winner = Some(i);
-                    break;
+            // separately bounded walk here); `resolve_redefinition_contest`'s
+            // own winner search and undominated-owner fallback each compare
+            // every edge's owner against every other edge's owner, but
+            // TC-196 R07's own documented shape — several redefining members
+            // sharing one contending owner — means distinct owners are
+            // frequently far fewer than edges, and the same owner recurs
+            // across many types and targets within one build; both are plain
+            // `O(1)` set lookups against the already-built map.
+            //
+            // `normalize.conflict-check` exposes this ambiguity
+            // (`value-accounting.md:456`), so `record_phase4_refusal` below
+            // ranks it by `CONFLICT_CHECK_STAGE` and this group's own
+            // `(type_key, target_key)` — `:456`'s "per type, in `type_keys`
+            // order, and only then by target" (`model-complete.md:160` puts
+            // the owning type first in the effective member key) — rather
+            // than keeping whichever ambiguity this pass's own per-`type_key`
+            // walk happens to reach first (see the module docs and
+            // `record_phase4_refusal`'s own doc).
+            match resolve_redefinition_contest(
+                accounting.owner_ancestor_sets,
+                type_key,
+                &target_key,
+                &edges,
+            ) {
+                Ok(index) => Some(index),
+                Err(refusal) => {
+                    record_phase4_refusal(
+                        accounting,
+                        CONFLICT_CHECK_STAGE,
+                        Some(type_key),
+                        &target_key,
+                        refusal,
+                    );
+                    None
                 }
             }
-
-            if winner.is_none() {
-                // TC-196 R07's second shape: among the undominated edges, the
-                // most-derived owners (those no *other* edge's owner properly
-                // descends from) are all the identical owner — contending
-                // redefiners of one inherited target (e.g. `B/z` and `B/z2`
-                // both `redefines: A/x`) — rather than distinct sibling
-                // lineages neither of which dominates the other (a genuine
-                // diamond, `derivation-conflict` below).
-                //
-                // Restricted to the most-derived owners, not every edge's
-                // owner: a less-derived owner's edge (e.g. `C/w` where
-                // `B <= C`) has already lost to any more-derived owner's edge
-                // (`B`'s) in the winner search above exactly as it would if
-                // `B` had only one redefiner, so it takes no part in deciding
-                // whether the *remaining* ambiguity is "one owner, several
-                // redefiners" or "two genuinely different lineages."
-                //
-                // A caller cannot resolve either shape by an arbitrary pick,
-                // but they are different ambiguities with different FR-272
-                // causes: this one refuses `redefinition-target`, naming every
-                // redefining member's own declaration key and the one
-                // contended target.
-                //
-                // `normalize.conflict-check` exposes this ambiguity
-                // (`value-accounting.md:456`), so `record_phase4_refusal`
-                // below ranks it by `CONFLICT_CHECK_STAGE` and this group's
-                // own `(type_key, target_key)` — `:456`'s "per type, in
-                // `type_keys` order, and only then by target"
-                // (`model-complete.md:160` puts the owning type first in the
-                // effective member key) — rather than keeping whichever
-                // ambiguity this pass's own per-`type_key` walk happens to
-                // reach first (see the module docs and
-                // `record_phase4_refusal`'s own doc).
-                let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
-                for edge in &edges {
-                    let mut dominated_by_another = false;
-                    for other in &edges {
-                        if other.owner == edge.owner {
-                            continue;
-                        }
-                        if owner_dominates(
-                            accounting.owner_ancestor_sets,
-                            &other.owner,
-                            &edge.owner,
-                        ) {
-                            dominated_by_another = true;
-                            break;
-                        }
-                    }
-                    if !dominated_by_another {
-                        most_derived.push(edge);
-                    }
-                }
-                let same_owner = !most_derived.is_empty()
-                    && most_derived
-                        .iter()
-                        .all(|edge| edge.owner == most_derived[0].owner);
-                let candidate = if same_owner {
-                    let mut redefiners: Vec<String> = most_derived
-                        .iter()
-                        .map(|edge| edge.redefining.node.clone())
-                        .collect();
-                    redefiners.sort();
-                    ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::RedefinitionTarget,
-                        detail: format!(
-                            "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
-                            most_derived[0].owner.node,
-                            most_derived.len(),
-                            redefiners.join(", "),
-                            target_key.node
-                        ),
-                    }
-                } else {
-                    let edge_paths: Vec<String> = edges
-                        .iter()
-                        .map(|edge| {
-                            let mut path: Vec<String> =
-                                edge.path.iter().map(|key| key.node.clone()).collect();
-                            path.push(edge.redefining.node.clone());
-                            path.push(target_key.node.clone());
-                            format!("[{}]", path.join(", "))
-                        })
-                        .collect();
-                    ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::DerivationConflict {
-                            type_: type_key.clone(),
-                            member: target_key.clone(),
-                            redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
-                        },
-                        detail: format!(
-                            "type {} has {} undominated redefinitions of {}: {}",
-                            type_key.node,
-                            edges.len(),
-                            target_key.node,
-                            edge_paths.join(" and ")
-                        ),
-                    }
-                };
-                record_phase4_refusal(
-                    accounting,
-                    CONFLICT_CHECK_STAGE,
-                    Some(type_key),
-                    &target_key,
-                    candidate,
-                );
-            }
-            winner
         };
 
         let member_key = (type_key.clone(), target_key.clone());
@@ -1886,15 +1787,17 @@ fn apply_redefinitions(
         hidden.insert(member_key);
     }
 
-    // Operation-member redefinition contention: never resolved here (see
-    // the module docs — `crate::model::conformance` decides which operation
-    // redefiner wins), but a contested operation target still owes
+    // Operation-member redefinition contention (#173): applies the identical
+    // `resolve_redefinition_contest` dominance rule field targets get above —
+    // a winner if one edge's owner dominates every other, otherwise a typed
+    // `redefinition-target`/`derivation-conflict` refusal — but touches no
+    // `member_preimages`/`hidden` state: operation members never enter
+    // `member_preimages` (see the module docs), so there is nothing here for
+    // a winner to resolve or hide; a resolved group's winner needs no further
+    // bookkeeping in this pass, and a contested target still owes
     // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
     // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
-    // contested field target (QSL #145).
-    // No `member_preimages`/`hidden` state is touched here: operation
-    // members never enter `member_preimages` (see the module docs), so
-    // there is nothing here for this loop to resolve or hide.
+    // contested field target (QSL #145), whether or not it resolves.
     let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
     for edge in operation_edges {
         operation_groups
@@ -1926,6 +1829,21 @@ fn apply_redefinitions(
             target_key.clone(),
             fact_total.saturating_mul(c.saturating_sub(1)),
         ));
+
+        if let Err(refusal) = resolve_redefinition_contest(
+            accounting.owner_ancestor_sets,
+            type_key,
+            &target_key,
+            &edges,
+        ) {
+            record_phase4_refusal(
+                accounting,
+                CONFLICT_CHECK_STAGE,
+                Some(type_key),
+                &target_key,
+                refusal,
+            );
+        }
     }
 
     conflict_charges.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1950,6 +1868,138 @@ fn owner_dominates(
         && closures
             .get(p_owner)
             .is_some_and(|ancestors| ancestors.contains(q_owner))
+}
+
+/// The dominance rule `apply_redefinitions` applies to a contested
+/// `target_key`'s `edges` (`c >= 2`, already checked by every caller):
+/// `Ok(i)` names the unique edge whose owner strictly dominates every other
+/// edge's owner. `Err` when no edge does, carrying the FR-272 refusal to
+/// report -- shared between field and operation redefiners (#173 applies the
+/// identical dominance rule to both) since the rule itself does not depend
+/// on member kind, only on the contending edges' own owners.
+///
+/// `Err` distinguishes TC-196 R07's two ambiguity shapes. Restricted to the
+/// most-derived owners, not every edge's owner: a less-derived owner's edge
+/// (e.g. `C/w` where `B <= C`) has already lost to any more-derived owner's
+/// edge (`B`'s) in the winner search above exactly as it would if `B` had
+/// only one redefiner, so it takes no part in deciding whether the
+/// *remaining* ambiguity is "one owner, several redefiners" or "two
+/// genuinely different lineages":
+///
+/// - `redefinition-target` when every most-derived owner among `edges`
+///   (those no *other* edge's owner properly descends from) is the identical
+///   owner -- several redefining members of one type contending for the same
+///   inherited target (e.g. `B/z` and `B/z2` both `redefines: A/x`), naming
+///   every contending redefiner and the one contended target.
+/// - `derivation-conflict` when the most-derived owners are not all the same
+///   owner -- a genuine diamond of distinct sibling lineages, neither
+///   dominating the other, naming every contending edge's own path.
+///
+/// A caller cannot resolve either shape by an arbitrary pick.
+///
+/// Sorted here, once, by `(owner, redefining)` (M1, #204 round 1) so the
+/// refusal payload built below (`DerivationConflict`'s own `redefiners`/
+/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic
+/// regardless of a caller's own incoming order: the field-target loop above
+/// already sorts its own `edges` the identical way before calling, for its
+/// *other* (`member_preimages`/`hidden`) needs downstream, so this sort is a
+/// stable no-op there and `Ok(i)` still indexes that caller's own slice the
+/// same way; the operation-target loop does not pre-sort, and never reads
+/// `Ok(i)` (operation members have no winner bookkeeping of their own — see
+/// that loop's comment), so sorting only here, once, covers both callers.
+fn resolve_redefinition_contest(
+    owner_ancestor_sets: &HashMap<DeclarationKey, HashSet<DeclarationKey>>,
+    type_key: &DeclarationKey,
+    target_key: &DeclarationKey,
+    edges: &[RedefinitionEdge],
+) -> Result<usize, ModelRefusal> {
+    let mut edges: Vec<&RedefinitionEdge> = edges.iter().collect();
+    edges.sort_by(|a, b| {
+        a.owner
+            .cmp(&b.owner)
+            .then_with(|| a.redefining.cmp(&b.redefining))
+    });
+    let edges = edges;
+    // L2, #204 round 1: `iter().position` in place of a raw `0..len()`
+    // index loop; `std::ptr::eq` stands in for the original `i == j`
+    // self-skip, comparing each edge's own identity (its slot in this
+    // group), not its value -- two structurally identical edges at
+    // different slots must still each get their own turn as `candidate`.
+    if let Some(winner) = edges.iter().position(|candidate| {
+        edges.iter().all(|other| {
+            std::ptr::eq(*candidate, *other)
+                || owner_dominates(owner_ancestor_sets, &candidate.owner, &other.owner)
+        })
+    }) {
+        return Ok(winner);
+    }
+
+    let mut most_derived: Vec<&RedefinitionEdge> = Vec::new();
+    for edge in edges.iter().copied() {
+        let dominated_by_another = edges.iter().any(|other| {
+            other.owner != edge.owner
+                && owner_dominates(owner_ancestor_sets, &other.owner, &edge.owner)
+        });
+        if !dominated_by_another {
+            most_derived.push(edge);
+        }
+    }
+    let same_owner = !most_derived.is_empty()
+        && most_derived
+            .iter()
+            .all(|edge| edge.owner == most_derived[0].owner);
+
+    Err(if same_owner {
+        let mut redefiners: Vec<String> = most_derived
+            .iter()
+            .map(|edge| edge.redefining.node.clone())
+            .collect();
+        redefiners.sort();
+        let mut redefiner_keys: Vec<DeclarationKey> = most_derived
+            .iter()
+            .map(|edge| edge.redefining.clone())
+            .collect();
+        redefiner_keys.sort();
+        ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: redefiner_keys,
+                target: target_key.clone(),
+            },
+            detail: format!(
+                "{} declares {} redefining members ({}) that all redefine {}, with no single valid target",
+                most_derived[0].owner.node,
+                most_derived.len(),
+                redefiners.join(", "),
+                target_key.node
+            ),
+        }
+    } else {
+        let edge_paths: Vec<String> = edges
+            .iter()
+            .map(|edge| {
+                let mut path: Vec<String> = edge.path.iter().map(|key| key.node.clone()).collect();
+                path.push(edge.redefining.node.clone());
+                path.push(target_key.node.clone());
+                format!("[{}]", path.join(", "))
+            })
+            .collect();
+        ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::DerivationConflict {
+                type_: type_key.clone(),
+                member: target_key.clone(),
+                redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+            },
+            detail: format!(
+                "type {} has {} undominated redefinitions of {}: {}",
+                type_key.node,
+                edges.len(),
+                target_key.node,
+                edge_paths.join(" and ")
+            ),
+        }
+    })
 }
 
 fn sort_facts(facts: &mut [PendingFact]) {
