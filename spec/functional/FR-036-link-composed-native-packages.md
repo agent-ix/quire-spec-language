@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-035
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-290
+    type: references
 ---
 # FR-036: Link composed packages without inventing runtime premises
 
@@ -89,6 +91,8 @@ If a native model reference names a domain package, declaration key or export ki
 If a package processing budget is exhausted, then the linker SHALL report resource_exhausted for unfinished dependent work without claiming complete package admission.
 
 The compiler SHALL retain each requested clause/capability pair when handing a linked subject to downstream processing.
+
+Each requested capability SHALL name exactly one member of the shared protocol claim-kind vocabulary `ix://agent-ix/quire-specification/FR-290` fixes: `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability` and `composition`.
 
 If a downstream checker or backend cannot admit a requested form, then the compiler SHALL retain its typed unsupported disposition without converting the package to complete success.
 
@@ -186,6 +190,16 @@ complete aggregate success unavailable. `admitted_bodies` exposes only admitted
 family-check subjects, so an unsupported family body is never represented as
 checked. Assessment selections and backend support are retained as provenance and
 are never written back into the static subject.
+
+The requested claim vocabulary this requirement retains is
+[quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md)'s
+six-member closed set — `global-conformance`, `monitorability`,
+`local-projection`, `refinement`, `realizability` and `composition` — which
+`agent-ix/quire-specification#116` fixes as the shared claim-kind authority,
+and which FR-290's own vocabulary-authority section names
+`linking::composed::requests::Capability` as aligning to. Remaining work: #185
+delivers that vocabulary in `linking::composed::requests::Capability`, whose
+requested-capability report TC-115 exercises.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
 runtime requirements. TC-114 exercises common nominal types across state,

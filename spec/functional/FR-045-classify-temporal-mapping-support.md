@@ -155,3 +155,17 @@ encode. Naming them is not discharging them.
   `ix://agent-ix/quire-specification/FR-095` — the TL formula, valuation request
   and correspondence record — depends on `quire-contract-ir#63`,
   `quire-contract-ir#64` and actual TL capability, and is not implemented here.
+
+## Status
+
+The implementation pins the reviewed source by symbol. The `SUPPORT_TABLE`
+constant in `src/temporal/mapping.rs` names
+`ix://agent-ix/quire-specification/FR-095` at the same baseline
+(`4d6230eb8aa9766ff3017360962f2d6368d74cb3`) this requirement's Behavior
+section cites, and `classify` retains that constant on every supported
+classification, so a disposition always reports the exact source revision it
+was read against. The classifier evaluates the Behavior section's rows, which
+restate that source; the constant carries the pin, not the rows.
+The baseline stays pinned to that revision until
+`ix://agent-ix/quire-specification#112` lands a reviewed revision of the
+source table; only a landed revision moves this pin.
