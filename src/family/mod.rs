@@ -70,10 +70,10 @@
 //! identically whether it wires `requirements()` correctly or not -- the
 //! exact failure this contract exists to prevent. So `#214` does not add a
 //! `requirements` method to `FamilyContract`, and the FR-062 rows for this
-//! part are left unbacked rather than backed by an unexercised shell. The
-//! first family ticket with a real FR-057 capability kind adds
-//! `requirements()` (and `Requirements`/`CapabilityKind`/`Extent`/`Bound`,
-//! or whatever shape that kind actually needs) to the trait then, validated
+//! part are left unbacked rather than backed by an unexercised shell.
+//! QSL-152 (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9) owns adding `requirements()`
+//! (and `Requirements`/`CapabilityKind`/`Extent`/`Bound`, or whatever shape
+//! a real FR-057 capability kind actually needs) to the trait, validated
 //! against a real instance instead of guessed in advance.
 
 mod contract;
@@ -83,7 +83,7 @@ pub(crate) use contract::{
     CheckContext, DiagnosticSink, EvaluateRefusal, FamilyContract, ReferenceEvaluation, ScopeStack,
     StageLimits,
 };
-pub(crate) use outcome::{CheckOutcome, StageFailure, Staged};
+pub(crate) use outcome::{CheckOutcome, StageFailure, StageLimitKind, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at

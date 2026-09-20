@@ -31,6 +31,16 @@ impl DiagnosticSink {
         });
     }
 
+    /// Read back for test assertions only (PR #262 review, coordinator
+    /// round 3): this crate's one non-test caller was a fabricated
+    /// coherence check, deleted (`value/expression/mod.rs`'s own doc at
+    /// its former call site). `#[cfg(test)]`, not `#[allow(dead_code)]`:
+    /// this is genuinely test-only infrastructure -- `check`'s real
+    /// production callers never need to read the sink back, only write
+    /// through it -- so the compiler is told that directly rather than
+    /// having the lint silenced over a real (non-test) reader that does
+    /// not exist.
+    #[cfg(test)]
     pub(crate) fn entries(&self) -> &[Diagnostic] {
         &self.entries
     }
@@ -55,21 +65,33 @@ impl ScopeStack {
     pub(crate) fn current(&self) -> &str {
         self.frames.last().map(String::as_str).unwrap_or("<root>")
     }
-
-    pub(crate) fn depth(&self) -> usize {
-        self.frames.len()
-    }
 }
 
 /// Explicit stage-entry limits (FR-062 "Explicit limits bound every stage
 /// entry, including recursion"; ADR-013 T-4). `check` is a recursive stage
 /// (ADR-011 §2.3) and bounds its own recursion by `nesting_depth`, checked
 /// before each recursive step -- never by the native call stack.
+///
+/// **`input_bytes`/`node_count` are deleted (PR #262 review, coordinator
+/// round 3, finding 4).** ADR-013 T-4 names four stage-entry limit kinds
+/// ("input bytes, nesting depth, node count, work budget"); an earlier
+/// version of this struct carried fields for all four already-named limits,
+/// but `Value`'s function-declaration `check` -- #214's one migrated stage
+/// entry -- only ever charges and checks `nesting_depth`
+/// ([`CheckContext::enter_nesting`]); nothing constructed one of these two
+/// fields anywhere but the fixed-value fixtures that built a `StageLimits`,
+/// and nothing anywhere read either back. Two write-only fields are the
+/// same fabricated-surface shape [`StageLimitKind`](super::outcome::
+/// StageLimitKind)'s own doc already narrows to `NestingDepth` alone for
+/// this same reason; keeping them here while `StageLimitKind` has no
+/// `InputBytes`/`NodeCount` variant to report a limit hit through would
+/// only restore the mismatch this round's review is correcting. QSL-153
+/// owns adding both fields back together with the matching
+/// `StageLimitKind` variants, not separately (FR-062-AC-5's own Status
+/// section).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct StageLimits {
-    pub(crate) input_bytes: u64,
     pub(crate) nesting_depth: u64,
-    pub(crate) node_count: u64,
 }
 
 /// The mutable typing context every family's `check` receives (ADR-012 §2,
@@ -148,8 +170,8 @@ impl<'a, D> CheckContext<'a, D> {
 /// contract's sixth part) and a typed refusal `Cause` are deferred -- see
 /// `crate::family`'s module doc for `requirements`, and
 /// [`super::outcome::StageFailure`]'s doc for `Cause`. Both are real
-/// ADR-012 §2 design parts a future family ticket adds back, validated
-/// against a real instance rather than guessed here.
+/// ADR-012 §2 design parts QSL-152 owns (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9),
+/// added against a real instance rather than guessed here.
 ///
 /// **`package` is deleted (PR #262 review, findings F1/F2).** An earlier
 /// version of this trait also required `package(checked: &Self::Checked,
@@ -165,10 +187,11 @@ impl<'a, D> CheckContext<'a, D> {
 /// called directly, not through this trait. FR-062's packaging-related
 /// rows (the `package` mention in AC-1, and AC-9's fault-injection
 /// criterion) are recorded unbacked rather than backed by an unconsumed
-/// hook. A future family whose packaging genuinely needs a shared,
-/// trait-level hook (for example because several families' v2 nodes must
-/// compose into one all-or-nothing emission a shared caller drives) adds
-/// `package` back then, with a real consumer in the same change.
+/// hook; QSL-152 owns both. A family whose packaging genuinely needs a
+/// shared, trait-level hook (for example because several families' v2
+/// nodes must compose into one all-or-nothing emission a shared caller
+/// drives) adds `package` back as part of that work, with a real consumer
+/// in the same change.
 pub(crate) trait FamilyContract {
     /// This family's parsed semantic form (typed subnodes; ADR-012 §4).
     type Form;

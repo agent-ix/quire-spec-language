@@ -377,9 +377,7 @@ impl PackageDeclarations {
         // was never built to replace it).
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
         let contract_limits = crate::family::StageLimits {
-            input_bytes: u64::MAX,
             nesting_depth: MAX_CHECKING_DEPTH,
-            node_count: u64::MAX,
         };
         let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
             integer_bits: u64::MAX,
@@ -395,7 +393,6 @@ impl PackageDeclarations {
         });
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
-        let mut contract_checked = 0_usize;
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let mut contract_cx = crate::family::CheckContext::new(
@@ -408,18 +405,27 @@ impl PackageDeclarations {
             let identity = match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
                 Ok(staged) => staged.value,
                 Err(crate::family::StageFailure::Limit(limit)) => {
+                    // PR #262 review (coordinator round 3, finding 4):
+                    // `limit.kind` is matched, not read past into a
+                    // hardcoded `CheckingLimitKind::Depth` -- `StageLimitKind`
+                    // has exactly one variant today, but this exhaustive
+                    // match (not a `_` catch-all) is what forces a real
+                    // decision here, not a guess, the day a second
+                    // `StageLimitKind` variant is added.
+                    let kind = match limit.kind {
+                        crate::family::StageLimitKind::NestingDepth => CheckingLimitKind::Depth,
+                    };
                     refusals.push(CheckRefusal {
                         location: location.clone(),
                         cause: CheckCause::ResourceExhausted {
                             stage: CheckingStage::Typing,
-                            kind: CheckingLimitKind::Depth,
+                            kind,
                             limit: limit.configured_bound,
                         },
                     });
                     continue;
                 }
             };
-            contract_checked += 1;
             let typed = (|| {
                 let mut typer = Typer::new(
                     &scope,
@@ -477,16 +483,16 @@ impl PackageDeclarations {
                 }
             }
         }
-        // FR-062-AC-3: `ValueFunctionFamily::check` records exactly one
-        // diagnostic per function it admitted through the contract --
-        // `DiagnosticSink::entries`'s only real caller, and a real
-        // (non-test) coherence check on the contract's own side effect, not
-        // a fabricated read.
-        assert_eq!(
-            contract_diagnostics.entries().len(),
-            contract_checked,
-            "ValueFunctionFamily::check must record exactly one diagnostic per admitted function"
-        );
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function asserted `contract_diagnostics.entries().len() ==
+        // contract_checked` here. `contract_checked` is incremented exactly
+        // once per successful `ValueFunctionFamily::check` call above, and
+        // `check` itself records exactly one diagnostic on every successful
+        // path (its own doc) -- the two counts are equal by construction,
+        // not because anything downstream was checked. `contract_checked`
+        // is deleted along with it; FR-062-AC-3's real coverage is the
+        // `#[cfg(test)]` assertions in `value/expression/family.rs` that
+        // exercise `check` directly and inspect its diagnostic sink.
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -547,14 +553,15 @@ impl PackageDeclarations {
                 }
             }
         }
-        // FR-062-AC-2: every admitted function has at least its own
-        // "declaration" occurrence -- `OccurrenceMap::entries`'s only real
-        // (non-test) caller, and a real coherence check on the map this
-        // loop just built, not a fabricated read.
-        assert!(
-            occurrences.entries().len() >= functions.len(),
-            "every admitted function must have at least one recorded occurrence"
-        );
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function asserted `occurrences.entries().len() >=
+        // functions.len()` here. The loop above unconditionally calls
+        // `occurrences.record(function.identity, "declaration", ...)` once
+        // per function in `functions`, before any "reference" entry --
+        // `entries().len()` is at least `functions.len()` by construction,
+        // not because anything downstream was checked. `OccurrenceMap::
+        // entries`, that assertion's only reader anywhere in this crate, is
+        // deleted with it.
         Ok(CheckedPackage {
             scope,
             functions,
