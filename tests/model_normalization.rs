@@ -17,7 +17,7 @@ use quire_spec_language::model::domain_package::{
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{
-    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_REDEFINE,
+    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, EffectiveIdExt, Fact, RULE_REDEFINE,
 };
 use quire_spec_language::model::normalize::{
     normalize, normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause,
@@ -695,7 +695,7 @@ fn key_json(key: &DeclarationKey) -> Value {
 
 fn effective_id_json(id: &EffectiveId) -> Value {
     serde_json::json!({
-        "digest": id.hex(),
+        "digest": id.to_string(),
         "domain": "quire.model.effective-declaration/v1",
     })
 }
@@ -742,7 +742,11 @@ fn assert_declaration_matches_vector(
         })
         .unwrap_or_else(|| panic!("no declaration {original_identity} owned by {owner:?}"));
     let vector = vector(vectors, name);
-    assert_eq!(entry.effective_id.hex(), vector["sha256"], "{name} digest");
+    assert_eq!(
+        entry.effective_id.to_string(),
+        vector["sha256"],
+        "{name} digest"
+    );
     assert_eq!(
         preimage_json(&entry.preimage),
         vector["preimage"],
@@ -785,12 +789,15 @@ fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
         "n01-member-B-x",
     );
 
-    assert_eq!(view.identity().hex(), vector_sha256(&vectors, "n01-view"));
+    assert_eq!(
+        view.identity().to_string(),
+        vector_sha256(&vectors, "n01-view")
+    );
 
     let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
-    assert_eq!(universe.root_types, vec![type_a.effective_id.clone()]);
+    assert_eq!(universe.root_types, vec![type_a.effective_id]);
     assert_eq!(
-        universe.identity().hex(),
+        universe.identity().to_string(),
         vector_sha256(&vectors, "n01-universe")
     );
 }
@@ -865,11 +872,14 @@ fn n02_normalizes_f2_diamond_inheritance_to_the_exact_ground_truth_identities() 
         "both diamond paths [B, A, A/x] and [C, A, A/x] retained"
     );
 
-    assert_eq!(view.identity().hex(), vector_sha256(&vectors, "n02-view"));
+    assert_eq!(
+        view.identity().to_string(),
+        vector_sha256(&vectors, "n02-view")
+    );
 
     let universe = quire_spec_language::model::normalize::object_universe(&fixture_f2()).unwrap();
     assert_eq!(
-        universe.identity().hex(),
+        universe.identity().to_string(),
         vector_sha256(&vectors, "n02-universe")
     );
 }
@@ -898,16 +908,22 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
         n01v2_view["preimage"]["declarations"]
     );
 
-    assert_eq!(view.identity().hex(), vector_sha256(&vectors, "n01v2-view"));
+    assert_eq!(
+        view.identity().to_string(),
+        vector_sha256(&vectors, "n01v2-view")
+    );
     let universe = quire_spec_language::model::normalize::object_universe(&domain_package).unwrap();
     assert_eq!(
-        universe.identity().hex(),
+        universe.identity().to_string(),
         vector_sha256(&vectors, "n01v2-universe")
     );
     // Different from N01's own view/universe: the model selection changed.
-    assert_ne!(view.identity().hex(), vector_sha256(&vectors, "n01-view"));
     assert_ne!(
-        universe.identity().hex(),
+        view.identity().to_string(),
+        vector_sha256(&vectors, "n01-view")
+    );
+    assert_ne!(
+        universe.identity().to_string(),
         vector_sha256(&vectors, "n01-universe")
     );
 }
@@ -919,7 +935,10 @@ fn n07_record_order_does_not_affect_identity_or_view() {
     let mut reversed = fixture_f2();
     reversed.records.reverse();
     let view = completed(&reversed, ModelNormalizationLimits::UNLIMITED);
-    assert_eq!(view.identity().hex(), vector_sha256(&vectors, "n02-view"));
+    assert_eq!(
+        view.identity().to_string(),
+        vector_sha256(&vectors, "n02-view")
+    );
 }
 
 #[trace("TC-195", "FR-150-AC-8")]
@@ -1012,14 +1031,14 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
 
     for entry in view.declarations() {
         assert_ne!(
-            entry.effective_id.hex(),
+            entry.effective_id.to_string(),
             selection_digest,
             "effective identity {} collided with the model selection digest",
-            entry.effective_id.hex()
+            entry.effective_id
         );
     }
-    assert_ne!(view.identity().hex(), selection_digest);
-    assert_ne!(universe.identity().hex(), selection_digest);
+    assert_ne!(view.identity().to_string(), selection_digest);
+    assert_ne!(universe.identity().to_string(), selection_digest);
 }
 
 #[trace("TC-195")]
@@ -1399,7 +1418,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     // Type-level identities are unaffected by phase 4 (field-only): D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find(&view, &vector_sha256(&vectors, "n02-type-D")[..8]);
-    let owner_d = type_d.effective_id.clone();
+    let owner_d = type_d.effective_id;
 
     let winner = find_member(&view, &owner_d, "model.D.x4");
     assert!(
@@ -2891,8 +2910,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
                     && entry.preimage.original.node == "model.O"
             })
             .unwrap_or_else(|| panic!("no type declaration for model.O in {n_parents}-parent view"))
-            .effective_id
-            .clone();
+            .effective_id;
 
         let winner = find_member(&view, &owner_o, "model.O.z");
         assert!(

@@ -108,6 +108,20 @@ impl EnclosingItem {
     }
 }
 
+/// `Self`'s type name for an `impl` block, for the common case every S1-S4
+/// seam this tool checks in today actually has (`impl PlainType { ... }`).
+///
+/// **Known limitation (rust-review pre-handoff pass).** A `Self` type this
+/// crate never uses for a real seam -- `impl<T> Foo<T>`, `impl Foo<Bar>`,
+/// `impl &Foo`, a tuple or reference type -- falls into the `"<impl>"`
+/// catch-all below, which would silently collapse two *different* impl
+/// blocks' methods of the same name into one indistinguishable checked-in
+/// key if two such impls ever both held a checked S1-S4 seam in the same
+/// file. Widening this to handle every `syn::Type` shape distinctly is
+/// speculative for a resolver with exactly one real call site
+/// (`FamilyKind`'s plain `impl` block); if a future seam actually needs a
+/// generic or otherwise non-`Type::Path` `Self`, broaden this match then,
+/// against that real case, rather than guessing every shape now.
 fn impl_self_name(ty: &syn::Type) -> String {
     match ty {
         syn::Type::Path(type_path) => type_path

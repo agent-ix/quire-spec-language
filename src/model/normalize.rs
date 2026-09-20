@@ -214,8 +214,8 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
 };
 use crate::model::key::{
-    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId,
+    EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
 
@@ -505,11 +505,11 @@ impl EffectiveView {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::UnsortedView {
-                        at: pair[1].effective_id.clone(),
+                        at: pair[1].effective_id,
                     },
                     detail: format!(
                         "view declarations are not sorted ascending by effective identity at {}",
-                        pair[1].effective_id.hex()
+                        pair[1].effective_id
                     ),
                 });
             }
@@ -1527,7 +1527,7 @@ fn build(
         // as this type's members' owner) and the JCS length phase 5 needs
         // later (PR #140 F10).
         let (owner_effective_id, type_jcs_len) = preimage.identity_and_jcs_len();
-        type_effective_ids.insert(type_key.clone(), owner_effective_id.clone());
+        type_effective_ids.insert(type_key.clone(), owner_effective_id);
         type_jcs_lens.insert(type_key.clone(), type_jcs_len);
         type_preimages.insert(type_key.clone(), preimage);
 
@@ -1543,7 +1543,7 @@ fn build(
             member_preimages.insert(
                 (type_key.clone(), member.key.clone()),
                 EffectiveDeclarationPreimage {
-                    owner_effective_type: Some(owner_effective_id.clone()),
+                    owner_effective_type: Some(owner_effective_id),
                     original: member.key.clone(),
                     derivation: vec![Fact {
                         ordinal: 0,
@@ -1574,7 +1574,7 @@ fn build(
                 let entry = member_preimages
                     .entry((type_key.clone(), member.key.clone()))
                     .or_insert_with(|| EffectiveDeclarationPreimage {
-                        owner_effective_type: Some(owner_effective_id.clone()),
+                        owner_effective_type: Some(owner_effective_id),
                         original: member.key.clone(),
                         derivation: Vec::new(),
                     });
@@ -1780,7 +1780,7 @@ fn build(
     let mut entries: Vec<ViewEntry> = Vec::new();
     for type_key in &type_keys {
         let preimage = type_preimages.remove(type_key).expect("built above");
-        let effective_id = type_effective_ids[type_key].clone();
+        let effective_id = type_effective_ids[type_key];
         declarations.push(PendingDeclaration {
             jcs_len: type_jcs_lens[type_key],
         });
@@ -1814,12 +1814,12 @@ fn build(
             visible,
         });
     }
-    entries.sort_by(|a, b| a.effective_id.cmp(&b.effective_id));
+    entries.sort_by_key(|a| a.effective_id);
 
     let mut root_types: Vec<EffectiveId> = type_keys
         .iter()
         .filter(|key| !index.non_root.contains(*key))
-        .map(|key| type_effective_ids[key].clone())
+        .map(|key| type_effective_ids[key])
         .collect();
     root_types.sort();
 
@@ -2142,7 +2142,7 @@ fn apply_redefinitions(
                 })
                 .sum();
             accounting.conflict_charges.push((
-                owner_effective_id.clone(),
+                owner_effective_id,
                 target_key.clone(),
                 fact_total.saturating_mul(c.saturating_sub(1)),
             ));
@@ -2353,7 +2353,7 @@ fn apply_redefinitions(
             })
             .sum();
         accounting.conflict_charges.push((
-            owner_effective_id.clone(),
+            owner_effective_id,
             target_key.clone(),
             fact_total.saturating_mul(c.saturating_sub(1)),
         ));
@@ -2544,7 +2544,7 @@ fn resolve_redefinition_contest(
         // original declaration key) -- this group's own resolving type's
         // effective identity, genuinely distinct per resolving type (QSL
         // #195).
-        let rank = Phase4Rank::ConflictCheck(owner_effective_id.clone(), target_key.clone());
+        let rank = Phase4Rank::ConflictCheck(*owner_effective_id, target_key.clone());
         (
             rank,
             ModelRefusal {
@@ -2831,7 +2831,7 @@ mod tests {
     /// by an integration test simulating an external caller.
     fn entry(byte: u8) -> ViewEntry {
         ViewEntry {
-            effective_id: EffectiveId::from_digest_bytes([byte; 32]),
+            effective_id: EffectiveId::from_digest([byte; 32]),
             preimage: EffectiveDeclarationPreimage {
                 owner_effective_type: None,
                 original: DeclarationKey::fixture("model.A"),
@@ -2857,7 +2857,7 @@ mod tests {
         assert_eq!(
             refusal.cause,
             ModelRefusalCause::UnsortedView {
-                at: view.declarations()[1].effective_id.clone(),
+                at: view.declarations()[1].effective_id,
             }
         );
         assert_eq!(refusal.code, Code::InvalidModelBinding);
