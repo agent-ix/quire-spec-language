@@ -25,9 +25,12 @@ has not minted yet.
 
 Before this ticket, `complete::package::lower_source_graph` produces a
 `LoweredSourceGraph`: a structural lowering established by #117, before
-semantic checking existed as a distinct stage. ADR-010 §2.6 X4 found it has
-no consumer anywhere in `src` outside the module that defines it — a dead
-end (SEAM-5). At the same time, the dedicated S2 stage ADR-011 assigns the
+semantic checking existed as a distinct stage. ADR-010 §2.6 X4 records it as
+`absent: LoweredSourceGraph in src excluding src/complete`: its only two
+occurrences besides its own definition — a test that calls it directly, and
+a module re-export — are both inside `src/complete`, the module that
+defines it, so nothing outside that module consumes it — a dead end
+(SEAM-5). At the same time, the dedicated S2 stage ADR-011 assigns the
 CST-to-parsed-form edge (E2) to — a `forms` module, at the layer-2 position
 ADR-011 §6.1 names — does not exist yet. Two things are wrong about this at
 once: a dead path stays in the tree wired to nothing, and the boundary meant
@@ -56,11 +59,11 @@ closes.
 ### US-007-EX-3: The old dead end is gone, not dormant
 
 - **Given** the S2 forms stage has landed.
-- **When** I search the compiled crate for `LoweredSourceGraph`,
-  `LoweredDeclaration`, or `lower_source_graph`.
-- **Then** none of the three symbols exist anywhere in the crate, and no
-  disabled or feature-gated copy of the pre-migration test that exercised
-  them remains either.
+- **When** I search every tracked file in the repository — not only `src/`
+  — for `LoweredSourceGraph`, `LoweredDeclaration`, or `lower_source_graph`.
+- **Then** none of the three names appear anywhere in the repository, and no
+  disabled, feature-gated, or relocated-to-`tests/`-or-`xtask` copy of the
+  pre-migration test that exercised them remains either.
 
 ## Priority and Risk (Informative)
 
