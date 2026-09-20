@@ -194,7 +194,50 @@ outcome.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. The design names `FamilyContract` and `ReferenceEvaluation`
-follow ADR-012; ADR-012 states these are design names and the implementing
-ticket chooses the final Rust spelling within this requirement's rules.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). The
+design names `FamilyContract` and `ReferenceEvaluation` follow ADR-012;
+ADR-012 states these are design names and the implementing ticket chooses
+the final Rust spelling within this requirement's rules.
+
+**Scope of what #214 delivers (PR #262 review).** #214 implements the
+contract narrowed to what its one migrated family (`Value`'s
+function-declaration form) can back with a real, non-fabricated
+construction site: `check`, the checked-input parameter, and the
+stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely),
+`package` (AC-1's mention, AC-9 entirely) and the `Relation`
+non-native-evaluability case (AC-6's second sentence) are deleted or never
+implemented, not stubbed -- see `src/family/mod.rs`'s and
+`src/family/contract.rs`'s own module docs for why each is a real deferral
+rather than an oversight. By Acceptance Criterion, with real trace tags as
+they exist in the delivered code today:
+- FR-062-AC-1: unbacked (untagged; the six-part shape it describes is
+  narrowed to `check` alone, per `contract.rs`'s own doc).
+- FR-062-AC-2: backed (`TC-160`, `src/value/expression/family.rs`).
+- FR-062-AC-3: backed (`TC-160`, `src/value/expression/family.rs`).
+- FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
+  migrates carries an FR-057 capability kind (`src/family/mod.rs`'s module
+  doc).
+- FR-062-AC-5: unbacked (untagged). `package` (one of the two hooks this
+  criterion names) is deleted entirely (F1/F2 below), so "package never
+  returns `Incomplete`" holds only because `package` no longer exists to
+  return anything.
+- FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
+  in #214; there is nothing to invoke this criterion's hook against yet.
+- FR-062-AC-7: backed (`TC-160`, `src/value/expression/family.rs`).
+- FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
+  own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
+  no cause-bearing family to probe yet.
+- FR-062-AC-9: unbacked, by PR #262 review findings F1/F2.
+  `FamilyContract::package` had one real caller
+  (`CheckedPackage::emit_function_package_v2`), which wrote `package`'s
+  output into a scratch buffer it never read back before building its
+  actual returned bytes independently through `family::emit_v2` -- a hook
+  nothing consumed. It is deleted rather than wired up speculatively or
+  kept as an unbacked "package" row while claiming AC-9's fault-injection
+  behavior; see `contract.rs`'s own doc on `FamilyContract`.
+- FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
+  `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
+  but no test carries this criterion's own trace tag.
+
+Three of this requirement's ten Acceptance Criteria are backed (AC-2, AC-3,
+AC-7); the other seven are unbacked, for the reasons above -- not silently.

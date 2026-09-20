@@ -357,12 +357,28 @@ impl PackageDeclarations {
             .collect();
         let mut nodes = 0_u64;
         let mut functions = Vec::with_capacity(self.functions.len());
-        // FR-062/FR-065: identity is minted through the checked-family
-        // contract's own `check` hook (`family::ValueFunctionFamily`), not
-        // by calling `family::mint_declaration_identity` directly -- this
-        // is what makes the contract (`CheckContext`, `Staged`,
-        // `StageFailure`) the one path this migration's declarations go
-        // through, not a free function beside it.
+        // FR-062/FR-065, corrected per PR #262 review (the headline
+        // question): identity is minted, and one diagnostic logged, through
+        // the checked-family contract's own `check` hook
+        // (`family::ValueFunctionFamily::check`) -- that part is real and
+        // exclusive to the contract. It is NOT what decides whether this
+        // declaration is admitted: `check` only ever refuses on the
+        // nesting-depth limit below, and admits unconditionally otherwise.
+        // The typing, definedness and termination verdict is still made
+        // entirely by the unchanged `Typer`, invoked immediately below, for
+        // every function, unconditionally -- FR-065's own claim that this
+        // migration makes the form "check... exclusively through" the
+        // contract is accurate only for identity/provenance minting, not
+        // for the checking decision itself. Both the contract's `check` and
+        // the `Typer` run for every declaration; see FR-065's own amended
+        // Status section for why this is recorded as a real limitation
+        // rather than resolved by this round's fixes, and why it is not the
+        // ADR-011 §7.3 M-6e side-by-side hazard in the narrow sense that
+        // rule targets (there is no separate, deprecated *old* admission
+        // path for declarations this ticket left running by oversight --
+        // the `Typer` is not "old" in that sense, it is the only checker
+        // that has ever existed for this form, and the contract's `check`
+        // was never built to replace it).
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
         let contract_limits = crate::family::StageLimits {
             input_bytes: u64::MAX,
@@ -384,12 +400,6 @@ impl PackageDeclarations {
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         let mut contract_checked = 0_usize;
-        crate::family::assert_distinct_catalog_code_prefixes();
-        assert_eq!(
-            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Check),
-            crate::family::HookStatus::Implemented,
-            "Value must report Implemented at Check to admit function declarations through the contract"
-        );
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let mut contract_cx = crate::family::CheckContext::new(
@@ -399,27 +409,20 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            let identity =
-                match family::ValueFunctionFamily::check(function.clone(), &mut contract_cx) {
-                    Ok(staged) => staged.value,
-                    Err(crate::family::StageFailure::Limit(limit)) => {
-                        refusals.push(CheckRefusal {
-                            location: location.clone(),
-                            cause: CheckCause::ResourceExhausted {
-                                stage: CheckingStage::Typing,
-                                kind: CheckingLimitKind::Depth,
-                                limit: limit.configured_bound,
-                            },
-                        });
-                        continue;
-                    }
-                    Err(crate::family::StageFailure::Fault(fault)) => {
-                        panic!(
-                            "ValueFunctionFamily::check's internal invariant failed at {}: {}",
-                            fault.stage, fault.invariant
-                        )
-                    }
-                };
+            let identity = match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
+                Ok(staged) => staged.value,
+                Err(crate::family::StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::ResourceExhausted {
+                            stage: CheckingStage::Typing,
+                            kind: CheckingLimitKind::Depth,
+                            limit: limit.configured_bound,
+                        },
+                    });
+                    continue;
+                }
+            };
             contract_checked += 1;
             let typed = (|| {
                 let mut typer = Typer::new(
@@ -724,27 +727,23 @@ impl CheckedPackage {
     }
 
     /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
-    /// bytes -- the checked-package producer's own public entry point
-    /// (calls [`family::ValueFunctionFamily::package`] once per function,
-    /// S4-links each identity first, all-or-nothing per function per
-    /// [`crate::family::FamilyContract::package`]'s own doc). Reads no CST,
-    /// no source text, only each function's already-checked identity.
+    /// bytes -- the checked-package producer's own public entry point.
+    /// S4-links each identity first (`family::link_function_identity`),
+    /// then emits directly through `family::emit_v2` (PR #262 review,
+    /// findings F1/F2: an earlier version routed this through
+    /// `FamilyContract::package` into a scratch buffer that was never read
+    /// back, which that trait method has since been deleted for -- see its
+    /// own doc). Reads no CST, no source text, only each function's
+    /// already-checked identity.
     pub fn emit_function_package_v2(&self) -> Vec<u8> {
-        assert_eq!(
-            crate::family::stage_hooks(
-                crate::family::FamilyKind::Value,
-                crate::family::Stage::Package
-            ),
-            crate::family::HookStatus::Implemented,
-            "Value must report Implemented at Package to emit v2 bytes through the contract"
-        );
-        let mut entries = Vec::with_capacity(self.functions.len());
-        for function in &self.functions {
-            let linked = family::link_function_identity(function.identity);
-            let mut scratch = Vec::new();
-            family::ValueFunctionFamily::package(&linked, &mut scratch);
-            entries.push((function.signature.name.clone(), linked));
-        }
+        let entries = self
+            .functions
+            .iter()
+            .map(|function| {
+                let linked = family::link_function_identity(function.identity);
+                (function.signature.name.clone(), linked)
+            })
+            .collect::<Vec<_>>();
         family::emit_v2(&entries)
     }
 
@@ -852,11 +851,6 @@ impl CheckedPackage {
         // (`crate::family::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
         // `Machine` call beside it.
-        assert_eq!(
-            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Evaluate),
-            crate::family::HookStatus::Implemented,
-            "Value must report Implemented at Evaluate to run checked functions through the contract"
-        );
         let identity = checked.identity;
         let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
             integer_bits: u64::MAX,

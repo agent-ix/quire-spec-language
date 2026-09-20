@@ -100,6 +100,32 @@ of:
   matches;
 - each family `Cause` enum's `catalog_code()`.
 
+**Correction to merged spec (stage-participation table deleted, PR #262
+review, finding F7).** #214's first implementation pass built the
+stage-participation table this section describes --
+`stage_hooks(FamilyKind, Stage) -> HookStatus` in `src/family/mod.rs` -- as
+its own checked-in S1 location, distinct from `catalog_code_prefix`'s prefix
+arm. Review found that table's only non-test callers were three
+`assert_eq!(stage_hooks(...), Implemented)` sites, each passing a literal,
+compile-time-known `FamilyKind`/`Stage` pair into the same hand-written
+`match` and asserting the result equalled the value that arm already
+returns for those literals -- an assertion manufactured to give otherwise-
+dead code a caller, not a real one. With those three call sites deleted
+(correctly), `stage_hooks` itself has no real reader left: nothing in this
+ticket's runtime asks "what hook status does family X have at stage Y" to
+make an actual decision. It is deleted along with them, rather than kept
+alive by more fabricated callers or `#[allow(dead_code)]`. The checked-in
+seam-function list therefore has, for now, only one entry -- the
+`FamilyKind` prefix arm of `catalog_code()` -- not two; the
+stage-participation-table bullet above is not currently satisfiable by
+anything this crate ships, and FR-063-AC-6's stage-participation-table
+category (below) is unbacked until a real, non-fabricated caller for a
+stage-participation table exists (most plausibly the first sibling family
+ticket that genuinely needs to ask that question at runtime, which adds the
+table back with a real caller in the same change). This is a narrowing
+`xtask/src/seam_probe.rs`'s own `checked_in_locations()` and its module doc
+also record.
+
 ### No wildcard arm, and no `#[non_exhaustive]` enum
 
 No `match` at an S1 to S4 seam SHALL carry a `_` arm or a catch-all arm. Every
@@ -157,7 +183,20 @@ comment.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. ADR-012 §5.3 states the seams that cross repositories (S5-S9)
-are probed where their enums are defined, by the owning repository; this
-requirement covers only S1-S4, which are wholly inside the QSL crate.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). ADR-012
+§5.3 states the seams that cross repositories (S5-S9) are probed where
+their enums are defined, by the owning repository; this requirement covers
+only S1-S4, which are wholly inside the QSL crate.
+
+**By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
+tags as they exist in the delivered code today:** only FR-063-AC-6 carries
+a `#[trace(..., "FR-063-AC-N")]` tag (three tests in
+`xtask/src/seam_probe.rs`, for the S1 portion this ticket's own scope note
+above covers -- S2/S3/S4 are QSL-143 and the no-cause-bearing-family gap,
+not this ticket's). FR-063-AC-1 through AC-5 and AC-7 are exercised by
+`cargo xtask seam-probe`'s real, end-to-end behavior -- verified manually
+this review round (a genuine probe-build failure at exactly the checked-in
+location, a clean normal build, a non-zero exit on a deliberate mismatch)
+-- but none carries its own trace tag in a dedicated test, so all six are
+recorded unbacked rather than claimed. One of seven ACs is backed
+(AC-6); six are unbacked.

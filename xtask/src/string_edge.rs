@@ -347,8 +347,34 @@ pub fn run(workspace_root: &Path) -> Result<String> {
 }
 
 /// FR-064's own rule: an allow-list entry that gates a branch is refused,
-/// not silently admitted. Re-scans the real occurrences and checks every
-/// allow-list entry against them.
+/// not silently admitted. Pure over its two inputs (PR #262 review, finding
+/// F11): every real occurrence found in the crate, and the candidate
+/// allow-list to check against them. Split out from
+/// [`allow_list_branch_gating_check`] specifically so a test can exercise
+/// real rejection with a non-empty, constructed allow-list -- [`allow_list`]
+/// itself is empty today (nothing has yet been reviewed and admitted), so a
+/// test that could only call through that production list would never be
+/// able to observe a rejection at all, the exact "structurally untestable"
+/// shape F11 flagged.
+fn branch_gating_entries<'a>(
+    occurrences: &[Occurrence],
+    candidates: impl IntoIterator<Item = &'a AllowListEntry>,
+) -> Vec<AllowListEntry> {
+    candidates
+        .into_iter()
+        .filter(|entry| {
+            occurrences.iter().any(|occurrence| {
+                occurrence.file == entry.file
+                    && occurrence.line == entry.line
+                    && occurrence.branch_gating
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Re-scans the real occurrences and checks the real, checked-in
+/// [`allow_list`] against them via [`branch_gating_entries`].
 fn allow_list_branch_gating_check(workspace_root: &Path) -> Result<Vec<AllowListEntry>> {
     let mut all_occurrences = Vec::new();
     for root in crate_roots(workspace_root) {
@@ -359,17 +385,8 @@ fn allow_list_branch_gating_check(workspace_root: &Path) -> Result<Vec<AllowList
             all_occurrences.extend(scan_file(workspace_root, &relative)?);
         }
     }
-    let rejected: Vec<AllowListEntry> = allow_list()
-        .into_iter()
-        .filter(|entry| {
-            all_occurrences.iter().any(|occurrence| {
-                occurrence.file == entry.file
-                    && occurrence.line == entry.line
-                    && occurrence.branch_gating
-            })
-        })
-        .collect();
-    Ok(rejected)
+    let allow_list = allow_list();
+    Ok(branch_gating_entries(&all_occurrences, &allow_list))
 }
 
 #[cfg(test)]
@@ -461,5 +478,95 @@ mod tests {
         );
         assert_eq!(occurrences.len(), 1);
         assert!(occurrences[0].branch_gating);
+    }
+
+    /// FR-064-AC-5 (PR #262 review, finding F11): a candidate allow-list
+    /// entry at a branch-gating occurrence's location is rejected; one at a
+    /// non-branching occurrence's location is not. Constructs its own
+    /// `AllowListEntry` fixtures rather than going through the real
+    /// (permanently empty) [`allow_list`], so this rejection is actually
+    /// exercised, not only claimed.
+    #[trace("TC-162", "FR-064-AC-5")]
+    #[test]
+    fn allow_list_entry_at_a_branch_gating_occurrence_is_rejected() {
+        let occurrences = scan_source(
+            r#"
+            fn dispatch(kind: &str) {
+                if kind == "allocation" {
+                    do_something();
+                }
+                let flag = kind == "other";
+                log(flag);
+            }
+            "#,
+        );
+        let branch_gating_line = occurrences
+            .iter()
+            .find(|occurrence| occurrence.branch_gating)
+            .expect("fixture has one branch-gating occurrence")
+            .line;
+        let non_branching_line = occurrences
+            .iter()
+            .find(|occurrence| !occurrence.branch_gating)
+            .expect("fixture has one non-branching occurrence")
+            .line;
+        let candidates = [
+            AllowListEntry {
+                file: "fixture.rs".to_owned(),
+                line: branch_gating_line,
+                reason: "test: claims a branch-gating comparison is safe",
+            },
+            AllowListEntry {
+                file: "fixture.rs".to_owned(),
+                line: non_branching_line,
+                reason: "test: a genuine display-only comparison",
+            },
+        ];
+        let rejected = branch_gating_entries(&occurrences, &candidates);
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].line, branch_gating_line);
+    }
+
+    /// FR-064-AC-5: none of ADR-010 §4.3's five production dispatch sites
+    /// can be allow-listed, because each one gates a branch. Constructs one
+    /// fixture occurrence shaped like each site (a string comparison
+    /// selecting between two branches) and asserts `branch_gating_entries`
+    /// rejects an allow-list entry naming it.
+    #[trace("TC-162", "FR-064-AC-5")]
+    #[test]
+    fn none_of_the_five_adr010_production_sites_can_be_allow_listed() {
+        let sites = [
+            ("allocation", "\"allocation\""),
+            (
+                "quire.protocol.finite-global/v1",
+                "\"quire.protocol.finite-global/v1\"",
+            ),
+            ("filament-canonical-json-1", "\"filament-canonical-json-1\""),
+            (
+                "quire.state.authority-adapter",
+                "\"quire.state.authority-adapter\"",
+            ),
+            ("clock:", "\"clock:\""),
+        ];
+        for (label, literal) in sites {
+            let source = format!(
+                "fn dispatch(value: &str) {{\n    if value == {literal} {{\n        do_something();\n    }}\n}}\n"
+            );
+            let occurrences = scan_source(&source);
+            let occurrence = occurrences
+                .first()
+                .unwrap_or_else(|| panic!("fixture for {label} produced one occurrence"));
+            assert!(
+                occurrence.branch_gating,
+                "fixture for {label} must be branch-gating"
+            );
+            let candidate = AllowListEntry {
+                file: occurrence.file.clone(),
+                line: occurrence.line,
+                reason: "test: an ADR-010 §4.3 production dispatch site",
+            };
+            let rejected = branch_gating_entries(&occurrences, [&candidate]);
+            assert_eq!(rejected.len(), 1, "{label} must be rejected");
+        }
     }
 }

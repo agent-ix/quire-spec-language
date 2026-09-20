@@ -139,21 +139,36 @@ impl<'a, D> CheckContext<'a, D> {
     }
 }
 
-/// ADR-012 §2's design-level `FamilyContract`, narrowed to the parts #214's
-/// one migrated family (`Value`'s function declaration/application) can
-/// genuinely exercise: `check` and `package`, each required by the trait's
-/// own associated-function signatures, so a family that omits either fails
-/// to compile (FR-062-AC-1). `requirements` (the contract's sixth part) and
-/// a typed refusal `Cause` are deferred -- see `crate::family`'s module doc
-/// for `requirements`, and [`super::outcome::StageFailure`]'s doc for
-/// `Cause`. Both are real ADR-012 §2 design parts a future family ticket
-/// adds back, validated against a real instance rather than guessed here.
+/// ADR-012 §2's design-level `FamilyContract`, narrowed to the one part
+/// #214's one migrated family (`Value`'s function declaration) can
+/// genuinely exercise: `check`, required by the trait's own
+/// associated-function signature, so a family that omits it fails to
+/// compile (FR-062-AC-1, itself now unbacked past this one part -- see
+/// FR-062's own amended Acceptance Criteria). `requirements` (the
+/// contract's sixth part) and a typed refusal `Cause` are deferred -- see
+/// `crate::family`'s module doc for `requirements`, and
+/// [`super::outcome::StageFailure`]'s doc for `Cause`. Both are real
+/// ADR-012 §2 design parts a future family ticket adds back, validated
+/// against a real instance rather than guessed here.
 ///
-/// `package` has no `Result` return: `Value`'s function-declaration
-/// packaging (name + identity, as v2 JSON) has no failure mode in this
-/// migration's scope, so a refusal type with no real refusal would be the
-/// same speculative shape `requirements`/`Cause` were. A future family whose
-/// packaging can genuinely fail adds that back too.
+/// **`package` is deleted (PR #262 review, findings F1/F2).** An earlier
+/// version of this trait also required `package(checked: &Self::Checked,
+/// out: &mut Vec<u8>)`. `ValueFunctionFamily`'s implementation emitted v2
+/// bytes into `out`, but `CheckedPackage::emit_function_package_v2` (the
+/// one real caller) passed it a scratch `Vec` that it never read back,
+/// then built its actual returned bytes independently through
+/// `family::emit_v2` -- gut `package`'s body and
+/// `emit_function_package_v2`'s output is byte-identical. A hook nothing
+/// consumes is the same fabricated-surface shape as the deleted
+/// `requirements`, so it is deleted rather than wired up speculatively;
+/// `family::emit_v2`/`decode_v2` are the real v2 emitter for this family,
+/// called directly, not through this trait. FR-062's packaging-related
+/// rows (the `package` mention in AC-1, and AC-9's fault-injection
+/// criterion) are recorded unbacked rather than backed by an unconsumed
+/// hook. A future family whose packaging genuinely needs a shared,
+/// trait-level hook (for example because several families' v2 nodes must
+/// compose into one all-or-nothing emission a shared caller drives) adds
+/// `package` back then, with a real consumer in the same change.
 pub(crate) trait FamilyContract {
     /// This family's parsed semantic form (typed subnodes; ADR-012 §4).
     type Form;
@@ -162,19 +177,22 @@ pub(crate) trait FamilyContract {
     /// This family's read-only resolved declarations and type environment.
     type Declarations;
 
-    /// Check `form` against `cx`, returning the checked node, a limit
-    /// outcome or an internal fault (FR-062 "structured outcome", narrowed
-    /// per this trait's own doc). `check` reads nothing outside `cx` and
-    /// mutates nothing but `cx`'s meter, diagnostic sink and scope stack.
+    /// Check `form` against `cx`, returning the checked node or a limit
+    /// outcome (FR-062 "structured outcome", narrowed per this trait's own
+    /// doc and [`super::outcome::StageFailure`]'s). `check` reads nothing
+    /// outside `cx` and `form`, and mutates nothing but `cx`'s meter,
+    /// diagnostic sink and scope stack.
+    ///
+    /// `form` is a reference (PR #262 review, finding F9): `check` and
+    /// everything it calls only ever read `form`, never need to own or move
+    /// out of it, and the caller (`PackageDeclarations::check`) needs its
+    /// own copy afterward for the unchanged `Typer`-based typing pass --
+    /// taking `Self::Form` by value forced that caller to `.clone()` a deep
+    /// AST purely to satisfy this signature.
     fn check(
-        form: Self::Form,
+        form: &Self::Form,
         cx: &mut CheckContext<'_, Self::Declarations>,
     ) -> CheckOutcome<Self::Checked>;
-
-    /// Emit every v2 node `checked` requires (FR-062 "Packaging is
-    /// all-or-nothing"; this trait's doc explains why there is no refusal
-    /// return here). `out` accumulates emitted bytes.
-    fn package(checked: &Self::Checked, out: &mut Vec<u8>);
 }
 
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
@@ -196,8 +214,8 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 
     /// Evaluate `checked` under `env` and `meter`. ADR-012 §2 reserves this
     /// hook alone for returning a meter-budget `Incomplete` outcome (`check`
-    /// and `package` never do, FR-062-AC-5); `EvaluateRefusal`'s own doc
-    /// explains why #214 does not add that variant yet.
+    /// never does, FR-062-AC-5); `EvaluateRefusal`'s own doc explains why
+    /// #214 does not add that variant yet.
     fn evaluate<'a>(
         checked: &Self::Checked,
         env: &mut Self::Env<'a>,
@@ -205,8 +223,29 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     ) -> Result<Self::Observed, EvaluateRefusal>;
 }
 
-/// `evaluate`'s own refusal shape: a typed refusal built only from checked
-/// input -- never a CST, a token or a display string (FR-062-AC-6).
+/// `evaluate`'s own refusal shape: constructed only from checked input --
+/// never by reading a CST, a token or a display string (FR-062-AC-6 is
+/// about what `evaluate` reads, not what a refusal's own message renders
+/// as; `Refused`'s `String` payload is a rendered failure message, not
+/// something read back in as input).
+///
+/// **`Refused`'s one call site is not reachable today (PR #262 review,
+/// finding F8).** `ValueFunctionFamily::evaluate` constructs `Refused` only
+/// when `env.package.function_by_identity(*checked)` finds nothing, but
+/// `CheckedPackage::call` -- `EvaluationEnv`'s one real (non-test)
+/// constructor -- always passes an identity it just read out of the same
+/// `self.functions` list `function_by_identity` searches, so that lookup
+/// cannot fail through `call()`. Unlike the deleted `StageFailure::Fault`
+/// self-comparison, this is not a tautology (`function_by_identity`
+/// genuinely does an `Option`-returning search, not a compile-time-known
+/// constant), and removing the `Result` would force `evaluate` to panic on
+/// a lookup miss instead -- worse than an unreached refusal path, not
+/// better, given #262's own ruling that a structured outcome undone by a
+/// panic at its one call site is the wrong trade. `Refused` therefore
+/// stays, kept honest about being unreached by any caller today rather
+/// than presented as exercised: the layer-6 `replay` facade widening
+/// (#243) is the plausible first caller that resolves `checked` from a bare
+/// identity with no prior name lookup, and could genuinely trigger it.
 ///
 /// **No `Incomplete` variant.** ADR-012 §2 reserves `evaluate` as the one
 /// hook allowed to return the kernel meter's `Incomplete` outcome, and that

@@ -10,9 +10,15 @@
 //!
 //! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
 //! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
-//! form this migration does not touch (literals, operators, `let`, `if`,
-//! records, collections); only the function-application arm moved to a
-//! thin call into [`super::family`]. `infer_form` itself carries
+//! form. **Correction (PR #262 review headline finding):** an earlier
+//! version of this note claimed "only the function-application arm moved to
+//! a thin call into `super::family`." It did not move: `Self::call` (the
+//! function `infer_form`'s `Expression::Call` arm dispatches to) is this
+//! module's own unchanged method, still doing the real name resolution,
+//! arity check and per-argument typing, with one incidental call to
+//! `family::mint_call_identity` added for identity. See `Self::call`'s own
+//! doc and `infer_form`'s doc for the full account and FR-065-AC-4/AC-5's
+//! resulting unbacked status. `infer_form` itself carries
 //! `#[deny(clippy::wildcard_enum_match_arm)]` (see its own doc) rather than
 //! this whole module: the module also holds several pre-existing, unrelated
 //! wildcard arms over *other* enums (`ValueType`, `BinaryOperator`) in
@@ -694,22 +700,46 @@ impl<'a> Typer<'a> {
         Ok(typed)
     }
 
-    /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3). The
-    /// function-application arm (`Expression::Call`) makes exactly one call
-    /// into [`super::family::mint_call_identity`]/[`Self::call`] and holds
-    /// no semantic logic of its own (FR-065-AC-4); every other arm is
-    /// unchanged by this migration.
+    /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3).
+    ///
+    /// **`Expression::Call` is not thin, and FR-065-AC-4/AC-5 are unbacked
+    /// (PR #262 review headline finding; rescoping decision on #262).** An
+    /// earlier version of this doc claimed the function-application arm
+    /// "makes exactly one call into `super::family::mint_call_identity`/
+    /// `Self::call` and holds no semantic logic of its own," and argued for
+    /// keeping `Expression::Call` as a variant on the grounds that a call is
+    /// "an ordinary, still-nestable operand of every other `Value` form."
+    /// Both statements describe a migration that has not happened: `self.call`
+    /// (`Self::call`, below) is this `Typer`'s own pre-existing method,
+    /// unchanged by this ticket, and it retains its full semantic logic --
+    /// name resolution against `self.signatures`, the arity check, and a
+    /// `self.check_as` typing pass over every argument. The one call this
+    /// arm makes reaches that unchanged logic, not "family check code";
+    /// `family::mint_call_identity` is one incidental call *inside*
+    /// `Self::call`, not the arm's target. FR-065-AC-4 ("the arm... contains
+    /// exactly one call into `Value`'s family check code and no other
+    /// conditional, lookup or loop") and FR-065-AC-5 (the composed checker's
+    /// pre-migration entry points are absent, and its input enum carries no
+    /// function-declaration/application variant) are both unmet, for the
+    /// same reason: the checking itself never moved onto the contract, so
+    /// there is nothing to delete from this enum or from `Self::call`
+    /// without deleting the only checker function application has ever had.
+    /// Both criteria are recorded unbacked; the real migration -- moving
+    /// this arm's logic into `ValueFunctionFamily::check` and removing it
+    /// from `Typer` -- is its own, separately filed ticket, not amended
+    /// spec text here. The former argument for keeping `Expression::Call`
+    /// "as an ordinary nestable operand" was reasoning about that migration
+    /// as if it had already happened; it had not, so that argument is
+    /// deleted along with the claim it was defending, not carried forward
+    /// as this ticket's own justification.
     ///
     /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
     /// QSL-25 implementation by owner ruling): a future change that wants
     /// to delete an arm from this `match` cannot restore exhaustiveness
     /// with a `_ => ...` catch-all -- that is the exact "escape hatch"
-    /// closed here, not merely by convention. Removing `Expression::Call`
-    /// as a variant is not required (and would be wrong: a call is an
-    /// ordinary, still-nestable operand of every other `Value` form), so
-    /// this arm stays; what this attribute forbids is silently absorbing a
-    /// *future* removed arm behind a catch-all instead of deleting the
-    /// corresponding variant.
+    /// closed here, not merely by convention; what this attribute forbids
+    /// is silently absorbing a *future* removed arm behind a catch-all
+    /// instead of deleting the corresponding variant.
     #[deny(clippy::wildcard_enum_match_arm)]
     #[deny(clippy::match_wildcard_for_single_variants)]
     fn infer_form(

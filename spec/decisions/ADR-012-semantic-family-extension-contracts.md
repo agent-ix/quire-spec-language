@@ -283,18 +283,41 @@ one PR:
   with a real FR-057 kind adds this back to the contract in that same
   change, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
 - `FamilyContract::Cause` is **not a trait associated type**; `check`
-  returns `CheckOutcome<Self::Checked>` with no cause type parameter, and
-  `StageFailure` carries only `Limit`/`Fault`, not a family-typed
-  `Refused`. Function declaration has no typed refusal cause distinct from
-  `Value`'s existing checking refusals (`CheckCause`), so a `Cause` enum
-  for it would have zero real variants; a probe over such an enum tests
-  only its own `catalog_code()` mapping, not a seam (S4, §5.1). The family
-  whose migration first has a real typed cause adds `Cause` back to the
-  trait and to FR-063's seam-probe checked-in list (S4) in that change.
-- `PackageRefusal` is **deleted**; `package` returns `()`, not
-  `Result<(), PackageRefusal>`. Function packaging cannot yet fail for a
-  reason distinct from the checking refusals that already prevented an
-  unpackageable node from being checked in the first place.
+  returns `CheckOutcome<Self::Checked>` with no cause type parameter.
+  Function declaration has no typed refusal cause distinct from `Value`'s
+  existing checking refusals (`CheckCause`), so a `Cause` enum for it would
+  have zero real variants; a probe over such an enum tests only its own
+  `catalog_code()` mapping, not a seam (S4, §5.1). The family whose
+  migration first has a real typed cause adds `Cause` back to the trait and
+  to FR-063's seam-probe checked-in list (S4) in that change.
+- `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
+  **deleted entirely** (PR #262 review, findings F1/F2, a correction to
+  this paragraph's earlier "`package` returns `()`" text). Its one real
+  caller, `CheckedPackage::emit_function_package_v2`, wrote `package`'s
+  output into a scratch buffer it never read back, then built its actual
+  returned bytes independently through `family::emit_v2` -- a hook nothing
+  consumed, the same forward-declared-shape hazard `requirements` already
+  is. The family whose migration first genuinely needs a shared,
+  trait-level packaging hook (for example because several families' v2
+  nodes must compose into one all-or-nothing emission a shared caller
+  drives) adds `package` back then, with a real consumer in the same
+  change.
+- `StageFailure` carries only `Limit`, not `Fault` (this paragraph's
+  earlier text) and not a family-typed `Refused`. `Fault(InternalFault)`'s
+  one construction site compared `mint_declaration_identity`'s output
+  against itself -- a pure function called twice with the same arguments,
+  which cannot fail by construction -- so PR #262 review (finding F7)
+  deleted it along with the fabricated comparison that was its only
+  caller. `src/diagnostic.rs`'s own `InternalFault` (landed after #214's
+  first pass, from #213 S-5) is that type's real eventual home for a
+  future stage entry with a genuine internal-fault outcome.
+- The S1 stage-participation table (`stage_hooks(FamilyKind, Stage) ->
+  HookStatus`) is **deleted** (PR #262 review, finding F7): its only
+  non-test callers were three `assert_eq!` sites asserting a hand-written
+  `match`'s own literal result against itself, and removing those
+  fabricated callers left the table with no real reader. FR-063-AC-6's
+  checked-in S1 list narrows from two locations to one accordingly (see
+  FR-063's and `xtask/src/seam_probe.rs`'s own correction notes).
 - `ReferenceEvaluation::EvaluateRefusal` carries only `Refused(String)`, not
   an `Incomplete` variant carrying a real meter state: `quire-exact`'s own
   `Meter::charge`/`charge_plan` are `pub(crate)`
@@ -304,9 +327,37 @@ one PR:
   not a QSL-side design choice; #214 defers `Incomplete` to when that gap
   closes rather than fabricate a caller for an unreachable variant.
 
+**What #214 actually delivers against the design intent above (PR #262
+review headline finding).** The narrowing recorded here is about which
+contract *parts* have a real construction site; it is not a claim that the
+part which remains -- `check` -- performs the family's admission decision.
+It does not, for either form #214 migrates: `ValueFunctionFamily::check`
+mints an identity and records one diagnostic, refusing only on the
+nesting-depth limit; the real typing, definedness and termination verdict
+for function declarations is made entirely by the unchanged `Typer`,
+invoked unconditionally immediately after, for every declaration, and
+`Expression::Call` (function application) never calls any
+`FamilyContract` method at all -- `Self::call` in `check.rs` is Typer's own
+unchanged method, with one incidental call to `family::mint_call_identity`
+added for identity. Both the contract's `check` and the unchanged `Typer`
+run for every declaration and every call. This is not the ADR-011 §7.3
+M-6e side-by-side hazard in the narrow sense that rule targets -- `Typer`
+was never a separate, deprecated *old* admission path left running by
+oversight; it is the only checker either form has ever had, and the
+contract's `check` was never built to replace it, only to mint identity
+alongside it -- but it does mean FR-065's own text ("check... exclusively
+through the contract") is delivered only for identity and provenance
+minting, not for the checking decision itself. FR-065's Status section
+records this by Acceptance Criterion; the real migration (moving the
+checking itself into `ValueFunctionFamily::check` and removing it from
+`Typer`) is filed as its own, separate ticket rather than attempted as
+part of #214.
+
 None of this changes the six-part contract's design intent above, which
 remains the target shape; it is what #214 could back with a real,
-non-fabricated caller against the one family it migrated. See
+non-fabricated caller against the one family it migrated, and -- for the
+checking decision itself -- less than #214's own first-pass report
+claimed. See
 [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md)
 for the recipe each later family migration follows, including when each
 deferred part comes back.
