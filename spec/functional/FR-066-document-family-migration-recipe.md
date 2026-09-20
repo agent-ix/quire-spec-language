@@ -116,4 +116,5 @@ own content (AC-4's "real deleted symbol," specifically, was corrected this
 review round -- PR #262 finding F13 -- to cite symbols that actually
 existed in a pushed commit, per `docs/family-migration-recipe.md`'s own
 correction note), but that is inspection, not the automated test TC-165
-names. Zero of four ACs are backed by a trace tag.
+names. Zero of four ACs are backed by a trace tag. Owner: QSL-151
+(AC-1 through AC-4).
