@@ -71,36 +71,38 @@ impl FromStr for ByteDigest {
 // ---------------------------------------------------------------------------
 // ADR-013 O-18: digest records.
 //
+// A fold candidate for this type is a wire `{domain, digest}` pair whose
+// `domain` is a `DigestDomain` variant -- not a bare domain-label string
+// with no accompanying digest field in the same object, not a wire shape
+// that carries its own `algorithm` field (this type fixes SHA-256), and not
+// a domain outside FR-201's 21-member vocabulary.
+//
 // One real caller landed in this slice: `value::member::Member::to_wire`'s
 // `declaration_json` mints a `NodeKey`'s digest through
 // `DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, ...)` (#260
 // review item 5), in place of the bare `NODE_KEY_DOMAIN` constant plus raw
 // hex it used before.
 //
-// Three other established call sites were checked as fold candidates and
-// rejected, not merely deferred -- none of them actually has the
-// `{domain, digest}` pair shape this type wraps, so folding them in would
-// not be "use `DigestRecord`" but "change the wire shape":
-//   - `state::input::CanonicalDigest` is `{algorithm, domain, value}`: an
-//     explicit, caller-chosen `algorithm` field alongside domain and value.
-//     `DigestRecord` fixes the algorithm at SHA-256 (this type's own doc
-//     comment: "not a stored field... there is no second algorithm value
-//     this type could ever hold"), so it cannot represent this shape without
-//     either dropping the field or asserting it is always `"sha256"`.
-//   - `crate::model::key`'s bare `"sha256-jcs"` string is one `digest_domain`
-//     member of a three-field preimage object (`{package, node,
-//     digest_domain}`) with no accompanying digest-bytes field in that same
-//     object -- the actual digest (`EffectiveId`) is computed by hashing the
-//     whole object elsewhere, so there is no `{domain, digest}` pair at this
-//     call site to fold at all.
-//   - `ByteDigest`'s `sha256:`-prefixed wire form is one string that
-//     concatenates an algorithm prefix and hex together, not a domain field
-//     and a digest field as two separate wire members; it is also read and
-//     written by other FR-001/004 call sites this slice does not touch.
+// A hand-built enumeration of every other site meeting the criterion above
+// was attempted across three rounds of review on this one comment and was
+// wrong every time (3 candidates named, then corrected to 4, then corrected
+// to 7 -- one of the 7, `model::intake::admit`'s digest-domain check, was at
+// one point ordered folded and then correctly un-ordered: nothing
+// downstream of that check consumes a `DigestRecord`, so folding it would
+// mint one and discard it. Its own real gap -- no adverse test distinguished
+// an unrecognized domain from a valid FR-201 domain that is merely the
+// wrong one -- is fixed regardless, at `refuses_a_valid_fr201_domain_that_
+// is_not_sha256_jcs` in its own test module). A hand-built list is not a
+// reliable artifact for a source comment to carry; the remaining real
+// sites are tracked as O-18 debt on QSL-26 instead of enumerated here.
 //
-// None of the three is tracked as debt here for that reason -- there is
-// nothing to fold until one of them changes shape, which is a spec-level
-// decision, not a code migration this slice deferred.
+// A candidate blocked on a spec decision is still a fold target, not a
+// disqualified one -- for example, `DomainPackageRef.digest` staying
+// `[u8; 32]` rather than `DigestRecord` is blocked by ADR-013 O-01's own
+// decided public shape (its `Field`/`Decision` table keeps `digest_domain`
+// and `digest` as separate members), not by the shape criterion above.
+// Recorded on QSL-26 for whoever can amend that decision; not this slice's
+// to touch.
 // ---------------------------------------------------------------------------
 
 /// The closed FR-201 canonical-identity-domain vocabulary, as amended by
@@ -374,14 +376,17 @@ mod digest_record_tests {
     }
 
     /// (#213 S-2, O-18) every FR-201 domain round-trips through
-    /// `from_wire`/`hex`/`domain` with no loss, and `DigestDomain::ALL` is
-    /// exactly FR-201's 21-member vocabulary (a missing or extra entry
-    /// changes this count). The label table below is hand-written against
-    /// FR-201's own text (not vendored in this repo -- `grep -rln FR-201
-    /// resources/` is empty), independent of `DigestDomain::as_str()`'s own
-    /// match arms: a wrong label there (e.g. `ModelEffectiveDeclarationV1`
-    /// silently becoming `.../v2`) fails the first assertion in the loop
-    /// rather than round-tripping only against itself (#260 review item 4).
+    /// `from_wire`/`hex`/`domain` with no loss. The label table below is
+    /// hand-written against FR-201's own text (not vendored in this repo --
+    /// `grep -rln FR-201 resources/` is empty), independent of
+    /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
+    /// `ModelEffectiveDeclarationV1` silently becoming `.../v2`) fails the
+    /// first assertion in the loop rather than round-tripping only against
+    /// itself (#260 review item 4). Both `[(...); 21]` and `DigestDomain::
+    /// ALL: [Self; 21]` are fixed-length arrays, so a 21st-to-22nd-entry
+    /// mismatch between them is a compile error, not something this test
+    /// could observe at runtime -- the per-entry label and round-trip
+    /// assertions below are this test's real teeth (#260 review round 2).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
         let labels: [(DigestDomain, &str); 21] = [

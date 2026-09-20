@@ -1656,6 +1656,34 @@ mod tests {
         );
     }
 
+    /// (#260 review round 3) `"sha1"` above is not an FR-201 label at all,
+    /// so it cannot tell this check apart from one that refuses only
+    /// *unrecognized* domains while silently admitting a *valid but wrong*
+    /// one -- a real FR-201 label (`ir-canonical`, O-18's own vocabulary)
+    /// that is not `sha256-jcs` must refuse here too (FR-154 Intake check
+    /// 1 is a total match against `sha256-jcs`, not "is this any known
+    /// domain").
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_valid_fr201_domain_that_is_not_sha256_jcs() {
+        let map = BTreeMap::new();
+        let (offered, digest_domain) = selection("acme/orders", "1", "ir-canonical", [0; 32]);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::StaleDependency,
+                cause: ModelRefusalCause::DigestDomainMismatch {
+                    expected: SHA256_JCS_DIGEST_DOMAIN,
+                    actual: "ir-canonical".to_owned(),
+                },
+                detail: "domain package selection acme/orders@1 names digest \
+                          domain \"ir-canonical\", not \"sha256-jcs\""
+                    .to_owned(),
+            }
+        );
+    }
+
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_missing_bytes() {
