@@ -1404,6 +1404,7 @@ pub fn read_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     fn digest_of(bytes: &[u8]) -> [u8; 32] {
         Sha256::digest(bytes).into()
@@ -1434,6 +1435,7 @@ mod tests {
         )
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn admits_matching_selection() {
         let bytes = package_bytes("acme/orders", "1");
@@ -1449,6 +1451,7 @@ mod tests {
         assert_eq!(admitted_bytes, bytes.as_slice());
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn admits_a_whitespace_variant_under_the_same_jcs_digest() {
         // The digest is taken over JCS bytes, not the raw bytes verbatim,
@@ -1479,6 +1482,7 @@ mod tests {
     // wrong `expected` digest domain, the caller's own selection echoed
     // back wrong) still fails the test.
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_foreign_digest_domain() {
         let map = BTreeMap::new();
@@ -1499,6 +1503,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_missing_bytes() {
         let map = BTreeMap::new();
@@ -1521,6 +1526,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_byte_digest_mismatch() {
         let bytes = package_bytes("acme/orders", "1");
@@ -1548,6 +1554,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_wrong_package_identity() {
         let bytes = package_bytes("acme/other", "1");
@@ -1582,6 +1589,7 @@ mod tests {
     /// distinct branch of the same `WrongModelSelection` check from
     /// `refuses_wrong_package_identity`'s identity mismatch, so it gets its
     /// own whole-outcome test.
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_version_only_mismatch() {
         let bytes = package_bytes("acme/orders", "2");
@@ -1616,6 +1624,7 @@ mod tests {
     /// bytes that are not JSON at all never reach a `package.identity`
     /// comparison, so `parsed` stays `None` and both `actual_identity`/
     /// `actual_version` default to empty strings.
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_non_json_bytes_as_wrong_selection() {
         let bytes = b"not json".to_vec();
@@ -1723,6 +1732,7 @@ mod tests {
         node
     }
 
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_document_that_is_not_json() {
         let refusals = read_records("acme/orders", b"not json").unwrap_err();
@@ -1742,6 +1752,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_bare_string_kind_as_malformed_declaration() {
         let document = wire_envelope(
@@ -1771,6 +1782,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-145", "FR-056-AC-4")]
     #[test]
     fn refuses_fcd_own_identity_form_as_malformed_declaration() {
         let document = wire_envelope(
@@ -1811,6 +1823,7 @@ mod tests {
     /// document never reaches `read_type_node`'s own hand-rolled `abstract`
     /// check at all -- `validate_with_semantic_ir` refuses it first, naming
     /// the validator's own pointer.
+    #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_non_boolean_abstract_via_the_semantic_ir_validator() {
         let document = wire_envelope(
@@ -1929,6 +1942,7 @@ mod tests {
     // one's own refusal/success shape is pinned independently of any one
     // fixture document.
 
+    #[trace("TC-145", "FR-056-AC-1")]
     #[test]
     fn resolves_a_known_native_type_ref() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -1938,6 +1952,7 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
+    #[trace("TC-145", "FR-056-AC-3")]
     #[test]
     fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -1978,6 +1993,7 @@ mod tests {
     /// to a model-declared type instead, at which point this exact refusal
     /// stops occurring, but as a consequence of what the *document* emits,
     /// not because this test or this reader changed.
+    #[trace("TC-145", "FR-056-AC-3")]
     #[test]
     fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
@@ -2008,6 +2024,7 @@ mod tests {
     /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
     /// unconditionally, naming which parameters are unexpressable, never
     /// resolving to a made-up declaration.
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_parameterized_native_type_as_unsupported() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
@@ -2084,6 +2101,7 @@ mod tests {
     /// refuses as a known-but-unsupported declaration form. It is never
     /// silently read as `OperationEffect::default()`, unlike an absent
     /// frame or one whose `modifies`/`creates`/`deletes` are all empty.
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_non_empty_operation_frame_as_unsupported() {
         let document = document_with_object_type_extra(serde_json::json!({
@@ -2142,6 +2160,7 @@ mod tests {
     /// of any one fixture document. Same reason
     /// [`resolves_a_known_native_type_ref`] drives `read_value_type_ref`
     /// directly instead of through the full pipeline.
+    #[trace("TC-145", "FR-056-AC-5")]
     #[test]
     fn reads_an_inline_relationship_with_the_real_source_end_and_target_end_shape() {
         let type_value = serde_json::json!({
@@ -2217,6 +2236,7 @@ mod tests {
     /// `flowDirection` (which never admits `undirected`) -- so `undirected`
     /// is exercised here specifically, on this shape's own `direction`
     /// member, never `flowDirection`.
+    #[trace("TC-145", "FR-056-AC-5")]
     #[test]
     fn reads_an_undirected_inline_relationship() {
         let type_value = serde_json::json!({
@@ -2271,6 +2291,7 @@ mod tests {
     /// through [`member_identity_name`]. Before this test, `read_relationship`
     /// applied no identity check at all and took this form verbatim as the
     /// record's key; this is the regression test for that gap.
+    #[trace("TC-145", "FR-056-AC-5")]
     #[test]
     fn refuses_a_relationship_member_whose_identity_is_not_owner_slash_name() {
         let type_value = serde_json::json!({
@@ -2324,6 +2345,7 @@ mod tests {
 
     /// H1 (PR #200 review), FR-056-AC-5's other half: "a relationship
     /// member with no ... source span refuses `malformed-declaration`".
+    #[trace("TC-145", "FR-056-AC-5")]
     #[test]
     fn refuses_a_relationship_member_with_no_source_span() {
         let type_value = serde_json::json!({
@@ -2369,6 +2391,7 @@ mod tests {
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
     /// yet, refuses as a known-but-unsupported declaration form rather than
     /// silently folding into `ObjectTypeRecord`.
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_known_but_unsupported_fr208_meaning_as_unsupported() {
         let document = wire_envelope(
@@ -2415,6 +2438,7 @@ mod tests {
     /// [`read_type_node`]'s final `other` arm as `malformed-declaration`,
     /// not `unsupported-construct`: an unrecognized meaning is not a known
     /// FR-208 shape this reader merely lacks a case for.
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_meaning_outside_fr208_as_malformed_declaration() {
         let document = wire_envelope(
@@ -2461,6 +2485,7 @@ mod tests {
     /// `extent` is always FCD's own refusal first) or a dangling `kind`
     /// (FCD's own "names no constructs entry" check, identical wording,
     /// fires first).
+    #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_population_kind_resolving_to_a_non_population_meaning() {
         let mut document = wire_envelope(
@@ -2521,6 +2546,7 @@ mod tests {
     /// different package's owner is schema-valid to FCD and reaches this
     /// reader's own check, distinct from `refuses_fcd_own_identity_form_as_malformed_declaration`'s
     /// same-package-wrong-segments case.
+    #[trace("TC-145", "FR-056-AC-4")]
     #[test]
     fn refuses_a_type_identity_naming_a_different_package_as_malformed_declaration() {
         let document = wire_envelope(
@@ -2565,6 +2591,7 @@ mod tests {
     /// accepts any lowercase-owner, near-arbitrary-name identity string, so
     /// a field identity that swaps the required `/` for a `-` reads as
     /// schema-valid to FCD and reaches this reader's own check.
+    #[trace("TC-145", "FR-056-AC-4")]
     #[test]
     fn refuses_a_member_identity_not_shaped_owner_slash_name() {
         let document = document_with_one_field(wire_field(
@@ -2600,6 +2627,7 @@ mod tests {
     /// `refuses_a_type_identity_naming_a_different_package_as_malformed_declaration`'s
     /// same check over a type-definition node's own `identity` rather than
     /// a `typeRef`.
+    #[trace("TC-145", "FR-056-AC-4")]
     #[test]
     fn refuses_a_foreign_package_type_ref_as_malformed_declaration() {
         let document = wire_envelope(
@@ -2674,6 +2702,7 @@ mod tests {
     /// and treats `multiplicity` as optional -- so a connection end with no
     /// multiplicity at all is schema-valid to FCD and reaches this reader's
     /// own check.
+    #[trace("TC-145", "FR-056-AC-3")]
     #[test]
     fn refuses_a_connection_end_with_no_multiplicity() {
         let document = wire_envelope(
@@ -2833,6 +2862,7 @@ mod tests {
         );
     }
 
+    #[trace("TC-145", "FR-056-AC-1")]
     #[test]
     fn resolves_a_package_type_ref_to_a_node_of_the_package() {
         let document = document_with_one_field(wire_field(

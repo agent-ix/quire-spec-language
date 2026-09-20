@@ -40,10 +40,14 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
+use ix_trace_rs::trace;
+use quire_spec_language::model::accounting::{
+    ChargePoint, LimitKind, Meter, ModelNormalizationLimits,
+};
 use quire_spec_language::model::domain_package::{DomainPackage, DomainPackageRef};
 use quire_spec_language::model::intake::{admit, lift_document, meaning, read_records};
 use quire_spec_language::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use quire_spec_language::model::normalize::{normalize, NormalizeOutcome};
 use quire_spec_language::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
     ConnectionOutcome,
@@ -55,6 +59,7 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
+#[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn lifts_the_architecture_bundle_and_admits_it() {
     let fixtures = fixtures_dir();
@@ -181,6 +186,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// the whole-document call above. `reads_pump_out_as_a_real_endpoint_record`
 /// below asserts real content for one of them by isolating it into its own
 /// single-type document.
+#[trace("TC-145", "TC-146", "FR-056-AC-3", "FR-056-AC-5")]
 #[test]
 fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
@@ -293,6 +299,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
 /// [`quire_spec_language::model::domain_package::EndpointRecord`], not
 /// merely "no refusal": owner `sys_pump`, direction `Out`, value type
 /// `Flow`, multiplicity exactly `1..=1`.
+#[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn reads_pump_out_as_a_real_endpoint_record() {
     let package_identity = "agent-ix/architecture";
@@ -518,6 +525,7 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
 /// member that validator's schema layer requires beyond the shape
 /// `crate::model::intake` itself reads -- not just this reader's own
 /// hand-rolled checks.
+#[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let package_identity = "test/plant";
@@ -725,6 +733,91 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     );
 }
 
+/// FR-056-AC-6 (TC-147): `normalize.record` charging under
+/// `ModelNormalizationLimitsV1`, decided after all admission checks.
+///
+/// This is not new production code: the charge itself is a general
+/// mechanism every model rung shares (`crate::model::normalize`'s own
+/// `charge_all`, reached through the public `normalize`/
+/// `normalize_with_meter` entry points), which charges `normalize.record`
+/// once per `domain_package.records` entry, ascending by index --
+/// `read_records`/`DomainPackage::new` (FR-056's own output) already
+/// produce `records` sorted ascending by declaration key. What this test
+/// adds is FR-056's own trace: proving that existing mechanism, driven by
+/// this crate's actual intake pipeline (`admit` -> `read_records` ->
+/// `DomainPackage::new`), satisfies TC-147's exact scenario -- the exact
+/// bound completes with every declaration, one less is incomplete at
+/// `normalize.record`, and step 2's "admission refusals are decided
+/// before the first charge" holds structurally: `admit`/`read_records`
+/// are separate, earlier calls than `normalize`, so a stale-digest
+/// refusal (already covered by `refuses_byte_digest_mismatch`) never
+/// reaches a charge at all.
+#[trace("TC-147", "FR-056-AC-6")]
+#[test]
+fn charges_normalize_record_once_per_intake_declaration() {
+    let package_identity = "acme/orders";
+    let widget = format!("ix://{package_identity}/Widget");
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([wire_construct(
+            package_identity,
+            "object_type",
+            meaning::OBJECT_TYPE,
+            serde_json::json!({}),
+        )]),
+        serde_json::json!([wire_type(
+            &widget,
+            serde_json::json!({"module": package_identity, "name": "object_type"}),
+            serde_json::json!({
+                "supertypes": [],
+                "fields": [wire_field(
+                    &format!("{widget}/flag"),
+                    "flag",
+                    "ix://quire/native/Boolean",
+                )],
+                "operations": [],
+            }),
+        )]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let records =
+        read_records(package_identity, &document).expect("Widget and its one field read clean");
+    assert_eq!(
+        records.len(),
+        2,
+        "one ObjectTypeRecord plus one FieldMemberRecord"
+    );
+
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture(package_identity), records);
+
+    let exact = ModelNormalizationLimits {
+        declaration_records: 2,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    assert!(
+        matches!(
+            normalize(&domain_package, exact),
+            NormalizeOutcome::Completed(_)
+        ),
+        "exactly 2 declarations at a declaration_records bound of 2 completes"
+    );
+
+    let one_less = ModelNormalizationLimits {
+        declaration_records: 1,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    match normalize(&domain_package, one_less) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::DeclarationRecords);
+            assert_eq!(incomplete.limit, 1);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeRecord);
+        }
+        other => panic!("expected Incomplete at normalize.record, got {other:?}"),
+    }
+}
+
 /// H3 (PR #200 review): `agent-ix-semantic-ir`'s own `json::MAX_DEPTH` is
 /// 200; `serde_json::from_slice`'s default recursion limit is 128.
 /// `validate_with_semantic_ir` parses (and, via `decide`, schema-validates)
@@ -810,6 +903,7 @@ fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {
 /// `org` (FCD's own `BUNDLE_UNIDENTIFIED` negative, `crates/extraction-frontend/
 /// fixtures/negatives/BUNDLE_UNIDENTIFIED` at the pinned rev): FCD cannot
 /// mint even the bundle's own identity, so no document is written at all.
+#[trace("TC-145", "FR-056-AC-2")]
 #[test]
 fn lift_document_refuses_a_bundle_with_no_identity() {
     let bundle = write_bundle(&[(
@@ -873,6 +967,7 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
 /// The expected diagnostic is read verbatim from FCD's own committed
 /// `crates/extraction-frontend/fixtures/negatives/DUPLICATE_IDENTITY/expected/diagnostics.json`
 /// at this crate's pinned rev, not invented here.
+#[trace("TC-145", "FR-056-AC-2")]
 #[test]
 fn lift_document_blocks_on_a_duplicate_identity() {
     let bundle = write_bundle(&[
