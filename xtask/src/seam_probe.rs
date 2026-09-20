@@ -52,7 +52,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         },
         SeamLocation {
             file: "src/family/mod.rs".to_owned(),
-            line: 201,
+            line: 208,
         },
     ]
     .into_iter()
