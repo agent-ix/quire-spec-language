@@ -103,13 +103,18 @@ converges the lane's own `Cargo.lock` to exactly one revision per repository
 
 Building this lane's own manifest at real current heads (not the
 intentionally incompatible fixture) currently fails: real
-quire-contract-codegen head does not compile against real
-quire-contract-runtime head (`error[E0560]: struct CounterexamplePacket has
-no field named witness`, RT `bounded_kani_corpus.rs:196` -- RT's real head
-removed or renamed that field, leaving only `source`). This is exactly the
-class of incompatibility this lane exists to catch, reported here as real,
-current evidence; it is a CG/RT concern to fix, not this lane's or QSL's, and
-the ownership procedure below applies to it directly.
+quire-contract-codegen head does not compile, with `error[E0560]: struct
+CounterexamplePacket has no field named witness` at CG's own
+`src/bounded_kani_corpus.rs:196`. This is a **CG/IR** incompatibility, not
+CG/RT: `CounterexamplePacket` is defined in quire-contract-**ir**
+(`src/kani/replay.rs:45`), not in quire-contract-runtime at all. IR's real
+head already renamed that field (`witness: Option<Witness>` became `source:
+ReplaySource`, IR commit `ef11217`, "kani: ReplaySource replaces the
+optional witness"); CG's own `bounded_kani_corpus.rs` still constructs the
+old `witness:` field, which no longer exists on IR's head. This is exactly
+the class of incompatibility this lane exists to catch, reported here as
+real, current evidence; it is a CG/IR concern to fix, not this lane's or
+QSL's, and the ownership procedure below applies to it directly.
 
 ## What it deliberately does not attempt
 
@@ -146,7 +151,11 @@ rather than decided here:
 ## Ownership and update procedure
 
 Owned by whoever owns ADR-011 T-12 (currently tracked under #215 and its
-successors). When a run fails:
+successors). `prepare`'s `git clone --branch <branch> --single-branch` (no
+`--depth`) keeps `.vendor/quire-contract-ir` and `.vendor/quire-contract-runtime`
+at full history, so step 2 below (`git bisect` or an equivalent manual walk of
+either vendored clone) is executable against them directly; it is not blocked
+by a shallow clone (#249 review round 2 L-1). When a run fails:
 
 1. Read the failure: a compile error names the incompatible crate and symbol;
    a contract-test failure names which of the four repositories' surface

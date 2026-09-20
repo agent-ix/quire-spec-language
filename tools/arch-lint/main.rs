@@ -57,6 +57,25 @@ fn require(args: &mut Vec<String>, name: &str) -> Result<PathBuf> {
     take_flag(args, name)?.map(PathBuf::from).ok_or_else(usage)
 }
 
+/// `(repository, remote URL to check freshness against, `main` branch)`.
+/// `--qsl` is excluded: it is this tool's own worktree, routinely checked
+/// out on a feature branch rather than `main`, so it has no "current head"
+/// to compare against; its resolved commit is still printed below.
+const FRESHNESS_TARGETS: [(graph::Repo, &str); 3] = [
+    (
+        graph::Repo::Ir,
+        "https://github.com/agent-ix/quire-contract-ir",
+    ),
+    (
+        graph::Repo::Rt,
+        "https://github.com/agent-ix/quire-contract-runtime",
+    ),
+    (
+        graph::Repo::Cg,
+        "https://github.com/agent-ix/quire-contract-codegen",
+    ),
+];
+
 fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     let offline = take_bool(&mut args, "--offline");
     let qsl = require(&mut args, "--qsl")?;
@@ -66,16 +85,38 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     if !args.is_empty() {
         return Err(usage());
     }
+    let mut summary = String::new();
+    summary.push_str("FR-059 backend direction check (ADR-011 FB-05/FB-11)\n");
+    summary.push_str("  Revisions used:\n");
+    let roots = [
+        (graph::Repo::Qsl, &qsl),
+        (graph::Repo::Ir, &ir),
+        (graph::Repo::Rt, &rt),
+        (graph::Repo::Cg, &cg),
+    ];
     let mut edges = Vec::new();
-    for root in [&qsl, &ir, &rt, &cg] {
+    for (repo, root) in &roots {
+        let head = metadata::git_head(root)?;
+        if let Some((_, url)) = FRESHNESS_TARGETS.iter().find(|(r, _)| r == repo) {
+            if offline {
+                summary.push_str(&format!(
+                    "    {repo}: {head} (--offline: not checked against remote main)\n"
+                ));
+            } else {
+                metadata::require_current_head(repo.as_str(), url, &head)?;
+                summary.push_str(&format!("    {repo}: {head} (matches {url} main)\n"));
+            }
+        } else {
+            summary.push_str(&format!(
+                "    {repo}: {head} (this worktree; no remote-main freshness check)\n"
+            ));
+        }
         edges.extend(metadata::edges_for_manifest(
             &root.join("Cargo.toml"),
             offline,
         )?);
     }
     let report = graph::check(&edges);
-    let mut summary = String::new();
-    summary.push_str("FR-059 backend direction check (ADR-011 FB-05/FB-11)\n");
     if report.fb05.is_empty() {
         summary.push_str("  FB-05: PASS (no unapproved edge into QSL)\n");
     } else {
@@ -108,6 +149,7 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     if !args.is_empty() {
         return Err(usage());
     }
+    api_surface::assert_is_qsl_root(&qsl)?;
     let mut summary = String::new();
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
     summary.push_str(
@@ -152,6 +194,9 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                     ));
                 }
             }
+        }
+        if let Some(note) = rule.scope_note {
+            summary.push_str(&format!("    (not evaluated for every role: {note})\n"));
         }
     }
     Ok((summary, all_passed))

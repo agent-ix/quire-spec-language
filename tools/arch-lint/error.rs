@@ -10,6 +10,11 @@ pub(crate) enum Code {
     CargoMetadata,
     InvalidMetadata,
     InvalidLockfile,
+    /// A local clone's resolved head does not match its remote `main` --
+    /// #249 review round 2 H-2: a stale clone must fail loudly, never report
+    /// a silently different (and possibly clean-looking) answer than the
+    /// same command run against a fresh one.
+    Stale,
 }
 
 impl Code {
@@ -20,6 +25,7 @@ impl Code {
             Self::CargoMetadata => "cargo-metadata-failed",
             Self::InvalidMetadata => "invalid-metadata",
             Self::InvalidLockfile => "invalid-lockfile",
+            Self::Stale => "stale-clone",
         }
     }
 }
@@ -60,6 +66,7 @@ impl Error {
         match self.code {
             Code::Usage => 2,
             Code::Io | Code::CargoMetadata | Code::InvalidMetadata | Code::InvalidLockfile => 3,
+            Code::Stale => 4,
         }
     }
 }

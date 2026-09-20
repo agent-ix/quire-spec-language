@@ -183,9 +183,14 @@ Separately, building the current-head lane's own manifest (not the fixture)
 at real current heads surfaced a genuine, unplanned cross-repository
 incompatibility -- exactly the class of finding this requirement exists to
 catch, found as a byproduct of R3's lock-convergence work rather than by a
-designed fixture: real quire-contract-codegen head fails to compile against
-real quire-contract-runtime head with `error[E0560]: struct
-CounterexamplePacket has no field named witness`
-(`bounded_kani_corpus.rs:196`) -- RT's real head removed or renamed that
-field, leaving only `source`. This is reported here as new, real evidence; it
-is a CG/RT concern, not QSL's, and this requirement does not remediate it.
+designed fixture: real quire-contract-codegen head fails to compile with
+`error[E0560]: struct CounterexamplePacket has no field named witness` at
+quire-contract-codegen's own `src/bounded_kani_corpus.rs:196`. This is a
+**CG/IR** incompatibility, not CG/RT: `CounterexamplePacket` is defined in
+quire-contract-**ir**'s `src/kani/replay.rs:45`, not in quire-contract-runtime
+at all, and IR's real head already removed its `witness: Option<Witness>`
+field in favor of `source: ReplaySource` (IR commit `ef11217`, "kani:
+ReplaySource replaces the optional witness"); CG's own
+`bounded_kani_corpus.rs` still constructs the old `witness:` field, which no
+longer exists on IR's head. This is reported here as new, real evidence; it
+is a CG/IR concern, not QSL's, and this requirement does not remediate it.
