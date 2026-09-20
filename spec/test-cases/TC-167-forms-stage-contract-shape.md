@@ -36,12 +36,16 @@ FR-067-AC-3, FR-067-AC-7, FR-067-AC-8.
 4. Inspect the dispatch-table entry for the test-only variant: count its
    calls into the stub production function, and check for any conditional,
    lookup or loop in the entry outside that one call.
-5. Build two lossless CSTs identical except for their recorded edition (the
-   existing top-level and `composed` edition constants), call the forms
-   stage on each, and read each resulting parsed form's edition back.
-6. Build two lossless CSTs whose root construct declares a bound or extent,
-   identical except for that declared value, call the forms stage on each,
-   and read each resulting parsed form's carried bound or extent back.
+5. Using the same test-only leading-token-kind variant and stub production
+   function as step 1 (CON-2 forbids a real family production function in
+   M-3a, so the stub is the only available producer), build two lossless
+   CSTs identical except for their recorded edition — literal values
+   `"0-draft"` and `"1-draft"` — call the forms stage on each, and read each
+   resulting parsed form's edition back.
+6. Using the same test-only variant and stub, build two lossless CSTs whose
+   root construct declares a bound or extent, identical except for that
+   declared value, call the forms stage on each, and read each resulting
+   parsed form's carried bound or extent back.
 
 ## Expected Results
 
@@ -53,8 +57,9 @@ FR-067-AC-3, FR-067-AC-7, FR-067-AC-8.
   exists on the parsed-form type.
 - Step 4: the entry makes exactly one call into the stub production
   function and holds no other conditional, lookup or loop.
-- Step 5: the two parsed forms' editions differ, matching the two CSTs'
-  recorded editions; neither reads back a shared constant.
-- Step 6: the two parsed forms' carried bound or extent values differ,
-  matching the two CSTs' declared values; neither reads back a shared
-  default.
+- Step 5: the `"0-draft"` CST's parsed form reads back edition `"0-draft"`,
+  and the `"1-draft"` CST's parsed form reads back edition `"1-draft"` —
+  each form's edition matches the CST it was built from, not a shared
+  constant and not the other CST's value.
+- Step 6: each parsed form's carried bound or extent matches the CST it was
+  built from, not a shared default and not the other CST's value.

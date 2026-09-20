@@ -11,13 +11,16 @@ relationships:
 ## Description
 
 Verify that after this requirement's implementation, `value::expression::syntax`
-no longer exists as a module, and that the `Expression` enum,
+no longer exists as a module, that the `Expression` enum,
 `FunctionDeclaration`, `BinaryOperator`, `ClauseKind`, `DeclaredClauseKind`,
 `FieldInitializer`, `BinderQuery` and `Accumulation` are each defined exactly
 once, under `forms`, with no second, independent definition left behind
-under `value::expression`. `value::expression`'s own code importing these
-types from `forms` is expected and does not itself fail this test; a second
-definition does. Scope: FR-067-AC-9.
+under `value::expression` or anywhere else, and that the move changed each
+type's defining module only — no variant, field, method signature, or their
+names, differs between the pre-move and post-move definitions (FR-067-CON-3).
+`value::expression`'s own code importing these types from `forms` is
+expected and does not itself fail this test; a second definition, or a
+shape difference, does. Scope: FR-067-AC-9, FR-067-CON-3.
 
 ## Test Procedure
 
@@ -29,6 +32,15 @@ definition does. Scope: FR-067-AC-9.
    `refusal` and `termination` modules for their use of the eight named
    types, distinguishing an import from `forms` from an independent
    re-definition.
+4. For each of the eight named types, extract its pre-move definition (the
+   commit immediately before this requirement's implementation) and its
+   post-move definition (under `forms`, after) as sets: for an enum, its
+   variant names and each variant's field names and types; for a struct, its
+   field names and types; for either, its method signatures (name,
+   parameter types, return type). Compare the pre-move set against the
+   post-move set for each type and require set equality — a variant, field
+   or method added, removed or renamed, or a type or signature changed,
+   makes the two sets unequal.
 
 ## Expected Results
 
@@ -38,3 +50,7 @@ definition does. Scope: FR-067-AC-9.
   `value::expression` or anywhere else.
 - Step 3: every use found is an import from `forms`; none is an independent
   definition.
+- Step 4: for every one of the eight types, the pre-move and post-move
+  variant/field/method sets are equal; a type with any added, removed,
+  renamed or retyped variant, field or method fails this step, naming that
+  type and the specific difference.
