@@ -2,7 +2,7 @@
 
 Tracking: [Agent A #58 / LR02](https://github.com/agent-ix/quire-research/issues/58),
 coordinated with [LC01](https://github.com/agent-ix/quire-spec-language/issues/2)
-on the existing private draft PR7 branch. The specification is FR-012/NFR-005
+on the existing PR7 branch. The specification is FR-012/NFR-005
 and IT-004 at 11a9128. The scoped full review is under
 [spec/reviews/rust-verification](../spec/reviews/rust-verification/base.md), and
 [Plan-001](../plan/Plan-001-rust-fixture-audits/plan.md) records implementation.
@@ -82,10 +82,10 @@ The owner requested local CI until stable. NFR-002/IT-004 amendments at 1649ef7
 received all eight review addenda at 2e5cd9a before the workflow change at
 8cf5571. The compiler workflow has only workflow_dispatch; the specification
 repository has no workflows. No hosted run was dispatched or used to qualify
-this remediation. The shared ix-trace-rs dependency is private: a future hosted
-runner needs access to that repository before the test/lint commands can run.
-Local locked builds have that access/cache; hosted credential setup is not
-claimed by local results.
+this remediation. The shared ix-trace-rs dependency is now public, so a future
+hosted runner no longer needs special access to clone it before the test/lint
+commands can run. Local locked builds already have that access/cache; hosted
+credential setup is not claimed by local results.
 
 This scope does not accept
 FS02/FS03/FS05 or complete the full compiler workflow. The root code and gap
