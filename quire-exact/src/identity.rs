@@ -147,12 +147,14 @@ mod tests {
         bytes
     }
 
-    /// TC-302: each of the six digest identities treats equal digest bytes
-    /// as equal, interchangeable ids, and distinct digests as distinct ids
+    /// TC-302 (H-7/H-8, strengthened): each of the six digest identities
+    /// treats equal digest bytes as interchangeable ids -- not just `==`,
+    /// but hashing equal (either stands in for the other as a set/map key)
+    /// -- and distinct digests as distinct, differently ordered ids
     /// (ADR-013 QC-15).
     #[trace("TC-302")]
     #[test]
-    fn tc_302_equal_digest_bytes_mint_equal_identities() {
+    fn tc_302_equal_digest_bytes_mint_interchangeable_identities() {
         macro_rules! check {
             ($ty:ident) => {
                 let a = $ty::from_digest(digest(1));
@@ -160,7 +162,8 @@ mod tests {
                 let c = $ty::from_digest(digest(2));
                 assert_eq!(a, b);
                 assert_eq!(a.as_bytes(), b.as_bytes());
-                assert_ne!(a, c);
+                assert_eq!(std::collections::HashSet::from([a, b, c]).len(), 2);
+                assert!(a < c);
             };
         }
         check!(EffectiveId);
@@ -171,11 +174,17 @@ mod tests {
         check!(MemberId);
     }
 
-    /// TC-303: each identity's domain constant is distinct, so no two of the
-    /// six can be confused by domain string (ADR-013 QC-15).
+    /// TC-303 (H-7/H-8, strengthened): each identity's domain constant is
+    /// distinct, so no two of the six can be confused by domain string
+    /// (ADR-013 QC-15). Also grounds `EFFECTIVE_ID_DOMAIN` against the real,
+    /// external value this module's own doc comment claims to match
+    /// (`src/model/key.rs:26`'s `EFFECTIVE_DECLARATION_DOMAIN`, per H-2),
+    /// so a future edit to either side that silently drifts the literal
+    /// fails here rather than only in a future S-2 integration.
     #[trace("TC-303")]
     #[test]
     fn tc_303_domain_constants_are_pairwise_distinct() {
+        assert_eq!(EFFECTIVE_ID_DOMAIN, "quire.model.effective-declaration/v1");
         let domains = [
             EFFECTIVE_ID_DOMAIN,
             UNIVERSE_ID_DOMAIN,
