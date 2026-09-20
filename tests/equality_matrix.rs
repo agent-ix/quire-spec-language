@@ -887,6 +887,83 @@ fn e16_references_compare_identity_triple_only() {
     assert_disjoint(&env, &r);
 }
 
+/// FR-149/TC-198 L08 (#164 item 1): `Reference<A>` and `Reference<B>` admit
+/// `=` when one conforms to the other in the environment's own admitted
+/// generalization graph (H1, #204 round 1), symmetrically -- the checked
+/// static types need not be equal, only related. Evaluation already
+/// compares the two `ObjectReference`s' full identity regardless of either
+/// operand's static type (`e16`, above), so the same real object denoted
+/// through its supertype on one side and its own declared type on the other
+/// compares equal.
+#[trace("TC-198", "FR-149-AC-6")]
+#[trace("TC-198", "FR-153-AC-6")]
+#[test]
+fn e16a_references_admit_a_conforming_upcast_either_direction() {
+    let animal = key("M::Animal");
+    let dog = key("M::Dog");
+    let env = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(animal, "Animal", vec![]),
+            ObjectTypeDeclaration::new(dog, "Dog", vec![]).with_supertypes(vec![animal]),
+        ],
+    )
+    .unwrap();
+    let (a, d) = (ValueType::Reference(animal), ValueType::Reference(dog));
+    let rex = ObjectReference::new(
+        UniverseIdentity::new(b"u1").unwrap(),
+        dog,
+        ObjectIdentity::new(b"rex").unwrap(),
+    );
+    let left = Value::Reference(rex.clone());
+    let right = Value::Reference(rex);
+    let mut meter = Meter::new(UNLIMITED);
+    assert_eq!(
+        check(&env, &a, &d)
+            .expect("Dog conforms to Animal: the upcast pair must admit")
+            .evaluate(&left, &right, &mut meter),
+        Outcome::Completed(true)
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    assert_eq!(
+        check(&env, &d, &a)
+            .expect("the same pair, operands swapped, must admit symmetrically")
+            .evaluate(&left, &right, &mut meter),
+        Outcome::Completed(true)
+    );
+}
+
+/// FR-149/TC-198 L08 (#164 item 1): the upcast admission above is narrow --
+/// two object-reference types with no generalization relation between them
+/// still refuse `=` at check time as `ill_typed`/`type-mismatch`, exactly as
+/// before #164's fix.
+#[trace("TC-198", "FR-149-AC-6")]
+#[test]
+fn e16b_references_refuse_an_unrelated_object_type() {
+    let animal = key("M::Animal");
+    let dog = key("M::Dog");
+    let rock = key("M::Rock");
+    let env = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(animal, "Animal", vec![]),
+            ObjectTypeDeclaration::new(dog, "Dog", vec![]).with_supertypes(vec![animal]),
+            ObjectTypeDeclaration::new(rock, "Rock", vec![]),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        check(
+            &env,
+            &ValueType::Reference(dog),
+            &ValueType::Reference(rock)
+        ),
+        Err(IllTyped {
+            cause: IllTypedCause::TypeMismatch
+        })
+    );
+}
+
 // ---- IEEE rows -------------------------------------------------------------
 
 fn profile() -> &'static AdmittedIeeeProfile {

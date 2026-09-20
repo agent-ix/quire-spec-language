@@ -143,6 +143,21 @@ impl TypeEnvironment {
             (ValueType::Population(_), _) | (_, ValueType::Population(_)) => {
                 return ill_typed(IllTypedCause::OperatorIneligible)
             }
+            // FR-149/TC-198 L08: a `Reference<A>` and a `Reference<B>` may
+            // denote the same real object even when `A != B`, as long as one
+            // conforms to the other in `self`'s own admitted generalization
+            // graph (H1, #204 round 1) -- the same upcast relation
+            // `Self::conforms` already grants dispatch call arguments
+            // (`crate::value::expression::check::Typer::check_dispatch_argument`).
+            // Evaluation compares the completed `ObjectReference`s' full
+            // identity regardless of either operand's static type
+            // (`plan_pairs`'s `Value::Reference` arm), so this only widens
+            // which pairs reach that comparison, never how it decides.
+            (ValueType::Reference(l), ValueType::Reference(r))
+                if l != r && (self.conforms(*l, *r) || self.conforms(*r, *l)) =>
+            {
+                EqualitySchedule::Plan
+            }
             (l, r) if l == r => EqualitySchedule::Plan,
             _ => return ill_typed(IllTypedCause::TypeMismatch),
         };
@@ -435,7 +450,40 @@ pub(crate) fn operand_value(
     value: &Value,
     meter: &mut Meter,
 ) -> Result<Value, Stop> {
-    if !operand.source.admits(value) {
+    // A `Reference<T>` operand's own runtime value carries its real
+    // most-specific object type, not `T` (#164 item 1; the identical
+    // soundness chain `OptionValue::from_admitted`'s own doc comment states
+    // for `lookup`'s upcast case): `Self::check_equality` already proved `T`
+    // conforms to (or equals) the peer operand's own declared type before
+    // this ever runs, so `ValueType::Reference(T)::admits`'s exact-key
+    // structural check is both redundant for an equal pair and wrong for a
+    // genuine upcast pair -- skip it here and let `plan_pairs`'s own
+    // `Value::Reference` arm decide identity. `Reference` is exhaustively
+    // named as the one exception, not wildcarded past: object types are the
+    // only nominal type in this crate with a declared supertype/conformance
+    // relation (`ObjectTypeDeclaration::with_supertypes`), so every other
+    // variant's declared type and runtime type can never diverge -- each is
+    // structural (collection kind/element/bound) or an exact declaration-key
+    // match (composite, enum). If a future variant gains its own nominal
+    // subtyping, this match stops compiling instead of silently admitting an
+    // unvetted upcast through the wrong arm.
+    let admits_by_conformance_not_structure = match &operand.source {
+        ValueType::Reference(_) => true,
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::Text(_)
+        | ValueType::Enum(_)
+        | ValueType::Option(_)
+        | ValueType::Composite(_)
+        | ValueType::Collection(_)
+        | ValueType::Population(_) => false,
+    };
+    if !admits_by_conformance_not_structure && !operand.source.admits(value) {
         return Err(invariant());
     }
     let Some(target) = &operand.target else {

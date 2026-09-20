@@ -280,13 +280,19 @@ fn l07_scenario() -> Scenario {
 /// object types under their real checked `NodeKey`s (the same 32 bytes as
 /// `scenario`'s own `EffectiveId`s) — required for `ValueType::Reference`
 /// to check at all: `TypeEnvironment::type_refusal` refuses any
-/// `Reference<T>` whose `T` is not a declared object type.
+/// `Reference<T>` whose `T` is not a declared object type. `M::B`'s
+/// `with_supertypes([M::A])` mirrors `fixture_f1`'s own `model.B -> model.A`
+/// generalization (#164): before this, the checker's own `TypeEnvironment`
+/// and the runtime `DomainPackage`/`PopulationBinding` it is checked
+/// against disagreed about `B`'s supertypes, an instance of the
+/// "TypeEnvironment island" gap this fixture must not reintroduce.
 fn types(scenario: &Scenario) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [
             ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
-            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![])
+                .with_supertypes(vec![node_key(&scenario.a)]),
         ],
     )
     .unwrap()
@@ -877,6 +883,68 @@ fn l16_lookup_expression_refused_mode() {
         }
         other => panic!("expected a refused absent-key lookup, got {other:?}"),
     }
+}
+
+/// FR-153-AC-3/TC-198 L03 (#164 item 3): `lookup<T>(p, r)` where `r`'s
+/// checked static type `S` conforms to `T` but is not equal to it is
+/// admitted at *check* time, via `TypeEnvironment::conforms` (H1, #204
+/// round 1) -- not deferred to `crate::model::population::lookup`'s own
+/// `type_conforms` as it was before #164. `scenario`'s own `M::B -> M::A`
+/// generalization (`fixture_f1`, mirrored onto the checker's own
+/// `TypeEnvironment` by [`types`]) is exactly this case.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.b))),
+    ];
+    let expression = lookup(target.clone(), AbsenceMode::Undefined);
+    let checked = check(&package, &parameters, &expression);
+    assert_eq!(*checked.value_type(), target);
+}
+
+/// FR-153-AC-3/TC-198 L03 (#164 item 3): the admission above is narrow -- a
+/// reference statically typed to an object type with no generalization
+/// relation to the queried `T` still refuses `ill_typed`/`type-mismatch` at
+/// check time, exactly as an unrelated type would (never deferred to
+/// evaluation, and never confused with [`all_instances_expression_target_declared_but_not_in_model_is_type_mismatch`]'s
+/// case, where the queried type itself is absent from the model).
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_refuses_an_unrelated_reference_type_at_check_time() {
+    let scenario = scenario();
+    let unrelated_key = fixed_key(0xDD);
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
+            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![])
+                .with_supertypes(vec![node_key(&scenario.a)]),
+            ObjectTypeDeclaration::new(unrelated_key, "M::C", vec![]),
+        ],
+    )
+    .unwrap();
+    let package = PackageDeclarations {
+        types,
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(unrelated_key)),
+    ];
+    let expression = lookup(target, AbsenceMode::Undefined);
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
 }
 
 /// FR-153 names a population binding only as the direct operand of
