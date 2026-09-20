@@ -154,3 +154,22 @@ did not introduce and does not own, the same shape as FR-063's S2/S3
 deferral (QSL-143). TC-162's own test (step 7, a stubbed gate target list)
 still demonstrates the wiring *mechanism* works; it does not demonstrate
 the real crate is clean under it.
+
+**By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
+tags as they exist in the delivered code today:**
+- FR-064-AC-1: backed (`TC-162`, `xtask/src/string_edge.rs`).
+- FR-064-AC-2: unbacked (untagged). The scanning half is real (any occurrence
+  the allow-list doesn't cover is reported); the specific
+  add-then-remove-reappears sequence has no dedicated tagged test.
+- FR-064-AC-3: backed (`TC-162`, `xtask/src/string_edge.rs`).
+- FR-064-AC-4: unbacked (untagged). No test asserts the CLI's process exit
+  code directly (the underlying `Result`/`Err` shape that drives it is
+  exercised indirectly through other tagged tests).
+- FR-064-AC-5: backed (`TC-162`, `xtask/src/string_edge.rs` -- rebuilt this
+  review round, finding F11, to actually reach the rejection path with a
+  constructed non-empty allow-list; see that file's own doc).
+- FR-064-AC-6: unbacked, as this section's own paragraph above already
+  states at length (no production gate wiring in #214; QSL-145).
+
+Three of six ACs are backed (AC-1, AC-3, AC-5); three are unbacked
+(AC-2, AC-4, AC-6).

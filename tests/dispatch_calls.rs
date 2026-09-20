@@ -475,30 +475,60 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
 /// through a checked expression tree, so `check.rs`'s own
 /// `callable_by_name` gate on `Expression::Call` never runs), must not be
 /// able to reach a synthesized dispatch candidate body either.
+///
+/// **Rebuilt (PR #262 review, finding F5).** An earlier version of this
+/// test named the target with a two-segment `QualifiedName` (`["candidate",
+/// "body"]`), reasoning that a real FR-151 synthesized name always contains
+/// a literal `.` and so can never be a single identifier segment
+/// `QualifiedName::new` accepts (`is_identifier` admits no `.`). That is
+/// true, but it means the test never reached the `callable_by_name` filter
+/// at all: `function.as_unqualified()` already returns `None` for two
+/// segments, so `package.call` refuses at that guard, before
+/// `self.function(name).filter(|(_, checked)|
+/// checked.signature.callable_by_name)` -- the actual mechanism this test
+/// exists to probe -- ever runs. Deleting the `.filter(...)` call still made
+/// the old assertion pass, which is exactly F5's "test that cannot fail the
+/// way it is written" shape. This version instead builds a minimal package
+/// (no dispatch table needed) whose one function is declared through
+/// [`FunctionDeclaration::clause`] -- the same crate-internal, never
+/// name-callable constructor FR-151 dispatch candidates use -- under a
+/// name that *is* a single plain identifier (`FunctionDeclaration::clause`
+/// itself places no dot-free restriction on `name`; only `QualifiedName`
+/// does), so `as_unqualified()` succeeds, `self.function` finds a real
+/// declaration by that identifier, and refusal can only come from the
+/// `callable_by_name` filter itself.
 #[trace("TC-196")]
 #[test]
-fn checked_package_call_refuses_a_synthesized_dispatch_candidate_by_name() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(receiver_type, None, ValueType::Integer)
-        .check(CheckingLimits::default())
-        .unwrap();
-    let objects = objects(receiver_type, "r1");
+fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup() {
+    let package = PackageDeclarations {
+        functions: vec![FunctionDeclaration::clause(
+            "internal_guard",
+            vec![],
+            ValueType::Boolean,
+            None,
+            Expression::Boolean(true),
+            DeclaredClauseKind::Body,
+        )],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("a single clause-kind function with no dispatch table checks cleanly");
+    let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
         .call(
-            // Two segments, not one: a synthesized dispatch candidate's
-            // internal name is never a single identifier a `QualifiedName`
-            // could name unqualified, so this resolves against no
-            // declaration regardless of `callable_by_name`.
-            &QualifiedName::new(vec!["candidate".to_owned(), "body".to_owned()]).unwrap(),
-            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
+            &QualifiedName::unqualified("internal_guard").unwrap(),
+            Vec::new(),
             &objects,
             &mut meter,
         )
-        .expect_err("a synthesized dispatch candidate body must not be callable by name");
+        .expect_err(
+            "a function declared through FunctionDeclaration::clause must not be callable by \
+             name even when found by plain-identifier lookup",
+        );
     assert_eq!(
         refusal,
-        InputRefusal::UnknownFunction("candidate::body".to_owned())
+        InputRefusal::UnknownFunction("internal_guard".to_owned())
     );
 }
 

@@ -147,8 +147,18 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("seam-probe: the normal (non-probe) build failed to compile; nothing else about the probe is meaningful until it succeeds")]
-    SeamProbeNormalBuildFailed,
+    #[error(
+        "seam-probe: cannot read {path} to resolve an E0004 line to its enclosing item: {source}"
+    )]
+    SeamProbeReadSource {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("seam-probe: the normal (non-probe) build failed to compile; nothing else about the probe is meaningful until it succeeds. stderr:\n{stderr}")]
+    SeamProbeNormalBuildFailed { stderr: String },
+    #[error("seam-probe: the normal (non-probe) build did not compile -- it failed dependency resolution under --offline (a cold registry cache, not a genuine compile error). Run a warm (non---offline) build first, then retry. stderr:\n{stderr}")]
+    SeamProbeOfflineRegistryUnavailable { stderr: String },
     #[error("seam-probe: the normal (non-probe) build reported E0004 at: {locations}; the probe variant must be unreachable outside the probe build (FR-063-AC-3)")]
     SeamProbeNormalBuildHasE0004 { locations: String },
     #[error("seam-probe: the build under RUSTFLAGS=--cfg seam_probe succeeded; it must fail with E0004 at every checked-in seam location")]
@@ -199,7 +209,9 @@ impl Error {
             }
             Self::CargoPinMissing { .. } | Self::CargoPinDisagreement { .. } => Code::CargoPin,
             Self::SeamProbeSpawn { .. }
-            | Self::SeamProbeNormalBuildFailed
+            | Self::SeamProbeReadSource { .. }
+            | Self::SeamProbeNormalBuildFailed { .. }
+            | Self::SeamProbeOfflineRegistryUnavailable { .. }
             | Self::SeamProbeNormalBuildHasE0004 { .. }
             | Self::SeamProbeBuildUnexpectedlySucceeded
             | Self::SeamProbeMismatch { .. } => Code::SeamProbe,

@@ -58,23 +58,25 @@ impl LimitExceeded {
     }
 }
 
-/// A stage's own internal-invariant violation (ADR-013 T-4): never a
-/// `Refusal`, mapped to the O-16 internal-failure category.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct InternalFault {
-    pub(crate) stage: &'static str,
-    pub(crate) invariant: &'static str,
-}
-
-impl InternalFault {
-    pub(crate) fn new(stage: &'static str, invariant: &'static str) -> Self {
-        Self { stage, invariant }
-    }
-}
-
-/// ADR-013 T-4's `StageFailure`: a reached limit or an internal fault -- the
-/// ways a stage can fail without producing output, for a family with no
-/// typed refusal cause exercised yet.
+/// ADR-013 T-4's `StageFailure`: the ways a stage can fail without
+/// producing output, narrowed to the one way this ticket's family can
+/// genuinely fail.
+///
+/// **No `Fault` variant either.** An earlier draft of this type also
+/// carried `Fault(InternalFault)` (ADR-013 T-4's internal-invariant
+/// category) with one real-looking construction site: `check` recomputed
+/// `mint_declaration_identity` a second time and compared it against the
+/// first, returning `Fault` on a mismatch. That comparison can never fail
+/// -- `mint_declaration_identity` is a pure function of its own arguments,
+/// called twice with the same arguments, so the two results are equal by
+/// construction, not by anything the runtime checks. That is a fabricated
+/// reader, not a real one, so #214 review (PR #262) ruled it out along
+/// with `Fault`/`InternalFault` themselves: nothing else in this ticket's
+/// one migrated family constructs either. `src/diagnostic.rs`'s own
+/// `InternalFault` (landed after this module was written, from `#213` S-5)
+/// is the type's real eventual home; a future stage entry that needs a
+/// genuine internal-fault outcome reaches for that one, not a revived copy
+/// here.
 ///
 /// **No `Refused` variant.** ADR-013 T-4's own design also names a
 /// family-typed-cause refusal (`Refused { causes: Vec<C> }`), and ADR-012
@@ -91,14 +93,13 @@ impl InternalFault {
 /// here constructs a `Refused`. Worse, `Vec<C>` over an uninhabited `C` is
 /// still constructible *empty* -- `Refused { causes: Vec::new() }` compiles
 /// and asserts nothing, a causeless refusal. Rather than ship a variant only
-/// reachable via that hazard, `#214` narrows `StageFailure` to the two ways
+/// reachable via that hazard, `#214` narrows `StageFailure` to the one way
 /// this ticket's family can genuinely fail; the first family with a real
 /// typed refusal cause adds `Refused` back, parameterised over its own
 /// (inhabited) `Cause` type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StageFailure {
     Limit(LimitExceeded),
-    Fault(InternalFault),
 }
 
 /// ADR-013 T-4's `Result<Staged<T>, StageFailure>`: every S1-S4 stage hook's

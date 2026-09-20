@@ -145,36 +145,65 @@ above.
   test category for real.
 
 **Required conversions, as delivered:**
-- v2 emitter: `ValueFunctionFamily::package` in
-  `src/value/expression/family.rs`, and `CheckedPackage::
-  emit_function_package_v2` in `src/value/expression/mod.rs`.
+- v2 emitter: `CheckedPackage::emit_function_package_v2` in
+  `src/value/expression/mod.rs`, calling `family::emit_v2`/`decode_v2`
+  directly. `FamilyContract::package` (and `ValueFunctionFamily`'s
+  implementation of it) is deleted (PR #262 review, findings F1/F2 -- see
+  the entry below): `emit_function_package_v2` originally called it into a
+  scratch buffer nothing read, then built its real returned bytes
+  independently, so the hook had no consumer.
 - Evaluator: `impl ReferenceEvaluation for ValueFunctionFamily` in
   `src/value/expression/family.rs` (`evaluate`), reached from
   `CheckedPackage::call` in `src/value/expression/mod.rs`.
 - Requirement derivation: deferred for this family, per this document's own
   note above.
 
-**Real deleted symbols from this migration** (FR-066-AC-4): the contract's
-own shape narrowed as this ticket discovered which parts had no real
-construction for a family with no capability kind and no typed cause yet
-(recorded in `src/family/mod.rs`'s and `src/family/contract.rs`'s module
-docs, and in ADR-012 §14.1's own record of this deferral):
-- `src/family/requirements.rs` -- deleted in its entirety (the `Requirements`
-  type and its `CapabilityKind`/`Extent`/`Bound` substructure).
-- `PackageRefusal` (was in `src/family/contract.rs`) -- deleted; `package`
-  narrowed to `fn package(checked: &Self::Checked, out: &mut Vec<u8>)`
-  with no `Result`.
-- `EvaluateRefusal::Incomplete` -- deleted (kept only `Refused(String)`);
-  `quire-exact`'s own `Meter::charge`/`charge_plan` are `pub(crate)`
-  (`quire-exact/src/accounting.rs:551,595`), not exported, so no family
-  migrated so far can construct a real `Incomplete`.
-- `DeclarationCause` and its `catalog_code()` method (was in
-  `src/value/expression/family.rs`) -- deleted; function declaration has no
-  real typed refusal cause distinct from the checking refusals `Value`
-  already has, so a probe over it would test only its own mapping, not a
-  seam.
-- `Stage::Requirements` (was in `src/family/mod.rs`) -- deleted along with
-  `Requirements` above.
+**Real deleted symbols from this migration** (FR-066-AC-4). **Correction
+(PR #262 review, finding F13):** an earlier revision of this section cited
+`src/family/requirements.rs`, `PackageRefusal`,
+`EvaluateRefusal::Incomplete`, `DeclarationCause` and `Stage::Requirements`
+as this ticket's "real deleted symbols." Those five were deleted from an
+uncommitted working draft before this ticket's first commit
+(`7ec1302`) ever landed -- from a reader's point of view, indistinguishable
+from a symbol that was never proposed at all, which is precisely the
+"hypothetical placeholder" AC-4 forbids citing. `Requirements`,
+`CapabilityKind`, `Extent`, `Bound` and `Stage::Requirements` are recorded
+unbacked for AC-4 rather than cited as deleted (they are real deferrals --
+this document's `requirements()` note above and `src/family/mod.rs`'s own
+module doc explain why -- just not ones a git log entry can show being
+removed). `PackageRefusal`, `EvaluateRefusal::Incomplete` and
+`DeclarationCause` are dropped from this list entirely: `package` was
+narrowed to take no `Result` (so it never needed a `PackageRefusal`) rather
+than have one deleted, and `EvaluateRefusal`/function-declaration's `Cause`
+were never given those variants in any committed revision to delete from.
+The following, in contrast, existed in `7ec1302` (pushed, inspectable with
+`git show 7ec1302` or later) and were removed by a later, also-pushed
+commit on this branch, in the PR #262 review round -- real deletions
+someone can find:
+- `FamilyContract::package` and `ValueFunctionFamily`'s implementation of it
+  (`src/family/contract.rs`, `src/value/expression/family.rs`) -- deleted
+  because `emit_function_package_v2` never read its output (F1/F2 above).
+- `stage_hooks`, `Stage` and `HookStatus` (`src/family/mod.rs`) -- deleted
+  because their only non-test callers were three `assert_eq!` sites
+  asserting a hand-written `match`'s own literal result against itself, and
+  removing those fabricated callers left the table with no real reader
+  (PR #262 review, finding F7; see `src/family/mod.rs`'s own module doc and
+  FR-063's "Correction to merged spec" note on the seam-probe's checked-in
+  list).
+- `FamilyKind::all()` and `assert_distinct_catalog_code_prefixes`
+  (`src/family/mod.rs`) -- deleted for the same reason as `stage_hooks`
+  (F7); the compile-time distinctness check `const _` in the same file
+  replaces the property it asserted with one enforced on every build, not
+  only under `cargo test`.
+- `StageFailure::Fault` and this crate's own `InternalFault`
+  (`src/family/outcome.rs`) -- deleted (F7): their one construction site
+  compared `mint_declaration_identity`'s output against itself, which
+  cannot fail by construction, not by anything the runtime checked.
+  `src/diagnostic.rs`'s own `InternalFault` (landed later, from `#213` S-5)
+  is that type's real eventual home.
+- The "defensive Fault path" self-comparison in
+  `ValueFunctionFamily::check` (`src/value/expression/family.rs`) -- deleted
+  along with `StageFailure::Fault` above, for the same reason.
 
 **Real test file added:** `src/value/expression/family.rs`'s
 `family_contract_tests` module (added by this migration); `xtask/src/
