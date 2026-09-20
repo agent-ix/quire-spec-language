@@ -6,21 +6,21 @@
 //! (declaration identity, O-05), `UniverseId` and `ObjectId` (a `Reference`
 //! payload, T-6), `UnitId` (a `Quantity` payload, T-6), `VariantId` (an `Enum`
 //! payload, T-6) and `MemberId` (O-06). Each is an opaque 32-byte digest with
-//! exactly one public constructor, [`from_digest`], mirroring
-//! [`crate::node::NodeKey::from_digest`]: the kernel wraps an already-computed
-//! digest and never hashes. QSL's `check`/`model` compute each digest over
-//! their own preimage schema and mint the id; this crate holds no preimage
-//! knowledge for any of them. As with `NodeKey` (see [`crate::node`]'s module
-//! doc), the ADR-011 T-12 `arch-lint api-surface` check that is meant to
-//! enforce "only `model` calls `EffectiveId::from_digest`" does not yet do
-//! so: it currently matches `EffectiveId::from_digest_bytes(`, a different
-//! name from this crate's real `from_digest`. Nothing today fails a caller
-//! outside `model`.
+//! exactly one public constructor, `from_digest` (each type's own, e.g.
+//! [`EffectiveId::from_digest`]), mirroring [`crate::NodeKey::from_digest`]:
+//! the kernel wraps an already-computed digest and never hashes. QSL's
+//! `check`/`model` compute each digest over their own preimage schema and
+//! mint the id; this crate holds no preimage knowledge for any of them. As
+//! with `NodeKey` (see the `node` module's doc comment), the ADR-011 T-12
+//! `arch-lint api-surface` check that is meant to enforce "only `model`
+//! calls `EffectiveId::from_digest`" does not yet do so: it currently
+//! matches `EffectiveId::from_digest_bytes(`, a different name from this
+//! crate's real `from_digest`. Nothing today fails a caller outside `model`.
 //!
 //! The six types share one shape (an opaque 32-byte digest, `Eq`/`Ord`/`Hash`,
-//! hex `Display`/`Debug`), so [`digest_identity!`] generates all six from one
-//! macro body rather than repeating the impls six times ("one fact, one
-//! place").
+//! hex `Display`/`Debug`), so the `digest_identity!` macro below generates
+//! all six from one macro body rather than repeating the impls six times
+//! ("one fact, one place").
 //!
 //! **Domain strings.** `EffectiveId`'s domain, `quire.model.effective-
 //! declaration/v1`, is the real value already live at
