@@ -258,7 +258,16 @@ observations belong only to the later consumer fixture.
     `ProducerObject`/`Correspondence` records, and require the reader to refuse
     each as an unrecognized field rather than accept or silently drop it.
     Inspect the compiler source tree and confirm no `ProducerObject` or
-    `Correspondence` type or wire tag remains. Regenerate both existing golden
+    `Correspondence` type or wire tag remains, and that the domain-package
+    member decodes through a plain `record!` field rather than an internally
+    tagged alternative with a zero-field variant (FR-042-CON-2); the reader's
+    refusal of a `correspondence`/`producer`/`interface` member above is the
+    behavioral proof that mechanism actually fires, not an assumption about
+    `deny_unknown_fields` in the abstract. Separately compile a native
+    package that admits no domain package at all (a directly admitted native
+    model) and confirm its emitted `Model` decodes with the domain-package
+    naming absent, exactly as the deleted `Correspondence`'s absence was
+    previously permitted. Regenerate both existing golden
     directories, `artifacts/compiled-protocol-v1` and
     `artifacts/compiled-protocol-v2`, and confirm both directories' own tests
     still pass under the new `Model` shape, at their existing
