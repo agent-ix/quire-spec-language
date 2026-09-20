@@ -28,14 +28,21 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
-    DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, Integer, IntegerInterval,
-    InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity,
-    Value, ValueType,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits,
+    ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
+    DispatchTable, Expression, FunctionDeclaration, IllTypedCause, InputRefusal, Integer,
+    IntegerInterval, InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome,
+    PackageDeclarations, PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
+
+// This crate's own `value::Origin` (imported above) is a different type
+// from `quire_exact::Origin` -- `CheckedPackage::occurrence` takes the
+// latter (ADR-013 O-07's kernel occurrence key), never the former, so both
+// are in scope here under distinct names.
+use quire_exact::Origin as ExactOrigin;
+use quire_exact::Role as ExactRole;
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -529,6 +536,87 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     assert_eq!(
         refusal,
         InputRefusal::UnknownFunction("internal_guard".to_owned())
+    );
+}
+
+/// FR-065-AC-2's reordering clause: a declaration's checked identity does
+/// not depend on any other declaration's existence or position in the
+/// package.
+///
+/// **Rebuilt (PR #262 review, coordinator round 3).** The previous version
+/// (`identity_ignores_unrelated_declarations`, `src/value/expression/
+/// family.rs`, `TC-163`) minted the same identity twice from the same
+/// `FunctionDeclaration` and compared it to itself; no second declaration
+/// was ever constructed, so there was nothing for the property to be
+/// independent *of*. This version checks two packages whose two functions
+/// are declared in opposite order and compares `target`'s checked identity
+/// across both -- a real reordering, at the one level position could
+/// actually leak (`PackageDeclarations::check`; see
+/// `mint_declaration_identity`'s own doc on why a typed body's
+/// `NodeKind::Call { function: usize, .. }` index makes checked position
+/// matter even though the *parsed* preimage this identity hashes does not).
+///
+/// Also gives a real, non-fabricated test caller to four `pub`
+/// `CheckedPackage` methods PR #262 review (coordinator round 3, finding 3)
+/// found with zero callers and zero tests anywhere in the crate:
+/// `function_identity` (read back here across both orderings), `occurrence`
+/// (the target's own declaration occurrence), and the
+/// `emit_function_package_v2`/`decode_function_package_v2` round trip
+/// (which also exercises `family::link_function_identity`, `emit_function_
+/// package_v2`'s own one caller, previously itself uncalled).
+#[trace("TC-163", "FR-065-AC-2")]
+#[test]
+fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
+    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
+        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+    }
+
+    let target = declaration("target", Expression::Boolean(true));
+    let unrelated = declaration("unrelated", Expression::Boolean(false));
+
+    let target_first = PackageDeclarations {
+        functions: vec![target.clone(), unrelated.clone()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("two unrelated boolean-literal functions check cleanly");
+    let unrelated_first = PackageDeclarations {
+        functions: vec![unrelated, target],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("reordering the same two declarations checks cleanly too");
+
+    let identity_target_first = target_first
+        .function_identity("target")
+        .expect("target is declared in this package");
+    let identity_unrelated_first = unrelated_first
+        .function_identity("target")
+        .expect("target is declared in this package, just declared second here");
+    assert_eq!(
+        identity_target_first, identity_unrelated_first,
+        "target's checked identity must not depend on unrelated's existence or position"
+    );
+
+    let origin = ExactOrigin::new(ExactRole::new("declaration"), 0);
+    assert!(
+        target_first
+            .occurrence(identity_target_first, &origin)
+            .is_some(),
+        "check must record target's own declaration occurrence, resolvable by (identity, origin)"
+    );
+
+    let bytes = target_first.emit_function_package_v2();
+    let decoded = CheckedPackage::decode_function_package_v2(&bytes)
+        .expect("this crate's own emit_function_package_v2 output decodes cleanly");
+    let decoded_identity = decoded
+        .into_iter()
+        .find(|(name, _)| name == "target")
+        .map(|(_, identity)| identity)
+        .expect("target survives the v2 round trip");
+    assert_eq!(
+        decoded_identity, identity_target_first,
+        "identity must survive check, S4 linking and a v2 emit/decode round trip unchanged"
     );
 }
 
