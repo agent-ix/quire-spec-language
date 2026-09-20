@@ -51,8 +51,12 @@ impl LibraryName {
 }
 
 /// A `quire.package.semantic/v2` `package_id`.
+///
+/// ADR-013 O-02: it is computed from a `CheckedPackage` and never accepted
+/// from a caller. The field is private for exactly that invariant --
+/// [`PackageId::of_preimage`] is production code's only constructor.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PackageId(pub [u8; 32]);
+pub struct PackageId([u8; 32]);
 
 impl PackageId {
     /// The `package_id` of identity preimage `preimage`: SHA-256 of its exact
