@@ -10,14 +10,16 @@ relationships:
 
 ## Description
 
-Verify that the `forms` core is the sole E2 producer of parsed forms from a
-lossless CST, that it refuses rather than partially building a form when the
-CST carries an error or recovery node, that a parsed form carries only the
-span of its originating CST node and no semantic identity, and that each
-entry in its dispatch table is a thin, single-call seam. The test uses a
-test-only leading-token-kind variant and a stub production function so the
-seam is exercised without depending on any family having migrated onto S2
-forms yet. Scope: FR-067-AC-1, FR-067-AC-2, FR-067-AC-3.
+Verify that the `forms` core, together with a family form builder, produces
+parsed forms from a lossless CST; that it refuses rather than partially
+building a form when the CST carries an error or recovery node; that a
+parsed form carries only the span of its originating CST node, no
+check-time-minted identity, and its CST's edition and any declared bound or
+extent unchanged; and that each entry in the dispatch table is a thin,
+single-call seam. The test uses a test-only leading-token-kind variant and a
+stub production function so the seam is exercised without depending on any
+family having migrated onto S2 forms yet. Scope: FR-067-AC-1, FR-067-AC-2,
+FR-067-AC-3, FR-067-AC-7, FR-067-AC-8.
 
 ## Test Procedure
 
@@ -34,6 +36,12 @@ forms yet. Scope: FR-067-AC-1, FR-067-AC-2, FR-067-AC-3.
 4. Inspect the dispatch-table entry for the test-only variant: count its
    calls into the stub production function, and check for any conditional,
    lookup or loop in the entry outside that one call.
+5. Build two lossless CSTs identical except for their recorded edition (the
+   existing top-level and `composed` edition constants), call the forms
+   stage on each, and read each resulting parsed form's edition back.
+6. Build two lossless CSTs whose root construct declares a bound or extent,
+   identical except for that declared value, call the forms stage on each,
+   and read each resulting parsed form's carried bound or extent back.
 
 ## Expected Results
 
@@ -45,3 +53,8 @@ forms yet. Scope: FR-067-AC-1, FR-067-AC-2, FR-067-AC-3.
   exists on the parsed-form type.
 - Step 4: the entry makes exactly one call into the stub production
   function and holds no other conditional, lookup or loop.
+- Step 5: the two parsed forms' editions differ, matching the two CSTs'
+  recorded editions; neither reads back a shared constant.
+- Step 6: the two parsed forms' carried bound or extent values differ,
+  matching the two CSTs' declared values; neither reads back a shared
+  default.
