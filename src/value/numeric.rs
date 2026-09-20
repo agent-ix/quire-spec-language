@@ -10,9 +10,9 @@ use std::cmp::Ordering;
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::decimal::{sbits, sdigits, Decimal};
-use super::integer::{Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
+use quire_exact::{Integer, IntegerInterval};
 
 /// A binary `+`, `-`, `*` or `/` before its operand values exist.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

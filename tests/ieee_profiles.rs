@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
+use quire_exact::{Integer, IntegerInterval};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
@@ -23,9 +24,8 @@ use quire_spec_language::value::{
     IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags,
     IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeResult,
     IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete,
-    InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome, PackageCause,
-    PackageRefusalCode, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined,
-    IEEE_DEFINITION,
+    InjectedDenial, LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational,
+    RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

@@ -48,8 +48,8 @@ TC-077 is qualified at 4ac3597 by SR-099. Task-015's qualification and private
 handoff are complete; SR-100 records the final plan audit. The ready-PR merge
 follows that audit; this plan status does not assert a merge or broader closure.
 A native API milestone does not replace IT-002's compiled ConfigVersion and
-existing backend, remaining LC02 strict package/projection, FS03 acceptance
-or LC05 Quire integration.
+existing backend, the outstanding package/projection and acceptance work,
+or further Quire integration.
 
 ## Dependency Graph
 

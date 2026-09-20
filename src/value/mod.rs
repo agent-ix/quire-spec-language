@@ -5,7 +5,8 @@
 //! `native_model`, `checking` and `runtime::evaluation`, which it neither
 //! widens nor reuses. Layers:
 //!
-//! 1. typed values: [`Integer`], [`IntegerInterval`]/[`BoundedInteger`],
+//! 1. typed values: `quire_exact::Integer`,
+//!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`], [`Decimal`], [`Text`], [`EnumValue`] and FR-142
 //!    [`Quantity`] over an admitted [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
@@ -49,7 +50,6 @@ mod enumeration;
 mod equality;
 mod expression;
 mod ieee;
-mod integer;
 mod key;
 mod library;
 mod member;
@@ -73,8 +73,8 @@ pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, 
 // belong to), so `Charge` itself is exposed crate-wide the same way.
 pub(crate) use accounting::{length_amount, Charge};
 pub use collection::{
-    construct_collection, form_collection, CardinalityBound, CollectionKind, CollectionType,
-    CollectionValue, EmptyCardinalityBound,
+    construct_collection, form_collection, CardinalityBound, CollectionType, CollectionValue,
+    EmptyCardinalityBound,
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use composite::{
@@ -137,10 +137,6 @@ pub use ieee::{
     IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag,
     IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance,
     IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
-};
-pub use integer::{
-    BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
-    OutOfDomain,
 };
 pub use library::{
     check_migration, resolve_libraries, ExportIdentity, ImportDeclaration, ImportPath,

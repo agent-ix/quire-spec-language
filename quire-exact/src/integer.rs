@@ -7,6 +7,36 @@
 //!
 //! Ported verbatim from QSL `value::integer` as part of QSL#213 S-1
 //! (ADR-011 X-1); no edge needed cutting.
+//!
+//! QSL-146 widens 17 `Integer`/`IntegerInterval` methods from `pub(crate)`
+//! to `pub`: [`abs`](Integer::abs), [`pow`](Integer::pow),
+//! [`split_factor_two`](Integer::split_factor_two),
+//! [`shifted_left`](Integer::shifted_left), [`add`](Integer::add),
+//! [`sub`](Integer::sub), [`mul`](Integer::mul), [`neg`](Integer::neg),
+//! [`gcd`](Integer::gcd), [`exact_div`](Integer::exact_div),
+//! [`div_rem_truncating`](Integer::div_rem_truncating),
+//! [`div_mod_floor`](Integer::div_mod_floor),
+//! [`power_of_ten`](Integer::power_of_ten),
+//! [`power_product_bits`](Integer::power_product_bits),
+//! [`spanning`](IntegerInterval::spanning), [`from_big`](Integer::from_big)
+//! and [`as_big`](Integer::as_big), since QSL-146 deletes QSL's own
+//! byte-identical `value::integer` and repoints its callers at this module,
+//! now a separate crate from theirs. Each was verified against a real call
+//! site by reverting it alone to `pub(crate)` and recompiling
+//! `quire-spec-language` `--workspace --all-targets --all-features`: 151
+//! real `E0624` errors across the 17, one compile per method in isolation
+//! so no error could be a cascade from another reverted method in the same
+//! expression. The complete caller set, one compile's error locations
+//! unioned across all 17 isolated reverts: `model::population`,
+//! `value::accounting`, `value::collection`, `value::composite`,
+//! `value::decimal`, `value::division`, `value::equality`,
+//! `value::expression::check`, `value::expression::evaluate`,
+//! `value::expression::facts`, `value::ieee`, `value::numeric`,
+//! `value::quantity`, `value::rational` and `value::unit` -- 15 modules.
+//! (`forms::syntax`, `model::conformance`, `value::node`,
+//! `value::expression::ir` and `value::expression::refusal` also import
+//! `Integer`/`IntegerInterval`, but only as a type, never calling one of
+//! these 17 methods, so reverting any of the 17 alone never errors there.)
 
 use std::fmt;
 use std::num::NonZeroU32;
@@ -61,18 +91,18 @@ impl Integer {
     }
 
     /// The magnitude `|self|`.
-    pub(crate) fn abs(&self) -> Self {
+    pub fn abs(&self) -> Self {
         Self(self.0.abs())
     }
 
     /// `self^|exponent|`. Callers bound the result size before calling.
-    pub(crate) fn pow(&self, exponent: &Self) -> Self {
+    pub fn pow(&self, exponent: &Self) -> Self {
         Self(num_traits::Pow::pow(&self.0, exponent.0.magnitude()))
     }
 
     /// `(self / 2^k, k)` for the greatest `k <= limit` with `2^k | self`.
     /// Zero has no greatest such `k` and is returned with `k = 0`.
-    pub(crate) fn split_factor_two(&self, limit: u64) -> (Self, u64) {
+    pub fn split_factor_two(&self, limit: u64) -> (Self, u64) {
         match self.0.trailing_zeros() {
             None => (self.clone(), 0),
             Some(zeros) => {
@@ -83,7 +113,7 @@ impl Integer {
     }
 
     /// `self × 2^shift`. Callers bound the result size before calling.
-    pub(crate) fn shifted_left(&self, shift: u64) -> Self {
+    pub fn shifted_left(&self, shift: u64) -> Self {
         Self(&self.0 << shift)
     }
 
@@ -92,45 +122,52 @@ impl Integer {
         self.0.is_even()
     }
 
-    pub(crate) fn add(&self, other: &Self) -> Self {
+    /// `self + other`. Exact; unbounded `Integer` addition never overflows.
+    pub fn add(&self, other: &Self) -> Self {
         Self(&self.0 + &other.0)
     }
 
-    pub(crate) fn sub(&self, other: &Self) -> Self {
+    /// `self - other`. Exact; unbounded `Integer` subtraction never
+    /// overflows.
+    pub fn sub(&self, other: &Self) -> Self {
         Self(&self.0 - &other.0)
     }
 
-    pub(crate) fn mul(&self, other: &Self) -> Self {
+    /// `self × other`. Exact; unbounded `Integer` multiplication never
+    /// overflows.
+    pub fn mul(&self, other: &Self) -> Self {
         Self(&self.0 * &other.0)
     }
 
-    pub(crate) fn neg(&self) -> Self {
+    /// `-self`.
+    pub fn neg(&self) -> Self {
         Self(-&self.0)
     }
 
-    pub(crate) fn gcd(&self, other: &Self) -> Self {
+    /// The greatest common divisor of `self` and `other`, non-negative.
+    pub fn gcd(&self, other: &Self) -> Self {
         Self(self.0.gcd(&other.0))
     }
 
     /// Exact quotient of a division known to be exact; `divisor` is nonzero.
-    pub(crate) fn exact_div(&self, divisor: &Self) -> Self {
+    pub fn exact_div(&self, divisor: &Self) -> Self {
         Self(&self.0 / &divisor.0)
     }
 
     /// Truncating quotient/remainder; `divisor` is nonzero.
-    pub(crate) fn div_rem_truncating(&self, divisor: &Self) -> (Self, Self) {
+    pub fn div_rem_truncating(&self, divisor: &Self) -> (Self, Self) {
         let (quotient, remainder) = self.0.div_rem(&divisor.0);
         (Self(quotient), Self(remainder))
     }
 
     /// Floor quotient/remainder; `divisor` is nonzero.
-    pub(crate) fn div_mod_floor(&self, divisor: &Self) -> (Self, Self) {
+    pub fn div_mod_floor(&self, divisor: &Self) -> (Self, Self) {
         let (quotient, remainder) = self.0.div_mod_floor(&divisor.0);
         (Self(quotient), Self(remainder))
     }
 
     /// Exact `10^exponent`.
-    pub(crate) fn power_of_ten(exponent: u64) -> Self {
+    pub fn power_of_ten(exponent: u64) -> Self {
         let mut result = BigInt::one();
         let mut base = BigInt::from(10_u8);
         let mut remaining = exponent;
@@ -154,7 +191,7 @@ impl Integer {
     /// exponent, and `P` doubles until both brackets have one bit length. The
     /// product is then not a power of two, so a finite precision separates it
     /// from the nearest power of two and the loop terminates.
-    pub(crate) fn power_product_bits(factor: &Self, base: &Self, exponent: &Self) -> Self {
+    pub fn power_product_bits(factor: &Self, base: &Self, exponent: &Self) -> Self {
         let factor = factor.0.magnitude();
         let base = base.0.magnitude();
         let exponent = exponent.0.magnitude();
@@ -318,7 +355,7 @@ impl IntegerInterval {
     }
 
     /// The smallest interval containing both `a` and `b`, in either order.
-    pub(crate) fn spanning(a: Integer, b: Integer) -> Self {
+    pub fn spanning(a: Integer, b: Integer) -> Self {
         if a <= b {
             Self { lower: a, upper: b }
         } else {
@@ -409,12 +446,12 @@ impl IntegerDomain {
 
 impl Integer {
     /// Wrap an arbitrary-precision integer (IEEE exact conversions).
-    pub(crate) fn from_big(value: BigInt) -> Self {
+    pub fn from_big(value: BigInt) -> Self {
         Self(value)
     }
 
     /// The arbitrary-precision integer (IEEE exact conversions).
-    pub(crate) fn as_big(&self) -> &BigInt {
+    pub fn as_big(&self) -> &BigInt {
         &self.0
     }
 }

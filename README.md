@@ -1,5 +1,7 @@
 # quire-spec-language
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/6qsdhSPE)
+
 `complete` exposes the edition `1-draft` authoring boundary. Its declarative
 grammar table and one bounded interpreter produce a byte-exact CST with typed
 token kinds, named production nodes and a separate recovery stream. The module
@@ -394,7 +396,7 @@ and deferred standard-artifact terms. No public release is authorized.
 
 Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),
 [compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
-The shared contracts and LC02–LC05 acceptance remain separate work.
+The shared contracts and LC02–LC05 work are tracked separately, in their own issues.
 
 ## Review fixture audits
 

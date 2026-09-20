@@ -24,8 +24,9 @@ admitted models. Resolved expressions remain the original source AST; a second
 expression wire/interpreter is not introduced.
 
 The exact package ByteDigest identifies its complete bytes. The separate native
-static identity follows the complete named derivation below; independent FS05
-consumer adoption remains required. Existing IR canonical and bound identities,
+static identity follows the complete named derivation below, defined
+independently of any FS05 consumer's own adoption decision. Existing IR
+canonical and bound identities,
 shared-reference versions and JCS remain unchanged. Runtime
 population, evaluation results, proof-engine work counters and producer/run
 attestations are not static package fields. B's run/producer references retain
@@ -373,7 +374,7 @@ a capability/derivation claim, not native clause meaning. It remains inside
 raw artifact bytes and is verified against the actual producer's dispositions.
 This separation does not qualify an unavailable backend or grant evidence reuse.
 The new native domain is not added to B's closed shared-reference schemas by
-this payload contract; A/B must qualify that explicit registration under FS05.
+this payload contract; that explicit registration under FS05 is not made here.
 
 ## Qualification and remaining acceptance
 

@@ -28,14 +28,13 @@
 //! forms") to rework under this ticket. The denial is pointed at the one
 //! seam the review actually flagged.
 
-use super::super::collection::{CardinalityBound, CollectionKind, CollectionType};
+use super::super::collection::{CardinalityBound, CollectionType};
 use super::super::comparison::IllTypedCause;
 use super::super::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
 use super::super::decimal::DecimalType;
 use super::super::enumeration::{EnumDeclaration, EnumValue};
 use super::super::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
 use super::super::ieee::AdmittedIeeeProfile;
-use super::super::integer::Integer;
 use super::super::node::NodeKey;
 use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::quantity::{check_comparable, result_unit, UnitOperation};
@@ -47,11 +46,12 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
+use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
-use crate::model::population::AbsenceMode;
+use quire_exact::{CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.
