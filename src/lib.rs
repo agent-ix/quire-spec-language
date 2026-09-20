@@ -44,7 +44,7 @@ mod token;
 pub mod value;
 pub mod wire_format;
 
-pub use diagnostic::{Code, Diagnostic, Phase};
+pub use diagnostic::{CatalogCode, Category, Code, Diagnostic, InternalFault, Phase};
 pub use digest::ByteDigest;
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
 pub use parser::{parse, parse_native, parse_native_source, parse_source};
