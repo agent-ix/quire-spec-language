@@ -363,21 +363,23 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// `abstract` that is not a boolean, say) still refuses rather than being
 /// read as a default.
 ///
-/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`) does not yet
-/// resolve `ix://quire/native/<Name>`: every `typeRef` under that prefix
-/// reads there as `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an
-/// `Error`-severity diagnostic this validator refuses like any other.
-/// FCD's `task/199-intake-shapes` branch (`crates/semantic-ir/src/
-/// rules.rs:43-56`) fixes this at the validator layer, resolving the
-/// prefix against FCD's own closed native-scalar set (`UUID`, `Boolean`,
-/// `Integer`, `Decimal`, `String`, `Timestamp`, `Duration`, `Bytes`,
-/// `JsonObject`) rather than refusing it outright -- once this crate pins
-/// that rev, `validate_with_semantic_ir` stops refusing a document merely
-/// for naming a native type reference. That does not widen what *this*
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`, FCD PR #200)
+/// resolves `ix://quire/native/<Name>` at the validator layer
+/// (`crates/semantic-ir/src/rules.rs`), against FCD's own closed
+/// native-scalar set (`UUID`, `Boolean`, `Integer`, `Decimal`, `String`,
+/// `Timestamp`, `Duration`, `Bytes`, `JsonObject`), so
+/// `validate_with_semantic_ir` no longer refuses a document merely for
+/// naming a native type reference (a rev predating FCD #199/#200 read every
+/// such `typeRef` as `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an
+/// `Error`-severity diagnostic this validator refused like any other; that
+/// is no longer observable at this pin). That does not widen what *this*
 /// reader accepts: [`read_value_type_ref`] independently refuses any
 /// `<Name>` outside [`NativeValueType`]'s own closed set (QSpec's
 /// `type-ref`, R5's ruling -- narrower than FCD's) as
-/// `malformed-declaration`, a later, separate refusal from this one.
+/// `malformed-declaration`, a later, separate refusal from this one --
+/// which is exactly why `Pump.id`/`Sys.id`/`Tank.id` still refuse in
+/// `tests/model_intake.rs`'s golden-shape test even though the schema
+/// itself now admits them.
 fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
     let malformed = |detail: String| ModelRefusal {
         code: Code::InvalidModelBinding,
@@ -1859,16 +1861,17 @@ mod tests {
         .into_bytes()
     }
 
-    // `agent-ix-semantic-ir` at the pinned rev does not yet resolve
-    // `ix://quire/native/<Name>` (every such reference reads there as
-    // `UNRESOLVED_TYPE_REF`, an `Error`-severity diagnostic
-    // `validate_with_semantic_ir` refuses like any other) -- see
+    // `agent-ix-semantic-ir` at the pinned rev resolves
+    // `ix://quire/native/<Name>` at the validator layer (see
     // `validate_with_semantic_ir`'s own doc comment for FCD's upstream fix
-    // and why it still would not widen what this reader accepts -- so a
-    // native typeRef cannot yet be exercised successfully end to end
-    // through `read_records`. These tests drive [`read_value_type_ref`]
-    // directly, the same resolver every field/parameter/`returns` typeRef
-    // site calls.
+    // and why it still does not widen what this reader accepts), and
+    // end-to-end native-typeRef resolution is exercised via
+    // `tests/model_intake.rs`'s
+    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
+    // These tests instead drive [`read_value_type_ref`] directly, the same
+    // resolver every field/parameter/`returns` typeRef site calls, so each
+    // one's own refusal/success shape is pinned independently of any one
+    // fixture document.
 
     #[test]
     fn resolves_a_known_native_type_ref() {
@@ -2073,13 +2076,14 @@ mod tests {
     /// read into a [`RelationshipRecord`], not refused.
     ///
     /// This calls [`read_object_type`] directly rather than through
-    /// [`read_records`]: at this crate's pinned `agent-ix-semantic-ir` rev
-    /// (predating FCD #199/#200) the *schema* for this shape still requires
-    /// the old `verb` member, so `validate_with_semantic_ir` refuses any
-    /// document carrying it before `read_object_type` ever runs --
-    /// confirmed by running FCD's own new golden through it (see
-    /// `reading_fcd_199s_golden_shape_refuses_the_whole_document_at_the_pinned_semantic_ir_schema`
-    /// in `tests/model_intake.rs`). Same reason
+    /// [`read_records`]: at this crate's now-pinned `agent-ix-semantic-ir`
+    /// rev the schema for this shape admits `sourceEnd`/`targetEnd`, so the
+    /// full pipeline would work too (confirmed by
+    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`
+    /// in `tests/model_intake.rs`, whose `Flow2` type reads clean this same
+    /// way); this unit test still drives `read_object_type` directly so its
+    /// own hand-rolled `sourceEnd`/`targetEnd` shape is pinned independently
+    /// of any one fixture document. Same reason
     /// [`resolves_a_known_native_type_ref`] drives `read_value_type_ref`
     /// directly instead of through the full pipeline.
     #[test]
