@@ -797,7 +797,9 @@ Proposed #213 slices, in order. The split itself is an owner action on #213.
 Each Gate cell names the immediate slices and QSpec items this slice's own
 deliverable cannot compile without; a transitive gate (for example S-1,
 reached through S-4 → S-3 → S-2 → S-1) is implied by the chain and is not
-repeated in the cell. A slice's objects may mention a later slice's type in
+repeated in the cell. A Gate names a dependency whether or not it has landed,
+and a sibling slice is named explicitly, since only ancestors on the chain
+are implied. A slice's objects may mention a later slice's type in
 prose without gating on it, when the code that touches that type is a
 separate, later ticket (for example the v2 emitter, ADR-011 M-4) rather than
 this slice's own deliverable — that carve-out restates the same rule rather
@@ -815,7 +817,7 @@ direction is S-3's, not a gate on S-2 (Consequences).
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus` | S-3 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
-| S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). O-22's readers additionally need `Locus::Artifact{digest, pointer}`'s O-18 digest record, S-2's row. Held until S-4 lands. | S-4, QC-11 |
+| S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). O-22's readers additionally need `Locus::Artifact{digest, pointer}`'s O-18 digest record, S-2's row. Held until S-4 lands. | S-5a (landed, #258), S-4, QC-11 |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, the `model::accounting` fold into the S-1 meter, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
 
 Work that this record assigns and that no ticket owns is listed in §8
@@ -848,7 +850,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-16 | AD-016 amendment: the WP9 category mapping of the ten `KaniOutcomeKind`s is the O-16 proof column. | IR C-09, #231 C-23 |
 | QC-17 | AD-016 amendment: node ids are listed in the kernel row only, reconciling two AD-016 rows. No rename. | nothing; #213 S-1 follows the kernel row |
 | QC-18 | The node-identity preimage schema and vectors: include the declaring package's declared `name@version` (not `package_id`), so a `NodeKey` is unique across packages (O-04). | #213 S-2, TK-01 |
-| QC-19 | FR-322: a named refusal code for an unknown node kind, and the rule that QSpec revises the v2 node-kind set in place while v2 is prerelease (O-14), if FR-322 has neither. | IR reader, #213 S-5a (`CatalogCode` only; no `Locus` needed for the code itself) |
+| QC-19 | FR-322: a named refusal code for an unknown node kind, and the rule that QSpec revises the v2 node-kind set in place while v2 is prerelease (O-14), if FR-322 has neither. | IR reader only: I2's `library` reader re-checks no declaration and exposes exported declarations as opaque data (T-2), so it never classifies a node kind; no #213 slice emits this code. |
 | QC-20 | AD-016 amendment: the arrow 6 output and the Replay-ownership Packet row replace `witness: Option<Witness>` with `source: ReplaySource { Witness(Witness), Input(values) }`. An `Input` replay settles `reproduced-without-witness` and never counts as backend evidence (O-25). ADR-011 E8 follows. | IR packet (TK-04), #231 |
 
 Questions for #209:
