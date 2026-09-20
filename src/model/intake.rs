@@ -387,17 +387,18 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// `tests/model_intake.rs`'s golden-shape test even though the schema
 /// itself now admits them.
 fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
-    let malformed = |node: String, artifact: Option<String>, span: Option<LocatedSpan>, detail: String| {
-        ModelRefusal {
-            code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                node,
-                artifact,
-                span,
-            },
-            detail,
-        }
-    };
+    let malformed =
+        |node: String, artifact: Option<String>, span: Option<LocatedSpan>, detail: String| {
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node,
+                    artifact,
+                    span,
+                },
+                detail,
+            }
+        };
     let text = std::str::from_utf8(document).map_err(|err| {
         vec![malformed(
             "$".to_owned(),
@@ -1903,7 +1904,8 @@ mod tests {
         let records = read_records("acme/orders", &shared_title)
             .expect("two artifacts with equal titles are still two distinct declarations");
         assert_eq!(records.len(), 2, "both equal-titled artifacts are admitted");
-        let keys: std::collections::BTreeSet<_> = records.iter().map(DomainPackageRecord::key).collect();
+        let keys: std::collections::BTreeSet<_> =
+            records.iter().map(DomainPackageRecord::key).collect();
         assert_eq!(
             keys.len(),
             2,
@@ -2043,7 +2045,11 @@ mod tests {
         )
         .to_string();
         let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
-        assert_eq!(refusals.len(), 2, "both invalid types refuse, not only the first");
+        assert_eq!(
+            refusals.len(),
+            2,
+            "both invalid types refuse, not only the first"
+        );
         let nodes: std::collections::BTreeSet<&str> = refusals
             .iter()
             .map(|refusal| match &refusal.cause {
@@ -2053,7 +2059,10 @@ mod tests {
             .collect();
         assert_eq!(
             nodes,
-            std::collections::BTreeSet::from(["ix://acme/orders/Order", "ix://acme/orders/Invoice"]),
+            std::collections::BTreeSet::from([
+                "ix://acme/orders/Order",
+                "ix://acme/orders/Invoice"
+            ]),
             "each diagnostic names its own owning declaration, not just the first one's"
         );
     }
