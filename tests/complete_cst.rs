@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! Lossless complete-V1 CST construction, incremental editing and recovery.
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;

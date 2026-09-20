@@ -73,7 +73,9 @@ pub const OUTSTANDING_PREMISES: &[&str] = &[
 /// The classification of one mapping request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Support {
+    /// The reviewed table names a TL target for this request.
     Supported {
+        /// The TL target this request maps to.
         target: Target,
         /// Reviewed source table this disposition was read from, so a later
         /// revision of that table is a visible change rather than silent
@@ -81,8 +83,10 @@ pub enum Support {
         table: &'static str,
         /// Extra condition the fixed-sample row attaches, when it applies.
         total_sample_valuation: bool,
+        /// Premises a supported mapping would still have to discharge.
         premises: &'static [&'static str],
     },
+    /// No current TL target can express this request.
     Unsupported {
         /// Every unmatched dimension, not one summary cause.
         dimensions: Vec<Unmatched>,
@@ -223,7 +227,9 @@ impl Classification {
 /// Which operator kinds a declaration's temporal graph reaches.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Operators {
+    /// A bounded or unbounded future operator is reachable.
     pub future: bool,
+    /// A bounded or unbounded past operator is reachable.
     pub past: bool,
 }
 

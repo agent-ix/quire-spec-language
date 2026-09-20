@@ -54,7 +54,7 @@ pub enum PreimageDefect {
     NotObject,
     /// The bytes are not the canonical serialization of their JSON value, so
     /// one logical preimage could carry two `package_id`s. See
-    /// [`project_declarations`] for the exact form enforced.
+    /// `project_declarations` for the exact form enforced.
     NonCanonical,
     /// A required member is absent.
     MissingMember(&'static str),

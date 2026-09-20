@@ -23,53 +23,93 @@ pub const CONTRACT: &str = RESULT_CONTRACT;
 #[derive(Clone, Copy, Debug)]
 /// Immutable result lineage selected by a producer.
 pub enum Relation<'a> {
+    /// This result has no predecessor; it is the first in its lineage.
     Original,
+    /// This result supersedes the given predecessor, replacing it as the
+    /// current answer within the same lineage.
     Superseding(&'a ValidatedResult),
+    /// This result invalidates the given predecessor, retracting it within
+    /// the same lineage.
     Invalidating(&'a ValidatedResult),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Which lineage relation a result stands in relative to a predecessor.
 pub enum RelationKind {
+    /// The result has no predecessor.
     Original,
+    /// The result supersedes and replaces a predecessor.
     Superseding,
+    /// The result invalidates and retracts a predecessor.
     Invalidating,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Whether the trigger or execution origin governing a result was activated.
 pub enum ActivationState {
+    /// No trigger was admitted within a closed, complete trigger scope; not a
+    /// true obligation to assess.
     Inactive,
+    /// The trigger scope was open, or trigger evidence was missing or
+    /// refused, so activation could not be determined.
     Unknown,
+    /// One semantic trigger was admitted, or the whole-execution origin
+    /// activated the obligation.
     Active,
+    /// Activation could not be reported because the request was refused,
+    /// incomplete, or its obligation was never activated.
     Unavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Bounded temporal truth. `Pending` is a distinct outcome, never a Boolean.
 pub enum Truth {
+    /// The decision evaluated to true.
     True,
+    /// The decision evaluated to false.
     False,
+    /// The decision has not yet settled to true or false.
     Pending,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Why a truth was settled, using the shared temporal settlement vocabulary.
 pub enum Settlement {
+    /// A complete closed decision scope authorized the closed-boundary rule.
     ClosedScope,
+    /// An open scope settled true from a witness preserved by every admitted
+    /// continuation.
     DecisiveWitness,
+    /// An open scope settled false from a counterexample preserved by every
+    /// admitted continuation.
     DecisiveCounterexample,
+    /// An open future whose admitted continuations do not preserve a
+    /// Boolean.
     Unsettled,
+    /// A fact inside the decision-support set is missing, so the truth is
+    /// not available.
     Unavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Why a result carries no truth value.
 pub enum NonValueKind {
+    /// No value is reported because activation was inactive.
     Inactive,
+    /// No value is reported because activation could not be determined.
     ActivationUnknown,
+    /// No value is reported because a required fact was missing from the
+    /// decision support.
     Missing,
+    /// No value is reported because evaluation was refused for the stated
+    /// dimension or reason.
     Refused,
+    /// No value is reported because the obligation was never activated.
     Unactivated,
 }
 
@@ -83,15 +123,20 @@ pub struct Document {
 }
 
 impl Document {
+    /// Returns the canonical encoded result bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Returns the raw digest of the canonical bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.digest
     }
+    /// Returns the result's canonical content-addressed identity.
     pub fn identity(&self) -> &str {
         &self.wire.identity
     }
+    /// Returns the monotonically increasing revision number within this
+    /// result's lineage.
     pub const fn revision(&self) -> u64 {
         self.wire.revision
     }
@@ -107,60 +152,88 @@ impl Document {
 pub struct ValidatedResult(Document);
 
 impl ValidatedResult {
+    /// Returns the underlying canonical document.
     pub fn document(&self) -> &Document {
         &self.0
     }
+    /// Returns which lineage relation this result stands in relative to a
+    /// predecessor.
     pub fn relation(&self) -> RelationKind {
         self.0.wire.relation.kind
     }
+    /// Returns the identity of the request this result was evaluated from.
     pub fn request_identity(&self) -> &str {
         &self.0.wire.request.identity
     }
+    /// Returns the identity of the observation subject this result concerns.
     pub fn subject_identity(&self) -> &str {
         &self.0.wire.subject_identity
     }
+    /// Returns the semantic instance identity this result was evaluated
+    /// against.
     pub fn instance(&self) -> &str {
         &self.0.wire.instance
     }
+    /// Returns the evidence correspondence this result was bound to.
     pub fn correspondence(&self) -> &EvidenceRef {
         &self.0.wire.correspondence
     }
+    /// Returns whether the governing trigger or execution origin was
+    /// activated.
     pub fn activation(&self) -> ActivationState {
         self.0.wire.activation
     }
+    /// Returns the assessment-execution disposition, independent of truth.
     pub fn execution(&self) -> temporal::Execution {
         self.0.wire.execution.into()
     }
+    /// Returns the settled truth, or `None` when no truth value is reported.
     pub fn truth(&self) -> Option<Truth> {
         self.0.wire.truth
     }
+    /// Returns why no truth value is reported, or `None` when a truth value
+    /// is present.
     pub fn non_value(&self) -> Option<NonValueView<'_>> {
         self.0.wire.non_value.as_ref().map(NonValueView)
     }
+    /// Returns why the truth was settled, or `None` when no truth value is
+    /// reported.
     pub fn settlement(&self) -> Option<Settlement> {
         self.0.wire.settlement
     }
+    /// Returns the identities of the trace positions whose valuations
+    /// established the reported truth.
     pub fn support(&self) -> impl ExactSizeIterator<Item = &str> {
         self.0.wire.support.iter().map(String::as_str)
     }
+    /// Returns the admitted decision-progress evidence and watermark.
     pub fn decision_progress(&self) -> ProgressView<'_> {
         ProgressView(&self.0.wire.axes.decision_progress)
     }
+    /// Returns the admitted decision-closure evidence and state.
     pub fn decision_closure(&self) -> ClosureView<'_> {
         ClosureView(&self.0.wire.axes.decision_closure)
     }
+    /// Returns the admitted surrounding-progress evidence and watermark.
     pub fn surrounding_progress(&self) -> ProgressView<'_> {
         ProgressView(&self.0.wire.axes.surrounding_progress)
     }
+    /// Returns the admitted surrounding-closure evidence and state.
     pub fn surrounding_closure(&self) -> ClosureView<'_> {
         ClosureView(&self.0.wire.axes.surrounding_closure)
     }
+    /// Returns the admitted completeness authority, state, and fact
+    /// population.
     pub fn completeness(&self) -> CompletenessView<'_> {
         CompletenessView(&self.0.wire.completeness)
     }
+    /// Returns the effective limits this result was evaluated and encoded
+    /// under.
     pub fn limits(&self) -> Limits {
         self.0.limits
     }
+    /// Returns the predecessor's identity and digest, or `None` for an
+    /// original result with no predecessor.
     pub fn predecessor(&self) -> Option<(&str, &str)> {
         self.0
             .wire
@@ -169,28 +242,36 @@ impl ValidatedResult {
             .as_ref()
             .map(|value| (value.identity.as_str(), value.digest.as_str()))
     }
+    /// Returns the monotonically increasing lineage counter, incremented on
+    /// each correction.
     pub const fn lineage(&self) -> u64 {
         self.0.wire.lineage
     }
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view over one progress axis's evidence reference and watermark.
 pub struct ProgressView<'a>(&'a ProgressWire);
 impl<'a> ProgressView<'a> {
+    /// Returns the evidence reference this progress axis is bound to.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns the progress watermark in the profile's clock domain.
     pub const fn watermark(self) -> i64 {
         self.0.watermark
     }
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view over one closure axis's evidence reference and state.
 pub struct ClosureView<'a>(&'a ClosureRecord);
 impl<'a> ClosureView<'a> {
+    /// Returns the evidence reference this closure axis is bound to.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns whether this closure axis is open or closed.
     pub fn state(self) -> temporal::Closure {
         match self.0.state {
             ClosureWire::Open => temporal::Closure::Open,
@@ -200,31 +281,42 @@ impl<'a> ClosureView<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view over the admitted completeness authority, state, and fact
+/// population.
 pub struct CompletenessView<'a>(&'a CompletenessRecord);
 impl<'a> CompletenessView<'a> {
+    /// Returns the evidence reference this completeness authority is bound
+    /// to.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns whether the input is complete or incomplete.
     pub fn state(self) -> temporal::Completeness {
         match self.0.state {
             CompletenessWire::Complete => temporal::Completeness::Complete,
             CompletenessWire::Incomplete => temporal::Completeness::Incomplete,
         }
     }
+    /// Returns the exact fact population this completeness authority
+    /// covers.
     pub fn facts(self) -> impl ExactSizeIterator<Item = &'a EvidenceRef> {
         self.0.facts.iter()
     }
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view over why a result carries no truth value.
 pub struct NonValueView<'a>(&'a NonValueWire);
 impl<'a> NonValueView<'a> {
+    /// Returns the category of reason no truth value is reported.
     pub const fn kind(self) -> NonValueKind {
         self.0.kind
     }
+    /// Returns the exact machine-readable reason code.
     pub fn code(self) -> &'a str {
         &self.0.code
     }
+    /// Returns the dimension the reason concerns, when one applies.
     pub fn dimension(self) -> Option<&'a str> {
         self.0.dimension.as_deref()
     }

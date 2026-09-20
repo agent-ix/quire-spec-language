@@ -168,18 +168,30 @@ pub enum Aggregate {
     /// Every required request was admitted for downstream processing.
     Attainable,
     /// A required request was not admitted; the index addresses responses().
-    Unavailable { response: usize },
+    Unavailable {
+        /// Index into responses() for the required request that was not admitted.
+        response: usize,
+    },
 }
 
 /// A consumer's requested inventory does not agree with this report.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InventoryGap {
     /// The report holds no response for this requested index.
-    MissingResponse { request: usize },
+    MissingResponse {
+        /// Index into the consumer's requested inventory with no matching response.
+        request: usize,
+    },
     /// The report holds a response the consumer did not request.
-    ExtraResponse { response: usize },
+    ExtraResponse {
+        /// Index into responses() for the response the consumer did not request.
+        response: usize,
+    },
     /// The response at this index answers a different requested pair.
-    MismatchedResponse { request: usize },
+    MismatchedResponse {
+        /// Index into the consumer's requested inventory whose response answers a different pair.
+        request: usize,
+    },
 }
 
 /// Every requested pair with its disposition, plus the assessment provenance

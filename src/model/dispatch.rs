@@ -152,7 +152,7 @@ pub enum LinkCheckOutcome {
     /// [`DispatchLinkOutcome`].
     Completed(DispatchLinkOutcome),
     /// A real defect (a dangling operation reference, or a family/dominance
-    /// walk deeper than [`MAX_DISPATCH_DEPTH`]) refused the check outright.
+    /// walk deeper than `MAX_DISPATCH_DEPTH`) refused the check outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
     Incomplete(Incomplete),
