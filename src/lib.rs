@@ -33,6 +33,7 @@ pub mod protocol_artifact;
 pub mod quire_source;
 pub mod runtime;
 mod serde_object;
+pub mod simulation;
 pub mod source;
 pub mod source_map;
 pub mod state;

@@ -34,6 +34,12 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-009
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-010
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-048
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-049
@@ -47,6 +53,18 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-055
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-056
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-058
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-059
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-060
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-061
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-013
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
@@ -161,6 +179,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-007
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-007
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-013
     type: contains
 ---
 # Master Requirements Specification
@@ -380,6 +400,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-046](functional/FR-046-execute-predicates-and-ordered-queries.md) | FR | Retrospective L3 draft under #66; review, matrix binding and full query runtime acceptance remain pending |
 | [FR-047](functional/FR-047-evaluate-finite-object-reference-graphs.md) | FR | Retrospective L4 finite graph contract under #66; implementation/evidence reconciliation pending |
 | [ADR-009](decisions/ADR-009-graph-path-witness-content.md) | ADR | Proposed; open question: what a graph path witness carries |
+| [ADR-010](decisions/ADR-010-observed-architecture-baseline.md) | ADR | Proposed; observed QSL and backend architecture baseline and Layer 1 decision items (#206) |
+| [ADR-011](decisions/ADR-011-stage-dag-and-dependency-architecture.md) | ADR | Proposed; QSL stage DAG, edge contracts, forbidden bypasses and crate/module dependency architecture (#209) |
+| [ADR-012](decisions/ADR-012-semantic-family-extension-contracts.md) | ADR | Proposed; semantic-family extension and dispatch contracts, capability selection mechanics and L1-D1 (#210) |
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
 | [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Implemented exact admitted `/1` and `/2` composed-evaluation input and typed-outcome boundary; `/2` compensation expressions completed under #101 |
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
@@ -389,4 +412,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131 |
+| [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
+| [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
+| [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | Implemented current-head cross-repository integration lane; #215 |
+| [FR-059](functional/FR-059-check-backend-dependency-direction.md) | FR | Implemented ADR-011 FB-05/FB-11 backend dependency-direction check (`arch-lint direction`); #215 |
+| [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B/T12-C live and failing at OBS-018; #215 |
+| [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
+| [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | Implemented current-head lane contract test across QSL, Contract IR, Runtime and Codegen; #215 |

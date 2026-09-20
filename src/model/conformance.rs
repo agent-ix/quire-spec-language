@@ -53,19 +53,18 @@
 //!   and `B/z2`) contending for the identical single inherited target — is
 //!   *not* checked by `resolve_redefinition_target`: nothing in `src/`
 //!   called it, so per-redefiner queries here could never see the sibling
-//!   that contends with them. For **field** members that shape is instead
-//!   detected where a model actually normalizes through it, `normalize`'s
-//!   own phase 4 (`apply_redefinitions`'s undominated-edges branch), which
-//!   already has every sibling redefiner of a contended target in view.
-//!   `normalize`'s phase 4 is field-only, though (see its own module doc),
-//!   so the identical shape for **operation** members is priced — a
-//!   contested operation target's `normalize.conflict-check` charge is not
-//!   skipped — but detected and resolved nowhere at all: no dominance
-//!   search decides which competing operation redefiner wins, and no
-//!   refusal reports an undominated operation contest the way
-//!   `derivation-conflict`/`redefinition-target` do for fields. This
-//!   predates this PR and is outside QSL #145's own scope. Remaining work:
-//!   #173.
+//!   that contends with them. That shape is instead detected where a model
+//!   actually normalizes through it, `normalize`'s own phase 4
+//!   (`apply_redefinitions`'s undominated-edges branch), which already has
+//!   every sibling redefiner of a contended target in view, for both
+//!   **field** and **operation** members alike (#173): a winner if one
+//!   redefiner's owner dominates every other, otherwise a typed
+//!   `derivation-conflict`/`redefinition-target` refusal. `normalize`'s
+//!   phase 4 still grows [`crate::model::normalize::EffectiveView`] for
+//!   field redefinition only (see its own module doc); the operation case
+//!   shares its dominance search but contributes no view entry, matching
+//!   this module's own per-axis operation conformance checking, which stays
+//!   here.
 #![allow(
     clippy::large_enum_variant,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline"
@@ -961,7 +960,7 @@ pub fn check_field_refinement_obligation(
             .effect
             .modifies
             .iter()
-            .any(|field| field.node == redefined_key.node || field.node == redefining_key.node)
+            .any(|field| field == redefined_key || field == redefining_key)
     });
     let Some(writer) = writer else {
         // No exposed operation writes this field: nothing to discharge.
@@ -973,13 +972,12 @@ pub fn check_field_refinement_obligation(
         let Some(target) = &operation.redefines else {
             continue;
         };
-        if target.node == writer.key.node && operation.owner.node == redefining.owner.node {
+        if target == &writer.key && operation.owner == redefining.owner {
             clauses.extend(operation.own_postcondition_clauses.iter());
         }
     }
-    let names_field = |key: &DeclarationKey| -> bool {
-        key.node == redefined_key.node || key.node == redefining_key.node
-    };
+    let names_field =
+        |key: &DeclarationKey| -> bool { key == redefined_key || key == redefining_key };
 
     // FR-146's own rule: a projection onto the field a narrowing redefinition
     // redefines carries the declared facts of the redefined PARENT member,
@@ -1095,11 +1093,11 @@ pub fn check_field_refinement_obligation(
 /// see sibling redefiners of the same target (querying `B/z` alone has no
 /// visibility into `B/z2`), so it does not — and cannot — detect R07's
 /// *second* shape, several distinct members all redefining one shared
-/// inherited target. That contention check runs where the real boundary can
-/// see every redefiner at once: `normalize.rs`'s phase 4
-/// (`apply_redefinitions`), not here. This function is currently unwired
-/// from `src/`'s pipeline (like its `conformance.rs` siblings); QSL #165
-/// composes it into the real pipeline's `conformance.axis` accounting.
+/// inherited target (field or operation alike). That contention check runs
+/// where the real boundary can see every redefiner at once: `normalize.rs`'s
+/// phase 4 (`apply_redefinitions`), not here. This function is currently
+/// unwired from `src/`'s pipeline (like its `conformance.rs` siblings); QSL
+/// #165 composes it into the real pipeline's `conformance.axis` accounting.
 pub fn resolve_redefinition_target(
     domain_package: &DomainPackage,
     redefining: &DeclarationKey,
@@ -1117,8 +1115,17 @@ pub fn resolve_redefinition_target(
                 .and_then(|operation| operation.redefines.clone())
         });
     let Some(target) = own_redefines else {
+        // `redefining` declares no `redefines` property of its own: there is
+        // no candidate edge to name, so `redefiners` is empty and `target`
+        // falls back to `redefining` itself (L4, #204 round 1) -- this
+        // branch carries no test of its own (see this function's own doc:
+        // unwired from `src/`'s pipeline, QSL #165), and `candidate: None`
+        // right below already tells a caller no target was ever found.
         return Ok(RedefinitionTargetOutcome::Refused {
-            cause: ModelRefusalCause::RedefinitionTarget,
+            cause: ModelRefusalCause::RedefinitionTarget {
+                redefiners: Vec::new(),
+                target: redefining.clone(),
+            },
             candidate: None,
         });
     };
@@ -1134,7 +1141,10 @@ pub fn resolve_redefinition_target(
     }
 
     Ok(RedefinitionTargetOutcome::Refused {
-        cause: ModelRefusalCause::RedefinitionTarget,
+        cause: ModelRefusalCause::RedefinitionTarget {
+            redefiners: vec![redefining.clone()],
+            target: target.clone(),
+        },
         candidate: Some((redefining.clone(), target)),
     })
 }

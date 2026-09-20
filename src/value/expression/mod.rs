@@ -260,6 +260,21 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        let mut seen_operations = std::collections::BTreeSet::new();
+        for operation in &self.dispatch_operations {
+            if !seen_operations.insert((operation.receiver_type, operation.member.clone())) {
+                refusals.push(invalid_dispatch(
+                    root(Origin::Expression),
+                    InvalidDispatchDeclaration::DuplicateOperation {
+                        receiver_type: operation.receiver_type,
+                        member: operation.member.clone(),
+                    },
+                ));
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         for operation in &self.dispatch_operations {
             let Some(table) = self.dispatch_tables.get(operation.table) else {
                 refusals.push(invalid_dispatch(

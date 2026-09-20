@@ -9,6 +9,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-041
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
   - target: "ix://agent-ix/quire-spec-language/FR-004"

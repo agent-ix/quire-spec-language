@@ -815,7 +815,7 @@ fn charges_normalize_record_once_per_intake_declaration() {
     match normalize(&domain_package, exact) {
         NormalizeOutcome::Completed(view) => {
             assert_eq!(
-                view.declarations.len(),
+                view.declarations().len(),
                 2,
                 "the completed view carries both declarations, not just any Completed outcome"
             );
