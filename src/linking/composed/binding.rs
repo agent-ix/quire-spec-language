@@ -17,18 +17,32 @@ pub enum Refusal {
     /// The original namespace record retains the exact name/cycle cause.
     Namespace,
     /// Shared duplicate model/profile alias evidence in this source unit.
-    Alias { conflict: usize },
+    Alias {
+        /// Index into this report's alias_conflicts().
+        conflict: usize,
+    },
     /// The selected edition definition/closure refused all declarations.
     Edition,
     /// Index into this declaration's definition-profile uses.
-    Profile { occurrence: usize },
+    Profile {
+        /// Index into this declaration's definition-profile uses.
+        occurrence: usize,
+    },
     /// Index into this declaration's model/export errors.
-    Model { occurrence: usize },
+    Model {
+        /// Index into this declaration's model/export errors.
+        occurrence: usize,
+    },
     /// Index into this declaration's lexical/structural issues.
-    Scope { occurrence: usize },
+    Scope {
+        /// Index into this declaration's lexical/structural issues.
+        occurrence: usize,
+    },
     /// A typed native dependency refused; the namespace retains its source span.
     Dependency {
+        /// Index into the namespace's dependency references for this declaration.
         reference: usize,
+        /// The dependency declaration whose refusal propagated to this one.
         target: DeclarationId,
     },
 }

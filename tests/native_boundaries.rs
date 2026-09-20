@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! Parse/format round-trip boundaries and diagnostics for native syntax.
 use ix_trace_rs::trace;
 use quire_spec_language::format::{format, format_with_limit};
 use quire_spec_language::{parse, Code, Diagnostic, Limits, Phase, SourceIdentity};

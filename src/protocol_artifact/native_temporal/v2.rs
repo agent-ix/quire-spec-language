@@ -40,6 +40,8 @@ pub const RESULT_SCHEMA_SHA256: &str =
 pub struct SemanticTriggerIdentity(Vec<u8>);
 
 impl SemanticTriggerIdentity {
+    /// Builds a semantic-trigger identity from opaque bytes, rejecting an
+    /// empty identity.
     pub fn new(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
         if bytes.is_empty() {
@@ -48,6 +50,7 @@ impl SemanticTriggerIdentity {
         Ok(Self(bytes))
     }
 
+    /// Returns the opaque identity bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -57,34 +60,64 @@ impl SemanticTriggerIdentity {
 /// enclosing opaque semantic trigger, not caller-authored text.
 #[derive(Clone, Debug)]
 pub struct TriggerInput {
+    /// Opaque delivery receipt identity. Repeated delivery of one semantic
+    /// trigger carries distinct receipts and creates no second instance.
     pub receipt: String,
+    /// The anchor this delivery was read at.
     pub anchor: String,
+    /// Opaque payload, compared only to detect a conflicting redelivery
+    /// under one semantic trigger identity.
     pub payload: String,
+    /// Activation guard valuation at the anchor. `None` where the guard
+    /// could not be established; an unestablished guard is not a false
+    /// guard. Ignored where the declaration has no guard.
     pub guard: Option<bool>,
+    /// Supplied input for each declared capture, in the declaration's
+    /// authored capture order.
     pub captures: Vec<temporal::CaptureInput>,
 }
 
 /// Complete event-triggered v2 input. It replaces v1's public `instance`.
 #[derive(Clone, Debug)]
 pub struct Input {
+    /// The opaque semantic-trigger identity this input is bound to.
     pub trigger: SemanticTriggerIdentity,
+    /// Evidence correspondence this input is bound to.
     pub correspondence: EvidenceRef,
+    /// Observation-bound native trace positions supplied for this
+    /// evaluation.
     pub positions: Vec<request::ObservedPosition>,
+    /// The authored activation anchor this input binds to.
     pub anchor: String,
+    /// Event triggers supplied for this input; v2 admission requires
+    /// exactly one.
     pub triggers: Vec<TriggerInput>,
+    /// Whether trigger evidence was admitted, absent or refused.
     pub trigger_evidence: temporal::Evidence,
+    /// Trigger-scope closure, independent of the decision scope.
     pub trigger_scope: temporal::Closure,
+    /// Decision-scope progress assertion.
     pub decision_progress: request::ProgressInput,
+    /// Decision-scope closure assertion.
     pub decision_closure: request::ClosureInput,
+    /// Surrounding-execution progress assertion.
     pub surrounding_progress: request::ProgressInput,
+    /// Surrounding-execution closure assertion.
     pub surrounding_closure: request::ClosureInput,
+    /// Assessment-execution disposition.
     pub execution: temporal::Execution,
+    /// Completeness authority and the exact fact population it covers.
     pub completeness: request::CompletenessInput,
+    /// Whether the trace's lower boundary is an authoritative execution
+    /// origin.
     pub authoritative_origin: bool,
+    /// Retained valuation and capture records this evaluation may still
+    /// read.
     pub evicted: Vec<temporal::Eviction>,
 }
 
 #[derive(Clone, Debug)]
+/// Canonical v2 request bytes and their raw and semantic identities.
 pub struct Document {
     bytes: Vec<u8>,
     digest: ByteDigest,
@@ -92,12 +125,15 @@ pub struct Document {
 }
 
 impl Document {
+    /// Returns the canonical encoded v2 request bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Returns the raw digest of the canonical bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.digest
     }
+    /// Returns the request's canonical content-addressed identity.
     pub fn identity(&self) -> &str {
         &self.wire.identity
     }
@@ -111,15 +147,22 @@ pub struct ValidatedRequest {
 }
 
 impl ValidatedRequest {
+    /// Returns the underlying canonical v2 request document.
     pub fn document(&self) -> &Document {
         &self.document
     }
+    /// Returns the opaque semantic-trigger identity bytes bound to this
+    /// request.
     pub fn semantic_trigger(&self) -> &[u8] {
         self.trigger.as_bytes()
     }
+    /// Returns the identity of the observation subject this request
+    /// concerns.
     pub fn subject_identity(&self) -> &str {
         self.inner.subject_identity()
     }
+    /// Returns the declaration index within the admitted package this
+    /// request targets.
     pub const fn declaration(&self) -> u32 {
         self.inner.declaration()
     }
@@ -177,6 +220,7 @@ impl ValidatedRequest {
 }
 
 #[derive(Clone, Debug)]
+/// Canonical v2 result bytes and their raw and semantic identities.
 pub struct ResultDocument {
     bytes: Vec<u8>,
     digest: ByteDigest,
@@ -184,12 +228,15 @@ pub struct ResultDocument {
 }
 
 impl ResultDocument {
+    /// Returns the canonical encoded v2 result bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Returns the raw digest of the canonical bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.digest
     }
+    /// Returns the result's canonical content-addressed identity.
     pub fn identity(&self) -> &str {
         &self.wire.identity
     }
@@ -203,15 +250,21 @@ pub struct ValidatedResult {
 }
 
 impl ValidatedResult {
+    /// Returns the underlying canonical v2 result document.
     pub fn document(&self) -> &ResultDocument {
         &self.document
     }
+    /// Returns the opaque semantic-trigger identity bytes committed in this
+    /// result.
     pub fn semantic_trigger(&self) -> &[u8] {
         self.trigger.as_bytes()
     }
+    /// Returns the identity of the request this result was evaluated from.
     pub fn request_identity(&self) -> &str {
         &self.document.wire.request_identity
     }
+    /// Returns the settled truth, or `None` when no truth value is
+    /// reported.
     pub fn truth(&self) -> Option<result::Truth> {
         self.inner.truth()
     }
@@ -227,8 +280,13 @@ impl ValidatedResult {
 
 /// Immutable v2 result lineage. A correction can never change trigger bytes.
 pub enum Relation<'a> {
+    /// This result has no predecessor; it is the first in its lineage.
     Original,
+    /// This result supersedes the given predecessor, replacing it as the
+    /// current answer within the same lineage.
     Superseding(&'a ValidatedResult),
+    /// This result invalidates the given predecessor, retracting it within
+    /// the same lineage.
     Invalidating(&'a ValidatedResult),
 }
 

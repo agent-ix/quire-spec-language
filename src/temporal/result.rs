@@ -33,8 +33,11 @@ pub struct Subject {
 /// Bounded temporal truth. `Pending` is a distinct outcome, never a Boolean.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Truth {
+    /// The obligation's formula is settled true.
     True,
+    /// The obligation's formula is settled false.
     False,
+    /// The truth is not yet settled by any admitted continuation.
     Pending,
 }
 
@@ -60,21 +63,27 @@ pub enum Basis {
 /// Independent progress/closure state of one axis.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Closure {
+    /// The axis has not yet progressed to its final state.
     Open,
+    /// The axis has reached its final state; nothing further can revise it.
     Closed,
 }
 
 /// Independent assessment-execution disposition, separate from truth.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Execution {
+    /// The assessment ran to completion.
     Completed,
+    /// The assessment could not run to completion.
     Failed,
 }
 
 /// Independent input completeness, separate from both closure axes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Completeness {
+    /// Every required input was supplied.
     Complete,
+    /// At least one required input was absent.
     Incomplete,
 }
 
@@ -88,7 +97,9 @@ pub enum Activation {
     Inactive,
     /// Open scope, or missing or refused trigger evidence.
     Unknown {
+        /// Input completeness toward establishing activation.
         completeness: Completeness,
+        /// Assessment-execution disposition toward establishing activation.
         execution: Execution,
     },
     /// One admitted semantic trigger, or a whole-execution origin.
@@ -144,6 +155,7 @@ pub struct Capture {
 /// One obligation instance's assessed temporal outcome.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Assessment {
+    /// Which declaration, instance, node and position this assessment belongs to.
     pub subject: Subject,
     /// Semantic instance identity: the admitted trigger or execution-origin
     /// identity this obligation was keyed by. Absent where no instance was
@@ -158,6 +170,7 @@ pub struct Assessment {
     /// Exactly one for an activated instance, across incremental
     /// re-evaluation, restoration and replay.
     pub capture_evaluations: usize,
+    /// Whether the instance is active, inactive, or unknown, and why.
     pub activation: Activation,
     /// Absent when activation carried no obligation to assess.
     pub truth: Option<Truth>,
@@ -171,6 +184,7 @@ pub struct Assessment {
     /// unavailable, while a missing fact outside it is a completeness gap that
     /// does not falsify or delay the settled truth.
     pub support: Support,
+    /// The exact premises this assessment depends on.
     pub premises: Premises,
 }
 
@@ -179,27 +193,45 @@ pub struct Assessment {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Dimension {
+    /// Selected temporal profile identity.
     Profile,
+    /// Exact admitted profile revision.
     ProfileRevision,
+    /// Clock binding name.
     Clock,
+    /// Declared fixed-sample period clock parameter.
     SamplePeriod,
+    /// Declared fixed-sample epoch clock parameter.
     Epoch,
+    /// Declared timestamp unit clock parameter.
     TimestampUnit,
+    /// Declared sequence authority clock parameter.
     SequenceAuthority,
     /// Fixed-sample unit selected by the authenticated artifact.
     ClockUnit,
     /// Exact parameter-key inventory selected by the authenticated artifact.
     ClockParameters,
+    /// Admitted order key over positions sharing a clock coordinate.
     AdmittedOrder,
+    /// Declared interval bound.
     Interval,
+    /// A declared capture and its initializer.
     Capture,
+    /// Activation guard valuation.
     Guard,
+    /// Semantic trigger or execution-origin identity.
     TriggerIdentity,
+    /// Declared activation anchor.
     Anchor,
+    /// An atomic valuation at a trace position.
     Valuation,
+    /// Retained history available to a past operator.
     History,
+    /// A bounded or unbounded past operator.
     PastOperator,
+    /// A finite-window bounded future operator.
     FiniteWindow,
+    /// The open, unbounded prefix of an execution.
     OpenPrefix,
     /// Progress in the profile's clock domain, asserted by a watermark.
     Watermark,
@@ -214,17 +246,24 @@ pub enum Refusal {
     /// A trace dimension differs from the declaration's admitted selection.
     #[error("temporal binding mismatch on {dimension:?}")]
     Binding {
+        /// Which trace dimension mismatched.
         dimension: Dimension,
+        /// Which declaration, instance, node and position the mismatch was located at.
         subject: Subject,
     },
     /// Order-sensitive operator over positions sharing a clock coordinate with
     /// no admitted order key.
     #[error("order-sensitive temporal operator without an admitted order")]
-    Order { subject: Subject },
+    Order {
+        /// Which declaration, instance, node and position the refusal was located at.
+        subject: Subject,
+    },
     /// A capture could not be established at the activation anchor.
     #[error("temporal capture could not be established: {dimension:?}")]
     Capture {
+        /// Which capture-related dimension could not be established.
         dimension: Dimension,
+        /// Which declaration, instance, node and position the refusal was located at.
         subject: Subject,
     },
     /// Two deliveries asserted one semantic trigger or execution-origin
@@ -233,6 +272,7 @@ pub enum Refusal {
     Contradiction {
         /// The semantic identity the conflict was asserted under.
         identity: String,
+        /// Which declaration, instance, node and position the conflict was located at.
         subject: Subject,
     },
     /// A progress assertion contradicts the progress already retained under one
@@ -245,11 +285,15 @@ pub enum Refusal {
         dimension: Dimension,
         /// Clock binding name the contradiction was asserted under.
         clock: String,
+        /// Which declaration, instance, node and position the contradiction was located at.
         subject: Subject,
     },
     /// The emitted graph did not match the shape this evaluator admits.
     #[error("temporal graph reference is not admissible")]
-    Reference { subject: Subject },
+    Reference {
+        /// Which declaration, instance, node and position the refusal was located at.
+        subject: Subject,
+    },
 }
 
 /// A required input was absent. Distinct from `false`, from `Pending` and from
@@ -257,7 +301,10 @@ pub enum Refusal {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("required temporal {dimension:?} is missing")]
 pub struct Incomplete {
+    /// Which dimension was required but absent.
     pub dimension: Dimension,
+    /// Which declaration, instance, node and position the missing input was
+    /// required at.
     pub subject: Subject,
 }
 
@@ -265,13 +312,16 @@ pub struct Incomplete {
 /// sibling instance inspectable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Obligation {
+    /// Activation was established and the instance was assessed.
     Assessed(Box<Assessment>),
     /// Activation could not be established for this instance.
     Unactivated {
+        /// Which declaration, instance, node and position the failure was located at.
         subject: Subject,
         /// Semantic instance identity. Known whenever the trigger was admitted,
         /// which is every case an activation can fail in.
         instance: String,
+        /// The bounded outcome that stopped activation.
         error: Error,
     },
 }
@@ -280,10 +330,13 @@ pub enum Obligation {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// A located refusal; no refusal is ever reported as a temporal Boolean.
     #[error(transparent)]
     Refused(Refusal),
+    /// A required input was absent.
     #[error(transparent)]
     Incomplete(Incomplete),
+    /// A resource ceiling was reached before the work could complete.
     #[error(transparent)]
     Exhausted(Exhaustion),
 }

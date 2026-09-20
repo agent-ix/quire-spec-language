@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! Expression-grammar parsing into the native syntax tree.
 use ix_trace_rs::trace;
 use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
 use quire_spec_language::{format::format, parse, Code, Limits, ParsedUnit, SourceIdentity, Span};

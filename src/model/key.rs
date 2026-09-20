@@ -18,7 +18,7 @@ use crate::value::length_amount;
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
 /// domain `quire.model.effective-declaration/v1`, minted only through
-/// [`quire_exact::identity::EffectiveId::from_digest`]. Re-exported at this
+/// [`quire_exact::EffectiveId::from_digest`]. Re-exported at this
 /// path so every existing `crate::model::key::EffectiveId` import keeps
 /// working unchanged; this crate no longer defines a second, model-owned
 /// copy of the type (ADR-013 §9 Consequences names this fold explicitly).

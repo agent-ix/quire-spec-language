@@ -57,26 +57,66 @@ use crate::source::{LocatedSpan, Position};
 /// construct or type definition IS. Kind names and modules are never
 /// matched directly; every reader dispatches on this table's values.
 pub mod meaning {
+    /// A domain object type: a `TypeDefinition` declaring an entity with
+    /// fields, operations, relationships and an identity, read into an
+    /// [`super::super::domain_package::ObjectTypeRecord`].
     pub const OBJECT_TYPE: &str = "quire.meaning.model.object-type/v1";
+    /// A domain value type: a `TypeDefinition` naming a scalar bound to one
+    /// of QSL's own native value types.
     pub const VALUE_TYPE: &str = "quire.meaning.model.value-type/v1";
+    /// A record value type: a `TypeDefinition` whose fields carry no
+    /// identity of their own (model-complete.md's grouped "Record value
+    /// type, event type, ..." row) -- a known FR-208 meaning with no QSL
+    /// record shape yet, refused as `unsupported_construct`.
     pub const RECORD_VALUE_TYPE: &str = "quire.meaning.model.record-value-type/v1";
+    /// A variant type: a `TypeDefinition` declaring one `enum` with one
+    /// `variant` case per member.
     pub const VARIANT_TYPE: &str = "quire.meaning.model.variant-type/v1";
+    /// A domain event type: a `TypeDefinition` declaring the shape of one
+    /// event -- a known FR-208 meaning with no QSL record shape yet,
+    /// refused as `unsupported_construct`.
     pub const EVENT_TYPE: &str = "quire.meaning.model.event-type/v1";
+    /// A state machine: a `TypeDefinition` declaring a type's states and
+    /// transitions -- a known FR-208 meaning with no QSL record shape yet,
+    /// refused as `unsupported_construct`.
     pub const STATE_MACHINE: &str = "quire.meaning.model.state-machine/v1";
+    /// A process: a `TypeDefinition` declaring a behavioural, non-object
+    /// participant -- a known FR-208 meaning with no QSL record shape yet,
+    /// refused as `unsupported_construct`.
     pub const PROCESS: &str = "quire.meaning.model.process/v1";
+    /// A persistence interface: a `TypeDefinition` declaring a storage
+    /// contract for a domain type -- a known FR-208 meaning with no QSL
+    /// record shape yet, refused as `unsupported_construct`.
     pub const PERSISTENCE_INTERFACE: &str = "quire.meaning.model.persistence-interface/v1";
+    /// A namespace: a `TypeDefinition` declaring a naming scope rather than
+    /// an instantiable type -- a known FR-208 meaning with no QSL record
+    /// shape yet, refused as `unsupported_construct`.
     pub const NAMESPACE: &str = "quire.meaning.model.namespace/v1";
+    /// A population declaration: a `populations[]` node naming the member
+    /// types and the object-closure extent a domain package instantiates,
+    /// read into a [`super::super::domain_package::PopulationRecord`].
     pub const POPULATION: &str = "quire.meaning.model.population/v1";
+    /// FR-152's Part kind: a structural component instance owned by a
+    /// composite type, read into a [`super::super::domain_package::ComponentRecord`].
     pub const SYSTEMS_PART: &str = "quire.meaning.systems.part/v1";
+    /// FR-152's Port kind: a component's typed, directional interaction
+    /// point, read into an [`super::super::domain_package::EndpointRecord`].
     pub const SYSTEMS_PORT: &str = "quire.meaning.systems.port/v1";
+    /// FR-152's Interface kind: an object type carrying a `featureOrder`,
+    /// read into an [`super::super::domain_package::ObjectTypeRecord`] with its
+    /// interface features populated.
     pub const SYSTEMS_INTERFACE: &str = "quire.meaning.systems.interface/v1";
+    /// FR-152's Connection kind: a wiring between two ports, read into a
+    /// [`super::super::domain_package::RelationshipRecord`].
     pub const SYSTEMS_CONNECTION: &str = "quire.meaning.systems.connection/v1";
+    /// FR-152's Allocation kind: an assignment of a Part, Port or operation
+    /// to a Part, read into an [`super::super::domain_package::AllocationRecord`].
     pub const SYSTEMS_ALLOCATION: &str = "quire.meaning.systems.allocation/v1";
 
     /// Every meaning id FR-208 declares, as this reader knows it. A type's
     /// resolved meaning outside this closed list is not a real FR-208
     /// meaning at all (`invalid_model_binding`/`malformed-declaration`); one
-    /// inside it but not covered by [`super::read_type_node`]'s dispatch is
+    /// inside it but not covered by `read_type_node`'s dispatch is
     /// instead a known-but-unsupported declaration form
     /// (`unsupported_construct`/`declaration-form`) -- two different
     /// refusal causes for two different defects.
@@ -120,7 +160,7 @@ pub mod native {
     /// outright, before FR-154's own four-check admission table runs,
     /// because a package that *did* declare this identity would mint node
     /// identities of the exact `ix://quire/native/<Name>` shape
-    /// [`super::read_value_type_ref`] always reads as a native reference
+    /// `read_value_type_ref` always reads as a native reference
     /// first -- so any of that package's own declarations could never be
     /// reached through [`super::super::domain_package::ValueTypeRef::Package`],
     /// and it would silently share the native key space rather than merely
