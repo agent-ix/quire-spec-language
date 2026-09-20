@@ -1,5 +1,7 @@
 # quire-spec-language
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/6qsdhSPE)
+
 `complete` exposes the edition `1-draft` authoring boundary. Its declarative
 grammar table and one bounded interpreter produce a byte-exact CST with typed
 token kinds, named production nodes and a separate recovery stream. The module
