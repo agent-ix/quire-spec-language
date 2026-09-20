@@ -790,7 +790,19 @@ fn charges_normalize_record_once_per_intake_declaration() {
         "one ObjectTypeRecord plus one FieldMemberRecord"
     );
 
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture(package_identity), records);
+    // A plain struct literal, not the `test-support`-gated
+    // `DomainPackageRef::fixture` (PR #200 review follow-up): this test file
+    // carries no `required-features` gate in `Cargo.toml`, so it must keep
+    // compiling and running under `cargo test --workspace`'s default
+    // features, the way every other test in this file already does.
+    let domain_package = DomainPackage::new(
+        DomainPackageRef {
+            identity: package_identity.to_owned(),
+            version: "1".to_owned(),
+            digest: [0u8; 32],
+        },
+        records,
+    );
 
     let exact = ModelNormalizationLimits {
         declaration_records: 2,
