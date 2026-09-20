@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! `quire-exact`: the QSL kernel row (QSL#213 S-1, ADR-011 X-1, ADR-013 §7
+//! S-1).
+//!
+//! This crate is the AD-016/ADR-011 module-DAG leaf layer `K`: checked
+//! identity ([`NodeKey`] and the six opaque digest identities, such as
+//! [`EffectiveId`]), provenance ([`Location`]), kernel outcomes and refusals
+//! ([`Outcome`], [`Refusal`]), bounds and accounting ([`Meter`],
+//! [`BoundedInteger`], [`CardinalityBound`]), and the exact semantic value
+//! kernel ([`Value`]/[`ValueType`] and every value-family module it
+//! composes: `numeric`, `rational`, `decimal`, `text`, `ieee`, `division`,
+//! `comparison`, `equality`, `key`, `quantity`, `reference`). Every
+//! submodule is private; this crate's public surface is exactly this page's
+//! curated `pub use` facade (H-5, mirroring `src/value/mod.rs`'s own
+//! private-submodules-behind-re-exports pattern), so the module names above
+//! are plain text, not links.
+//!
+//! It depends on nothing else in the `quire-spec-language` workspace (ADR-011
+//! §6.1, §7.1: every crate-DAG edge points *into* this crate, never out of
+//! it), and on no wire format, hashing or JCS canonicalization crate: every
+//! digest identity here ([`NodeKey`] and the six digest identities,
+//! [`EffectiveId`], [`UniverseId`], [`ObjectId`], [`UnitId`], [`VariantId`],
+//! [`MemberId`]) is minted by wrapping an already-computed digest through
+//! its one public `from_digest` constructor (ADR-013 T-6), never by hashing
+//! internally.
+//!
+//! Several real, deliberate capability losses at this kernel boundary are
+//! documented where they occur rather than silently absorbed:
+//! - [`Value`]/[`ValueType`]: `Value::Population` has no kernel payload at
+//!   all (the `ValueType::Enum` shape, by contrast, carries its variant set
+//!   inline per ADR-013 O-14, so it needs no declaration lookup and is not a
+//!   capability loss).
+//! - the `key` and `equality` modules: an enum pair keys and compares equal
+//!   by raw digest, with no declaration-aware ordering. (A same-enum check
+//!   is *not* a loss here: `ValueType::Enum(EnumShape)`'s admission already
+//!   guarantees both operands share one enum's variant set before either
+//!   module ever runs, per ADR-013 O-14.)
+//! - [`Quantity`]: no cross-unit arithmetic, comparison or equality; only
+//!   same-unit operations.
+//! - the `equality` module: the top-level text/enum/quantity schedule
+//!   selection and the closed equality-conversion table are dropped along
+//!   with the declaration registry and unit graph they need.
+//!
+//! **The ADR-011 §2.3 kernel proof gate does not exist yet.** This crate
+//! ships with zero discharged propositions and no claimed-module list.
+//! `cargo kani` cannot run against this workspace at all today: Kani 0.67.0's
+//! bundled toolchain is `rustc 1.93.0-nightly`, while this workspace declares
+//! `rust-version = "1.98"`, and `cargo kani` separately fails on a vendored
+//! dependency's fixture `Cargo.toml`. Building the gate is tracked
+//! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
+//!
+//! **H-9: no acceptance criterion exists for this crate's own test suite.**
+//! Every `#[trace("TC-3NN")]` tag here is the bare one-argument form,
+//! against the repo's two-argument `#[trace("TC-NNN", "FR-NNN-AC-n")]`
+//! convention, because there is no `FR-NNN-AC-n` to name: no `spec/`
+//! functional requirement or acceptance criterion, no `spec/test-cases/
+//! TC-3NN-*.md` file and no `spec/tests.md`/subsystem `tests.md` test
+//! matrix row exists for `quire-exact`'s value-kernel behavior as of this
+//! PR. This is stated here rather than left silent, and rather than bound
+//! to an approximate existing FR (every FR found under `spec/functional/`
+//! that mentions ADR-011/ADR-013 is about package/capability admission,
+//! not value-kernel semantics -- binding these tests to one of those
+//! would misrepresent what they actually verify). Authoring a real FR/AC
+//! set and test matrix for this crate is a QSpec decision -- which
+//! subsystem directory it belongs to, and whether criteria are authored
+//! before or after the code they describe -- not something this PR
+//! decides for itself.
+//!
+//! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
+//! for 56 tests: **`TC-343` is retired, not reused.** It named
+//! `text::tests::tc_343_unquoted_literal_is_refused`, which tested only
+//! `TextPayload::from_source_literal`'s malformed-input path; M-6 removed
+//! `from_source_literal` from the kernel entirely (with no in-crate caller
+//! outside that test), and the test went with it rather than being
+//! repointed at unrelated behavior. Do not mint a new `TC-343` to fill the
+//! hole -- an id that once named one thing should not silently come to
+//! name another.
+
+#![forbid(unsafe_code)]
+
+mod accounting;
+mod collection;
+mod comparison;
+mod decimal;
+mod division;
+mod equality;
+mod identity;
+mod ieee;
+mod integer;
+mod key;
+mod location;
+mod node;
+mod numeric;
+mod outcome;
+mod quantity;
+mod rational;
+mod reference;
+mod text;
+mod value;
+
+// H-5: every submodule above is private and its public surface is exposed
+// only through this curated facade, mirroring `src/value/mod.rs`'s pattern
+// (private `mod`s behind selective `pub use` re-exports) rather than
+// `pub mod` wholesale. `crate::key::compare_keys` and the two functions this
+// PR's own REVISE round demoted to `pub(crate)` out of the five flagged
+// (`rational::divided_by_power_of_ten`, `decimal::DecimalRepresentation::
+// to_rational`) are deliberately absent below: they are reachable only from
+// inside this crate. The other three flagged functions
+// (`quantity::compare_quantity`, `decimal::DecimalLoss::exact`/
+// `exact_denominator`, `equality::plan_equality`) stayed `pub` -- see their
+// own doc comments for why -- and are exported below as before.
+pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
+pub use collection::{
+    construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
+    CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
+};
+pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
+pub use decimal::{
+    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
+    DecimalType, RoundingMode,
+};
+pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
+pub use equality::{plan_equality, planned_equality, EqualityPlan};
+pub use identity::{
+    EffectiveId, MemberId, ObjectId, UnitId, UniverseId, VariantId, EFFECTIVE_ID_DOMAIN,
+    MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, UNIT_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
+};
+pub use ieee::{
+    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
+    ieee_to_exact, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss, IeeeExactTarget,
+    IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance, IeeeResult,
+    IeeeValue, IeeeWidth, IEEE_DEFINITION,
+};
+pub use integer::{
+    BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
+    OutOfDomain,
+};
+pub use location::{Location, Origin, Role};
+pub use node::{NodeKey, NODE_KEY_DOMAIN};
+pub use numeric::{
+    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
+    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
+    RationalArithmetic,
+};
+pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
+pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, QuantityArithmetic};
+pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
+pub use reference::ObjectReference;
+pub use text::{
+    admit_text, compare_text, EmptyTextBounds, InvalidUtf8, NormalizationForm, Text, TextPayload,
+    TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION, UNICODE_VERSION,
+};
+pub use value::{
+    evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, tuple, Component,
+    CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumShape, FieldDeclaration,
+    FieldExpression, FieldValue, OptionValue, Presence, Value, ValueType,
+};
