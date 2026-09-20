@@ -26,8 +26,8 @@ relationships:
 ## Dependency Graph
 
 Task-003 implements the reviewed native boundary; Task-004 verifies and records
-merge readiness after Task-003. LR02 Plan-001 remains done. Future LC02 depends
-on the separately accepted FS02/FS03/FS05 contracts and IR/model adapter seam.
+merge readiness after Task-003. LR02 Plan-001 remains done. The IR/model
+adapter seam required for future linking work is not yet accepted.
 
 ## Test Plan
 
