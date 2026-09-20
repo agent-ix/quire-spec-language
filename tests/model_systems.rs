@@ -127,10 +127,12 @@ fn relationship(
         key: DeclarationKey::fixture(identity),
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
+            role: None,
             multiplicity: source_m,
         },
         target: RelationshipEnd {
             type_identity: DeclarationKey::fixture(target),
+            role: None,
             multiplicity: target_m,
         },
         direction,
