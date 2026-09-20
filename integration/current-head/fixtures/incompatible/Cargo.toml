@@ -1,0 +1,24 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+# FR-058-AC-3 (#215): the intentionally incompatible fixture. It depends on
+# quire-spec-language exactly as the real current-head lane
+# (`../../Cargo.toml`) does, but patches quire-contract-ir's
+# `quire-contract-model` package to `stub-quire-contract-model/` -- a local,
+# deliberately empty stand-in declaring none of the types
+# quire-spec-language's real source imports from it. Building this crate is
+# expected to fail to compile; `current-head-lane check-incompatible-fixture`
+# runs it and turns the failure into one stable diagnostic line.
+name = "qsl-integration-incompatible-fixture"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+quire-spec-language = { path = "../../../..", default-features = false }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
+
+[patch."https://github.com/agent-ix/quire-contract-ir"]
+quire-contract-model = { path = "stub-quire-contract-model" }

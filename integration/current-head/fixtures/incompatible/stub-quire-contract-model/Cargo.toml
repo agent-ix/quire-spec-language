@@ -1,0 +1,17 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+# FR-058-AC-3 (#215): a deliberately incompatible stand-in for
+# quire-contract-ir's `quire-contract-model` package -- see
+# ../src/lib.rs and ../../Cargo.toml (the intentionally incompatible
+# fixture's `[patch]`).
+name = "quire-contract-model"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[lib]
+name = "quire_contract_ir"
+path = "src/lib.rs"
