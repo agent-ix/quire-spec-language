@@ -31,7 +31,7 @@ runtime qualification are done. Existing source/link plans retain their own
 requirements; this bundle adds the new package requirements, without
 duplicating their completed tasks.
 
-- [x] StR-001: native package contribution qualified; the full backend/Quire objective remains LC04/05.
+- [x] StR-001: native package contribution qualified; the full backend/Quire objective is LC04/05's own tracked scope.
 - [x] FR-019-AC-1..10: complete immutable package and exact static dependencies.
 - [x] FR-020-AC-1..11: bounded verified read/rebind, explicit authority and actual compiler reconstruction.
 - [x] FR-021-AC-1..6: native source-bound static identity, independent vectors and role separation.
@@ -112,7 +112,7 @@ this plan does not schedule their builds or edit their repositories.
 
 ## Coordination Rules
 
-The work is tracked on branch
+The worktree is /home/peter/dev/worktrees/formalization-a-language, branch
 agent-a/lc02-linked-packages, based on merged runtime 789c636. Keep the private
 owning issue and PR concrete with source/review/evidence pins. No public
 posting, producer-language invocation or shared-repository change is included.
@@ -125,5 +125,6 @@ implementation reviews, then QUOIN gap-analysis with optional semantic pass off.
 A package milestone preserves full original acceptance: independent A/B/C
 native-domain/interchange adoption, actual executable lowering and qualified
 existing backend with compiled ConfigVersion, then Quire integration. These
-remain LC02/FS05, LC04 and LC05 work. An unlowered disposition is retained
-evidence of remaining work, not a replacement for the backend.
+are LC02/FS05, LC04 and LC05's own separately tracked work. An unlowered
+disposition is retained evidence of remaining work, not a replacement for the
+backend.

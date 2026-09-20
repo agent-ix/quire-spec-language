@@ -59,5 +59,5 @@ Verified source/test candidate cbccbb61e9bf15690af386d857b6255ed2bfb948;
 SR-028 records the actual code/Rust review and commands. TM-002's nine cases
 passed, with all 28 native ACs backed and 41/41 repository test symbols bound.
 The only remaining review conditions are external catalog status interpretation
-and future private hosted dependency access. LC02 needs FS02/FS03/FS05 contract
-acceptance and the existing #54/#50 adapter seam; no state evaluator is claimed.
+and future private hosted dependency access. LC02's own contract work covers
+FS02/FS03/FS05 and the existing #54/#50 adapter seam; no state evaluator is claimed.
