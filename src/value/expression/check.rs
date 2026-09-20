@@ -130,7 +130,7 @@ pub struct PackageDeclarations {
 /// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
 /// whose receiver's static type is `receiver_type` and whose member name is
 /// `member` resolves to this signature, checked against `parameters` and
-/// `result`, and its call site becomes a [`super::ir::NodeKind::Dispatch`]
+/// `result`, and its call site becomes a `NodeKind::Dispatch`
 /// naming `table` (an index into the package's `dispatch_tables`).
 #[derive(Clone, Debug)]
 pub struct DispatchOperation {

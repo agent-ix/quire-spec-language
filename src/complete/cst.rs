@@ -44,7 +44,12 @@ macro_rules! productions {
         /// Every named grammar production represented by the complete-V1 parser.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Production {
-            $($production),+
+            $(
+                #[doc = concat!(
+                    "The `", stringify!($production), "` production of the complete-V1 grammar."
+                )]
+                $production
+            ),+
         }
 
         impl Production {
@@ -165,6 +170,7 @@ impl CstNode {
     }
 }
 
+/// How a parser-proposed [`Recovery`] would repair the source at its span.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecoveryKind {
     /// Proposed zero-width insertion.

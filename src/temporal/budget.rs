@@ -65,13 +65,17 @@ impl Limits {
 /// A refused charge never increases usage.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
+    /// Admitted trace positions inspected so far.
     pub positions: usize,
+    /// Atomic valuation lookups performed so far.
     pub valuations: usize,
     /// Greatest number of instances active at one time.
     pub instances: usize,
+    /// Retained capture records across all instances, charged cumulatively.
     pub captures: usize,
     /// Greatest number of retained valuations required at one time.
     pub retention: usize,
+    /// Temporal graph node visits performed so far.
     pub visits: usize,
     /// Greatest checked formula depth.
     pub depth: usize,
@@ -82,13 +86,21 @@ pub struct Usage {
 /// The exact exhausted resource, never inferred from a diagnostic string.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dimension {
+    /// Admitted trace positions inspected.
     Positions,
+    /// Atomic valuation lookups.
     Valuations,
+    /// Concurrently active obligation instances.
     Instances,
+    /// Retained capture records across all instances.
     Captures,
+    /// Retained valuation records an unsettled obligation still requires.
     Retention,
+    /// Temporal graph node visits.
     Visits,
+    /// Temporal formula nesting depth.
     Depth,
+    /// Largest admitted interval bound.
     Horizon,
 }
 
