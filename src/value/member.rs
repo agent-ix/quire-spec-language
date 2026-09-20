@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! ADR-013 O-06: checked member identity.
+//!
+//! [`Member`] mirrors the v2 `OperationMember` union exactly
+//! (`node-identity-preimage.schema.json` `$defs.OperationMember`, vendored at
+//! `resources/complete-value/quire-specification/proposals/checked-package-v2/`,
+//! which ADR-013 O-06 names as this type's serialized authority alongside
+//! QSpec FR-322). `declaration` is a [`NodeKey`], unique across packages
+//! (O-04); the kernel itself carries a member only as an opaque `MemberId`
+//! digest (QC-15, `quire_exact::identity::MemberId`) -- this structured type
+//! is QSL's own, not the kernel's.
+//!
+//! No production caller constructs a [`Member`] yet: the layer-3 check stage
+//! that resolves members (O-06's own "Owner" row) is `CheckedGraph`, ADR-013
+//! T-1, which is S-3's row. This type and its total wire mapping ([`Member::to_wire`],
+//! C-18) are S-2's to land regardless -- ADR-013 §7 gates S-2 on S-1 and the
+//! QSpec tickets only, not on S-3 -- exactly as the kernel identity newtypes in
+//! `quire-exact::identity` landed in S-1 ahead of the checker that will use
+//! them, with tests as their only caller until then.
+
+use serde_json::{json, Value};
+
+use super::node::{NodeKey, NODE_KEY_DOMAIN};
+
+/// One closed checked-member identity (ADR-013 O-06).
+///
+/// Equality is `derive`d, which already gives ADR-013's own "declared"
+/// equality rule -- "(declaring node id, identifier or declared position)"
+/// -- directly: two `Member`s are equal only when they are the same variant
+/// (the wire union's own `kind` discriminant) with equal fields, so a
+/// `Field` and an `Operation` sharing a declaration and name are never
+/// confused, matching the schema's own discriminated-union shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Member {
+    /// A composite type's named field.
+    Field {
+        /// The declaring composite type.
+        declaration: NodeKey,
+        /// The field's own identifier.
+        name: String,
+    },
+    /// A tuple's positional element.
+    Position {
+        /// The declaring tuple type.
+        declaration: NodeKey,
+        /// The zero-based position.
+        position: u64,
+    },
+    /// A collection's element (position-independent).
+    Element {
+        /// The declaring collection type.
+        declaration: NodeKey,
+    },
+    /// A relationship's named end.
+    RelationshipEnd {
+        /// The declaring relationship.
+        declaration: NodeKey,
+        /// The end's own identifier.
+        name: String,
+    },
+    /// A type's named operation.
+    Operation {
+        /// The declaring type.
+        declaration: NodeKey,
+        /// The operation's own identifier.
+        name: String,
+    },
+    /// A generic declaration's type argument (position-independent: a
+    /// declaration has at most one type argument in this catalog).
+    TypeArgument {
+        /// The declaring generic type.
+        declaration: NodeKey,
+    },
+    /// A semantic profile's operator, named directly rather than through a
+    /// declaring node -- the only variant with no `declaration` (the schema's
+    /// own shape: `{"kind": "profile_operator", "operator": ...}`, no
+    /// `declaration` member).
+    ProfileOperator {
+        /// The operator's own identifier, e.g. `"add"`.
+        operator: String,
+    },
+}
+
+impl Member {
+    /// This member's total v2 wire encoding (C-18): exactly the
+    /// `node-identity-preimage.schema.json` `OperationMember` shape, over
+    /// every variant with no `_` arm, so a new variant fails to compile here
+    /// until this match grows an arm for it.
+    pub fn to_wire(&self) -> Value {
+        fn declaration_json(declaration: &NodeKey) -> Value {
+            json!({
+                "domain": NODE_KEY_DOMAIN,
+                "digest": declaration.to_string(),
+            })
+        }
+        match self {
+            Self::Field { declaration, name } => json!({
+                "kind": "field",
+                "declaration": declaration_json(declaration),
+                "name": name,
+            }),
+            Self::Position {
+                declaration,
+                position,
+            } => json!({
+                "kind": "position",
+                "declaration": declaration_json(declaration),
+                "position": position,
+            }),
+            Self::Element { declaration } => json!({
+                "kind": "element",
+                "declaration": declaration_json(declaration),
+            }),
+            Self::RelationshipEnd { declaration, name } => json!({
+                "kind": "relationship_end",
+                "declaration": declaration_json(declaration),
+                "name": name,
+            }),
+            Self::Operation { declaration, name } => json!({
+                "kind": "operation",
+                "declaration": declaration_json(declaration),
+                "name": name,
+            }),
+            Self::TypeArgument { declaration } => json!({
+                "kind": "type_argument",
+                "declaration": declaration_json(declaration),
+            }),
+            Self::ProfileOperator { operator } => json!({
+                "kind": "profile_operator",
+                "operator": operator,
+            }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(fill: u8) -> NodeKey {
+        NodeKey::from_hex(&format!("{fill:02x}").repeat(32)).expect("64 lowercase hex digits")
+    }
+
+    /// (#213 S-2, C-18) one test per variant: each renders exactly the
+    /// vendored `OperationMember` shape, field-for-field.
+    #[test]
+    fn field_renders_the_schema_shape() {
+        let member = Member::Field {
+            declaration: node(1),
+            name: "quantity".to_owned(),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "field",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(1).to_string()},
+                "name": "quantity",
+            })
+        );
+    }
+
+    #[test]
+    fn position_renders_the_schema_shape() {
+        let member = Member::Position {
+            declaration: node(2),
+            position: 3,
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "position",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(2).to_string()},
+                "position": 3,
+            })
+        );
+    }
+
+    #[test]
+    fn element_renders_the_schema_shape() {
+        let member = Member::Element {
+            declaration: node(3),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "element",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(3).to_string()},
+            })
+        );
+    }
+
+    #[test]
+    fn relationship_end_renders_the_schema_shape() {
+        let member = Member::RelationshipEnd {
+            declaration: node(4),
+            name: "source".to_owned(),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "relationship_end",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(4).to_string()},
+                "name": "source",
+            })
+        );
+    }
+
+    #[test]
+    fn operation_renders_the_schema_shape() {
+        let member = Member::Operation {
+            declaration: node(5),
+            name: "totalPrice".to_owned(),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "operation",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(5).to_string()},
+                "name": "totalPrice",
+            })
+        );
+    }
+
+    #[test]
+    fn type_argument_renders_the_schema_shape() {
+        let member = Member::TypeArgument {
+            declaration: node(6),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "type_argument",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(6).to_string()},
+            })
+        );
+    }
+
+    #[test]
+    fn profile_operator_renders_the_schema_shape_with_no_declaration() {
+        let member = Member::ProfileOperator {
+            operator: "add".to_owned(),
+        };
+        assert_eq!(
+            member.to_wire(),
+            json!({
+                "kind": "profile_operator",
+                "operator": "add",
+            })
+        );
+    }
+
+    /// ADR-013 O-06's own equality rule: a `Field` and an `Operation` on the
+    /// same declaration with the same name are different members, because
+    /// they are different variants of the discriminated union -- not merely
+    /// different `(declaration, name)` tuples.
+    #[test]
+    fn field_and_operation_of_the_same_name_are_unequal() {
+        let field = Member::Field {
+            declaration: node(7),
+            name: "same".to_owned(),
+        };
+        let operation = Member::Operation {
+            declaration: node(7),
+            name: "same".to_owned(),
+        };
+        assert_ne!(field, operation);
+    }
+}

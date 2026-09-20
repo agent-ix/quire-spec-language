@@ -510,6 +510,19 @@ pub enum ModelRefusalCause {
         /// The package's own declared version.
         actual_version: String,
     },
+    /// ADR-010 OBS-006 / ADR-013 O-03: a selection names the reserved
+    /// `quire/native` pseudo-package identity
+    /// (`crate::model::intake::native::RESERVED_IDENTITY`), which shares no
+    /// key space with a real domain package -- a native value type
+    /// resolves only as `ValueTypeRef::Native`. FR-272's
+    /// `invalid_model_binding` cause list has no dedicated variant for
+    /// this, so this shares the catalogued `malformed-declaration` tag with
+    /// [`Self::MalformedDeclaration`] (#157's precedent for a condition the
+    /// closed catalog does not name separately).
+    ReservedPackageIdentity {
+        /// The offered selection naming the reserved identity.
+        selection: DomainPackageRef,
+    },
     /// A population member declares the same field twice in its
     /// `field_values`. FR-272's `invalid_runtime_input` cause list is
     /// closed; there is no dedicated duplicate-field variant, so this is
@@ -660,9 +673,9 @@ impl ModelRefusalCause {
             Self::UnknownEndpoint { .. } => "unknown-endpoint",
             Self::UnsortedDerivation { .. } => "unsorted-derivation",
             Self::DuplicatePath { .. } => "duplicate-path",
-            Self::MalformedDeclaration | Self::IntakeMalformedDeclaration { .. } => {
-                "malformed-declaration"
-            }
+            Self::MalformedDeclaration
+            | Self::IntakeMalformedDeclaration { .. }
+            | Self::ReservedPackageIdentity { .. } => "malformed-declaration",
             Self::UnsupportedDeclarationForm { .. } => "declaration-form",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
@@ -780,7 +793,8 @@ mod tests {
             ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
             ModelRefusalCause::MalformedDeclaration
-            | ModelRefusalCause::IntakeMalformedDeclaration { .. } => "malformed-declaration",
+            | ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            | ModelRefusalCause::ReservedPackageIdentity { .. } => "malformed-declaration",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
@@ -976,6 +990,9 @@ mod tests {
                 selection: DomainPackageRef::fixture("p"),
                 actual_identity: String::new(),
                 actual_version: String::new(),
+            },
+            ModelRefusalCause::ReservedPackageIdentity {
+                selection: DomainPackageRef::fixture("p"),
             },
             ModelRefusalCause::DuplicateMember {
                 object: String::new(),
