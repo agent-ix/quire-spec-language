@@ -6,7 +6,7 @@
 //! **Provisional.** ADR-013 T-4 assigns these types' canonical home to
 //! `#213` S-5's `diagnostic` crate. `src/diagnostic.rs` has since landed
 //! (merged into this branch from `origin/main`); migrating `Staged`/
-//! `StageFailure`/`LimitExceeded` onto it is real work a future change does
+//! `StageFailure`/`LimitExceeded` onto it is real work QSL-162 does
 //! deliberately, not a byproduct of this one. This module implements T-4's
 //! already-decided shape locally so #214 has something to return; see
 //! `crate::family`'s module doc.
@@ -23,10 +23,10 @@
 /// write-only in both directions, not a real warnings channel. `Staged<T>`
 /// itself stays -- ADR-013 T-4's `Result<Staged<T>, StageFailure>` return
 /// shape is real and every S1-S4 hook returns it, distinguishing a stage's
-/// structured output from a bare `T` -- so a future stage entry that
-/// genuinely raises a warning adds the field back with a real producer and
-/// a real consumer in the same change, not as a hollow shell restored
-/// speculatively.
+/// structured output from a bare `T` -- so QSL-162, which owns adding the
+/// field back with a real producer and a real consumer in the same change,
+/// does that when a stage entry genuinely raises a warning, not as a hollow
+/// shell restored speculatively.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Staged<T> {
     pub(crate) value: T,
