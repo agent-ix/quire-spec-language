@@ -28,10 +28,9 @@ pub use editor::{
     DocumentNavigation, DocumentSnapshot, DocumentSymbol, FormatCorrespondence, FormatResponse,
 };
 pub use package::{
-    lower_source_graph, resolve_source_package, CompleteBundle, Definition, DefinitionCatalog,
-    DefinitionConflict, DefinitionRole, Facet, LoweredDeclaration, LoweredSourceGraph,
-    ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal, ReaderAuthority,
-    ResolvedSourcePackage, SemanticDigest, SourceAuthority,
+    resolve_source_package, CompleteBundle, Definition, DefinitionCatalog, DefinitionConflict,
+    DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
+    ReaderAuthority, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
 };
 pub use package::{
     CapabilityId, DefinitionDigest, DefinitionRef, ImportSelection, ModelDigest, ModelRef,

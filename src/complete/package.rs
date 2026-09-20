@@ -613,33 +613,6 @@ impl ResolvedSourcePackage {
     }
 }
 
-/// One declaration occurrence in the identity-preserving source graph.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoweredDeclaration {
-    pub production: super::Production,
-    pub span: Span,
-}
-
-/// Structural lowering established by #117, before semantic checking.
-#[derive(Clone, Debug)]
-pub struct LoweredSourceGraph {
-    authority: SourceAuthority,
-    bundle_identity: SemanticDigest,
-    declarations: Vec<LoweredDeclaration>,
-}
-
-impl LoweredSourceGraph {
-    pub fn authority(&self) -> &SourceAuthority {
-        &self.authority
-    }
-    pub fn bundle_identity(&self) -> SemanticDigest {
-        self.bundle_identity
-    }
-    pub fn declarations(&self) -> &[LoweredDeclaration] {
-        &self.declarations
-    }
-}
-
 macro_rules! digest_domain {
     ($name:ident, $description:literal) => {
         #[doc = $description]
@@ -1334,43 +1307,6 @@ fn identity_refusal(
         _ => super::CompleteCode::InvalidPackage,
     };
     refusal(parsed, code, span, cause)
-}
-
-/// Lower the resolved syntax/package graph while preserving source authority.
-pub fn lower_source_graph(package: &ResolvedSourcePackage) -> LoweredSourceGraph {
-    let declarations = package
-        .parsed
-        .cst()
-        .root()
-        .children()
-        .iter()
-        .filter_map(|element| match element {
-            super::CstElement::Node(index) => package.parsed.cst().nodes().get(*index),
-            super::CstElement::Token(_) => None,
-        })
-        .filter(|node| node.production() == super::Production::Declaration)
-        .filter_map(|wrapper| {
-            wrapper.children().iter().find_map(|element| match element {
-                super::CstElement::Node(index) => {
-                    package
-                        .parsed
-                        .cst()
-                        .nodes()
-                        .get(*index)
-                        .map(|node| LoweredDeclaration {
-                            production: node.production(),
-                            span: node.span(),
-                        })
-                }
-                super::CstElement::Token(_) => None,
-            })
-        })
-        .collect();
-    LoweredSourceGraph {
-        authority: package.authority.clone(),
-        bundle_identity: package.bundle.identity(),
-        declarations,
-    }
 }
 
 fn encode_set<'a>(values: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, PackageError> {
