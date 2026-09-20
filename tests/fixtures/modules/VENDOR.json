@@ -5,7 +5,7 @@
     {
       "kind": "fcd",
       "repo": "https://github.com/agent-ix/filament-core-data",
-      "commit": "7dcb2f2c7466a770b2362561e70ed10a8f941c1f",
+      "commit": "1572ba4ba8fad0e94e9a0b19a569f82a5181b488",
       "source_prefix": "crates/extraction-frontend/fixtures/modules",
       "dest_prefix": "",
       "files": [

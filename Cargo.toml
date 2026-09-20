@@ -34,8 +34,8 @@ serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
-agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "7dcb2f2c7466a770b2362561e70ed10a8f941c1f" }
-agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "7dcb2f2c7466a770b2362561e70ed10a8f941c1f" }
+agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
+agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
 # `crate::model::intake::lift_document` calls FCD's `lift`, which always
 # writes its document to a required output path (FR-099); this is that
 # scratch directory, not test-only.

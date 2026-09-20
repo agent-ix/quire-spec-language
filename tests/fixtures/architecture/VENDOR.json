@@ -5,7 +5,7 @@
     {
       "kind": "fcd",
       "repo": "https://github.com/agent-ix/filament-core-data",
-      "commit": "7dcb2f2c7466a770b2362561e70ed10a8f941c1f",
+      "commit": "1572ba4ba8fad0e94e9a0b19a569f82a5181b488",
       "source_prefix": "crates/extraction-frontend/fixtures/architecture",
       "dest_prefix": "",
       "files": [
@@ -23,11 +23,11 @@
         },
         {
           "path": "expected/semantic-ir.json",
-          "sha256": "sha256:b5444d687968e7b5844147acbca7ac74a2b4c749a47ad19d680bb3f5f6f37a1d"
+          "sha256": "sha256:27e208f9832b771003fb1b05e0105ef394737986981c1da1d35e40ce24898663"
         },
         {
           "path": "expected/semantic-ir.json.fingerprint",
-          "sha256": "sha256:ff80bdb7775dbaac42d0f88fe2b102df3072981e472cf1f5d28fd4453847b1c2"
+          "sha256": "sha256:e59742a33b5878302fc83375656ce770d034a0b24b9c19d3603222ca8098573f"
         },
         {
           "path": "modules.json",

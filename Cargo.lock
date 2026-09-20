@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=7dcb2f2c7466a770b2362561e70ed10a8f941c1f#7dcb2f2c7466a770b2362561e70ed10a8f941c1f"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=1572ba4ba8fad0e94e9a0b19a569f82a5181b488#1572ba4ba8fad0e94e9a0b19a569f82a5181b488"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -18,7 +18,7 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=7dcb2f2c7466a770b2362561e70ed10a8f941c1f#7dcb2f2c7466a770b2362561e70ed10a8f941c1f"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=1572ba4ba8fad0e94e9a0b19a569f82a5181b488#1572ba4ba8fad0e94e9a0b19a569f82a5181b488"
 
 [[package]]
 name = "ahash"
