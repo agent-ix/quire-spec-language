@@ -18,11 +18,19 @@ use proc_macro::TokenStream;
 
 /// Marks a function as a string-dispatch edge (ADR-012 §9). See the module
 /// docs: this expands to exactly the input, unchanged.
+///
+/// No attribute arguments are admitted: there is nothing to configure --
+/// the marker's presence is the whole signal `xtask string-edge` reads.
+/// `#[string_edge(anything)]` is a compile error (PR #262 review, finding
+/// F18): an earlier version silently dropped `attribute` instead, so a
+/// typo'd or misremembered argument compiled cleanly and did nothing,
+/// contradicting this doc's own claim that none are admitted.
 #[proc_macro_attribute]
 pub fn string_edge(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    // No attribute arguments are admitted; anything present is dropped
-    // (there is nothing to configure -- the marker's presence is the whole
-    // signal `xtask string-edge` reads).
-    let _ = attribute;
+    if !attribute.is_empty() {
+        return "compile_error!(\"#[string_edge] takes no arguments\");"
+            .parse()
+            .expect("static compile_error! literal always parses");
+    }
     item
 }

@@ -5,62 +5,76 @@
 //! `TemporalTrace`, `ProtocolClause`, `Relation`; ADR-012 §1) implements
 //! [`FamilyContract`] (and, except `Relation`, [`ReferenceEvaluation`])
 //! exactly once. This module is the "check core" ADR-012 §13.1 places the
-//! contract in: it owns the six shared parts (identity, provenance, checked
-//! input, requirements, structured outcome, stage hooks) and no
-//! family-specific logic.
+//! contract in.
 //!
 //! **What this ticket (#214/QSL-25) migrates onto the contract**: `Value`'s
-//! function-declaration and function-application forms only
-//! ([`crate::value::expression::family`]). `FamilyKind`'s other five
-//! variants exist here because ADR-012 §1 closes the catalogue over all six
-//! names now, and [`stage_hooks`] must answer, exhaustively, what every
-//! family does at every stage -- but only `Value`'s two migrated forms have
-//! a real [`FamilyContract`] implementation today. The other five report
-//! [`HookStatus::NotYetMigrated`]: their forms still check through the
-//! pre-existing `value::expression`/`model`/`state`/`temporal`/
-//! `protocol_artifact` code, unchanged by this ticket, until their own
-//! tickets migrate them (ADR-012 §14.1).
+//! function-declaration form only ([`crate::value::expression::family`]).
+//! `FamilyKind`'s other five variants exist here because ADR-012 §1 closes
+//! the catalogue over all six names now, so each sibling ticket's
+//! `FamilyContract` implementation is added against an already-complete
+//! enum, not one it also has to grow; none of the other five has any
+//! `FamilyContract` implementation yet, and their forms are unchanged by
+//! this ticket.
+//!
+//! **`stage_hooks`/`Stage`/`HookStatus` are deleted (PR #262 review,
+//! finding F7).** An earlier version of this module carried a
+//! stage-participation table -- `stage_hooks(FamilyKind, Stage) ->
+//! HookStatus`, matching ADR-012 §5.1 S1's "stage-participation table"
+//! seam -- plus three `assert_eq!(stage_hooks(...), Implemented)` call
+//! sites so the table would have a non-test reader. Every one of those
+//! three call sites passed a *literal, compile-time-known* `FamilyKind`
+//! and `Stage` into a hand-written `match` and then asserted the result
+//! equalled the exact value that same `match` arm already returns for
+//! those literals -- an assertion that cannot fail, manufactured only to
+//! give otherwise-dead code a caller. Once those three call sites are gone
+//! (correctly, per F7), `stage_hooks` itself has no real (non-test) reader
+//! left: nothing in this ticket's actual runtime asks "what hook status
+//! does family X have at stage Y" to make a real decision (forms are
+//! routed by the parser's own separate, S2 closed-enum dispatch, not by a
+//! FamilyKind/Stage query). A table nothing reads is the same
+//! forward-declared-shape hazard `Requirements` and `Cause` already are in
+//! this module, so it is deleted rather than kept `#[allow(dead_code)]` or
+//! kept alive by more fabricated callers. This narrows FR-063-AC-6's own
+//! checked-in seam-probe list from two S1 locations to one (only
+//! `catalog_code_prefix`'s match survives; see `xtask/src/seam_probe.rs`
+//! and FR-063's own amended spec text) -- a real, further narrowing this
+//! review round produced, not something #214's first pass got right.
+//! `Stage`'s own "no `Requirements` stage" doc note is deleted along with
+//! `Stage`.
 //!
 //! **Provisional types.** [`outcome`] (`Staged`/`StageFailure`/
-//! `LimitExceeded`/`InternalFault`) implements a shape ADR-013 T-4 already
-//! decides, but whose canonical Rust home (`#213` S-5's `diagnostic` crate)
-//! has not landed as of this ticket. It is built here, to the ADR's own
-//! decided shape, because #214 needs it now and nothing else defines it yet.
-//! This is not a compatibility layer for a retiring path -- it is the one
-//! implementation of an already-decided design that a sibling ticket owns
-//! but has not yet delivered. When #213 S-5 lands, QSL's copy is expected to
-//! move or be replaced by theirs; that migration is out of this ticket's
-//! scope.
+//! `LimitExceeded`) implements a shape ADR-013 T-4 already decides, but
+//! whose canonical Rust home (`#213` S-5's `diagnostic` crate) had not
+//! landed when this module was first written. `src/diagnostic.rs` has
+//! since landed (merged into this branch from `origin/main`) with its own,
+//! real `InternalFault`; this module's own copy of `InternalFault` was
+//! deleted in the same review round that removed its one (fabricated)
+//! construction site, rather than migrated onto `src/diagnostic.rs`'s --
+//! that migration, for `Staged`/`StageFailure`/`LimitExceeded` too, is real
+//! work a future change does deliberately, not a byproduct of this one.
 //!
 //! **The sixth contract part, `Requirements` (ADR-012 §2), is deferred.**
 //! No family this repository has migrated -- `Value`'s function-declaration
-//! and function-application forms, the only forms #214 migrates -- carries
-//! an FR-057 capability kind (owner ruling, #214 review). A `Requirements`
-//! type built now would have had exactly the fields `CapabilityKind`,
-//! `Extent` and `Bound` supply, and deleting those three (because nothing
-//! constructs one yet) leaves `Requirements` with no fields at all: a
-//! zero-content type that cannot be told apart from "not implemented" by
-//! anything that reads it. Shipping that shell would make a future family
-//! with a real capability kind satisfy `FamilyContract` identically whether
-//! it wires `requirements()` correctly or not -- the exact failure this
-//! contract exists to prevent. So `#214` does not add a `requirements`
-//! method to `FamilyContract`, and the FR-062 rows for this part are left
-//! unbacked rather than backed by an unexercised shell. The first family
-//! ticket with a real FR-057 capability kind adds `requirements()` (and
-//! `Requirements`/`CapabilityKind`/`Extent`/`Bound`, or whatever shape that
-//! kind actually needs) to the trait then, validated against a real
-//! instance instead of guessed in advance.
-//!
-//! Whether function declaration/application itself carries an FR-057 kind
-//! is an open question against `#229` (capability vocabulary), not resolved
-//! here: FR-062 (spec/functional/FR-062-implement-checked-family-contract.md
-//! :46-48) and ADR-012 §2 (line 213) both say a claim form with no FR-057
-//! kind yields no `Requirements` value, but neither names function
-//! declaration/application specifically, and no FR-057 claim-form table
-//! entry for it exists anywhere in this repository's specs today. The
-//! deferral above holds regardless of how that question resolves, because
-//! it rests on "no migrated family has a capability kind," not on function
-//! forms specifically.
+//! form, the only form #214 migrates -- carries an FR-057 capability kind.
+//! FR-057:159-162 states plainly that "no kind for an expression nested in
+//! a clause, such as a function application" exists, and FR-057:182-186
+//! states "family-body admission is language admission, not a capability
+//! kind" -- explicit text, not an inference from absence, and not an open
+//! question against #229: function declaration/application has no FR-057
+//! kind. A `Requirements` type built now would have had exactly the fields
+//! `CapabilityKind`, `Extent` and `Bound` supply, and deleting those three
+//! (because nothing constructs one yet) leaves `Requirements` with no
+//! fields at all: a zero-content type that cannot be told apart from "not
+//! implemented" by anything that reads it. Shipping that shell would make
+//! a future family with a real capability kind satisfy `FamilyContract`
+//! identically whether it wires `requirements()` correctly or not -- the
+//! exact failure this contract exists to prevent. So `#214` does not add a
+//! `requirements` method to `FamilyContract`, and the FR-062 rows for this
+//! part are left unbacked rather than backed by an unexercised shell. The
+//! first family ticket with a real FR-057 capability kind adds
+//! `requirements()` (and `Requirements`/`CapabilityKind`/`Extent`/`Bound`,
+//! or whatever shape that kind actually needs) to the trait then, validated
+//! against a real instance instead of guessed in advance.
 
 mod contract;
 mod outcome;
@@ -69,7 +83,7 @@ pub(crate) use contract::{
     CheckContext, DiagnosticSink, EvaluateRefusal, FamilyContract, ReferenceEvaluation, ScopeStack,
     StageLimits,
 };
-pub(crate) use outcome::{CheckOutcome, InternalFault, StageFailure, Staged};
+pub(crate) use outcome::{CheckOutcome, StageFailure, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at
@@ -103,7 +117,10 @@ impl FamilyKind {
     ///
     /// FR-063 seam: adding a `FamilyKind` variant with no arm here fails
     /// `--cfg seam_probe` with `E0004`.
-    pub(crate) fn catalog_code_prefix(self) -> &'static str {
+    ///
+    /// `const fn` so the compile-time distinctness check below can call
+    /// it at compile time.
+    pub(crate) const fn catalog_code_prefix(self) -> &'static str {
         match self {
             Self::Value => "value",
             Self::StateModel => "state-model",
@@ -118,148 +135,83 @@ impl FamilyKind {
             // (ADR-012 §5.1 S1). Do not add a catch-all to make it compile.
         }
     }
+}
 
-    /// Every non-probe member of ADR-012 §1's closed catalogue, in
-    /// declaration order. [`crate::value::expression::PackageDeclarations::
-    /// check`]'s real (non-test) call to
-    /// `assert_distinct_catalog_code_prefixes` is this array's one
-    /// production consumer: five of the six members have no `FamilyContract`
-    /// implementation yet (this ticket migrates only `Value`), so nothing
-    /// else constructs them outside a test -- but the catalogue itself is
-    /// ADR-012 §1's own closed, forward-declared design (all six members
-    /// exist now so each sibling ticket's `FamilyContract` implementation is
-    /// added against an already-complete enum, not one it also has to grow),
-    /// not speculative shape #214 invented.
-    pub(crate) const fn all() -> [FamilyKind; 6] {
-        [
-            Self::Value,
-            Self::StateModel,
-            Self::SumCase,
-            Self::TemporalTrace,
-            Self::ProtocolClause,
-            Self::Relation,
-        ]
+/// Byte-for-byte equality, `const fn` because `str`/`[u8]` equality is not
+/// yet a stable `const` trait impl; used only by
+/// the compile-time distinctness check below (`const _`, near the end of this file).
+const fn prefixes_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
     }
-}
-
-/// A real (non-test) invariant: no two [`FamilyKind`] members share a
-/// `catalog_code_prefix()` (ADR-012 §5.1 S1's own rule, "no two families
-/// share a prefix"). Constructs every non-`Value` member for real, which is
-/// what keeps [`FamilyKind`]'s five not-yet-migrated members from being
-/// merely forward-declared shape with no production reader.
-pub(crate) fn assert_distinct_catalog_code_prefixes() {
-    let mut prefixes: Vec<&'static str> = FamilyKind::all()
-        .iter()
-        .map(|kind| kind.catalog_code_prefix())
-        .collect();
-    prefixes.sort_unstable();
-    prefixes.dedup();
-    assert_eq!(
-        prefixes.len(),
-        FamilyKind::all().len(),
-        "FamilyKind's catalog-code prefixes must be pairwise distinct"
-    );
-}
-
-/// One stage of the contract (ADR-012 §8) that [`stage_hooks`] reports
-/// [`HookStatus`] for.
-///
-/// **No `Requirements` stage.** ADR-012 §2 names a `requirements` stage
-/// too, but `#214` defers the sixth contract part entirely (no family's
-/// `FamilyContract` has a `requirements` method here yet -- see
-/// `crate::family`'s module doc), so there is no hook for any family to
-/// report a status for at this stage; adding it back is part of the same
-/// deferred work `requirements()` itself is.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum Stage {
-    Check,
-    Package,
-    Evaluate,
-}
-
-/// Whether, and how, a family participates in one [`Stage`] (ADR-012 §5.1
-/// S1's stage-participation table; ADR-012 §13.1's answer to "a missing hook
-/// is a compile error... a family that sits out a stage has an explicit,
-/// hand-written arm").
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum HookStatus {
-    /// A real [`FamilyContract`]/[`ReferenceEvaluation`] hook exists for at
-    /// least one of the family's forms.
-    Implemented,
-    /// The family's forms still check through their pre-existing,
-    /// pre-contract code path; no [`FamilyContract`] implementation exists
-    /// for this family yet. Not the same as [`Self::ExplicitlyUnsupported`]:
-    /// this family fully participates in the stage, just not through this
-    /// contract yet, and its own ticket (ADR-012 §14.1) migrates it.
-    NotYetMigrated,
-    /// The family declares, permanently, that it does not take part in this
-    /// stage (ADR-012 §2: `Relation` at `evaluate`). The hook still has an
-    /// explicit arm, returning a named refusal rather than a value.
-    ExplicitlyUnsupported,
-}
-
-/// The stage-participation table (ADR-012 §5.1 S1, FR-063-AC-6): which hook
-/// status each family has at each stage, including the explicit `Relation`
-/// evaluation arm (ADR-012 §2).
-///
-/// FR-063 seam: adding a `FamilyKind` or `Stage` variant with no arm here
-/// fails `--cfg seam_probe` with `E0004`.
-pub(crate) fn stage_hooks(family: FamilyKind, stage: Stage) -> HookStatus {
-    match (family, stage) {
-        (FamilyKind::Value, Stage::Check | Stage::Package | Stage::Evaluate) => {
-            HookStatus::Implemented
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
         }
-        (
-            FamilyKind::StateModel
-            | FamilyKind::SumCase
-            | FamilyKind::TemporalTrace
-            | FamilyKind::ProtocolClause,
-            Stage::Check | Stage::Package | Stage::Evaluate,
-        ) => HookStatus::NotYetMigrated,
-        (FamilyKind::Relation, Stage::Check | Stage::Package) => HookStatus::NotYetMigrated,
-        // ADR-012 §2: `Relation` has no native `evaluate` -- its S6a arm
-        // returns `FamilyOutcome::Refused(FamilyRefusal::
-        // FamilyNotNativelyEvaluable)`. This is the one hand-written
-        // "sits out this stage" arm the contract requires, distinct from
-        // "not yet migrated": `Relation` never migrates at `evaluate`.
-        (FamilyKind::Relation, Stage::Evaluate) => HookStatus::ExplicitlyUnsupported,
-        // FR-063: no arm for `FamilyKind::__SeamProbe` here, and no `_`
-        // arm -- under `--cfg seam_probe` this match is deliberately
-        // non-exhaustive (`E0004`), which is the seam probe's evidence for
-        // this seam. Do not add a catch-all to make it compile.
+        i += 1;
     }
+    true
 }
+
+/// ADR-012 §5.1 S1's "no two families share a prefix" checked at compile
+/// time, in every build, not only under `#[cfg(test)]`.
+///
+/// **Why this exists, and why it is not `#[allow(dead_code)]`.** Closing
+/// `FamilyKind` over all six ADR-012 §1 members now -- before five of them
+/// have any `FamilyContract` implementation -- means `catalog_code_prefix`'s
+/// five non-`Value` arms have no other real (non-test) reader: nothing yet
+/// asks a `StateModel`/`SumCase`/`TemporalTrace`/`ProtocolClause`/`Relation`
+/// value what its prefix is, because no sibling family ticket has landed.
+/// Silencing that with `#[allow(dead_code)]`, or fabricating a call site
+/// that passes each variant in only to assert the literal result its own
+/// `match` arm already returns, is exactly the PR #262 F7 pattern this
+/// module's own doc rejects elsewhere. This constant is not that: it is a
+/// real, always-enforced structural invariant of a *closed* catalogue --
+/// distinct prefixes are meaningless to check while the catalogue could
+/// still grow, and become a genuine property worth guarding the moment it
+/// closes, which is exactly what ADR-012 §1 does now. Evaluating it forces
+/// the compiler to construct and compare all six variants' prefixes on
+/// every build, catching a collision (for example a sibling ticket copying
+/// an existing prefix) at compile time instead of only in
+/// `family_prefixes_are_distinct` below, which only runs under `cargo test`.
+///
+/// Named `_` (the standard `const _: () = { assert!(...) };` idiom, not
+/// this module's invention) rather than given a real name: a named `const`
+/// nothing references would itself be flagged dead code, and the anonymous
+/// form is the documented, ecosystem-standard way (used by, for example,
+/// the `static_assertions` crate) to force a `const` body to evaluate for
+/// its assertions alone, with no reader needed.
+const _: () = {
+    let kinds = [
+        FamilyKind::Value,
+        FamilyKind::StateModel,
+        FamilyKind::SumCase,
+        FamilyKind::TemporalTrace,
+        FamilyKind::ProtocolClause,
+        FamilyKind::Relation,
+    ];
+    let mut i = 0;
+    while i < kinds.len() {
+        let mut j = i + 1;
+        while j < kinds.len() {
+            assert!(
+                !prefixes_eq(
+                    kinds[i].catalog_code_prefix(),
+                    kinds[j].catalog_code_prefix()
+                ),
+                "two FamilyKind variants share a catalog_code_prefix"
+            );
+            j += 1;
+        }
+        i += 1;
+    }
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
-
-    /// TC-160 step 9 (FR-062-AC-6): `Relation`'s evaluation-stage status is
-    /// the named "sits out" arm, not "not yet migrated" -- the contract
-    /// distinguishes a family that never evaluates natively from one that
-    /// simply has not migrated yet.
-    #[trace("TC-160", "FR-062-AC-6")]
-    #[test]
-    fn relation_evaluate_is_explicitly_unsupported() {
-        assert_eq!(
-            stage_hooks(FamilyKind::Relation, Stage::Evaluate),
-            HookStatus::ExplicitlyUnsupported
-        );
-    }
-
-    /// FR-062-AC-1/FR-063-AC-6: `Value` is the one family with a real
-    /// contract implementation at every stage in this ticket.
-    #[trace("TC-160", "FR-062-AC-1")]
-    #[test]
-    fn value_is_implemented_at_every_stage() {
-        for stage in [Stage::Check, Stage::Package, Stage::Evaluate] {
-            assert_eq!(
-                stage_hooks(FamilyKind::Value, stage),
-                HookStatus::Implemented
-            );
-        }
-    }
 
     /// Every family has a distinct `catalog_code()` prefix (ADR-012 §5.1
     /// S1).

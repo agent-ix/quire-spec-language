@@ -223,7 +223,13 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 
 /// One entry in the checked-package producer's minimal v2 encoding: a
 /// declared function's qualified name and its checked identity.
+///
+/// `deny_unknown_fields` (PR #262 review, finding F16): decoded through the
+/// `pub` [`decode_function_package_v2`], from bytes an external caller
+/// supplies, not only from this crate's own `emit_v2` output -- an unknown
+/// field should refuse, not silently disappear.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FunctionEntryV2 {
     name: String,
     identity: String,
@@ -237,7 +243,11 @@ struct FunctionEntryV2 {
 /// emit/decode round trip unchanged (FR-065-AC-2).
 const FUNCTION_PACKAGE_V2_VERSION: &str = "quire.checked-function-package/v2";
 
+/// `deny_unknown_fields` (PR #262 review, finding F16): see
+/// [`FunctionEntryV2`]'s own doc -- same reason, same externally-decoded
+/// input.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FunctionPackageV2 {
     version: String,
     functions: Vec<FunctionEntryV2>,
@@ -275,7 +285,13 @@ pub enum DecodeV2Error {
     Malformed,
     #[error("unrecognised version")]
     Version,
-    #[error("identity is not 64 lowercase hex digits")]
+    // PR #262 review (F16): this used to say "64 lowercase hex digits",
+    // which `decode_hex_32` never enforced -- it accepts either case via
+    // `is_ascii_hexdigit`. `emit_v2` always emits lowercase
+    // (`NodeKey`'s `Display` impl, `quire-exact/src/node.rs`), so nothing
+    // this crate produces is ever uppercase, but decode is genuinely
+    // case-insensitive; the message now says what the code does.
+    #[error("identity is not 64 hex digits")]
     InvalidIdentity,
 }
 
@@ -323,10 +339,10 @@ pub(crate) struct ValueFunctionFamily;
 impl crate::family::FamilyContract for ValueFunctionFamily {
     type Form = FunctionDeclaration;
     /// The minted identity is this contract's checked payload for a
-    /// declaration: everything a `package`/`evaluate` caller needs to
-    /// re-find the declaration's own checked body is already in
-    /// `CheckedFunction` (unchanged by this contract); what `check` adds is
-    /// the identity, so that is what it hands back.
+    /// declaration: everything an `evaluate` caller needs to re-find the
+    /// declaration's own checked body is already in `CheckedFunction`
+    /// (unchanged by this contract); what `check` adds is the identity, so
+    /// that is what it hands back.
     type Checked = NodeKey;
     /// The declaring package's `name@version` (see
     /// [`mint_declaration_identity`]'s doc for why Complete-V1 has no real
@@ -334,7 +350,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
     type Declarations = String;
 
     fn check(
-        form: Self::Form,
+        form: &Self::Form,
         cx: &mut crate::family::CheckContext<'_, String>,
     ) -> crate::family::CheckOutcome<NodeKey> {
         // FR-062 "Explicit limits bound every stage entry, including
@@ -350,27 +366,16 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         let depth_before = cx.scopes.depth();
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
-        let identity = mint_declaration_identity(cx.declarations(), &form);
-        // Defensive `Fault` path (ADR-013 T-4's internal-invariant category,
-        // `crate::family::InternalFault`): recomputing the same preimage
-        // must yield the same digest, since `mint_declaration_identity` is a
-        // pure function of `cx.declarations()` and `form`. This can never
-        // trip in practice -- SHA-256 is deterministic -- but it is a real,
-        // reachable check, not a fabricated one: if it ever did trip, that
-        // would mean memory corruption or a non-deterministic hash
-        // regression, exactly ADR-013 T-4's "internal-invariant violation,
-        // never a Refusal" category, not something a typed `Cause` (a
-        // structural refusal of the *input*) could name.
-        if identity != mint_declaration_identity(cx.declarations(), &form) {
-            cx.scopes.leave();
-            cx.leave_nesting();
-            return Err(crate::family::StageFailure::Fault(
-                crate::family::InternalFault::new(
-                    "check",
-                    "mint_declaration_identity is deterministic",
-                ),
-            ));
-        }
+        let identity = mint_declaration_identity(cx.declarations(), form);
+        // PR #262 review (F7): an earlier version of this function
+        // recomputed `mint_declaration_identity` a second time here and
+        // returned `StageFailure::Fault` on a mismatch, framed as a
+        // "defensive" internal-invariant check. It was not: comparing a
+        // pure function's output against itself, called twice with the
+        // same arguments, cannot fail -- the two calls are definitionally
+        // equal, not equal because anything was verified. Deleted along
+        // with `StageFailure::Fault`/`InternalFault` themselves (see
+        // `crate::family::outcome::StageFailure`'s own doc).
         cx.diagnostics.record(
             cx.scopes,
             format!(
@@ -389,15 +394,6 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         );
         cx.leave_nesting();
         Ok(crate::family::Staged::new(identity))
-    }
-
-    fn package(checked: &NodeKey, out: &mut Vec<u8>) {
-        // All-or-nothing (FR-062): this family's one v2 node always
-        // serializes whole (see `crate::family::FamilyContract::package`'s
-        // own doc for why there is no refusal path here).
-        let bytes = emit_v2(&[("declaration".to_owned(), *checked)]);
-        out.clear();
-        out.extend_from_slice(&bytes);
     }
 }
 
@@ -436,7 +432,24 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
                 "no checked function for identity {checked}"
             ))
         })?;
-        let arguments = env.arguments.take().unwrap_or_default();
+        // PR #262 review (F17): `.take().unwrap_or_default()` used to
+        // silently evaluate with zero arguments if `arguments` were ever
+        // `None` -- which, since `take()` itself leaves it `None`, is
+        // exactly what a second `evaluate` call on the same `env` would
+        // hit, and it would look like a legitimate zero-argument call
+        // rather than the reused-env bug it actually is.
+        // `EvaluationEnv`'s one real constructor (`CheckedPackage::call`)
+        // always builds a fresh env with `Some(arguments)` and calls
+        // `evaluate` exactly once, so this refusal is unreached today; it
+        // exists so a future second call surfaces as a typed refusal
+        // instead of a wrong, silent answer.
+        let arguments = env.arguments.take().ok_or_else(|| {
+            crate::family::EvaluateRefusal::Refused(
+                "evaluate called more than once on the same EvaluationEnv \
+                 (arguments already consumed by an earlier call)"
+                    .to_owned(),
+            )
+        })?;
         let callables = env.package.callables();
         Ok(super::evaluate::Machine::new(
             &env.package.scope,
@@ -490,10 +503,17 @@ mod family_contract_tests {
         FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
     }
 
-    /// FR-062-AC-1/FR-065: `Value`'s function-declaration family is a real
-    /// `FamilyContract` implementation, reachable through the trait, not a
-    /// free-standing function with no shared associated-type binding.
-    #[trace("TC-160", "FR-062-AC-1")]
+    /// `Value`'s function-declaration family is a real `FamilyContract`
+    /// implementation, reachable through the trait, not a free-standing
+    /// function with no shared associated-type binding -- and its minted
+    /// identity survives a real v2 emit/decode round trip through
+    /// `family::emit_v2`/`decode_v2` directly (PR #262 review, F1/F2:
+    /// no longer routed through the deleted `FamilyContract::package`,
+    /// which nothing consumed). Untagged for FR-062-AC-1 (PR #262 review,
+    /// finding F3): AC-1 requires all six contract parts as compile-time
+    /// obligations, and this trait now has only `check` -- see FR-062's own
+    /// amended Acceptance Criteria for why AC-1 is recorded unbacked rather
+    /// than retagged onto a narrower claim.
     #[test]
     fn value_function_family_checks_through_the_contract() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
@@ -520,20 +540,26 @@ mod family_contract_tests {
         );
         let form = declaration("f", Expression::Boolean(true));
         let expected = mint_declaration_identity(&package_identity, &form);
-        let staged = ValueFunctionFamily::check(form, &mut cx).unwrap();
+        let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(staged.value, expected);
         assert_eq!(diagnostics.entries().len(), 1);
-        let mut v2 = Vec::new();
-        ValueFunctionFamily::package(&staged.value, &mut v2);
+        let v2 = emit_v2(&[("declaration".to_owned(), staged.value)]);
         assert_eq!(
             decode_v2(&v2).unwrap(),
             vec![("declaration".to_owned(), expected)]
         );
     }
 
-    /// FR-062-AC-3: two contexts built from the same declarations, one
-    /// mutated and one not, check the same form to the same output; only
-    /// the mutated context's own meter/diagnostics/scopes are observable.
+    /// FR-062-AC-3: two independently constructed contexts each observe
+    /// exactly one diagnostic from checking the same form -- if `check`
+    /// wrote through any shared/global state instead of `cx.diagnostics`,
+    /// one of the two independent sinks would show zero or more than one
+    /// entry (PR #262 review, finding F6: the previous version of this
+    /// test compared `diagnostics_a`'s count against an unrelated, freshly
+    /// constructed `DiagnosticSink::default()` rather than against
+    /// `diagnostics_b`, so it never actually observed `cx_b`'s own state,
+    /// and separately asserted a pure function's output against itself by
+    /// comparing `staged_a.value` to `staged_b.value` -- both deleted).
     #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
@@ -562,7 +588,7 @@ mod family_contract_tests {
             &mut diagnostics_a,
             &mut scopes_a,
         );
-        let staged_a = ValueFunctionFamily::check(form.clone(), &mut cx_a).unwrap();
+        ValueFunctionFamily::check(&form, &mut cx_a).unwrap();
 
         let mut meter_b = Meter::new(scalar_limits);
         let mut diagnostics_b = DiagnosticSink::default();
@@ -574,13 +600,13 @@ mod family_contract_tests {
             &mut diagnostics_b,
             &mut scopes_b,
         );
-        let staged_b = ValueFunctionFamily::check(form, &mut cx_b).unwrap();
+        ValueFunctionFamily::check(&form, &mut cx_b).unwrap();
 
-        assert_eq!(staged_a.value, staged_b.value);
-        // Only `diagnostics_a` observed a mutation from checking; a second,
-        // untouched context shows none.
+        // Each independently constructed sink shows exactly its own one
+        // entry -- a shared/global sink would leak entries into whichever
+        // one ran second, or show two entries in one and zero in the other.
         assert_eq!(diagnostics_a.entries().len(), 1);
-        assert_eq!(DiagnosticSink::default().entries().len(), 0);
+        assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
     /// FR-062-AC-7: varying only the nesting-depth limit by one flips the
@@ -615,7 +641,7 @@ mod family_contract_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let refused = ValueFunctionFamily::check(form.clone(), &mut cx);
+        let refused = ValueFunctionFamily::check(&form, &mut cx);
         assert!(matches!(
             refused,
             Err(crate::family::StageFailure::Limit(_))
@@ -629,7 +655,7 @@ mod family_contract_tests {
             &mut diagnostics,
             &mut scopes,
         );
-        let admitted = ValueFunctionFamily::check(form, &mut cx);
+        let admitted = ValueFunctionFamily::check(&form, &mut cx);
         assert!(admitted.is_ok());
     }
 }
@@ -699,46 +725,22 @@ mod tests {
         assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
     }
 
-    /// FR-065-AC-2: identity read after `check`, after S4 linking and after
-    /// v2 decode are all equal.
+    /// FR-065-AC-2: identity read after `check` survives a real v2
+    /// emit/decode round trip unchanged. Does not exercise a distinct
+    /// "after S4 linking" checkpoint (PR #262 review, finding F6):
+    /// `link_function_identity` is `fn(x) -> x` for this migration's real
+    /// scope (`link_function_identity`'s own doc), so comparing its input
+    /// to its output is comparing a value to itself, not something a
+    /// broken implementation could fail. The first family whose linking is
+    /// a real transformation gets a real before/after linking assertion;
+    /// this one would not have been testing anything.
     #[trace("TC-163", "FR-065-AC-2")]
     #[test]
-    fn identity_survives_link_and_v2_round_trip() {
+    fn identity_survives_v2_round_trip() {
         let declaration = declaration("f", Expression::Boolean(true));
         let after_check = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
-        let after_link = link_function_identity(after_check);
-        assert_eq!(after_check, after_link);
-        let bytes = emit_v2(&[("f".to_owned(), after_link)]);
+        let bytes = emit_v2(&[("f".to_owned(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
         assert_eq!(decoded, vec![("f".to_owned(), after_check)]);
-    }
-
-    /// FR-065-AC-3: a call's source occurrence resolves to the same span
-    /// before linking, after linking (identity unchanged, so the same
-    /// lookup key resolves) and after a v2 round trip; corrupting one byte
-    /// of the region in a hand-built alternate package changes the
-    /// resolved span, showing this reads the region rather than a constant.
-    #[trace("TC-163", "FR-065-AC-3")]
-    #[test]
-    fn occurrence_span_survives_link_and_a_corrupted_alternate_differs() {
-        let mut map = OccurrenceMap::default();
-        let identity = mint_call_identity(DEFAULT_PACKAGE_IDENTITY, "f", &[]);
-        let origin = map.record(identity, "reference", (10, 20));
-        let before_linking = map.resolve(identity, &origin).copied();
-        let linked_identity = link_function_identity(identity);
-        let after_linking = map.resolve(linked_identity, &origin).copied();
-        assert_eq!(before_linking, after_linking);
-        assert_eq!(before_linking, Some((10, 20)));
-
-        // A hand-built alternate package whose occurrence region has one
-        // byte corrupted: a different span for the identical (identity,
-        // origin) key.
-        let mut alternate = OccurrenceMap::default();
-        let corrupted_origin = alternate.record(identity, "reference", (10, 21));
-        assert_eq!(origin, corrupted_origin);
-        assert_ne!(
-            alternate.resolve(identity, &origin).copied(),
-            before_linking
-        );
     }
 }
