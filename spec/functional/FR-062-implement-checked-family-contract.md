@@ -223,6 +223,7 @@ they exist in the delivered code today:
   typing contexts checking the same declarations produce identical checked
   output -- and the tag survived that deletion until this round untagged
   it. Nothing currently asserts the identical-checked-output clause itself.
+  Owner: QSL-161.
 - FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
   migrates carries an FR-057 capability kind (`src/family/mod.rs`'s module
   doc). Owner: QSL-152.
@@ -237,7 +238,19 @@ they exist in the delivered code today:
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
   in #214; there is nothing to invoke this criterion's hook against yet.
   Owner: QSL-152.
-- FR-062-AC-7: backed (`TC-160`, `src/value/expression/family.rs`).
+- FR-062-AC-7: unbacked (untagged; PR #262 review round 4; previously
+  misrecorded as backed). The tagged test varied only the nesting-depth
+  limit (0 vs 1) against `check`, which calls `enter_nesting` exactly once
+  per top-level declaration -- `check` performs no recursive descent of
+  its own, so `depth` never exceeds 1 and the predicate the test exercised
+  reduces to `0 >= nesting_depth`. Confirmed by mutation: deleting `self.
+  depth += 1` from `CheckContext::enter_nesting` (removing the nesting
+  bound entirely) left that test passing unchanged. This criterion needs a
+  fixture nested to a real depth D, which does not exist against today's
+  non-recursive `check`. Owner: QSL-148 -- unbackable until real recursive
+  checking (typing/definedness/termination) moves into
+  `ValueFunctionFamily::check`, which is the same move QSL-148 already
+  owns for AC-4/AC-5.
 - FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
   own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
   no cause-bearing family to probe yet. Owner: QSL-152.
@@ -253,5 +266,5 @@ they exist in the delivered code today:
   `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
 
-Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-7);
-the other eight are unbacked, for the reasons above -- not silently.
+One of this requirement's ten Acceptance Criteria is backed (AC-2); the
+other nine are unbacked, for the reasons above -- not silently.
