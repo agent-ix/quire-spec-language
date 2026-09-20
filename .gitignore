@@ -1,5 +1,9 @@
-/target/
 /target-codex-backends/
 /target-fr151/
 /.cargo-target-214/
 /.ci-run-*.log
+
+target/
+*-target/
+target-*/
+.worktrees/

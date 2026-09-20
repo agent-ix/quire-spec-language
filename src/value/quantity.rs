@@ -10,11 +10,11 @@ use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::decimal::{
     sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode,
 };
-use super::integer::{BoundedInteger, Integer, IntegerInterval};
 use super::numeric::{rational_arithmetic_bits, RationalArithmetic};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
+use quire_exact::{BoundedInteger, Integer, IntegerInterval};
 
 /// The unit of a quantity: an admitted declared unit or a compound unit
 /// produced by multiplication, division or power.

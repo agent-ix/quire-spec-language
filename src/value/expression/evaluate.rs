@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use super::super::accounting::{Charge, ChargePoint, LimitKind, Meter};
-use super::super::collection::{form, form_grouped, member_equal, CollectionKind, CollectionValue};
+use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
 use super::super::comparison::ComparisonOperator;
 use super::super::composite::{
     retain_composite, CompositeShape, FieldValue, OptionValue, Value, ValueType,
@@ -24,7 +24,6 @@ use super::super::equality::operand_value;
 use super::super::ieee::{
     evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
 };
-use super::super::integer::{Integer, IntegerInterval};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup};
 use super::super::numeric::{
@@ -44,6 +43,7 @@ use super::ir::{
 use super::refusal::Location;
 use super::refusal::WrongSnapshotCause;
 use crate::model::population::PopulationBinding;
+use quire_exact::{CollectionKind, Integer, IntegerInterval};
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
 /// expression where a non-completed outcome originated.

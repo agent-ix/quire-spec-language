@@ -21,37 +21,9 @@ use super::composite::{
     Component, ConstructionCause, ConstructionRefusal, Deferred, Value, ValueType,
 };
 use super::equality::plan_pairs;
-use super::integer::Integer;
 use super::key::compare_keys;
 use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
-
-/// A collection kind.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CollectionKind {
-    /// Ordered, duplicates retained.
-    Sequence,
-    /// Unordered, unique members.
-    Set,
-    /// Unordered, duplicates retained as multiplicity.
-    Bag,
-    /// Unique members in first-occurrence order.
-    OrderedSet,
-}
-
-impl CollectionKind {
-    /// Every kind.
-    pub const ALL: [Self; 4] = [Self::Sequence, Self::Set, Self::Bag, Self::OrderedSet];
-
-    /// Whether equal occurrences coalesce into one member.
-    pub fn is_unique(self) -> bool {
-        matches!(self, Self::Set | Self::OrderedSet)
-    }
-
-    /// Whether occurrence order is semantic.
-    pub fn is_ordered(self) -> bool {
-        matches!(self, Self::Sequence | Self::OrderedSet)
-    }
-}
+use quire_exact::{CollectionKind, Integer};
 
 /// An inclusive declared cardinality bound `[minimum, maximum]`. It counts
 /// occurrences for sequences and bags and members for sets and ordered sets.

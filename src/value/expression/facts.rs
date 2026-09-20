@@ -13,7 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::collection::CollectionType;
 use super::super::composite::{Value, ValueType};
 use super::super::equality::EqualityOperator;
-use super::super::integer::{Integer, IntegerInterval};
 use super::super::numeric::ArithmeticOperator;
 use super::super::numeric::OrderingOperator;
 use super::check::DispatchOperation;
@@ -21,6 +20,7 @@ use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKi
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
 };
+use quire_exact::{Integer, IntegerInterval};
 
 /// One step of a stable path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
