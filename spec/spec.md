@@ -56,6 +56,16 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-057
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-058
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-059
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-060
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-061
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/IT-013
+    type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-010
@@ -405,3 +415,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
+| [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | Implemented current-head cross-repository integration lane; #215 |
+| [FR-059](functional/FR-059-check-backend-dependency-direction.md) | FR | Implemented ADR-011 FB-05/FB-11 backend dependency-direction check (`arch-lint direction`); #215 |
+| [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B/T12-C live and failing at OBS-018; #215 |
+| [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
+| [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | Implemented current-head lane contract test across QSL, Contract IR, Runtime and Codegen; #215 |
