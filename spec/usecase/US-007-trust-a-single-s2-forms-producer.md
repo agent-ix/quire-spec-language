@@ -59,11 +59,15 @@ closes.
 ### US-007-EX-3: The old dead end is gone, not dormant
 
 - **Given** the S2 forms stage has landed.
-- **When** I search every tracked file in the repository — not only `src/`
-  — for `LoweredSourceGraph`, `LoweredDeclaration`, or `lower_source_graph`.
-- **Then** none of the three names appear anywhere in the repository, and no
+- **When** I search every Rust source and build-input file — `src/`,
+  `tests/`, `benches/`, `xtask/`, `examples/`, not only `src/` — for
+  `LoweredSourceGraph`, `LoweredDeclaration`, or `lower_source_graph`.
+- **Then** none of the three names appear in any of those files, and no
   disabled, feature-gated, or relocated-to-`tests/`-or-`xtask` copy of the
-  pre-migration test that exercised them remains either.
+  pre-migration test that exercised them remains either. This search does
+  not reach `spec/` or `docs/`, which name the three symbols by design —
+  including this ticket's own artifacts and ADR-010/ADR-011's historical
+  record of the seam, which never stop naming it.
 
 ## Priority and Risk (Informative)
 
