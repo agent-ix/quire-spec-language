@@ -489,6 +489,14 @@ mod tests {
     /// removed or renamed — E0004 (non-exhaustive match) for a variant,
     /// E0026/E0027 (unknown/missing field) for a field — so this test is
     /// itself the shape check, not just evidence run under it.
+    ///
+    /// Two residual limits, both covered in practice by this crate's own
+    /// live callers rather than by this test: binding a field with `_`
+    /// names it but does not check its *type* (TC-169 step 4's stated
+    /// scope), and `FunctionDeclaration::clause` is never called here.
+    /// `src/model/checked_dispatch.rs:851,888,916` exercises both today —
+    /// a type-shape change on a bound-`_` field, or a `clause` signature
+    /// change, still fails to compile there.
     #[trace("TC-169", "FR-067-AC-9", "FR-067-CON-3")]
     #[test]
     fn every_variant_and_field_of_the_moved_types_is_unchanged() {
