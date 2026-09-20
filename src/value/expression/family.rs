@@ -215,10 +215,6 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
             })
             .map(|occurrence| &occurrence.span)
     }
-
-    pub(crate) fn entries(&self) -> &[Occurrence<S>] {
-        &self.entries
-    }
 }
 
 /// One entry in the checked-package producer's minimal v2 encoding: a
@@ -359,11 +355,9 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // all once the configured depth is reached (FR-062-AC-7).
         cx.enter_nesting()
             .map_err(crate::family::StageFailure::Limit)?;
-        // FR-062-AC-3 "no side door": the scope stack is pushed/popped, not
-        // just read, and balance is checked for real (not `debug_assert!`,
-        // which a release profile compiles out) -- `ScopeStack::depth`'s
-        // only real caller.
-        let depth_before = cx.scopes.depth();
+        // FR-062-AC-3 "no side door": the scope stack is pushed and popped
+        // around this one check (`cx.scopes.enter`/`leave` below), not just
+        // read.
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
         let identity = mint_declaration_identity(cx.declarations(), form);
@@ -387,11 +381,14 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             ),
         );
         cx.scopes.leave();
-        assert_eq!(
-            cx.scopes.depth(),
-            depth_before,
-            "ValueFunctionFamily::check must leave the scope stack exactly as it found it"
-        );
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function also asserted `cx.scopes.depth() == depth_before` here.
+        // In this straight-line body, one `enter` four lines above is
+        // followed by exactly one `leave`, with nothing between them that
+        // could push or pop again -- the assertion restated what the two
+        // calls already guarantee by construction, not something a broken
+        // implementation could trip. `ScopeStack::depth`, that assertion's
+        // only reader, is deleted with it.
         cx.leave_nesting();
         Ok(crate::family::Staged::new(identity))
     }
@@ -486,17 +483,51 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 #[cfg(test)]
 mod family_contract_tests {
     use super::*;
-    use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
-    use crate::value::composite::ValueType;
+    use crate::family::{
+        CheckContext, DiagnosticSink, EvaluateRefusal, FamilyContract, ReferenceEvaluation,
+        ScopeStack, StageLimits,
+    };
+    use crate::value::accounting::{Meter as ValueMeter, ScalarLimits as ValueScalarLimits};
+    use crate::value::composite::{TypeEnvironment, ValueType};
+    use crate::value::expression::{CheckingLimits, PackageDeclarations};
+    use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
     use quire_exact::Meter;
 
+    // `EvaluationEnv::local_meter` is this crate's own `value::accounting::
+    // Meter` (`ValueFunctionFamily::evaluate`'s pre-existing accounting
+    // path); `ReferenceEvaluation::evaluate`'s own `_meter` parameter is
+    // the shared kernel `quire_exact::Meter` (`Meter`, imported above) --
+    // two distinct types with the same name in different crates, both
+    // needed by `evaluate_refuses_a_second_call_on_the_same_env`.
+    const VALUE_SCALAR_UNLIMITED: ValueScalarLimits = ValueScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+
+    const SCALAR_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+
     fn limits() -> StageLimits {
-        StageLimits {
-            input_bytes: 1_000_000,
-            nesting_depth: 128,
-            node_count: 1_000_000,
-        }
+        StageLimits { nesting_depth: 128 }
     }
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
@@ -550,17 +581,73 @@ mod family_contract_tests {
         );
     }
 
-    /// FR-062-AC-3: two independently constructed contexts each observe
-    /// exactly one diagnostic from checking the same form -- if `check`
-    /// wrote through any shared/global state instead of `cx.diagnostics`,
-    /// one of the two independent sinks would show zero or more than one
-    /// entry (PR #262 review, finding F6: the previous version of this
-    /// test compared `diagnostics_a`'s count against an unrelated, freshly
-    /// constructed `DiagnosticSink::default()` rather than against
-    /// `diagnostics_b`, so it never actually observed `cx_b`'s own state,
-    /// and separately asserted a pure function's output against itself by
-    /// comparing `staged_a.value` to `staged_b.value` -- both deleted).
-    #[trace("TC-160", "FR-062-AC-3")]
+    /// PR #262 review, finding F17 (round 3, item 8): a second `evaluate`
+    /// call on the same `EvaluationEnv` -- whose `arguments` the first call
+    /// already consumed via `.take()` -- refuses with a typed
+    /// `EvaluateRefusal` rather than silently evaluating with zero
+    /// arguments. `EvaluationEnv`'s one real (non-test) constructor
+    /// (`CheckedPackage::call`) never reaches this: it always builds a
+    /// fresh env with `Some(arguments)` and calls `evaluate` exactly once,
+    /// so the guard is unreached through that path. This test bypasses
+    /// that constructor -- the same thing the F17 finding's own fix
+    /// verified by hand and then reverted, leaving the fix itself
+    /// unguarded -- and lands the guard with a real second call.
+    #[test]
+    fn evaluate_refuses_a_second_call_on_the_same_env() {
+        let package = PackageDeclarations {
+            functions: vec![declaration("f", Expression::Boolean(true))],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("one boolean-literal function checks cleanly");
+        let identity = package
+            .function_identity("f")
+            .expect("f is declared in this package");
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let mut local_meter = ValueMeter::new(VALUE_SCALAR_UNLIMITED);
+        let mut env = EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(Vec::new()),
+            local_meter: &mut local_meter,
+        };
+        let mut contract_meter = Meter::new(SCALAR_UNLIMITED);
+        ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+            .expect("first call, with real arguments still present, evaluates cleanly");
+        let refusal = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+            .expect_err("second call on the same env, arguments already consumed, must refuse");
+        assert_eq!(
+            refusal,
+            EvaluateRefusal::Refused(
+                "evaluate called more than once on the same EvaluationEnv \
+                 (arguments already consumed by an earlier call)"
+                    .to_owned()
+            )
+        );
+    }
+
+    /// Two independently constructed contexts each observe exactly one
+    /// diagnostic from checking the same form -- if `check` wrote through
+    /// any shared/global state instead of `cx.diagnostics`, one of the two
+    /// independent sinks would show zero or more than one entry (PR #262
+    /// review, finding F6: the previous version of this test compared
+    /// `diagnostics_a`'s count against an unrelated, freshly constructed
+    /// `DiagnosticSink::default()` rather than against `diagnostics_b`, so
+    /// it never actually observed `cx_b`'s own state, and separately
+    /// asserted a pure function's output against itself by comparing
+    /// `staged_a.value` to `staged_b.value` -- both deleted).
+    ///
+    /// **Untagged (PR #262 review, coordinator round 3, finding 5).** This
+    /// test was tagged `FR-062-AC-3`, whose central clause is that two
+    /// typing contexts checking the same declarations produce *identical
+    /// checked output* -- F6 correctly deleted the `staged_a.value ==
+    /// staged_b.value` self-comparison that used to (fabricatedly) stand in
+    /// for that, but kept the tag on what remained: two counts, each
+    /// asserted only against the literal `1` the loop below guarantees by
+    /// construction, not against each other's checked output. That is a
+    /// real isolation test, not an identical-output test, so it is untagged
+    /// rather than left claiming to back a criterion it does not; see
+    /// FR-062's own amended Acceptance Criteria for AC-3's current status.
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
@@ -629,10 +716,7 @@ mod family_contract_tests {
         });
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
-        let mut tight = StageLimits {
-            nesting_depth: 0,
-            ..limits()
-        };
+        let mut tight = StageLimits { nesting_depth: 0 };
         let mut cx = CheckContext::new(
             &package_identity,
             tight,
@@ -688,22 +772,19 @@ mod tests {
         );
     }
 
-    /// FR-065-AC-2: identity does not depend on any other declaration's
-    /// existence or position -- it is a pure function of this declaration's
-    /// own parsed structure and the package identity.
-    #[trace("TC-163", "FR-065-AC-2")]
-    #[test]
-    fn identity_ignores_unrelated_declarations() {
-        let target = declaration("f", Expression::Boolean(true));
-        let identity_alone = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &target);
-        // Nothing about `target` changes when other declarations exist
-        // elsewhere in the package or in a different order; the identity is
-        // computed from `target` alone, so this is definitionally true, and
-        // exercised here so a future change that starts threading package
-        // position into the preimage is caught.
-        let identity_again = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &target);
-        assert_eq!(identity_alone, identity_again);
-    }
+    // `identity_ignores_unrelated_declarations` (PR #262 review, coordinator
+    // round 3) is deleted from here. It minted `DEFAULT_PACKAGE_IDENTITY`'s
+    // identity for the same `target` twice and compared the result to
+    // itself -- no second declaration was ever constructed, so FR-065-AC-2's
+    // reordering clause had nothing to be independent *of*; its own comment
+    // conceded "this is definitionally true". A real reordering test needs
+    // two actual declarations checked in two actual orders, which
+    // `mint_declaration_identity`'s single-declaration signature cannot
+    // exercise -- see
+    // `tests/dispatch_calls.rs`'s
+    // `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`,
+    // built at the `PackageDeclarations::check` level instead, where
+    // position could actually leak.
 
     /// FR-062-AC-2: two occurrences of one identity get distinct ordinals;
     /// a different identity's occurrence does not consume an ordinal from

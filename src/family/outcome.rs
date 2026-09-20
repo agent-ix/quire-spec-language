@@ -8,19 +8,30 @@
 //! implements T-4's already-decided shape locally so #214 has something to
 //! return; see `crate::family`'s module doc.
 
-/// A stage's successful output plus any warnings it raised along the way.
+/// A stage's successful output.
+///
+/// **No `warnings` field (PR #262 review, coordinator round 3, finding
+/// 4).** ADR-013 T-4's design names "output plus any warnings it raised
+/// along the way", and an earlier version of this struct carried a
+/// `warnings: Vec<String>` for that -- but nothing in #214's one migrated
+/// stage entry ever pushes into it (`Staged::new` always constructs it
+/// empty) and nothing anywhere reads it back; a field that is always
+/// `Vec::new()` on the way in and never inspected on the way out is
+/// write-only in both directions, not a real warnings channel. `Staged<T>`
+/// itself stays -- ADR-013 T-4's `Result<Staged<T>, StageFailure>` return
+/// shape is real and every S1-S4 hook returns it, distinguishing a stage's
+/// structured output from a bare `T` -- so a future stage entry that
+/// genuinely raises a warning adds the field back with a real producer and
+/// a real consumer in the same change, not as a hollow shell restored
+/// speculatively.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Staged<T> {
     pub(crate) value: T,
-    pub(crate) warnings: Vec<String>,
 }
 
 impl<T> Staged<T> {
     pub(crate) fn new(value: T) -> Self {
-        Self {
-            value,
-            warnings: Vec::new(),
-        }
+        Self { value }
     }
 }
 
@@ -34,8 +45,10 @@ impl<T> Staged<T> {
 /// charges and checks only nesting depth (FR-062-AC-7); nothing in this
 /// ticket's real scope ever reaches an input-bytes, node-count or
 /// work-budget limit, so those three variants would be exactly the same
-/// unconstructed shape `Requirements`'s substructure was. The first stage
-/// entry that genuinely checks one of the other three adds it back.
+/// unconstructed shape `Requirements`'s substructure was. FR-062-AC-5 names
+/// all four limit kinds and is unbacked for exactly this narrowing; QSL-153
+/// owns adding the other three variants back, together with a real
+/// producer for each (`FR-062`'s own Status section).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum StageLimitKind {
     NestingDepth,
