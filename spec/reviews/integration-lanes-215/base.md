@@ -71,10 +71,13 @@ records verbatim rather than re-litigating:
   one revision per quire-ecosystem crate." Building the lane's real manifest
   at real current heads (a byproduct of this convergence work, not a designed
   fixture) surfaced a genuine, new cross-repository incompatibility: real
-  quire-contract-codegen head fails against real quire-contract-runtime head
+  quire-contract-codegen head fails against real quire-contract-**ir** head
   (`error[E0560]: struct CounterexamplePacket has no field named witness`,
-  `bounded_kani_corpus.rs:196`), reported in FR-058's Status section as real,
-  current evidence, not remediated here.
+  `bounded_kani_corpus.rs:196`; `CounterexamplePacket` is defined in
+  quire-contract-ir's `src/kani/replay.rs:45`, not in quire-contract-runtime
+  -- corrected in #249 review round 3 M-1, which had misattributed this to
+  CG/RT), reported in FR-058's Status section as real, current evidence, not
+  remediated here.
 
 Also fixed this round: the lane's `prepare` step now runs `cargo update`
 against the lane's own manifest and `revision-log` fails on a
@@ -92,8 +95,23 @@ renamed-import limitation and a second, previously-undocumented one (a call
 pattern found inside a comment or string literal is not excluded) (MEDIUM-5);
 T12-A's `pending_reason` now names `src/replay.rs` explicitly, so
 `tc_arch_lint_api_surface_002` asserts that name rather than a value it set
-itself (MEDIUM-6); the PR body's claim that `make ci` runs Kani proofs is
-removed, since it does not (MEDIUM-8); `integration/current-head/tool/src/
+itself (MEDIUM-6); **MEDIUM-8 withdrawn (reviewer error, #249 review round
+4)**: the finding claimed the PR body's "`make ci` runs Kani proofs" was
+false; it is not false -- the reviewer's own grep of `Makefile`/`.github`
+missed a proof invoked from test code. `make ci` runs `cargo test --locked
+--workspace` twice, once per feature lane, which includes
+`tests/configversion_backends.rs`, whose plain `#[test]` functions shell out
+to `cargo kani` (cargo-kani 0.67.0, pinned by version and SHA-256 at
+`:509-524`; the proof runs via `execute_kani` at `:807`, invoked from the
+test at `:861`), so Kani/CBMC proofs do run under `make ci`, and `make ci`
+therefore depends on a locally installed, SHA-pinned cargo-kani 0.67.0 on
+PATH and fails on a machine without it. What `make ci` does **not** run is
+any `arch-lint` target (`arch-lint-api-surface`,
+`arch-lint-duplicate-revisions`, `arch-lint-duplicate-revisions-lane`,
+`arch-lint-direction`) or the `integration-current-head` lane, so a green
+`make ci` says nothing about FR-058/059/060/061 or ADR-011 T-12's
+enforcement. The PR body's claim was not removed as a fix; the claim was
+correct all along; `integration/current-head/tool/src/
 main.rs`'s `cargo metadata` call now passes `--locked`; the dead
 `is_ecosystem_crate`/`"quire_contract_model"` underscore check was removed
 along with the crate-name-keyed logic it supported; `RuleOutcome::rule_id` is
