@@ -145,6 +145,9 @@ pub enum Code {
     /// FR-153: a formed population selection's count is outside its declared
     /// `allInstances<T>(p)` bound.
     CardinalityOutOfBound,
+    /// ADR-013 O-01/QC-5: a second selection of a domain-package identity
+    /// already selected at a different (or the same) version.
+    DuplicateSelection,
 }
 
 impl Code {
@@ -196,6 +199,7 @@ impl Code {
             Self::AmbiguousDispatch => "ambiguous_dispatch",
             Self::ForeignReference => "foreign_reference",
             Self::CardinalityOutOfBound => "cardinality_out_of_bound",
+            Self::DuplicateSelection => "duplicate_selection",
         }
     }
 
@@ -247,6 +251,7 @@ impl Code {
             Self::AmbiguousDispatch,
             Self::ForeignReference,
             Self::CardinalityOutOfBound,
+            Self::DuplicateSelection,
         ]
     }
 

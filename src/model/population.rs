@@ -732,7 +732,7 @@ pub fn admit_binding(
         .declarations()
         .iter()
         .filter(|entry| entry.preimage.owner_effective_type.is_none())
-        .map(|entry| (entry.preimage.original.clone(), entry.effective_id.clone()))
+        .map(|entry| (entry.preimage.original.clone(), entry.effective_id))
         .collect();
 
     // Computed once here rather than once per `all_instances`/`lookup` call;
@@ -834,8 +834,8 @@ pub fn admit_binding(
         }
 
         let key = ReferenceKey {
-            universe: universe.clone(),
-            type_identity: effective_type.clone(),
+            universe,
+            type_identity: *effective_type,
             object: member.object.clone(),
         };
         if let Some(existing) = by_object.get(&key.object) {
@@ -846,14 +846,12 @@ pub fn admit_binding(
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::ConflictingIdentity {
                     object: key.object.clone(),
-                    existing_type: existing.type_identity.clone(),
-                    declared_type: key.type_identity.clone(),
+                    existing_type: existing.type_identity,
+                    declared_type: key.type_identity,
                 },
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
-                    key.object,
-                    existing.type_identity.hex(),
-                    key.type_identity.hex()
+                    key.object, existing.type_identity, key.type_identity
                 ),
             });
         }
@@ -1706,12 +1704,12 @@ fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal 
         code: Code::ForeignReference,
         cause: ModelRefusalCause::ForeignUniverse {
             actual: actual.to_vec(),
-            expected: binding.universe().clone(),
+            expected: *binding.universe(),
         },
         detail: format!(
             "reference key names universe {}, not the binding's {}",
             hex(actual),
-            binding.universe().hex()
+            binding.universe()
         ),
     }
 }
@@ -1766,8 +1764,8 @@ pub fn lookup(
     let present = match std::str::from_utf8(&r.object) {
         Ok(object) => {
             let key = ReferenceKey {
-                universe: binding.universe().clone(),
-                type_identity: r.type_identity.clone(),
+                universe: *binding.universe(),
+                type_identity: r.type_identity,
                 object: object.to_owned(),
             };
             binding.members().contains_key(&key).then_some(key)

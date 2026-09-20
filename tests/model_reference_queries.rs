@@ -126,7 +126,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id.clone())
+        .map(|entry| entry.effective_id)
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 
@@ -187,13 +187,13 @@ fn object_reference(
     object: &str,
 ) -> ObjectReference {
     let universe = UniverseIdentity::new(universe.as_bytes()).unwrap();
-    let object_type = NodeKey::from_hex(&type_identity.hex()).unwrap();
+    let object_type = NodeKey::from_hex(&type_identity.to_string()).unwrap();
     let identity = ObjectIdentity::new(object.as_bytes()).unwrap();
     ObjectReference::new(universe, object_type, identity)
 }
 
 fn node_key(identity: &EffectiveId) -> NodeKey {
-    NodeKey::from_hex(&identity.hex()).unwrap()
+    NodeKey::from_hex(&identity.to_string()).unwrap()
 }
 
 struct Scenario {
