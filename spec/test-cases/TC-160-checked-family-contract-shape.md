@@ -17,9 +17,11 @@ distinct from identity (verifying identity and provenance behaviorally,
 since neither is a separate trait item to omit), that the typing context has
 no side door, that requirements are a pure function of a checked node, that
 a reached limit is distinct from both a refusal and `Incomplete`, that
-`Incomplete` is returned only by `evaluate`, that a recursion-depth limit
-prevents a native stack overflow, that `package` is all-or-nothing, and that
-the `Relation` family's evaluation hook returns a named
+`Incomplete` is returned only by `evaluate`, that a nesting-depth limit is
+the proximate cause of a deeply-nested form's refusal (not the form's
+absolute size or the host's available stack), that `package` is
+all-or-nothing, and that the `Relation` family's evaluation hook returns a
+named
 non-native-evaluability refusal rather than a panic or a silent success.
 Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
 
@@ -53,10 +55,10 @@ Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
    exhaust mid-evaluation and confirm it returns `Incomplete`. Run `check`
    and `package` across the same fixture set and confirm neither ever
    returns `Incomplete`.
-7. Construct a form nested well past a configured nesting-depth limit (for
-   example, deeply nested function application) and check it with the limit
-   configured; separately, check the same form with the limit removed or set
-   far beyond the test process's available stack.
+7. Construct a fixture nested to depth D (for example, D levels of nested
+   function application). Check it with the nesting-depth limit configured
+   to D-1. Check the identical fixture again with the limit configured to
+   D, one greater and nothing else changed.
 8. Given a checked item requiring more than one v2 node, inject a fault
    partway through `package`'s emission for that item (after the first node
    is written, before the last); read whatever v2 bytes resulted.
@@ -82,11 +84,11 @@ Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
   work-budget kind, distinct in type from a checked node, a refusal and
   `Incomplete`; the exhausted `evaluate` call returns `Incomplete`; `check`
   and `package` return `Incomplete` in no observed case.
-- Step 7: with the limit configured, `check` returns a `Limit` outcome
-  naming the nesting-depth limit and the process does not crash; with the
-  limit removed or raised beyond the available stack, the same fixture
-  aborts the process (stack overflow), showing the configured limit, not
-  incidental luck, prevented the crash.
+- Step 7: with the limit at D-1, `check` returns a `Limit` outcome naming
+  the nesting-depth limit; with the limit at D on the identical fixture,
+  `check` does not return that outcome. Varying only the limit by one flips
+  the result, showing the limit value, not the fixture's absolute size, is
+  the proximate cause.
 - Step 8: the result is either a refusal with no v2 bytes for the item, or a
   complete v2 node set for the item; no reading finds a partial node set (for
   example, a declaration node with no body).

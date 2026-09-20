@@ -91,6 +91,17 @@ enum forces a cross-crate `match` over it to carry a `_` arm to compile at
 all, which would let a seam accept a new variant through that `_` arm with
 no `E0004` and no probe failure, defeating the seam entirely.
 
+This requirement scopes the clippy denial to "every module containing a
+listed seam" because that is ADR-012 §5.1's own scoping, so a seam this
+requirement did not enumerate in a module it did not name is not covered by
+that denial (a residual this requirement inherits from its authority rather
+than exceeds). A crate-level `#![deny(clippy::wildcard_enum_match_arm)]` in
+the QSL crate's `lib.rs` removes that module-by-module scoping in one line,
+covering every module including one added after this requirement lands; the
+implementing ticket may take that route, but does so as a deliberate choice
+recorded in the implementation, not as an accidental consequence of
+module-by-module denial lists falling out of sync with new seam modules.
+
 ### A correct-looking implementation without a probe fails this requirement
 
 A change that adds a match arm for every family without a probe mechanism
@@ -107,7 +118,7 @@ under the `seam-probe` feature, not asserted by code review or by a comment.
 | FR-063-AC-3 | Building the QSL crate with default features (no `seam-probe`) compiles cleanly with no probe variant reachable from any non-probe code path; a test asserts the feature is absent from `default` in `Cargo.toml` and from every other feature's dependency list. | Test (TC-161) |
 | FR-063-AC-4 | `xtask seam-probe` runs to completion and exits non-zero when the checked-in list and the actual `E0004` location set differ in either direction (extra or missing), and exits zero only when the two sets are equal; a test with a deliberately wrong checked-in list (one entry removed) demonstrates the non-zero exit with a concrete example, not only an assertion that the tool "checks" the list. | Test (TC-161) |
 | FR-063-AC-5 | The full gate invokes `xtask seam-probe`, and a test that stubs the gate's target list shows the gate fails when `xtask seam-probe` exits non-zero. | Test (TC-161) |
-| FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the stage-participation table, including the explicit `Relation` evaluation arm; the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that has an `E0004` at that category's location, causes `xtask seam-probe` to fail, naming the missing category's location as expected-but-absent from the list. | Test (TC-161) |
+| FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the stage-participation table, including the explicit `Relation` evaluation arm; the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that still has an `E0004` at that category's location (the source is unchanged), causes `xtask seam-probe` to fail, naming that category's location as present in the build but absent from the list (unexpected-but-present). | Test (TC-161) |
 | FR-063-AC-7 | A `match` at an S1 to S4 seam that carries a `_ => unsupported(...)` fallback arm produces no `E0004` for that seam under `--features seam-probe` and is therefore invisible to `xtask seam-probe` alone; `cargo clippy` over that seam's module fails on `clippy::wildcard_enum_match_arm` (or `clippy::match_wildcard_for_single_variants`, for the enum that trips it instead), so the lint gate, not the seam probe, is what catches this case. A test reintroduces such a fallback arm in a fixture module and asserts the clippy lint fires. A separate test inspects the definition of `FamilyKind`, the parsed form enum, the checked node enum and each family `Cause` enum and asserts none carries `#[non_exhaustive]`. | Test (TC-161) |
 
 ## Dependencies

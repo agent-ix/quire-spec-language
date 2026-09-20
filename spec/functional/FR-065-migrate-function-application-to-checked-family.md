@@ -122,6 +122,24 @@ requirement and are deleted by their own migrating tickets (#120, #164,
 #170, #175), the last of which removes the composed checker module entirely
 (ADR-011 §7.3 M-6e).
 
+Where the composed checker module is retained for those other forms, its
+dispatch `match` over its own input form-kind enum SHALL carry no `_` or
+catch-all arm, the same rule FR-063 applies at every S1 to S4 seam. This
+enum is the composed checker's own construct, not one of FR-063's S1-S4
+enums, so FR-063's probe does not reach it; this requirement states the
+same no-wildcard rule directly, for this one enum, so the same defect it
+prevents elsewhere cannot reopen here. Because no catch-all arm is admitted,
+deleting the function-declaration and function-application match arms is a
+compile error (`E0004`) for as long as the composed checker's input
+form-kind enum still carries a function-declaration or
+function-application variant. This requirement's implementation SHALL
+therefore also remove those two variants from that enum in the same
+change, which is what makes the arm deletion compile at all: no `_ =>
+refuse(...)` arm may be added to keep the match exhaustive instead, because
+that would be a catch-all arm and is forbidden by this same rule. A function
+form is thereafter not merely unmatched by the composed checker; it is not
+a value the composed checker's input type can hold.
+
 ### This requirement's checked-package producer is #240's precondition
 
 This requirement builds S1 through S4 (and E4 v2 emission on request) for
@@ -161,7 +179,7 @@ for the function family.
 | FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity is the same value read at three points: immediately after `check`, again after S4 linking, and again after decoding the emitted v2 bytes. Reordering unrelated top-level declarations in the source leaves that identity unchanged at all three points. | Test (TC-163) |
 | FR-065-AC-3 | Given the same source file, the call's source occurrence (identity, role, ordinal) resolves to the same byte span before linking, after linking, and after decoding from v2 bytes; corrupting one byte of the occurrence's region in a hand-built alternate package makes the resolved span differ, showing the test actually reads the region rather than a constant. | Test (TC-163) |
 | FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
-| FR-065-AC-5 | After the implementation lands, the composed linker's function-declaration and function-application checking entry points are absent from the compiled crate's symbols (or, where the composed checker module is retained for its other `Value` forms, its function-form match arms are removed so calling it with a function form fails to compile); a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. A change that lands the S3 function checker while leaving the composed checker's function-form arms reachable, even if no caller currently invokes them, does not satisfy this criterion. | Test (TC-164) |
+| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 
 ## Dependencies
