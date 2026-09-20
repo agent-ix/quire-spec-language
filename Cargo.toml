@@ -57,6 +57,13 @@ path = "src/main.rs"
 name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
 
+# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
+# checks over the QSL/IR/RT/CG ecosystem. Self-contained (does not link
+# `quire-spec-language`); see tools/arch-lint/main.rs.
+[[bin]]
+name = "arch-lint"
+path = "tools/arch-lint/main.rs"
+
 # These integration tests call the `test-support`-gated fixture constructors
 # (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
 # `DomainPackageRef::fixture_with_version`) documented above `test-support`.

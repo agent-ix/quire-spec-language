@@ -165,14 +165,6 @@ pub enum ModelRefusalCause {
         /// The undominated redefining members, in domain package order.
         redefiners: Vec<DeclarationKey>,
     },
-    /// A redefinition edge's target or redefining member is not an
-    /// effective member of its owner.
-    RedefinitionUnreachable {
-        /// The unreachable member.
-        member: DeclarationKey,
-        /// The owner it is not an effective member of.
-        owner: DeclarationKey,
-    },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
     UnsuppliedProducerRecord,
@@ -225,8 +217,21 @@ pub enum ModelRefusalCause {
     /// A redefinition narrows a fact FR-146 has no proof form to establish,
     /// or narrows past an established fact with no supporting proof.
     UnprovedRefinement,
-    /// More than one redefinition target candidate remains after dominance.
-    RedefinitionTarget,
+    /// A redefinition whose target is not a member inherited by its owning
+    /// type, or two or more members of one type that redefine one target
+    /// with no single valid candidate remaining after dominance (#204 round
+    /// 1: typed like [`Self::DerivationConflict`], the sibling cause for
+    /// the other R07 ambiguity shape).
+    RedefinitionTarget {
+        /// The contending redefining members sharing one owner, with no
+        /// single owner dominating a resolvable choice among them, or every
+        /// redefining member naming an unreachable target. Empty where no
+        /// redefining member's own claim is even known (a construction site
+        /// with no candidate edge to name).
+        redefiners: Vec<DeclarationKey>,
+        /// The contended or unreachable redefinition target.
+        target: DeclarationKey,
+    },
     /// A population document or effective view names a model selection
     /// other than the admitting domain package's.
     ForeignModelSelection {
@@ -285,7 +290,10 @@ pub enum ModelRefusalCause {
         /// The newly declared, conflicting type.
         declared_type: EffectiveId,
     },
-    /// A population binding has no declared maximum to select against.
+    /// An operator is applied to a binding it cannot act on: a population
+    /// binding with no declared maximum to select against, or (FR-151,
+    /// `quire.model.dispatch.single/v1`) a dispatch target with a declared
+    /// result and effect set that disqualify it as a query.
     OperatorIneligible,
     /// A selected population count exceeds its declared maximum.
     AboveMaximum {
@@ -297,11 +305,13 @@ pub enum ModelRefusalCause {
     /// A reference key names a universe other than the binding's.
     ForeignUniverse {
         /// The reference key's raw universe bytes, exactly as supplied. Not
-        /// always a well-formed 32-byte identity: a reference whose universe
-        /// component is some other length is also refused under this cause
-        /// (`crate::value::model_query`'s own malformed-universe case),
-        /// reporting the bytes the caller actually supplied rather than a
-        /// substituted or truncated identity.
+        /// always a well-formed 32-byte identity: a
+        /// [`crate::model::population::LookupKey`] whose `universe` is some
+        /// other length is also refused under this cause
+        /// (`crate::model::population::lookup`'s own raw-byte universe
+        /// comparison, never a separate malformed case), reporting the bytes
+        /// the caller actually supplied rather than a substituted or
+        /// truncated identity.
         actual: Vec<u8>,
         /// The binding's universe.
         expected: EffectiveId,
@@ -309,11 +319,12 @@ pub enum ModelRefusalCause {
     /// A reference key is not a member of the bound population.
     AbsentKey {
         /// The absent key's raw object bytes, exactly as supplied. A
-        /// reference key's plain `object` string as UTF-8 bytes, not a
-        /// [`DeclarationKey`] -- not always valid UTF-8 itself
-        /// (`crate::value::model_query`'s own malformed-identity case),
-        /// reporting the bytes the caller actually supplied rather than a
-        /// substituted or lossily-decoded string.
+        /// [`crate::model::population::LookupKey`]'s plain `object` bytes,
+        /// not a [`DeclarationKey`] -- not always valid UTF-8 itself
+        /// (`crate::model::population::lookup`'s own raw-byte membership
+        /// check, never a separate malformed case), reporting the bytes the
+        /// caller actually supplied rather than a substituted or
+        /// lossily-decoded string.
         key: Vec<u8>,
     },
     /// A domain package record does not export the required [`crate::model::key`]
@@ -614,7 +625,6 @@ impl ModelRefusalCause {
             Self::UnknownEffectType { .. } => "unknown-effect-type",
             Self::UnknownMember { .. } => "unknown-member",
             Self::DerivationConflict { .. } => "derivation-conflict",
-            Self::RedefinitionUnreachable { .. } => "redefinition-unreachable",
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
             Self::ConformanceDepth { .. } => "conformance-depth",
             Self::VarianceResult => "variance-result",
@@ -624,7 +634,7 @@ impl ModelRefusalCause {
             Self::VarianceParameter { .. } => "variance-parameter",
             Self::EffectEscape { .. } => "effect-escape",
             Self::UnprovedRefinement => "unproved-refinement",
-            Self::RedefinitionTarget => "redefinition-target",
+            Self::RedefinitionTarget { .. } => "redefinition-target",
             Self::ForeignModelSelection { .. } => "foreign-model-selection",
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
@@ -734,7 +744,6 @@ mod tests {
             ModelRefusalCause::UnknownEffectType { .. } => "unknown-effect-type",
             ModelRefusalCause::UnknownMember { .. } => "unknown-member",
             ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
-            ModelRefusalCause::RedefinitionUnreachable { .. } => "redefinition-unreachable",
             ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
             ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
             ModelRefusalCause::VarianceResult => "variance-result",
@@ -744,7 +753,7 @@ mod tests {
             ModelRefusalCause::VarianceParameter { .. } => "variance-parameter",
             ModelRefusalCause::EffectEscape { .. } => "effect-escape",
             ModelRefusalCause::UnprovedRefinement => "unproved-refinement",
-            ModelRefusalCause::RedefinitionTarget => "redefinition-target",
+            ModelRefusalCause::RedefinitionTarget { .. } => "redefinition-target",
             ModelRefusalCause::ForeignModelSelection { .. } => "foreign-model-selection",
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
@@ -836,10 +845,6 @@ mod tests {
                 member: key("p"),
                 redefiners: vec![key("p")],
             },
-            ModelRefusalCause::RedefinitionUnreachable {
-                member: key("p"),
-                owner: key("p"),
-            },
             ModelRefusalCause::UnsuppliedProducerRecord,
             ModelRefusalCause::ConformanceDepth { from: key("p") },
             ModelRefusalCause::VarianceResult,
@@ -859,7 +864,10 @@ mod tests {
             },
             ModelRefusalCause::EffectEscape { field: key("p") },
             ModelRefusalCause::UnprovedRefinement,
-            ModelRefusalCause::RedefinitionTarget,
+            ModelRefusalCause::RedefinitionTarget {
+                redefiners: vec![key("p")],
+                target: key("p"),
+            },
             ModelRefusalCause::ForeignModelSelection {
                 actual: OfferedSelection::Document(String::new()),
                 expected: crate::model::domain_package::DomainPackageRef::fixture("p"),

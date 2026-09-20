@@ -300,7 +300,7 @@ pub fn link_dispatch(
     // effective-identity order (the view's own order): type-level entries
     // only, filtered by domain-package-level conformance to `receiver_type`.
     let mut subtypes: Vec<DeclarationKey> = Vec::new();
-    for entry in &view.declarations {
+    for entry in view.declarations() {
         if entry.preimage.owner_effective_type.is_some() {
             continue; // a member entry, not a type entry.
         }

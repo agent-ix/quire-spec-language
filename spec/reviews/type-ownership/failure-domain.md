@@ -1,0 +1,150 @@
+---
+id: SR-483
+title: "failure-domain review of ADR-013 canonical type, package and conversion ownership"
+type: SpecReview
+analysis: failure-domain
+scope: "spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md"
+review_set: all
+relationships:
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: reviews
+---
+
+## Summary
+
+This review covers ADR-013 (ARCH-12, #211) and its `spec/spec.md` index row at
+quire-spec-language commit 660aa25 on `task/211-type-ownership`. It checks the
+ownership and conversion decisions for unstated failure modes, identity
+confusion, purity gaps and topological edge cases. It focuses on the replay
+path, because #211's acceptance requires that "Witness/replay types preserve
+enough stable identity and values for deterministic native replay". Evidence
+was read at QSpec origin/main (AD-016, FR-201, FR-321, FR-322, FR-323, FR-331),
+IR PR #139 head 417ec86, CG origin/main a4b2a73 and the QSL worktree at 660aa25.
+
+The ownership structure is sound. Every #211 object has one owner and one
+equality kind, lane-private types are fenced off (R-09), and the no-compatibility
+rules (R-08, §5) hold. The index row matches the ADR's title and status. Five
+blocking gaps remain, and four of them are in replay:
+
+- The replay executor must "recompile the locked source", but nothing names
+  where it gets the source and dependency bytes.
+- Witness bytes are joined to function parameters by an order that no rule
+  fixes.
+- The IR packet stores a second copy of the input values beside the witness,
+  and the ADR's rule for when the witness is absent contradicts IR.
+- The outcome category map is not total.
+- `DeclarationKey` collides across versions of one domain package.
+
+Verdict: REVISE. There are 5 high, 6 medium and 4 low findings. Each has a
+concrete fix that stays inside ADR-013 or its §8 questions. None asks for a
+rename, a compatibility path or a decision that belongs to #209 or #210.
+
+## Method
+
+- Checklist, applied to an ownership design record:
+  - Trust boundaries: at each §4 conversion, where the admitted data comes
+    from, what refusal is named, and whether any wire value can become
+    checked typestate (R-10).
+  - Entity identity: whether each O-row's uniqueness key and equality kind
+    hold against the FR-201 domain and the code that implements it.
+  - Evaluation purity: whether replay's recompilation and decoding depend on
+    inputs the request does not carry.
+  - Topology: the ordering and join conditions along arrow 7 (packet →
+    bindings → request → call), and the stage cycles.
+- Sources checked:
+  - QSpec: `FR-322` (identity preimage exclusions, `source_map` occurrence key,
+    AC-14); `FR-323` (properties, result identity, AC-1); `FR-321` (key and
+    AC-3/AC-4); `FR-331` (results vocabulary); `FR-201` (domain rule); AD-016
+    arrows 5 and 7 and the Replay-ownership table.
+  - IR PR #139 at 417ec86: `src/kani/witness.rs` and `src/kani/replay.rs`.
+  - CG a4b2a73: `src/kani_obligations.rs:63-72,351-398,1449-1470`,
+    `src/kani.rs:1017-1035` and `src/kani_execution.rs:419`.
+  - QSL: `src/model/key.rs:62-77`, `src/value/node.rs:22,49`,
+    `src/value/outcome.rs:18-27` and `src/value/expression/mod.rs:650-656`.
+- Also checked: ADR-010 §9.2 routing, to confirm §9 covers every item routed
+  to #211, and that the Mermaid labels contain no `;`.
+- Out of scope: family contracts, capability vocabulary and stage order. These
+  are decided in #209, #210 and #229, and the ADR's deferrals of them were
+  accepted as legitimate.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | Replay recompilation has no named source of bytes and no refusal when they are unavailable. O-15 and C-13 say the executor "recompiles the locked source" and then compares `package_id`. The FR-323 request carries only an "exact FR-322 checked-package reference" (`package_id`, contract version), and the O-25 packet carries no source. The FR-322 lock names source documents, definitions, profiles and domain packages only by digest. Nothing in the ADR says who supplies those bytes to the executor, or how it resolves them by digest. The O-26 refusal list has no cause for a source, definition or domain package that is missing or whose digest does not match. #231 would have to pick an owner, which contradicts the Consequences line "#213 and #231 implement from §3 and §7 without choosing an owner". Recompilation is also only deterministic if it reads nothing other than digest-addressed inputs. Fix: in O-26, name the owner of the digest-addressed byte provider that the executor reads. It is CG's replay adapter or QSL; if this depends on stage placement, record it as a §8 Q209 item. State that the executor resolves every lock member by exact digest and domain, and reads no path, environment or search. Add a refusal to the O-26 list for "a locked input is absent or its bytes do not match the digest" (`stale_dependency`/`byte-digest-mismatch`), with no partial execution. | ADR-013 O-15, O-26, C-13, Consequences · FR-322 `lock` · FR-323 `package` |
+| FND-002 | high | Nothing fixes the order that joins witness bytes to function parameters. Kani encodes `concrete_vals` in `kani::any()` call order, and `Witness::decode` joins them with the schema by position (IR `witness.rs`, `decode` zips `schema` with `entries`). C-11 builds that schema from `KaniObligationIdentity.arguments`, which are "ascending by identifier" (O-09; CG `kani_obligations.rs:394`). The CG harness emitters happen to declare `kani::any()` in that same order (`kani_obligations.rs:1449-1470`, `kani.rs:1017-1035`), but no rule requires it. The executor then calls `CheckedPackage::call(function, arguments: Vec<Value>, …)` by parameter position (`value/expression/mod.rs:650-656`). No rule maps a binding identifier to a declared parameter position. When two parameters share a width (two `i64`s) and their names do not sort in declaration order, the values are swapped silently. `decode`'s comment check still passes, because each comment matches its own bytes. This breaks R-05 and #211's deterministic-replay acceptance. Fix: add two invariants to O-25 and C-11/C-12. (a) The harness declares `kani::any()` in exactly `arguments` order, and a CG test pins it. (b) C-12 maps each `ObligationBinding.identifier` to the function node's declared parameter position (an O-06 `position` member). It refuses when an identifier is unmatched or duplicated, or a parameter has no binding, and never falls back to sort order. | ADR-013 R-05, O-09, O-25, C-11, C-12 · IR@417ec86 `src/kani/witness.rs` `decode` · CG@a4b2a73 `src/kani_obligations.rs:394,1449-1470`, `src/kani.rs:1017-1035` · QSL `src/value/expression/mod.rs:650-656` |
+| FND-003 | high | The packet has two sources of values, and the rule for an absent witness contradicts IR. O-25 says witness absence occurs "only for a packet with no counterexample". AD-016 arrow 6 says "No packet without a counterexample", so no such packet exists. IR PR #139 defines `None` differently: "a corpus counterexample that never ran Kani retains no backend transcript". There the packet is still replayed, with `witness_backed = false` (`replay.rs:14-23,113`). The packet also stores `input: FiniteInput` ("Exact finite ABI input that produced the witness") beside `witness`. That is a second stored carrier of the argument values, and nothing checks it against the transcript. So the O-25 envelope invariant ("an envelope cannot disagree with its own backend evidence") does not hold for the packet. The ADR does not say which one replay uses. Fix: in O-25, (a) decide what `witness: None` means: either refuse at reconstruction, or state that a corpus packet without a witness is an admitted replay input with `witness_backed = false`. (b) Name the single value source for C-11 and C-12. If replay decodes from the witness, `input` must be derived from it or checked equal, and a mismatch refuses. If `input` is kept for witness-less packets, state it as the only other case. Route the IR change through #231 and IR #137. | ADR-013 O-25, C-11, C-12 · AD-016 arrow 6 and Replay ownership · IR@417ec86 `src/kani/replay.rs:14-23,113` |
+| FND-004 | high | The O-16 category map is not total, and C-08 cannot produce one of its targets. (a) The kernel `Undefined` has no row in the six-category table, although O-16's invariants and FR-323-AC-1 keep it as its own disposition. (b) FR-331 `tested` has no row. (c) IR `Inconclusive` sits in the "internal failure" row, which collapses an honest non-verdict into a failure. (d) A parity disagreement is `inconclusive` (O-27), but no category row holds that outcome. (e) The "internal failure → `failed`" row is sourced from the kernel, but kernel `Outcome` has exactly four variants (`Completed`, `Undefined`, `Refused`, `Incomplete`, `value/outcome.rs:18-27`). C-08 ("kernel `Outcome` → FR-323 disposition, category-preserving") therefore cannot yield `failed`. As written, "total and category-preserving" cannot be tested. Fix: add an `undefined` row: kernel `Undefined` → FR-323 `undefined`, with its reason and locus. Add an `inconclusive` row covering IR `Inconclusive` and parity disagreement, each with a typed cause. Place FR-331 `tested` in a row. Name the carrier that produces `failed`, which is a broken established invariant outside `Outcome`, as a separate input to C-08. Keep the `Unavailable` mapping as the IR map decides it (WP9). | ADR-013 O-16, O-27, C-08 · FR-323-AC-1 · FR-331 `results` · QSL `src/value/outcome.rs:18-27` |
+| FND-005 | high | `DeclarationKey` collides across versions of one domain package. O-03 gives it declared equality over `{package, node}`, and `package` is only the identity string. The code says so: "A declaration key carries no digest: two versions of one domain package with equal nodes yield equal declaration keys" (`model/key.rs:65-66`). FR-321's selection key includes `version` and `digest`, and two selections that differ only in digest are unequal. O-01 and O-03 do not require at most one selection per identity. O-03 refuses only a key whose package "is not a selected domain package". With two selected versions of `acme/orders`, the keys and the `ModelOwner{identity, node}` preimage (O-04, C-02) collide. The two declarations then mint one node id, and the model correspondence becomes ambiguous. Fix: add an invariant to O-01/O-03. One package selects at most one version of each domain package identity. A second selection of the same identity refuses at intake, before name binding, with a catalog code. This keeps FR-321-AC-3 and makes `{package, node}` unique within a package. No rename is needed. | ADR-013 O-01, O-03, O-04, C-02 · FR-321 Identity and validation, AC-3, AC-4 · QSL `src/model/key.rs:62-77` |
+| FND-006 | medium | O-09 treats clause and obligation as one-to-one, and it overstates the obligation's identity discipline. CG `KaniObligationIdentity` has a `kind: ObligationKind` (`Precondition`, `Postcondition`, `Invariant`, `Frame`), so one clause can yield several obligations. "clause node id → obligation id (identity, no re-mint)" therefore merges distinct obligations. The same struct also includes `source_span` (`kani_obligations.rs:373`), which O-07 says is "excluded from every identity preimage". Its digest travels as `obligation_identity_sha256` (`kani_execution.rs:419`), with no FR-201 domain label, so the "normalized" equality claim does not hold under R-04. Fix: state that the obligation key is the full `KaniObligationIdentity` digest, not the clause node id. The O-25 and O-26 "originating counterexample identity" uses that digest. Record the `source_span` member and the missing domain label as CG-owned conformance work under #231. Otherwise, narrow O-07's exclusion to QSL-minted preimages. | ADR-013 O-07, O-09, O-26, R-04 · CG@a4b2a73 `src/kani_obligations.rs:63-72,369-373`, `src/kani_execution.rs:419` · FR-201 Cross-domain rule |
+| FND-007 | medium | The O-07 occurrence identity drops members of the FR-322 key. FR-322 keys an occurrence by (`node_id`, `role`, `ordinal`) and lets one occurrence name several ordered regions. O-07 defines it as (node id, source digest, byte start, byte end), compared lexically. Under that key, two occurrences of one node with different roles (for example `declaration` and `type`) over the same region become one, and one multi-region occurrence becomes several. A replay span (O-12, arrow 7) could then resolve to the wrong role. Fix: set the O-07 public type and equality to the FR-322 key (`node_id`, `role`, `ordinal`), with an ordered list of (source identity, `[start,end)`) regions as its value. | ADR-013 O-07, O-12 · FR-322 `source_map` |
+| FND-008 | medium | Checking `package_id` equality at replay does not catch stale source. The FR-322 `identity_preimage` excludes "source regions, raw artifact bytes/digests", and FR-322-AC-14 says that editing a source-map region or a raw source digest leaves `package_id` unchanged. A reformatted or re-commented source therefore passes C-13's recompile-and-compare check. The replay then reports a "resolved nested span" (O-27) against a different source revision from the one the harness was built from. Fix: in O-25 and O-26, also carry and compare the lock's source-document identities (`quire.source.bytes/v1` digests). A mismatch refuses as a stale source, or `package_id` is declared to be the only replay key and span fidelity is explicitly not guaranteed. The ADR must choose one of these two. | ADR-013 O-02, O-12, O-26, O-27, C-13 · FR-322 `identity_preimage`, AC-14 |
+| FND-009 | medium | Witness identity is not canonical. O-25 makes a witness lexical over `transcript`, and #231 must round-trip it "byte for byte". But `Witness` is `Deserialize`, and its accessors re-select and re-trim the block on every call (`derived` runs `derive` over `self.transcript`). A multi-block or untrimmed transcript is therefore accepted and derives the same facts as its selected form. Two witnesses for one counterexample then compare unequal, and the round trip preserves the non-canonical form. Fix: add to O-25 and C-10 that an envelope or packet reader refuses a witness whose `transcript` differs from its own derived selected block. Only the trimmed single-assertion block is a canonical witness, so lexical equality holds. | ADR-013 O-25, C-10 · IR@417ec86 `src/kani/witness.rs` `Witness`, `derived`, `parse_single` |
+| FND-010 | medium | How a wire node id becomes a `NodeKey` at replay is unstated. O-04 says `NodeKey` is "constructed only from a node-identity preimage". But O-26 and C-13 select the function "by checked node id", and that id arrives in the FR-323 `selection` wire member. The ADR does not say how the executor turns that wire id into a selection. An implementer who adds a public bytes → `NodeKey` constructor would open a path from the wire into checked typestate, contrary to R-10. The existing crate-internal `NodeKey::from_bytes` (`value/node.rs:49`) is that kind of bridge. Fix: in O-04 and O-26, state that a wire `NodeId{domain, digest}` stays a wire value. It is resolved by lookup against the recompiled `CheckedPackage`'s own node set. It refuses on a domain mismatch or when no node matches, and it never becomes a `NodeKey` except by that lookup. Name `from_bytes` in the #213 row as removed or confined to preimage minting. | ADR-013 R-10, O-04, O-26, C-13 · QSL `src/value/node.rs:22,49` |
+| FND-011 | medium | §5 opens a loophole in R-08. R-08 and O-22 allow one version per contract per build. §5 calls `native-run-result/1` and `/2` "two distinct contracts, each with its own reader". Under that reading, any version bump can be recast as a new contract so that both versions keep a producer and a reader. That is the dual-version support that R-08 and the no-compatibility rule forbid. OQ-1 leaves the question open, but §5 already presumes that two readers are allowed. Fix: define contract identity as the wire kind (`native-run-result`), whose version is `/1` or `/2`. State that one build produces and reads exactly one of them, and that OQ-1 selects which one. Remove "each with its own reader". | ADR-013 R-08, O-22, §5, OQ-1 · FR-352 |
+| FND-012 | low | The replay result omits the executor's toolchain pin. FR-323 says "Result identity additionally includes implementation/toolchain pin". The O-27 public type lists the category, value, witness, span and charges, but no executor pin. `package_id` does not cover the QSL or kernel revision. A parity verdict across two kernel revisions can therefore flip without any identity change. Fix: add the executor's QSL and `quire-exact` revision (from the lock, O-23) to the O-27 public type, and state that parity compares only results under one executor pin. | ADR-013 O-27, O-23 · FR-323 Identity and validation |
+| FND-013 | low | Re-derived witness refusals drop provenance. `Witness::derived` re-parses with the placeholder `source_id = "witness"` and `context = "transcript"`, so every accessor or `decode` refusal after deserialization names no clause or harness. R-07 says a conversion "drops no identity, provenance". Fix: in C-10 and C-11, require refusals to carry the obligation identity (or harness symbol) of the packet being decoded, supplied by the caller. Record this as IR work under #231. | ADR-013 R-07, C-10, C-11 · IR@417ec86 `src/kani/witness.rs` `WITNESS_SOURCE_ID`, `WITNESS_CONTEXT` |
+| FND-014 | low | §9 omits three ADR-010 findings that list #211 as secondary owner: OBS-001 (no v2 emitter), OBS-037 (the "checked" handoff derived from wire-admitted v2) and OBS-039 (conflicting replay owners). The ADR decides the #211 part of each: O-02 and C-03, R-10 and O-15, and O-26. But #212 cannot trace them from §9. Fix: add three §9 rows naming those O-rows. Primary ownership stays with #209. | ADR-013 §9, R-10, O-02, O-15, O-26 · ADR-010 §9.2 OBS-001, OBS-037, OBS-039 |
+| FND-015 | low | O-01's equality kind does not fit §2's definition. §2 defines "normalized" as equality of digests under one FR-201 domain. O-01 applies it to the tuple (`identity`, `version`, `digest_domain`, `digest`), in which `identity` and `version` are lexical strings. Fix: state O-01 equality as lexical on `identity` and `version`, then normalized on (`digest_domain`, `digest`), matching FR-321's key. | ADR-013 §2, O-01 · FR-321 Identity and validation |
+
+## Round 2 (commit 0042691)
+
+This round re-checks each round-1 finding against the ADR-013 text at 0042691,
+using the same sources as round 1. It also checks FR-154 (intake label check)
+and AD-016 arrow 5 (argument order), because two resolutions rely on them.
+
+| Round-1 ID | Severity | Status | Reason |
+| --- | --- | --- | --- |
+| FND-001 | high | resolved | O-26 now says the executor gets every source, definition and domain-package input by digest from a byte provision named in the request, and never reads a path, environment variable or search location. Absent and digest-mismatched inputs refuse with `stale_dependency`/`byte-digest-mismatch` and no partial substitute. The wire member is QC-1 (a QSpec change), and the executor's missing ticket is OQ-4. C-13's tests include a missing input. The Alternatives section records why reading from the local checkout was rejected. |
+| FND-002 | high | resolved | O-25 now joins witness values to parameters by declared identity: harness order equals `arguments` order, each binding names its parameter node id, and the call arguments are ordered by the function's declared parameter positions. A binding with no parameter, a parameter with no binding, or a width or type mismatch refuses. C-11 says "join by parameter node id". The revised argument order raises a new question, FND-016. |
+| FND-003 | high | resolved | O-25 "Absent witness" defines `None` as a corpus counterexample: it is replayed with `witness_backed = false` and never counts as backend evidence. That matches IR `replay.rs:14-23`. The packet has one value source. With a witness, the replay values are its decode, and `input` must equal the decode or reconstruction refuses. Without a witness, the values are `input`. |
+| FND-004 | high | resolved | O-16 now has eight categories and says every source value has exactly one row. `undefined` and `inconclusive` have their own rows, and parity disagreement is `inconclusive` with a typed cause. `failed` is produced by the executor when a runtime invariant breaks, and O-16 states it is not a kernel outcome. FR-331 `tested` sits under success, keeping its value. That placement leaves a small residue, FND-017. |
+| FND-005 | high | resolved | O-01 adds the rule that a package selects at most one version of each domain-package identity, and a second selection refuses at intake. The refusal code is QC-5. O-03 states that uniqueness across versions depends on this rule. The work is assigned to #213 S-2 after #131. |
+| FND-006 | medium | resolved | O-09 now identifies an obligation by the full identity digest over (clause node id, kind, `arguments`), not by the clause node id alone. C-19 is tested with one clause and two kinds. `source_span` leaves the preimage, and the missing FR-201 domain is QC-4. |
+| FND-007 | medium | resolved | O-07 is now keyed by (node id, `role`, `ordinal`), exactly the FR-322 `source_map` key. It carries one or more regions, each with a `RawSourceRef`, and equality is over that key. |
+| FND-008 | medium | resolved | The packet and the request now carry every `RawSourceRef` digest in the lock. O-26 requires every recompiled source digest to equal the request's, and refuses otherwise. C-13 tests that a presentation-only edit refuses by source digest. |
+| FND-009 | medium | resolved | O-25 "Admission" says a `Witness` is admitted only through `parse`, including on deserialization. A stored transcript that differs from its own selected block refuses, and §2 now says "a witness transcript after admission". The IR side of this rule has no owner; see FND-018. |
+| FND-010 | medium | resolved | O-04 says a wire node id becomes a `NodeKey` only by lookup against the node set of a package the checker produced. It also removes `NodeKey::from_bytes` (`value/node.rs:49`). O-26 and C-13 select by node-id lookup. |
+| FND-011 | medium | resolved | §5 now says `native-run-result/1` and `/2` are two versions of one contract, and that a QSL build produces exactly one of them. The choice is OQ-1. The phrase "each with its own reader" is gone. |
+| FND-012 | low | resolved | The O-27 public type now carries the executor's toolchain pin, and O-27 equality is FR-323 result identity. |
+| FND-013 | low | resolved | O-25 now says `decode` refusals carry the packet's obligation identity as provenance, not placeholder strings. |
+| FND-014 | low | resolved | §9 adds a secondary-owner table covering OBS-001, OBS-031, OBS-037, OBS-039 and OBS-041. |
+| FND-015 | low | resolved differently | Instead of splitting the equality into a lexical part and a normalized part, O-01 now says the `sha256-jcs` digest decides equality. `identity` and `version` are labels that intake checks against the digested bytes. That check is real: FR-154 compares the package's own identity and version with the selection (`invalid_model_binding`/`wrong-model-selection`, FR-154-AC-2). So the "normalized" label is now accurate. |
+
+Counts: 14 resolved, 1 resolved differently, 0 unresolved.
+
+New findings introduced by the revision:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-016 | medium | O-09 changes the argument order without recording it as an AD-016 amendment. O-09 now says `arguments` are "in declared parameter order". AD-016 arrow 5 says `KaniObligationIdentity.arguments` are "ascending by identifier", and so does CG (`kani_obligations.rs:394`). The Context section says every difference from accepted AD-016 text is listed in OQ-3, but OQ-3 (a)–(e) does not include this one. `arguments` is inside the obligation identity preimage, so the change also changes `obligationIdentitySha256` and the AD-016 seed vector. After the FND-002 fix, correctness no longer depends on this order, because values are joined by parameter node id and ordered by declared parameter position. The only requirement is that harness order equals `arguments` order, whatever that order is. Fix: keep AD-016's "ascending by identifier" in O-09 and let the parameter-node-id join fix the call order. Alternatively, add OQ-3 (f) for the reordering and name the seed-vector regeneration in QC-4 or the CG conformance bullet in §7. | ADR-013 Context, O-09, O-25, OQ-3 · AD-016 arrow 5 · CG@a4b2a73 `src/kani_obligations.rs:394` |
+| FND-017 | low | Placing FR-331 `tested` under success merges two distinct FR-331 results into one O-16 category. O-16's invariant says no category collapses into another. `tested` keeps its value, but anything that reads only the category (for example a gate asking for "success") cannot tell a bounded test from a proof. Fix: either give `tested` its own category row, or state in O-16 that success requires reading the FR-331 value, and that only `proved` counts as proof evidence. | ADR-013 O-16 · FR-331 `results` |
+| FND-018 | low | The IR half of the witness admission rule has no owner. The rule needs IR's `Witness` deserialization to go through `parse`. At IR PR #139 head 417ec86, `Witness` derives `Deserialize` directly, so deserialization bypasses `parse`. The §7 IR bullet lists the packet members, the WP9 map and the reader codes, but not this. #231 covers only the QSL-side envelope. Fix: add "the `Witness` deserialization admits only through `parse`" to the §7 IR no-ticket bullet (OQ-4), or make it a condition on PR #139 before its sha is recorded. | ADR-013 O-25, §7 · IR@417ec86 `src/kani/witness.rs` `Witness` |
+
+Round-2 verdict: ACCEPT WITH FINDINGS. All five round-1 high findings are
+resolved and no high finding remains. One medium and two low findings are new;
+each can be fixed by editing a cell or adding an item to §7 or §8, without
+changing an owner.
+
+## Round 3 (commit 4152eb8)
+
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+
+- The replay failure modes are consistent. An `Input`-sourced packet settles
+  `reproduced-without-witness` and is never backend evidence (O-25, O-27).
+  ADR-011 E9 states the same rule. A `package_id` or source digest mismatch
+  refuses.
+- O-16 now has its validation row. Simulation converges into S6a, so it gets
+  no separate category map.
+- O-22 names the unsupported-version code, and QC-19 adds the unknown node
+  kind code.
+
+New findings:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| PR2-M3 | medium | S6a cannot carry a non-kernel refusal cause. T-6 moves `WrongSnapshotCause` out of the kernel `Refusal`, yet `FamilyNotNativelyEvaluable` is put in. `Outcome::Refused(Refusal)` has no place for a `value::expression` cause. Name the S6a result type that wraps the kernel `Outcome` and carries family causes. | ADR-013 366-368, 401-402, 654 · ADR-012@10664aa 239-240, 596, 852 |
+
+Round-3 verdict: CHANGES (see base.md; PR2-M3 is this analysis's finding).

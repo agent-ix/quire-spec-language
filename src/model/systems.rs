@@ -563,7 +563,7 @@ pub fn check_connection(
         relationship.direction,
         crate::model::domain_package::RelationshipDirection::Bidirectional
     ) {
-        flow_source.value_type.node == flow_target.value_type.node
+        flow_source.value_type == flow_target.value_type
     } else {
         match type_conforms(&generals, &flow_source.value_type, &flow_target.value_type) {
             Ok(conforms) => conforms,

@@ -3,6 +3,7 @@
 
 use super::super::comparison::{IllTyped, IllTypedCause};
 use super::super::integer::Integer;
+use super::super::node::NodeKey;
 use crate::diagnostic::Code;
 
 /// The declaration a location belongs to.
@@ -314,6 +315,18 @@ pub enum InvalidDispatchDeclaration {
         role: DispatchFunctionRole,
         /// The function index, valid in `functions` but wrongly shaped.
         index: usize,
+    },
+    /// Two dispatch operations in the package's own `dispatch_operations`
+    /// share a `(receiver_type, member)` pair. A well-formed package exposes
+    /// each static receiver type/member name once; a duplicate means two
+    /// bridge calls (see `crate::model::checked_dispatch`) were merged for
+    /// overlapping roots, and name lookup at a call site would otherwise
+    /// silently pick whichever entry happens to come first.
+    DuplicateOperation {
+        /// The receiver type both operations declare.
+        receiver_type: NodeKey,
+        /// The shared member name.
+        member: String,
     },
 }
 
