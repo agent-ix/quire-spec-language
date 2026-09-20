@@ -107,18 +107,31 @@ pub enum Accumulation {
 /// The exact exhausted resource, never inferred from a diagnostic string.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dimension {
+    /// The complete offered payload, in bytes.
     PayloadBytes,
+    /// The complete encoded output, in bytes.
     OutputBytes,
+    /// Each native or foreign original source, in bytes.
     SourceBytes,
+    /// Total decoded string UTF-8 content, including JSON keys, in bytes.
     ContentBytes,
+    /// Source entries in the complete source inventory.
     Sources,
+    /// Dependency entries in the complete dependency inventory.
     Dependencies,
+    /// Selected definition entries.
     Definitions,
+    /// Selected admitted-model entries.
     Models,
+    /// Complete declaration entries.
     Declarations,
+    /// Allocated table, member and index records.
     Entries,
+    /// Subsequent reference, graph-edge and type visits.
     References,
+    /// Cumulative traversed, copied, hashed or compared bytes.
     ByteWork,
+    /// Maximum JSON or graph traversal depth.
     Depth,
 }
 

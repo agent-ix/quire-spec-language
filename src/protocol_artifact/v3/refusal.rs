@@ -40,7 +40,9 @@ pub enum Refusal {
     Header,
     /// One complete activation mapping population is invalid.
     Mapping {
+        /// Which inventory (the offer or the independently supplied expectation) the defect appears on.
         side: InventorySide,
+        /// The kind of structural defect the mapping population suffers.
         cause: MappingCause,
     },
     /// Offered mappings are not in ascending control-handle order.

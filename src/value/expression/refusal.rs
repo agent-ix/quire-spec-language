@@ -239,7 +239,7 @@ pub enum CheckCause {
     /// or function index, or a candidate whose signature does not match its
     /// dispatch operation's declared arity or types. Checked upfront in
     /// [`super::PackageDeclarations::check`], before any node is typed, so
-    /// [`super::facts`]'s own call-graph walk can treat every table index it
+    /// `facts`'s own call-graph walk can treat every table index it
     /// reads as already valid; reuses the already-catalogued `invalid-value`
     /// tag rather than minting a new one.
     InvalidDispatchDeclaration(InvalidDispatchDeclaration),

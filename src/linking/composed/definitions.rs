@@ -62,39 +62,78 @@ pub enum Cause {
     MissingDefinition(Selection),
     /// Multiple supplied entries claim one immutable identity/revision.
     AmbiguousDefinition {
+        /// The identity/revision selection matched by multiple entries.
         selection: Selection,
+        /// Indices of the supplied entries claiming this selection.
         entries: Vec<usize>,
     },
     /// Asserted digest does not match supplied content.
-    DefinitionDigest { entry: usize },
+    DefinitionDigest {
+        /// Index of the supplied entry whose digest does not match its bytes.
+        entry: usize,
+    },
     /// Native selection differs from the selected supplied artifact.
-    SelectionMismatch { expected: Selection, entry: usize },
+    SelectionMismatch {
+        /// The selection asserted by the native reference.
+        expected: Selection,
+        /// Index of the supplied entry actually selected, which differs from `expected`.
+        entry: usize,
+    },
     /// The compiler has no interpretation for these exact bytes and labels.
-    UnsupportedDefinition { entry: usize },
+    UnsupportedDefinition {
+        /// Index of the supplied entry the compiler has no interpretation for.
+        entry: usize,
+    },
     /// A required normative rule was omitted.
-    MissingRule { path: &'static str },
+    MissingRule {
+        /// Baseline path of the omitted normative rule.
+        path: &'static str,
+    },
     /// Multiple supplied rule entries claim the same baseline path.
     AmbiguousRule {
+        /// Baseline path claimed by multiple supplied rule entries.
         path: &'static str,
+        /// Indices of the supplied rule entries claiming this path.
         entries: Vec<usize>,
     },
     /// Rule content or its declared digest differs from the supported baseline.
-    RuleMismatch { path: &'static str, entry: usize },
+    RuleMismatch {
+        /// Baseline path of the mismatched rule.
+        path: &'static str,
+        /// Index of the supplied entry whose content or digest differs from the baseline.
+        entry: usize,
+    },
     /// Exact selection is known but is not the composed edition definition.
     WrongEdition(Selection),
     /// An inherited requirement selected two meanings for one identity.
-    IncompatibleRequirement { first: Selection, second: Selection },
+    IncompatibleRequirement {
+        /// The first selection resolved for this identity.
+        first: Selection,
+        /// The later, incompatible selection resolved for the same identity.
+        second: Selection,
+    },
     /// A semantic definition path repeats an active dependency.
-    DefinitionCycle { definition: Selection },
+    DefinitionCycle {
+        /// The selection whose dependency path repeats an active definition.
+        definition: Selection,
+    },
     /// The authored profile alias is absent in this source unit.
     MissingAlias,
     /// More than one authored profile import has this alias.
-    AmbiguousAlias { imports: Vec<usize> },
+    AmbiguousAlias {
+        /// Indices of the profile imports sharing this alias.
+        imports: Vec<usize>,
+    },
     /// The authored digest is not canonical SHA-256 text.
-    InvalidDigest { span: Span },
+    InvalidDigest {
+        /// Source span of the malformed digest text.
+        span: Span,
+    },
     /// The exact root does not admit this declaration/obligation kind.
     WrongProfileKind {
+        /// The root definition actually selected.
         selected: RegisteredDefinition,
+        /// The interpretation this occurrence requires instead.
         required: UseKind,
     },
 }

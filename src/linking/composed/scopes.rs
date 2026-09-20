@@ -256,47 +256,101 @@ pub struct StructuralReference {
 #[derive(Clone, Debug)]
 pub enum ScopeIssue {
     /// A declaration reuses a binder; both source locations remain inspectable.
-    DuplicateBinder { span: Span, previous: BinderId },
+    DuplicateBinder {
+        /// Source span of the reused binder name.
+        span: Span,
+        /// The binder already bound to this name.
+        previous: BinderId,
+    },
     /// A binder would shadow a model/profile alias or native declaration.
-    ReservedBinder { span: Span },
+    ReservedBinder {
+        /// Source span of the binder name that would shadow a reserved name.
+        span: Span,
+    },
     /// No lexical binding declares this value name.
     MissingValue {
+        /// Original expression handle for the unresolved reference.
         expression: ExprId,
+        /// Source span of the unresolved name.
         span: Span,
+        /// The value name that no lexical binding declares.
         name: String,
     },
     /// A declared binding is unavailable in this expression's environment.
     OutOfScope {
+        /// Original expression handle for the out-of-scope reference.
         expression: ExprId,
+        /// Source span of the reference.
         span: Span,
+        /// The declared binding's name, unavailable in this environment.
         name: String,
     },
     /// self/result/pre is unavailable at this declaration or selected anchor.
-    AmbientUnavailable { expression: ExprId, span: Span },
+    AmbientUnavailable {
+        /// Original expression handle for the ambient reference.
+        expression: ExprId,
+        /// Source span of the unavailable self/result/pre reference.
+        span: Span,
+    },
     /// Model refusal prevented establishing actual invocation inputs.
-    ModelOperationUnavailable { span: Span },
+    ModelOperationUnavailable {
+        /// Source span of the reference requiring the unavailable model operation.
+        span: Span,
+    },
     /// Two declarations occupy the same structural scope/name.
     DuplicateSymbol {
+        /// The newly declared symbol occupying the conflicting scope/name.
         symbol: SymbolId,
+        /// The symbol already occupying this structural scope/name.
         previous: SymbolId,
     },
     /// No symbol supplies the original path; index addresses references.
-    MissingTarget { reference: usize },
+    MissingTarget {
+        /// Index into this declaration's structural references.
+        reference: usize,
+    },
     /// Multiple symbols supply a path component.
-    AmbiguousTarget { reference: usize },
+    AmbiguousTarget {
+        /// Index into this declaration's structural references.
+        reference: usize,
+    },
     /// The unique symbol has a different required structural kind.
-    WrongTargetKind { reference: usize, target: SymbolId },
+    WrongTargetKind {
+        /// Index into this declaration's structural references.
+        reference: usize,
+        /// The unique symbol found, whose kind does not satisfy the requirement.
+        target: SymbolId,
+    },
     /// The referenced event/commit is not necessarily available on this path.
-    UnavailableTarget { reference: usize, target: SymbolId },
+    UnavailableTarget {
+        /// Index into this declaration's structural references.
+        reference: usize,
+        /// The referenced symbol, not necessarily available on this control path.
+        target: SymbolId,
+    },
     /// The all-branch join does not select every branch exactly once.
-    InvalidJoin { span: Span },
+    InvalidJoin {
+        /// Source span of the all-branch join that does not cover every branch.
+        span: Span,
+    },
     /// This protocol profile does not admit waiting on a send or attempt.
-    InvalidAwaitEvent { control: c::ControlId, span: Span },
+    InvalidAwaitEvent {
+        /// The control node awaiting an event this profile does not admit.
+        control: c::ControlId,
+        /// Source span of the await occurrence.
+        span: Span,
+    },
     /// A receive selects a different channel than its exact referenced send.
-    IncompatibleReference { reference: usize },
+    IncompatibleReference {
+        /// Index into this declaration's structural references.
+        reference: usize,
+    },
     /// Defensive: a future scheduler invariant violation failed to extend the
     /// inherited frame chain; current constructor-private scheduling prevents it.
-    InvalidEnvironment { span: Span },
+    InvalidEnvironment {
+        /// Source span where the inherited frame chain could not be extended.
+        span: Span,
+    },
 }
 
 /// Scope completion is independent of definition/model/type/family admission.

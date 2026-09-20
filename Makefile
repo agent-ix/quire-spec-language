@@ -18,7 +18,7 @@ TREE ?= all
 QSPEC_CLONE ?=
 FCD_CLONE ?=
 
-.PHONY: revendor revendor-check seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build
+.PHONY: revendor revendor-check seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
 
 revendor:
 	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
@@ -77,7 +77,13 @@ ci-clean-build:
 	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
 
-ci: ci-default-features ci-all-features ci-clean-build seam-probe
+# PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
+# enforced fully under a real `cargo doc` build -- clippy never runs
+# rustdoc, so a doc build is its own gate, not a byproduct of ci-all-features.
+ci-docs:
+	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
+
+ci: ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and

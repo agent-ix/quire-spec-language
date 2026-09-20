@@ -147,13 +147,19 @@ pub struct Expected<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Unsupported {
+    /// A selected artifact reference declares a wire pair this reader does not recognize.
     Wire,
+    /// A native declaration exercises an operation this reader offers no supported execution for.
     Feature,
+    /// No supplied or registered definition matches the declaration's target.
     Definition,
+    /// No supported profile matches the requested configuration.
     Profile,
+    /// A package claims a producer correspondence with no available adapter to honor it.
     ProducerCorrespondence,
     /// A native family obligation has no supplied supported proof interpretation.
     FamilyProof,
+    /// An export names a kind with no admitted correspondence to resolve it against.
     Export,
 }
 
@@ -161,31 +167,75 @@ pub enum Unsupported {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Invalid {
+    /// An offered artifact reference disagrees with an independently supplied
+    /// selection it is required to match.
     Selection,
+    /// A supplied artifact's bytes do not hash to its declared digest.
     Seal,
+    /// A name is empty or exceeds the maximum permitted length.
     Name,
+    /// An encoded structural integer, such as an index or count, exceeds the
+    /// compiled protocol's maximum magnitude.
     StructuralInteger,
+    /// A field requires an exact integer but the supplied numeric wire value
+    /// is a different kind.
     WrongNumericKind,
+    /// A numeric value is outside the domain its field requires, such as a
+    /// negative or unparsable bound.
     NumericDomain,
+    /// An expected reference has no matching entry in an inventory that is
+    /// required to contain it.
     Inventory,
+    /// Entries that must appear in strictly ascending order are not ordered
+    /// that way.
     Order,
+    /// More than one entry claims an identity that is only permitted once.
     Duplicate,
+    /// A reference does not match any entry in the dependency inventory.
     Dependency,
+    /// A definition does not match the registered or supplied entry it is
+    /// required to correspond to.
     Definition,
+    /// A reference or export has no matching admitted model authority.
     Model,
+    /// A foreign source's identity, path or digest disagrees with an earlier
+    /// occurrence of the same locus.
     ForeignLocus,
+    /// A locus falls outside its owning declaration's recorded span, or names
+    /// a source that does not exist.
     Locus,
+    /// An index-based reference does not resolve to an existing entry.
     Reference,
+    /// The referenced declaration is not of the kind its owner-relative
+    /// lookup requires.
     Owner,
+    /// A resolved binder or evaluation anchor disagrees with the anchor
+    /// already recorded for its scope.
     Scope,
+    /// The native type presented is not one the operation supports.
     Type,
+    /// A family-scoped profile name is not valid for its declared family, or
+    /// no registered profile matches the reference.
     Profile,
+    /// A call expression names no recorded call target.
     Call,
+    /// A binding's kind, anchor, subject, model or type does not satisfy a
+    /// structural requirement placed on it.
     Binding,
+    /// A control-flow reference, such as a parallel join, does not resolve to
+    /// any branch or control declared in scope.
     Control,
+    /// Following control or reference edges revisits a node still being
+    /// visited, forming a cycle.
     Cycle,
+    /// A required feature declaration is missing, such as the control family
+    /// needed by the package's controls.
     Feature,
+    /// The payload's bytes do not match the canonical encoding recomputed
+    /// from its admitted contents.
     Canonical,
+    /// The compiled protocol failed to serialize to valid output and no more
+    /// specific refusal was recorded.
     Encoding,
 }
 
@@ -198,9 +248,17 @@ pub enum Error {
     Allocation,
     /// Closed JSON shape refusal, with original byte-oriented line and column.
     #[error("invalid compiled protocol JSON at line {line}, column {column}")]
-    Json { line: usize, column: usize },
+    Json {
+        /// The one-based line at which the byte-oriented JSON parse failed.
+        line: usize,
+        /// The one-based column at which the byte-oriented JSON parse failed.
+        column: usize,
+    },
+    /// An exact protocol number violates one of its own canonical-encoding rules.
     #[error(transparent)]
     Numeric(NumberError),
+    /// The compiled protocol data fails a specific structural or identity
+    /// check; see [`Invalid`] for the exact axis.
     #[error("invalid compiled protocol data: {0:?}")]
     Invalid(Invalid),
     /// Strict version-2 refusal with a stable, axis-specific public code.
@@ -209,8 +267,11 @@ pub enum Error {
     /// Strict version-3 refusal with a stable, axis-specific public code.
     #[error("invalid version-3 compiled protocol data: {0}")]
     V3(v3::Refusal),
+    /// The payload requests a recognized but unimplemented interpretation;
+    /// see [`Unsupported`] for which one.
     #[error("unsupported compiled protocol interpretation: {0:?}")]
     Unsupported(Unsupported),
+    /// A bounded limit was exhausted before work completed.
     #[error(transparent)]
     Incomplete(Exhaustion),
 }

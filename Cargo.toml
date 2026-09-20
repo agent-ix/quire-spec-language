@@ -114,6 +114,7 @@ required-features = ["test-support"]
 
 [lints.rust]
 unsafe_code = "forbid"
+missing_docs = "warn"
 # QSL#214 (FR-063): `seam_probe` is a `RUSTFLAGS`-set `--cfg`, not a Cargo
 # feature -- `--all-features` activates every real Cargo feature
 # unconditionally, and this probe is designed to fail to compile (`E0004`),

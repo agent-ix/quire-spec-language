@@ -9,18 +9,32 @@ pub const ACCOUNTING_VERSION: &str = "quire.state.evaluation-work/1";
 /// Inclusive caller-lowered ceilings; values above these defaults are clamped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
+    /// Maximum number of input value nodes the evaluation may charge.
     pub input_value_nodes: usize,
+    /// Maximum number of aggregate (population, record or sequence) entries
+    /// the evaluation may charge.
     pub input_aggregate_entries: usize,
+    /// Maximum cumulative length of input text the evaluation may charge, in bytes.
     pub input_text_bytes: usize,
+    /// Maximum nesting depth of supplied input values.
     pub input_structural_depth: usize,
+    /// Maximum cumulative expression evaluation work.
     pub expression_work: usize,
+    /// Maximum simultaneously active expression call depth.
     pub active_expression_depth: usize,
+    /// Maximum simultaneously active predicate call depth.
     pub predicate_call_depth: usize,
+    /// Maximum cumulative work spent iterating sequences.
     pub sequence_work: usize,
+    /// Maximum cumulative number of output value nodes retained.
     pub retained_output: usize,
+    /// Maximum cumulative work spent expanding graph traversals.
     pub graph_expansion: usize,
+    /// Maximum cumulative number of graph edges traversed.
     pub graph_edges: usize,
+    /// Maximum simultaneously active graph traversal depth.
     pub active_graph_depth: usize,
+    /// Maximum cumulative work spent comparing values.
     pub value_comparison: usize,
 }
 
@@ -73,55 +87,90 @@ impl Limits {
 /// Successfully charged cumulative work and greatest active depths.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
+    /// Input value nodes charged so far.
     pub input_value_nodes: usize,
+    /// Aggregate (population, record or sequence) entries charged so far.
     pub input_aggregate_entries: usize,
+    /// Input text bytes charged so far.
     pub input_text_bytes: usize,
+    /// Greatest input structural depth reached so far.
     pub input_structural_depth: usize,
+    /// Expression evaluation work charged so far.
     pub expression_work: usize,
+    /// Greatest active expression call depth reached so far.
     pub active_expression_depth: usize,
+    /// Greatest active predicate call depth reached so far.
     pub predicate_call_depth: usize,
+    /// Sequence iteration work charged so far.
     pub sequence_work: usize,
+    /// Output value nodes retained so far.
     pub retained_output: usize,
+    /// Graph expansion work charged so far.
     pub graph_expansion: usize,
+    /// Graph edges traversed so far.
     pub graph_edges: usize,
+    /// Greatest active graph traversal depth reached so far.
     pub active_graph_depth: usize,
+    /// Value comparison work charged so far.
     pub value_comparison: usize,
 }
 
 /// Independently limited evaluation resource.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dimension {
+    /// Count of input value nodes.
     InputValueNodes,
+    /// Count of aggregate (population, record or sequence) entries.
     InputAggregateEntries,
+    /// Cumulative length of input text, in bytes.
     InputTextBytes,
+    /// Peak nesting depth of supplied input values.
     InputStructuralDepth,
+    /// Cumulative expression evaluation work.
     ExpressionWork,
+    /// Peak simultaneously active expression call depth.
     ActiveExpressionDepth,
+    /// Peak simultaneously active predicate call depth.
     PredicateCallDepth,
+    /// Cumulative work spent iterating sequences.
     SequenceWork,
+    /// Count of retained output value nodes.
     RetainedOutput,
+    /// Cumulative work spent expanding graph traversals.
     GraphExpansion,
+    /// Count of graph edges traversed.
     GraphEdges,
+    /// Peak simultaneously active graph traversal depth.
     ActiveGraphDepth,
+    /// Cumulative work spent comparing values.
     ValueComparison,
 }
 
 /// Why the next bounded operation could not be performed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExhaustionCause {
+    /// The charge would exceed the dimension's configured limit.
     Limit,
+    /// The charge would overflow the dimension's own counter.
     CounterOverflow,
+    /// The charge could not be satisfied because reserving memory for it failed.
     Allocation,
 }
 
 /// Exact refused next charge.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Exhaustion {
+    /// Which resource dimension was exhausted.
     pub dimension: Dimension,
+    /// Exact reason the charge was refused.
     pub cause: ExhaustionCause,
+    /// Amount already charged against this dimension before the refused charge.
     pub used: usize,
+    /// Amount the refused charge would have added.
     pub requested: usize,
+    /// Effective limit this dimension was bounded by.
     pub limit: usize,
+    /// Source location the charge was attributed to, when one was set.
     pub locus: Option<Locus>,
 }
 

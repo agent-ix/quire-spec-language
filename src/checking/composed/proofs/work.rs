@@ -20,38 +20,66 @@ pub const VERSION: &str = "composed-definedness-work/1";
 /// Independent capacities, including per-goal and recursion high-water marks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dimension {
+    /// Every copied/scanned string byte, including IR symbol/source metadata.
     Bytes,
+    /// Declarations admitted in namespace order during correspondence and proof work.
     Declarations,
+    /// Original value/root visits.
     Expressions,
+    /// Type descent and type-table lookups.
     Types,
+    /// Each dependency occurrence, charged at insertion and at settled-target delivery.
     Edges,
+    /// Each retained proof value, charged before creation.
     Values,
+    /// Each retained proof graph node, charged before creation.
     GraphNodes,
+    /// Each inspected/copied fact, charged before creation.
     Facts,
+    /// Each retained proof goal, charged before creation.
     Goals,
+    /// Each materialized IR node.
     Materialized,
+    /// High-water mark of materialized nodes within the current goal.
     GoalNodes,
+    /// Rational literal and finite-domain normalization steps.
     Normalization,
+    /// Each retained record, charged before creation.
     Records,
+    /// Recursion/descent depth, checked before native, type or graph descent.
     Depth,
 }
 
 /// Finite capacities; Default defines each independently enforced hard maximum.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
+    /// Hard maximum for Dimension::Bytes.
     pub bytes: usize,
+    /// Hard maximum for Dimension::Declarations.
     pub declarations: usize,
+    /// Hard maximum for Dimension::Expressions.
     pub expressions: usize,
+    /// Hard maximum for Dimension::Types.
     pub types: usize,
+    /// Hard maximum for Dimension::Edges.
     pub edges: usize,
+    /// Hard maximum for Dimension::Values.
     pub values: usize,
+    /// Hard maximum for Dimension::GraphNodes.
     pub graph_nodes: usize,
+    /// Hard maximum for Dimension::Facts.
     pub facts: usize,
+    /// Hard maximum for Dimension::Goals.
     pub goals: usize,
+    /// Hard maximum for Dimension::Materialized.
     pub materialized: usize,
+    /// Hard maximum for Dimension::GoalNodes, the per-goal materialized-node high-water mark.
     pub goal_nodes: usize,
+    /// Hard maximum for Dimension::Normalization.
     pub normalization: usize,
+    /// Hard maximum for Dimension::Records.
     pub records: usize,
+    /// Hard maximum for Dimension::Depth, the recursion high-water mark.
     pub depth: usize,
 }
 
@@ -101,29 +129,48 @@ impl Limits {
 /// Successful work only; rejected charges never advance their counter.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
+    /// Successful charges accumulated against Dimension::Bytes.
     pub bytes: usize,
+    /// Successful charges accumulated against Dimension::Declarations.
     pub declarations: usize,
+    /// Successful charges accumulated against Dimension::Expressions.
     pub expressions: usize,
+    /// Successful charges accumulated against Dimension::Types.
     pub types: usize,
+    /// Successful charges accumulated against Dimension::Edges.
     pub edges: usize,
+    /// Successful charges accumulated against Dimension::Values.
     pub values: usize,
+    /// Successful charges accumulated against Dimension::GraphNodes.
     pub graph_nodes: usize,
+    /// Successful charges accumulated against Dimension::Facts.
     pub facts: usize,
+    /// Successful charges accumulated against Dimension::Goals.
     pub goals: usize,
+    /// Successful charges accumulated against Dimension::Materialized.
     pub materialized: usize,
+    /// Highest absolute value charged against Dimension::GoalNodes.
     pub max_goal_nodes: usize,
+    /// Successful charges accumulated against Dimension::Normalization.
     pub normalization: usize,
+    /// Successful charges accumulated against Dimension::Records.
     pub records: usize,
+    /// Highest absolute value charged against Dimension::Depth.
     pub max_depth: usize,
 }
 
 /// Source-owned next operation whose charge could not be accepted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Exhaustion {
+    /// The dimension whose limit the rejected charge would have exceeded.
     pub dimension: Dimension,
+    /// The effective hard maximum for that dimension.
     pub limit: usize,
+    /// Usage already accumulated for that dimension before this charge.
     pub prior: usize,
+    /// The amount (or, for Depth/GoalNodes, the absolute value) that was requested.
     pub requested: usize,
+    /// Where in the source the rejected operation originated.
     pub site: Site,
 }
 

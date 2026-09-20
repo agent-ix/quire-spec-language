@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! The complete-V1 `Production` inventory against the accepted EBNF grammar.
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
