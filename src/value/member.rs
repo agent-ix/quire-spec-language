@@ -7,7 +7,7 @@
 //! which ADR-013 O-06 names as this type's serialized authority alongside
 //! QSpec FR-322). `declaration` is a [`NodeKey`], unique across packages
 //! (O-04); the kernel itself carries a member only as an opaque `MemberId`
-//! digest (QC-15, `quire_exact::identity::MemberId`) -- this structured type
+//! digest (QC-15, `quire_exact::MemberId`) -- this structured type
 //! is QSL's own, not the kernel's.
 //!
 //! No production caller constructs a [`Member`] yet: the layer-3 check stage

@@ -17,7 +17,8 @@ use quire_spec_language::model::domain_package::{
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{
-    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_REDEFINE,
+    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, EffectiveIdExt, Fact,
+    RULE_REDEFINE,
 };
 use quire_spec_language::model::normalize::{
     normalize, normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause,

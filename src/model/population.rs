@@ -139,7 +139,7 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
-use crate::model::key::{hex, DeclarationKey, EffectiveId};
+use crate::model::key::{hex, DeclarationKey, EffectiveId, EffectiveIdExt};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
