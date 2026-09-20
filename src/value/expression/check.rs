@@ -26,11 +26,11 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
+use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
-use crate::absence::AbsenceMode;
 use quire_exact::{CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every

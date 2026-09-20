@@ -29,37 +29,42 @@
 //! use quire_spec_language::value::expression::syntax::Expression;
 //! ```
 //!
-//! ## Declared layer violation (QSL-146)
+//! ## Declared layer violation (QSL-146, narrowed; QSL-131 owns the rest)
 //!
 //! `forms` is layer 2 (ADR-011 §6.1), whose allow-list is layer 1 (`cst`)
-//! and F only. This module does not conform. Two of the eight moved types
-//! carry the violation independently:
+//! and F only. This module does not conform. QSL-146 resolved three of the
+//! four carrier types named when this violation was first declared:
+//! [`syntax`]'s `AbsenceMode` field now imports `crate::absence::AbsenceMode`
+//! (F, allow-listed — QSL-146 moved it out of `model::population`, layer 3),
+//! and its `CollectionKind` and `Integer` fields now import
+//! `quire_exact::{CollectionKind, Integer}` (layer K, allow-listed — a
+//! sibling crate, not a QSL layer at all). One carrier type remains,
+//! independently in two places:
 //!
-//! - [`syntax::Expression`]: its `Lookup` variant carries a
-//!   `model::population::AbsenceMode` field (layer 3); its `AllInstances`,
-//!   `Lookup` and `Convert` variants each carry a `value::ValueType` field
-//!   (layer 5); its other variants reach `value::Integer` and
-//!   `value::CollectionKind` (also layer 5) the same way.
+//! - [`syntax::Expression`]: its `AllInstances`, `Lookup` and `Convert`
+//!   variants each carry a `crate::value::ValueType` field (layer 5).
 //! - [`syntax::FunctionDeclaration`]: `parameters: Vec<(String, ValueType)>`
-//!   and `result: ValueType` each carry `value::ValueType` (layer 5)
-//!   directly, independent of `Expression`.
+//!   (`syntax.rs:406`) and `result: ValueType` (`syntax.rs:408`) each carry
+//!   `crate::value::ValueType` (layer 5) directly, independent of
+//!   `Expression`.
 //!
 //! `ParsedForm`'s `expression` field is unconditional production code (not
-//! test-only), so this is a hard dependency of the `forms` core on layers 3
-//! and 5, not an incidental one.
+//! test-only), so this remains a hard dependency of the `forms` core on
+//! layer 5, not an incidental one.
 //!
 //! This is a contradiction between two decision records, not an
 //! implementation mistake this module can fix alone: ADR-012 §4.3 places
 //! the one shared `Expression` enum inside the `forms` core by design, and
 //! ADR-011 §6.1 assigns `forms` a layer-2 allow-list that `Expression`'s and
-//! `FunctionDeclaration`'s own fields cannot satisfy while `AbsenceMode`,
-//! `CollectionKind`, `Integer` and `ValueType` live where they live today.
-//! QSL-146 (removing the QSL-side duplicates of `CollectionKind`, `Integer`
-//! and `ValueType` — `quire-exact` already defines all three — and moving
-//! `AbsenceMode` into F) resolves it: once those moves land,
-//! `crate::value::{CollectionKind, Integer, ValueType}` in [`syntax`]
-//! retarget to `quire_exact`'s existing copies (layer K, allow-listed), and
-//! `AbsenceMode` moves to F (also allow-listed), and `forms` becomes
+//! `FunctionDeclaration`'s own fields cannot satisfy while `ValueType` lives
+//! where it lives today. Unlike `CollectionKind` and `Integer`,
+//! `quire-exact`'s `ValueType`/`Value` are not a byte-identical duplicate of
+//! the QSL copy — their `Enum`, `Reference` and `Quantity` payloads are a
+//! redesigned target shape, and `quire-exact`'s `Value` has no `Population`
+//! variant at all — so retargeting `ValueType` is not the mechanical repoint
+//! QSL-146 did for the other three. QSL-131 (#213 S-1b) owns that
+//! replacement; once it lands, `ValueType` in [`syntax`] retargets to
+//! `quire_exact`'s copy (layer K, allow-listed) and `forms` becomes
 //! layer-2-legal without a further change to this module's shape.
 
 mod dispatch;
