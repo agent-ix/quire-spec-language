@@ -124,8 +124,7 @@ function, and a `Debug`-rendered preimage is not that schema's own
 preimage format. Structural identity within one check run -- reordering
 independence and survival across S4 linking and v2 emission, what AC-2 and
 AC-3 actually test -- holds regardless of this gap. Building the real
-`PreimageTerm`-conformant preimage is separate work a future change does
-deliberately, not a byproduct of this migration.
+`PreimageTerm`-conformant preimage is separate work; QSL-156 owns it.
 
 ### The composed function checker is deleted in this change
 
@@ -265,16 +264,34 @@ calls any `FamilyContract` method at all.
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:
 - FR-065-AC-1: unbacked. No `#[trace(..., "FR-065-AC-1")]` tag exists.
-- FR-065-AC-2: backed (`TC-163`, `src/value/expression/family.rs:661,704`).
-  Identity/provenance minting is the part this ticket actually delivers.
+  Owner: QSL-154.
+- FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
+  (`src/value/expression/family.rs`) and
+  `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
+  (`tests/dispatch_calls.rs`). Identity/provenance minting is the part this
+  ticket actually delivers. **Rebuilt (PR #262 review, coordinator round
+  3, finding 2).** The reordering half was previously backed by
+  `identity_ignores_unrelated_declarations`
+  (`src/value/expression/family.rs`), which minted the same identity twice
+  from the same declaration and compared it to itself -- no second
+  declaration was ever constructed, so the criterion's "does not depend on
+  any other declaration's existence or position" clause had nothing to be
+  independent of. It is deleted; the reordering clause is now backed by a
+  real fixture at the `PackageDeclarations::check` level (two functions,
+  checked in both orders, `CheckedPackage::function_identity` compared
+  across both) in `tests/dispatch_calls.rs`, which also gives real test
+  callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
+  `decode_function_package_v2` (PR #262 review, coordinator round 3,
+  finding 3).
 - FR-065-AC-3: unbacked. No `#[trace(..., "FR-065-AC-3")]` tag exists
   anywhere in the crate (the one test that exercised it,
   `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
   deleted as self-corrupting in the PR #262 review round, finding F6, and
-  not replaced).
+  not replaced). Owner: QSL-154.
 - FR-065-AC-4: unbacked. Untagged, and unmeetable as worded while the
   checking decision stays in `Typer`: the arm's one call reaches
   `Self::call`, not "family check code" (see `check.rs`'s corrected doc).
+  Owner: QSL-148 (named explicitly, not only implied by AC-5's row).
 - FR-065-AC-5: unbacked, by the rescoping decision on #262. The composed
   checker's pre-migration entry points for both forms are not absent --
   `Typer`'s declaration-typing pass and `Self::call` are exactly those
@@ -282,14 +299,16 @@ delivered code today:
   criterion is intentionally not narrowed to match; it names the real
   target (move the checking into `ValueFunctionFamily::check` and delete it
   from `Typer`), which is filed as its own, separate ticket rather than
-  attempted as part of #214.
+  attempted as part of #214. Owner: QSL-148.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
-  in the delivered code (see FR-065's own Test Matrix / TC-166).
+  in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
+  QSL-5 / #243 -- a real owner that existed before this round but was not
+  written against this criterion; recorded here now.
 
-Five of this requirement's six Acceptance Criteria are therefore unbacked;
-only AC-2 (identity/provenance) is delivered and tested. `TC-164`, `TC-165`
-and `TC-166` -- the test cases FR-065-AC-5, the migration-recipe
-completeness check, and FR-065-AC-6 verify against -- have zero tests each
-in the delivered code.
+One of this requirement's six Acceptance Criteria is backed (AC-2,
+identity/provenance); the other five are unbacked, for the reasons above.
+`TC-164`, `TC-165` and `TC-166` -- the test cases FR-065-AC-5, the
+migration-recipe completeness check, and FR-065-AC-6 verify against -- have
+zero tests each in the delivered code.
