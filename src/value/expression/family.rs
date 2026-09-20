@@ -476,9 +476,10 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 // `check` mints identity unconditionally once nesting is charged, so it has
 // no typed refusal cause -- a family with zero causes cannot demonstrate a
 // per-family cause seam, the same shape `Requirements`, `PackageRefusal` and
-// `StageFailure::Refused` were. The first family with a real typed refusal
-// cause adds its own `Cause` enum, `catalog_code()` and the S4 probe
-// variant, validated against real content instead of guessed here.
+// `StageFailure::Refused` were. QSL-152 owns adding a real `Cause` enum,
+// `catalog_code()` and the S4 probe variant for the first family that has
+// one, validated against real content instead of guessed here
+// (FR-062-AC-8's S4 seam-probe coverage).
 
 #[cfg(test)]
 mod family_contract_tests {
@@ -491,7 +492,6 @@ mod family_contract_tests {
     use crate::value::composite::{TypeEnvironment, ValueType};
     use crate::value::expression::{CheckingLimits, PackageDeclarations};
     use crate::value::reference::ObjectEnvironment;
-    use ix_trace_rs::trace;
     use quire_exact::Meter;
 
     // `EvaluationEnv::local_meter` is this crate's own `value::accounting::
@@ -696,9 +696,22 @@ mod family_contract_tests {
         assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
-    /// FR-062-AC-7: varying only the nesting-depth limit by one flips the
-    /// result on an identical fixture.
-    #[trace("TC-160", "FR-062-AC-7")]
+    /// **Untagged (PR #262 review round 4).** This test varies only the
+    /// nesting-depth limit (0 vs 1) against `check`, which calls
+    /// `enter_nesting` exactly once per top-level declaration -- `check`
+    /// performs no recursive descent of its own, so `depth` never exceeds
+    /// 1 and the predicate this test exercises reduces to `0 >=
+    /// nesting_depth`. Mutation confirms it: deleting `self.depth += 1`
+    /// from `CheckContext::enter_nesting` (removing the nesting bound
+    /// entirely) leaves this test passing unchanged, because it never
+    /// calls `enter_nesting` more than once to observe the increment.
+    /// FR-062-AC-7 requires a fixture nested to depth D and a limit varied
+    /// by exactly one at D -- that needs a real recursive-descent fixture,
+    /// which does not exist against today's `check` (QSL-148 owns moving
+    /// real recursive checking into `ValueFunctionFamily::check`; see its
+    /// own scope note). This test still guards a real, narrower property
+    /// (the nesting-depth limit is `>=`-checked at all) and stays for
+    /// that, untagged rather than claiming AC-7.
     #[test]
     fn nesting_depth_limit_is_the_proximate_cause() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
@@ -812,9 +825,11 @@ mod tests {
     /// `link_function_identity` is `fn(x) -> x` for this migration's real
     /// scope (`link_function_identity`'s own doc), so comparing its input
     /// to its output is comparing a value to itself, not something a
-    /// broken implementation could fail. The first family whose linking is
-    /// a real transformation gets a real before/after linking assertion;
-    /// this one would not have been testing anything.
+    /// broken implementation could fail. QSL-154 owns the real before/
+    /// after linking assertion, for a family whose linking is a real
+    /// transformation (FR-065-AC-1/AC-3, occurrence-span survival across
+    /// S4 linking) -- against this family's pass-through linking, that
+    /// assertion would not have been testing anything.
     #[trace("TC-163", "FR-065-AC-2")]
     #[test]
     fn identity_survives_v2_round_trip() {
