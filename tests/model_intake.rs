@@ -12,14 +12,14 @@
 //! proves `crate::model::intake::admit` accepts that output under a
 //! matching selection.
 //!
-//! `reading_fcd_199s_golden_shape_refuses_the_whole_document_at_the_pinned_semantic_ir_schema`
-//! carries FCD PR #200's own new architecture golden (not vendored here --
-//! vendoring it means bumping the pin) into `intake::read_records` and
-//! asserts today's real, whole-document refusal: the pinned
-//! `agent-ix-semantic-ir` schema (predating FCD #200) does not yet
-//! recognize two members that golden's shape uses, so `read_records`
-//! refuses before reading a single node -- see that test's own doc comment
-//! for the per-node breakdown this cannot yet observe.
+//! `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`
+//! carries FCD PR #200's own architecture golden (vendored under
+//! `tests/fixtures/architecture/expected/semantic-ir.json`, now that the pin
+//! covers it) into `intake::read_records` and asserts the measured, per-node
+//! breakdown: `validate_with_semantic_ir` admits the whole document at this
+//! pin, so `read_records` reaches per-node reading, and 4 of the golden's 12
+//! types refuse while 8 read clean -- see that test's own doc comment for
+//! the breakdown.
 //!
 //! `a_qspec_conformant_document_admits_reads_and_classifies` is the
 //! complementary positive case: a hand-written Semantic IR 2.0.0 document
@@ -112,83 +112,102 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     assert_eq!(admitted_bytes, document);
 }
 
-/// (a): `agent-ix/filament-core-data`'s `task/199-intake-shapes` branch
-/// (commit `ea09341`, FCD PR #200) fixes FCD #199's four gaps and produces a
-/// new architecture golden at
-/// `crates/extraction-frontend/fixtures/architecture/expected/semantic-ir.json`:
-/// 12 types, `kind: {module, name}`, no package-local scalar/alias nodes, no
+/// (a): `agent-ix/filament-core-data` PR #200 (merged; this crate's pinned
+/// `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` rev now includes
+/// it) fixes FCD #199's four gaps and produces the architecture golden
+/// vendored at `tests/fixtures/architecture/expected/semantic-ir.json`
+/// (`cargo xtask revendor --tree test-fixtures-architecture`): 12 types,
+/// `kind: {module, name}`, no package-local scalar/alias nodes, no
 /// `/type//field//operation/` identity segments, and `Flow2`'s inline
 /// `relationships[]` in the real `sourceEnd`/`targetEnd`
-/// (`role`+`multiplicity`+`type`) shape. That golden is not vendored here
-/// (`tests/fixtures/fcd-199-golden-semantic-ir.json` is a one-time manual
-/// copy, not a `VENDOR.json` tree) because vendoring it means bumping this
-/// crate's `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` pin
-/// (`Cargo.toml`), which FCD PR #200 merging is a precondition for, not
-/// something this test does.
+/// (`role`+`multiplicity`+`type`) shape.
 ///
-/// A static read of this reader against that golden predicts 5 of its 12
-/// types refuse (`Count`: unsupported record-value-type dispatch, deferred
-/// separately; `Pump`/`Sys`/`Tank`: `ix://quire/native/UUID`, R5's ruling
-/// that QSL's native-value-type vocabulary is the conformant side and FCD's
-/// wider one is not QSL's to narrow -- see [`super::read_value_type_ref`]'s
-/// docs and its own `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836`
-/// test) and 7 read clean. That `UUID` refusal is R5's ruling as it stands
-/// *today*: PLAT-836 (filed separately, lands after FCD #200) narrows FCD's
-/// own emission so `Pump.id`/`Sys.id`/`Tank.id` stop being native `UUID`
-/// references at all -- at which point they read clean too, as a
-/// consequence of what the document emits changing, not of this reader
-/// changing. **That prediction cannot be observed yet.**
-/// `read_records` runs `validate_with_semantic_ir` over the whole document
-/// before reading a single node, and at this crate's pinned
-/// `agent-ix-semantic-ir` rev (`7dcb2f2c`, predating FCD #200) that
-/// validator's own schema does not yet recognize two members this golden
-/// uses: a field's `constraints[]` (added to FCD's schema after this pin)
-/// and a relationship's `sourceEnd`/`targetEnd`/`role`/`direction` shape
-/// (the schema at this pin still requires the old `verb` member FCD #199
-/// gap 3 replaces). Either alone makes the whole document refuse as one
-/// `malformed-declaration` at that member's own pointer -- never a per-type
-/// breakdown -- so the 5-of-12 prediction is moot until the pin bumps to a
-/// rev whose schema accepts both (confirmed independently: FCD's own
-/// `tc_1286` on `task/199-intake-shapes` asserts
-/// `agent_ix_semantic_ir::decide` returns `ResultState::Success` over this
-/// exact golden).
+/// Measured (not predicted) against the now-pinned rev:
+/// `validate_with_semantic_ir` admits the whole document -- the schema at
+/// this pin recognizes both a field's `constraints[]` and a relationship's
+/// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
+/// `Severity::Error` diagnostic and `read_records` reaches its own per-node
+/// reading over the golden for the first time. Of its 12 types (no
+/// `populations[]`), 4 refuse and 8 read clean:
+///
+/// - `Count`: [`quire_spec_language::model::normalize::ModelRefusalCause::UnsupportedDeclarationForm`]
+///   -- `quire.meaning.model.record-value-type/v1` has no reader yet (a
+///   separate, still-open gap, not this pin's).
+/// - `Pump.id`, `Sys.id`, `Tank.id`: `IntakeMalformedDeclaration` -- each
+///   field's `typeRef` is `ix://quire/native/UUID`, R5's ruling that QSL's
+///   native-value-type vocabulary is the conformant side and FCD's wider
+///   one is not QSL's to narrow (see [`super::read_value_type_ref`]'s docs
+///   and its own
+///   `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836` test).
+///   PLAT-836 (a separate ticket) narrows what FCD *emits* for these
+///   fields, not this reader; until it lands, this refusal is correct.
+///
+/// A prior static reading of this reader predicted 5 of 12 refusing,
+/// naming `Flow2` alongside `Count`/`Pump`/`Sys`/`Tank` on the theory that
+/// its relationships would still miss a role/multiplicity this reader
+/// requires. That prediction was never observable before the pin bump (the
+/// whole-document schema refusal short-circuited every per-node read) and
+/// the measurement above supersedes it: `Flow2` reads clean along with
+/// `Flow`, `pipe`, `pump_alloc`, `pump_out`, `sys_pump`, `sys_tank` and
+/// `tank_in` -- 8, not 7, read clean, and the refusing set is exactly
+/// `{Count, Pump, Sys, Tank}`, not the predicted `{Count, Flow2, Pump, Sys,
+/// Tank}`.
 #[test]
-fn reading_fcd_199s_golden_shape_refuses_the_whole_document_at_the_pinned_semantic_ir_schema() {
+fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
-    let document = include_str!("fixtures/fcd-199-golden-semantic-ir.json");
+    let document = include_str!("fixtures/architecture/expected/semantic-ir.json");
 
     let refusals = read_records(package_identity, document.as_bytes()).expect_err(
-        "the pinned agent-ix-semantic-ir schema (7dcb2f2c, predating FCD #200) refuses this \
-         golden's field.constraints/relationship shape before any node is read",
+        "measured: 4 of the golden's 12 types refuse at read_records even though the whole \
+         document now clears validate_with_semantic_ir's schema check",
     );
 
-    // `validate_with_semantic_ir` stops at the first `Severity::Error`
-    // diagnostic agent-ix-semantic-ir's own `decide` reports, so this is
-    // always exactly one refusal, never a per-type list -- confirmed
-    // against `decide` directly: at this pin it reports exactly two errors
-    // over this document, `/ir/types/0/fields/0` (`Count.value`'s
-    // `constraints[]`, unrecognized) and `/ir/types/2/relationships/0`
-    // (`Flow2`'s relationship, missing the old, no-longer-emitted `verb`
-    // member) -- `find`'s document-order iteration surfaces the first.
     assert_eq!(
         refusals.len(),
-        1,
-        "validate_with_semantic_ir refuses the whole document as one refusal, not per node: {refusals:#?}"
+        4,
+        "measured refusal count over the post-#200 golden: {refusals:#?}"
     );
-    let refusal = &refusals[0];
-    assert_eq!(refusal.cause.as_str(), "malformed-declaration");
-    match &refusal.cause {
-        quire_spec_language::model::normalize::ModelRefusalCause::IntakeMalformedDeclaration {
-            node,
-            ..
-        } => assert_eq!(node, "/ir/types/0/fields/0"),
-        other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
+
+    use quire_spec_language::diagnostic::Code;
+    use quire_spec_language::model::normalize::ModelRefusalCause;
+
+    let (count, pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2], &refusals[3]);
+
+    assert_eq!(count.code, Code::UnsupportedConstruct);
+    match &count.cause {
+        ModelRefusalCause::UnsupportedDeclarationForm { node, what } => {
+            assert_eq!(node, "ix://agent-ix/architecture/Count");
+            assert_eq!(what, "quire.meaning.model.record-value-type/v1");
+        }
+        other => panic!("Count: expected UnsupportedDeclarationForm, got {other:?}"),
     }
     assert!(
-        refusal.detail.contains("SCHEMA_VIOLATION") && refusal.detail.contains("constraints"),
-        "expected the field.constraints schema gap, got: {}",
-        refusal.detail
+        count.detail.contains("has no reader yet"),
+        "Count detail: {}",
+        count.detail
     );
+
+    for (refusal, expected_node) in [
+        (pump, "ix://agent-ix/architecture/Pump/id"),
+        (sys, "ix://agent-ix/architecture/Sys/id"),
+        (tank, "ix://agent-ix/architecture/Tank/id"),
+    ] {
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        match &refusal.cause {
+            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
+                assert_eq!(node, expected_node);
+            }
+            other => panic!("{expected_node}: expected IntakeMalformedDeclaration, got {other:?}"),
+        }
+        assert!(
+            refusal.detail.contains("ix://quire/native/UUID")
+                && refusal
+                    .detail
+                    .contains("names no native value type QSL declares"),
+            "{expected_node} detail: {}",
+            refusal.detail
+        );
+    }
 }
 
 fn multiplicity_one(lower: u64, upper: Option<u64>) -> serde_json::Value {
@@ -320,13 +339,14 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
 /// #199 gap 3, fixed) -- but because this positive case does not need one
 /// to prove the pipeline whole; `read_relationship`'s own coverage is
 /// separate. Every field's `typeRef` names a package type node declared in
-/// this same document: at the pinned rev, `validate_with_semantic_ir`
-/// refuses any document naming a native value type
-/// (`ix://quire/native/<Name>`) as `UNRESOLVED_TYPE_REF` (see
+/// this same document rather than a native value type
+/// (`ix://quire/native/<Name>`); at the pinned rev,
+/// `validate_with_semantic_ir` itself now resolves a native `typeRef` (see
 /// `crate::model::intake::validate_with_semantic_ir`'s own doc comment for
-/// FCD's upstream fix, which does not widen what this reader accepts), so a
-/// whole-pipeline success case cannot exercise native-typeRef resolution --
-/// that is covered separately by direct unit tests of `read_value_type_ref`.
+/// FCD's upstream fix), but this fixture simply was not authored to
+/// exercise that path -- native-typeRef resolution is covered separately by
+/// direct unit tests of `read_value_type_ref` and, end to end, by
+/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
 /// It admits through `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape
@@ -599,5 +619,80 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
             );
         }
         other => panic!("expected LiftFailure::Refused, got {other:?}"),
+    }
+}
+
+/// (L2) `lift_document`'s `LiftFailure::Blocked` branch: FCD's real `lift`
+/// loads and extracts the bundle, then blocks on a rules-layer diagnostic.
+///
+/// This reproduces FCD's own `DUPLICATE_IDENTITY` negative fixture
+/// (`crates/extraction-frontend/fixtures/negatives/DUPLICATE_IDENTITY` at
+/// this crate's now-pinned rev): a single file where `FR-001`'s own field
+/// and its own operation are both named `revision`. FCD #199/#200 collapses
+/// the field and operation identity namespaces into one `<Owner>/<name>`
+/// segment with no kind segment of its own, so the two now mint the same
+/// identity and `lift_document` blocks. At the previously pinned rev
+/// (`7dcb2f2c`, predating FCD #199/#200) this same bundle did *not*
+/// collide -- `NodeKind::Field` and `NodeKind::Operation` minted under
+/// different segments there -- which is why this test was deleted rather
+/// than kept `#[ignore]`d until the pin bumped; this is that test, rebuilt
+/// fresh against the collision this pin actually produces.
+///
+/// The expected diagnostic is read verbatim from FCD's own committed
+/// `crates/extraction-frontend/fixtures/negatives/DUPLICATE_IDENTITY/expected/diagnostics.json`
+/// at this crate's pinned rev, not invented here.
+#[test]
+fn lift_document_blocks_on_a_duplicate_identity() {
+    let bundle = write_bundle(&[
+        (
+            "spec/spec.md",
+            "---\ntype: master-requirements\nname: identity-service\norg: agent-ix\ntitle: \"Identity Service\"\n---\n# Identity Service\n",
+        ),
+        (
+            "spec/functional/FR-001-note.md",
+            "---\nid: FR-001\ntitle: Note\nobject: entity\ntype: FR\n---\n# FR-001: Note\n\n## Description\n\nAn authored fixture record whose field and whose own operation mint the\nsame member identity.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| revision | Integer | 1 | |\n| id | UUID | 1 | identity |\n\n## Operations\n\n### revision\n\nReturns: Integer [1]\n",
+        ),
+    ]);
+    let fixtures = fixtures_dir();
+    let module_roots = vec![
+        fixtures.join("modules/spec-objects-business"),
+        fixtures.join("modules/edge-vocabulary"),
+        fixtures.join("modules/spec-objects-architecture"),
+    ];
+
+    let error = lift_document(bundle.path(), &module_roots).expect_err(
+        "FR-001's own field and its own operation, both named `revision`, mint the same identity",
+    );
+    match error {
+        quire_spec_language::model::intake::LiftFailure::Blocked(diagnostics) => {
+            assert_eq!(
+                diagnostics,
+                vec![agent_ix_extraction_frontend::Diagnostic {
+                    code: agent_ix_extraction_frontend::WireCode::Registry(
+                        agent_ix_extraction_frontend::Code::DuplicateIdentity
+                    ),
+                    severity: agent_ix_extraction_frontend::Severity::Error,
+                    message: "identity `ix://agent-ix/identity-service/FR-001/revision` \
+                              is already minted by an earlier node"
+                        .to_owned(),
+                    owner: "ix://agent-ix/filament-core-data/extraction-frontend".to_owned(),
+                    locus: Some(agent_ix_extraction_frontend::Locus {
+                        source_identity: "ix://agent-ix/identity-service/spec".to_owned(),
+                        path: "spec/functional/FR-001-note.md".to_owned(),
+                        start_line: 23,
+                        start_column: 1,
+                    }),
+                    blocking: true,
+                    causes: Vec::new(),
+                    related: vec![agent_ix_extraction_frontend::Locus {
+                        source_identity: "ix://agent-ix/identity-service/spec".to_owned(),
+                        path: "spec/functional/FR-001-note.md".to_owned(),
+                        start_line: 18,
+                        start_column: 3,
+                    }],
+                }]
+            );
+        }
+        other => panic!("expected LiftFailure::Blocked, got {other:?}"),
     }
 }
