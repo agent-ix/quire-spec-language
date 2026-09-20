@@ -632,20 +632,35 @@ mod foundation_tests {
         assert_eq!(fault.category(), Category::InternalFailure);
     }
 
+    /// The catalog table row whose first cell is exactly `` `code` ``, or
+    /// `None` if no such row exists. Scoping a cause search to this one
+    /// line (rather than the whole file) means a note that a cause was
+    /// *removed* cannot make the search pass.
+    fn catalog_row<'a>(catalog: &'a str, code: &str) -> Option<&'a str> {
+        let cell = format!("| `{code}` |");
+        catalog.lines().find(|line| line.starts_with(&cell))
+    }
+
     #[test]
     fn internal_fault_catalog_code_is_in_the_vendored_catalog() {
         let catalog = vendored_catalog();
-        // The top-level code, as its own table cell.
+        // Derived from `catalog_code()`, not retyped: a transposed
+        // `stage`/`invariant` argument at the call site, or a code/cause
+        // that no longer matches this impl, fails here instead of passing
+        // against a copy of the same literal.
+        let code = InternalFault::new("S3", "x").catalog_code();
+        let row = catalog_row(&catalog, code.code()).unwrap_or_else(|| {
+            panic!(
+                "vendored catalog no longer lists `{}`; InternalFault::catalog_code() is now stale",
+                code.code()
+            )
+        });
         assert!(
-            catalog.contains("| `runtime_invariant` |"),
-            "vendored catalog no longer lists `runtime_invariant`; \
-             InternalFault::catalog_code() is now stale"
-        );
-        // The cause the row actually names.
-        assert!(
-            catalog.contains("`established-invariant-broken`"),
-            "vendored catalog no longer lists `established-invariant-broken`; \
-             InternalFault::catalog_code() is now stale"
+            row.contains(&format!("`{}`", code.cause())),
+            "vendored catalog's `{}` row no longer lists `{}`; \
+             InternalFault::catalog_code() is now stale: {row:?}",
+            code.code(),
+            code.cause()
         );
     }
 
@@ -656,7 +671,8 @@ mod foundation_tests {
         // codes S-5b will need are already vendored, so the revendor this
         // commit performs is not wasted.
         let catalog = vendored_catalog();
-        assert!(catalog.contains("`stage_limit_exceeded`"));
+        let row = catalog_row(&catalog, "stage_limit_exceeded")
+            .expect("vendored catalog no longer lists `stage_limit_exceeded`");
         for cause in [
             "input-bytes-exceeded",
             "nesting-depth-exceeded",
@@ -664,8 +680,8 @@ mod foundation_tests {
             "work-budget-exceeded",
         ] {
             assert!(
-                catalog.contains(cause),
-                "vendored catalog is missing stage_limit_exceeded cause {cause:?}"
+                row.contains(&format!("`{cause}`")),
+                "vendored catalog's `stage_limit_exceeded` row is missing cause `{cause}`: {row:?}"
             );
         }
     }
