@@ -249,7 +249,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed view, got {other:?}"),
     };
-    let owner_b = find_type(&view, "model.B").effective_id.clone();
+    let owner_b = find_type(&view, "model.B").effective_id;
 
     let winner = find_member(&view, &owner_b, "model.B.n");
     assert!(
