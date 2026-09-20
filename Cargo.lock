@@ -1072,6 +1072,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-exact"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "thiserror",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "quire-rs"
 version = "0.46.0"
 source = "git+https://github.com/agent-ix/quire-rs?rev=2823a93bd3797c970c1d389afae9b893dea6f232#2823a93bd3797c970c1d389afae9b893dea6f232"

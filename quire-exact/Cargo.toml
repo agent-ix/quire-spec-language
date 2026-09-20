@@ -1,0 +1,24 @@
+[package]
+name = "quire-exact"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "QSL#213 S-1 (ADR-011 X-1): the quire-exact kernel -- checked identity, typestate, outcome/refusal, provenance and bound value types with no dependency on any other crate in the quire ecosystem."
+
+[dependencies]
+num-bigint = "=0.4.8"
+num-integer = "=0.1.47"
+num-traits = "=0.2.19"
+thiserror = "=2.0.20"
+unicode-normalization = "=0.1.25"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
