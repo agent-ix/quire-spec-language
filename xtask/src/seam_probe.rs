@@ -63,7 +63,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
 /// `RUSTFLAGS` (empty for a normal build) and collect every `E0004`
 /// diagnostic's primary span as `(file, line)`, plus whether the build
 /// itself succeeded.
-fn build_and_collect_e0004(workspace_root: &Path, rustflags: &str) -> Result<(bool, BTreeSet<SeamLocation>)> {
+fn build_and_collect_e0004(
+    workspace_root: &Path,
+    rustflags: &str,
+) -> Result<(bool, BTreeSet<SeamLocation>)> {
     let mut command = Command::new("cargo");
     command.current_dir(workspace_root).args([
         "build",
@@ -138,7 +141,8 @@ pub fn run(workspace_root: &Path) -> Result<String> {
             locations: format!("{normal_locations:?}"),
         });
     }
-    let (probe_succeeded, probe_locations) = build_and_collect_e0004(workspace_root, "--cfg seam_probe")?;
+    let (probe_succeeded, probe_locations) =
+        build_and_collect_e0004(workspace_root, "--cfg seam_probe")?;
     if probe_succeeded {
         return Err(Error::SeamProbeBuildUnexpectedlySucceeded);
     }
@@ -170,6 +174,8 @@ mod tests {
     fn checked_in_locations_are_the_two_family_kind_matches() {
         let locations = checked_in_locations();
         assert_eq!(locations.len(), 2);
-        assert!(locations.iter().all(|location| location.file == "src/family/mod.rs"));
+        assert!(locations
+            .iter()
+            .all(|location| location.file == "src/family/mod.rs"));
     }
 }

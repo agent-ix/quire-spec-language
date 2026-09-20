@@ -399,23 +399,27 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            let identity = match family::ValueFunctionFamily::check(function.clone(), &mut contract_cx) {
-                Ok(staged) => staged.value,
-                Err(crate::family::StageFailure::Limit(limit)) => {
-                    refusals.push(CheckRefusal {
-                        location: location.clone(),
-                        cause: CheckCause::ResourceExhausted {
-                            stage: CheckingStage::Typing,
-                            kind: CheckingLimitKind::Depth,
-                            limit: limit.configured_bound,
-                        },
-                    });
-                    continue;
-                }
-                Err(crate::family::StageFailure::Fault(fault)) => {
-                    panic!("ValueFunctionFamily::check's internal invariant failed at {}: {}", fault.stage, fault.invariant)
-                }
-            };
+            let identity =
+                match family::ValueFunctionFamily::check(function.clone(), &mut contract_cx) {
+                    Ok(staged) => staged.value,
+                    Err(crate::family::StageFailure::Limit(limit)) => {
+                        refusals.push(CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::ResourceExhausted {
+                                stage: CheckingStage::Typing,
+                                kind: CheckingLimitKind::Depth,
+                                limit: limit.configured_bound,
+                            },
+                        });
+                        continue;
+                    }
+                    Err(crate::family::StageFailure::Fault(fault)) => {
+                        panic!(
+                            "ValueFunctionFamily::check's internal invariant failed at {}: {}",
+                            fault.stage, fault.invariant
+                        )
+                    }
+                };
             contract_checked += 1;
             let typed = (|| {
                 let mut typer = Typer::new(
@@ -711,7 +715,11 @@ impl CheckedPackage {
     /// FR-062-AC-2/FR-065-AC-3: the source location recorded for one
     /// occurrence (identity, role, ordinal) of a checked function
     /// declaration or function-application call, if `check` recorded one.
-    pub fn occurrence(&self, identity: quire_exact::NodeKey, origin: &quire_exact::Origin) -> Option<&Location> {
+    pub fn occurrence(
+        &self,
+        identity: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<&Location> {
         self.occurrences.resolve(identity, origin)
     }
 
@@ -723,7 +731,10 @@ impl CheckedPackage {
     /// no source text, only each function's already-checked identity.
     pub fn emit_function_package_v2(&self) -> Vec<u8> {
         assert_eq!(
-            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Package),
+            crate::family::stage_hooks(
+                crate::family::FamilyKind::Value,
+                crate::family::Stage::Package
+            ),
             crate::family::HookStatus::Implemented,
             "Value must report Implemented at Package to emit v2 bytes through the contract"
         );
@@ -865,9 +876,13 @@ impl CheckedPackage {
             arguments: Some(arguments),
             local_meter: meter,
         };
-        family::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter).map_err(|refusal| match refusal {
-            crate::family::EvaluateRefusal::Refused(reason) => InputRefusal::UnknownFunction(reason),
-        })
+        family::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter).map_err(
+            |refusal| match refusal {
+                crate::family::EvaluateRefusal::Refused(reason) => {
+                    InputRefusal::UnknownFunction(reason)
+                }
+            },
+        )
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.

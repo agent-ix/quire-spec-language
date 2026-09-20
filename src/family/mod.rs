@@ -148,10 +148,17 @@ impl FamilyKind {
 /// what keeps [`FamilyKind`]'s five not-yet-migrated members from being
 /// merely forward-declared shape with no production reader.
 pub(crate) fn assert_distinct_catalog_code_prefixes() {
-    let mut prefixes: Vec<&'static str> = FamilyKind::all().iter().map(|kind| kind.catalog_code_prefix()).collect();
+    let mut prefixes: Vec<&'static str> = FamilyKind::all()
+        .iter()
+        .map(|kind| kind.catalog_code_prefix())
+        .collect();
     prefixes.sort_unstable();
     prefixes.dedup();
-    assert_eq!(prefixes.len(), FamilyKind::all().len(), "FamilyKind's catalog-code prefixes must be pairwise distinct");
+    assert_eq!(
+        prefixes.len(),
+        FamilyKind::all().len(),
+        "FamilyKind's catalog-code prefixes must be pairwise distinct"
+    );
 }
 
 /// One stage of the contract (ADR-012 §8) that [`stage_hooks`] reports
@@ -199,9 +206,14 @@ pub(crate) enum HookStatus {
 /// fails `--cfg seam_probe` with `E0004`.
 pub(crate) fn stage_hooks(family: FamilyKind, stage: Stage) -> HookStatus {
     match (family, stage) {
-        (FamilyKind::Value, Stage::Check | Stage::Package | Stage::Evaluate) => HookStatus::Implemented,
+        (FamilyKind::Value, Stage::Check | Stage::Package | Stage::Evaluate) => {
+            HookStatus::Implemented
+        }
         (
-            FamilyKind::StateModel | FamilyKind::SumCase | FamilyKind::TemporalTrace | FamilyKind::ProtocolClause,
+            FamilyKind::StateModel
+            | FamilyKind::SumCase
+            | FamilyKind::TemporalTrace
+            | FamilyKind::ProtocolClause,
             Stage::Check | Stage::Package | Stage::Evaluate,
         ) => HookStatus::NotYetMigrated,
         (FamilyKind::Relation, Stage::Check | Stage::Package) => HookStatus::NotYetMigrated,
@@ -242,7 +254,10 @@ mod tests {
     #[test]
     fn value_is_implemented_at_every_stage() {
         for stage in [Stage::Check, Stage::Package, Stage::Evaluate] {
-            assert_eq!(stage_hooks(FamilyKind::Value, stage), HookStatus::Implemented);
+            assert_eq!(
+                stage_hooks(FamilyKind::Value, stage),
+                HookStatus::Implemented
+            );
         }
     }
 

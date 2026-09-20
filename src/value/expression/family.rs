@@ -333,7 +333,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
     /// one of its own yet).
     type Declarations = String;
 
-    fn check(form: Self::Form, cx: &mut crate::family::CheckContext<'_, String>) -> crate::family::CheckOutcome<NodeKey> {
+    fn check(
+        form: Self::Form,
+        cx: &mut crate::family::CheckContext<'_, String>,
+    ) -> crate::family::CheckOutcome<NodeKey> {
         // FR-062 "Explicit limits bound every stage entry, including
         // recursion": `check` charges one nesting-entry before minting,
         // and refuses with a `Limit` outcome rather than reading `form` at
@@ -345,7 +348,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // which a release profile compiles out) -- `ScopeStack::depth`'s
         // only real caller.
         let depth_before = cx.scopes.depth();
-        cx.scopes.enter(format!("value.function-declaration:{}", form.name));
+        cx.scopes
+            .enter(format!("value.function-declaration:{}", form.name));
         let identity = mint_declaration_identity(cx.declarations(), &form);
         // Defensive `Fault` path (ADR-013 T-4's internal-invariant category,
         // `crate::family::InternalFault`): recomputing the same preimage
@@ -360,10 +364,12 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         if identity != mint_declaration_identity(cx.declarations(), &form) {
             cx.scopes.leave();
             cx.leave_nesting();
-            return Err(crate::family::StageFailure::Fault(crate::family::InternalFault::new(
-                "check",
-                "mint_declaration_identity is deterministic",
-            )));
+            return Err(crate::family::StageFailure::Fault(
+                crate::family::InternalFault::new(
+                    "check",
+                    "mint_declaration_identity is deterministic",
+                ),
+            ));
         }
         cx.diagnostics.record(
             cx.scopes,
@@ -426,14 +432,20 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         _meter: &mut quire_exact::Meter,
     ) -> Result<super::Evaluation, crate::family::EvaluateRefusal> {
         let function = env.package.function_by_identity(*checked).ok_or_else(|| {
-            crate::family::EvaluateRefusal::Refused(format!("no checked function for identity {checked}"))
+            crate::family::EvaluateRefusal::Refused(format!(
+                "no checked function for identity {checked}"
+            ))
         })?;
         let arguments = env.arguments.take().unwrap_or_default();
         let callables = env.package.callables();
-        Ok(
-            super::evaluate::Machine::new(&env.package.scope, &callables, env.objects, env.local_meter, &env.package.dispatch_tables)
-                .run(&function.body, function.slots, arguments, true),
+        Ok(super::evaluate::Machine::new(
+            &env.package.scope,
+            &callables,
+            env.objects,
+            env.local_meter,
+            &env.package.dispatch_tables,
         )
+        .run(&function.body, function.slots, arguments, true))
     }
 }
 
@@ -513,7 +525,10 @@ mod family_contract_tests {
         assert_eq!(diagnostics.entries().len(), 1);
         let mut v2 = Vec::new();
         ValueFunctionFamily::package(&staged.value, &mut v2);
-        assert_eq!(decode_v2(&v2).unwrap(), vec![("declaration".to_owned(), expected)]);
+        assert_eq!(
+            decode_v2(&v2).unwrap(),
+            vec![("declaration".to_owned(), expected)]
+        );
     }
 
     /// FR-062-AC-3: two contexts built from the same declarations, one
@@ -721,6 +736,9 @@ mod tests {
         let mut alternate = OccurrenceMap::default();
         let corrupted_origin = alternate.record(identity, "reference", (10, 21));
         assert_eq!(origin, corrupted_origin);
-        assert_ne!(alternate.resolve(identity, &origin).copied(), before_linking);
+        assert_ne!(
+            alternate.resolve(identity, &origin).copied(),
+            before_linking
+        );
     }
 }
