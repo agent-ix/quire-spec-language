@@ -35,11 +35,11 @@ for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
 the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
 for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
-The lock now selects 180 packages including this crate, optional and target-specific
+The lock now selects 198 packages including this crate, optional and target-specific
 dependencies. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
-FR-030 adds optional quire-rs 0.46.0 at
-8b8020e665c61a11bc74f3f23b84617c80c0c442 under its declared AGPL-3.0-or-later grant.
+FR-030 adds optional quire-rs 0.46.0, pinned at
+2823a93bd3797c970c1d389afae9b893dea6f232 under its declared AGPL-3.0-or-later grant.
 Its default, Python and wasm features are disabled; default native builds omit it.
 The additional 40 locked entries retain their declared grants below, including
 Quire's target-specific Loom dependencies; this consumer does not run Loom or
@@ -53,11 +53,16 @@ dependency, along with `tests/producer_correspondence.rs`; nothing in this
 prerelease repo consumed that path, so it was deleted outright rather than
 bridged. Model intake reads Semantic IR 2.0.0 domain
 packages (FR-056) through the `agent-ix-extraction-frontend` and
-`agent-ix-semantic-ir` crates, both pinned (see their `Cargo.toml` `rev`, the
-single place this commit is recorded) under their declared
-AGPL-3.0-or-later grant; `tests/fixtures/architecture` and
-`tests/fixtures/modules` are vendored from the same repository at that same
-commit (`cargo xtask revendor --tree test-fixtures-architecture|test-fixtures-modules`,
+`agent-ix-semantic-ir` crates, both pinned by their `Cargo.toml` `rev` --
+this workspace's own single *authoritative* source for that commit --
+under their declared AGPL-3.0-or-later grant. `tests/fixtures/architecture`
+and `tests/fixtures/modules` are vendored from the same repository at that
+same commit, but each tree's own `VENDOR.json` still carries that commit
+again by hand in its own `commit` field (`Source::Fcd` requires one before
+`revendor` can read anything to compare it against); `xtask::cargo_pin`
+checks that hand-edited value against the authoritative pin rather than
+trusting it (`cargo xtask revendor --tree
+test-fixtures-architecture|test-fixtures-modules`,
 `tests/fixtures/{architecture,modules}/VENDOR.json`). `tempfile` moves from a qualification-only
 dependency to a production one: `agent-ix-extraction-frontend`'s `lift` entry
 always writes its document to a required output path, and intake supplies a
