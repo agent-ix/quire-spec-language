@@ -683,7 +683,7 @@ Seams:
 | SEAM-2 composed | ADR-010 lane B: `syntax::composed`, `parser::composed`, `linking::composed`, `checking::composed`, and shared code such as `formal_source` | Deleted (owner ruling). Each composed family is deleted in the PR that lands its S3 family checker and S4 emission, so everything reaches IR through the one S4 spine. #185 removes the `requests` backend disposition from QSL (FB-12). | M-6e with the family implementation tickets (§7.3); #185 for `requests` |
 | SEAM-3 protocol wires | `protocol_artifact` (compiled-protocol /1 to /3 emit and read; checked-predicate, temporal-subject and native-temporal handoffs) | Its reads that feed `state` and `temporal` are deleted with #120, #121 and #164 (state) and #188 and #189 (temporal) (M-6c). Its handoffs to IR are deleted with #218 and agent-ix/quire-contract-ir#141, which land S4 emission over the checked graph and IR v2 admission (M-6d). The last lane PR deletes the remainder. The QSpec wire question is in §Questions. | M-6c, M-6d |
 | SEAM-4 IT-010 | `tests/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Deleted with #217, which lands the CG replay adapter through S6a | M-6b |
-| SEAM-5 source graph | `complete::package::lower_source_graph` / `LoweredSourceGraph` (ADR-010 C3) | The S2 `forms` producer lands and replaces it | #214 (M-3) |
+| SEAM-5 source graph | `complete::package::lower_source_graph` / `LoweredSourceGraph` (ADR-010 C3) | The S2 `forms` producer lands and replaces it | QSL-138 (M-3a) |
 
 Module table:
 
@@ -709,7 +709,7 @@ Module table:
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `node`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15 (TK-10), and the operations over them (X-1, carried out as #213 S-1) |
 | `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `key`, `reference` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (M-2) |
 | `value::division::negotiate_*`, `value::ieee::negotiate_*` | RT | AD-016 Shared-type row: the `negotiate_*` predicates stay in RT, and CG negotiates (arrow 3). AD-016 WP7 decides the predicate list (OBS-004). #213 S-1 (X-1) removes the QSL copies when it moves `division` and `ieee` into K. |
-| `value::expression::syntax` | 2 `forms` | M-3 |
+| `value::expression::syntax` | 2 `forms` | M-3a |
 | `value::expression::check`, `facts`, `termination`, `ir` | 3 `check` | `ir` is the checked expression output (M-5) |
 | `value::expression::refusal` | split | check causes move to `check`; `InputRefusal` moves to argument admission in `CheckedPackage::call`, before S6a (M-5) |
 | `value::expression::evaluate`, `value::expression` `CheckedPackage::call` | 5 `value::expression` | S6a and the replay executor, at the AD-016 arrow 7 path |
@@ -810,9 +810,10 @@ edit `value` and `model`, so they land in that order, one at a time.
 | X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. X-1 makes the edge cuts that keep it a leaf (§6.1 kernel rule). | The AD-016 Shared-type row types as amended by QC-15, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the QSL `value` kernel is replaced in #213 S-1, and the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56, one change per repository |
 | M-1 | Make `diagnostic` a foundation module | F | codes, typed causes, locus | with #213 | none |
 | M-2 | Move `model` below `check` (§6.1) and create `semantic_value` | 3 | `model`, `model::intake`, `semantic_value` | after X-1 | none |
-| M-3 | Add S2 `forms` and retire SEAM-5 | 2 | parsed form types per family (#210) | #214 | none: `LoweredSourceGraph` is deleted in the same change |
+| M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138 | none: `LoweredSourceGraph` is deleted in the same change |
+| M-3b | Add each family's parsed-form type: its grammar-production function and its `Expression` enum variant, landing incrementally, one per family's own migration ticket, alongside M-6a to M-6e | 2 | parsed form types per family (#210) | QSL-141 | none |
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
-| M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | after M-2 and M-3, with #214 | none |
+| M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-2 and M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
@@ -821,7 +822,7 @@ old path and its replacement both run:
 
 | Lane | Deleted | In the PR that lands |
 |---|---|---|
-| M-6a checked-package producer | native `run` and `compile` producing packages or backend artifacts, the `lower` command, `package::NativePackage` and native-linked-package/1; `format` is retargeted to the CST | the spine for those commands: #214 with M-4, before #216 |
+| M-6a checked-package producer | native `run` and `compile` producing packages or backend artifacts, the `lower` command, `package::NativePackage` and native-linked-package/1; `format` is retargeted to the CST | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216 |
 | M-6b proof and replay | the IT-010 path (SEAM-4), the QSL dev dependencies on CG, IR and the RT fixture crate, the `lowering` targets, `ProjectionTarget` and `--target` | #217. Until then the skeleton spine (§1.1) is the proof-and-replay evidence. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
 | M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222) |
 | M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 (design #223), with agent-ix/quire-contract-ir#141 |

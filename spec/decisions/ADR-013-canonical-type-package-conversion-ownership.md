@@ -400,7 +400,7 @@ their wire strings.
 | Owner | Codes: QSpec `native-diagnostics.md` (`quire.native.diagnostics/v1`). Typed causes: each layer and stage. |
 | Implementing ticket | #213 S-5 for the shared refusal types and QSL `catalog_code()`; each downstream layer implements its own mapping (IR reader codes: IR conformance work with no ticket, §7). |
 | Public type | Each stage keeps its typed refusal cause (`CheckRefusal`, `InputRefusal`, `PackageRefusal`, `LibraryRefusal`, `ModelRefusal`, IR `CheckedPackageRefusalCode`, …). Each cause type has one exhaustive `fn catalog_code(&self) -> CatalogCode` with no `_` arm (AD-016), and a fixed O-16 category. |
-| Serialized authority | One catalog revision per QSL build: the revision vendored in `resources/complete-value` at the QSpec pin. FR-322 selects revision `1-draft.4`. A code site that claims another revision (`1-draft.1` and `1-draft.3`, ADR-010 OBS-023) is a defect, not a second catalog. |
+| Serialized authority | One catalog revision per QSL build: the revision vendored in `resources/complete-value` at the QSpec pin. FR-322 selects revision `1-draft.6`. A code site that claims another revision (`1-draft.1` and `1-draft.3`, ADR-010 OBS-023) is a defect, not a second catalog. |
 | Conversions | typed cause → catalog code (total, C-15). Catalog code → typed cause does not exist; a consumer reads the code and its structured fields, never the message. |
 | Validation and diagnostics | Per-layer `catalog_code()` totality test against the vendored catalog. IR's reader implements every FR-322 code; the 13-of-16 gap (OBS-035) is IR-owned conformance work. |
 | Equality | lexical on the code string. |
@@ -797,11 +797,12 @@ Proposed #213 slices, in order. The split itself is an owner action on #213.
 
 | Slice | Objects | Gate |
 | --- | --- | --- |
-| S-1 | `quire-exact` kernel (ADR-011 X-1), exactly the AD-016 kernel row: O-04 `NodeKey`, O-13 values, O-16 kernel outcome and refusal types, `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, the kernel bound value types (O-21), and the QC-15 `Value` component types, with the T-6 edge cuts (ADR-011 X-1). It removes the QSL `negotiate_*` copies from `division` and `ieee`, which stay in RT (OBS-004). Nothing else: `CatalogCode` and the category type are S-5's, in F `diagnostic`. If it exceeds one bounded effort it splits into values and outcomes first, then accounting and location. | TK-10 (QC-15) |
+| S-1 | `quire-exact` kernel (ADR-011 X-1), exactly the AD-016 kernel row: O-04 `NodeKey`, O-13 values, O-16 kernel outcome and refusal types, `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, the kernel bound value types (O-21), and the QC-15 `Value` component types, with the T-6 edge cuts (ADR-011 X-1). It removes the QSL `negotiate_*` copies from `division` and `ieee`, which stay in RT (OBS-004). Nothing else: `CatalogCode` and the category type are S-5a's, in F `diagnostic`. If it exceeds one bounded effort it splits into values and outcomes first, then accounting and location. | TK-10 (QC-15) |
 | S-2 | Identities and digests: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 | S-1, #131 merged, QC-15 (adds `EffectiveId` and the reference identities to the kernel), QC-2, QC-3, QC-5 |
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus` | S-3 |
-| S-5 | Refusals and readers: O-17 QSL `catalog_code()` and `RefusalRecord`, the `CatalogCode` and O-16 category types in F `diagnostic`, O-22 QSL readers, T-4 stage failures | S-1, QC-11 |
+| S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
+| S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). Held until S-4 lands. | S-1, QC-11, S-4, and S-2 for O-22 |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, the `model::accounting` fold into the S-1 meter, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
 
 Work that this record assigns and that no ticket owns is listed in §8
@@ -984,8 +985,11 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
   `ValueTypeRef::Native`; the adverse test for the pseudo-package refusal is
   #213 S-2's, and #131 is asked to land it with PR #200 (O-03).
 - The byte transfers in `value/model_query.rs`, `NodeKey::from_bytes` and the
-  caller-supplied `object_keys` map lose their role; #213 S-2 replaces them with
-  typed reference components and the checker's model correspondence.
+  caller-supplied `object_keys` map lose their role. #213 S-2 replaces the byte
+  transfers with typed reference components (O-05). The checker's model
+  correspondence, read from the `CheckedPackage` (O-04, O-15), is #213 S-3's:
+  a `model_query.rs` site needing the node-id → `DeclarationKey` direction is
+  not fixed at S-2.
 - Twenty QSpec changes go to QSpec: QC-1 to QC-12, the six accepted AD-016
   amendments QC-13 to QC-17 and QC-20, and QC-18 and QC-19. They are filed as
   TK-06 to TK-10, and QC-7 and QC-20 join the TK-10 amendment PR. Work that
