@@ -48,13 +48,14 @@ installed Plan/Task schemas and index/log skeletons. Strict validation reports
 remain not_started. The next executable work is Task-016's independent Rust
 fixtures and genuine missing-API test, followed by implementation.
 Static native-domain
-registration, independent FS05 consumption, compiled ConfigVersion/backend
-parity and Quire integration remain full-assignment acceptance work. No Cargo
+registration, FS05 consumption, compiled ConfigVersion/backend
+parity and Quire integration are tracked as separate full-assignment work. No Cargo
 build, additional agent, hosted dispatch or public posting ran in this review.
 
 Recorded 2026-09-07. The [requirements index](../spec/spec.md) contains 24 draft
 artifacts: one master, one StR, four US, eleven FR, four NFR and three IT.
-These document the existing syntax implementation. The full
+These document requirements spanning syntax, linking, checking and runtime
+evaluation as drafted so far. The full
 healthy/violating/refused-or-incomplete state workflow is still
 required; syntax success does not satisfy that acceptance.
 
@@ -210,10 +211,10 @@ LC02's IT-005, TM-003 and TC-020–029 cover the existing ten FR-005/006
 acceptance criteria. SR-030–037 record the retained base plus seven analyses.
 The cases remain planned: Quire reports TM-003 0/10 backed and the existing
 41/41 Rust test symbols bound. No new runtime execution is claimed.
-The actual shared typed-model/reference interface and qualified rule-model
-realization remain prerequisites; A will specify its concrete native API and
-resource limits against that shared interface before implementation.
-Broader FS acceptance, independent B/C adoption and publication remain separate.
+A will specify its concrete native API and resource limits against the actual
+shared typed-model/reference interface and qualified rule-model realization.
+Broader FS acceptance, independent B/C adoption and publication are tracked
+as separate work.
 
 ## Current ownership correction — 2026-09-08
 
@@ -225,7 +226,7 @@ merely because A posted it.
 This corrects work ownership only. The adopted semantics, IT-005 prerequisites,
 ten planned LC02 cases and SR-030–037 technical findings are unchanged. Actual
 adapter availability still requires code and qualification evidence; it is no
-longer described as a dependency on the retired core session.
+longer described as a dependency on an inactive work track.
 
 ## IR #54 resolution — 2026-09-08
 
@@ -325,10 +326,11 @@ Runtime rows remain planned; existing tests are not relabeled as runtime evidenc
 The actual local code-review/rust-review skills and non-semantic gap reconciliation
 remain mandatory during implementation qualification.
 
-This native API milestone still requires subsequent LC02/FS03 acceptance,
-compiled ConfigVersion/backend qualification and Quire integration for the
-original assignment. It introduces no B/C/TL/Filament ownership change, new
-portable result authority, decoder, producer-language execution or hosted CI run.
+This native API milestone is scoped to LC03. LC02/FS03 acceptance, compiled
+ConfigVersion/backend qualification and Quire integration for the original
+assignment are tracked as separate work. It introduces no B/C/TL/Filament
+ownership change, new portable result authority, decoder, producer-language
+execution or hosted CI run.
 
 ## LC03 input construction qualified — 2026-09-09
 

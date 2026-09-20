@@ -87,6 +87,5 @@ hosted runner no longer needs special access to clone it before the test/lint
 commands can run. Local locked builds already have that access/cache; hosted
 credential setup is not claimed by local results.
 
-This scope does not accept
-FS02/FS03/FS05 or complete the full compiler workflow. The root code and gap
+This scope covers the local-CI remediation described above. The root code and gap
 reviews record the actual evaluated implementation revision and limitations.

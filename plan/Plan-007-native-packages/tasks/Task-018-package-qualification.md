@@ -48,8 +48,9 @@ reviewable compiler delivery under LC02. Preserve all broader assignment gates.
 
 Actual reconstructed native workflow observations, full local command evidence,
 validated code/Rust and gap reviews, reconciled plan/matrix statuses and a
-reviewable private PR plus ownership handoff. Merge readiness is separate from
-closing full LC02/FS05 or the original assignment.
+reviewable private PR plus ownership handoff. Merge readiness is a distinct
+milestone from LC02/FS05 or the original assignment, which remain tracked in
+their own tickets.
 
 ## Notes
 
@@ -61,4 +62,5 @@ No additional agents, hosted dispatch, public publication or overlapping
 B/C/TL/Filament edits. Review meaning changes through specify/spec-review again.
 
 Qualification: implementation eb97a87; PR code/Rust review SR-112 and final
-Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance remains open.
+Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance is tracked
+in those separate, own-owned tickets.

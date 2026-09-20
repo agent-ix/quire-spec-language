@@ -73,4 +73,5 @@ does not add a general model decoder, B envelope or IR executable projection.
 Source/semantic/interface changes reopen the completed specification reviews.
 
 Qualification: implementation eb97a87; PR code/Rust review SR-112 and final
-Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance remains open.
+Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance is tracked
+in those separate, own-owned tickets.
