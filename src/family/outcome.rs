@@ -4,9 +4,12 @@
 //! returns (FR-062-AC-5).
 //!
 //! **Provisional.** ADR-013 T-4 assigns these types' canonical home to
-//! `#213` S-5's `diagnostic` crate, which has not landed. This module
-//! implements T-4's already-decided shape locally so #214 has something to
-//! return; see `crate::family`'s module doc.
+//! `#213` S-5's `diagnostic` crate. `src/diagnostic.rs` has since landed
+//! (merged into this branch from `origin/main`); migrating `Staged`/
+//! `StageFailure`/`LimitExceeded` onto it is real work a future change does
+//! deliberately, not a byproduct of this one. This module implements T-4's
+//! already-decided shape locally so #214 has something to return; see
+//! `crate::family`'s module doc.
 
 /// A stage's successful output.
 ///
