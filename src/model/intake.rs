@@ -357,12 +357,17 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// crate decides `conformance/schema/input-bundle.schema.json` by wrapping
 /// the document as `{"ir": <document>}` (`input-bundle.schema.json` requires
 /// an `ir` member carrying `semantic-ir.schema.json`) and reports every
-/// defect as an RFC 6901 pointer into the wrapped bundle. On the first
-/// `Severity::Error` diagnostic this refuses `malformed-declaration`, naming
-/// that diagnostic's own pointer as the node and carrying its code/message
-/// in the detail, so a shape this reader's own hand-rolled checks miss (an
-/// `abstract` that is not a boolean, say) still refuses rather than being
-/// read as a default.
+/// defect as an RFC 6901 pointer into the wrapped bundle. FR-056-AC-2/FR-056
+/// Admission: "a reader-refused document retains every reader diagnostic
+/// and admits no declaration" -- so this refuses `malformed-declaration`
+/// once per `Severity::Error` diagnostic the reader reports, not only the
+/// first, each carrying that diagnostic's own owning declaration as the
+/// node (`Located::owner`, the same identity [`agent_ix_semantic_ir::diag::owner_for`]
+/// computes) and, when its `locus` names one, the artifact id and span
+/// ([`located_span`]), so a shape this reader's own hand-rolled checks miss
+/// (an `abstract` that is not a boolean, say) still refuses -- fully, not
+/// just its first defect -- rather than being read as a default or having
+/// every diagnostic but the first silently dropped (PR #200 review R2-2).
 ///
 /// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`, FCD PR #200)
 /// resolves `ix://quire/native/<Name>` at the validator layer
@@ -381,49 +386,105 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// which is exactly why `Pump.id`/`Sys.id`/`Tank.id` still refuse in
 /// `tests/model_intake.rs`'s golden-shape test even though the schema
 /// itself now admits them.
-fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
-    let malformed = |detail: String| ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: "$".to_owned(),
-            artifact: None,
-            span: None,
-        },
-        detail,
+fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
+    let malformed = |node: String, artifact: Option<String>, span: Option<LocatedSpan>, detail: String| {
+        ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                artifact,
+                span,
+            },
+            detail,
+        }
     };
-    let text = std::str::from_utf8(document)
-        .map_err(|err| malformed(format!("admitted document bytes are not UTF-8: {err}")))?;
+    let text = std::str::from_utf8(document).map_err(|err| {
+        vec![malformed(
+            "$".to_owned(),
+            None,
+            None,
+            format!("admitted document bytes are not UTF-8: {err}"),
+        )]
+    })?;
     let parsed = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
-        malformed(format!(
-            "admitted document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"
-        ))
+        vec![malformed(
+            "$".to_owned(),
+            None,
+            None,
+            format!("admitted document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"),
+        )]
     })?;
     let bundle = agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), parsed)]);
     let verdict = agent_ix_semantic_ir::decide(&bundle);
-    let Some(first_error) = verdict
+    let refusals: Vec<ModelRefusal> = verdict
         .diagnostics
         .iter()
-        .find(|located| located.severity == agent_ix_semantic_ir::diag::Severity::Error)
-    else {
-        return Ok(());
-    };
-    let node = if first_error.pointer.is_empty() {
-        "$".to_owned()
+        .filter(|located| located.severity == agent_ix_semantic_ir::diag::Severity::Error)
+        .map(|located| {
+            let node = if located.owner.is_empty() {
+                "$".to_owned()
+            } else {
+                located.owner.clone()
+            };
+            let (artifact, span) = located_span(located);
+            malformed(
+                node,
+                artifact,
+                span,
+                format!(
+                    "agent-ix-semantic-ir refused this document at {} ({}): {}",
+                    located.pointer, located.code, located.message
+                ),
+            )
+        })
+        .collect();
+    if refusals.is_empty() {
+        Ok(())
     } else {
-        first_error.pointer.clone()
+        Err(refusals)
+    }
+}
+
+/// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
+/// `locus` carries. `Located::locus` is already the `origin.source` object
+/// itself (see `agent_ix_semantic_ir::diag::locus_for`), not wrapped in an
+/// `origin` member the way [`node_span`] must unwrap from a freshly parsed
+/// `serde_json::Value` -- the two functions read the same
+/// `sourceIdentity`/`startLine`/`startColumn` shape from two different `Json`
+/// types the two crates each keep independently, one FCD's own, one this
+/// crate's own `serde_json::Value` copy of the same bytes.
+fn located_span(
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> (Option<String>, Option<LocatedSpan>) {
+    let Some(source) = &located.locus else {
+        return (None, None);
     };
-    Err(ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node,
-            artifact: None,
-            span: None,
-        },
-        detail: format!(
-            "agent-ix-semantic-ir refused this document at {} ({}): {}",
-            first_error.pointer, first_error.code, first_error.message
-        ),
-    })
+    let artifact = source
+        .get("sourceIdentity")
+        .and_then(agent_ix_semantic_ir::json::Json::as_str)
+        .map(str::to_owned);
+    let span = match (
+        source
+            .get("startLine")
+            .and_then(agent_ix_semantic_ir::json::Json::as_i64),
+        source
+            .get("startColumn")
+            .and_then(agent_ix_semantic_ir::json::Json::as_i64),
+    ) {
+        (Some(start_line), Some(start_column)) if start_line >= 0 && start_column >= 0 => {
+            let position = Position {
+                byte: 0,
+                line: start_line as usize,
+                column: start_column as usize,
+            };
+            Some(LocatedSpan {
+                start: position,
+                end: position,
+            })
+        }
+        _ => None,
+    };
+    (artifact, span)
 }
 
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
@@ -1309,8 +1370,8 @@ pub fn read_records(
     package_identity: &str,
     document: &[u8],
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
-    if let Err(refusal) = validate_with_semantic_ir(document) {
-        return Err(vec![refusal]);
+    if let Err(refusals) = validate_with_semantic_ir(document) {
+        return Err(refusals);
     }
     // `agent-ix-semantic-ir`'s own independent parser (called above by
     // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
@@ -1782,6 +1843,74 @@ mod tests {
         );
     }
 
+    /// FR-056-AC-4's second half (PR #200 review R2-3): "changing only
+    /// `title` or `displayName` leaves every key, export, ordering and
+    /// binding unchanged, and two artifacts with equal titles stay distinct
+    /// declarations." FCD's own wire carries `displayName` (not a separate
+    /// `title`); this reader's `identity`-only key derivation never reads
+    /// it, so both halves hold by construction -- this test is the actual
+    /// Test verification the row claims, not just the argument for it.
+    #[trace("TC-145", "FR-056-AC-4")]
+    #[test]
+    fn changing_only_displayname_leaves_records_unchanged_and_equal_titles_stay_distinct() {
+        let one_type = |identity: &str, display_name: &str| {
+            let mut node = wire_type(
+                identity,
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            );
+            node["displayName"] = serde_json::json!(display_name);
+            node
+        };
+        let document_of = |types: Value| {
+            wire_envelope(
+                "acme/orders",
+                serde_json::json!([wire_construct(
+                    "acme/orders",
+                    "order",
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                )]),
+                types,
+            )
+            .to_string()
+            .into_bytes()
+        };
+
+        // Half one: changing only displayName changes nothing else.
+        let titled_a = document_of(serde_json::json!([one_type(
+            "ix://acme/orders/Order",
+            "Order A"
+        )]));
+        let titled_b = document_of(serde_json::json!([one_type(
+            "ix://acme/orders/Order",
+            "A Totally Different Title"
+        )]));
+        let records_a =
+            read_records("acme/orders", &titled_a).expect("displayName alone never refuses");
+        let records_b =
+            read_records("acme/orders", &titled_b).expect("displayName alone never refuses");
+        assert_eq!(
+            records_a, records_b,
+            "changing only displayName must not change the resulting records"
+        );
+
+        // Half two: two artifacts sharing one title stay distinct declarations.
+        let shared_title = document_of(serde_json::json!([
+            one_type("ix://acme/orders/Order", "Shared Title"),
+            one_type("ix://acme/orders/Invoice", "Shared Title"),
+        ]));
+        let records = read_records("acme/orders", &shared_title)
+            .expect("two artifacts with equal titles are still two distinct declarations");
+        assert_eq!(records.len(), 2, "both equal-titled artifacts are admitted");
+        let keys: std::collections::BTreeSet<_> = records.iter().map(DomainPackageRecord::key).collect();
+        assert_eq!(
+            keys.len(),
+            2,
+            "equal titles must not collapse two distinct artifacts onto one key"
+        );
+    }
+
     #[trace("TC-145", "FR-056-AC-4")]
     #[test]
     fn refuses_fcd_own_identity_form_as_malformed_declaration() {
@@ -1822,7 +1951,8 @@ mod tests {
     /// (`crates/semantic-ir/src/schema.rs`'s `type_definition`), so this
     /// document never reaches `read_type_node`'s own hand-rolled `abstract`
     /// check at all -- `validate_with_semantic_ir` refuses it first, naming
-    /// the validator's own pointer.
+    /// the validator's own diagnostic (its owning declaration, code and
+    /// message).
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_non_boolean_abstract_via_the_semantic_ir_validator() {
@@ -1852,7 +1982,13 @@ mod tests {
             vec![ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: "/ir/types/0/abstract".to_owned(),
+                    // `Located::owner` (PR #200 review R2-2): the nearest
+                    // declaration that owns `/ir/types/0/abstract`, not the
+                    // raw pointer itself -- FR-056-AC-2 retains "every
+                    // reader diagnostic" with "its IR node", and an actual
+                    // declaration identity is a real IR node in a way a JSON
+                    // pointer into the wrapped bundle is not.
+                    node: "ix://acme/orders/Order".to_owned(),
                     artifact: None,
                     span: None,
                 },
@@ -1861,8 +1997,64 @@ mod tests {
                           abstract is a boolean"
                     .to_owned(),
             }],
-            "the refusal names the validator's own pointer to the offending member and \
-             the validator that refused this, not this reader's own hand-rolled check"
+            "the refusal names the validator's own diagnostic (owning declaration, code, \
+             message), not this reader's own hand-rolled check"
+        );
+    }
+
+    /// R2-2 (PR #200 review round 2): `validate_with_semantic_ir` used to
+    /// build one refusal from the *first* `Severity::Error` diagnostic and
+    /// silently drop every later one -- FR-056-AC-2 requires retaining
+    /// "every reader diagnostic". Two schema-invalid types, each with its
+    /// own non-boolean `abstract`, must both be named.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_every_semantic_ir_diagnostic_not_only_the_first() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "order",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([
+                wire_type(
+                    "ix://acme/orders/Order",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({
+                        "supertypes": [],
+                        "fields": [],
+                        "operations": [],
+                        "abstract": "yes",
+                    }),
+                ),
+                wire_type(
+                    "ix://acme/orders/Invoice",
+                    serde_json::json!({"module": "acme/orders", "name": "order"}),
+                    serde_json::json!({
+                        "supertypes": [],
+                        "fields": [],
+                        "operations": [],
+                        "abstract": "also yes",
+                    }),
+                ),
+            ]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        assert_eq!(refusals.len(), 2, "both invalid types refuse, not only the first");
+        let nodes: std::collections::BTreeSet<&str> = refusals
+            .iter()
+            .map(|refusal| match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => node.as_str(),
+                other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            nodes,
+            std::collections::BTreeSet::from(["ix://acme/orders/Order", "ix://acme/orders/Invoice"]),
+            "each diagnostic names its own owning declaration, not just the first one's"
         );
     }
 
@@ -1942,7 +2134,14 @@ mod tests {
     // one's own refusal/success shape is pinned independently of any one
     // fixture document.
 
-    #[trace("TC-145", "FR-056-AC-1")]
+    /// PR #200 review R2-4: untagged, not re-traced. This drives
+    /// [`read_value_type_ref`] directly -- a native `typeRef`'s own
+    /// resolution rule, no FR-056 AC's subject (AC-1 covers per-IR-node
+    /// declaration production: meaning, exports, artifact id, span). No
+    /// FR-056 AC or other traced criterion in this repo names native
+    /// `typeRef` resolution, so this stays untagged rather than mistagged
+    /// (the same honest-untag choice as `xtask/src/cargo_pin.rs`'s tests,
+    /// F6).
     #[test]
     fn resolves_a_known_native_type_ref() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -1952,7 +2151,9 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
-    #[trace("TC-145", "FR-056-AC-3")]
+    /// PR #200 review R2-4: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
+    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
     #[test]
     fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -1993,7 +2194,10 @@ mod tests {
     /// to a model-declared type instead, at which point this exact refusal
     /// stops occurring, but as a consequence of what the *document* emits,
     /// not because this test or this reader changed.
-    #[trace("TC-145", "FR-056-AC-3")]
+    ///
+    /// PR #200 review R2-4: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
+    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
     #[test]
     fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
@@ -2024,7 +2228,9 @@ mod tests {
     /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
     /// unconditionally, naming which parameters are unexpressable, never
     /// resolving to a made-up declaration.
-    #[trace("TC-146", "FR-056-AC-3")]
+    /// PR #200 review R2-4: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
+    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
     #[test]
     fn refuses_a_parameterized_native_type_as_unsupported() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
@@ -2386,6 +2592,55 @@ mod tests {
         );
     }
 
+    /// R2-5 (PR #200 review round 2): `read_relationship`'s own `direction`
+    /// match is the fourth panic-to-refusal conversion H3 made (the review's
+    /// brief named three -- `read_endpoint`'s `direction`, `read_connection`'s
+    /// `flowDirection`, `read_population`'s `extent` -- but this fourth one
+    /// changed too, and had no regression test of its own).
+    #[test]
+    fn refuses_an_unrecognized_relationship_direction_instead_of_panicking() {
+        let type_value = serde_json::json!({
+            "identity": "ix://acme/orders/Flow2",
+            "supertypes": [],
+            "fields": [],
+            "operations": [],
+            "relationships": [{
+                "identity": "ix://acme/orders/Flow2/specializes",
+                "category": "structural",
+                "composite": false,
+                "direction": "sideways",
+                "origin": {"source": {"sourceIdentity": "ix://acme/orders/spec", "startLine": 1, "startColumn": 1}},
+                "sourceEnd": {
+                    "role": "specializes",
+                    "type": "ix://acme/orders/Flow2",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+                "targetEnd": {
+                    "type": "ix://acme/orders/Flow",
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+                },
+            }],
+        });
+        let mut records = Vec::new();
+        let refusal = read_object_type(
+            "acme/orders",
+            &type_value,
+            "ix://acme/orders/Flow2",
+            "$.types[0]",
+            false,
+            &mut records,
+        )
+        .expect_err("an unrecognized relationship direction refuses rather than panicking");
+        assert!(
+            refusal.detail.contains("sideways")
+                && refusal
+                    .detail
+                    .contains("is not a direction this reader recognizes"),
+            "{}",
+            refusal.detail
+        );
+    }
+
     /// A real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
     /// accepts generically -- any string in `kind`'s resolved `meaning` is
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
@@ -2472,6 +2727,43 @@ mod tests {
                           FR-208"
                     .to_owned(),
             }]
+        );
+    }
+
+    /// FR-056-AC-3's last clause (PR #200 review R2-4): "renaming a kind
+    /// while keeping its meaning id changes no meaning or export." This
+    /// reader dispatches purely on the construct's resolved `meaning`
+    /// (FR-056-CON-3), never on `kind.name`/`kind.module`, so two documents
+    /// whose only difference is the construct/type `kind` name (with the
+    /// same `meaning::OBJECT_TYPE`) must read to the exact same record.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn renaming_a_kind_while_keeping_its_meaning_id_changes_no_record() {
+        let document_named = |kind_name: &str| {
+            wire_envelope(
+                "acme/orders",
+                serde_json::json!([wire_construct(
+                    "acme/orders",
+                    kind_name,
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                )]),
+                serde_json::json!([wire_type(
+                    "ix://acme/orders/Order",
+                    serde_json::json!({"module": "acme/orders", "name": kind_name}),
+                    serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                )]),
+            )
+            .to_string()
+            .into_bytes()
+        };
+        let records_a = read_records("acme/orders", &document_named("order"))
+            .expect("a real OBJECT_TYPE meaning always reads");
+        let records_b = read_records("acme/orders", &document_named("purchase_order"))
+            .expect("a real OBJECT_TYPE meaning always reads");
+        assert_eq!(
+            records_a, records_b,
+            "renaming the kind while keeping the same meaning id must not change the record"
         );
     }
 
@@ -2702,7 +2994,13 @@ mod tests {
     /// and treats `multiplicity` as optional -- so a connection end with no
     /// multiplicity at all is schema-valid to FCD and reaches this reader's
     /// own check.
-    #[trace("TC-145", "FR-056-AC-3")]
+    ///
+    /// PR #200 review R2-4: untagged, not re-traced -- this is
+    /// `read_connection`'s own connection-end shape check, not AC-3's
+    /// kind/meaning subject, and this repo carries no local FR-152 text to
+    /// cite for the connection-end rule itself (FR-056-AC-8 cites FR-152
+    /// only end to end). Same honest-untag choice as
+    /// `resolves_a_known_native_type_ref`'s doc comment describes (F6).
     #[test]
     fn refuses_a_connection_end_with_no_multiplicity() {
         let document = wire_envelope(
@@ -2862,7 +3160,11 @@ mod tests {
         );
     }
 
-    #[trace("TC-145", "FR-056-AC-1")]
+    /// PR #200 review R2-4: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment. This one drives
+    /// `read_records` end to end rather than `read_value_type_ref` directly,
+    /// but its subject is still typeRef resolution, not AC-1's per-node
+    /// declaration production.
     #[test]
     fn resolves_a_package_type_ref_to_a_node_of_the_package() {
         let document = document_with_one_field(wire_field(
