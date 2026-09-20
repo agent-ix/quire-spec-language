@@ -729,7 +729,14 @@ pub fn admit_binding(
             DomainPackageRecord::ObjectType(object) => {
                 Some((object.key.clone(), object.abstract_type))
             }
-            _ => None,
+            DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::OperationMember(_)
+            | DomainPackageRecord::Component(_)
+            | DomainPackageRecord::Endpoint(_)
+            | DomainPackageRecord::Relationship(_)
+            | DomainPackageRecord::Allocation(_)
+            | DomainPackageRecord::Population(_) => None,
         })
         .collect();
 
