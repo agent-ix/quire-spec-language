@@ -361,14 +361,24 @@ pub struct EndpointRecord {
     pub multiplicity: Multiplicity,
 }
 
-/// One end of a [`RelationshipRecord`]: `{type_identity, multiplicity}`.
+/// One end of a [`RelationshipRecord`]: `{type_identity, role, multiplicity}`.
 /// `type_identity` names whatever the end's `typeIdentity` names in the
 /// correspondence — an endpoint, a component, an operation member or an
 /// object type — which [`crate::model::systems`] resolves by kind.
+///
+/// `role` (model-complete.md's Relationships row: "each end has a role and
+/// a multiplicity") is `Some` when the producer's own end shape carries one
+/// -- a type's inline `relationships[]` entry always does on its source end
+/// and may on its target end -- and `None` when the end's own producer
+/// shape carries no role concept at all, as a Connection node's
+/// `sourceEnd`/`targetEnd` never do (`ConnectionEnd` has no `role` member).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipEnd {
     /// The named producer key.
     pub type_identity: DeclarationKey,
+    /// `Some(role)` when the producer's own end shape carries a role;
+    /// `None` when it does not.
+    pub role: Option<String>,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
 }

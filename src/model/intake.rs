@@ -14,15 +14,20 @@
 //! table (FR-208), never by `kind.name`/`kind.module` directly.
 //!
 //! **This reader binds only what QSpec admits and refuses everything else.**
-//! It never invents a value and never drops data. Four shapes FCD emits
-//! today are FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
+//! It never invents a value and never drops data. Three shapes FCD emits
+//! today are still FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
 //! declared directly in `types[]`, FCD's own identity form
 //! (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`) rather than
-//! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`), a type's inline
-//! `relationships[]` (FCD's `verb`/`category`/`composite` shape carries
-//! neither the role nor the full direction vocabulary QSpec's own
-//! Relationships row requires), and a non-empty operation `frame`. This
-//! reader refuses all four rather than working around them.
+//! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`), and a non-empty operation
+//! `frame`. This reader refuses all three rather than working around them.
+//! A type's inline `relationships[]` (model-complete.md's Relationships
+//! row: each end names an object type or a process, carries a role and a
+//! multiplicity, and `direction` is the full source-to-target/
+//! target-to-source/bidirectional/undirected vocabulary) was a fourth gap
+//! -- FCD's old `verb`/`category`/`composite` shape carried neither a role
+//! nor that direction vocabulary -- fixed upstream by FCD #199/#200's
+//! `sourceEnd`/`targetEnd`/`role`/`direction` shape, so this reader now
+//! reads it rather than refusing it.
 #![allow(
     clippy::result_large_err,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
@@ -361,8 +366,18 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`) does not yet
 /// resolve `ix://quire/native/<Name>`: every `typeRef` under that prefix
 /// reads there as `agent-ix.semantic-ir.UNRESOLVED_TYPE_REF`, an
-/// `Error`-severity diagnostic this validator refuses like any other,
-/// until the FCD rev this crate pins recognizes the prefix.
+/// `Error`-severity diagnostic this validator refuses like any other.
+/// FCD's `task/199-intake-shapes` branch (`crates/semantic-ir/src/
+/// rules.rs:43-56`) fixes this at the validator layer, resolving the
+/// prefix against FCD's own closed native-scalar set (`UUID`, `Boolean`,
+/// `Integer`, `Decimal`, `String`, `Timestamp`, `Duration`, `Bytes`,
+/// `JsonObject`) rather than refusing it outright -- once this crate pins
+/// that rev, `validate_with_semantic_ir` stops refusing a document merely
+/// for naming a native type reference. That does not widen what *this*
+/// reader accepts: [`read_value_type_ref`] independently refuses any
+/// `<Name>` outside [`NativeValueType`]'s own closed set (QSpec's
+/// `type-ref`, R5's ruling -- narrower than FCD's) as
+/// `malformed-declaration`, a later, separate refusal from this one.
 fn validate_with_semantic_ir(document: &[u8]) -> Result<(), ModelRefusal> {
     let malformed = |detail: String| ModelRefusal {
         code: Code::InvalidModelBinding,
@@ -798,8 +813,9 @@ fn read_field_member(
 
 /// Reads an `OBJECT_TYPE`/`SYSTEMS_INTERFACE` type into an
 /// [`ObjectTypeRecord`] plus one [`FieldMemberRecord`]/[`OperationMemberRecord`]
-/// per declared field/operation, appending all of them to `records` in the
-/// type's own field-then-operation order.
+/// per declared field/operation and one [`RelationshipRecord`] per declared
+/// inline relationship, appending all of them to `records` in the type's
+/// own field-then-operation-then-relationship order.
 fn read_object_type(
     package: &str,
     type_value: &Value,
@@ -809,22 +825,6 @@ fn read_object_type(
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
-    // A type's own inline `relationships[]` is QSpec's Relationship
-    // declaration kind (model-complete.md's Relationships row: each end
-    // names object-type-or-process, carries a role and a multiplicity, and
-    // `direction` is the full source-to-target/target-to-source/
-    // bidirectional/undirected vocabulary). FCD's wire shape for it
-    // (`verb`/`category`/`composite`/`target`/`multiplicity`) carries
-    // neither a role nor that direction vocabulary (FCD #199 gap 3); a
-    // non-empty `relationships[]` refuses rather than being read as a
-    // shape it is not.
-    if !ctx.array_field("relationships")?.is_empty() {
-        return Err(unsupported_at(
-            type_value,
-            &format!("{at}.relationships"),
-            "relationships[]",
-        ));
-    }
     let supertypes = ctx.identity_keys(package, "supertypes")?;
     // `agent-ix-semantic-ir`'s own `expect_bool` guarantees `abstract`, when
     // present, is a boolean, before this reader sees the document; absent
@@ -864,6 +864,18 @@ fn read_object_type(
             node,
             operation,
             &format!("{operations_at}[{position}]"),
+        )?));
+    }
+    // A type's own inline `relationships[]` is QSpec's Relationship
+    // declaration kind (model-complete.md's Relationships row), read by
+    // `read_relationship` -- FCD #199 gap 3 is fixed upstream, so this is
+    // read rather than refused.
+    let relationships_at = format!("{at}.relationships");
+    for (position, relationship) in ctx.array_field("relationships")?.iter().enumerate() {
+        records.push(DomainPackageRecord::Relationship(read_relationship(
+            package,
+            relationship,
+            &format!("{relationships_at}[{position}]"),
         )?));
     }
     Ok(())
@@ -955,13 +967,85 @@ fn read_connection(
         key: declaration_key(package, node),
         source: RelationshipEnd {
             type_identity: declaration_key(package, source_type),
+            // `ConnectionEnd` (FCD's wire shape for a Connection node's
+            // ends) carries no `role` member at all -- not merely an absent
+            // optional one -- so this end never has one to preserve.
+            role: None,
             multiplicity: source_multiplicity,
         },
         target: RelationshipEnd {
             type_identity: declaration_key(package, target_type),
+            role: None,
             multiplicity: target_multiplicity,
         },
         direction,
+    })
+}
+
+/// Reads a type's own inline `relationships[]` entry (model-complete.md's
+/// Relationships row: each end names an object type or a process, carries
+/// a role and a multiplicity with `lower <= upper`, and `direction` is the
+/// full `source-to-target`/`target-to-source`/`bidirectional`/`undirected`
+/// vocabulary) into a [`RelationshipRecord`].
+///
+/// Distinct from [`read_connection`]: a Connection node's ends carry no
+/// `role` at all, and its direction lives under `flowDirection`, restricted
+/// to `source-to-target`/`target-to-source`/`bidirectional` -- never
+/// `undirected`. This shape's own member is `direction`, not
+/// `flowDirection`; the two are never conflated.
+fn read_relationship(
+    package: &str,
+    relationship: &Value,
+    at: &str,
+) -> Result<RelationshipRecord, ModelRefusal> {
+    let ctx = NodeCtx::new(relationship, at.to_owned());
+    let node = ctx.str_field("identity")?;
+    let source = read_relationship_end(package, &ctx, "sourceEnd")?;
+    let target = read_relationship_end(package, &ctx, "targetEnd")?;
+    // `agent-ix-semantic-ir`'s own `expect_enum` guarantees `direction` is
+    // one of the four `RelationshipDirection` variants when present, and
+    // `str_field` above already refused its absence.
+    let direction = match ctx.str_field("direction")? {
+        "source-to-target" => RelationshipDirection::SourceToTarget,
+        "target-to-source" => RelationshipDirection::TargetToSource,
+        "bidirectional" => RelationshipDirection::Bidirectional,
+        "undirected" => RelationshipDirection::Undirected,
+        other => {
+            panic!("agent-ix-semantic-ir guarantees direction is a known direction, got {other:?}")
+        }
+    };
+    Ok(RelationshipRecord {
+        key: declaration_key(package, node),
+        source,
+        target,
+        direction,
+    })
+}
+
+/// One `sourceEnd`/`targetEnd` of a [`read_relationship`] node:
+/// `{role, multiplicity, type}`. `role` is required on `sourceEnd` and
+/// optional on `targetEnd` (`agent-ix-semantic-ir`'s own
+/// `relationshipSourceEnd`/`relationshipTargetEnd` schemas), so it is read
+/// as present-or-absent here rather than assumed on both ends.
+fn read_relationship_end(
+    package: &str,
+    ctx: &NodeCtx<'_>,
+    field: &'static str,
+) -> Result<RelationshipEnd, ModelRefusal> {
+    let end = ctx
+        .value
+        .get(field)
+        .ok_or_else(|| ctx.malformed(format!("{field}: missing")))?;
+    let type_ref = end
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ctx.malformed(format!("{field}.type: missing or not a string")))?;
+    let role = end.get("role").and_then(Value::as_str).map(str::to_owned);
+    let multiplicity = ctx.multiplicity_of(end, &format!("{field}.multiplicity"))?;
+    Ok(RelationshipEnd {
+        type_identity: declaration_key(package, type_ref),
+        role,
+        multiplicity,
     })
 }
 
@@ -1778,10 +1862,13 @@ mod tests {
     // `agent-ix-semantic-ir` at the pinned rev does not yet resolve
     // `ix://quire/native/<Name>` (every such reference reads there as
     // `UNRESOLVED_TYPE_REF`, an `Error`-severity diagnostic
-    // `validate_with_semantic_ir` refuses like any other), so a native
-    // typeRef cannot yet be exercised successfully end to end through
-    // `read_records`. These tests drive [`read_value_type_ref`] directly,
-    // the same resolver every field/parameter/`returns` typeRef site calls.
+    // `validate_with_semantic_ir` refuses like any other) -- see
+    // `validate_with_semantic_ir`'s own doc comment for FCD's upstream fix
+    // and why it still would not widen what this reader accepts -- so a
+    // native typeRef cannot yet be exercised successfully end to end
+    // through `read_records`. These tests drive [`read_value_type_ref`]
+    // directly, the same resolver every field/parameter/`returns` typeRef
+    // site calls.
 
     #[test]
     fn resolves_a_known_native_type_ref() {
@@ -1808,6 +1895,49 @@ mod tests {
                     span: None,
                 },
                 detail: "$.types[0].fields[0]: typeRef: \"ix://quire/native/Frobnicate\" \
+                          names no native value type QSL declares"
+                    .to_owned(),
+            }
+        );
+    }
+
+    /// R5 (the PR owner's ruling, authorized by the repo owner): QSpec's
+    /// `type-ref` production (`shared-grammar.md:285-296`) is
+    /// `{Boolean, Integer, Rational, Decimal, Float32, Float64, Text}`, and
+    /// that is the closed set [`NativeValueType`] declares -- FCD's own
+    /// native-scalar set is wider (adds `UUID`, `String`, `Timestamp`,
+    /// `Duration`, `Bytes`, `JsonObject`), and QSL does not widen its own
+    /// vocabulary, add a mapping, or otherwise translate a name outside its
+    /// grammar. `ix://quire/native/UUID` -- the exact typeRef FCD #199's new
+    /// golden gives `Pump.id`/`Sys.id`/`Tank.id` -- is this ruling's
+    /// concrete case: it refuses today, and it keeps refusing after the FCD
+    /// pin bumps (FCD's own validator resolving the prefix, F7's fix to
+    /// `validate_with_semantic_ir`'s doc comment, does not change what this
+    /// reader itself accepts). PLAT-836 (filed separately, lands after FCD
+    /// #200) narrows FCD's own emission so `UUID` stops being a native
+    /// reference there at all -- a field like `Pump.id` becomes a reference
+    /// to a model-declared type instead, at which point this exact refusal
+    /// stops occurring, but as a consequence of what the *document* emits,
+    /// not because this test or this reader changed.
+    #[test]
+    fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
+        let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let refusal = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
+            .expect_err(
+                "R5: FCD's native-scalar set is wider than QSpec's type-ref; QSL does not widen \
+                 to match it, so ix://quire/native/UUID refuses",
+            );
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "ix://agent-ix/architecture/Pump/id".to_owned(),
+                    artifact: None,
+                    span: None,
+                },
+                detail: "$.types[0].fields[0]: typeRef: \"ix://quire/native/UUID\" \
                           names no native value type QSL declares"
                     .to_owned(),
             }
@@ -1935,45 +2065,143 @@ mod tests {
         );
     }
 
-    /// A type's own non-empty inline `relationships[]` -- FCD's
-    /// `verb`/`category`/`composite`/`target` wire shape, carrying
-    /// neither a role nor QSpec's own direction vocabulary -- refuses as a
-    /// known-but-unsupported declaration form.
+    /// A type's own non-empty inline `relationships[]`, in the real
+    /// `sourceEnd`/`targetEnd` shape FCD #199/#200 gap 3 fixes (`role` is
+    /// required on `sourceEnd`, optional on `targetEnd` --
+    /// `agent-ix-semantic-ir`'s own `relationshipSourceEnd`/
+    /// `relationshipTargetEnd` schemas -- so both are exercised here), is
+    /// read into a [`RelationshipRecord`], not refused.
+    ///
+    /// This calls [`read_object_type`] directly rather than through
+    /// [`read_records`]: at this crate's pinned `agent-ix-semantic-ir` rev
+    /// (predating FCD #199/#200) the *schema* for this shape still requires
+    /// the old `verb` member, so `validate_with_semantic_ir` refuses any
+    /// document carrying it before `read_object_type` ever runs --
+    /// confirmed by running FCD's own new golden through it (see
+    /// `reading_fcd_199s_golden_shape_refuses_the_whole_document_at_the_pinned_semantic_ir_schema`
+    /// in `tests/model_intake.rs`). Same reason
+    /// [`resolves_a_known_native_type_ref`] drives `read_value_type_ref`
+    /// directly instead of through the full pipeline.
     #[test]
-    fn refuses_a_non_empty_relationships_array_as_unsupported() {
-        let document = document_with_object_type_extra(serde_json::json!({
+    fn reads_an_inline_relationship_with_the_real_source_end_and_target_end_shape() {
+        let type_value = serde_json::json!({
+            "identity": "ix://acme/orders/Flow2",
+            "supertypes": ["ix://acme/orders/Flow"],
+            "fields": [],
+            "operations": [],
+            "featureOrder": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Widget/owns",
-                "verb": "owns",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
-                "target": "ix://acme/orders/OtherType",
-                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
-                "origin": {
-                    "generated": {
-                        "generatorIdentity": "ix://acme/orders/Widget/owns",
-                        "generatorVersion": "1.0.0",
-                        "inputIdentities": ["ix://acme/orders/Widget/owns"],
-                    }
+                "direction": "source-to-target",
+                "sourceEnd": {
+                    "role": "specializes",
+                    "type": "ix://acme/orders/Flow2",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+                "targetEnd": {
+                    "type": "ix://acme/orders/Flow",
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
                 },
             }],
-        }));
-        let refusals = read_records("acme/orders", &document).expect_err(
-            "a non-empty relationships[] is FCD's own shape, not QSpec's Relationships row",
+        });
+        let mut records = Vec::new();
+        read_object_type(
+            "acme/orders",
+            &type_value,
+            "ix://acme/orders/Flow2",
+            "$.types[0]",
+            true,
+            &mut records,
+        )
+        .expect("the real sourceEnd/targetEnd relationship shape reads, it is not refused");
+
+        let relationship = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Relationship(relationship) => Some(relationship),
+                _ => None,
+            })
+            .expect("read_object_type appends one Relationship record per declared relationship");
+
+        assert_eq!(
+            relationship.key,
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow"
+            )
         );
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::UnsupportedConstruct,
-                cause: ModelRefusalCause::UnsupportedDeclarationForm {
-                    node: "ix://acme/orders/Widget".to_owned(),
-                    what: "relationships[]".to_owned(),
-                },
-                detail: "$.types[0].relationships: construct meaning/capability \
-                          \"relationships[]\" has no reader yet"
-                    .to_owned(),
-            }]
+            relationship.direction,
+            RelationshipDirection::SourceToTarget
         );
+        assert_eq!(relationship.source.role.as_deref(), Some("specializes"));
+        assert_eq!(
+            relationship.source.type_identity,
+            declaration_key("acme/orders", "ix://acme/orders/Flow2")
+        );
+        assert_eq!(relationship.source.multiplicity.upper, None);
+        // `targetEnd.role` is absent here: `relationshipTargetEnd`'s own
+        // schema does not require it, and this reader preserves that as
+        // `None`, not a fabricated default.
+        assert_eq!(relationship.target.role, None);
+        assert_eq!(
+            relationship.target.type_identity,
+            declaration_key("acme/orders", "ix://acme/orders/Flow")
+        );
+        assert_eq!(relationship.target.multiplicity.upper, Some(1));
+    }
+
+    /// `direction` on this shape is source-to-target/target-to-source/
+    /// bidirectional/undirected -- the full vocabulary
+    /// [`RelationshipDirection`] already carries for [`read_connection`]'s
+    /// `flowDirection` (which never admits `undirected`) -- so `undirected`
+    /// is exercised here specifically, on this shape's own `direction`
+    /// member, never `flowDirection`.
+    #[test]
+    fn reads_an_undirected_inline_relationship() {
+        let type_value = serde_json::json!({
+            "identity": "ix://acme/orders/Widget",
+            "supertypes": [],
+            "fields": [],
+            "operations": [],
+            "relationships": [{
+                "identity": "ix://acme/orders/relationship/Widget-Widget",
+                "category": "structural",
+                "composite": false,
+                "direction": "undirected",
+                "sourceEnd": {
+                    "role": "peer",
+                    "type": "ix://acme/orders/Widget",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+                "targetEnd": {
+                    "role": "peer",
+                    "type": "ix://acme/orders/Widget",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+            }],
+        });
+        let mut records = Vec::new();
+        read_object_type(
+            "acme/orders",
+            &type_value,
+            "ix://acme/orders/Widget",
+            "$.types[0]",
+            false,
+            &mut records,
+        )
+        .expect("undirected is a real member of RelationshipDirection, not refused");
+
+        let relationship = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Relationship(relationship) => Some(relationship),
+                _ => None,
+            })
+            .expect("read_object_type appends one Relationship record per declared relationship");
+        assert_eq!(relationship.direction, RelationshipDirection::Undirected);
     }
 
     /// A real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
