@@ -264,12 +264,16 @@ fn revendor_pinned(
 /// in the manifest. Needs no git repository and no network access, so it is
 /// safe to run from `cargo test`.
 ///
-/// `expected_fcd_commit` is this workspace's own single source of truth for
-/// the commit any `Source::Fcd` entry must be pinned to (QSL #131 PR 3, M1:
-/// `agent-ix-semantic-ir`'s rev, read from `Cargo.toml`/`Cargo.lock` by
-/// [`cargo_pin::read_agent_ix_semantic_ir_rev`]) -- never repeated by hand
-/// in `VENDOR.json`. A manifest with no `Source::Fcd` entry never reads this
-/// parameter at all.
+/// `expected_fcd_commit` is this workspace's own single *authoritative*
+/// source for the commit any `Source::Fcd` entry must be pinned to (QSL #131
+/// PR 3, M1: `agent-ix-semantic-ir`'s rev, read from `Cargo.toml`/
+/// `Cargo.lock` by [`cargo_pin::read_agent_ix_semantic_ir_rev`]). Each
+/// `Source::Fcd` entry's own `VENDOR.json` `commit` field is still a
+/// separate, hand-edited value (`revendor` reads bytes at exactly that
+/// commit, so it needs one before this check can compare anything) --
+/// `expected_fcd_commit` is what that hand-edited value is checked against,
+/// not a value `VENDOR.json` never repeats. A manifest with no `Source::Fcd`
+/// entry never reads this parameter at all.
 pub fn revendor_check(
     manifest: &Manifest,
     tree_root: &Path,

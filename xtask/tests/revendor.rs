@@ -118,14 +118,20 @@ fn checked_in_manifests_match_the_vendored_trees_with_no_drift_or_stray_files() 
     }
 }
 
-/// QSL #131 PR 3, M1: the FCD rev a vendored fixture tree is read from lives
-/// in exactly one place -- this workspace's own `Cargo.toml`/`Cargo.lock`
-/// pin of `agent-ix-semantic-ir` -- never repeated by hand in `VENDOR.json`.
-/// A `Source::Fcd` entry whose own `commit` has drifted from that one place
-/// is refused, with a typed error naming both commits, before any per-file
-/// digest check runs.
-/// Tracing: TC-152.
-#[trace("TC-152", "NFR-011-AC-4")]
+/// QSL #131 PR 3, M1: this workspace's own `Cargo.toml`/`Cargo.lock` pin of
+/// `agent-ix-semantic-ir` is the single authoritative rev a vendored
+/// `Source::Fcd` fixture tree is read from -- but the tree's own
+/// `VENDOR.json` still carries its own hand-edited `commit` field
+/// (`revendor` needs a commit to read bytes at before it can compare
+/// anything against that authoritative rev). A `Source::Fcd` entry whose
+/// own `commit` has drifted from the authoritative one is refused, with a
+/// typed error naming both commits, before any per-file digest check runs.
+///
+/// Untagged (PR #200 review F6): TC-152/NFR-011-AC-4 cover only
+/// digest-drift/missing/stray/dropped-pin detection over already-vendored
+/// bytes; this test verifies the separate Cargo.toml-vs-Cargo.lock rev
+/// consistency check, which has no acceptance criterion of its own yet --
+/// see `xtask/src/cargo_pin.rs`'s own tests' doc comments.
 #[test]
 fn revendor_check_refuses_an_fcd_source_whose_commit_disagrees_with_the_cargo_pin() {
     let dir = tempfile::tempdir().unwrap();
