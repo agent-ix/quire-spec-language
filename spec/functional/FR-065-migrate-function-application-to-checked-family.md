@@ -22,23 +22,39 @@ Function declaration and application is the sole representative family this
 ticket migrates onto the checked-family contract of
 [FR-062](FR-062-implement-checked-family-contract.md). QSL SHALL make the
 `Value` family's function-declaration and function-application forms check,
-package and evaluate exclusively through that contract, carry their identity
-and provenance through the checked-package boundary unchanged, and reach
-callers only through the checked-package producer spine, with the
+package and evaluate exclusively through that contract, delete the composed
+linker's function-declaration and function-application checking code in the
+same change (ADR-011 §7.3 M-6e), carry their identity and provenance through
+the checked-package boundary unchanged, and reach callers only through the
+checked-package producer this requirement builds, with the
 function-application arms of `infer_form` reduced to a thin dispatch seam
 (ADR-012 §4.3).
+
+This requirement builds the checked-package producer for function
+declaration and application; it does not perform the CLI cutover. Native
+`run` and `compile`'s deletion of their native-v1 producer path, the `lower`
+command, `package::NativePackage`, `native-linked-package/1`, and the
+retarget of `format` to the CST are ADR-011 §7.3 M-6a, T-1's own PR, carried
+by [#240](https://github.com/agent-ix/quire-spec-language/issues/240)
+because that cutover cannot land before #242's S4 emitter exists. This
+requirement's checked-package producer is #240's precondition, not its
+implementation.
 
 This requirement covers only function declaration and application. The
 remaining `Value` forms (literals, operators, `let`, `if`, records,
 collections) and every other family's forms are unchanged by this
-requirement and migrate under their own tickets.
+requirement and migrate under their own tickets, and the composed linker's
+checking code for those remaining forms is unchanged by this requirement.
 
 ## Inputs
 
 - Parsed function-declaration and function-application forms.
-- The checked-package producer spine: S1 (CST) through S4 (linked checked
-  package, and its v2 emission on request).
-- The typed `QualifiedName` a caller uses to select a function.
+- The checked-package producer this requirement builds: S1 (CST) through S4
+  (linked checked package, and its v2 emission on request).
+- The typed `QualifiedName` a caller uses to select a function, including
+  the layer-6 `replay` facade's executor entry (ADR-012 §9's edge table;
+  today the bare `&str` function-name lookup at
+  `value/expression/mod.rs:635`).
 
 ## Outputs
 
@@ -91,48 +107,62 @@ span before and after the checked-package boundary: the occurrence-keyed
 source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
-### The checked-package producer spine is the only producer
+### The composed function checker is deleted in this change
 
-Native `run` and `compile`, where they produce a checked package or a
-backend artifact, SHALL do so only through the checked-package producer
-spine (S1 through S4, and E4 v2 emission on request); they SHALL NOT produce
-one through the native-v1 path. The `lower` command, `package::NativePackage`
-and wire form `native-linked-package/1` are deleted by this requirement's
-implementation, in the same change that lands the spine replacement for the
-commands that produced them (ADR-011 §7.3 M-6a, T-1). `format` is retargeted
-to operate over the CST (S1) rather than a native-v1 parse.
+The composed linker's (SEAM-2) checking code for function declaration and
+function application SHALL be deleted in the same change that lands this
+requirement's S3 family checker and S4 emission for those two forms (ADR-011
+§7.3 M-6e). After this requirement's implementation, no composed-checker
+code path checks a function-declaration or function-application form; the
+checked-family contract's `check`/`package` hooks
+([FR-062](FR-062-implement-checked-family-contract.md)) are the only path
+that does. The composed checker's remaining `Value` forms (literals,
+operators, `let`, `if`, records, collections) are unchanged by this
+requirement and are deleted by their own migrating tickets (#120, #164,
+#170, #175), the last of which removes the composed checker module entirely
+(ADR-011 §7.3 M-6e).
 
-After this requirement's implementation, exactly one path produces a checked
-function package or a backend artifact from `run` or `compile`: no caller,
-CLI flag or library entry point selects the deleted native-v1 producer path,
-because that path's code no longer exists. A caller that could previously
-select it is refused with a compile error (the deleted types and command are
-gone) or a documented CLI argument change, not a silent fallback.
+### This requirement's checked-package producer is #240's precondition
 
-### `format` is retargeted, not deleted
+This requirement builds S1 through S4 (and E4 v2 emission on request) for
+function declaration and application: a checked-package producer that
+`run`, `compile` and a future backend-artifact caller can route through.
+This requirement does not wire `run` or `compile` onto that producer, does
+not delete the native-v1 producer path, the `lower` command,
+`package::NativePackage` or `native-linked-package/1`, and does not
+retarget `format`. Those five changes are ADR-011 §7.3 M-6a, T-1's own PR
+(#240), which deletes each old path in the same change that lands its spine
+replacement, per the T-3 same-change rule; #240 cannot land that PR before
+this requirement's producer, and #242's S4 emitter, both exist.
 
-`format`, unlike `run`, `compile` and `lower`, is retargeted to consume the
-CST (S1) directly rather than deleted, because formatting is a tooling
-consumer of the lossless CST (ADR-011 §2.3, "Only to tooling"), not a
-checked-package producer.
+### The replay executor selects a function by typed name
+
+The layer-6 `replay` facade's executor entry, which selects the function to
+call for a replay request, SHALL take a typed `QualifiedName` (ADR-013 O-11)
+and SHALL resolve it against the recompiled package's declarations
+(ADR-012 §8, §9). It SHALL NOT take a bare `&str` compared against a
+function's display name; the function-name lookup by `&str` at
+`value/expression/mod.rs:635` is replaced by this typed lookup as part of
+this requirement's implementation, widening #243's layer-6 `replay` facade
+for the function family.
 
 ## Constraints
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
 | FR-065-CON-1 | This requirement's implementation modifies no internal representation of any family other than `Value`'s function-declaration and function-application forms, and no `infer_form` arm other than those two forms'. | Design | Inspection |
-| FR-065-CON-2 | This requirement's implementation deletes native `run`/`compile` package and backend-artifact production, the `lower` command, `package::NativePackage` and `native-linked-package/1` in the same change that lands their checked-package-spine replacement; no change under this requirement leaves both the deleted path and its replacement selectable at once. | Process | Inspection |
+| FR-065-CON-2 | This requirement's implementation deletes the composed linker's function-declaration and function-application checking code in the same change that lands the S3 family checker and S4 emission for those two forms; no change under this requirement leaves both the composed checker's function-form arms and the checked-family contract's function checker reachable at once. | Process | Inspection |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-065-AC-1 | Calling the function packaging/lowering public API with a checked node or verified checked-package bytes succeeds; a test that attempts to call it with a raw CST node or a raw source string fails to compile (no accepting overload or conversion exists), not merely at runtime. | Test (TC-163) |
-| FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity, read after S4 linking and again after decoding emitted v2 bytes, is the same value in all three readings; reordering unrelated top-level declarations in the source leaves that identity unchanged. | Test (TC-163) |
+| FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity is the same value read at three points: immediately after `check`, again after S4 linking, and again after decoding the emitted v2 bytes. Reordering unrelated top-level declarations in the source leaves that identity unchanged at all three points. | Test (TC-163) |
 | FR-065-AC-3 | Given the same source file, the call's source occurrence (identity, role, ordinal) resolves to the same byte span before linking, after linking, and after decoding from v2 bytes; corrupting one byte of the occurrence's region in a hand-built alternate package makes the resolved span differ, showing the test actually reads the region rather than a constant. | Test (TC-163) |
 | FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
-| FR-065-AC-5 | After the implementation lands, the repository contains no `package::NativePackage` type, no `lower` command, and no reader or writer for wire form `native-linked-package/1`; a grep-equivalent test over the compiled crate's public symbols and the CLI's command table confirms their absence. `run` and `compile` invoked to produce a package or backend artifact route only through the S1-S4 spine, verified by a test that instruments the spine's entry function and asserts it is called at least once and the deleted native-v1 producer function (absent) is never called. | Test (TC-164) |
-| FR-065-AC-6 | `format` invoked on a source file succeeds using only the CST (S1) as its input, verified by a test that supplies a source file whose native-v1 parse would fail (a construct only the deleted native-v1 parser rejected) but whose CST is well-formed, and observes `format` succeed. | Test (TC-164) |
+| FR-065-AC-5 | After the implementation lands, the composed linker's function-declaration and function-application checking entry points are absent from the compiled crate's symbols (or, where the composed checker module is retained for its other `Value` forms, its function-form match arms are removed so calling it with a function form fails to compile); a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. A change that lands the S3 function checker while leaving the composed checker's function-form arms reachable, even if no caller currently invokes them, does not satisfy this criterion. | Test (TC-164) |
+| FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 
 ## Dependencies
 
@@ -140,11 +170,19 @@ checked-package producer.
   this migration implements for the `Value` family's function forms.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §2.1 (E3/E4 admitted types and provenance), §2.3 (refusals, limits, partial
-  output), §7.3 (M-6a and M-6e lane deletions, T-1 ticket row) own the spine
-  edges and the deletion timing this requirement follows.
+  output, and the "Only to tooling" CST-consumer row `format` falls under
+  once #240 retargets it), §7.3 owns the deletion timing this requirement
+  follows: M-6e (the composed function checker, deleted by this
+  requirement) and M-6a, T-1 (the CLI producer cutover, deleted by
+  [#240](https://github.com/agent-ix/quire-spec-language/issues/240) against
+  the producer this requirement builds, after
+  [#242](https://github.com/agent-ix/quire-spec-language/issues/242)'s S4
+  emitter lands).
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §4.3
-  (thin dispatch seam), §14.2 (states that only the function-application
-  arms of `infer_form` are in scope for this ticket).
+  (thin dispatch seam), §8 (the replay stage hook this requirement widens
+  for the function family), §9 (the replay-executor edge this requirement
+  converts to a typed `QualifiedName`), §14.2 (states that only the
+  function-application arms of `infer_form` are in scope for this ticket).
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-04 (checked node identity), O-07 (source occurrence identity), O-11
   (qualified names), O-12 (source locations and provenance), O-15
@@ -159,4 +197,11 @@ Specified under
 implemented. State/model, sum/case, temporal/trace, protocol/frame and
 refinement migrations, and the remaining `Value` forms, are out of scope and
 are tracked by their own tickets (#120, #121, #164, #170, #175, #187, #188,
-#189, #191, #192, #198, #218 via #220-#223), per ADR-012 §14.1.
+#189, #191, #192, #198, #218 via #220-#223), per ADR-012 §14.1. The M-6a CLI
+producer cutover (native `run`/`compile` deletion, `lower`,
+`package::NativePackage`, `native-linked-package/1`, and the `format`
+retarget) is [#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s
+own requirement, owner-ruled against this ticket's contradiction between an
+earlier draft of this requirement, QSL-25's body and ADR-011 T-1: this
+requirement supplies #240's precondition (the checked-package producer) and
+does not perform the cutover itself.
