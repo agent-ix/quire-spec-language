@@ -182,7 +182,7 @@ flowchart LR
 | S0 Source | Source bytes with `SourceIdentity` and revision | QSL `source` | none |
 | S1 Lossless CST | Exact, recovering concrete syntax tree | QSL `cst` (today `complete::cst`, `complete::parser`, `complete::grammar`) | none |
 | S2 Parsed semantic forms | Unchecked syntactic forms per family, each with a span. No semantic identity. | QSL `forms` (today absent: ADR-010 X4) | arrow 1 input ("Source AST") |
-| S3 Checked semantic graph | Checked nodes with minted node ids and declaration identities, resolved against admitted domain packages and dependency import views | QSL `check` (today `value::expression` check, `model::checked_dispatch`, `value::library`, `value::enumeration`, `value::unit`) over `model` | arrow 1 output |
+| S3 Checked semantic graph | Checked nodes with minted node ids and declaration identities, resolved against admitted domain packages and dependency import views | QSL `check` (today `value::expression` check, `model::checked_dispatch`, `value::library`) over `model` | arrow 1 output |
 | S4 Linked checked package | The checked graph linked with the checked packages of its dependencies, each compiled from its digest-addressed source through S1 to S4, with package identity and source map. The closure carries checked dependency nodes, never wire-admitted ones. Two forms: in-process, and `quire.checked-package/v2` wire. | QSL `package` | arrow 2 producer |
 | S5 Contract IR | Target-neutral IR nodes read from the v2 wire | IR `quire-contract-model` (`CheckedPackageV2::read`, `::lower`) | arrow 2 consumer |
 | S6a Reference execution | `FamilyOutcome` of evaluating a checked package: the kernel `Outcome` (completed, undefined, refused or incomplete), or a `FamilyRefusal` for a family that sits out evaluation. Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
@@ -212,28 +212,6 @@ A4 "link", and lanes B2 to B4) is a phase inside S3, not a stage before it. S4
 identified by package identity, which happens after checking. No stage after S3
 re-resolves a name, except the replay `QualifiedName` lookup at E9 (ADR-013
 R-06).
-
-ADR-013 O-04 minting boundary (#211, corrects a gap #215's T-12 API-surface
-check surfaced). `value::enumeration` and `value::unit` mint I04 nominal node
-identities for enum, dimension and unit declarations through their own
-`EnumDeclaration::admit`/`admit_member` (`value/enumeration.rs:181,208`) and
-`UnitGraph::admit` (`value/unit.rs:449`), which call the same `node_key_of`
-preimage-digest path (`value/node.rs:320`) `value::expression::check` calls.
-They are colocated with their own domain types exactly as `value::library` is
-colocated with import verification, rather than living in `value::expression`
-or `model::checked_dispatch`; both are S3/layer-3 `semantic_value` modules
-(§6.2), and this record's "today" list names the modules whose code calls the
-minting path, not only the layer-3 `check` core sub-layer. #118 landed their
-preimage/digest and admission logic scoped to I04/I05 identity semantics only,
-explicitly "without minting a checked package or claiming runtime execution
-authority" (issue text); no check-stage orchestrator calls `admit`/
-`admit_member` yet. So today their only callers are this crate's own tests
-(`tests/text_enum_identity.rs`, `tests/equality_matrix.rs`,
-`tests/quantities.rs`, `tests/collection_algebra.rs`) — test-support
-construction, the same carve-out I1 states above for a caller-constructed
-`DomainPackage`. This is current-state fact, not a decision to leave them
-unwired: the family-checker ticket that wires `model::intake`/`check` to call
-`admit`/`admit_member` for real domain packages remains open.
 
 ### 1.1 Skeleton spine
 
@@ -512,6 +490,7 @@ re-walks them against the scenarios.
 | FB-10 | A proof gate claims a module over which it discharges no SUCCESS check, or shares a helper between its expectation and the code under proof without a run mutation of that helper that fails the proof | §2.3 | RT `src/exact/` (agent-ix/quire-contract-runtime#53); the agent-ix/quire-contract-runtime#57 harness's shared `decode` (#245) | §2.3 gate owners, #219 |
 | FB-11 | A dependency or test-time edge that closes a cycle between QSL, IR, RT and CG | §7.1 | QSL ⇄ CG and QSL ⇄ RT test-time cycles (OBS-040) | the same direction check over normal and dev edges (T-12) |
 | FB-12 | Capability negotiation in S3 | AD-016: QSL admission negotiates nothing. #210 owns the capability-selection contract, #213 the `Capability` value type, and #185 is the only registry and router. | composed `requests::report` (ADR-010 OBS-003, a #210 item) | #216 "#185 alone owns registry/routing" evidence |
+| FB-13 | A module other than QSL `check` calls the kernel `NodeKey` constructor | §6.1 "Kernel identity constructors have one caller each" (ADR-013 O-04); the T-12 API-surface check enforces it | `value::enumeration`'s `EnumDeclaration::admit`/`admit_member` and `value::unit`'s `UnitGraph::admit` call `node_key_of` today with no check-stage caller and no production reachability (SR-508): no `src/` module constructs an `EnumDeclaration` or a `UnitGraph`; `PackageDeclarations::enums` is populated only in `tests/collection_algebra.rs`; `src/model/intake` does not exist. §6.1's minting rule, ADR-013 O-04 and T-12 all stay as written and are not relaxed for this. Remaining work: #131 | #249's `arch-lint api-surface` T12-B rule correctly fails both modules today, by design, until #131 wires them behind `check` |
 
 ## 4. Checking precedes lowering
 
