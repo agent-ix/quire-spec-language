@@ -8,12 +8,13 @@
 use std::num::NonZeroU32;
 
 use ix_trace_rs::trace;
+use quire_exact::{Integer, IntegerDomain, IntegerInterval};
 use quire_spec_language::value::{
     divide, modulo, negotiate_integer_division, AdmittedIntegerDivision, CatalogRole, ChargePoint,
-    DefinitionLock, DefinitionReference, DivisionProfile, Incomplete, InjectedDenial, Integer,
-    IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition, IntegerDomain,
-    IntegerInterval, LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode,
-    QuotientRemainder, Refusal, ScalarLimits, Undefined,
+    DefinitionLock, DefinitionReference, DivisionProfile, Incomplete, InjectedDenial,
+    IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition, LimitKind, Meter,
+    Outcome, PackageCause, PackageRefusal, PackageRefusalCode, QuotientRemainder, Refusal,
+    ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

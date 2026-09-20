@@ -2,9 +2,9 @@
 //! Located checking refusals and their closed codes and causes.
 
 use super::super::comparison::{IllTyped, IllTypedCause};
-use super::super::integer::Integer;
 use super::super::node::NodeKey;
 use crate::diagnostic::Code;
+use quire_exact::Integer;
 
 /// The declaration a location belongs to.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

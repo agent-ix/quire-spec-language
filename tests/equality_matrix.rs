@@ -12,22 +12,22 @@ use std::cell::Cell;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
+use quire_exact::{CollectionKind, Integer, IntegerInterval};
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
     AdmittedIeeeProfile, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage, CheckingLimits,
-    CollectionKind, CollectionType, Component, CompositeDeclaration, CompositeShape,
-    ConstructionCause, ConstructionRefusal, Decimal, DecimalType, DefinitionLock,
-    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
-    EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
-    FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeExactLoss, IeeeFlag,
-    IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer,
-    IntegerInterval, LimitKind, LocatedLoss, Meter, NodeKey, NodeOwner, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Outcome,
-    OwnerSelection, OwnerSubject, PackageDeclarations, Presence, Quantity, QuantityUnit, Rational,
-    RationalDomain, Refusal, RoundingMode, ScalarLimits, Text, TextPayload, TextProfile, TextType,
-    TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,
-    ValueType,
+    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, Decimal, DecimalType, DefinitionLock, DimensionPreimage, EnumDeclaration,
+    EnumDeclarationPreimage, EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation,
+    Expression, FieldDeclaration, FieldExpression, FieldInitializer, FieldValue,
+    FunctionDeclaration, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped,
+    IllTypedCause, Incomplete, InjectedDenial, LimitKind, LocatedLoss, Meter, NodeKey, NodeOwner,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, Presence, Quantity,
+    QuantityUnit, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Text, TextPayload,
+    TextProfile, TextType, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity,
+    Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

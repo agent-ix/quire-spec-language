@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use quire_exact::{Integer, IntegerInterval};
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::checked_dispatch::{
@@ -30,11 +31,10 @@ use quire_spec_language::model::normalize::{
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
     DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, Integer, IntegerInterval,
-    InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration,
+    LimitKind, Location, Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations, PreconditionFailure, ScalarLimits,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
 };
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
