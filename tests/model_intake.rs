@@ -725,6 +725,72 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     );
 }
 
+/// H3 (PR #200 review): `agent-ix-semantic-ir`'s own `json::MAX_DEPTH` is
+/// 200; `serde_json::from_slice`'s default recursion limit is 128.
+/// `validate_with_semantic_ir` parses (and, via `decide`, schema-validates)
+/// document bytes through the former; `read_records` used to re-parse the
+/// same bytes with the latter, under the assumption that a prior successful
+/// parse meant a second, plain `serde_json::from_slice` would always
+/// succeed too. That assumption was false for any document nested between
+/// 129 and 200 deep: real, validator-accepted input (achievable
+/// schema-legally inside a producer extension's own free-form `payload`,
+/// which this test exercises at depth 150) that the old
+/// `serde_json::from_slice(document).expect(...)` would panic on instead of
+/// refusing.
+///
+/// This is confirmed two ways: directly, a plain `serde_json::from_str` on
+/// this exact document's bytes fails with "recursion limit exceeded"
+/// (asserted below, so this test is not vacuous); and end to end,
+/// `read_records` -- which now disables its own second parse's recursion
+/// limit, this crate's own idiom for a re-parse whose depth is already
+/// bounded by a prior pass (`src/package/intake.rs`,
+/// `src/protocol_artifact/decode.rs`) -- reads this document clean rather
+/// than aborting the process.
+#[test]
+fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
+    let package_identity = "acme/orders";
+    let widget = format!("ix://{package_identity}/Widget");
+
+    let mut deeply_nested_payload = serde_json::json!(0);
+    for _ in 0..150 {
+        deeply_nested_payload = serde_json::json!([deeply_nested_payload]);
+    }
+
+    let mut document = wire_envelope(
+        package_identity,
+        serde_json::json!([wire_construct(
+            package_identity,
+            "object_type",
+            meaning::OBJECT_TYPE,
+            serde_json::json!({}),
+        )]),
+        serde_json::json!([wire_type(
+            &widget,
+            serde_json::json!({"module": package_identity, "name": "object_type"}),
+            serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+        )]),
+    );
+    document["extensions"] = serde_json::json!([{
+        "identity": format!("ix://{package_identity}/ext/probe"),
+        "version": "1.0.0",
+        "required": false,
+        "payload": deeply_nested_payload,
+    }]);
+    let text = document.to_string();
+
+    assert!(
+        serde_json::from_str::<Value>(&text).is_err(),
+        "sanity: this document really does exceed serde_json's own default \
+         recursion limit, or this test proves nothing"
+    );
+
+    let records = read_records(package_identity, text.as_bytes()).expect(
+        "depth 150 is within agent-ix-semantic-ir's own 200-deep bound and reads clean, \
+         not a panic",
+    );
+    assert_eq!(records.len(), 1);
+}
+
 /// Write `contents` (a `(relative path, bytes)` list) under a fresh tempdir
 /// and return it.
 fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {
