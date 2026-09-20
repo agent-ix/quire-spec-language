@@ -903,6 +903,35 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
     assert_eq!(records.len(), 1);
 }
 
+/// ADR-010 OBS-006 / ADR-013 O-03 (#213 S-2's own adverse test, named but not
+/// landed by #131/PR #200): a selection naming the reserved `quire/native`
+/// pseudo-package identity refuses at `admit`, before any byte check runs --
+/// distinct from a native `typeRef` (`ix://quire/native/<Name>`) resolving to
+/// `ValueTypeRef::Native`, which the golden-shape test above already covers.
+/// No PR #200 head encodes this refusal: `admit` had no check for it at all
+/// until this change.
+#[test]
+fn admit_refuses_the_reserved_native_pseudo_package_identity() {
+    let offered = DomainPackageRef {
+        identity: quire_spec_language::model::intake::native::RESERVED_IDENTITY.to_owned(),
+        version: "1".to_owned(),
+        digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
+    };
+    let bytes_by_digest = BTreeMap::new();
+
+    let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest).expect_err(
+        "a selection naming the quire/native pseudo-package never admits, \
+         regardless of what bytes it would otherwise resolve to",
+    );
+    assert_eq!(
+        refusal.cause,
+        quire_spec_language::model::refusal::ModelRefusalCause::ReservedPackageIdentity {
+            selection: offered,
+        }
+    );
+    assert_eq!(refusal.cause.as_str(), "malformed-declaration");
+}
+
 /// Write `contents` (a `(relative path, bytes)` list) under a fresh tempdir
 /// and return it.
 fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {

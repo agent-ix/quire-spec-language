@@ -113,6 +113,36 @@ pub mod meaning {
 pub mod native {
     /// The prefix a native value type reference carries.
     pub const PREFIX: &str = "ix://quire/native/";
+
+    /// The bare domain-package identity [`PREFIX`] is built from (ADR-010
+    /// OBS-006, ADR-013 O-03): the reserved pseudo-package no domain package
+    /// selection may name. [`super::admit`] refuses a selection naming it
+    /// outright, before FR-154's own four-check admission table runs,
+    /// because a package that *did* declare this identity would mint node
+    /// identities of the exact `ix://quire/native/<Name>` shape
+    /// [`super::read_value_type_ref`] always reads as a native reference
+    /// first -- so any of that package's own declarations could never be
+    /// reached through [`super::super::domain_package::ValueTypeRef::Package`],
+    /// and it would silently share the native key space rather than merely
+    /// refusing to resolve.
+    ///
+    /// Kept as its own constant rather than re-deriving it from [`PREFIX`]
+    /// by string surgery at each use site, and pinned against `PREFIX` by
+    /// this module's own test so the two cannot drift.
+    pub const RESERVED_IDENTITY: &str = "quire/native";
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// (#213 S-2) [`PREFIX`] and [`RESERVED_IDENTITY`] name the same
+        /// pseudo-package; this pins them together so an edit to one alone
+        /// cannot leave the other stale.
+        #[test]
+        fn reserved_identity_matches_native_prefix() {
+            assert_eq!(PREFIX, format!("ix://{RESERVED_IDENTITY}/"));
+        }
+    }
 }
 
 /// FCD `agent_ix_extraction_frontend::lift` did not produce a document.
@@ -186,6 +216,25 @@ pub fn admit<'a>(
     digest_domain: &str,
     bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
 ) -> Result<(DomainPackageRef, &'a [u8]), ModelRefusal> {
+    // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
+    // pseudo-package never selects, regardless of what its bytes would
+    // otherwise admit -- checked first, ahead of FR-154's own four-check
+    // table, because this rejects the offered identity itself rather than
+    // anything about the package's bytes.
+    if offered.identity == native::RESERVED_IDENTITY {
+        return Err(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ReservedPackageIdentity {
+                selection: offered.clone(),
+            },
+            detail: format!(
+                "domain package selection names identity {:?}, the reserved native-reference \
+                 pseudo-package -- a native value type resolves only as ValueTypeRef::Native \
+                 and never shares a real package's key space",
+                offered.identity
+            ),
+        });
+    }
     if digest_domain != SHA256_JCS_DIGEST_DOMAIN {
         return Err(ModelRefusal {
             code: Code::StaleDependency,
