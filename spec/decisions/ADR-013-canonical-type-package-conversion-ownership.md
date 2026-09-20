@@ -794,6 +794,11 @@ duplicates that #213 S-2 folds into the O-18 record.
 | agent-ix/quire-specification#81, spec-objects-business PR #8 (merged), agent-ix/filament-core-data#172, agent-ix/filament-core-data#173, agent-ix/filament-core-data#199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
 
 Proposed #213 slices, in order. The split itself is an owner action on #213.
+Each Gate cell names every other slice this slice's own deliverable cannot
+compile without: a slice's objects may mention a later slice's type in prose
+without gating on it, when the code that touches that type is a separate,
+later ticket (for example the v2 emitter, ADR-011 M-4) rather than this
+slice's own deliverable.
 
 | Slice | Objects | Gate |
 | --- | --- | --- |
