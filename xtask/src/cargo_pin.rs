@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL #131 PR 3, M1: the FCD rev a vendored `Source::Fcd` fixture tree is
-//! read from must live in exactly one place -- this workspace's own
-//! `Cargo.toml` `agent-ix-semantic-ir` git dependency (and `Cargo.lock`'s
-//! locked resolution of it) -- never repeated by hand in a vendored tree's
-//! `VENDOR.json`. This module reads that one place so `revendor_check` can
-//! refuse a `VENDOR.json` `Fcd` source whose `commit` has drifted from it.
+//! QSL #131 PR 3, M1: this workspace's own `Cargo.toml`
+//! `agent-ix-semantic-ir` git dependency (confirmed, not merely assumed,
+//! to agree with `Cargo.lock`'s locked resolution of it) is the single
+//! *authoritative* source of the FCD rev a vendored `Source::Fcd` fixture
+//! tree is read from -- but each such tree's own `VENDOR.json` still
+//! carries its own `commit` field by hand (`Source::Fcd` requires one,
+//! `revendor` reads bytes at exactly that commit: see `xtask::manifest`,
+//! `xtask::revendor`), because `revendor` needs a commit to read *before*
+//! it can compare anything. A pin bump is a hand edit across three files
+//! (`Cargo.toml`, and each affected tree's `VENDOR.json`), not one. This
+//! module reads the authoritative rev so `revendor_check` can catch a
+//! `VENDOR.json` `Fcd` source whose hand-edited `commit` has drifted from
+//! it, in exactly the same way `revendor_check` catches any other drift.
 use crate::error::{Error, Result};
 use std::path::Path;
 
@@ -99,10 +106,14 @@ fn extract_rev_field(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
 
-    /// Tracing: QSL #131 PR 3, M1.
-    #[trace("TC-152", "NFR-011-AC-4")]
+    /// QSL #131 PR 3, M1. Untraced (PR #200 review F6): TC-152 covers only
+    /// digest-drift/missing/stray/dropped-pin detection over already-vendored
+    /// bytes, and NFR-011-AC-4 is strictly about a byte differing from its
+    /// digest, a missing file or a stray file -- neither describes this
+    /// module's own job (parsing `Cargo.toml`/`Cargo.lock` text to confirm
+    /// they agree on one rev). That check has no acceptance criterion of its
+    /// own yet, so it is untagged here rather than mistagged.
     #[test]
     fn dependency_rev_reads_a_single_line_git_dependency() {
         let cargo_toml = "agent-ix-semantic-ir = { git = \"https://example.invalid\", rev = \"abc123\" }\nother-crate = \"1.0\"\n";
@@ -112,8 +123,8 @@ mod tests {
         );
     }
 
-    /// Tracing: QSL #131 PR 3, M1.
-    #[trace("TC-152", "NFR-011-AC-4")]
+    /// QSL #131 PR 3, M1. Untagged (PR #200 review F6): see
+    /// `dependency_rev_reads_a_single_line_git_dependency`'s own doc comment.
     #[test]
     fn locked_rev_reads_the_source_field_of_the_named_packages_block() {
         let cargo_lock = "[[package]]\nname = \"other\"\nversion = \"0.0.0\"\n\n\
@@ -126,8 +137,8 @@ mod tests {
         );
     }
 
-    /// Tracing: QSL #131 PR 3, M1.
-    #[trace("TC-152", "NFR-011-AC-4")]
+    /// QSL #131 PR 3, M1. Untagged (PR #200 review F6): see
+    /// `dependency_rev_reads_a_single_line_git_dependency`'s own doc comment.
     #[test]
     fn read_agent_ix_semantic_ir_rev_matches_this_workspaces_own_pin() {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -140,8 +151,8 @@ mod tests {
         assert!(rev.bytes().all(|byte| byte.is_ascii_hexdigit()), "{rev:?}");
     }
 
-    /// Tracing: QSL #131 PR 3, M1.
-    #[trace("TC-152", "NFR-011-AC-4")]
+    /// QSL #131 PR 3, M1. Untagged (PR #200 review F6): see
+    /// `dependency_rev_reads_a_single_line_git_dependency`'s own doc comment.
     #[test]
     fn read_agent_ix_semantic_ir_rev_refuses_a_toml_lock_disagreement() {
         let dir = tempfile::tempdir().unwrap();
