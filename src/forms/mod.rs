@@ -11,7 +11,7 @@
 //!
 //! `value::expression::syntax` moves here in the same change (ADR-011 §6.2
 //! module map, M-3a): the `Expression` enum and its seven sibling types are
-//! defined exactly once, in [`syntax`], and re-exported at this module's
+//! defined exactly once, in `syntax`, and re-exported at this module's
 //! top level. `value::expression`'s own submodules, and `crate::value`'s
 //! aggregating re-export, import them from here; neither is a second
 //! definition (FR-067-AC-9).
@@ -21,7 +21,7 @@
 //! absence by itself: `value::expression` is a private module
 //! (`src/value/mod.rs`, `mod expression;`, unchanged by this move), so the
 //! same `use` would fail the same way, with the same error, for a module
-//! that still existed there but stayed private. [`syntax`]'s own test
+//! that still existed there but stayed private. `syntax`'s own test
 //! module carries the real absence check, directly against the file-per-
 //! module convention rather than through this crate's public API:
 //!
@@ -34,16 +34,16 @@
 //! `forms` is layer 2 (ADR-011 §6.1), whose allow-list is layer 1 (`cst`)
 //! and F only. This module does not conform. QSL-146 resolved three of the
 //! four carrier types named when this violation was first declared:
-//! [`syntax`]'s `AbsenceMode` field now imports `crate::absence::AbsenceMode`
+//! `syntax`'s `AbsenceMode` field now imports `crate::absence::AbsenceMode`
 //! (F, allow-listed — QSL-146 moved it out of `model::population`, layer 3),
 //! and its `CollectionKind` and `Integer` fields now import
 //! `quire_exact::{CollectionKind, Integer}` (layer K, allow-listed — a
 //! sibling crate, not a QSL layer at all). One carrier type remains,
 //! independently in two places:
 //!
-//! - [`syntax::Expression`]: its `AllInstances`, `Lookup` and `Convert`
+//! - [`Expression`]: its `AllInstances`, `Lookup` and `Convert`
 //!   variants each carry a `crate::value::ValueType` field (layer 5).
-//! - [`syntax::FunctionDeclaration`]: `parameters: Vec<(String, ValueType)>`
+//! - [`FunctionDeclaration`]: `parameters: Vec<(String, ValueType)>`
 //!   (`syntax.rs:406`) and `result: ValueType` (`syntax.rs:408`) each carry
 //!   `crate::value::ValueType` (layer 5) directly, independent of
 //!   `Expression`.
@@ -63,7 +63,7 @@
 //! redesigned target shape, and `quire-exact`'s `Value` has no `Population`
 //! variant at all — so retargeting `ValueType` is not the mechanical repoint
 //! QSL-146 did for the other three. QSL-131 (#213 S-1b) owns that
-//! replacement; once it lands, `ValueType` in [`syntax`] retargets to
+//! replacement; once it lands, `ValueType` in `syntax` retargets to
 //! `quire_exact`'s copy (layer K, allow-listed) and `forms` becomes
 //! layer-2-legal without a further change to this module's shape.
 

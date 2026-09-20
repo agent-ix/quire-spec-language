@@ -358,7 +358,7 @@ pub struct ResolvedElement {
     /// The producer key this classification actually stored for the
     /// matched record — fetched from that record, never the request's
     /// `key` echoed straight back (finding #7; see
-    /// [`SystemsClassification::stored_key`]). This module resolves by
+    /// `SystemsClassification::stored_key`). This module resolves by
     /// key, not by qualified name — see the module docs.
     pub key: DeclarationKey,
     /// The resolved kind, always equal to the request's `required` kind.

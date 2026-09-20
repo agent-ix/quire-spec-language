@@ -10,7 +10,9 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{temporal, ByteDigest};
 
+/// Contract identifier for the native-temporal request document.
 pub const REQUEST_CONTRACT: &str = "quire.native-temporal-request/v1";
+/// Contract identifier for the native-temporal result document.
 pub const RESULT_CONTRACT: &str = "quire.native-temporal-result/v1";
 
 const MAX_BYTES: usize = 8 * 1_048_576;
@@ -31,19 +33,33 @@ const MAX_VISITED: usize = 2_000_000;
 #[serde(deny_unknown_fields)]
 /// Caller-selected ceilings, independently clamped to QSL owner maxima.
 pub struct Limits {
+    /// Maximum size in bytes of the encoded input document.
     pub input_bytes: usize,
+    /// Maximum size in bytes of the encoded output document.
     pub output_bytes: usize,
+    /// Maximum nesting depth allowed while parsing JSON.
     pub json_depth: usize,
+    /// Maximum size in bytes of any single string value.
     pub string_bytes: usize,
+    /// Maximum number of nodes in the temporal formula.
     pub formula_nodes: usize,
+    /// Maximum depth of the temporal formula tree.
     pub formula_depth: usize,
+    /// Maximum number of observed trace positions.
     pub positions: usize,
+    /// Maximum number of formula-leaf valuations across all positions.
     pub valuations: usize,
+    /// Maximum number of trigger captures.
     pub captures: usize,
+    /// Maximum retained evidence support set size.
     pub support: usize,
+    /// Maximum required history span, in clock units.
     pub history_span: usize,
+    /// Maximum number of evaluation steps performed.
     pub evaluation_steps: usize,
+    /// Maximum lineage chain length retained.
     pub lineage: usize,
+    /// Maximum total number of nodes visited across validation and evaluation.
     pub visited: usize,
 }
 
@@ -194,17 +210,29 @@ impl TryFrom<WireLimits> for Limits {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 /// Measured work retained for either success or failure.
 pub struct Usage {
+    /// Size in bytes of the encoded input document actually consumed.
     pub input_bytes: usize,
+    /// Size in bytes of the encoded output document actually produced.
     pub output_bytes: usize,
+    /// Maximum JSON nesting depth actually observed.
     pub json_depth: usize,
+    /// Length in bytes of the longest string value actually observed.
     pub string_bytes: usize,
+    /// Number of formula nodes actually visited.
     pub formula_nodes: usize,
+    /// Number of observed trace positions actually processed.
     pub positions: usize,
+    /// Number of formula-leaf valuations actually processed.
     pub valuations: usize,
+    /// Number of trigger captures actually processed.
     pub captures: usize,
+    /// Size of the evidence support set actually retained.
     pub support: usize,
+    /// Length of the lineage chain actually retained.
     pub lineage: usize,
+    /// Total number of nodes actually visited across validation and evaluation.
     pub visited: usize,
+    /// Resource usage recorded by the underlying temporal evaluation.
     pub evaluation: temporal::Usage,
 }
 
@@ -212,16 +240,24 @@ pub struct Usage {
 #[non_exhaustive]
 /// Stable refusal categories for the FR-052 owner contracts.
 pub enum ErrorCode {
+    /// The caller-supplied input failed validation.
     InvalidInput,
+    /// The document bytes were malformed or failed to decode.
     InvalidDocument,
+    /// The document decoded successfully but was not in canonical form.
     NonCanonical,
+    /// The document requested behavior this owner contract does not support.
     Unsupported,
+    /// The document's cross-references did not hold the required relationship.
     InvalidRelation,
+    /// A resource limit was exceeded before the operation could complete.
     ResourceIncomplete,
+    /// Memory allocation failed while producing or reading the document.
     Allocation,
 }
 
 impl ErrorCode {
+    /// Returns the stable string form of this error code.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "invalid_input",
@@ -244,10 +280,12 @@ pub struct Error {
 }
 
 impl Error {
+    /// Returns the error's stable category code.
     pub const fn code(&self) -> ErrorCode {
         self.code
     }
 
+    /// Returns the field path the error refers to.
     pub const fn path(&self) -> &'static str {
         self.path
     }
@@ -274,18 +312,22 @@ pub struct Report<T> {
 }
 
 impl<T> Report<T> {
+    /// Returns the operation's result by reference.
     pub fn result(&self) -> Result<&T, &Error> {
         self.result.as_ref()
     }
 
+    /// Consumes the report and returns its result.
     pub fn into_result(self) -> Result<T, Error> {
         self.result
     }
 
+    /// Returns the resource limits the operation ran under.
     pub const fn limits(&self) -> Limits {
         self.limits
     }
 
+    /// Returns the resource usage measured during the operation.
     pub const fn usage(&self) -> Usage {
         self.usage
     }
@@ -319,6 +361,7 @@ impl EvidenceRef {
         clippy::too_many_arguments,
         reason = "the owner evidence tuple is intentionally explicit"
     )]
+    /// Constructs a new evidence reference from its owner-supplied fields.
     pub fn new(
         contract: impl Into<String>,
         schema_digest: impl Into<String>,
@@ -343,30 +386,39 @@ impl EvidenceRef {
         }
     }
 
+    /// Returns the contract identifier of the referenced evidence.
     pub fn contract(&self) -> &str {
         &self.contract
     }
+    /// Returns the digest of the schema the referenced evidence conforms to.
     pub fn schema_digest(&self) -> &str {
         &self.schema_digest
     }
+    /// Returns the identity of the referenced evidence.
     pub fn identity(&self) -> &str {
         &self.identity
     }
+    /// Returns the digest of the referenced evidence's bytes.
     pub fn digest(&self) -> &str {
         &self.digest
     }
+    /// Returns the identity of the authority that produced the referenced evidence.
     pub fn authority_identity(&self) -> &str {
         &self.authority_identity
     }
+    /// Returns the revision of the authority that produced the referenced evidence.
     pub fn authority_revision(&self) -> &str {
         &self.authority_revision
     }
+    /// Returns the digest of the authority that produced the referenced evidence.
     pub fn authority_digest(&self) -> &str {
         &self.authority_digest
     }
+    /// Returns the scope this evidence reference is bound to.
     pub fn scope(&self) -> &str {
         &self.scope
     }
+    /// Returns the exact population of facts the referenced evidence covers.
     pub const fn population(&self) -> u64 {
         self.population
     }

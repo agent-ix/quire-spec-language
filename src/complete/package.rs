@@ -144,6 +144,7 @@ pub struct ModelRef {
 }
 
 impl ModelRef {
+    /// Validate a non-empty exact compiled-model selection.
     pub fn new(
         identity: impl Into<String>,
         version: impl Into<String>,
@@ -175,14 +176,17 @@ impl ModelRef {
         }
     }
 
+    /// Opaque compiled-model identity.
     pub fn identity(&self) -> &str {
         &self.identity
     }
 
+    /// Exact selected version.
     pub fn version(&self) -> &str {
         &self.version
     }
 
+    /// Exact raw-byte compiled-model digest.
     pub fn digest(&self) -> ModelDigest {
         self.digest
     }
@@ -237,6 +241,8 @@ pub struct ModelArtifact {
 }
 
 impl ModelArtifact {
+    /// Bind an owning reader's typed compiled-model interpretation to the exact
+    /// supplied model document bytes selected by native source.
     pub fn from_exact_bytes(
         _authority: &ReaderAuthority,
         identity: impl Into<String>,
@@ -253,10 +259,13 @@ impl ModelArtifact {
         })
     }
 
+    /// Exact computed compiled-model reference.
     pub fn exact(&self) -> &ModelRef {
         &self.exact
     }
 
+    /// Exact canonical compiled-model document bytes whose digest appears in
+    /// [`Self::exact`].
     pub fn exact_bytes(&self) -> &[u8] {
         &self.exact_bytes
     }
@@ -276,14 +285,23 @@ pub struct SourceSelections {
 /// Role supplied by one exact profile definition.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DefinitionRole {
+    /// Supplies source, package, identity and evolution contracts.
     Source,
+    /// Supplies value, model-type and expression contracts.
     ValueModelExpression,
+    /// Supplies temporal contracts.
     Temporal,
+    /// Supplies observation contracts.
     Observation,
+    /// Supplies protocol and choreography contracts.
     Protocol,
+    /// Supplies runtime contracts.
     Runtime,
+    /// Supplies analysis and method-plan contracts.
     MethodPlan,
+    /// Supplies portable IR and backend contracts.
     Backend,
+    /// Supplies tooling, mapping and evidence contracts.
     ToolingEvidence,
 }
 
@@ -331,9 +349,17 @@ pub struct Definition {
 /// implementation ceilings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackageLimits {
+    /// Maximum number of exact definitions (or model artifacts) admitted into
+    /// one resolved package graph or catalog.
     pub definitions: usize,
+    /// Maximum number of dependency edges traversed while resolving the
+    /// package graph.
     pub dependency_edges: usize,
+    /// Maximum dependency-chain depth carried on the active resolution stack
+    /// before resolution is refused.
     pub depth: usize,
+    /// Maximum total artifact byte count (definitions plus models) admitted
+    /// into one resolved package or catalog.
     pub artifact_bytes: usize,
 }
 
@@ -517,10 +543,12 @@ pub struct ModelCatalog {
 }
 
 impl ModelCatalog {
+    /// Build a catalog and refuse duplicate exact compiled-model artifacts.
     pub fn new(models: Vec<ModelArtifact>) -> Result<Self, PackageError> {
         Self::with_limits(models, PackageLimits::default())
     }
 
+    /// Build a compiled-model catalog under explicit lower accounting limits.
     pub fn with_limits(
         models: Vec<ModelArtifact>,
         limits: PackageLimits,
@@ -577,8 +605,11 @@ pub(crate) enum StaleProfile {
 /// Original source authority retained through package graph resolution/lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceAuthority {
+    /// Caller-selected source identity and revision labels.
     pub identity: SourceIdentity,
+    /// Exact raw-byte digest of the source that produced this package graph.
     pub digest: SourceDigest,
+    /// Source path recorded for diagnostics and located refusal messages.
     pub path: String,
 }
 
@@ -593,12 +624,16 @@ pub struct ResolvedSourcePackage {
 }
 
 impl ResolvedSourcePackage {
+    /// The exact admitted syntax tree this package was resolved from.
     pub fn parsed(&self) -> &Arc<super::ParsedSource> {
         &self.parsed
     }
+    /// Original source authority (identity, digest, path) this package was
+    /// resolved from.
     pub fn authority(&self) -> &SourceAuthority {
         &self.authority
     }
+    /// The dependency-closed complete bundle selected for this package.
     pub fn bundle(&self) -> &CompleteBundle {
         &self.bundle
     }
@@ -1423,8 +1458,11 @@ pub enum PackageError {
     /// One source namespace reused a local alias.
     #[error("duplicate {namespace} alias {alias}; first declared at {first_span:?}")]
     DuplicateAlias {
+        /// The namespace (`profile`, `import`, or `model`) that reused the alias.
         namespace: String,
+        /// The alias spelling that was declared more than once.
         alias: String,
+        /// Where the alias was first declared.
         first_span: Span,
     },
     /// Exact definition dependency graph is cyclic.

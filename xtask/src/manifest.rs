@@ -12,11 +12,15 @@ use std::path::Path;
 /// The `VENDOR.json` schema version this crate reads and writes.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// The parsed contents of a `VENDOR.json` pin file for one vendored resource tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
+    /// The `VENDOR.json` schema version this manifest was written against.
     pub schema_version: u32,
+    /// The vendored resource tree this manifest pins, e.g. `native-v1`.
     pub tree: String,
+    /// The pinned sources making up this tree.
     pub sources: Vec<Source>,
 }
 
@@ -28,19 +32,26 @@ pub struct Manifest {
 pub enum Source {
     /// Bytes read from `agent-ix/quire-specification` at an explicit commit.
     Qspec {
+        /// The `agent-ix/quire-specification` repository identity, recorded for provenance.
         repo: String,
+        /// The pinned commit bytes are read from.
         commit: String,
+        /// Prefix prepended to each file's `dest` when writing into the vendored tree.
         #[serde(default)]
         dest_prefix: String,
+        /// The pinned files read from this source.
         files: Vec<PinnedFile>,
     },
     /// Bytes read from this repository's own history at an explicit commit
     /// (the `native-v1/external/quire-spec-language` historical selection).
     #[serde(rename = "self")]
     SelfRepo {
+        /// The pinned commit, within this repository's own history, bytes are read from.
         commit: String,
+        /// Prefix prepended to each file's `dest` when writing into the vendored tree.
         #[serde(default)]
         dest_prefix: String,
+        /// The pinned files read from this source.
         files: Vec<PinnedFile>,
     },
     /// Bytes read from `agent-ix/filament-core-data` at an explicit commit.
@@ -50,16 +61,24 @@ pub enum Source {
     /// a shared relative tail joined onto `source_prefix` to read and onto
     /// `dest_prefix` to write.
     Fcd {
+        /// The `agent-ix/filament-core-data` repository identity, recorded for provenance.
         repo: String,
+        /// The pinned commit bytes are read from.
         commit: String,
+        /// Prefix joined onto each file's shared relative tail when reading from the source repo.
         source_prefix: String,
+        /// Prefix joined onto each file's shared relative tail when writing into the vendored tree.
         #[serde(default)]
         dest_prefix: String,
+        /// The pinned files read from this source.
         files: Vec<PinnedFile>,
     },
     /// Bytes downloaded once from an external host and pinned by digest;
     /// `revendor`/`revendor_check` verify the digest and never fetch it.
-    ExternalUrl { files: Vec<ExternalFile> },
+    ExternalUrl {
+        /// The pinned externally sourced files.
+        files: Vec<ExternalFile>,
+    },
 }
 
 /// A single vendored file read with `git show <commit>:<path>`.
@@ -68,7 +87,7 @@ pub enum Source {
 pub struct PinnedFile {
     /// Path relative to the source repository root.
     pub path: String,
-    /// `sha256:<64 lowercase hex>`, the crate's [`ByteDigest`] display form.
+    /// `sha256:<64 lowercase hex>`, `quire_spec_language::ByteDigest`'s display form.
     pub sha256: String,
 }
 
@@ -80,7 +99,7 @@ pub struct ExternalFile {
     pub dest: String,
     /// Authoritative origin URL, recorded for provenance only; never fetched.
     pub url: String,
-    /// `sha256:<64 lowercase hex>`, the crate's [`ByteDigest`] display form.
+    /// `sha256:<64 lowercase hex>`, `quire_spec_language::ByteDigest`'s display form.
     pub sha256: String,
 }
 
@@ -155,6 +174,7 @@ impl Source {
 }
 
 impl Manifest {
+    /// Read and parse `VENDOR.json` from `path`, validating its contents.
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = std::fs::read(path).map_err(|source| Error::io(path, source))?;
         let manifest: Self = serde_json::from_slice(&bytes).map_err(|source| Error::Manifest {
@@ -165,6 +185,7 @@ impl Manifest {
         Ok(manifest)
     }
 
+    /// Write this manifest back to `path` as pretty-printed, newline-terminated JSON.
     pub fn save(&self, path: &Path) -> Result<()> {
         let mut bytes =
             serde_json::to_vec_pretty(self).expect("Manifest serialization cannot fail");

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! End-to-end CLI behavior: usage, I/O and resource exit-code outcomes.
 use ix_trace_rs::trace;
 use std::process::Command;
 

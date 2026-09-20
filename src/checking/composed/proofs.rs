@@ -63,13 +63,19 @@ pub enum CauseKind {
     /// Authored correspondence failed before any dependent discharge.
     Correspondence(CorrespondenceError),
     /// A supported obligation was not proved; this is not a counterexample.
-    Unproved { diagnostics: Vec<ir::Diagnostic> },
+    Unproved {
+        /// Actual upstream proof diagnostics explaining why discharge did not succeed.
+        diagnostics: Vec<ir::Diagnostic>,
+    },
     /// The finite aggregate domain does not prove every admitted prefix representable.
     UnprovedAggregateDomain,
     /// The selected interface cannot supply this required meaning.
     Unsupported(Unsupported),
     /// An actual native dependency did not discharge.
-    Dependency { target: DeclarationId },
+    Dependency {
+        /// The native declaration this obligation depends on that failed to discharge.
+        target: DeclarationId,
+    },
 }
 
 /// One original native locus and its typed proof cause.
