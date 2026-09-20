@@ -278,12 +278,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// `pub(crate)` inside `quire-exact` (`quire-exact/src/accounting.rs:551,
 /// 595`), not exported to this crate. QSL cannot charge the kernel meter
 /// through any public API today, so nothing here could construct an
-/// `Incomplete` for real. **QSL-153 owns this export gap** (PR #262
-/// review round 4: the previous attribution here, "#213 S-1", named
-/// QSL-26/#213, which is Done and never covered this gap -- QSL-153 is
-/// already this same file's correct attribution for `StageLimits`'
-/// deleted limit kinds, above at [`StageLimits`]'s own doc; this
-/// paragraph now matches it instead of contradicting it), not a
+/// `Incomplete` for real. QSL-153 owns this export gap, not a
 /// consequence of how many families are migrated. QSL-153 adds this
 /// variant back together with public charge access.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

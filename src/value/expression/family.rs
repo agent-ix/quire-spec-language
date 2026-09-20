@@ -696,7 +696,7 @@ mod family_contract_tests {
         assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
-    /// **Untagged (PR #262 review round 4).** This test varies only the
+    /// **Untagged.** This test varies only the
     /// nesting-depth limit (0 vs 1) against `check`, which calls
     /// `enter_nesting` exactly once per top-level declaration -- `check`
     /// performs no recursive descent of its own, so `depth` never exceeds
