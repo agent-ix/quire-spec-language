@@ -633,10 +633,8 @@ Rules that close the ADR-010 OBS-016 cycles:
   **This requirement was not met by the change that was supposed to meet
   it.** #213 S-1 (X-1, PR #254) did not cut these edges: its own summary
   states "No file under `src/value/` or `src/model/` is touched here." The
-  cuts remain outstanding, and **QSL-131** (#213 S-1b) now owns them; QSL-163
-  and this record's own §7.3 correction (2026-09-20) are the second and third
-  times X-1's incompleteness against this bullet has surfaced from a
-  different direction. Until QSL-131 lands, `collection`, `equality`,
+  cuts remain outstanding, and **QSL-131** (#213 S-1b) now owns them. Until
+  QSL-131 lands, `collection`, `equality`,
   `division`, `ieee`, `composite` and `outcome` continue to import `key`,
   `enumeration`, `quantity`, `reference` and `definition` from `value` — an
   edge reaching *up* into layer 3, which this leaf rule forbids in every
@@ -649,14 +647,18 @@ Rules that close the ADR-010 OBS-016 cycles:
   `outcome` use `quire-exact`'s own already-built narrow `quantity.rs`/
   `reference.rs`/`key.rs` (present today under `quire-exact/src/`), never
   `semantic_value`'s full declaration types.
-- **`model` sits below `check`.** M-2 moves the three things that make `model`
+- **`model` sits below `check`.** M-2 moves the two things that make `model`
   depend on `value::expression` today: `model::checked_dispatch` moves to
   `check`, and so does the FR-151 field-refinement obligation
   (`model::conformance::check_field_refinement_obligation`, the only
-  `conformance` code that reads `value::expression` facts). Kernel types move
-  to `quire-exact` (X-1), including the `model::accounting` meter. QSL value
-  modules outside the kernel row move to `semantic_value`. After M-2, `model`
-  depends on `semantic_value`, F and K only. This breaks SCC S2.
+  `conformance` code that reads `value::expression` facts). Both moves are
+  M-2's own — moving `model` code is not M-5's job — but neither can execute
+  until M-5 relocates the `value::expression` types they depend on (§7.3).
+  Kernel types move to `quire-exact` (X-1), including the `model::accounting`
+  meter. QSL value modules outside the kernel row move to `semantic_value`
+  (QSL-165), a separate change blocked by QSL-131 cutting the edges named
+  above, not by M-2 or M-5. After M-2 and QSL-165, `model` depends on
+  `semantic_value`, F and K only. This breaks SCC S2.
 - **The temporal evaluator, under `value::expression`, sits below orchestration
   and never imports a wire module.** Wire emission and reading live in S4
   `package`, and temporal evaluation lives in S6a. This breaks SCC S3.
@@ -739,7 +741,7 @@ Module table:
 | `value::library`, `value::package_identity`, `value::model_query` | 3 `library`, 3 `library`, 3 `model` | `package_identity` is a structural preimage reader with no wire I/O; `library` imports it (`value/library.rs:25`) |
 | `value::containment` | 3 `semantic_value` | FR-143 `ValueGraph`; its `protocol_artifact` consumer retires with SEAM-3 |
 | `model` (`dispatch`, `domain_package`, `key`, `normalize`, `population`, `refusal`, `systems`, `conformance` type conformance) | 3 `model` | `model::intake` is I1 |
-| `model::checked_dispatch`, `model::conformance::check_field_refinement_obligation` | 3 `check` | M-5 (corrected 2026-09-20; both were misassigned to M-2, see §7.3's order correction and this section's "K is a leaf" note) |
+| `model::checked_dispatch`, `model::conformance::check_field_refinement_obligation` | 3 `check` | M-2, blocked by M-5 (corrected 2026-09-20: moving `model` code is M-2's job, not M-5's — M-5 only unblocks it by relocating the `value::expression` types both moves depend on; see §7.3) |
 | `model::accounting` | K `quire-exact` | one kernel `Meter` (M-2 with X-1) |
 | `state` | replaced by a family evaluator under layer-5 `value::expression` in #120, #121 and #164 (design #220) | It is typed on SEAM-1 and SEAM-3 types (`native_model`, `protocol_artifact::wire`, `ProtocolNumber`, `Locus`) and on IR `ValueType` (`state/evaluation.rs:15`, `:21`). The PR among #120, #121 and #164 that lands the evaluator over checked forms and S3 `model` deletes the old module (M-6c). |
 | `temporal` | replaced by a family evaluator under layer-5 `value::expression` in #188 and #189 (design #222) | typed on `protocol_artifact::wire` and `ProtocolNumber` (`temporal/formula.rs:10`, `temporal/mapping.rs:19`). The PR among #188 and #189 that lands the evaluator over checked forms only (FB-03) deletes the old module (M-6c). |
@@ -826,28 +828,24 @@ never justifies a crate.
 ### 7.3 Proposed extractions and module moves
 
 Each row is one change, except M-3b, which is incremental, one per family's
-migration ticket. M-3a and M-5 are one change each, and separate from each
-other.
+migration ticket, and QSL-165, split out of M-2's original scope (below).
+M-3a and M-5 are one change each, and separate from each other.
 
 **Order correction (2026-09-20).** This section originally stated the order
-X-1, M-2, M-3a and M-5, one at a time, and gave the reason as a shared edit
-surface: "X-1, M-2, M-3a and M-5 all edit `value` and `model`." That reason
-was wrong, and reasoning from it (rather than from the imports) produced two
-incorrect sequencing rulings on QSL-7 before this correction landed. M-3a in
-fact landed ahead of M-2 with no conflict, because its scope
-(`value::expression::syntax`) is disjoint from M-2's six `value` submodules —
-edit-surface collision was never the real constraint.
+X-1, M-2, M-3a and M-5, one at a time, with the reason given as a shared
+edit surface: "X-1, M-2, M-3a and M-5 all edit `value` and `model`." That is
+not the actual constraint. M-3a landed ahead of M-2 with no conflict,
+because its scope (`value::expression::syntax`) is disjoint from M-2's six
+`value` submodules — edit-surface collision was never binding.
 
-The real constraint is a dependency, not a collision: M-2 cannot land before
-M-5, because every one of M-2's three parts needs something M-5 or QSL-131
-has not yet produced.
+The actual constraint is a dependency: M-2's two moves (below) each need a
+`value::expression` type that only M-5 relocates to layer-3 `check`.
 
-- `model::checked_dispatch`'s move to `check` needs `DispatchTable`/
-  `DispatchCandidate` (`value/expression/ir.rs`) and `DispatchOperation`/
-  `PackageDeclarations` (`value/expression/check.rs`) to already be layer-3.
-  M-5 is what moves them there; today they are layer-5 `value::expression`,
-  so the move would create a `check → value::expression` edge (layer 3 → 5),
-  which §6.1's exhaustive allow-list forbids.
+- `model::checked_dispatch`'s move needs `DispatchTable`/`DispatchCandidate`
+  (`value/expression/ir.rs`) and `DispatchOperation`/`PackageDeclarations`
+  (`value/expression/check.rs`), today layer-5. Moving it first would create
+  a `check → value::expression` edge (layer 3 → 5), forbidden by §6.1's
+  exhaustive allow-list.
 - `model::conformance::check_field_refinement_obligation`'s move needs the
   same thing, through a different route: its exclusive helper chain
   (`clause_location`, `self_field_node`, `field_domain_type`,
@@ -855,36 +853,45 @@ has not yet produced.
   `format_interval`) is built entirely out of `value::expression` primitives
   — `established_field_fact` (`value/expression/facts.rs`), `Node`/
   `NodeKind`/`Connective`/`OrderedKind` (`value/expression/ir.rs`) and
-  `Location`/`Origin`/`ProvedInterval` (`value/expression/refusal.rs`). M-5 is
-  what relocates all four of these submodules to layer-3 `check`; until then,
-  moving this function creates the identical forbidden edge.
-- `semantic_value`'s creation needs the K-designated `value` submodules
-  (`composite`, `collection`, `equality`, `division`, `ieee`, `outcome`) to
-  no longer import the six non-kernel submodules `semantic_value` takes
-  (`definition`, `enumeration`, `quantity`, `key`, `reference`; `unit` is the
-  one clean submodule, imported only by `quantity`, which moves with it).
-  Cutting those edges is QSL-131's scope, tracked for this ticket as
-  **QSL-165**, and is a different edge from the one `semantic_value` itself
-  creates by depending on those K submodules' current, not-yet-relocated
-  location (that direction self-heals when QSL-131 lands; this direction does
-  not — see §6.1's "K is a leaf" bullet).
+  `Location`/`Origin`/`ProvedInterval` (`value/expression/refusal.rs`).
 
-The real order is **X-1 → QSL-131 → M-5 (QSL-139) → M-2 (QSL-7)**. M-3a sits
-outside this chain — its only contact point with M-2 is `src/value/mod.rs`,
-where both remove submodule declarations — and may land anywhere after X-1.
-**QSL-131 is therefore the head of this critical path, and it is
-unstaffed.**
+`semantic_value` is a separate change (**QSL-165**, split out of M-2's
+original scope): it needs the K-designated `value` submodules (`composite`,
+`collection`, `equality`, `division`, `ieee`, `outcome`) to stop importing
+the six non-kernel submodules it takes (`definition`, `enumeration`,
+`quantity`, `key`, `reference`; `unit` is clean, imported only by
+`quantity`, which moves with it). Cutting those edges is QSL-131's scope.
+This is a different edge from the one `semantic_value` itself creates by
+depending on those K submodules' current, not-yet-relocated location (that
+direction self-heals when QSL-131 lands; this direction does not — §6.1's
+"K is a leaf" bullet).
+
+M-5 does not depend on QSL-165 or on QSL-131: `value::expression`'s
+check-stage submodules (`check`, `facts`, `ir`, `refusal`, `termination`)
+import only K-designated `value` siblings, and, in `check.rs`'s case
+(`value/expression/check.rs:15,20`), two of the six `semantic_value`-bound
+submodules (`enumeration`, `quantity`) — in the allowed direction, layer-3
+`check` depending on layer-3 `semantic_value`, later in the layer's order
+depending on earlier. Nothing in that submodule set requires `semantic_value`
+to exist first.
+
+The real order is **X-1 → M-5 (QSL-139) → M-2 (QSL-7)**, and, independently,
+**QSL-131 → QSL-165**. M-3a depends only on X-1, landed correctly ahead of
+M-2, and is otherwise outside both chains — its only contact point with M-2
+is `src/value/mod.rs`, where both remove submodule declarations. **QSL-131
+is unstaffed**, blocking QSL-165.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
 |---|---|---|---|---|---|
-| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. X-1 makes the edge cuts that keep it a leaf (§6.1 kernel rule). | The AD-016 Shared-type row types as amended by QC-15, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56. On the QSL side, #213 S-1 builds `quire-exact` and cuts the kernel's own edges (T-6) but leaves the QSL `value` kernel copies in place, including the `negotiate_*` copies in `division` and `ieee` (`src/value/division.rs:223`, `src/value/ieee.rs:882`, still present, unchanged) and the redesigned `ValueType`/`Value`. QSL-146 (below) owns the byte-identical subset (`CollectionKind`, `Integer`, `IntegerInterval`) and the `AbsenceMode` move; QSL-131 (#213 S-1b) owns the rest, `negotiate_*` and `ValueType`/`Value` alike. |
+| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. X-1 was to make the edge cuts that keep it a leaf (§6.1 kernel rule); it did not — the cuts are outstanding, owned by QSL-131 (§6.1's "K is a leaf" bullet). | The AD-016 Shared-type row types as amended by QC-15, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56. On the QSL side, #213 S-1 builds `quire-exact` and cuts the kernel's own edges (T-6) but leaves the QSL `value` kernel copies in place, including the `negotiate_*` copies in `division` and `ieee` (`src/value/division.rs:223`, `src/value/ieee.rs:882`, still present, unchanged) and the redesigned `ValueType`/`Value`. QSL-146 (below) owns the byte-identical subset (`CollectionKind`, `Integer`, `IntegerInterval`) and the `AbsenceMode` move; QSL-131 (#213 S-1b) owns the rest, `negotiate_*` and `ValueType`/`Value` alike. |
 | M-1 | Make `diagnostic` a foundation module | F | codes, typed causes, locus | with #213 | none |
 | QSL-146 | Remove the QSL `value` kernel's byte-identical duplicates of the `quire-exact` types (`CollectionKind`, `Integer`, `IntegerInterval`) and move `AbsenceMode` into F (`absence`) | F (`absence`); the removed types' consumers repoint at `quire-exact` | `quire-exact` widens 17 `Integer`/`IntegerInterval` methods (`add`, `sub`, `mul`, `neg`, `gcd`, `abs`, `pow`, `exact_div`, `div_rem_truncating`, `div_mod_floor`, `power_of_ten`, `power_product_bits`, `spanning`, `from_big`, `as_big`, `split_factor_two`, `shifted_left`) from `pub(crate)` to `pub`, each verified against a real cross-crate call site (§7.2 criterion 2's narrow-API bar), since their QSL callers are now a separate crate; `quire_spec_language::value` narrows, removing 8 `pub use` re-exports (`CollectionKind`, `Integer`, `IntegerInterval`, `BoundedInteger`, `IntegerDomain`, `EmptyInterval`, `NonCanonicalInteger`, `OutOfDomain`) whose one remaining definition is `quire-exact`'s | after X-1 and M-3a | none: QSL-146 removes exactly the byte-identical copies. `quire-exact`'s `ValueType`/`Value` are not byte-identical to the QSL copy they'd replace -- their `Enum`, `Reference` and `Quantity` payloads are a redesigned target shape (`quire-exact/src/quantity.rs`, `reference.rs` document this as a deliberate, non-verbatim cut), and `quire-exact`'s `Value` has no `Population` variant at all. Consolidating `ValueType`/`Value` is therefore not a mechanical duplicate removal; QSL-131 (#213 S-1b) owns it. |
-| M-2 | Move `model` below `check` and create `semantic_value` (§6.1), in three independently-blocked parts: **(a)** move `model::checked_dispatch` to `check` — blocked by M-5 (§6.2); **(b)** move `model::conformance::check_field_refinement_obligation` and its two exclusive helpers (`established_facts`, `format_interval`) to `check`, widening `ConformanceIndex`, `AxisFailure`, `ConformanceOutcome` and `missing_member` to `pub(crate)` so `check` (which sits above `model`) can call back into them — blocked by M-5, for the same reason as (a); **(c)** create `semantic_value` from `value`'s six non-kernel submodules — blocked by QSL-131 (tracked as **QSL-165**), per §6.1's "K is a leaf" bullet | 3 | `model`, `model::intake`, `semantic_value` | **after M-5 (QSL-139)** (corrected 2026-09-20; QSL-139 is itself blocked by QSL-131) | none |
-| M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138, after M-2 | none: `LoweredSourceGraph` is deleted in the same change |
+| M-2 | Move `model` below `check` (§6.1): move `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` (with its two exclusive helpers, `established_facts` and `format_interval`) to `check`, widening `ConformanceIndex`, `AxisFailure`, `ConformanceOutcome` and `missing_member` to `pub(crate)` so `check` (which sits above `model`) can call back into them | 3 | `model`, `model::intake` | after M-5 (QSL-139) (corrected 2026-09-20; was "after X-1") | none |
+| QSL-165 | Create `semantic_value` from `value`'s six non-kernel submodules (`definition`, `enumeration`, `unit`, `quantity`, `key`, `reference`); split out of M-2's original scope (2026-09-20) | 3 | `semantic_value` | blocked by QSL-131: five of the six submodules (all but `unit`) are imported back by K-designated `value` siblings (`composite`, `collection`, `equality`, `division`, `ieee`, `outcome`) that stay in `value` until QSL-131 cuts those edges (§6.1's "K is a leaf" bullet) | none |
+| M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138, after X-1 (corrected 2026-09-20; was "after M-2", which is now circular since M-2 depends on M-5 and M-5 depends on M-3a) | none: `LoweredSourceGraph` is deleted in the same change |
 | M-3b | Add each family's parsed-form type: its grammar-production function and its `Expression` enum variant, landing incrementally, one per family's own migration ticket, alongside M-6c to M-6e | 2 | parsed form types per family (#210) | per family, tracked under QSL-141 | none |
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
-| M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-3a and QSL-131; **not** after M-2 — corrected 2026-09-20, M-2 depends on M-5, not the reverse (see §7.3's order correction) | none |
+| M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
