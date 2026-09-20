@@ -79,10 +79,14 @@ impl InternalFault {
 /// **No `Refused` variant.** ADR-013 T-4's own design also names a
 /// family-typed-cause refusal (`Refused { causes: Vec<C> }`), and ADR-012
 /// §5.1 S4 separately requires each family's own `Cause` enum and its
-/// `catalog_code()` mapping to exist as a closed seam (see
-/// [`crate::value::expression::family::DeclarationCause`]) -- but nothing in
-/// this ticket's one migrated family ever produces a typed refusal cause
-/// through this outcome type: `Value`'s function-declaration/application
+/// `catalog_code()` mapping to exist as a closed seam -- but `Value`'s
+/// function-declaration/application family has no real typed refusal cause
+/// distinct from its existing checking refusals (`CheckCause`), so #214
+/// does not add a `Cause` enum for it (a `DeclarationCause` with zero real
+/// variants was tried and deleted: a probe over it would test only its own
+/// `catalog_code()` mapping, not a seam). Nothing in this ticket's one
+/// migrated family ever produces a typed refusal cause through this
+/// outcome type: `Value`'s function-declaration/application
 /// `check` mints identity unconditionally past its one limit check, so nothing
 /// here constructs a `Refused`. Worse, `Vec<C>` over an uninhabited `C` is
 /// still constructible *empty* -- `Refused { causes: Vec::new() }` compiles

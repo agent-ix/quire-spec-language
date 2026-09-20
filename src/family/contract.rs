@@ -166,7 +166,10 @@ pub(crate) trait FamilyContract {
     /// outcome or an internal fault (FR-062 "structured outcome", narrowed
     /// per this trait's own doc). `check` reads nothing outside `cx` and
     /// mutates nothing but `cx`'s meter, diagnostic sink and scope stack.
-    fn check(form: Self::Form, cx: &mut CheckContext<'_, Self::Declarations>) -> CheckOutcome<Self::Checked>;
+    fn check(
+        form: Self::Form,
+        cx: &mut CheckContext<'_, Self::Declarations>,
+    ) -> CheckOutcome<Self::Checked>;
 
     /// Emit every v2 node `checked` requires (FR-062 "Packaging is
     /// all-or-nothing"; this trait's doc explains why there is no refusal
