@@ -15,7 +15,8 @@ Planned public Rust controls for the full
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
-reader behavior. The ten groups below correspond to the ten acceptance criteria.
+reader behavior. The twelve groups below correspond to the twelve acceptance
+criteria.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
 payment attempts A1/A2 and effect E1, refund registration and distinct refund
@@ -54,7 +55,7 @@ observations belong only to the later consumer fixture.
    malformed, unreduced, wrong-domain, bare-number and structural-number mutants.
 3. Mutate each reference component independently, retaining the expected
    accepted selection. Include native versus formal source revisions, rule
-   bytes, domain package identity and declaration keys, manifest/lock closure,
+   bytes, domain package identity, version and declaration keys, manifest/lock closure,
    baseline, inner versus outer profile, feature omission/addition and unknown
    optional feature. Substitute source, domain package `sha256-jcs`, IR and
    result-JCS digests into the external package and source byte slots; require
@@ -243,6 +244,43 @@ observations belong only to the later consumer fixture.
     missing family, model intake or consumer implementation records the
     unmet positive integration prerequisite; a negative unsupported test cannot
     stand in for successful source-to-consumer emission.
+11. Run the [Rust emitter recipe](../../examples/protocol-handoff/README.md)
+    rewritten over the filament-core-data#173 architecture fixture bundle: admit
+    its domain package through the real FR-056 intake seam (parts, interfaces,
+    ports and a connection between two ports, as IT-012 exercises), link a
+    native package that references it, and emit the compiled-protocol package.
+    Decode the emitted `Model` and confirm its identity, version and digest,
+    read directly from the `Model` record, equal the `DomainPackageRef` the
+    intake seam admitted, with no `correspondence`, `producer` or `interface`
+    member present. Separately, hand-construct a decoder input whose `Model`
+    object adds a `correspondence` member (with any value, including explicit
+    `null`) or a `producer`/`interface` member shaped like the deleted
+    `ProducerObject`/`Correspondence` records, and require the reader to refuse
+    each as an unrecognized field rather than accept or silently drop it.
+    Inspect the compiler source tree and confirm no `ProducerObject` or
+    `Correspondence` type or wire tag remains, and that the domain-package
+    member decodes through a plain `record!` field rather than any internally
+    tagged (`#[serde(tag = ...)]`) representation (FR-042-CON-2); the
+    reader's refusal of a `correspondence`/`producer`/`interface` member
+    above is the behavioral proof that mechanism actually fires, not an
+    assumption about `deny_unknown_fields` in the abstract. Regenerate both
+    existing golden directories, `artifacts/compiled-protocol-v1` and
+    `artifacts/compiled-protocol-v2`, and confirm both directories' own tests
+    still pass under the new `Model` shape, at their existing
+    `quire.compiled-protocol/1` and `quire.compiled-protocol/2`
+    ([FR-050](../functional/FR-050-publish-authenticated-temporal-artifacts.md))
+    wire identities unchanged; `quire.compiled-protocol/3`
+    ([FR-054](../functional/FR-054-publish-control-temporal-activation-map.md))
+    keeps its own wire identity and activation-mapping delta, and only its
+    shared `Model` population changes shape.
+12. Compile a native package that admits no domain package at all (a
+    directly admitted native model) and decode its emitted `Model`; confirm
+    its domain-package member decodes as explicit `null`, distinguished by
+    byte content from the member being omitted. Separately hand-construct a
+    decoder input for such a model that omits the member entirely and require
+    the reader to refuse it, exactly as an omitted `Nullable<T>` member
+    refuses elsewhere in this contract, never reading the omission as an
+    implicit `null`.
 
 ## Expected Results
 
