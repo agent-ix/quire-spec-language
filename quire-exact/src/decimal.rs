@@ -66,8 +66,11 @@ impl DecimalRepresentation {
         Self::new(coefficient, scale)
     }
 
-    /// The exact mathematical value.
-    pub fn to_rational(&self) -> Rational {
+    /// The exact mathematical value. `pub(crate)`, not `pub` (H-5): `scale`
+    /// is caller-supplied and unmetered, and `Decimal::new(Integer::one(),
+    /// u32::MAX).to_rational()` builds a roughly 1.8GB `BigInt` through two
+    /// otherwise-`pub` constructors with no meter in between.
+    pub(crate) fn to_rational(&self) -> Rational {
         Rational::from_integer(self.coefficient.clone())
             .divided_by_power_of_ten(u64::from(self.scale))
     }
@@ -289,6 +292,26 @@ impl DecimalLoss {
     /// Reduced positive exact denominator. This unmetered accessor
     /// materializes the denominator, including any power of ten contributed by
     /// a large working scale.
+    ///
+    /// **H-5, judgment call: stays `pub`, not `pub(crate)`.** The scale
+    /// driving `self.exact.fives`/`self.exact.twos` is bounded only by
+    /// `DecimalType::new`'s `smax <= u32::MAX`, so this is a real unmetered
+    /// materialization risk, the same class as `rational::
+    /// divided_by_power_of_ten` and `DecimalRepresentation::to_rational`.
+    /// Those two became `pub(crate)`: each already has a real in-crate
+    /// caller. This one and [`DecimalLoss::exact`] do not -- per this
+    /// module's own doc comment, evaluation deliberately never charges this
+    /// materialization, deferring it to "consumer-side accessors" for QSL to
+    /// report a loss's exact pre-rounding value, which is this method's
+    /// entire reason to exist. Demoting it to `pub(crate)` would either
+    /// delete that not-yet-wired consumer capability or produce dead code
+    /// (confirmed: a `#[cfg(test)]`-only caller does not satisfy `cargo
+    /// build`'s dead-code check). Metering it would need a new
+    /// `quire.value.accounting/v1` charge point, which is ADR-governed
+    /// product vocabulary, not something to mint at this call site (the same
+    /// reasoning `identity.rs`'s module doc gives for not inventing digest
+    /// domains). Left `pub` and documented, tracked for a real fix once a
+    /// consumer exists to say which of pub(crate)/metering it actually needs.
     pub fn exact_denominator(&self) -> Integer {
         let fives = Integer::from(5_i64).pow(&Integer::from(self.exact.fives));
         self.exact
@@ -298,7 +321,8 @@ impl DecimalLoss {
     }
 
     /// The exact mathematical value, materialized as for
-    /// [`DecimalLoss::exact_denominator`].
+    /// [`DecimalLoss::exact_denominator`], including that method's same H-5
+    /// judgment call.
     pub fn exact(&self) -> Rational {
         Rational::new(self.exact.numerator.clone(), self.exact_denominator())
             .expect("a loss denominator is a product of positive factors")
@@ -1045,5 +1069,34 @@ mod tests {
         .unwrap();
         assert!(target.contains(&Decimal::new(Integer::from(500_u64), 2)));
         assert!(!target.contains(&Decimal::new(Integer::from(1_100_u64), 2)));
+    }
+
+    /// TC-344: dividing `1 / 3` at scale 2 under `TowardZero` (not
+    /// `NearestEven`) rounds and records a loss whose `exact()`/
+    /// `exact_denominator()` reconstruct the exact pre-rounding `1/3` (H-7:
+    /// both were untested; also exercises `evaluate_decimal` under a
+    /// non-`NearestEven` rounding mode).
+    #[trace("TC-344")]
+    #[test]
+    fn tc_344_decimal_loss_exact_reconstructs_the_pre_rounding_rational() {
+        let target = DecimalType::new(
+            Integer::zero().sub(&Integer::from(1_000_000_u64)),
+            Integer::from(1_000_000_u64),
+            0,
+            2,
+            RoundingMode::TowardZero,
+        )
+        .unwrap();
+        let mut meter = generous_meter();
+        let one = Decimal::new(Integer::one(), 0);
+        let three = Decimal::new(Integer::from(3_u64), 0);
+        let outcome = evaluate_decimal(DecimalOperation::Divide(&one, &three), &target, &mut meter);
+        let result = outcome.completed().expect("within the generous target");
+        let loss = result.loss().expect("1/3 does not terminate at scale 2");
+        let exact = loss.exact();
+        assert_eq!(
+            exact,
+            Rational::new(Integer::one(), Integer::from(3_u64)).unwrap()
+        );
     }
 }

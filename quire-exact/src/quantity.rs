@@ -19,11 +19,11 @@
 //! Reference-identity cuts in `crate::value`'s and `crate::key`'s module doc
 //! comments.
 
-use crate::accounting::{Charge, ChargePoint, Meter};
+use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use crate::identity::UnitId;
-use crate::numeric::{evaluate_rational_arithmetic, RationalArithmetic};
-use crate::outcome::Outcome;
+use crate::numeric::{evaluate_rational_arithmetic, rational_ordering_bits, RationalArithmetic};
+use crate::outcome::{Outcome, Stop};
 use crate::rational::Rational;
 
 /// A quantity value: a magnitude in exactly one unit.
@@ -99,15 +99,45 @@ pub enum QuantityArithmetic<'a> {
     Subtract(&'a Quantity, &'a Quantity),
 }
 
-/// Compare two quantities in the same unit. Operands in different units are
+/// Compare two quantities in the same unit: `ordering.operands`,
+/// `ordering.arithmetic`, then `ordering.result-retain` (H-5: this is the
+/// same metered shape as `crate::numeric::order_numbers`'s `Rationals` arm,
+/// over the same magnitude comparison -- comparing two quantities is
+/// otherwise an unmetered `Rational::cmp`, whose cross-multiplication cost
+/// grows with caller-supplied operand size). Operands in different units are
 /// ill-typed and consume nothing.
 pub fn compare_quantity(
     operator: ComparisonOperator,
     left: &Quantity,
     right: &Quantity,
-) -> Result<bool, IllTyped> {
+    meter: &mut Meter,
+) -> Result<Outcome<bool>, IllTyped> {
     same_unit(left, right)?;
-    Ok(operator.holds(left.magnitude.cmp(&right.magnitude)))
+    Ok(Outcome::from_stop(compare(operator, left, right, meter)))
+}
+
+fn compare(
+    operator: ComparisonOperator,
+    left: &Quantity,
+    right: &Quantity,
+    meter: &mut Meter,
+) -> Result<bool, Stop> {
+    let bits = left
+        .magnitude
+        .max_part_bits()
+        .max(right.magnitude.max_part_bits());
+    meter.charge(
+        Charge::new(ChargePoint::OrderingOperands)
+            .size(LimitKind::IntegerBits, bits)
+            .size(LimitKind::ValueOccurrences, 2),
+    )?;
+    meter.charge(Charge::new(ChargePoint::OrderingArithmetic).exact_size(
+        LimitKind::IntegerBits,
+        rational_ordering_bits(&left.magnitude, &right.magnitude),
+    ))?;
+    let ordering = left.magnitude.cmp(&right.magnitude);
+    meter.charge(Charge::new(ChargePoint::OrderingResultRetain).results(1))?;
+    Ok(operator.holds(ordering))
 }
 
 #[cfg(test)]
@@ -166,7 +196,34 @@ mod tests {
     fn tc_320_distinct_units_are_ill_typed() {
         let metres = Quantity::new(Rational::from_integer(Integer::one()), unit(1));
         let seconds = Quantity::new(Rational::from_integer(Integer::one()), unit(2));
-        let err = compare_quantity(ComparisonOperator::Equal, &metres, &seconds).unwrap_err();
+        let mut meter = generous_meter();
+        let err =
+            compare_quantity(ComparisonOperator::Equal, &metres, &seconds, &mut meter).unwrap_err();
         assert_eq!(err.cause, IllTypedCause::DistinctUnits);
+    }
+
+    /// TC-345: same-unit quantities compare under a generous meter, and a
+    /// meter with no `integer_bits` left cannot admit `ordering.operands`,
+    /// so the same comparison returns `Outcome::Incomplete` instead (H-5's
+    /// added metering, proved end to end).
+    #[trace("TC-345")]
+    #[test]
+    fn tc_345_compare_quantity_charges_and_a_tight_meter_is_incomplete() {
+        let metres = unit(1);
+        let left = Quantity::new(Rational::from_integer(Integer::one()), metres);
+        let right = Quantity::new(Rational::from_integer(Integer::from(2_u64)), metres);
+
+        let mut generous = generous_meter();
+        let outcome = compare_quantity(ComparisonOperator::Less, &left, &right, &mut generous)
+            .expect("same unit");
+        assert!(outcome.completed().expect("charges available"));
+
+        let mut tight = Meter::new(ScalarLimits {
+            integer_bits: 0,
+            ..*generous.limits()
+        });
+        let outcome = compare_quantity(ComparisonOperator::Less, &left, &right, &mut tight)
+            .expect("same unit");
+        assert!(matches!(outcome, Outcome::Incomplete(_)));
     }
 }

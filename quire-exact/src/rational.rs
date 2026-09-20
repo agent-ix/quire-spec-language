@@ -86,8 +86,11 @@ impl Rational {
         self.denominator == Integer::one()
     }
 
-    /// The exact value `self / 10^exponent`.
-    pub fn divided_by_power_of_ten(&self, exponent: u64) -> Self {
+    /// The exact value `self / 10^exponent`. `pub(crate)`, not `pub` (H-5):
+    /// `exponent` is caller-supplied and unmetered, and `10^u64::MAX` is an
+    /// out-of-memory `BigInt`, mirroring [`Self::divided_by_power_of_two`]'s
+    /// own `pub(crate)` visibility for the identical reason.
+    pub(crate) fn divided_by_power_of_ten(&self, exponent: u64) -> Self {
         let denominator = self.denominator.mul(&Integer::power_of_ten(exponent));
         let divisor = self.numerator.gcd(&denominator);
         Self {
