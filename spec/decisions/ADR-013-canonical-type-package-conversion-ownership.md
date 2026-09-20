@@ -382,9 +382,9 @@ that ADR-012 does not evaluate natively (`Relation`) returns
 (ADR-011 §8), so its outcomes are the kernel `Outcome` through S6a.
 
 Implementing tickets: #213 S-1 builds the kernel outcome and refusal types;
-#213 S-5 builds the category type in F `diagnostic`; #231 carries them
-unchanged in its envelopes and builds the FR-331 result reader (C-23). IR owns
-C-09. CG keeps its disposition type.
+#213 S-5a builds the category type in F `diagnostic` (landed, #258); #231
+carries them unchanged in its envelopes and builds the FR-331 result reader
+(C-23). IR owns C-09. CG keeps its disposition type.
 
 Validation and diagnostics: one test per row of the category table (C-08, C-09,
 C-23); each map is exhaustive with no `_` arm; a source value with no row fails
@@ -398,7 +398,7 @@ their wire strings.
 | Field | Decision |
 | --- | --- |
 | Owner | Codes: QSpec `native-diagnostics.md` (`quire.native.diagnostics/v1`). Typed causes: each layer and stage. |
-| Implementing ticket | #213 S-5 for the shared refusal types and QSL `catalog_code()`; each downstream layer implements its own mapping (IR reader codes: IR conformance work with no ticket, §7). |
+| Implementing ticket | #213 S-5a for `CatalogCode` and QSL `catalog_code()` (landed, #258); #213 S-5b for the shared `RefusalRecord` type; each downstream layer implements its own mapping (IR reader codes: IR conformance work with no ticket, §7). |
 | Public type | Each stage keeps its typed refusal cause (`CheckRefusal`, `InputRefusal`, `PackageRefusal`, `LibraryRefusal`, `ModelRefusal`, IR `CheckedPackageRefusalCode`, …). Each cause type has one exhaustive `fn catalog_code(&self) -> CatalogCode` with no `_` arm (AD-016), and a fixed O-16 category. |
 | Serialized authority | One catalog revision per QSL build: the revision vendored in `resources/complete-value` at the QSpec pin. FR-322 selects revision `1-draft.6`. A code site that claims another revision (`1-draft.1` and `1-draft.3`, ADR-010 OBS-023) is a defect, not a second catalog. |
 | Conversions | typed cause → catalog code (total, C-15). Catalog code → typed cause does not exist; a consumer reads the code and its structured fields, never the message. |
@@ -408,7 +408,7 @@ their wire strings.
 Family refusals (answers ADR-012 §13.2 Q3): each family owns its own `Cause`
 enum with its own exhaustive `catalog_code()`. No shared enum lists every
 family's causes. The shared part is `RefusalRecord` in QSL F `diagnostic`
-(#213 S-5). It carries the `CatalogCode`, the O-16 category, the `Locus` (T-5)
+(#213 S-5b). It carries the `CatalogCode`, the O-16 category, the `Locus` (T-5)
 and the structured fields the catalog defines for that code. It is produced
 from a family cause by that family's `catalog_code()`, from a `FamilyRefusal`
 (O-16) by its `catalog_code()`, or from a kernel `Refusal` by QSL's map of the
@@ -525,7 +525,7 @@ Equality: not an identity. Each bound value compares under its owning type.
 | Field | Decision |
 | --- | --- |
 | Owner | QSpec for each contract version identifier; the producing repository fixes it in each artifact. |
-| Implementing ticket | #213 S-5 for QSL readers; #231 for version refusal in its envelopes. |
+| Implementing ticket | #213 S-5b for QSL readers; #231 for version refusal in its envelopes. |
 | Rule | There is no negotiation. A producer writes exactly one version. A reader accepts exactly one version per contract and refuses every other one with an explicit unsupported-version refusal, catalog code `unknown_wire`/`unsupported-wire`, which names the actual and expected contract identifiers. The order of that refusal relative to structural parse errors follows each contract's own refusal order (FR-322, FR-323, FR-331). A version is never inferred from content (FR-352-AC-2). |
 | Package schema | `quire.checked-package/v2` is the only QSL → IR package contract (AD-016). IR's `read_checked_package` dispatch admits `v2` only. |
 | Tests | IR TC-048 (v2 reader); QSpec TC-255 (FR-352); #231 adds an unknown-version test for each envelope it reads. |
@@ -666,7 +666,7 @@ decides one. The O rows above hold the full decision where one exists.
 | T-1 | Typestate encoding and names for the S2, S3 and S4 outputs | One distinct nominal type per stage output, each with private constructors in its stage module. No type is generic over a state parameter, so no `impl` block can accept two states. S1: `LosslessCst`. S2: `ParsedSource`. S3: `CheckedGraph`, new. S4 in-process: `CheckedPackage`, defined in layer-4 `package` (ADR-011 §4), with `call` in `value::expression` (AD-016 Owner decision 6 keeps the name). S4 wire: `EmittedPackage`, the v2 bytes with their `package_id`, new. I2: `VerifiedPackage`, the v2 bytes after the verified binding holds, defined in layer-3 `library` together with the §4 binding check, new; and `ImportView`, converted from it in `library`, new. The layer-4 `package` reader reads bytes and calls down into `library`. `VerifiedPackage` and `ImportView` are not checked typestate (R-10). The only conversions are S2 → S3 (checker), S3 → S4 (link step), S4 → wire (emitter), wire → `VerifiedPackage` (`package` reader into `library`) and `VerifiedPackage` → `ImportView` (`library`). #213 S-3 builds them (O-15). |
 | T-2 | The digest form for the verified binding, and whether I2 re-checks declarations | The digest is the FR-322 `package_id`: the `quire.package.semantic/v2` digest of the JCS bytes of the `identity_preimage` the reader read. The reader recomputes it and requires lexical equality (O-18) with the declared `package_id` and with the lock or request entry. A digest of the file bytes, a lock-file digest or a source digest never substitutes (FR-201-AC-4). For E3, I2 re-checks no declaration: `ImportView` exposes the verified package's exported declarations as data, and the importing check refers to them by T-3 keys. For E9, the executor re-checks every declaration: it recompiles the digest-addressed source through S1 to S4 and requires the recompiled `package_id` to equal the packet's (O-26). No `CheckedPackage` is built from wire bytes. ADR-011 applies this (Q209-8). |
 | T-3 | The canonical cross-package node key | `DeclarationKey{package, node}` does not serve: it names domain-package declarations only (O-03). Under the O-04 package scope a bare `NodeKey` is unique across packages. An I2 reference is `PackageNodeKey{package: package_id, node: WireNodeId}`, owned by QSL `library` and built by #213 S-3: it pins the verified content and names the node without making a `NodeKey` from wire bytes (R-10, O-04). Equality is declared: both components compare lexically. The v2 member for a reference into a dependency package is QC-10. |
-| T-4 | Stage outcome and refusal types, the limit cause and the internal-fault kind | Stages S1 to S4 and the I2 reader return `Result<Staged<T>, StageFailure<C>>`. `Staged<T>` carries the output and its warnings. `StageFailure<C>` has three variants: `Refused{causes, diagnostics}` with at least one typed cause `C` of that stage (O-17), `Limit(LimitExceeded)` and `Fault(InternalFault)`. `LimitExceeded` names the limit kind (closed enum: input bytes, nesting depth, node count, work budget), the configured bound and the `Locus` (T-5) where it was reached, so S1 and S2 limits have a location. `InternalFault` names the stage and the violated invariant by a stable identifier. It maps to the O-16 internal-failure category and is never a `Refusal`. A family `check` that reaches a limit returns `Limit(LimitExceeded)` with limit kind work budget. `CheckedPackage::call` admits arguments before S6a and returns `Result<FamilyOutcome, CallFailure>`, with `CallFailure { Input(InputRefusal), Fault(InternalFault) }`; `replay` carries `Input` as a `StageFailure::Refused` cause and `Fault` as an internal fault. S6a returns `Result<FamilyOutcome, InternalFault>` and keeps the kernel `Outcome<T>` (O-16): its `Incomplete` is a meter budget, not a stage limit, and `Incomplete` is an S6a outcome only. The layer-6 `replay` facade and the layer-R `route` module return `Result<Staged<T>, StageFailure<C>>`, each with its own cause type. The types live in F `diagnostic`, built by #213 S-5. Catalog codes for each limit kind and for internal fault are QC-11. #225 renders them to exit codes. |
+| T-4 | Stage outcome and refusal types, the limit cause and the internal-fault kind | Stages S1 to S4 and the I2 reader return `Result<Staged<T>, StageFailure<C>>`. `Staged<T>` carries the output and its warnings. `StageFailure<C>` has three variants: `Refused{causes, diagnostics}` with at least one typed cause `C` of that stage (O-17), `Limit(LimitExceeded)` and `Fault(InternalFault)`. `LimitExceeded` names the limit kind (closed enum: input bytes, nesting depth, node count, work budget), the configured bound and the `Locus` (T-5) where it was reached, so S1 and S2 limits have a location. `InternalFault` names the stage and the violated invariant by a stable identifier. It maps to the O-16 internal-failure category and is never a `Refusal`. A family `check` that reaches a limit returns `Limit(LimitExceeded)` with limit kind work budget. `CheckedPackage::call` admits arguments before S6a and returns `Result<FamilyOutcome, CallFailure>`, with `CallFailure { Input(InputRefusal), Fault(InternalFault) }`; `replay` carries `Input` as a `StageFailure::Refused` cause and `Fault` as an internal fault. S6a returns `Result<FamilyOutcome, InternalFault>` and keeps the kernel `Outcome<T>` (O-16): its `Incomplete` is a meter budget, not a stage limit, and `Incomplete` is an S6a outcome only. The layer-6 `replay` facade and the layer-R `route` module return `Result<Staged<T>, StageFailure<C>>`, each with its own cause type. The types live in F `diagnostic`: `InternalFault` is built by #213 S-5a (landed, #258); `Staged<T>`, `StageFailure<C>` and `LimitExceeded`/its limit-kind enum are #213 S-5b's. Catalog codes for each limit kind and for internal fault are QC-11. #225 renders them to exit codes. |
 | T-5 | The foundation `diagnostic` locus type (DA-13) | `Locus` has three variants. `Region(SourceRegion)` is the O-07 region (`RawSourceRef`, byte start, byte end), used by S0 to S2. `Occurrence(Location)` is the kernel location tag (node id and occurrence key, O-12), used from S3 on and resolved to regions through the source map when rendered. `Artifact{digest, pointer}` is a digest record (O-18) and a JSON pointer into that artifact, used by wire readers. F depends on K, so `Locus` uses the kernel `Location` directly. A stage converts its own position into a `Locus` when it emits a diagnostic (ADR-011 §6.1). #213 S-4 builds it. |
 | T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (QC-15), or its variant leaves the kernel type. The `Reference` payload moves in: `EffectiveId` and the universe and object identities (O-05). The `Quantity` payload moves in: magnitude and a `UnitId`, with no reference to `quantity` declarations. The `Enum` payload moves in as the O-14 sum shape: a `VariantId` only, with no `NodeKey`. `UnitId`, `VariantId` and `MemberId` are opaque digest newtypes with no dependency on `check` (QC-15); QSL computes their digests. `ValueType::Population` keeps its `u64` count only (AD-016 model row). Any other `model::population` payload leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes a `value::expression` family cause mapped through its own `catalog_code()` (O-17). Family-dispatch causes such as `FamilyNotNativelyEvaluable` are `FamilyRefusal` causes in the layer-3 `check` core, carried by S6a's `FamilyOutcome` (O-16), never kernel causes. `diagnostic::Code` leaves: the kernel `Refusal` carries the kernel's own typed cause, and QSL F `diagnostic`, which holds `CatalogCode` and the O-16 category type, maps that cause to a code. `NodeKey` and `EffectiveId` minting follows O-04 and O-05: one public constructor from a preimage digest, so the preimage types, JCS and hashing stay in QSL and the kernel imports none of them. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
 | T-7 | Which crate holds `BackendDescriptor`, the candidate set and `Capability` | They cross as data in QSpec-authored formats. No shared Rust crate holds them. `quire-exact` cannot, because the AD-016 kernel row lists its types exactly, and ADR-011 §7 approves no other extraction. A backend's descriptor is its FR-331 provider manifest. The driver reads it, and QSL `route` converts it into its `BackendDescriptor` (C-28). A candidate set is one list of `backend` members (O-19) per `request_index`, sorted by (identity, manifest digest) (QC-12, C-29). A capability crosses in its agent-ix/quire-specification#134 (FR-290) wire spelling (C-24). QSL's `Capability` (#213 S-6) and CG's own representations each convert from the wire, so there is no CG → QSL type edge (FB-05). |
@@ -794,11 +794,19 @@ duplicates that #213 S-2 folds into the O-18 record.
 | agent-ix/quire-specification#81, spec-objects-business PR #8 (merged), agent-ix/filament-core-data#172, agent-ix/filament-core-data#173, agent-ix/filament-core-data#199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
 
 Proposed #213 slices, in order. The split itself is an owner action on #213.
-Each Gate cell names every other slice this slice's own deliverable cannot
-compile without: a slice's objects may mention a later slice's type in prose
-without gating on it, when the code that touches that type is a separate,
-later ticket (for example the v2 emitter, ADR-011 M-4) rather than this
-slice's own deliverable.
+Each Gate cell names the immediate slices and QSpec items this slice's own
+deliverable cannot compile without; a transitive gate (for example S-1,
+reached through S-4 → S-3 → S-2 → S-1) is implied by the chain and is not
+repeated in the cell. A slice's objects may mention a later slice's type in
+prose without gating on it, when the code that touches that type is a
+separate, later ticket (for example the v2 emitter, ADR-011 M-4) rather than
+this slice's own deliverable — that carve-out restates the same rule rather
+than excepting it: a Gate cell records compile dependency, nothing else. A
+slice that would compile while remaining functionally incomplete is not
+resolved by gating it on the slice that completes it; the incomplete work is
+assigned to the slice that can do it instead. That is what O-05 and O-15
+already do with `value/model_query.rs`: the node-id → `DeclarationKey`
+direction is S-3's, not a gate on S-2 (Consequences).
 
 | Slice | Objects | Gate |
 | --- | --- | --- |
@@ -807,7 +815,7 @@ slice's own deliverable.
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus` | S-3 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
-| S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). Held until S-4 lands. | S-1, QC-11, S-4, and S-2 for O-22 |
+| S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). O-22's readers additionally need `Locus::Artifact{digest, pointer}`'s O-18 digest record, S-2's row. Held until S-4 lands. | S-4, QC-11 |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, the `model::accounting` fold into the S-1 meter, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
 
 Work that this record assigns and that no ticket owns is listed in §8
@@ -832,7 +840,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined` and `FamilyOutcome::Refused` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
 | QC-9 | FR-331: the result value for a `supported` item whose Kani run ends in `Refused`, `InvalidInput`, `IncompleteInput` or `Unavailable`, so the item keeps exactly one terminal record with a typed cause (O-16). | IR C-09, #231 C-23 |
 | QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. | #213 S-3, the v2 emitter (ADR-011 T-8) |
-| QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5 |
+| QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5a (the internal-fault code) and S-5b (each limit-kind code) |
 | QC-12 | A QSpec wire for the candidate set: per `request_index`, a sorted list of `backend` members (T-7). | #185, CG negotiation input |
 | QC-13 | AD-016 amendment: the Replay-ownership `Witness` row stores `transcript` only, with the other four facts derived. | #231 |
 | QC-14 | AD-016 amendment: the obligation identity is every `KaniObligationIdentity` member except `source_span`, matching O-09; the AD-016 seed vector is regenerated. Landed by agent-ix/quire-specification#140. | CG obligation conformance (TK-05) |
@@ -840,7 +848,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-16 | AD-016 amendment: the WP9 category mapping of the ten `KaniOutcomeKind`s is the O-16 proof column. | IR C-09, #231 C-23 |
 | QC-17 | AD-016 amendment: node ids are listed in the kernel row only, reconciling two AD-016 rows. No rename. | nothing; #213 S-1 follows the kernel row |
 | QC-18 | The node-identity preimage schema and vectors: include the declaring package's declared `name@version` (not `package_id`), so a `NodeKey` is unique across packages (O-04). | #213 S-2, TK-01 |
-| QC-19 | FR-322: a named refusal code for an unknown node kind, and the rule that QSpec revises the v2 node-kind set in place while v2 is prerelease (O-14), if FR-322 has neither. | IR reader, #213 S-5 |
+| QC-19 | FR-322: a named refusal code for an unknown node kind, and the rule that QSpec revises the v2 node-kind set in place while v2 is prerelease (O-14), if FR-322 has neither. | IR reader, #213 S-5a (`CatalogCode` only; no `Locus` needed for the code itself) |
 | QC-20 | AD-016 amendment: the arrow 6 output and the Replay-ownership Packet row replace `witness: Option<Witness>` with `source: ReplaySource { Witness(Witness), Input(values) }`. An `Input` replay settles `reproduced-without-witness` and never counts as backend evidence (O-25). ADR-011 E8 follows. | IR packet (TK-04), #231 |
 
 Questions for #209:

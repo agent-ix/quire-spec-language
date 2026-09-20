@@ -806,16 +806,16 @@ never justifies a crate.
 
 Each row is one change, except M-3b, which is incremental, one per family's
 migration ticket. M-3a and M-5 are one change each, and separate from each
-other. X-1, M-2 and M-5 all edit `value` and `model`, so they land in that
-order, one at a time.
+other. X-1, M-2, M-3a and M-5 all edit `value` and `model`, so they land in
+that order, one at a time.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
 |---|---|---|---|---|---|
 | X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. X-1 makes the edge cuts that keep it a leaf (§6.1 kernel rule). | The AD-016 Shared-type row types as amended by QC-15, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the QSL `value` kernel is replaced in #213 S-1, and the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56, one change per repository |
 | M-1 | Make `diagnostic` a foundation module | F | codes, typed causes, locus | with #213 | none |
 | M-2 | Move `model` below `check` (§6.1) and create `semantic_value` | 3 | `model`, `model::intake`, `semantic_value` | after X-1 | none |
-| M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138 | none: `LoweredSourceGraph` is deleted in the same change |
-| M-3b | Add each family's parsed-form type: its grammar-production function and its `Expression` enum variant, landing incrementally, one per family's own migration ticket, alongside M-6a to M-6e | 2 | parsed form types per family (#210) | QSL-141 | none |
+| M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138, after M-2 | none: `LoweredSourceGraph` is deleted in the same change |
+| M-3b | Add each family's parsed-form type: its grammar-production function and its `Expression` enum variant, landing incrementally, one per family's own migration ticket, alongside M-6c to M-6e | 2 | parsed form types per family (#210) | per family, tracked under QSL-141 | none |
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
 | M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-2 and M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
@@ -853,7 +853,7 @@ No other crate extraction is approved.
 |---|---|
 | A native-v1 | **Retires** as SEAM-1, lane by lane (M-6). It admits no new families (AD-016 arrow 1). |
 | B composed | **Converges.** B1 → S1 and S2. B2 to B4 → S3 binding phase. B5 → leaves QSL (FB-12, #210). B6 and B7 → S3 family checkers. B8 and B9 → S4 emission (#223, #218); the SEAM-3 emission is deleted in the same PRs (M-6d). B10 → S6a family evaluators. |
-| C complete-V1 | **The spine.** C1 → S1. C2 → I2 and `library`. C3 → replaced by S2 (M-3). C4 → S3. C5 → S6a. C6 → S3 `model`. C7 → `library`. |
+| C complete-V1 | **The spine.** C1 → S1. C2 → I2 and `library`. C3 → replaced by S2 (M-3a). C4 → S3. C5 → S6a. C6 → S3 `model`. C7 → `library`. |
 | D simulation | **Converges** into S6a as the finite exploration engine. It gains an implementer only through a family evaluator (#220). |
 
 ## 9. ADR-010 findings decided
@@ -862,7 +862,7 @@ No other crate extraction is approved.
 |---|---|
 | OBS-001 | S4 `package` owns the checked-package/v2 emitter (M-4). It is the only QSL → IR path. |
 | OBS-002 | IT-010's proof path is SEAM-4, deleted in #217 (M-6b), which lands the CG replay adapter. The skeleton spine is the proof-and-replay evidence until then (FB-07, FB-08). |
-| OBS-007 | S2 `forms` is the only producer of check-stage input from source (SEAM-5, M-3). `model::checked_dispatch` moves to `check` (M-2). |
+| OBS-007 | S2 `forms` is the only producer of check-stage input from source (SEAM-5, M-3a). `model::checked_dispatch` moves to `check` (M-2). |
 | OBS-008 | One spine (lane C). Lane A retires, lane B converges, lane D joins S6a (§8). The other checked-package producer paths are deleted before #216 (M-6a); each other lane is deleted with its replacement (M-6). |
 | OBS-009 | Name and model binding is a phase of S3. "Linked" means S4 closure over package identities (§1). |
 | OBS-010 | S3 decides definedness itself. `check` never imports `quire-contract-model` (FB-06, §6.1). |
