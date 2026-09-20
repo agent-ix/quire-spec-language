@@ -26,8 +26,8 @@ relationships:
 ## Dependency Graph
 
 Task-003 implements the reviewed native boundary; Task-004 verifies and records
-merge readiness after Task-003. LR02 Plan-001 remains done. Future LC02 depends
-on the separately accepted FS02/FS03/FS05 contracts and IR/model adapter seam.
+merge readiness after Task-003. LR02 Plan-001 remains done. The IR/model
+adapter seam required for future linking work is not yet accepted.
 
 ## Test Plan
 
@@ -40,7 +40,7 @@ private-packet lane and Quire validation/coverage. No hosted CI dispatch.
 No implementation or local verification task remains in this plan. Task-003
 delivered the reviewed source/tests; Task-004 records actual gates and SR-028.
 The final read-only plan audit and authorized private merge follow completion.
-Future LC02 linking/typechecking remains a separate prerequisite-gated task.
+LC02 linking/typechecking is tracked as its own separate task.
 
 ## Task File Mapping
 

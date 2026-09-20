@@ -36,6 +36,6 @@ Reviewable, tested linker PR with explicit remaining FR-006 and full-workflow
 work. No external model service or repeated owner approval is introduced.
 
 Delivered at 3924dbb260b7ad06e4b002dc5252d7511c024cd1: compiler PR8 is ready
-for review, with the exact implementation/review handoff on LC02 and CO01.
+for review, with the exact implementation/review handoff on LC02.
 This task's reviewable-PR deliverable is complete. The final GitHub merge state
 is recorded on those private threads; no full LC02/FR-006 completion is implied.
