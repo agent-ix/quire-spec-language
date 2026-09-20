@@ -172,8 +172,10 @@ fn integer_ordering_bits(left: &Integer, right: &Integer) -> Integer {
 }
 
 /// The `integer_bits` amount of `ordering.arithmetic` for `a/b` and `c/d`:
-/// `max(bits(a)+bits(d), bits(c)+bits(b))`.
-fn rational_ordering_bits(left: &Rational, right: &Rational) -> Integer {
+/// `max(bits(a)+bits(d), bits(c)+bits(b))`. `pub(crate)`: `crate::quantity`'s
+/// `compare_quantity` reuses this to size its own `ordering.arithmetic`
+/// charge over the same `Rational` magnitude comparison.
+pub(crate) fn rational_ordering_bits(left: &Rational, right: &Rational) -> Integer {
     cross_bits(left, right).max(cross_bits(right, left))
 }
 

@@ -47,6 +47,20 @@ impl EqualityPlan {
 
 /// Form the plan of two completed operands of one type, without charge. A
 /// reference pair of different universes refuses with `foreign_reference`.
+///
+/// **H-5, judgment call: stays `pub`, unmetered, not `pub(crate)`.** This
+/// walks the whole occurrence-pair tree of caller-supplied values with no
+/// meter, which is exactly the risk profile the other four H-5 findings
+/// share. The difference here is that "without charge" is this function's
+/// entire documented purpose: it lets a caller size an equality check's cost
+/// (via [`EqualityPlan::pair_events`]) *before* spending [`planned_equality`]'s
+/// metered budget on it. Giving it a `&mut Meter` would defeat that purpose,
+/// and demoting it to `pub(crate)` deletes a QSL-facing capability that has
+/// no in-crate substitute (`planned_equality` needs the `equal` bool this
+/// plan discards, so it cannot be rewritten to call this instead). Left
+/// `pub` and documented: a caller that does not want unbounded work must
+/// bound its own operand size before calling this, the same way any
+/// pre-metering admission check must.
 pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusal> {
     plan_pairs(left, right).map(|plan| EqualityPlan {
         pair_events: plan.pairs,
@@ -186,6 +200,61 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::*;
+    use crate::accounting::ScalarLimits;
+
+    fn generous_limits() -> ScalarLimits {
+        ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units: u64::MAX,
+            result_units: u64::MAX,
+        }
+    }
+
+    fn generous_meter() -> Meter {
+        Meter::new(generous_limits())
+    }
+
+    /// TC-346: `plan_equality` reports the exact pair count of two equal
+    /// integers without charging (H-7/H-8: previously untested).
+    #[trace("TC-346")]
+    #[test]
+    fn tc_346_plan_equality_reports_pairs_without_charge() {
+        let left = Value::Integer(Integer::one());
+        let right = Value::Integer(Integer::one());
+        let plan = plan_equality(&left, &right).unwrap();
+        assert_eq!(plan.pair_events(), &Integer::one());
+    }
+
+    /// TC-347: `planned_equality` completes true for two equal integers
+    /// under a generous meter, and a meter with no `value_occurrences` left
+    /// cannot admit `equality.plan-form`, so the identical comparison
+    /// returns `Outcome::Incomplete` instead (H-7/H-8: `planned_equality`'s
+    /// public API and metering path were previously untested, and metering
+    /// accumulation/`Incomplete` was unproven end to end for any operation).
+    #[trace("TC-347")]
+    #[test]
+    fn tc_347_planned_equality_charges_and_a_tight_meter_is_incomplete() {
+        let left = Value::Integer(Integer::one());
+        let right = Value::Integer(Integer::one());
+
+        let mut generous = generous_meter();
+        let outcome = planned_equality(&left, &right, &mut generous);
+        assert!(outcome.completed().expect("charges available"));
+
+        let mut tight = Meter::new(ScalarLimits {
+            value_occurrences: 0,
+            ..generous_limits()
+        });
+        let outcome = planned_equality(&left, &right, &mut tight);
+        assert!(matches!(outcome, Outcome::Incomplete(_)));
+    }
 
     /// TC-321: two equal integers plan one pair and compare equal.
     #[trace("TC-321")]

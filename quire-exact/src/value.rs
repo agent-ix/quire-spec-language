@@ -603,7 +603,9 @@ pub fn fill_slots(
     let mut slots = Vec::with_capacity(declared.len());
     for field in declared {
         let component = || Component::Field(field.member);
-        let slot = by_member.remove(&field.member).unwrap_or(FieldValue::Absent);
+        let slot = by_member
+            .remove(&field.member)
+            .unwrap_or(FieldValue::Absent);
         match (&slot, field.presence) {
             (FieldValue::Absent, Presence::Required) => {
                 return refuse(component(), ConstructionCause::MissingField)
