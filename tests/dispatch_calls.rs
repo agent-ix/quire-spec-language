@@ -618,6 +618,29 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
         decoded_identity, identity_target_first,
         "identity must survive check, S4 linking and a v2 emit/decode round trip unchanged"
     );
+
+    // FR-065-AC-2 says identity is unchanged at all three checkpoints
+    // (check, linking, v2) *under reordering* -- the assertions above only
+    // exercise `target_first`'s v2 round trip; without this, `unrelated_
+    // first` (the reordered package) is checked and its `function_identity`
+    // compared, but never itself emitted to v2, so the reordering claim was
+    // only half-covered at the v2 checkpoint (PR #262 review round 4, item
+    // 6). Round-trip `unrelated_first` too and compare against the same
+    // target identity.
+    let unrelated_first_bytes = unrelated_first.emit_function_package_v2();
+    let unrelated_first_decoded =
+        CheckedPackage::decode_function_package_v2(&unrelated_first_bytes)
+            .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
+    let unrelated_first_decoded_identity = unrelated_first_decoded
+        .into_iter()
+        .find(|(name, _)| name == "target")
+        .map(|(_, identity)| identity)
+        .expect("target survives the v2 round trip from the reordered package too");
+    assert_eq!(
+        unrelated_first_decoded_identity, identity_target_first,
+        "target's identity must survive check, linking and a v2 round trip identically \
+         regardless of unrelated's position"
+    );
 }
 
 /// [`FunctionDeclaration::clause`] takes [`DeclaredClauseKind`], which has
