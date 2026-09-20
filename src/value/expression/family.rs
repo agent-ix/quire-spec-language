@@ -750,7 +750,8 @@ mod tests {
     /// actually refuses an unknown field, rather than silently dropping it.
     #[test]
     fn decode_v2_refuses_an_unknown_top_level_field() {
-        let bytes = br#"{"version":"quire.checked-function-package/v2","functions":[],"extra":true}"#;
+        let bytes =
+            br#"{"version":"quire.checked-function-package/v2","functions":[],"extra":true}"#;
         assert_eq!(decode_v2(bytes), Err(DecodeV2Error::Malformed));
     }
 
@@ -767,8 +768,7 @@ mod tests {
     /// their own distinct variant, not `Malformed`.
     #[test]
     fn decode_v2_distinguishes_version_and_identity_refusals() {
-        let wrong_version =
-            br#"{"version":"quire.checked-function-package/v1","functions":[]}"#;
+        let wrong_version = br#"{"version":"quire.checked-function-package/v1","functions":[]}"#;
         assert_eq!(decode_v2(wrong_version), Err(DecodeV2Error::Version));
 
         let bad_identity = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"not-hex"}]}"#;
