@@ -749,6 +749,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or(Stop::Undefined(Undefined::NoneValue))?
             }
             NodeKind::Call {
+                identity: _,
                 function,
                 arguments,
             } => {

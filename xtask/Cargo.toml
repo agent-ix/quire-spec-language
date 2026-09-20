@@ -9,8 +9,11 @@ description = "Re-vendor resources/native-v1 and resources/complete-value from a
 
 [dependencies]
 quire-spec-language = { path = ".." }
+qsl-attrs = { path = "../qsl-attrs" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151" }
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 thiserror = "=2.0.20"
 
 [dev-dependencies]

@@ -260,6 +260,57 @@ a lowering or proof stage, the arm returns `unsupported` with a catalog code
 `package` is all-or-nothing. A family either emits every v2 node for the item
 or emits none and returns the refusal.
 
+**#214's implementation record.** #214 (FR-062/FR-065) implements this
+contract for real, migrating `Value`'s function-declaration and
+function-application forms as the one representative family, and finds
+that several parts of the design-level shape above have no real
+construction with only one family migrated and that family carrying no
+FR-057 capability kind and no typed refusal cause distinct from its
+existing checking refusals. Rather than keep a part of the contract that
+nothing can ever legitimately construct (an uninhabited type whose own
+`#[allow(dead_code)]` would be the only way past the lint gate), #214
+narrows the implemented trait shape to what it can back with a real
+caller, and records what is deferred here so the intent survives past this
+one PR:
+
+- `FamilyContract::requirements()` and the `Requirements`/`CapabilityKind`/
+  `Extent`/`Bound` types are **not implemented**. FR-057/#229 (QSL-11,
+  Done) states plainly that function-application has no FR-057 capability
+  kind at all ("no kind for an expression nested in a clause, such as a
+  function application"), so a `requirements()` for this family would
+  return `None` unconditionally -- not a real function, its own absence
+  wearing a signature. The family whose migration first has a claim form
+  with a real FR-057 kind adds this back to the contract in that same
+  change, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
+- `FamilyContract::Cause` is **not a trait associated type**; `check`
+  returns `CheckOutcome<Self::Checked>` with no cause type parameter, and
+  `StageFailure` carries only `Limit`/`Fault`, not a family-typed
+  `Refused`. Function declaration has no typed refusal cause distinct from
+  `Value`'s existing checking refusals (`CheckCause`), so a `Cause` enum
+  for it would have zero real variants; a probe over such an enum tests
+  only its own `catalog_code()` mapping, not a seam (S4, §5.1). The family
+  whose migration first has a real typed cause adds `Cause` back to the
+  trait and to FR-063's seam-probe checked-in list (S4) in that change.
+- `PackageRefusal` is **deleted**; `package` returns `()`, not
+  `Result<(), PackageRefusal>`. Function packaging cannot yet fail for a
+  reason distinct from the checking refusals that already prevented an
+  unpackageable node from being checked in the first place.
+- `ReferenceEvaluation::EvaluateRefusal` carries only `Refused(String)`, not
+  an `Incomplete` variant carrying a real meter state: `quire-exact`'s own
+  `Meter::charge`/`charge_plan` are `pub(crate)`
+  (`quire-exact/src/accounting.rs:551,595`), not exported, so no family
+  migrated so far can construct a real `Incomplete` from outside
+  `quire-exact`. This is an export gap in `quire-exact` (#213's own scope),
+  not a QSL-side design choice; #214 defers `Incomplete` to when that gap
+  closes rather than fabricate a caller for an unreachable variant.
+
+None of this changes the six-part contract's design intent above, which
+remains the target shape; it is what #214 could back with a real,
+non-fabricated caller against the one family it migrated. See
+[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md)
+for the recipe each later family migration follows, including when each
+deferred part comes back.
+
 ## 3. Family-owned responsibilities
 
 Each family owns the following. The shared layer owns none of it.
@@ -911,6 +962,8 @@ item settles `invalid-request` with no preference order
 | IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | agent-ix/quire-contract-ir#141 |
 | CG enum matches in place of string compares | agent-ix/quire-contract-codegen#86 |
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
+| S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | [QSL-143](https://linear.app/agent-ix/issue/QSL-143) |
+| Marking or converting the QSL crate's remaining string-dispatch sites (outside `src/family/*`/`src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
 
 Requirements needed before implementation starts:
 

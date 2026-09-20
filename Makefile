@@ -18,13 +18,39 @@ TREE ?= all
 QSPEC_CLONE ?=
 FCD_CLONE ?=
 
-.PHONY: revendor revendor-check ci ci-default-features ci-all-features ci-clean-build
+.PHONY: revendor revendor-check seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build
 
 revendor:
 	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
 
 revendor-check:
 	cargo xtask revendor-check --tree $(TREE)
+
+# QSL#214 (FR-063-AC-5): demonstrated on every full-gate run, not only when
+# run by hand. Builds the QSL crate twice on its own (once under
+# `RUSTFLAGS=--cfg seam_probe`, once without), independent of whatever
+# feature set the caller's own `cargo build`/`clippy` steps used.
+seam-probe:
+	cargo xtask seam-probe
+
+# QSL#214 (FR-064): scans the QSL crates' non-test source for a string
+# comparison or string `match` outside a `#[string_edge]`-marked function.
+# FR-064's own text requires this tool to run "in the lint gate", but the
+# real, unmarked crate today has 60 pre-existing occurrences outside every
+# file #214 touches (src/cli.rs, src/complete/, src/model/,
+# src/protocol_artifact/, src/state/evaluation.rs, src/value/definition.rs,
+# src/linking.rs, src/mapped.rs) -- none of them reachable from
+# src/family/* or src/value/expression/*, the only files this ticket
+# changes. FR-064's allow-list mechanism cannot paper over them (it refuses
+# any branch-gating entry, which is what almost all of them are), so making
+# them clean is real conversion work belonging to the family this string
+# selects, not to #214. `xtask string-edge` itself is complete and its own
+# footprint (xtask/*) is clean under it (verified: 0 findings), so this
+# target runs it standalone -- like `arch-lint` below, it is not part of
+# `ci:` until the crate-wide marking sweep this same comment's Linear
+# ticket tracks lands. Remaining work: see the ticket filed alongside #214.
+string-edge:
+	cargo xtask string-edge
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below. `test-support`
@@ -51,7 +77,7 @@ ci-clean-build:
 	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
 
-ci: ci-default-features ci-all-features ci-clean-build
+ci: ci-default-features ci-all-features ci-clean-build seam-probe
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and

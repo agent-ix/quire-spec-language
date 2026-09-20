@@ -21,12 +21,15 @@ pub mod error;
 mod fsutil;
 pub mod git;
 pub mod manifest;
+pub mod seam_probe;
+pub mod string_edge;
 pub mod tree;
 
 pub use error::{CommitOwner, Error, Result};
 pub use manifest::{ExternalFile, Manifest, PinnedFile, Source};
 pub use tree::Tree;
 
+use qsl_attrs::string_edge;
 use quire_spec_language::ByteDigest;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -205,6 +208,10 @@ pub fn revendor(
 /// A new pin replaces the tree wholesale: any entry under `tree_root` that
 /// `manifest` no longer lists (other than `VENDOR.json` and `README.md`) is
 /// removed rather than left behind as a stray file.
+/// Excludes the two fixed manifest-adjacent filenames from wholesale
+/// removal; a bounded literal-comparison edge, not a family dispatch, but
+/// real string comparison a syntax-only scan cannot distinguish from one.
+#[string_edge]
 fn remove_files_the_manifest_no_longer_lists(
     manifest: &Manifest,
     tree_root: &Path,
