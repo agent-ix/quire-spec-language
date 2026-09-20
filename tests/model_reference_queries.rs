@@ -19,6 +19,8 @@
 use std::sync::Arc;
 
 use ix_trace_rs::trace;
+use quire_exact::{CollectionKind, Integer};
+use quire_spec_language::absence::AbsenceMode;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -30,18 +32,17 @@ use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
 use quire_spec_language::model::population::{
-    admit_binding, admit_invocation, AbsenceMode, AdmissionMeter, AdmissionOutcome,
-    InvocationContext, InvocationDelta, PopulationAdmissionLimits, PopulationBinding,
-    PopulationDocument, PopulationMember,
+    admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
+    InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember,
 };
 use quire_spec_language::value::{
     BinaryOperator, CardinalityBound, ChargePoint, CheckCause, CheckMode, CheckRefusal,
-    CheckedExpression, CheckedPackage, CheckingLimits, CollectionKind, CollectionType,
-    CompositeDeclaration, CompositeShape, DeclarationCause, Expression, FieldDeclaration,
-    FunctionDeclaration, IllTypedCause, Integer, LimitKind, Meter, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence,
-    Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
-    WrongSnapshotCause,
+    CheckedExpression, CheckedPackage, CheckingLimits, CollectionType, CompositeDeclaration,
+    CompositeShape, DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration,
+    IllTypedCause, LimitKind, Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, Refusal, ScalarLimits,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

@@ -71,12 +71,13 @@
 
 use std::collections::HashMap;
 
+use crate::absence::AbsenceMode;
 use crate::diagnostic::Code;
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
-    all_instances, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
-    PopulationBinding, ReferenceKey,
+    all_instances, lookup, AllInstancesOutcome, LookupKey, LookupOutcome, PopulationBinding,
+    ReferenceKey,
 };
 
 use super::accounting::Meter;

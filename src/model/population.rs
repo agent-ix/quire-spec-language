@@ -132,6 +132,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
+use crate::absence::AbsenceMode;
 use crate::diagnostic::Code;
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
@@ -145,8 +146,9 @@ use crate::model::normalize::{
 };
 use crate::value::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
-    Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
+    Incomplete as ScalarIncomplete, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
 };
+use quire_exact::Integer;
 
 // ---------------------------------------------------------------------------
 // PopulationAdmissionLimitsV1
@@ -448,18 +450,6 @@ pub struct LookupKey {
     /// supplied -- well-formed (valid UTF-8) or not. [`lookup`] alone decides
     /// which.
     pub object: Vec<u8>,
-}
-
-/// `lookup`'s absence mode, part of the query and never inferred from a
-/// result type (FR-153's own table).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AbsenceMode {
-    /// `absent undefined`.
-    Undefined,
-    /// `absent empty`.
-    Empty,
-    /// `absent refused`.
-    Refused,
 }
 
 // ---------------------------------------------------------------------------

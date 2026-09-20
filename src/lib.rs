@@ -10,6 +10,7 @@ extern crate self as quire_spec_language;
 #[path = "../tests/support/runtime_setup.rs"]
 mod runtime_test_setup;
 
+pub mod absence;
 pub mod checking;
 pub mod command;
 pub mod complete;
