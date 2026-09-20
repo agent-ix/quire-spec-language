@@ -8,6 +8,15 @@
 //! The units of one dimension node form an acyclic graph with exactly one
 //! targetless canonical root; each edge maps
 //! `target_value = scale × source_value + offset` exactly.
+//!
+//! `UnitGraph::admit` mints these node ids the same way `value::expression::
+//! check` mints checked-expression node ids (ADR-013 O-04), but this module
+//! is not itself a `check`-stage implementer: no `src/` caller builds a
+//! `UnitGraph` today (#118 scoped this module to I04/I05 identity semantics
+//! only, never a check-stage wiring), so this is outside ADR-011 §6.1's
+//! "only `check` calls the kernel `NodeKey` constructor" rule (ADR-011
+//! FB-13, #211). Today it is exercised only by this crate's own tests.
+//! Remaining work: #131 wires a check-stage caller.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
