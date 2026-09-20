@@ -1,5 +1,5 @@
 ---
-id: US-007
+id: US-008
 title: "Trust a compiled artifact's domain-package provenance"
 type: US
 relationships:
@@ -10,7 +10,7 @@ relationships:
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
 ---
-# US-007: Trust a compiled artifact's domain-package provenance
+# US-008: Trust a compiled artifact's domain-package provenance
 
 ## Story
 
@@ -37,7 +37,7 @@ able to go absent.
 
 ## Acceptance Examples (Illustrative)
 
-### US-007-EX-1: One domain package, one name
+### US-008-EX-1: One domain package, one name
 
 - **Given** a native package linked against one domain package admitted
   under FR-056.
@@ -46,14 +46,14 @@ able to go absent.
   read directly from the `Model` record, equal the `DomainPackageRef` FR-056
   admitted at linking.
 
-### US-007-EX-2: No second producer object to reconcile
+### US-008-EX-2: No second producer object to reconcile
 
 - **Given** the same emitted package.
 - **When** a consumer reads the `Model` record.
 - **Then** there is no `Correspondence` or `ProducerObject` value to decode,
   check against a relation artifact, or find absent.
 
-### US-007-EX-3: An old-shaped payload does not pass silently
+### US-008-EX-3: An old-shaped payload does not pass silently
 
 - **Given** a `quire.compiled-protocol/1` payload whose `Model` still carries
   a `correspondence`, `producer` or `interface` member from before this
