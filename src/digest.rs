@@ -356,13 +356,73 @@ mod digest_record_tests {
     /// (#213 S-2, O-18) every FR-201 domain round-trips through
     /// `from_wire`/`hex`/`domain` with no loss, and `DigestDomain::ALL` is
     /// exactly FR-201's 21-member vocabulary (a missing or extra entry
-    /// changes this count).
+    /// changes this count). The label table below is hand-written against
+    /// FR-201's own text (not vendored in this repo -- `grep -rln FR-201
+    /// resources/` is empty), independent of `DigestDomain::as_str()`'s own
+    /// match arms: a wrong label there (e.g. `ModelEffectiveDeclarationV1`
+    /// silently becoming `.../v2`) fails the first assertion in the loop
+    /// rather than round-tripping only against itself (#260 review item 4).
     #[test]
     fn every_fr201_domain_round_trips_through_the_wire() {
+        let labels: [(DigestDomain, &str); 21] = [
+            (DigestDomain::IrCanonical, "ir-canonical"),
+            (DigestDomain::IrBound, "ir-bound"),
+            (DigestDomain::IrSemantic, "ir-semantic"),
+            (DigestDomain::PackageFingerprint, "package-fingerprint"),
+            (DigestDomain::LockFileDigest, "lock-file-digest"),
+            (DigestDomain::RawArtifactDigest, "raw-artifact-digest"),
+            (DigestDomain::Sha256Jcs, "sha256-jcs"),
+            (DigestDomain::PackageSemanticV2, "quire.package.semantic/v2"),
+            (DigestDomain::SourceBytesV1, "quire.source.bytes/v1"),
+            (DigestDomain::DefinitionBytesV1, "quire.definition.bytes/v1"),
+            (
+                DigestDomain::CheckedSemanticNodeV1,
+                "quire.checked-semantic-node/v1",
+            ),
+            (
+                DigestDomain::ContractIrSemanticV1,
+                "quire.contract-ir.semantic/v1",
+            ),
+            (
+                DigestDomain::DiagnosticCatalogBytesV1,
+                "quire.diagnostic-catalog.bytes/v1",
+            ),
+            (
+                DigestDomain::GeneratedArtifactBytesV1,
+                "quire.generated-artifact.bytes/v1",
+            ),
+            (
+                DigestDomain::ToolManifestJcsV1,
+                "quire.tool-manifest.jcs/v1",
+            ),
+            (
+                DigestDomain::SimulationStateKeyV1,
+                "quire.simulation.state-key/v1",
+            ),
+            (
+                DigestDomain::TypedExpressionIdentity,
+                "typed-expression-identity",
+            ),
+            (DigestDomain::VerificationJcs, "quire.verification.jcs"),
+            (
+                DigestDomain::ModelEffectiveDeclarationV1,
+                "quire.model.effective-declaration/v1",
+            ),
+            (
+                DigestDomain::ModelEffectiveViewV1,
+                "quire.model.effective-view/v1",
+            ),
+            (
+                DigestDomain::ModelObjectUniverseV1,
+                "quire.model.object-universe/v1",
+            ),
+        ];
         assert_eq!(DigestDomain::ALL.len(), 21);
-        for domain in DigestDomain::ALL {
+        assert_eq!(labels.len(), 21);
+        for (domain, expected_label) in labels {
+            assert_eq!(domain.as_str(), expected_label, "{domain:?}'s FR-201 label");
             let record = DigestRecord::mint(domain, bytes(0xab));
-            let round_tripped = DigestRecord::from_wire(Some(domain.as_str()), &record.hex())
+            let round_tripped = DigestRecord::from_wire(Some(expected_label), &record.hex())
                 .unwrap_or_else(|err| panic!("{domain} round trip: {err}"));
             assert_eq!(round_tripped, record);
             assert_eq!(round_tripped.domain(), domain);

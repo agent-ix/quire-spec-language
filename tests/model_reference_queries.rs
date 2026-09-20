@@ -25,7 +25,7 @@ use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId, EffectiveIdExt};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
@@ -186,13 +186,13 @@ fn object_reference(
     object: &str,
 ) -> ObjectReference {
     let universe = UniverseIdentity::new(universe.as_bytes()).unwrap();
-    let object_type = NodeKey::from_hex(&type_identity.hex()).unwrap();
+    let object_type = NodeKey::from_hex(&type_identity.to_string()).unwrap();
     let identity = ObjectIdentity::new(object.as_bytes()).unwrap();
     ObjectReference::new(universe, object_type, identity)
 }
 
 fn node_key(identity: &EffectiveId) -> NodeKey {
-    NodeKey::from_hex(&identity.hex()).unwrap()
+    NodeKey::from_hex(&identity.to_string()).unwrap()
 }
 
 struct Scenario {

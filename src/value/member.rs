@@ -20,7 +20,47 @@
 
 use serde_json::{json, Value};
 
-use super::node::{NodeKey, NODE_KEY_DOMAIN};
+use super::node::{is_identifier, NodeKey};
+use crate::digest::{DigestDomain, DigestRecord};
+
+// `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
+// through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
+// tests below still assert the wire shape against the domain's own constant.
+#[cfg(test)]
+use super::node::NODE_KEY_DOMAIN;
+
+/// A `node-identity-preimage.schema.json` `$defs.Identifier`
+/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the type every `Member` name/operator field
+/// carries, so an invalid identifier is refused at construction instead of
+/// being serialized as a schema-invalid `OperationMember` (ADR-013 O-06).
+/// Reuses [`is_identifier`], the same character-class check this crate's
+/// other identifier-shaped fields already use ("one fact, one place"),
+/// rather than a second copy of the schema's character class.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Identifier(String);
+
+/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[error("a member identifier is `^[A-Za-z_][A-Za-z0-9_]*$`")]
+pub struct InvalidIdentifier;
+
+impl Identifier {
+    /// `value` as a member identifier, or [`InvalidIdentifier`] if it is not
+    /// `^[A-Za-z_][A-Za-z0-9_]*$`.
+    pub fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
+        let value = value.into();
+        if is_identifier(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidIdentifier)
+        }
+    }
+
+    /// The identifier's own text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
@@ -37,7 +77,7 @@ pub enum Member {
         /// The declaring composite type.
         declaration: NodeKey,
         /// The field's own identifier.
-        name: String,
+        name: Identifier,
     },
     /// A tuple's positional element.
     Position {
@@ -56,14 +96,14 @@ pub enum Member {
         /// The declaring relationship.
         declaration: NodeKey,
         /// The end's own identifier.
-        name: String,
+        name: Identifier,
     },
     /// A type's named operation.
     Operation {
         /// The declaring type.
         declaration: NodeKey,
         /// The operation's own identifier.
-        name: String,
+        name: Identifier,
     },
     /// A generic declaration's type argument (position-independent: a
     /// declaration has at most one type argument in this catalog).
@@ -77,7 +117,7 @@ pub enum Member {
     /// `declaration` member).
     ProfileOperator {
         /// The operator's own identifier, e.g. `"add"`.
-        operator: String,
+        operator: Identifier,
     },
 }
 
@@ -87,17 +127,26 @@ impl Member {
     /// every variant with no `_` arm, so a new variant fails to compile here
     /// until this match grows an arm for it.
     pub fn to_wire(&self) -> Value {
+        // O-18 fold (#260 review item 5): a `NodeKey` is exactly a
+        // `DigestDomain::CheckedSemanticNodeV1` digest (`NODE_KEY_DOMAIN` is
+        // that domain's own label), so this member's declaration digest
+        // mints through `DigestRecord` -- a real caller for the type, not
+        // the bare domain-string-plus-raw-hex construction this helper used
+        // before. Byte-identical wire output: `DigestRecord::hex()` and
+        // `NodeKey`'s own `Display` are both lowercase 2-digit-per-byte hex.
         fn declaration_json(declaration: &NodeKey) -> Value {
+            let record =
+                DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, *declaration.as_bytes());
             json!({
-                "domain": NODE_KEY_DOMAIN,
-                "digest": declaration.to_string(),
+                "domain": record.domain().to_string(),
+                "digest": record.hex(),
             })
         }
         match self {
             Self::Field { declaration, name } => json!({
                 "kind": "field",
                 "declaration": declaration_json(declaration),
-                "name": name,
+                "name": name.as_str(),
             }),
             Self::Position {
                 declaration,
@@ -114,12 +163,12 @@ impl Member {
             Self::RelationshipEnd { declaration, name } => json!({
                 "kind": "relationship_end",
                 "declaration": declaration_json(declaration),
-                "name": name,
+                "name": name.as_str(),
             }),
             Self::Operation { declaration, name } => json!({
                 "kind": "operation",
                 "declaration": declaration_json(declaration),
-                "name": name,
+                "name": name.as_str(),
             }),
             Self::TypeArgument { declaration } => json!({
                 "kind": "type_argument",
@@ -127,7 +176,7 @@ impl Member {
             }),
             Self::ProfileOperator { operator } => json!({
                 "kind": "profile_operator",
-                "operator": operator,
+                "operator": operator.as_str(),
             }),
         }
     }
@@ -135,28 +184,69 @@ impl Member {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn node(fill: u8) -> NodeKey {
         NodeKey::from_hex(&format!("{fill:02x}").repeat(32)).expect("64 lowercase hex digits")
     }
 
+    /// A validator over the vendored `$defs/OperationMember` subschema only
+    /// (not the whole `node-identity-preimage.schema.json` document, whose
+    /// own top-level `oneOf` is node preimage kinds, not `OperationMember`) --
+    /// a `{"$ref": ..., "$defs": ...}` wrapper against the same `$defs`, so
+    /// `$ref`s inside `OperationMember` (`NodeId`, `Identifier`) still
+    /// resolve. A hand-written `json!` literal restating the schema's shape
+    /// cannot catch a transcription error the schema itself would catch (a
+    /// wrong `kind` literal, a stray field `additionalProperties: false`
+    /// would reject); this validates against the vendored authority instead.
+    fn operation_member_schema() -> jsonschema::JSONSchema {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "resources/complete-value/quire-specification/proposals/checked-package-v2/\
+             node-identity-preimage.schema.json",
+        );
+        let document: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let wrapper = json!({
+            "$ref": "#/$defs/OperationMember",
+            "$defs": document["$defs"],
+        });
+        jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft202012)
+            .compile(&wrapper)
+            .expect("vendored OperationMember subschema compiles")
+    }
+
+    fn assert_valid_operation_member(wire: &Value) {
+        let schema = operation_member_schema();
+        if let Err(errors) = schema.validate(wire) {
+            panic!(
+                "{wire} does not satisfy the vendored OperationMember schema: {:?}",
+                errors.collect::<Vec<_>>()
+            );
+        };
+    }
+
     /// (#213 S-2, C-18) one test per variant: each renders exactly the
-    /// vendored `OperationMember` shape, field-for-field.
+    /// vendored `OperationMember` shape, field-for-field, and validates
+    /// against the vendored schema itself (not only a hand-written literal
+    /// that could restate the same transcription error).
     #[test]
     fn field_renders_the_schema_shape() {
         let member = Member::Field {
             declaration: node(1),
-            name: "quantity".to_owned(),
+            name: Identifier::new("quantity").unwrap(),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "field",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(1).to_string()},
                 "name": "quantity",
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -165,14 +255,16 @@ mod tests {
             declaration: node(2),
             position: 3,
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "position",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(2).to_string()},
                 "position": 3,
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -180,45 +272,51 @@ mod tests {
         let member = Member::Element {
             declaration: node(3),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "element",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(3).to_string()},
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
     fn relationship_end_renders_the_schema_shape() {
         let member = Member::RelationshipEnd {
             declaration: node(4),
-            name: "source".to_owned(),
+            name: Identifier::new("source").unwrap(),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "relationship_end",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(4).to_string()},
                 "name": "source",
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
     fn operation_renders_the_schema_shape() {
         let member = Member::Operation {
             declaration: node(5),
-            name: "totalPrice".to_owned(),
+            name: Identifier::new("totalPrice").unwrap(),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "operation",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(5).to_string()},
                 "name": "totalPrice",
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -226,27 +324,46 @@ mod tests {
         let member = Member::TypeArgument {
             declaration: node(6),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "type_argument",
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(6).to_string()},
             })
         );
+        assert_valid_operation_member(&wire);
     }
 
     #[test]
     fn profile_operator_renders_the_schema_shape_with_no_declaration() {
         let member = Member::ProfileOperator {
-            operator: "add".to_owned(),
+            operator: Identifier::new("add").unwrap(),
         };
+        let wire = member.to_wire();
         assert_eq!(
-            member.to_wire(),
+            wire,
             json!({
                 "kind": "profile_operator",
                 "operator": "add",
             })
         );
+        assert_valid_operation_member(&wire);
+    }
+
+    /// A wrong `kind` literal (the exact transcription error a hand-written
+    /// literal comparison alone cannot catch, ADR-013 O-06/#260 review item
+    /// 2) is rejected by the vendored schema: `additionalProperties: false`
+    /// plus `kind: {"const": "field"}` on every real variant means no other
+    /// `kind` string satisfies any branch of `OperationMember`'s `oneOf`.
+    #[test]
+    fn a_wrong_kind_literal_fails_the_vendored_schema() {
+        let wrong = json!({
+            "kind": "fielddd",
+            "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(1).to_string()},
+            "name": "quantity",
+        });
+        assert!(!operation_member_schema().is_valid(&wrong));
     }
 
     /// ADR-013 O-06's own equality rule: a `Field` and an `Operation` on the
@@ -257,12 +374,42 @@ mod tests {
     fn field_and_operation_of_the_same_name_are_unequal() {
         let field = Member::Field {
             declaration: node(7),
-            name: "same".to_owned(),
+            name: Identifier::new("same").unwrap(),
         };
         let operation = Member::Operation {
             declaration: node(7),
-            name: "same".to_owned(),
+            name: Identifier::new("same").unwrap(),
         };
         assert_ne!(field, operation);
+    }
+
+    /// ADR-013 O-06/#260 review item 3: a name that is not
+    /// `^[A-Za-z_][A-Za-z0-9_]*$` is refused at `Identifier::new`, before a
+    /// `Member` carrying it can ever exist to be serialized as a
+    /// schema-invalid `OperationMember`.
+    #[test]
+    fn a_non_identifier_name_is_refused() {
+        for invalid in ["not an id!", "", "1starts_with_digit", "has-a-dash"] {
+            assert_eq!(
+                Identifier::new(invalid),
+                Err(InvalidIdentifier),
+                "{invalid:?} must be refused"
+            );
+        }
+    }
+
+    /// The positive complement of the refusal above: every name/operator
+    /// this file's own schema-shape tests use is itself accepted.
+    #[test]
+    fn ordinary_identifiers_are_accepted() {
+        for valid in [
+            "quantity",
+            "source",
+            "totalPrice",
+            "add",
+            "_leading_underscore",
+        ] {
+            assert!(Identifier::new(valid).is_ok(), "{valid:?} must be accepted");
+        }
     }
 }

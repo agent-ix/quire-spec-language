@@ -509,7 +509,7 @@ impl EffectiveView {
                     },
                     detail: format!(
                         "view declarations are not sorted ascending by effective identity at {}",
-                        pair[1].effective_id.hex()
+                        pair[1].effective_id
                     ),
                 });
             }

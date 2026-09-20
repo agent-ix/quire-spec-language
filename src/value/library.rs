@@ -64,17 +64,6 @@ impl PackageId {
     pub fn of_preimage(preimage: &[u8]) -> Self {
         Self(Sha256::digest(preimage).into())
     }
-
-    /// A `PackageId` from raw bytes with no recomputation, for a test that
-    /// needs one deliberately unequal to any real preimage's digest (a
-    /// mismatch/stale-dependency negative case, or a digest bridged from
-    /// another 32-byte source such as a fixture's own `package_id.digest`).
-    /// Never a production constructor (ADR-013 O-02) -- named and gated so
-    /// nothing mistakes it for one.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
 }
 
 /// `import "L" version "v" digest "d" as a;`.
