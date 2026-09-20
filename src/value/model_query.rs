@@ -121,7 +121,7 @@ fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -
     LookupKey {
         static_type,
         universe: reference.universe().as_bytes().to_vec(),
-        type_identity: EffectiveId::from_digest_bytes(*reference.object_type().as_bytes()),
+        type_identity: EffectiveId::from_digest(*reference.object_type().as_bytes()),
         object: reference.identity().as_bytes().to_vec(),
     }
 }
@@ -134,7 +134,7 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
     binding
         .type_catalog()
         .iter()
-        .map(|(producer, effective)| (effective.clone(), producer.clone()))
+        .map(|(producer, effective)| (*effective, producer.clone()))
         .collect()
 }
 
@@ -153,14 +153,14 @@ fn resolve_target(
     catalog: &HashMap<EffectiveId, DeclarationKey>,
     target: NodeKey,
 ) -> Result<DeclarationKey, Stop> {
-    let target_id = EffectiveId::from_digest_bytes(*target.as_bytes());
+    let target_id = EffectiveId::from_digest(*target.as_bytes());
     catalog.get(&target_id).cloned().ok_or_else(|| {
         model_refusal(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} is not a declared type of this population's model",
-                target_id.hex()
+                target_id
             ),
         })
     })

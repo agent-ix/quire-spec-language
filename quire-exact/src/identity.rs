@@ -10,12 +10,14 @@
 //! [`EffectiveId::from_digest`]), mirroring [`crate::NodeKey::from_digest`]:
 //! the kernel wraps an already-computed digest and never hashes. QSL's
 //! `check`/`model` compute each digest over their own preimage schema and
-//! mint the id; this crate holds no preimage knowledge for any of them. As
-//! with `NodeKey` (see the `node` module's doc comment), the ADR-011 T-12
-//! `arch-lint api-surface` check that is meant to enforce "only `model`
-//! calls `EffectiveId::from_digest`" does not yet do so: it currently
-//! matches `EffectiveId::from_digest_bytes(`, a different name from this
-//! crate's real `from_digest`. Nothing today fails a caller outside `model`.
+//! mint the id; this crate holds no preimage knowledge for any of them. The
+//! ADR-011 T-12 `arch-lint api-surface` check (T12-C) enforces "only `model`
+//! calls `EffectiveId::from_digest`" by scanning QSL's tree for that call
+//! pattern (#213 S-2 fixed the rule's pattern to match this crate's real
+//! `from_digest`, in place of the pre-migration `from_digest_bytes(` name).
+//! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) still
+//! scans for the pre-migration `crate::value::node::NodeKey` names and is
+//! separate, unclaimed debt.
 //!
 //! The six types share one shape (an opaque 32-byte digest, `Eq`/`Ord`/`Hash`,
 //! hex `Display`/`Debug`), so the `digest_identity!` macro below generates

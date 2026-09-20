@@ -226,7 +226,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id.clone())
+        .map(|entry| entry.effective_id)
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 
@@ -276,8 +276,8 @@ fn reference_key(
     object: &str,
 ) -> ReferenceKey {
     ReferenceKey {
-        universe: universe.clone(),
-        type_identity: type_identity.clone(),
+        universe: *universe,
+        type_identity: *type_identity,
         object: object.to_owned(),
     }
 }
@@ -297,7 +297,7 @@ fn lookup_key(
     LookupKey {
         static_type,
         universe: universe.as_bytes().to_vec(),
-        type_identity: type_identity.clone(),
+        type_identity: *type_identity,
         object: object.as_bytes().to_vec(),
     }
 }
@@ -718,7 +718,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let malformed = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
         universe: universe.as_bytes().to_vec(),
-        type_identity: a.clone(),
+        type_identity: a,
         object: vec![0xFF, 0xFE],
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -760,7 +760,7 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
         universe: universe.as_bytes().to_vec(),
-        type_identity: a.clone(),
+        type_identity: a,
         object: b"a1".to_vec(),
     };
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -859,7 +859,7 @@ fn l04_lookup_foreign_universe_refuses() {
                 refusal.cause,
                 ModelRefusalCause::ForeignUniverse {
                     actual: foreign_universe.as_bytes().to_vec(),
-                    expected: binding.universe().clone(),
+                    expected: *binding.universe(),
                 }
             );
         }

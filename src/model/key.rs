@@ -10,13 +10,24 @@
 //! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
 //! already emits ascending-key, whitespace-free bytes for every ASCII member
 //! name this schema defines, which is RFC 8785 JCS for these preimages.
-use std::fmt;
-
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::model::refusal::ModelRefusalCause;
 use crate::value::length_amount;
+
+/// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
+/// domain `quire.model.effective-declaration/v1`, minted only through
+/// [`quire_exact::identity::EffectiveId::from_digest`]. Re-exported at this
+/// path so every existing `crate::model::key::EffectiveId` import keeps
+/// working unchanged; this crate no longer defines a second, model-owned
+/// copy of the type (ADR-013 §9 Consequences names this fold explicitly).
+/// [`EffectiveIdExt`] below adds this module's own formatting/serialization
+/// conveniences, which cannot be inherent methods on a foreign-crate type
+/// (Rust's orphan rule) and so live as a local extension trait instead --
+/// one place for all of them, rather than ad hoc hex-building at each call
+/// site.
+pub use quire_exact::EffectiveId;
 
 /// The fixed digest domain of a declaration key and a domain package
 /// selection (`model-complete.md`, "Identity domains").
@@ -151,51 +162,31 @@ impl Fact {
     }
 }
 
-/// A `quire.model.effective-declaration/v1` identity: an effective type or an
-/// effective member of an effective type.
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EffectiveId([u8; 32]);
-
-impl EffectiveId {
-    /// An effective declaration identity from its raw 32-byte digest, with no
-    /// re-hash. FR-143's reference identity triple carries a
-    /// `quire.model.effective-declaration/v1` digest as a reference's
-    /// most-specific type, so the bridge between a model reference and a
-    /// `crate::value` `Reference<T>` (`crate::value::node::NodeKey`, the same
-    /// 32 raw bytes under a different domain tag) is a direct byte transfer.
-    pub(crate) fn from_digest_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    /// The raw 32-byte digest.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
+/// [`EffectiveId`]'s formatting and JSON-serialization conveniences owned by
+/// this module (ADR-013 O-05's model side), not by the kernel: the kernel
+/// type has one public constructor (`from_digest`) and no preimage or JSON
+/// knowledge at all (ADR-013 T-6: "the kernel imports none of them").
+pub trait EffectiveIdExt {
     /// The first eight hex digits, as TC-195's vectors abbreviate identities.
-    pub fn short_hex(&self) -> String {
-        hex(&self.0[..4])
+    fn short_hex(&self) -> String;
+    /// This identity's `{domain, digest}` wire form
+    /// (`model-effective-declaration.schema.json`).
+    fn to_json(&self) -> Value;
+}
+
+impl EffectiveIdExt for EffectiveId {
+    fn short_hex(&self) -> String {
+        hex(&self.as_bytes()[..4])
     }
 
-    /// The full 64-hex digest.
-    pub fn hex(&self) -> String {
-        hex(&self.0)
-    }
-
-    pub(super) fn to_json(&self) -> Value {
+    fn to_json(&self) -> Value {
         let mut object = Map::new();
         object.insert(
             "domain".to_owned(),
             Value::String(EFFECTIVE_DECLARATION_DOMAIN.to_owned()),
         );
-        object.insert("digest".to_owned(), Value::String(self.hex()));
+        object.insert("digest".to_owned(), Value::String(self.to_string()));
         Value::Object(object)
-    }
-}
-
-impl fmt::Debug for EffectiveId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "EffectiveId({})", self.hex())
     }
 }
 
@@ -323,5 +314,5 @@ pub(super) fn digest_of(value: &Value) -> EffectiveId {
 
 /// The SHA-256 digest of already-serialized JCS `bytes`, as an [`EffectiveId`].
 fn digest_of_bytes(bytes: &[u8]) -> EffectiveId {
-    EffectiveId(Sha256::digest(bytes).into())
+    EffectiveId::from_digest(Sha256::digest(bytes).into())
 }
