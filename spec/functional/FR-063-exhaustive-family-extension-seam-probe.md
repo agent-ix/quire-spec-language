@@ -189,14 +189,32 @@ their enums are defined, by the owning repository; this requirement covers
 only S1-S4, which are wholly inside the QSL crate.
 
 **By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
-tags as they exist in the delivered code today:** only FR-063-AC-6 carries
-a `#[trace(..., "FR-063-AC-N")]` tag (three tests in
-`xtask/src/seam_probe.rs`, for the S1 portion this ticket's own scope note
-above covers -- S2/S3/S4 are QSL-143 and the no-cause-bearing-family gap,
-not this ticket's). FR-063-AC-1 through AC-5 and AC-7 are exercised by
-`cargo xtask seam-probe`'s real, end-to-end behavior -- verified manually
-this review round (a genuine probe-build failure at exactly the checked-in
-location, a clean normal build, a non-zero exit on a deliberate mismatch)
--- but none carries its own trace tag in a dedicated test, so all six are
-recorded unbacked rather than claimed. One of seven ACs is backed
-(AC-6); six are unbacked.
+tags as they exist in the delivered code today:** none carries a
+`#[trace(..., "FR-063-AC-N")]` tag.
+
+- FR-063-AC-1 through AC-5 and AC-7 are exercised by `cargo xtask
+  seam-probe`'s real, end-to-end behavior -- verified manually this review
+  round (a genuine probe-build failure at exactly the checked-in location,
+  a clean normal build, a non-zero exit on a deliberate mismatch) -- but
+  none carries its own trace tag in a dedicated test, so all six are
+  recorded unbacked rather than claimed. Owner: QSL-149 (AC-1, 2, 3, 4, 7).
+  AC-5's second half (the gate-stubbing test this criterion's own text
+  requires) is tracked as a spec defect against this requirement's text,
+  owned by QSL-155.
+- FR-063-AC-6: unbacked (untagged, PR #262 review, coordinator round 3,
+  finding 6; previously misrecorded as backed). It requires at least one
+  checked-in entry for *each of* five categories; the checked-in list has
+  one (the S1 `FamilyKind::catalog_code_prefix` prefix arm -- see the
+  "Correction to merged spec" note above, which already concedes the
+  stage-participation-table category is unbacked). A criterion cannot be
+  backed while its own Status text says it is not. Its three previously-
+  tagged tests in `xtask/src/seam_probe.rs` made this worse, not better:
+  `checked_in_locations_are_the_one_family_kind_match` asserts the function
+  returns the literal it hardcodes three lines above -- a constant compared
+  to itself -- and the other two exercise `enclosing_item_name`, the F14
+  line-to-item-name helper, which is not this criterion's subject. All
+  three are now untagged; they remain as real tests of what they actually
+  verify (the literal's shape, and the F14 helper), not of AC-6.
+
+Zero of this requirement's seven Acceptance Criteria are backed by a
+dedicated, trace-tagged test today.
