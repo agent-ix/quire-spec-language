@@ -86,7 +86,7 @@ pub enum Undefined {
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the
 /// receiver reference and the call locus. The call locus is the evaluator's
-/// own [`crate::value::expression::evaluate::Evaluation::location`], not
+/// own [`crate::value::Evaluation::location`], not
 /// repeated here.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PreconditionFailure {

@@ -129,7 +129,7 @@ pub enum ConformanceCheckOutcome {
     /// Every axis charge was admitted; see the substantive [`ConformanceOutcome`].
     Completed(ConformanceOutcome),
     /// A real defect (a dangling member reference, or a conformance walk
-    /// deeper than [`MAX_CONFORMANCE_DEPTH`]) refused the check outright.
+    /// deeper than `MAX_CONFORMANCE_DEPTH`) refused the check outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
     Incomplete(Incomplete),

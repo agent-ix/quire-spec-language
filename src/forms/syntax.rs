@@ -101,7 +101,7 @@ pub enum ClauseKind {
 /// entry ever has, so the type itself rules the case out instead of a
 /// runtime check on an otherwise-valid `ClauseKind` value.
 ///
-/// [`CheckedPackage::check_postcondition_expression`]: crate::value::expression::CheckedPackage::check_postcondition_expression
+/// [`CheckedPackage::check_postcondition_expression`]: crate::value::CheckedPackage::check_postcondition_expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclaredClauseKind {
     /// A model invariant clause.
@@ -457,7 +457,7 @@ impl FunctionDeclaration {
     /// which no package function has — so `DeclaredClauseKind` leaves that
     /// case unrepresentable rather than accepting it and refusing later.
     ///
-    /// [`CheckedPackage::check_postcondition_expression`]: crate::value::expression::CheckedPackage::check_postcondition_expression
+    /// [`CheckedPackage::check_postcondition_expression`]: crate::value::CheckedPackage::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
         parameters: Vec<(String, ValueType)>,

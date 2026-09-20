@@ -57,32 +57,68 @@ impl Trigger {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum CatalogRole {
+    /// The `ix:native` language edition definition (`edition.md`).
     Edition,
+    /// The `quire.value.complete/v1` root value-system definition (`value-complete.md`).
     Root,
+    /// The `quire.value.accounting/v1` charge-accounting definition (`value-accounting.md`).
     Accounting,
+    /// The `quire.value.compound-unit/v1` compound-unit definition (`value-compound-unit.md`).
     CompoundUnit,
+    /// The `quire.value.compound-unit.schema/v1` JSON Schema for compound units
+    /// (`value-compound-unit.schema.json`).
     CompoundUnitSchema,
+    /// The `quire.value.compound-unit.vectors/v1` compound-unit test vectors
+    /// (`value-compound-unit-vectors.json`).
     CompoundUnitVectors,
+    /// The `quire.value.complete.rules/v1` manifest listing the always-selected
+    /// rule roles (`value-complete-rules.json`).
     RuleManifest,
+    /// The `quire.value.text.unicode-17.0.0/v1` text profile, selected when the
+    /// package is `text_bearing` (`value-text-unicode-17.md`).
     TextProfile,
+    /// The `quire.value.ieee754-2019-default/v1` IEEE binary32/binary64 profile,
+    /// selected when the package is `ieee_operation` (`value-ieee754-2019-default.md`).
     IeeeProfile,
+    /// The `quire.value.integer-division.euclidean/v1` Euclidean `div`/`rem` law
+    /// (`value-integer-division-euclidean.md`).
     IntegerDivisionEuclidean,
+    /// The `quire.value.integer-division.floor/v1` floored `div`/`rem` law
+    /// (`value-integer-division-floor.md`).
     IntegerDivisionFloor,
+    /// The `quire.value.integer-division.truncating/v1` truncating `div`/`rem` law
+    /// (`value-integer-division-truncating.md`).
     IntegerDivisionTruncating,
+    /// The `quire.rule.package-contract/v1` package-contract rule (`../package-contract.md`).
     RulePackageContract,
+    /// The `quire.rule.shared-grammar/v1` shared-grammar rule (`../shared-grammar.md`).
     RuleSharedGrammar,
+    /// The `quire.rule.ad-005/v1` rule binding AD-005's complete-value expression
+    /// system (`AD-005-complete-value-expression-system.md`).
     #[serde(rename = "rule_ad_005")]
     RuleAd005,
+    /// The `quire.rule.fr-140/v1` rule binding FR-140 exact-decimal evaluation
+    /// (`FR-140-evaluate-exact-decimals.md`).
     #[serde(rename = "rule_fr_140")]
     RuleFr140,
+    /// The `quire.rule.fr-141/v1` rule binding FR-141 text and enumeration
+    /// evaluation (`FR-141-evaluate-text-and-enumerations.md`).
     #[serde(rename = "rule_fr_141")]
     RuleFr141,
+    /// The `quire.rule.fr-142/v1` rule binding FR-142 quantity and unit
+    /// evaluation (`FR-142-evaluate-quantities-and-units.md`).
     #[serde(rename = "rule_fr_142")]
     RuleFr142,
+    /// The `quire.rule.fr-147/v1` rule binding FR-147 integer-division-domain
+    /// evaluation (`FR-147-evaluate-integer-division-domains.md`).
     #[serde(rename = "rule_fr_147")]
     RuleFr147,
+    /// The `quire.rule.fr-148/v1` rule binding FR-148 IEEE floating-point
+    /// profile evaluation (`FR-148-evaluate-ieee-floating-profiles.md`).
     #[serde(rename = "rule_fr_148")]
     RuleFr148,
+    /// The `quire.rule.fr-149/v1` rule binding FR-149's complete equality
+    /// matrix (`FR-149-apply-complete-equality-matrix.md`).
     #[serde(rename = "rule_fr_149")]
     RuleFr149,
 }

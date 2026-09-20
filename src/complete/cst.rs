@@ -39,19 +39,66 @@ pub enum TokenKind {
     Invalid,
 }
 
+// A production with real, non-obvious grammar shape may carry an explicit
+// `#[doc = "..."]` immediately before its name in the `productions!` call
+// below; this TT-muncher gives that production's hand-written doc instead of
+// the mechanical one. A production with no such override gets the mechanical
+// "The `Name` production ..." doc, which is deliberately fine for the many
+// self-evident productions (e.g. `EnumDeclaration`, `Field`). See
+// `grammar.rs` for every production's actual rule.
 macro_rules! productions {
-    ($($production:ident),+ $(,)?) => {
+    ($($input:tt)*) => {
+        productions_impl! { @collect [] [] $($input)* }
+    };
+}
+
+macro_rules! productions_impl {
+    (@collect [$($variants:tt)*] [$($idents:tt)*]) => {
         /// Every named grammar production represented by the complete-V1 parser.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Production {
-            $($production),+
+            $($variants)*
         }
 
         impl Production {
             /// Closed production inventory used by grammar/corpus coverage gates.
             pub const fn all() -> &'static [Self] {
-                &[$(Self::$production),+]
+                &[$($idents)*]
             }
+        }
+    };
+    (@collect [$($variants:tt)*] [$($idents:tt)*] #[doc = $doc:literal] $production:ident, $($rest:tt)*) => {
+        productions_impl! {
+            @collect
+            [$($variants)* #[doc = $doc] $production,]
+            [$($idents)* Self::$production,]
+            $($rest)*
+        }
+    };
+    (@collect [$($variants:tt)*] [$($idents:tt)*] #[doc = $doc:literal] $production:ident) => {
+        productions_impl! {
+            @collect
+            [$($variants)* #[doc = $doc] $production,]
+            [$($idents)* Self::$production,]
+        }
+    };
+    (@collect [$($variants:tt)*] [$($idents:tt)*] $production:ident, $($rest:tt)*) => {
+        productions_impl! {
+            @collect
+            [$($variants)* #[doc = concat!(
+                "The `", stringify!($production), "` production of the complete-V1 grammar."
+            )] $production,]
+            [$($idents)* Self::$production,]
+            $($rest)*
+        }
+    };
+    (@collect [$($variants:tt)*] [$($idents:tt)*] $production:ident) => {
+        productions_impl! {
+            @collect
+            [$($variants)* #[doc = concat!(
+                "The `", stringify!($production), "` production of the complete-V1 grammar."
+            )] $production,]
+            [$($idents)* Self::$production,]
         }
     };
 }
@@ -64,15 +111,33 @@ productions! {
     EnumMember, RecordDeclaration, Field, TupleDeclaration, AliasDeclaration,
     FunctionDeclaration, Predicate, Parameter, StateClause, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
-    Postfix, Primary, ExactNumber, FloatValue, Hex32, Hex64, HexDigit,
+    Postfix, Primary, ExactNumber, FloatValue,
+    #[doc = "`0x` followed by exactly 8 hexadecimal digits: the bit-exact `float32` literal payload in `float32(bits: <Hex32>)`."]
+    Hex32,
+    #[doc = "`0x` followed by exactly 16 hexadecimal digits: the bit-exact `float64` literal payload in `float64(bits: <Hex64>)`."]
+    Hex64,
+    HexDigit,
     EnumValue, CollectionValue, RecordValue, FieldValue, TupleValue,
-    CollectionCall, SignedInteger, TemporalClause, Activation, Capture,
+    CollectionCall, SignedInteger, TemporalClause,
+    #[doc = "`on origin` or `on each ( <parameter> ) [when ( <expression> )]`: which events start a `temporal` clause."]
+    Activation,
+    #[doc = "`capture <parameter> = <expression> ;`: binds a named value inside a `temporal` clause body."]
+    Capture,
     Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
-    Control, Sequence, Visibility, Choice, Case, Parallel, JoinPolicy, Branch,
-    Repetition, AwaitControl, Related, EventNode, Check, Commit, Finish,
+    Control, Sequence,
+    #[doc = "`visible ( <expression-list>? )`: attached to `choice` and `repeat` control blocks."]
+    Visibility,
+    Choice, Case, Parallel,
+    #[doc = "`all`, `any`, `quorum ( <count> )`, or `predicate ( <identifier> )`: how a `parallel` block's branches converge."]
+    JoinPolicy,
+    Branch,
+    Repetition, AwaitControl,
+    #[doc = "`related by <identifier> ( <expression>, <expression> )`: attached to an event node to correlate it with another by a named relation."]
+    Related,
+    EventNode, Check, Commit, Finish,
     RelationClause, ExecutionBinding, HyperClause, TraceDomain, Quantifier,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
@@ -165,6 +230,7 @@ impl CstNode {
     }
 }
 
+/// How a parser-proposed [`Recovery`] would repair the source at its span.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecoveryKind {
     /// Proposed zero-width insertion.

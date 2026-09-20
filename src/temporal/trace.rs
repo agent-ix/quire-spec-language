@@ -36,6 +36,7 @@ pub struct ClockBinding {
 pub struct OrderKey {
     /// Exact admitted order authority; never an ingestion or transport label.
     pub authority: String,
+    /// Order value within the authority's key space.
     pub key: i64,
 }
 
@@ -57,8 +58,11 @@ pub struct Position {
 /// are distinct dispositions and neither is an inactive scope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Evidence {
+    /// Trigger evidence was supplied and admitted.
     Admitted,
+    /// No trigger evidence was supplied.
     Missing,
+    /// Trigger evidence was supplied but refused.
     Refused,
 }
 
@@ -68,7 +72,12 @@ pub enum Evidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CaptureInput {
     /// An established typed value, with the anchor it was read at.
-    Value { anchor: String, value: String },
+    Value {
+        /// The anchor the value was read at.
+        anchor: String,
+        /// The established value, retained verbatim.
+        value: String,
+    },
     /// No input was supplied for this capture.
     Missing,
     /// The input was supplied but carried no value.
@@ -105,6 +114,7 @@ pub struct Trigger {
 /// A complete caller-constructed observation trace for one declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace {
+    /// The clock binding this trace asserts.
     pub clock: ClockBinding,
     /// Admitted positions. Order in this vector is not an admitted order and is
     /// never consulted as one.
@@ -142,9 +152,19 @@ pub struct Trace {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Eviction {
     /// The valuation for one temporal leaf at one clock coordinate.
-    Valuation { node: u32, coordinate: i64 },
+    Valuation {
+        /// Index of the temporal leaf in the declaration's arena.
+        node: u32,
+        /// Clock coordinate the evicted valuation was recorded at.
+        coordinate: i64,
+    },
     /// One declared capture of one obligation instance.
-    Capture { instance: String, capture: usize },
+    Capture {
+        /// Semantic identity of the obligation instance.
+        instance: String,
+        /// Index of the declared capture in the authored list.
+        capture: usize,
+    },
 }
 
 impl Trace {

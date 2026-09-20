@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! Plan-013 (complete-V1 delivery) task and acceptance-criteria bookkeeping.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;

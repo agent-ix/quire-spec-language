@@ -81,7 +81,7 @@
 //! `pre(..)`-anchored `allInstances`/`lookup` reads exactly the admitted pre
 //! population (`tests/model_reference_queries.rs`'s `l07_pre_*` tests). It
 //! then runs two distinct checks over the two admitted bindings, both by
-//! [`enforce_frame`]:
+//! `enforce_frame`:
 //!
 //! - the FR-151 operation frame (`quire.model.conformance.effect/v1`):
 //!   every created and deleted object identity's most-specific type must
@@ -101,7 +101,7 @@
 //!   created/deleted identity lists (declared once per invocation, outside
 //!   any operation's own effect) must be internally consistent (no
 //!   duplicate, no identity declared both created and deleted) and must
-//!   equal the complete created/deleted sets [`enforce_frame`] computed from
+//!   equal the complete created/deleted sets `enforce_frame` computed from
 //!   the two documents.
 //!
 //! A frame violation is `Refused` with `Code::FrameViolation`/cause
@@ -1015,14 +1015,14 @@ pub struct InvocationContext<'a> {
 
 /// The operation's own declared frame and recorded population delta for one
 /// invocation. `effect` is the operation's authored frame
-/// (`quire.model.conformance.effect/v1`), enforced by [`enforce_frame`].
+/// (`quire.model.conformance.effect/v1`), enforced by `enforce_frame`.
 /// `declared_created`/`declared_deleted` are the invocation's own recorded
 /// created/deleted object identities for this population role -- FR-046's
 /// "caller-supplied lists must match" (the native runtime's own
 /// `declared_deltas`/`inspect_frames`, `src/runtime/validation/frames.rs`),
 /// applied here at the model-population layer. Object identity only: this
 /// call's own universe is implicit (both admitted bindings share it), and
-/// per [`enforce_frame`]'s own docs, identity for delta purposes is
+/// per `enforce_frame`'s own docs, identity for delta purposes is
 /// `(universe, object)`, never the most-specific type.
 #[derive(Clone, Copy)]
 pub struct InvocationDelta<'a> {
