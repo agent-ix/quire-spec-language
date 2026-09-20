@@ -11,7 +11,6 @@ description = "QSL#213 S-1 (ADR-011 X-1): the quire-exact kernel -- checked iden
 num-bigint = "=0.4.8"
 num-integer = "=0.1.47"
 num-traits = "=0.2.19"
-serde_json = "=1.0.151"
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
 

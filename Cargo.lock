@@ -941,7 +941,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "serde_json",
  "thiserror",
  "unicode-normalization",
 ]

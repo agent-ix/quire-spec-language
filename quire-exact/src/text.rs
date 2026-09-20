@@ -11,8 +11,18 @@
 //! the corpus; this crate re-derives no vendored fixture). No locale, case
 //! folding, collation or grapheme segmentation is applied.
 //!
-//! Ported verbatim from QSL `value::text` as part of QSL#213 S-1
-//! (ADR-011 X-1); no edge needed cutting.
+//! Ported from QSL `value::text` as part of QSL#213 S-1 (ADR-011 X-1). One
+//! cut (M-6): `TextPayload::from_source_literal`/`InvalidTextLiteral`,
+//! which decoded a complete quoted source literal's JSON string escapes,
+//! are dropped. Decoding a source-lexer literal spelling is a source-stage
+//! concern, not an O-13 value concern, and nothing in this crate called it
+//! (only its own now-removed tests did) -- QSL's own lexer/parser is
+//! already the right place to decode a literal's escapes before handing
+//! this crate the resulting scalar sequence via [`TextPayload::from_utf8`].
+//! [`TextProvenance::SourceLiteral`] itself is unaffected and still directly
+//! constructible: recording that a payload came from a source literal, and
+//! which one, is a real kernel-observable fact; only the JSON-based decode
+//! convenience was QSL's job, not the kernel's.
 
 use std::cmp::Ordering;
 use std::str::Chars;
@@ -216,12 +226,6 @@ pub struct InvalidUtf8 {
     pub valid_up_to: usize,
 }
 
-/// A source text literal is not one complete JSON-compatible quoted string
-/// denoting Unicode scalars.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("invalid text literal")]
-pub struct InvalidTextLiteral;
-
 /// Where a payload came from. Provenance never participates in text value
 /// comparison.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -249,24 +253,6 @@ impl TextPayload {
         Ok(Self {
             text: text.into(),
             provenance: TextProvenance::Runtime,
-        })
-    }
-
-    /// Decode a complete quoted source literal, such as `"é"`.
-    ///
-    /// The escape grammar is the JSON string grammar the source lexer already
-    /// delegates to, so lone surrogates and raw controls refuse. This reads
-    /// the literal with `serde_json`'s string grammar (a bare quoted-string
-    /// decode, not a `quire.checked-package/v2` document, so it carries no
-    /// wire-schema dependency), matching the ported QSL behavior exactly.
-    pub fn from_source_literal(spelling: &str) -> Result<Self, InvalidTextLiteral> {
-        if !(spelling.len() >= 2 && spelling.starts_with('"') && spelling.ends_with('"')) {
-            return Err(InvalidTextLiteral);
-        }
-        let text: String = serde_json::from_str(spelling).map_err(|_| InvalidTextLiteral)?;
-        Ok(Self {
-            text: text.into(),
-            provenance: TextProvenance::SourceLiteral(spelling.into()),
         })
     }
 
@@ -459,12 +445,12 @@ mod tests {
         })
     }
 
-    /// TC-341: a quoted source literal decodes its JSON string escapes, and
-    /// a payload within its declared length bounds is admitted unchanged.
+    /// TC-341: a runtime UTF-8 payload within its declared length bounds is
+    /// admitted unchanged.
     #[trace("TC-341")]
     #[test]
-    fn tc_341_source_literal_decodes_and_is_admitted() {
-        let payload = TextPayload::from_source_literal("\"caf\\u00e9\"").unwrap();
+    fn tc_341_utf8_payload_within_bound_is_admitted() {
+        let payload = TextPayload::from_utf8("café".as_bytes()).unwrap();
         assert_eq!(payload.as_str(), "café");
         let text_type = TextType::new(0, 10, TextProfile::UnicodeScalars).unwrap();
         let mut meter = generous_meter();
@@ -486,16 +472,5 @@ mod tests {
             outcome,
             Outcome::Refused(Refusal::TextLengthOutOfDomain)
         ));
-    }
-
-    /// TC-343: a malformed literal missing its closing quote is refused
-    /// before any decode is attempted.
-    #[trace("TC-343")]
-    #[test]
-    fn tc_343_unquoted_literal_is_refused() {
-        assert_eq!(
-            TextPayload::from_source_literal("abc"),
-            Err(InvalidTextLiteral)
-        );
     }
 }
