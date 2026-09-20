@@ -641,7 +641,11 @@ mod tests {
     }
 
     /// TC-327: a charge within every limit is admitted, and the high-water
-    /// counter it names records the charged size.
+    /// counter it names records the charged size. L-1: also proves a
+    /// cumulative counter (`work_units`) accumulates across charges rather
+    /// than only ever recording one charge's amount, the one H-8 sub-claim
+    /// that had not landed -- every other counter assertion in this crate is
+    /// single-charge high-water.
     #[trace("TC-327")]
     #[test]
     fn tc_327_charge_within_limits_is_admitted() {
@@ -652,6 +656,11 @@ mod tests {
             )
             .expect("4 bits is within the 8-bit limit");
         assert_eq!(meter.consumed(LimitKind::IntegerBits), 4);
+
+        meter
+            .charge(Charge::new(ChargePoint::IntegerArithmeticOperands))
+            .expect("work_units has room");
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
     }
 
     /// TC-328: a charge past a counter's limit is denied atomically: the

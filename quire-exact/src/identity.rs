@@ -176,11 +176,21 @@ mod tests {
 
     /// TC-303 (H-7/H-8, strengthened): each identity's domain constant is
     /// distinct, so no two of the six can be confused by domain string
-    /// (ADR-013 QC-15). Also grounds `EFFECTIVE_ID_DOMAIN` against the real,
-    /// external value this module's own doc comment claims to match
-    /// (`src/model/key.rs:26`'s `EFFECTIVE_DECLARATION_DOMAIN`, per H-2),
-    /// so a future edit to either side that silently drifts the literal
-    /// fails here rather than only in a future S-2 integration.
+    /// (ADR-013 QC-15). Also pins `EFFECTIVE_ID_DOMAIN` against the literal
+    /// this module's own doc comment claims to match (`src/model/key.rs:26`'s
+    /// `EFFECTIVE_DECLARATION_DOMAIN`, per H-2).
+    ///
+    /// **L-2, doc correction: this is a hard-coded literal, not an
+    /// import-based check.** A leaf crate at ADR-011's module-DAG layer `K`
+    /// cannot depend on QSL's `src/model`, so this test cannot actually read
+    /// `EFFECTIVE_DECLARATION_DOMAIN` and compare against it live -- it
+    /// compares `EFFECTIVE_ID_DOMAIN` to a second copy of the same string
+    /// typed here. A future edit to `src/model/key.rs:26` alone, with this
+    /// literal left unchanged, leaves this test green even though the two
+    /// values have now drifted; only an edit to *this* crate's own
+    /// `EFFECTIVE_ID_DOMAIN` would be caught. The test is right to exist at
+    /// this crate's boundary -- there is no other way to pin the value here
+    /// -- the previous wording overstated what it actually catches.
     #[trace("TC-303")]
     #[test]
     fn tc_303_domain_constants_are_pairwise_distinct() {

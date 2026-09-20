@@ -31,7 +31,10 @@
 //!   inline per ADR-013 O-14, so it needs no declaration lookup and is not a
 //!   capability loss).
 //! - the `key` and `equality` modules: an enum pair keys and compares equal
-//!   by raw digest, with no declaration-aware ordering or same-enum check.
+//!   by raw digest, with no declaration-aware ordering. (A same-enum check
+//!   is *not* a loss here: `ValueType::Enum(EnumShape)`'s admission already
+//!   guarantees both operands share one enum's variant set before either
+//!   module ever runs, per ADR-013 O-14.)
 //! - [`Quantity`]: no cross-unit arithmetic, comparison or equality; only
 //!   same-unit operations.
 //! - the `equality` module: the top-level text/enum/quantity schedule
@@ -56,12 +59,22 @@
 //! PR. This is stated here rather than left silent, and rather than bound
 //! to an approximate existing FR (every FR found under `spec/functional/`
 //! that mentions ADR-011/ADR-013 is about package/capability admission,
-//! not value-kernel semantics -- binding TC-300-TC-356 to one of those
+//! not value-kernel semantics -- binding these tests to one of those
 //! would misrepresent what they actually verify). Authoring a real FR/AC
 //! set and test matrix for this crate is a QSpec decision -- which
 //! subsystem directory it belongs to, and whether criteria are authored
 //! before or after the code they describe -- not something this PR
 //! decides for itself.
+//!
+//! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
+//! for 56 tests: **`TC-343` is retired, not reused.** It named
+//! `text::tests::tc_343_unquoted_literal_is_refused`, which tested only
+//! `TextPayload::from_source_literal`'s malformed-input path; M-6 removed
+//! `from_source_literal` from the kernel entirely (with no in-crate caller
+//! outside that test), and the test went with it rather than being
+//! repointed at unrelated behavior. Do not mint a new `TC-343` to fill the
+//! hole -- an id that once named one thing should not silently come to
+//! name another.
 
 #![forbid(unsafe_code)]
 
@@ -88,11 +101,14 @@ mod value;
 // H-5: every submodule above is private and its public surface is exposed
 // only through this curated facade, mirroring `src/value/mod.rs`'s pattern
 // (private `mod`s behind selective `pub use` re-exports) rather than
-// `pub mod` wholesale. `crate::key::compare_keys` and the five functions
-// this PR's own REVISE round demoted to `pub(crate)`
+// `pub mod` wholesale. `crate::key::compare_keys` and the two functions this
+// PR's own REVISE round demoted to `pub(crate)` out of the five flagged
 // (`rational::divided_by_power_of_ten`, `decimal::DecimalRepresentation::
 // to_rational`) are deliberately absent below: they are reachable only from
-// inside this crate.
+// inside this crate. The other three flagged functions
+// (`quantity::compare_quantity`, `decimal::DecimalLoss::exact`/
+// `exact_denominator`, `equality::plan_equality`) stayed `pub` -- see their
+// own doc comments for why -- and are exported below as before.
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
 pub use collection::{
     construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
