@@ -903,6 +903,84 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
     assert_eq!(records.len(), 1);
 }
 
+/// ADR-010 OBS-006 / ADR-013 O-03 (#213 S-2's own adverse test, named but not
+/// landed by #131/PR #200): a selection naming the reserved `quire/native`
+/// pseudo-package identity refuses at `admit`, before any byte check runs --
+/// distinct from a native `typeRef` (`ix://quire/native/<Name>`) resolving to
+/// `ValueTypeRef::Native`, which the golden-shape test above already covers.
+/// No PR #200 head encodes this refusal: `admit` had no check for it at all
+/// until this change.
+#[test]
+fn admit_refuses_the_reserved_native_pseudo_package_identity() {
+    let offered = DomainPackageRef {
+        identity: quire_spec_language::model::intake::native::RESERVED_IDENTITY.to_owned(),
+        version: "1".to_owned(),
+        digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
+    };
+    let bytes_by_digest = BTreeMap::new();
+
+    let refusal = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest).expect_err(
+        "a selection naming the quire/native pseudo-package never admits, \
+         regardless of what bytes it would otherwise resolve to",
+    );
+    assert_eq!(
+        refusal.cause,
+        quire_spec_language::model::refusal::ModelRefusalCause::ReservedPackageIdentity {
+            selection: offered,
+        }
+    );
+    assert_eq!(refusal.cause.as_str(), "malformed-declaration");
+}
+
+/// ADR-013 O-01 (#213 S-2, QC-5 -- landed as `duplicate_selection`/
+/// `duplicate-identity`, revision `1-draft.6`): a package selects at most
+/// one version of a domain-package identity. `admit_selections` refuses the
+/// second selection of an already-selected identity before doing any of that
+/// item's own byte-level admission work, whether or not the requested
+/// version differs from the one already selected.
+#[test]
+fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
+    // A minimal but genuinely admittable first selection, so the refusal
+    // below is provably about the *second* selection's repeated identity,
+    // not a byte-level failure of the first (compact `Value::to_string()`
+    // is already RFC 8785 JCS bytes here: no `preserve_order` feature means
+    // `serde_json::Map` is a `BTreeMap`, and there is no whitespace to strip
+    // -- the same reasoning `model::key`'s own module docs give).
+    let document = serde_json::json!({"package": {"identity": "acme/orders", "version": "1"}})
+        .to_string()
+        .into_bytes();
+    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let mut bytes_by_digest = BTreeMap::new();
+    bytes_by_digest.insert(digest, document);
+
+    let first = DomainPackageRef {
+        identity: "acme/orders".to_owned(),
+        version: "1".to_owned(),
+        digest,
+    };
+    let second = DomainPackageRef {
+        identity: "acme/orders".to_owned(),
+        version: "2".to_owned(),
+        digest: Sha256::digest(b"second selection: refused before this is ever looked up").into(),
+    };
+
+    let refusal = quire_spec_language::model::intake::admit_selections(
+        &[first, second],
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+    )
+    .expect_err("a second selection of the same domain-package identity never admits");
+    assert_eq!(
+        refusal.cause,
+        quire_spec_language::model::refusal::ModelRefusalCause::DuplicateSelection {
+            identity: "acme/orders".to_owned(),
+            already_selected_version: "1".to_owned(),
+            requested_version: "2".to_owned(),
+        }
+    );
+    assert_eq!(refusal.cause.as_str(), "duplicate-identity");
+}
+
 /// Write `contents` (a `(relative path, bytes)` list) under a fresh tempdir
 /// and return it.
 fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {

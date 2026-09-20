@@ -113,6 +113,36 @@ pub mod meaning {
 pub mod native {
     /// The prefix a native value type reference carries.
     pub const PREFIX: &str = "ix://quire/native/";
+
+    /// The bare domain-package identity [`PREFIX`] is built from (ADR-010
+    /// OBS-006, ADR-013 O-03): the reserved pseudo-package no domain package
+    /// selection may name. [`super::admit`] refuses a selection naming it
+    /// outright, before FR-154's own four-check admission table runs,
+    /// because a package that *did* declare this identity would mint node
+    /// identities of the exact `ix://quire/native/<Name>` shape
+    /// [`super::read_value_type_ref`] always reads as a native reference
+    /// first -- so any of that package's own declarations could never be
+    /// reached through [`super::super::domain_package::ValueTypeRef::Package`],
+    /// and it would silently share the native key space rather than merely
+    /// refusing to resolve.
+    ///
+    /// Kept as its own constant rather than re-deriving it from [`PREFIX`]
+    /// by string surgery at each use site, and pinned against `PREFIX` by
+    /// this module's own test so the two cannot drift.
+    pub const RESERVED_IDENTITY: &str = "quire/native";
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// (#213 S-2) [`PREFIX`] and [`RESERVED_IDENTITY`] name the same
+        /// pseudo-package; this pins them together so an edit to one alone
+        /// cannot leave the other stale.
+        #[test]
+        fn reserved_identity_matches_native_prefix() {
+            assert_eq!(PREFIX, format!("ix://{RESERVED_IDENTITY}/"));
+        }
+    }
 }
 
 /// FCD `agent_ix_extraction_frontend::lift` did not produce a document.
@@ -186,6 +216,25 @@ pub fn admit<'a>(
     digest_domain: &str,
     bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
 ) -> Result<(DomainPackageRef, &'a [u8]), ModelRefusal> {
+    // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
+    // pseudo-package never selects, regardless of what its bytes would
+    // otherwise admit -- checked first, ahead of FR-154's own four-check
+    // table, because this rejects the offered identity itself rather than
+    // anything about the package's bytes.
+    if offered.identity == native::RESERVED_IDENTITY {
+        return Err(ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::ReservedPackageIdentity {
+                selection: offered.clone(),
+            },
+            detail: format!(
+                "domain package selection names identity {:?}, the reserved native-reference \
+                 pseudo-package -- a native value type resolves only as ValueTypeRef::Native \
+                 and never shares a real package's key space",
+                offered.identity
+            ),
+        });
+    }
     if digest_domain != SHA256_JCS_DIGEST_DOMAIN {
         return Err(ModelRefusal {
             code: Code::StaleDependency,
@@ -264,6 +313,50 @@ pub fn admit<'a>(
         });
     }
     Ok((package_ref, bytes.as_slice()))
+}
+
+/// ADR-013 O-01: admits every selection in `offered`, in order, through
+/// [`admit`], and additionally refuses a second selection naming a
+/// domain-package `identity` already admitted earlier in this same call --
+/// "a package selects at most one version of a domain-package identity"
+/// (QC-5, catalogued `duplicate_selection`/`duplicate-identity`, revision
+/// `1-draft.6`) -- whether or not the repeated selection's version matches
+/// the one already admitted. Checked before [`admit`]'s own byte-level work
+/// for the repeated item, since the defect is in the selection list itself,
+/// not in that item's bytes. No production caller offers more than one
+/// domain package yet; this is the single-selection rule #131 was asked to
+/// wire together with [`admit`] and did not (ADR-013 O-01's own "Implementing
+/// ticket" row).
+pub fn admit_selections<'a>(
+    offered: &[DomainPackageRef],
+    digest_domain: &str,
+    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<Vec<(DomainPackageRef, &'a [u8])>, ModelRefusal> {
+    let mut admitted = Vec::with_capacity(offered.len());
+    let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
+    for selection in offered {
+        if let Some(&already_selected_version) = selected_versions.get(selection.identity.as_str())
+        {
+            return Err(ModelRefusal {
+                code: Code::DuplicateSelection,
+                cause: ModelRefusalCause::DuplicateSelection {
+                    identity: selection.identity.clone(),
+                    already_selected_version: already_selected_version.to_owned(),
+                    requested_version: selection.version.clone(),
+                },
+                detail: format!(
+                    "domain package identity {:?} is already selected at version {:?}; this call \
+                     additionally selects it at version {:?}, and a package selects at most one \
+                     version of a domain-package identity",
+                    selection.identity, already_selected_version, selection.version
+                ),
+            });
+        }
+        let (admitted_ref, bytes) = admit(selection, digest_domain, bytes_by_digest)?;
+        selected_versions.insert(&selection.identity, &selection.version);
+        admitted.push((admitted_ref, bytes));
+    }
+    Ok(admitted)
 }
 
 // ---------------------------------------------------------------------------
@@ -1558,6 +1651,34 @@ mod tests {
                 },
                 detail: "domain package selection acme/orders@1 names digest \
                           domain \"sha1\", not \"sha256-jcs\""
+                    .to_owned(),
+            }
+        );
+    }
+
+    /// (#260 review round 3) `"sha1"` above is not an FR-201 label at all,
+    /// so it cannot tell this check apart from one that refuses only
+    /// *unrecognized* domains while silently admitting a *valid but wrong*
+    /// one -- a real FR-201 label (`ir-canonical`, O-18's own vocabulary)
+    /// that is not `sha256-jcs` must refuse here too (FR-154 Intake check
+    /// 1 is a total match against `sha256-jcs`, not "is this any known
+    /// domain").
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_valid_fr201_domain_that_is_not_sha256_jcs() {
+        let map = BTreeMap::new();
+        let (offered, digest_domain) = selection("acme/orders", "1", "ir-canonical", [0; 32]);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::StaleDependency,
+                cause: ModelRefusalCause::DigestDomainMismatch {
+                    expected: SHA256_JCS_DIGEST_DOMAIN,
+                    actual: "ir-canonical".to_owned(),
+                },
+                detail: "domain package selection acme/orders@1 names digest \
+                          domain \"ir-canonical\", not \"sha256-jcs\""
                     .to_owned(),
             }
         );
