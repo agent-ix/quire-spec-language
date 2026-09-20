@@ -12,14 +12,21 @@
 //! proves `crate::model::intake::admit` accepts that output under a
 //! matching selection.
 //!
-//! `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`
+//! `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types`
 //! carries FCD PR #200's own architecture golden (vendored under
 //! `tests/fixtures/architecture/expected/semantic-ir.json`, now that the pin
 //! covers it) into `intake::read_records` and asserts the measured, per-node
 //! breakdown: `validate_with_semantic_ir` admits the whole document at this
-//! pin, so `read_records` reaches per-node reading, and 4 of the golden's 12
-//! types refuse while 8 read clean -- see that test's own doc comment for
-//! the breakdown.
+//! pin, so `read_records` reaches per-node reading, and 5 of the golden's 12
+//! types refuse while 7 read clean -- see that test's own doc comment for
+//! the breakdown, including PR #200 review finding H1 (a missing identity
+//! check on relationship members, fixed in `read_relationship`), which is
+//! why the count is 5 rather than the 4 first measured.
+//!
+//! `reads_pump_out_as_a_real_endpoint_record` asserts real record content
+//! for one of the 7 clean-reading types, which the whole-document test
+//! above cannot do (`read_records` discards every already-read record when
+//! any node refuses).
 //!
 //! `a_qspec_conformant_document_admits_reads_and_classifies` is the
 //! complementary positive case: a hand-written Semantic IR 2.0.0 document
@@ -128,11 +135,25 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
 /// `Severity::Error` diagnostic and `read_records` reaches its own per-node
 /// reading over the golden for the first time. Of its 12 types (no
-/// `populations[]`), 4 refuse and 8 read clean:
+/// `populations[]`, asserted below rather than assumed), **5 refuse and 7
+/// read clean**:
 ///
 /// - `Count`: [`quire_spec_language::model::normalize::ModelRefusalCause::UnsupportedDeclarationForm`]
 ///   -- `quire.meaning.model.record-value-type/v1` has no reader yet (a
 ///   separate, still-open gap, not this pin's).
+/// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
+///   relationship -- FCD's relationship identity form
+///   (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`, an
+///   extra `relationship` segment and `-` separators) does not parse as
+///   `<owner>/<name>` (FR-056 Declarations, FR-056-AC-5). PR #200 review
+///   finding H1: earlier in this same PR, this refusal did not fire at all
+///   -- `read_relationship` applied no identity check, so this exact golden
+///   entry was accepted verbatim as the record's key and `Flow2` read
+///   "clean" only because the check was missing, not because the shape
+///   conforms. Fixed in `read_relationship` (validates through the same
+///   `member_identity_name` rule `read_field_member`/`read_operation_member`
+///   already apply, and separately refuses a missing source span per
+///   FR-056-AC-5's other half); this is the corrected, honest count.
 /// - `Pump.id`, `Sys.id`, `Tank.id`: `IntakeMalformedDeclaration` -- each
 ///   field's `typeRef` is `ix://quire/native/UUID`, R5's ruling that QSL's
 ///   native-value-type vocabulary is the conformant side and FCD's wider
@@ -142,36 +163,64 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 ///   PLAT-836 (a separate ticket) narrows what FCD *emits* for these
 ///   fields, not this reader; until it lands, this refusal is correct.
 ///
-/// A prior static reading of this reader predicted 5 of 12 refusing,
-/// naming `Flow2` alongside `Count`/`Pump`/`Sys`/`Tank` on the theory that
-/// its relationships would still miss a role/multiplicity this reader
-/// requires. That prediction was never observable before the pin bump (the
-/// whole-document schema refusal short-circuited every per-node read) and
-/// the measurement above supersedes it: `Flow2` reads clean along with
-/// `Flow`, `pipe`, `pump_alloc`, `pump_out`, `sys_pump`, `sys_tank` and
-/// `tank_in` -- 8, not 7, read clean, and the refusing set is exactly
-/// `{Count, Pump, Sys, Tank}`, not the predicted `{Count, Flow2, Pump, Sys,
-/// Tank}`.
+/// A prior static reading of this reader predicted 5 of 12 refusing, naming
+/// `Flow2` alongside `Count`/`Pump`/`Sys`/`Tank` on the theory that its
+/// relationships would still miss a role/multiplicity this reader requires.
+/// That theory was wrong (the golden's `Flow2` relationship has both a role
+/// and a multiplicity on each end) and, before H1's fix, the measurement
+/// disagreed with it too (4 refusing, `Flow2` clean) -- the prediction and
+/// the first honest measurement landed on the same headline number (5) by
+/// two different, both-wrong routes. H1's fix is what makes 5-refusing
+/// correct now, for the real reason (a relationship member's identity form),
+/// not the predicted one (role/multiplicity).
+///
+/// The remaining 7 -- `Flow`, `pipe`, `pump_alloc`, `pump_out`, `sys_pump`,
+/// `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
+/// as "produced no refusal": it discards every already-read record when any
+/// node refuses, so no content assertion for these 7 is possible against
+/// the whole-document call above. `reads_pump_out_as_a_real_endpoint_record`
+/// below asserts real content for one of them by isolating it into its own
+/// single-type document.
 #[test]
-fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types() {
+fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
     let document = include_str!("fixtures/architecture/expected/semantic-ir.json");
 
+    let parsed: Value = serde_json::from_str(document).expect("the vendored golden is valid JSON");
+    assert_eq!(
+        parsed["types"]
+            .as_array()
+            .expect("the golden's types is an array")
+            .len(),
+        12,
+        "the golden's own type count; if this drifts, the 5-of-12/7-clean split below is stale"
+    );
+    assert!(
+        parsed.get("populations").is_none(),
+        "this test's breakdown assumes no populations[] in the golden"
+    );
+
     let refusals = read_records(package_identity, document.as_bytes()).expect_err(
-        "measured: 4 of the golden's 12 types refuse at read_records even though the whole \
+        "measured: 5 of the golden's 12 types refuse at read_records even though the whole \
          document now clears validate_with_semantic_ir's schema check",
     );
 
     assert_eq!(
         refusals.len(),
-        4,
-        "measured refusal count over the post-#200 golden: {refusals:#?}"
+        5,
+        "measured refusal count over the post-#200 golden, post-H1 fix: {refusals:#?}"
     );
 
     use quire_spec_language::diagnostic::Code;
     use quire_spec_language::model::normalize::ModelRefusalCause;
 
-    let (count, pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2], &refusals[3]);
+    let (count, flow2, pump, sys, tank) = (
+        &refusals[0],
+        &refusals[1],
+        &refusals[2],
+        &refusals[3],
+        &refusals[4],
+    );
 
     assert_eq!(count.code, Code::UnsupportedConstruct);
     match &count.cause {
@@ -185,6 +234,24 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types
         count.detail.contains("has no reader yet"),
         "Count detail: {}",
         count.detail
+    );
+
+    assert_eq!(flow2.code, Code::InvalidModelBinding);
+    match &flow2.cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
+            assert_eq!(
+                node,
+                "ix://agent-ix/architecture/relationship/Flow2-specializes-Flow"
+            );
+        }
+        other => panic!("Flow2: expected IntakeMalformedDeclaration, got {other:?}"),
+    }
+    assert!(
+        flow2
+            .detail
+            .contains("is not ix://agent-ix/architecture/Flow2/<name>"),
+        "Flow2 detail: {}",
+        flow2.detail
     );
 
     for (refusal, expected_node) in [
@@ -208,6 +275,105 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types
             refusal.detail
         );
     }
+}
+
+/// The golden's `pump_out` type (`quire.meaning.systems.port/v1`) is one of
+/// the 7 clean-reading types the whole-document test above cannot assert
+/// content for (`read_records` discards already-read records when any
+/// sibling node refuses). This isolates it into its own small document
+/// carrying the golden's own `pump_out`/`sys_pump`/`Flow`/`Sys`/`Pump` nodes
+/// verbatim (`agent-ix-semantic-ir`'s own schema requires every referenced
+/// type -- `pump_out.owner`, `pump_out.interfaceType`, `sys_pump.owner`,
+/// `sys_pump.declaredType` -- to resolve to a real node, so the referential
+/// closure comes along), with only `Sys`/`Pump.id`'s own `typeRef` (the
+/// `ix://quire/native/UUID` refusal, irrelevant to `pump_out` itself) and
+/// `Flow.rate`'s `typeRef` (a reference to `Count`, the unsupported-meaning
+/// refusal, equally irrelevant here) redirected to a supported native type
+/// so the closure itself reads clean too. `pump_out` reads as a real
+/// [`quire_spec_language::model::domain_package::EndpointRecord`], not
+/// merely "no refusal": owner `sys_pump`, direction `Out`, value type
+/// `Flow`, multiplicity exactly `1..=1`.
+#[test]
+fn reads_pump_out_as_a_real_endpoint_record() {
+    let package_identity = "agent-ix/architecture";
+    let document = include_str!("fixtures/architecture/expected/semantic-ir.json");
+    let parsed: Value = serde_json::from_str(document).expect("the vendored golden is valid JSON");
+    let all_types = parsed["types"].as_array().expect("types is an array");
+    let find = |identity: &str| -> Value {
+        all_types
+            .iter()
+            .find(|type_value| type_value["identity"] == identity)
+            .unwrap_or_else(|| panic!("{identity}: not found in the golden"))
+            .clone()
+    };
+
+    let pump_out = find("ix://agent-ix/architecture/pump_out");
+    let sys_pump = find("ix://agent-ix/architecture/sys_pump");
+    let mut flow = find("ix://agent-ix/architecture/Flow");
+    let mut sys = find("ix://agent-ix/architecture/Sys");
+    let mut pump = find("ix://agent-ix/architecture/Pump");
+    // `Sys.id`/`Pump.id`'s own `typeRef` is `ix://quire/native/UUID`, R5's
+    // ruling refusal -- irrelevant to `pump_out`'s own content -- redirected
+    // to a supported native type rather than dropped: `identityFields`
+    // requires at least one field, and it must still resolve.
+    for entity in [&mut sys, &mut pump] {
+        entity["fields"][0]["typeRef"] = Value::String("ix://quire/native/Boolean".to_owned());
+    }
+    // `Flow.rate`'s own `typeRef` names `Count`, the unsupported-meaning
+    // refusal -- irrelevant to `pump_out`'s own content -- so it is
+    // redirected to a supported native type rather than dropped outright:
+    // `featureOrder` requires at least one feature, and the field must
+    // still resolve to keep `Flow` itself reading clean.
+    flow["fields"][0]["typeRef"] = Value::String("ix://quire/native/Boolean".to_owned());
+
+    let types = vec![pump_out, sys_pump, flow, sys, pump];
+    let kept_kinds: Vec<Value> = types
+        .iter()
+        .map(|type_value| type_value["kind"].clone())
+        .collect();
+    let constructs = parsed["constructs"]
+        .as_array()
+        .expect("constructs is an array")
+        .iter()
+        .filter(|construct| kept_kinds.contains(&construct["kind"]))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut document = parsed;
+    document["constructs"] = Value::Array(constructs);
+    document["types"] = Value::Array(types);
+
+    let records = read_records(package_identity, document.to_string().as_bytes()).expect(
+        "pump_out and the referential closure needed to satisfy agent-ix-semantic-ir's own \
+         schema, with Sys/Pump/Flow's unrelated refusing members emptied out, read clean",
+    );
+    let endpoint = records
+        .iter()
+        .find_map(|record| match record {
+            quire_spec_language::model::domain_package::DomainPackageRecord::Endpoint(endpoint) => {
+                Some(endpoint)
+            }
+            _ => None,
+        })
+        .expect("exactly one Endpoint record, for pump_out");
+    assert_eq!(
+        endpoint.key,
+        key(package_identity, "ix://agent-ix/architecture/pump_out")
+    );
+    assert_eq!(
+        endpoint.owning_component,
+        key(package_identity, "ix://agent-ix/architecture/sys_pump")
+    );
+    assert_eq!(
+        endpoint.value_type,
+        key(package_identity, "ix://agent-ix/architecture/Flow")
+    );
+    assert_eq!(
+        endpoint.direction,
+        Some(quire_spec_language::model::domain_package::PortDirection::Out)
+    );
+    assert_eq!(endpoint.multiplicity.lower, 1);
+    assert_eq!(endpoint.multiplicity.upper, Some(1));
 }
 
 fn multiplicity_one(lower: u64, upper: Option<u64>) -> serde_json::Value {
