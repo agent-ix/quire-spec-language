@@ -51,6 +51,14 @@ impl Error {
         }
     }
 
+    /// The message alone, without the `{code}: ` prefix `Display` adds --
+    /// so a caller that wraps this error's text into a larger report (for
+    /// example `run_direction` folding a `Stale` error into the revisions
+    /// summary, #249 review round 4) does not print the code twice.
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
     pub(crate) fn at(self, path: &Path) -> Self {
         Self::new(self.code, format!("{} ({})", self.message, path.display()))
     }

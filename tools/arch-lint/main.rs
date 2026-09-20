@@ -95,6 +95,15 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
         (graph::Repo::Cg, &cg),
     ];
     let mut edges = Vec::new();
+    // #249 review round 4: every root's resolved revision is printed
+    // regardless of whether a later freshness check fails -- previously a
+    // `Stale` error propagated via `?` before the summary built so far was
+    // ever returned to `main`, so a stale-clone abort showed only the bare
+    // diagnostic, not the "Revisions used" block FR-059-AC-7 promises
+    // "regardless of outcome". The first `Stale` error found is still the
+    // one this run fails with; it is folded into `summary` so the caller
+    // never loses it.
+    let mut stale: Option<Error> = None;
     for (repo, root) in &roots {
         let head = metadata::git_head(root)?;
         if let Some((_, url)) = FRESHNESS_TARGETS.iter().find(|(r, _)| r == repo) {
@@ -103,18 +112,37 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
                     "    {repo}: {head} (--offline: not checked against remote main)\n"
                 ));
             } else {
-                metadata::require_current_head(repo.as_str(), url, &head)?;
-                summary.push_str(&format!("    {repo}: {head} (matches {url} main)\n"));
+                match metadata::require_current_head(repo.as_str(), url, &head) {
+                    Ok(()) => {
+                        summary.push_str(&format!("    {repo}: {head} (matches {url} main)\n"))
+                    }
+                    Err(error) => {
+                        summary.push_str(&format!(
+                            "    {repo}: {head} (STALE -- does not match {url} main)\n"
+                        ));
+                        if stale.is_none() {
+                            stale = Some(error);
+                        }
+                    }
+                }
             }
         } else {
             summary.push_str(&format!(
                 "    {repo}: {head} (this worktree; no remote-main freshness check)\n"
             ));
         }
-        edges.extend(metadata::edges_for_manifest(
-            &root.join("Cargo.toml"),
-            offline,
-        )?);
+        if stale.is_none() {
+            edges.extend(metadata::edges_for_manifest(
+                &root.join("Cargo.toml"),
+                offline,
+            )?);
+        }
+    }
+    if let Some(error) = stale {
+        return Err(Error::new(
+            error.code,
+            format!("{summary}{}", error.message()),
+        ));
     }
     let report = graph::check(&edges);
     if report.fb05.is_empty() {
