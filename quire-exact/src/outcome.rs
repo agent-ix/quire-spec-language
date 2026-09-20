@@ -247,14 +247,34 @@ mod tests {
 
     use super::*;
 
-    /// TC-317: `Outcome::completed` returns the value for `Completed` and
-    /// `None` for every other variant.
+    /// TC-317 (H-7/H-8, strengthened): `Outcome::completed` returns the
+    /// value for `Completed` and `None` for every other variant --
+    /// `Undefined`, `Refused` and `Incomplete` are each exercised, not just
+    /// `Undefined` as before.
     #[trace("TC-317")]
     #[test]
     fn tc_317_completed_extracts_only_the_completed_variant() {
+        use crate::accounting::{ChargePoint, Incomplete, LimitKind};
+        use crate::integer::Integer;
+
         assert_eq!(Outcome::Completed(1).completed(), Some(1));
         assert_eq!(
             Outcome::<i32>::Undefined(Undefined::DivisionByZero).completed(),
+            None
+        );
+        assert_eq!(
+            Outcome::<i32>::Refused(Refusal::CheckedInvariant).completed(),
+            None
+        );
+        assert_eq!(
+            Outcome::<i32>::Incomplete(Incomplete {
+                limit_kind: LimitKind::IntegerBits,
+                limit: 0,
+                consumed: 0,
+                next_charge: Integer::one(),
+                charge_point: ChargePoint::IntegerArithmeticOperands,
+            })
+            .completed(),
             None
         );
     }

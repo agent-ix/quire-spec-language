@@ -79,18 +79,24 @@ mod tests {
         bytes
     }
 
-    /// TC-300: equal digests mint equal, interchangeable `NodeKey`s
-    /// (ADR-013 O-04 normalized identity), and unequal digests mint distinct
-    /// keys.
+    /// TC-300 (H-7/H-8, strengthened): equal digests mint interchangeable
+    /// `NodeKey`s (ADR-013 O-04 normalized identity) -- not just `==`, but
+    /// hashing equal (so either stands in for the other as a set/map key)
+    /// and ordering equal to zero. Unequal digests mint keys that order by
+    /// raw digest bytes, not merely compare unequal.
     #[trace("TC-300")]
     #[test]
-    fn tc_300_equal_digest_bytes_mint_equal_node_keys() {
+    fn tc_300_equal_digest_bytes_mint_interchangeable_node_keys() {
+        use std::collections::HashSet;
+
         let a = NodeKey::from_digest(digest(1));
         let b = NodeKey::from_digest(digest(1));
         let c = NodeKey::from_digest(digest(2));
         assert_eq!(a, b);
         assert_eq!(a.as_bytes(), b.as_bytes());
-        assert_ne!(a, c);
+        assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal);
+        assert_eq!(HashSet::from([a, b, c]).len(), 2);
+        assert!(a < c);
     }
 
     /// TC-301: `Display` renders exactly 64 lowercase hex digits, the wire

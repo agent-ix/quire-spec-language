@@ -147,13 +147,19 @@ mod tests {
         assert_ne!(a, c);
     }
 
-    /// TC-306: `Origin` accessors return the role and ordinal it was built
-    /// with.
+    /// TC-306 (H-7/H-8, strengthened): `Origin`'s derived `Ord` orders
+    /// first by role, then by ordinal within the same role -- the field
+    /// order the derive relies on, exercised rather than merely round-
+    /// tripped through the accessors.
     #[trace("TC-306")]
     #[test]
-    fn tc_306_origin_accessors_round_trip() {
-        let origin = Origin::new(Role::from("reference"), 3);
-        assert_eq!(origin.role().as_str(), "reference");
-        assert_eq!(origin.ordinal(), 3);
+    fn tc_306_origin_orders_by_role_then_ordinal() {
+        let declaration_0 = Origin::new(Role::from("declaration"), 0);
+        let declaration_1 = Origin::new(Role::from("declaration"), 1);
+        let reference_0 = Origin::new(Role::from("reference"), 0);
+        assert!(declaration_0 < declaration_1);
+        assert!(declaration_1 < reference_0);
+        assert_eq!(reference_0.role().as_str(), "reference");
+        assert_eq!(reference_0.ordinal(), 0);
     }
 }
