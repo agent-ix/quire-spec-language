@@ -39,7 +39,7 @@ reviewable compiler delivery under LC02. Preserve all broader assignment gates.
 - [x] Execute healthy, violating, refused and incomplete current/pre/post cases, operation capture/frame controls and fresh-budget retries through reconstructed CheckedPackage.
 - [x] Reconcile every matrix criterion, all five metrics and all eight integration steps against actual Rust evidence; shared case portions left by earlier tasks must be complete before this task closes.
 - [x] Run README's required local tests, selected private audit tests, formatting, strict Clippy, cached minimal build, strict rustdoc and documented CLI/audit commands. Record exact source revisions, commands and terminal results.
-- [x] Apply /home/peter/dev/agent-skills/code-review/SKILL.md and /home/peter/dev/agent-skills/rust-review/SKILL.md, including applicable Rust-style/implementation-gap guidance, and resolve findings.
+- [x] Apply agent-skills/code-review/SKILL.md and agent-skills/rust-review/SKILL.md, including applicable Rust-style/implementation-gap guidance, and resolve findings.
 - [x] Run QUOIN gap-analysis on this plan, actual trace attributes and full criterion mapping; retain the owner's declined optional semantic comparison.
 - [x] Update the private owning issue and PR with reviewed specification/implementation/evidence pins and accurate remaining work. A ready merge follows actual gates; no hosted run is dispatched.
 - [x] Share concrete native payload/canonical fixtures for independent B/C FS05 qualification and retain actual lowering/backend/Quire work in its existing tickets. Posting a handoff does not prove acceptance.
@@ -48,8 +48,9 @@ reviewable compiler delivery under LC02. Preserve all broader assignment gates.
 
 Actual reconstructed native workflow observations, full local command evidence,
 validated code/Rust and gap reviews, reconciled plan/matrix statuses and a
-reviewable private PR plus ownership handoff. Merge readiness is separate from
-closing full LC02/FS05 or the original assignment.
+reviewable private PR plus ownership handoff. Merge readiness is a distinct
+milestone from LC02/FS05 or the original assignment, which remain tracked in
+their own tickets.
 
 ## Notes
 
@@ -61,4 +62,5 @@ No additional agents, hosted dispatch, public publication or overlapping
 B/C/TL/Filament edits. Review meaning changes through specify/spec-review again.
 
 Qualification: implementation eb97a87; PR code/Rust review SR-112 and final
-Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance remains open.
+Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance is tracked
+in those separate, own-owned tickets.

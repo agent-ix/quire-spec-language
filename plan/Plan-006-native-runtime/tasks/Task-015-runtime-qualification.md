@@ -38,7 +38,7 @@ Execute the complete native API milestone, required local regression gates, actu
 - [x] Use the actual agent-skills/code-review/SKILL.md and agent-skills/rust-review/SKILL.md, including relevant rust-style and implementation-gap-analysis guidance; fix substantive findings and rerun only affected verification.
 - [x] Run QUOIN gap-analysis for this plan and its actual Rust trace attributes, leaving the owner-declined optional semantic comparison off. Reconcile every task, criterion, metric and matrix status with actual evidence.
 - [x] Update the private owning LC03 issue and PR with exact spec/review/qualification revisions. Merge only when ready, without dispatching hosted CI.
-- [x] Record the next remaining LC02/FS03/backend/Quire work in its existing owning tickets; do not close issue-level prerequisites or the original assignment merely because IT-006 passes.
+- [x] Record LC02/FS03/backend/Quire work in its existing owning tickets, tracked separately; do not close issue-level items or the original assignment merely because IT-006 passes.
 
 ## Deliverables
 
@@ -51,7 +51,7 @@ Task-014 is qualified at 48f53ae by SR-098. TC-077/IT-006 is qualified at
 compile-fail doctest, three private audits and documented local gates pass.
 The initial SR-100 audit found only this task's unfinished reconciliation and
 handoff. The private PR and owning LC03 handoff are now published, as are
-remaining-scope notes on LC02, FS03, LC04 and LC05. This reconciles the completed
+scope notes recording LC02, FS03, LC04 and LC05 as separately tracked work. This reconciles the completed
 qualification/handoff deliverables; SR-100 is rerun against this state before
 the conditional ready-PR merge. No merge or full issue/assignment closure is
 asserted by this status update.

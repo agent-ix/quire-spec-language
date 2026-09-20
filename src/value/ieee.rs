@@ -25,9 +25,9 @@ use super::definition::{
     CatalogRole, DefinitionLock, DefinitionReference, PackageCause, PackageRefusal,
     PackageRefusalCode,
 };
-use super::integer::{Integer, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
+use quire_exact::{Integer, IntegerInterval};
 
 /// The IEEE profile definition identity.
 pub const IEEE_DEFINITION: &str = "quire.value.ieee754-2019-default/v1";

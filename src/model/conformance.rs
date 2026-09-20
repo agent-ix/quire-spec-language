@@ -87,9 +87,10 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::redefinition_reaches;
 use crate::value::{
-    established_field_fact, Connective, Established, Integer, IntegerInterval, Location, Node,
-    NodeKind, OrderedKind, OrderingOperator, Origin, ProvedInterval, Value, ValueType,
+    established_field_fact, Connective, Established, Location, Node, NodeKind, OrderedKind,
+    OrderingOperator, Origin, ProvedInterval, Value, ValueType,
 };
+use quire_exact::{Integer, IntegerInterval};
 
 /// Bounds the proper-descendant walk `type_conforms` performs: an explicit
 /// task stack over caller-supplied generalization records, never native
