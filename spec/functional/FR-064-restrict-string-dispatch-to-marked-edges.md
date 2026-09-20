@@ -160,16 +160,35 @@ tags as they exist in the delivered code today:**
 - FR-064-AC-1: backed (`TC-162`, `xtask/src/string_edge.rs`).
 - FR-064-AC-2: unbacked (untagged). The scanning half is real (any occurrence
   the allow-list doesn't cover is reported); the specific
-  add-then-remove-reappears sequence has no dedicated tagged test.
+  add-then-remove-reappears sequence has no dedicated tagged test. Owner:
+  QSL-150.
 - FR-064-AC-3: backed (`TC-162`, `xtask/src/string_edge.rs`).
 - FR-064-AC-4: unbacked (untagged). No test asserts the CLI's process exit
   code directly (the underlying `Result`/`Err` shape that drives it is
-  exercised indirectly through other tagged tests).
-- FR-064-AC-5: backed (`TC-162`, `xtask/src/string_edge.rs` -- rebuilt this
-  review round, finding F11, to actually reach the rejection path with a
-  constructed non-empty allow-list; see that file's own doc).
+  exercised indirectly through other tagged tests). Owner: QSL-150.
+- FR-064-AC-5: unbacked (untagged; PR #262 review, coordinator round 3,
+  finding 7; previously misrecorded as backed). Its branch-gating/
+  non-branching distinction half is exercised by two real tests in
+  `xtask/src/string_edge.rs` (`branch_gating_is_distinguished_from_a_non_
+  branching_sink`, `allow_list_entry_at_a_branch_gating_occurrence_is_
+  rejected`), now untagged rather than left implying the whole criterion.
+  Its "each of the five ADR-010 §4.3 production dispatch sites" half is
+  not: `none_of_the_five_adr010_production_sites_can_be_allow_listed`
+  builds five *synthetic* fixtures shaped like the five sites, but
+  `branch_gating_entries` filters only on `(file, line, branch_gating)`,
+  never on the literal string compared, so the test passes identically for
+  five arbitrary branch-gating strings -- it never actually attempts to
+  allow-list the five real, named sites at their real file:line. One of
+  those five (the `"allocation"` relationship-category site, `QSL:model/
+  systems.rs:269` per ADR-010 §4.3's own evidence column, which that same
+  column already flags "PR-sensitive") is confirmed gone from
+  `src/model/systems.rs` on this branch, so a real test against the
+  current tree could not reject all five as currently named regardless.
+  Owner: QSL-150.
 - FR-064-AC-6: unbacked, as this section's own paragraph above already
-  states at length (no production gate wiring in #214; QSL-145).
+  states at length (no production gate wiring in #214). Owner: QSL-145
+  (the first half -- no production gate wiring); QSL-155, a spec defect,
+  owns the second half.
 
-Three of six ACs are backed (AC-1, AC-3, AC-5); three are unbacked
-(AC-2, AC-4, AC-6).
+Two of six ACs are backed (AC-1, AC-3); four are unbacked
+(AC-2, AC-4, AC-5, AC-6).
