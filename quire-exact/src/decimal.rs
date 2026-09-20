@@ -1038,6 +1038,18 @@ mod tests {
         .unwrap()
     }
 
+    /// TC-348 (M-7): every `RoundingMode` variant round-trips its source
+    /// spelling through `as_str`/`from_code`, and `ALL` names exactly the
+    /// six declared variants.
+    #[trace("TC-348")]
+    #[test]
+    fn tc_348_rounding_mode_spellings_round_trip() {
+        assert_eq!(RoundingMode::ALL.len(), 6);
+        for mode in RoundingMode::ALL {
+            assert_eq!(RoundingMode::from_code(mode.as_str()), Some(mode));
+        }
+    }
+
     /// TC-339: `1.00 + 2.00` completes to the exact `3.00` coefficient at
     /// the target's declared scale.
     #[trace("TC-339")]
