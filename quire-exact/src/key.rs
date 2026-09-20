@@ -7,6 +7,20 @@
 //! ordering operator. Comparison is iterative, so value depth never reaches
 //! the host stack.
 //!
+//! **M-2: `Value::Float` has no key, matching its exclusion from `=`.**
+//! [`crate::equality`]'s own leaf match excludes `Value::Float` the same
+//! way this module's `leaf` function does -- both fall through to their
+//! catch-all refusal arm. This is not an oversight in either module: IEEE
+//! equality (`NaN != NaN`, `-0.0 == 0.0`) is not the total-order `=` this
+//! key and the generic equality plan give every other leaf type, so IEEE
+//! comparison stays [`crate::compare_ieee`]'s own `IeeeComparison`
+//! (`NumericEqual`/`TotalOrder`/`BitIdentical`), never this key or `=`.
+//! `crate::collection`'s set/bag coalescing groups occurrences by
+//! `equality.rs`'s charged member comparison, not this key, so a Float set
+//! or bag of one element still forms; the same `Refusal::CheckedInvariant`
+//! that would stop this key on a Float pair also stops the first
+//! two-element membership comparison there.
+//!
 //! One adaptation against the original: `Value::Enum` is a bare
 //! [`crate::identity::VariantId`] digest here (ADR-013 T-6), not a
 //! declaration-aware `EnumValue` with a position and case. Two enum values
@@ -155,5 +169,17 @@ mod tests {
         let boolean = Value::Boolean(true);
         let integer = Value::Integer(Integer::one());
         assert_eq!(compare_keys(&boolean, &integer), None);
+    }
+
+    /// TC-349 (M-2): a same-type `Value::Float` pair has no key, matching
+    /// its exclusion from `=` in `crate::equality`'s leaf match.
+    #[trace("TC-349")]
+    #[test]
+    fn tc_349_float_pair_has_no_key() {
+        use crate::ieee::IeeeValue;
+
+        let left = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
+        let right = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
+        assert_eq!(compare_keys(&left, &right), None);
     }
 }
