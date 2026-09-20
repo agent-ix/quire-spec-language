@@ -61,10 +61,6 @@
           "sha256": "sha256:bfbfdfdccf9deda602b0f7acf48f4843b53a12518a19031250cbd1d8cb6548d9"
         },
         {
-          "path": "proposals/quire-v1/definitions/native-diagnostics.md",
-          "sha256": "sha256:e894159c2b241b1cde4c75f0de031a515939a65800d53fd7209bd6369ca3b391"
-        },
-        {
           "path": "proposals/quire-v1/definitions/value-accounting.md",
           "sha256": "sha256:1d8b15f8b0cb20bfb04841101e6dd09735cca06fe80e38652f48555a0c6871fa"
         },
@@ -239,6 +235,18 @@
         {
           "path": "spec/test-cases/TC-227-reusable-semantic-library-resolution.md",
           "sha256": "sha256:bf1d59228323f6325afa0fc8b35791a12db9263c67585f9bd590d62947425674"
+        }
+      ]
+    },
+    {
+      "kind": "qspec",
+      "repo": "https://github.com/agent-ix/quire-specification",
+      "commit": "e8a81b569d0efe8d0cf72f3cecb2d21889cc258a",
+      "dest_prefix": "quire-specification",
+      "files": [
+        {
+          "path": "proposals/quire-v1/definitions/native-diagnostics.md",
+          "sha256": "sha256:9a55506569ff8f1aa4c97d04fe8c8d14aa07ecb40452f5ea9409f38da3a41365"
         }
       ]
     },
