@@ -71,16 +71,36 @@ impl FromStr for ByteDigest {
 // ---------------------------------------------------------------------------
 // ADR-013 O-18: digest records.
 //
-// `state::input::CanonicalDigest` (an untyped `{algorithm, domain, value}`
-// string triple) and `crate::model::key`'s bare `"sha256-jcs"` string are
-// named by O-18 as folding into `DigestRecord` too. That migration is not
-// done here: both are established call sites outside this slice's six
-// objects (O-01, O-02, O-03, O-05, O-06, O-18), and `ByteDigest`'s own
-// `sha256:`-prefixed wire form is read/written by other FR-001/004 call
-// sites this slice does not touch. Folding them in is a separate,
-// wider-blast-radius change (tracked the way QSL-131 tracks the
-// still-duplicated value kernel), not silently done or silently dropped
-// here.
+// One real caller landed in this slice: `value::member::Member::to_wire`'s
+// `declaration_json` mints a `NodeKey`'s digest through
+// `DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, ...)` (#260
+// review item 5), in place of the bare `NODE_KEY_DOMAIN` constant plus raw
+// hex it used before.
+//
+// Three other established call sites were checked as fold candidates and
+// rejected, not merely deferred -- none of them actually has the
+// `{domain, digest}` pair shape this type wraps, so folding them in would
+// not be "use `DigestRecord`" but "change the wire shape":
+//   - `state::input::CanonicalDigest` is `{algorithm, domain, value}`: an
+//     explicit, caller-chosen `algorithm` field alongside domain and value.
+//     `DigestRecord` fixes the algorithm at SHA-256 (this type's own doc
+//     comment: "not a stored field... there is no second algorithm value
+//     this type could ever hold"), so it cannot represent this shape without
+//     either dropping the field or asserting it is always `"sha256"`.
+//   - `crate::model::key`'s bare `"sha256-jcs"` string is one `digest_domain`
+//     member of a three-field preimage object (`{package, node,
+//     digest_domain}`) with no accompanying digest-bytes field in that same
+//     object -- the actual digest (`EffectiveId`) is computed by hashing the
+//     whole object elsewhere, so there is no `{domain, digest}` pair at this
+//     call site to fold at all.
+//   - `ByteDigest`'s `sha256:`-prefixed wire form is one string that
+//     concatenates an algorithm prefix and hex together, not a domain field
+//     and a digest field as two separate wire members; it is also read and
+//     written by other FR-001/004 call sites this slice does not touch.
+//
+// None of the three is tracked as debt here for that reason -- there is
+// nothing to fold until one of them changes shape, which is a spec-level
+// decision, not a code migration this slice deferred.
 // ---------------------------------------------------------------------------
 
 /// The closed FR-201 canonical-identity-domain vocabulary, as amended by
