@@ -24,13 +24,13 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::integer::Integer;
 use super::node::{
     check_terms, is_qualified_name, node_key_of, refuse, CanonicalNodeId, CanonicalOwner,
     CanonicalRational, InvalidSemanticGraph, NodeIdDocument, NodeKey, NodeOwner, OwnerSelection,
     RationalDocument, SemanticGraphCause,
 };
 use super::rational::Rational;
+use quire_exact::Integer;
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";

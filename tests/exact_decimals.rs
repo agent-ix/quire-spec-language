@@ -8,10 +8,11 @@
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::Pow;
+use quire_exact::Integer;
 use quire_spec_language::model::population::AdmissionChargePoint;
 use quire_spec_language::value::{
     evaluate_decimal, order_numbers, ChargePoint, Decimal, DecimalOperation, DecimalResult,
-    DecimalType, IllTyped, IllTypedCause, Incomplete, InjectedDenial, Integer, LimitKind, Meter,
+    DecimalType, IllTyped, IllTypedCause, Incomplete, InjectedDenial, LimitKind, Meter,
     OrderedOperands, OrderingOperator, Outcome, Refusal, RoundingMode, ScalarLimits, Undefined,
 };
 
