@@ -674,11 +674,27 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::*;
+    use crate::accounting::ScalarLimits;
 
     fn digest(byte: u8) -> [u8; 32] {
         let mut bytes = [0_u8; 32];
         bytes[31] = byte;
         bytes
+    }
+
+    fn generous_meter() -> Meter {
+        Meter::new(ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units: u64::MAX,
+            result_units: u64::MAX,
+        })
     }
 
     /// TC-307: `ValueType::Boolean` admits only `Value::Boolean`, refusing
@@ -756,5 +772,84 @@ mod tests {
                 supplied: 1,
             }
         );
+    }
+
+    /// TC-354 (H-7/H-8): `fill_slots` fills a present field and, for an
+    /// omitted optional field, `Absent`, both in declaration order
+    /// regardless of supplied order (`fill_slots` was previously only
+    /// exercised indirectly, through `record`'s missing-required-field
+    /// refusal path).
+    #[trace("TC-354")]
+    #[test]
+    fn tc_354_fill_slots_fills_present_and_absent_in_declaration_order() {
+        let count = MemberId::from_digest(digest(1));
+        let label = MemberId::from_digest(digest(2));
+        let shape = vec![
+            FieldDeclaration::new(count, "count", ValueType::Integer, Presence::Required),
+            FieldDeclaration::new(
+                label,
+                "label",
+                ValueType::Text(
+                    TextType::new(0, 10, crate::text::TextProfile::UnicodeScalars).unwrap(),
+                ),
+                Presence::Optional,
+            ),
+        ];
+        let slots = fill_slots(
+            &shape,
+            vec![(count, FieldValue::Present(Value::Integer(Integer::one())))],
+        )
+        .unwrap();
+        assert!(matches!(slots[0], FieldValue::Present(Value::Integer(_))));
+        assert!(matches!(slots[1], FieldValue::Absent));
+    }
+
+    /// TC-355 (H-7/H-8): `evaluate_record` runs a deferred field expression
+    /// and completes with `composite.result-retain` charged (`evaluate_record`
+    /// had no test before this; `record`/`tuple`'s tests exercise only the
+    /// non-deferred constructors).
+    #[trace("TC-355")]
+    #[test]
+    fn tc_355_evaluate_record_completes_from_a_deferred_field() {
+        let count = MemberId::from_digest(digest(1));
+        let shape = vec![FieldDeclaration::new(
+            count,
+            "count",
+            ValueType::Integer,
+            Presence::Required,
+        )];
+        let mut meter = generous_meter();
+        let fields: Vec<(MemberId, FieldExpression<'_>)> = vec![(
+            count,
+            FieldExpression::Evaluate(Box::new(|_meter| {
+                Outcome::Completed(Value::Integer(Integer::one()))
+            })),
+        )];
+        let outcome = evaluate_record(&shape, NodeKey::from_digest(digest(2)), fields, &mut meter)
+            .expect("declared fields match");
+        let value = outcome.completed().expect("charges available");
+        assert_eq!(value.occ(), Integer::one().add(&Integer::one()));
+    }
+
+    /// TC-356 (H-7/H-8): `evaluate_tuple` runs deferred positional
+    /// expressions in position order and completes (`evaluate_tuple` had no
+    /// test before this).
+    #[trace("TC-356")]
+    #[test]
+    fn tc_356_evaluate_tuple_completes_from_deferred_positions() {
+        let shape = vec![ValueType::Integer];
+        let mut meter = generous_meter();
+        let positions: Vec<Deferred<'_>> = vec![Box::new(|_meter| {
+            Outcome::Completed(Value::Integer(Integer::one()))
+        })];
+        let outcome = evaluate_tuple(
+            &shape,
+            NodeKey::from_digest(digest(1)),
+            positions,
+            &mut meter,
+        )
+        .expect("declared arity matches");
+        let value = outcome.completed().expect("charges available");
+        assert_eq!(value.occ(), Integer::one().add(&Integer::one()));
     }
 }
