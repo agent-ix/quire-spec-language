@@ -2,10 +2,9 @@
 use std::collections::BTreeSet;
 
 use crate::complete::{
-    self, lower_source_graph, resolve_source_package, CapabilityId, CompleteCause, CompleteCode,
-    Definition, DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet,
-    ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
-    SourceDigest,
+    self, resolve_source_package, CapabilityId, CompleteCause, CompleteCode, Definition,
+    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet, ModelArtifact,
+    ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority, SourceDigest,
 };
 use crate::{Limits, SourceIdentity};
 use ix_trace_rs::trace;
@@ -177,24 +176,19 @@ fn exact_multi_profile_graph_closes_and_preserves_source_authority() {
     assert_eq!(package.definitions().len(), definitions.len());
     assert_eq!(package.models().len(), 1);
     assert_eq!(package.bundle().capabilities().len(), 176);
-    let lowered = lower_source_graph(&package);
-    assert_eq!(lowered.authority().identity, *parsed.source().identity());
-    assert_eq!(lowered.authority().path, parsed.source().path());
+    // Source authority is `ResolvedSourcePackage`'s own accessor (FR-131,
+    // FR-339): SEAM-5's now-deleted structural lowering (ADR-011 §7.3 M-3a;
+    // FR-067-AC-5, AC-6) only ever cloned it from here, so asserting on
+    // `package.authority()` directly keeps this coverage unchanged.
+    assert_eq!(package.authority().identity, *parsed.source().identity());
+    assert_eq!(package.authority().path, parsed.source().path());
     assert_eq!(
-        lowered.authority().digest.digest(),
+        package.authority().digest.digest(),
         parsed.source().digest()
     );
     assert_eq!(
         SourceDigest::of(b"abc").digest().to_string(),
         "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
-    for declaration in lowered.declarations() {
-        assert!(parsed.source().slice(declaration.span).is_some());
-        assert_ne!(declaration.production, complete::Production::Declaration);
-    }
-    assert_eq!(
-        lowered.declarations()[0].production,
-        complete::Production::RecordDeclaration
     );
 }
 

@@ -104,13 +104,20 @@ pub use equality::{
     EqualityPlan, EqualitySchedule,
 };
 pub use expression::{
-    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal,
-    CheckedExpression, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    ClauseKind, CollectionLoss, CollectionProperty, DeclaredClauseKind, DepthAboveMaximum,
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
+    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
     DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
-    Evaluation, Expression, FieldInitializer, FunctionDeclaration, InputRefusal,
-    InvalidDispatchDeclaration, LocatedLoss, Location, MeasureObligation, Obligation, Origin,
-    PackageDeclarations, ProvedInterval, ValueLoss, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+    Evaluation, InputRefusal, InvalidDispatchDeclaration, LocatedLoss, Location, MeasureObligation,
+    Obligation, Origin, PackageDeclarations, ProvedInterval, ValueLoss, WrongSnapshotCause,
+    MAX_CHECKING_DEPTH,
+};
+// The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
+// moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
+// is their one defining module (FR-067-AC-9); `value` keeps naming them at
+// this path so its existing downstream consumers are unaffected by the move.
+pub use crate::forms::{
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
+    FieldInitializer, FunctionDeclaration,
 };
 // `crate::model::conformance`'s FR-151 refinement obligation reuses this
 // crate's own FR-146 fact-derivation primitive (see

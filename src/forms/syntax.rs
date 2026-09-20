@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The Complete-V1 value-expression and declaration forms the checker admits,
+//! The S2 parsed value-expression and declaration forms (ADR-011 §6.2
+//! module map: `value::expression::syntax` moves to layer-2 `forms`, M-3a),
 //! as a typed tree over source names.
 //!
 //! Names are unresolved source spellings: a parameter, `let` or binder name,
@@ -7,10 +8,8 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`Expression::children`] lists the children.
 
-use super::super::collection::CollectionKind;
-use super::super::composite::ValueType;
-use super::super::integer::Integer;
 use crate::model::population::AbsenceMode;
+use crate::value::{CollectionKind, Integer, ValueType};
 
 /// A binary operator of the expression grammar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -101,7 +100,7 @@ pub enum ClauseKind {
 /// entry ever has, so the type itself rules the case out instead of a
 /// runtime check on an otherwise-valid `ClauseKind` value.
 ///
-/// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
+/// [`CheckedPackage::check_postcondition_expression`]: crate::value::expression::CheckedPackage::check_postcondition_expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclaredClauseKind {
     /// A model invariant clause.
@@ -457,7 +456,7 @@ impl FunctionDeclaration {
     /// which no package function has — so `DeclaredClauseKind` leaves that
     /// case unrepresentable rather than accepting it and refusing later.
     ///
-    /// [`CheckedPackage::check_postcondition_expression`]: super::CheckedPackage::check_postcondition_expression
+    /// [`CheckedPackage::check_postcondition_expression`]: crate::value::expression::CheckedPackage::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
         parameters: Vec<(String, ValueType)>,
