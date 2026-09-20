@@ -109,6 +109,19 @@ mod value;
 // (`quantity::compare_quantity`, `decimal::DecimalLoss::exact`/
 // `exact_denominator`, `equality::plan_equality`) stayed `pub` -- see their
 // own doc comments for why -- and are exported below as before.
+//
+// QSL-146 moves the ledger the other direction: 17 `Integer`/
+// `IntegerInterval` inherent methods (`integer.rs`'s own module doc names
+// them) go from `pub(crate)` to `pub`, each verified against a real
+// cross-crate call site in `quire_spec_language` (revert each in isolation,
+// recompile `--workspace --all-targets --all-features`, confirm a genuine
+// `E0624` at that method's own real callers -- 151 across the 17, not the
+// 137 a first, non-isolated pass under-counted by masking `shifted_left`'s
+// one caller behind a cascading error on the same expression). `Integer`
+// and `IntegerInterval` were already exported below (this facade only
+// gates the type; an inherent method's own `pub`/`pub(crate)` is not listed
+// here separately) -- what changed is that their methods are now reachable
+// through that existing export, not merely from inside this crate.
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
 pub use collection::{
     construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
