@@ -25,7 +25,7 @@ use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
+use quire_spec_language::model::key::{DeclarationKey, EffectiveId, EffectiveIdExt};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };

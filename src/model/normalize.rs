@@ -214,8 +214,8 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
 };
 use crate::model::key::{
-    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, EffectiveIdExt,
+    Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use crate::value::length_amount;
 
@@ -2831,7 +2831,7 @@ mod tests {
     /// by an integration test simulating an external caller.
     fn entry(byte: u8) -> ViewEntry {
         ViewEntry {
-            effective_id: EffectiveId::from_digest_bytes([byte; 32]),
+            effective_id: EffectiveId::from_digest([byte; 32]),
             preimage: EffectiveDeclarationPreimage {
                 owner_effective_type: None,
                 original: DeclarationKey::fixture("model.A"),
