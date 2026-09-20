@@ -17,6 +17,16 @@
 //! occurrence roles ("declaration", "reference", "default", ...) is QSL's
 //! preimage schema's to define and extend, and the kernel takes no position
 //! on which roles exist -- it only carries the role QSL attached.
+//!
+//! **M-3: `Role`'s `String` has no length bound.** This is deliberate, not
+//! an oversight left alongside the other `pub(crate)`-or-metered H-5
+//! findings: a role's spelling is a small, fixed vocabulary word that
+//! QSL's own preimage schema names at check time (`node-identity-
+//! preimage.schema.json`), not a value materialized from caller-supplied,
+//! runtime-metered evaluation input the way a `Decimal`'s scale or a
+//! `Text`'s bytes are. Nothing on any evaluation path constructs a `Role`
+//! from adversarial input, so it takes no charge and needs no bound the way
+//! [`crate::Meter`]-charged materializations do.
 
 use std::fmt;
 
