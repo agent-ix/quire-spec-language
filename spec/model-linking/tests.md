@@ -139,7 +139,7 @@ per-group counts before moving this row to Passed.
 | FR-054 | FR-054-AC-2 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-3 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-4 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
-| FR-056 | FR-056-AC-1 | TC-145 | ✅ Passed locally (`tests/model_intake.rs`, `src/model/intake.rs`) |
+| FR-056 | FR-056-AC-1 | TC-145 | 🚧 Planned; #131 -- one declaration per IR node, ascending by key, is covered, but `DomainPackageRecord` records carry no meaning, artifact id or span yet |
 | FR-056 | FR-056-AC-2 | TC-145 | ✅ Passed locally (`tests/model_intake.rs`, `src/model/intake.rs`) |
 | FR-056 | FR-056-AC-3 | TC-146 | ✅ Passed locally (`src/model/intake.rs`) |
 | FR-056 | FR-056-AC-4 | TC-145 | ✅ Passed locally (`src/model/intake.rs`) |
