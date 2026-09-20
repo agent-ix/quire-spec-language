@@ -654,7 +654,7 @@ pub fn check_allocation(
             cause: ModelRefusalCause::UnknownRelationship {
                 relationship: relationship_key.clone(),
             },
-            detail: format!("{} is not a declared relationship", relationship_key.node),
+            detail: format!("{} is not a declared allocation", relationship_key.node),
         });
     };
     let target_kind = classification.actual_kind(&allocation.target_element);
