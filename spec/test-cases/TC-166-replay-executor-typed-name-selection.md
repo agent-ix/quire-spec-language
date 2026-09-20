@@ -16,8 +16,8 @@ Verify that the layer-6 `replay` facade's executor entry, reached through a
 family's widened `evaluate` hook, selects the function to call by a typed
 `QualifiedName` resolved against the recompiled package's declarations, that
 no bare `&str` overload exists, and that an unresolvable name refuses rather
-than falling back to a display-name string comparison. Scope: FR-062-AC-9,
-FR-062-AC-10, FR-065-AC-6.
+than falling back to a display-name string comparison. Scope: FR-062-AC-10,
+FR-065-AC-6.
 
 ## Test Procedure
 
