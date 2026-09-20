@@ -63,7 +63,10 @@ pub fn allow_list() -> Vec<AllowListEntry> {
 
 fn has_attr_named(attrs: &[syn::Attribute], name: &str) -> bool {
     attrs.iter().any(|attr| {
-        attr.path().segments.last().is_some_and(|segment| segment.ident == name)
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == name)
     })
 }
 
@@ -88,19 +91,33 @@ fn line_of<T: syn::spanned::Spanned>(node: &T) -> u32 {
 }
 
 fn is_string_lit(expr: &syn::Expr) -> bool {
-    matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(_), .. }))
+    matches!(
+        expr,
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(_),
+            ..
+        })
+    )
 }
 
 fn is_comparison_op(op: syn::BinOp) -> bool {
     matches!(
         op,
-        syn::BinOp::Eq(_) | syn::BinOp::Ne(_) | syn::BinOp::Lt(_) | syn::BinOp::Le(_) | syn::BinOp::Gt(_) | syn::BinOp::Ge(_)
+        syn::BinOp::Eq(_)
+            | syn::BinOp::Ne(_)
+            | syn::BinOp::Lt(_)
+            | syn::BinOp::Le(_)
+            | syn::BinOp::Gt(_)
+            | syn::BinOp::Ge(_)
     )
 }
 
 fn pattern_has_string_literal(pat: &syn::Pat) -> bool {
     match pat {
-        syn::Pat::Lit(syn::PatLit { lit: syn::Lit::Str(_), .. }) => true,
+        syn::Pat::Lit(syn::PatLit {
+            lit: syn::Lit::Str(_),
+            ..
+        }) => true,
         syn::Pat::Or(pat_or) => pat_or.cases.iter().any(pattern_has_string_literal),
         _ => false,
     }
@@ -237,7 +254,11 @@ fn source_files(root: &Path, workspace_root: &Path) -> Result<Vec<PathBuf>> {
                 }
                 pending.push(path);
             } else if path.extension().is_some_and(|extension| extension == "rs") {
-                files.push(path.strip_prefix(workspace_root).unwrap_or(&path).to_path_buf());
+                files.push(
+                    path.strip_prefix(workspace_root)
+                        .unwrap_or(&path)
+                        .to_path_buf(),
+                );
             }
         }
     }
@@ -273,9 +294,14 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
 }
 
 pub fn run(workspace_root: &Path) -> Result<String> {
-    let allow_list: BTreeSet<(String, u32)> =
-        allow_list().into_iter().map(|entry| (entry.file, entry.line)).collect();
-    if let Some(entry) = allow_list_branch_gating_check(workspace_root)?.into_iter().next() {
+    let allow_list: BTreeSet<(String, u32)> = allow_list()
+        .into_iter()
+        .map(|entry| (entry.file, entry.line))
+        .collect();
+    if let Some(entry) = allow_list_branch_gating_check(workspace_root)?
+        .into_iter()
+        .next()
+    {
         return Err(Error::StringEdgeAllowListGatesABranch {
             file: entry.file,
             line: entry.line,
@@ -295,15 +321,25 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         }
     }
     if reported.is_empty() {
-        Ok("string-edge: no unmarked, unlisted string comparison or string match found\n".to_owned())
+        Ok(
+            "string-edge: no unmarked, unlisted string comparison or string match found\n"
+                .to_owned(),
+        )
     } else {
-        let mut summary = format!("string-edge: {} unmarked, unlisted occurrence(s):\n", reported.len());
+        let mut summary = format!(
+            "string-edge: {} unmarked, unlisted occurrence(s):\n",
+            reported.len()
+        );
         for occurrence in &reported {
             summary.push_str(&format!(
                 "  {}:{}{}\n",
                 occurrence.file,
                 occurrence.line,
-                if occurrence.branch_gating { " (branch-gating)" } else { "" }
+                if occurrence.branch_gating {
+                    " (branch-gating)"
+                } else {
+                    ""
+                }
             ));
         }
         Err(Error::StringEdgeFound { summary })
@@ -326,9 +362,11 @@ fn allow_list_branch_gating_check(workspace_root: &Path) -> Result<Vec<AllowList
     let rejected: Vec<AllowListEntry> = allow_list()
         .into_iter()
         .filter(|entry| {
-            all_occurrences
-                .iter()
-                .any(|occurrence| occurrence.file == entry.file && occurrence.line == entry.line && occurrence.branch_gating)
+            all_occurrences.iter().any(|occurrence| {
+                occurrence.file == entry.file
+                    && occurrence.line == entry.line
+                    && occurrence.branch_gating
+            })
         })
         .collect();
     Ok(rejected)
@@ -398,8 +436,12 @@ mod tests {
             "#,
         );
         assert_eq!(occurrences.len(), 2);
-        assert!(occurrences.iter().any(|occurrence| occurrence.branch_gating));
-        assert!(occurrences.iter().any(|occurrence| !occurrence.branch_gating));
+        assert!(occurrences
+            .iter()
+            .any(|occurrence| occurrence.branch_gating));
+        assert!(occurrences
+            .iter()
+            .any(|occurrence| !occurrence.branch_gating));
     }
 
     /// FR-064-AC-1: a string `match` is reported by its literal-pattern
