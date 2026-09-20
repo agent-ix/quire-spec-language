@@ -7,6 +7,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-067
+    type: verifies
 ---
 # TC-161: The seam probe demonstrates exhaustiveness at every S1-S4 seam
 
@@ -21,8 +23,12 @@ that the full gate fails when the tool does, that the checked-in list covers
 every named category, that a wildcard-arm escape or a `#[non_exhaustive]`
 enum is caught by the lint gate rather than silently passing the probe, and
 that a family `Cause` enum's `catalog_code()` mapping has no fallback arm as
-demonstrated by this same probe mechanism, not by source inspection. Scope:
-FR-063-AC-1 through FR-063-AC-7, FR-062-AC-8.
+demonstrated by this same probe mechanism, not by source inspection. Step 1's
+"parser entry table and check seam" location is also FR-067's S2 `forms`
+dispatch table and parsed-form enum (FR-067-AC-4): the same probe run and the
+same checked-in-list mismatch behaviour (steps 2 through 4) demonstrate that
+seam's exhaustiveness, so FR-067-AC-4 is not re-verified by a separate test.
+Scope: FR-063-AC-1 through FR-063-AC-7, FR-062-AC-8, FR-067-AC-4.
 
 ## Test Procedure
 
