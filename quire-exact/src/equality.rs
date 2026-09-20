@@ -61,6 +61,13 @@ impl EqualityPlan {
 /// `pub` and documented: a caller that does not want unbounded work must
 /// bound its own operand size before calling this, the same way any
 /// pre-metering admission check must.
+///
+/// **Round 2 correction:** "size the cost before spending the budget"
+/// overstates what this buys. The walk here costs exactly what
+/// [`planned_equality`]'s does over the same pair -- it is not a cheaper
+/// estimate. Calling this first does not let a caller *avoid* paying that
+/// cost; it lets them pay it once unmetered to decide whether to pay it
+/// again metered.
 pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusal> {
     plan_pairs(left, right).map(|plan| EqualityPlan {
         pair_events: plan.pairs,

@@ -312,6 +312,16 @@ impl DecimalLoss {
     /// reasoning `identity.rs`'s module doc gives for not inventing digest
     /// domains). Left `pub` and documented, tracked for a real fix once a
     /// consumer exists to say which of pub(crate)/metering it actually needs.
+    ///
+    /// **Round 2 characterization:** the meter already mitigates this in
+    /// practice. `evaluate_decimal` charges `decimal.scale-expansion` and
+    /// `decimal.arithmetic`'s `decimal_digits` amount on the same scale
+    /// expansion that produces a `DecimalLoss` in the first place, so any
+    /// realistic meter refuses the operation long before a loss with a
+    /// dangerous `max_scale` could exist -- this accessor is reachable with
+    /// an actually-large denominator only under a meter with every counter
+    /// at `u64::MAX`, under which nothing else in this crate is bounded
+    /// either. No new charge point is warranted for this alone.
     pub fn exact_denominator(&self) -> Integer {
         let fives = Integer::from(5_i64).pow(&Integer::from(self.exact.fives));
         self.exact
