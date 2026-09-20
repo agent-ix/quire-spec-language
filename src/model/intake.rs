@@ -38,6 +38,7 @@ use std::path::{Path, PathBuf};
 
 use agent_ix_extraction_frontend::lift::{lift, LiftOutcome, LiftRequest};
 use agent_ix_extraction_frontend::{Diagnostic, Refusal};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -914,15 +915,20 @@ fn read_endpoint(
     // `agent-ix-semantic-ir`'s own `expect_enum` guarantees `direction`,
     // when present, is one of `in`/`out`/`inout` before this reader sees
     // the document; presence itself is not FCD-guaranteed, so absent stays
-    // `None` here.
-    let direction = ctx.opt_str_field("direction").map(|value| match value {
-        "in" => PortDirection::In,
-        "out" => PortDirection::Out,
-        "inout" => PortDirection::InOut,
-        other => panic!(
-            "agent-ix-semantic-ir guarantees direction is in/out/inout when present, got {other:?}"
-        ),
-    });
+    // `None` here. An unrecognized value still refuses rather than aborting
+    // the process, so a future FCD pin widening this enum degrades to a
+    // refusal, not a crash.
+    let direction = match ctx.opt_str_field("direction") {
+        Some("in") => Some(PortDirection::In),
+        Some("out") => Some(PortDirection::Out),
+        Some("inout") => Some(PortDirection::InOut),
+        Some(other) => {
+            return Err(ctx.malformed(format!(
+                "direction: {other:?} is not a direction this reader recognizes"
+            )))
+        }
+        None => None,
+    };
     Ok(EndpointRecord {
         key: declaration_key(package, node),
         owning_component: declaration_key(package, owner),
@@ -957,14 +963,19 @@ fn read_connection(
     let target_multiplicity = ctx.multiplicity_of(target_end, "targetEnd.multiplicity")?;
     // `agent-ix-semantic-ir`'s own `expect_enum` guarantees `flowDirection`
     // is one of `source-to-target`/`target-to-source`/`bidirectional` when
-    // present, and `str_field` above already refused its absence.
+    // present, and `str_field` above already refused its absence. An
+    // unrecognized value still refuses rather than aborting the process, so
+    // a future FCD pin widening this enum degrades to a refusal, not a
+    // crash.
     let direction = match ctx.str_field("flowDirection")? {
         "source-to-target" => RelationshipDirection::SourceToTarget,
         "target-to-source" => RelationshipDirection::TargetToSource,
         "bidirectional" => RelationshipDirection::Bidirectional,
-        other => panic!(
-            "agent-ix-semantic-ir guarantees flowDirection is a known direction, got {other:?}"
-        ),
+        other => {
+            return Err(ctx.malformed(format!(
+                "flowDirection: {other:?} is not a direction this reader recognizes"
+            )))
+        }
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
@@ -1142,11 +1153,17 @@ fn read_population(
         )));
     }
     // `POPULATION_MEMBERS` requires `extent` present, and `expect_enum`
-    // guarantees it is `closed` or `open` when present.
+    // guarantees it is `closed` or `open` when present. An unrecognized
+    // value still refuses rather than aborting the process, so a future FCD
+    // pin widening this enum degrades to a refusal, not a crash.
     let extent = match ctx.str_field("extent")? {
         "closed" => Extent::Closed,
         "open" => Extent::Open,
-        other => panic!("agent-ix-semantic-ir guarantees extent is closed/open, got {other:?}"),
+        other => {
+            return Err(ctx.malformed(format!(
+                "extent: {other:?} is not closed/open, the only extents this reader recognizes"
+            )))
+        }
     };
     Ok(PopulationRecord {
         key: declaration_key(package, node),
@@ -1297,11 +1314,23 @@ pub fn read_records(
     }
     // `agent-ix-semantic-ir`'s own independent parser (called above by
     // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
-    // and parse as JSON, so a second, divergent parse failure here would be
-    // an internal bug, not a real document defect -- trusted rather than
-    // refused a second time.
-    let parsed: Value = serde_json::from_slice(document)
-        .expect("validate_with_semantic_ir already confirmed these bytes parse as JSON");
+    // and parse as JSON *and* fit within its own `json::MAX_DEPTH` (200), so
+    // a second, divergent parse failure here would be an internal bug, not
+    // a real document defect. `serde_json::from_slice`'s own default
+    // recursion limit is 128, lower than that -- a document at depth
+    // 129-200 is real, validator-accepted input, and this crate's own
+    // idiom for a re-parse whose depth is already bounded by a prior pass
+    // is `disable_recursion_limit()` (`src/package/intake.rs`,
+    // `src/protocol_artifact/decode.rs`), not a fixed limit that can
+    // disagree with the bound that already ran.
+    let mut decoder = serde_json::Deserializer::from_slice(document);
+    decoder.disable_recursion_limit();
+    let parsed: Value = Value::deserialize(&mut decoder)
+        .and_then(|value| decoder.end().map(|()| value))
+        .expect(
+            "validate_with_semantic_ir already confirmed these bytes parse as JSON within its \
+             own depth bound, and disable_recursion_limit() removes serde_json's own lower one",
+        );
     let meanings = match meaning_index(&parsed) {
         Ok(meanings) => meanings,
         Err(refusal) => return Err(vec![refusal]),
@@ -2711,6 +2740,96 @@ mod tests {
                 },
                 detail: "$.types[2]: sourceEnd.multiplicity: missing multiplicity".to_owned(),
             }]
+        );
+    }
+
+    /// H3 (PR #200 review): `agent-ix-semantic-ir`'s own `expect_enum`
+    /// restricts a real port's `direction` to `in`/`out`/`inout` before this
+    /// reader ever sees a document, so this exact branch is unreachable
+    /// through `read_records` today -- exercised here by calling
+    /// `read_endpoint` directly, bypassing that schema gate, the same way
+    /// `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836` calls
+    /// `read_value_type_ref` directly. Before this test, an unrecognized
+    /// value here panicked (`agent-ix-semantic-ir guarantees direction is
+    /// in/out/inout when present, got {other:?}`) rather than refusing, so
+    /// a future FCD pin widening this enum would abort the process instead
+    /// of degrading to a refusal.
+    #[test]
+    fn refuses_an_unrecognized_port_direction_instead_of_panicking() {
+        let node = serde_json::json!({
+            "owner": "ix://acme/orders/SysPump",
+            "interfaceType": "ix://acme/orders/Flow",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+            "direction": "sideways",
+        });
+        let ctx = NodeCtx::new(&node, "$.types[0]");
+        let refusal = read_endpoint("acme/orders", &ctx, "ix://acme/orders/PumpOut")
+            .expect_err("an unrecognized direction refuses rather than panicking");
+        assert!(
+            refusal.detail.contains("sideways")
+                && refusal
+                    .detail
+                    .contains("is not a direction this reader recognizes"),
+            "{}",
+            refusal.detail
+        );
+    }
+
+    /// H3 (PR #200 review): same reasoning as
+    /// [`refuses_an_unrecognized_port_direction_instead_of_panicking`], for
+    /// [`read_connection`]'s `flowDirection`. Before this test, an
+    /// unrecognized value here panicked rather than refusing.
+    #[test]
+    fn refuses_an_unrecognized_connection_flow_direction_instead_of_panicking() {
+        let node = serde_json::json!({
+            "sourceEnd": {
+                "type": "ix://acme/orders/PumpOut",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            },
+            "targetEnd": {
+                "type": "ix://acme/orders/TankIn",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            },
+            "flowDirection": "sideways",
+        });
+        let ctx = NodeCtx::new(&node, "$.types[0]");
+        let refusal = read_connection("acme/orders", &ctx, "ix://acme/orders/Pipe")
+            .expect_err("an unrecognized flowDirection refuses rather than panicking");
+        assert!(
+            refusal.detail.contains("sideways")
+                && refusal
+                    .detail
+                    .contains("is not a direction this reader recognizes"),
+            "{}",
+            refusal.detail
+        );
+    }
+
+    /// H3 (PR #200 review): same reasoning, for [`read_population`]'s
+    /// `extent`. Before this test, an unrecognized value here panicked
+    /// rather than refusing.
+    #[test]
+    fn refuses_an_unrecognized_population_extent_instead_of_panicking() {
+        let node = serde_json::json!({
+            "kind": {"module": "acme/orders", "name": "population"},
+            "members": [],
+            "extent": "sideways",
+        });
+        let ctx = NodeCtx::new(&node, "$.populations[0]");
+        let mut meanings = HashMap::new();
+        meanings.insert(
+            ("acme/orders".to_owned(), "population".to_owned()),
+            meaning::POPULATION.to_owned(),
+        );
+        let refusal = read_population("acme/orders", &ctx, "ix://acme/orders/AllPumps", &meanings)
+            .expect_err("an unrecognized extent refuses rather than panicking");
+        assert!(
+            refusal.detail.contains("sideways")
+                && refusal
+                    .detail
+                    .contains("closed/open, the only extents this reader recognizes"),
+            "{}",
+            refusal.detail
         );
     }
 
