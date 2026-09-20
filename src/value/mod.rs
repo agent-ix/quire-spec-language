@@ -52,6 +52,7 @@ mod ieee;
 mod integer;
 mod key;
 mod library;
+mod member;
 mod model_query;
 mod node;
 mod numeric;
@@ -147,6 +148,7 @@ pub use library::{
     LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause,
     IDENTITY_PREIMAGE_PATH, PACKAGE_ID_PATH,
 };
+pub use member::{Identifier, InvalidIdentifier, Member};
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
     SemanticGraphCause, NODE_KEY_DOMAIN,

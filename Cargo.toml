@@ -23,6 +23,11 @@ quire-extraction = ["dep:quire-rs"]
 test-support = []
 
 [dependencies]
+# ADR-013 O-05: only `model` calls the kernel `EffectiveId` constructor,
+# enforced by the ADR-011 T-12 arch-lint `api-surface` check (`tools/arch-lint`),
+# not by this dependency edge itself -- every crate that depends on
+# `quire-exact` is in that check's scope, this one included as of this edit.
+quire-exact = { path = "quire-exact" }
 quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
 logos = "=0.16.1"
 num-bigint = "=0.4.8"

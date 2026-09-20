@@ -4,11 +4,12 @@
 //!
 //! Each rule names a symbol (a constructor or a facade module) and the
 //! module prefixes allowed to call it. The `quire-exact` crate (#213 S-1)
-//! does not exist yet, so today's rule data points at the symbols' current
-//! locations on origin/main (`crate::value::node::NodeKey`,
-//! `crate::model::key::EffectiveId`) and QSL's current module names, rather
-//! than the post-#213 kernel crate. #213 updates the paths here in its own
-//! PR; this module keeps the rule set as data for exactly that reason.
+//! now exists and defines the kernel `EffectiveId`/`NodeKey` types; T12-C's
+//! call pattern was updated in #213 S-2 to match the kernel's real
+//! `from_digest` constructor name. T12-B still points at the pre-migration
+//! `crate::value::node::NodeKey` location (`NodeKey`'s own retirement onto
+//! the kernel type is separate, unclaimed debt), so this module keeps the
+//! rule set as data for exactly that reason.
 //!
 //! The scan is textual: it looks for `Type::method(` call syntax in a `.rs`
 //! file's own module and does not resolve `use ... as` renames or macro
@@ -175,11 +176,19 @@ pub(crate) const RULES: &[Rule] = &[
         id: "T12-C",
         description: "only `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05)",
         role: Role::Qsl,
-        call_patterns: &["EffectiveId::from_digest_bytes("],
+        // The kernel's real constructor (`quire-exact`'s `EffectiveId::
+        // from_digest`, #213 S-1/S-2), not the pre-migration
+        // `from_digest_bytes` name this rule matched before S-2 retired
+        // `model::key`'s own `EffectiveId` struct in favor of re-exporting
+        // the kernel type.
+        call_patterns: &["EffectiveId::from_digest("],
         allowed_caller_prefixes: &["model"],
         requires_path: Some("src/model/key.rs"),
-        // Genuinely unreachable for the same reason as T12-B's, above.
-        pending_reason: "unreachable: EffectiveId is defined in src/model/key.rs on origin/main",
+        // Genuinely unreachable for the same reason as T12-B's, above:
+        // `src/model/key.rs` already exists on origin/main (it now
+        // re-exports the kernel `EffectiveId` rather than defining it, but
+        // the marker path's presence is all this check tests).
+        pending_reason: "unreachable: src/model/key.rs already exists on origin/main",
         scope_note: Some(
             "scoped to QSL's own tree only; does not scan quire-contract-runtime's or \
              quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
@@ -437,7 +446,7 @@ mod tests {
         write(
             dir.path(),
             "src/model/normalize.rs",
-            "fn f() {\n    let id = EffectiveId::from_digest_bytes(bytes);\n}\n",
+            "fn f() {\n    let id = EffectiveId::from_digest(bytes);\n}\n",
         );
         let rule = &RULES[2]; // T12-C: allowed prefix "model"
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
@@ -458,7 +467,7 @@ mod tests {
         write(
             dir.path(),
             "src/value/model_query.rs",
-            "fn f() {\n    let id = EffectiveId::from_digest_bytes(bytes);\n}\n",
+            "fn f() {\n    let id = EffectiveId::from_digest(bytes);\n}\n",
         );
         let rule = &RULES[2];
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();

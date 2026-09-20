@@ -45,7 +45,7 @@ impl NodeKey {
     /// A key from its raw 32-byte digest, with no domain check: the caller
     /// already knows the bytes are a node key (for example, a same-domain
     /// identity bridged from another 32-byte digest type). Mirrors
-    /// [`crate::model::key::EffectiveId::from_digest_bytes`].
+    /// [`quire_exact::EffectiveId::from_digest`].
     pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
