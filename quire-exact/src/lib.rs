@@ -42,22 +42,78 @@
 
 #![forbid(unsafe_code)]
 
-pub mod accounting;
-pub mod collection;
-pub mod comparison;
-pub mod decimal;
-pub mod division;
-pub mod equality;
-pub mod identity;
-pub mod ieee;
-pub mod integer;
+mod accounting;
+mod collection;
+mod comparison;
+mod decimal;
+mod division;
+mod equality;
+mod identity;
+mod ieee;
+mod integer;
 mod key;
-pub mod location;
-pub mod node;
-pub mod numeric;
-pub mod outcome;
-pub mod quantity;
-pub mod rational;
-pub mod reference;
-pub mod text;
-pub mod value;
+mod location;
+mod node;
+mod numeric;
+mod outcome;
+mod quantity;
+mod rational;
+mod reference;
+mod text;
+mod value;
+
+// H-5: every submodule above is private and its public surface is exposed
+// only through this curated facade, mirroring `src/value/mod.rs`'s pattern
+// (private `mod`s behind selective `pub use` re-exports) rather than
+// `pub mod` wholesale. `crate::key::compare_keys` and the five functions
+// this PR's own REVISE round demoted to `pub(crate)`
+// (`rational::divided_by_power_of_ten`, `decimal::DecimalRepresentation::
+// to_rational`) are deliberately absent below: they are reachable only from
+// inside this crate.
+pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
+pub use collection::{
+    construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
+    CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
+};
+pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
+pub use decimal::{
+    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
+    DecimalType, RoundingMode,
+};
+pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
+pub use equality::{plan_equality, planned_equality, EqualityPlan};
+pub use identity::{
+    EffectiveId, MemberId, ObjectId, UnitId, UniverseId, VariantId, EFFECTIVE_ID_DOMAIN,
+    MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, UNIT_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
+};
+pub use ieee::{
+    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
+    ieee_to_exact, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss, IeeeExactTarget,
+    IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance, IeeeResult,
+    IeeeValue, IeeeWidth, IEEE_DEFINITION,
+};
+pub use integer::{
+    BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
+    OutOfDomain,
+};
+pub use location::{Location, Origin, Role};
+pub use node::{NodeKey, NODE_KEY_DOMAIN};
+pub use numeric::{
+    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
+    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
+    RationalArithmetic,
+};
+pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
+pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, QuantityArithmetic};
+pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
+pub use reference::ObjectReference;
+pub use text::{
+    admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
+    Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,
+    UNICODE_VERSION,
+};
+pub use value::{
+    evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, tuple, Component,
+    CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumShape, FieldDeclaration,
+    FieldExpression, FieldValue, OptionValue, Presence, Value, ValueType,
+};
