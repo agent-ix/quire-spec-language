@@ -1,0 +1,151 @@
+---
+id: FR-062
+title: "Implement the shared checked-family contract"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-005
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-012
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-065
+    type: traces_to
+---
+# FR-062: Implement the shared checked-family contract
+
+## Description
+
+QSL semantic families (`Value`, `StateModel`, `SumCase`, `TemporalTrace`,
+`ProtocolClause`, `Relation`) each own their own grammar, checked nodes and
+diagnostics, but check, package, requirement-derivation and evaluation are
+reached through the same shape for every family. QSL SHALL implement one
+shared contract, with the parts below, that every family implements once and
+that no family bypasses.
+
+The contract's six parts (ADR-012 §2):
+
+1. **Identity.** Every checked node the contract's `check` produces SHALL
+   carry a stable identity minted once, at check time, from a
+   content-addressed preimage over the node's structure and its declaring
+   package's `name@version`. Structurally identical nodes SHALL share one
+   identity, and `check` SHALL key each source occurrence of a node
+   separately from the node's identity, by (identity, role, ordinal).
+2. **Provenance.** Every checked node occurrence SHALL map to its source span
+   through a source map keyed by that occurrence key, minted only by QSL.
+3. **Checked input (typing context).** A family's `check` SHALL receive a
+   mutable typing context through which resolved declarations, the type
+   environment and limits are read-only, and through which only a
+   work-budget meter, a diagnostic sink and a scope stack are mutable.
+   `check` SHALL read no global or thread-local state.
+4. **Requirements.** A pure function of a checked node SHALL yield the node's
+   `Requirements` (its one capability kind, its declared extent, and any
+   authored bound) or, for a claim form with no FR-057 kind, SHALL yield no
+   `Requirements` value.
+5. **Structured outcome.** A family's `check` SHALL return the checked node,
+   or a refusal carrying a family-owned typed cause that maps to a catalog
+   code through one exhaustive function with no fallback arm; a `check` that
+   exhausts its work budget SHALL return a limit outcome naming the work
+   budget, distinct from a refusal.
+6. **Stage hooks.** A family SHALL implement one hook for each stage it
+   participates in (check, package, requirements, and, for every family
+   except `Relation`, evaluate); every hook SHALL take only checked input,
+   and none SHALL take a CST, a token stream or a display string.
+
+A family that does not evaluate natively (`Relation`) SHALL return a named
+refusal at the evaluation hook rather than omitting the hook silently, so
+every family has an entry at every stage its contract lists, distinguishing
+"this family sits out this stage" from "this family has no hook."
+
+## Inputs
+
+- Parsed forms produced by a family's own grammar productions (ADR-012 §3).
+- The mutable typing context (`CheckContext`): resolved declarations, the
+  type environment, limits, a work-budget meter, a diagnostic sink, a scope
+  stack.
+- For evaluation: the checked node, an evaluation environment and a
+  work-budget meter.
+
+## Outputs
+
+- A checked node carrying a minted identity and, through the package's
+  source map, provenance to its source occurrence.
+- A `Requirements` value, or none, for a checked node's own claim form.
+- A structured outcome: the checked node, a typed refusal, a limit outcome
+  naming the exhausted budget, or an internal fault distinct from both.
+- For evaluation, on every family except `Relation`: an evaluated result or
+  a typed refusal built only from checked input. On `Relation`: a named
+  refusal stating that the family is not natively evaluable.
+
+## Behavior
+
+### The contract is one shape, not six ad hoc functions
+
+The six parts above SHALL be expressed as one static contract (a fixed set of
+associated types and methods; ADR-012 uses the design names `FamilyContract`
+and `ReferenceEvaluation`) that every family implements exactly once. A
+family's own `check`, `package`, `requirements` and `evaluate` code SHALL be
+the only code that constructs that family's checked node or reads its
+internals; the shared layer SHALL define no family-specific logic.
+
+### No hook reads reconstructed meaning
+
+A stage hook SHALL take its family's checked node, or a type built only from
+checked nodes (for example a package emitter), as its only semantic input.
+No stage hook SHALL take a CST node, a token, a display string, or a
+diagnostic message, and derive semantic meaning from it.
+
+### Identity is independent of position and counters
+
+Two checked nodes with the same content, checked in the same package, SHALL
+compare equal by identity, independent of where each occurs, what order they
+were checked in, or how many other nodes exist. A source occurrence key
+(identity, role, ordinal) SHALL distinguish two occurrences of one
+structurally identical node without changing the node's identity.
+
+### Typing context has no side door
+
+`check` SHALL be given no way to read a resolved declaration, the type
+environment or a limit except through the typing context parameter. `check`
+SHALL be given no way to mutate anything except the meter, the diagnostic
+sink and the scope stack the typing context exposes.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once; an implementation missing any part fails to compile. A correct-looking implementation that instead defines its own free-standing `check`/`package`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
+| FR-062-AC-2 | Given two parsed forms with identical structure checked into the same package, the checker mints one identity for both, and given the same node occurring twice in the source, the source map carries two distinct occurrence keys (identity, role, ordinal) for the one identity. Reordering the two source occurrences changes only their ordinal, never the identity. | Test (TC-160) |
+| FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
+| FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and a claim form with a kind yields exactly one `Requirements` value naming that kind; calling the requirements function twice on the same checked node yields equal values. | Test (TC-160) |
+| FR-062-AC-5 | A `check` that exhausts its work budget returns a limit outcome naming the work-budget limit kind, and a test asserts the returned value is not a refusal and not a checked node; a `check` given a form with an actual semantic error returns a refusal whose cause maps to a catalog code through the family's `catalog_code()`, and no fallback arm exists in that mapping (a compile-time exhaustiveness property, checked by removing the exhaustive match's implicit totality and observing a compile failure). | Test (TC-160) |
+| FR-062-AC-6 | The `Relation` family's evaluation hook, invoked on a checked `Relation` node, returns a named refusal stating non-native evaluability rather than a panic, a silently omitted call, or a successful evaluated result. Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
+
+## Dependencies
+
+- [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §2
+  designs the six-part contract this requirement implements, and §1 the
+  closed `FamilyKind` catalogue whose members implement it.
+- [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
+  O-04 (checked node identity), O-07 (source occurrence identity), O-12
+  (source locations and provenance) and O-16 (outcomes) own the canonical
+  types this contract's parts are built from; `quire-exact` (#213 S-1)
+  implements them.
+- [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §2.1
+  and §2.3 own the stage edges and the structured-result shape
+  (`Result<Staged<T>, StageFailure<C>>`) the contract's outcomes are built
+  from.
+- [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
+- [FR-065](FR-065-migrate-function-application-to-checked-family.md) is the
+  first family slice to implement this contract, for function declaration
+  and application.
+
+## Status
+
+Specified under
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
+implemented. The design names `FamilyContract` and `ReferenceEvaluation`
+follow ADR-012; ADR-012 states these are design names and the implementing
+ticket chooses the final Rust spelling within this requirement's rules.
