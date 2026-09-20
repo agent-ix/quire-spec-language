@@ -76,7 +76,9 @@ decisions. It does not design their content.
 | #213 | Implementation of canonical identity, typestate, outcome, provenance, bound and `Capability` value types that the stage outputs carry |
 | #185 | The only capability registry and router: the QSL `route` module (§6.1) |
 | #231 | Typed proof-result, witness and replay envelopes on E8 and E9 |
-| #214 | The S2 forms producer (M-3), the check/evaluate split for function application (M-5), and, as a `Value` family implementation ticket, the widening of the layer-6 `replay` facade for that family (ADR-013 TK-01) |
+| #214 | As a `Value` family implementation ticket, the widening of the layer-6 `replay` facade for that family (ADR-013 TK-01) |
+| QSL-138, QSL-141 | The S2 forms producer: the `forms` core (M-3a) and each family's parsed-form type (M-3b) |
+| QSL-139 | The check/evaluate split for function application (M-5) |
 | #215 | Exact-pin and current-head integration lanes |
 | #216 | The single checked-package gate (Layer 2) |
 | #217 | The function-application proof and native-replay exemplar: the first widening of the skeleton spine (§1.1) |
@@ -802,8 +804,10 @@ never justifies a crate.
 
 ### 7.3 Proposed extractions and module moves
 
-Each row is one change. M-3 and M-5 are separate slices. X-1, M-2 and M-5 all
-edit `value` and `model`, so they land in that order, one at a time.
+Each row is one change, except M-3b, which is incremental, one per family's
+migration ticket. M-3a and M-5 are one change each, and separate from each
+other. X-1, M-2 and M-5 all edit `value` and `model`, so they land in that
+order, one at a time.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
 |---|---|---|---|---|---|
@@ -999,7 +1003,7 @@ The owner delegated these to the #205 coordinator.
 
 | # | Proposed change | Proposed owner and repository |
 |---|---|---|
-| T-1 | M-6a: the CLI `run` and `compile` rewire onto the spine, `format` retarget, `lower` and native-linked-package/1 deletion, before #216 (a Layer 2 move that amends #205's layer plan) | QSL, Layer 2, with #214 |
+| T-1 | M-6a: the CLI `run` and `compile` rewire onto the spine, `format` retarget, `lower` and native-linked-package/1 deletion, before #216 (a Layer 2 move that amends #205's layer plan) | QSL, Layer 2, with QSL-8 (this repo's #240) |
 | T-2 | The skeleton spine (§1.1) as a tracked ticket. QSL #243 lands the layer-6 `replay` facade (ADR-013 TK-01), and agent-ix/quire-contract-codegen#87 lands the replay adapter. Each family's implementation ticket then widens `replay` for that family. | QSL #243 and agent-ix/quire-contract-codegen#87, with QSL M-4 |
 | T-3 | Add the lane deletions M-6b to M-6e to the exit criteria of the implementation tickets that land each replacement: #217, #120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198, #214 and #218 | QSL (issue text for those tickets) |
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
