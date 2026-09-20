@@ -655,10 +655,13 @@ Rules that close the ADR-010 OBS-016 cycles:
   M-2's own — moving `model` code is not M-5's job — but neither can execute
   until M-5 relocates the `value::expression` types they depend on (§7.3).
   Kernel types move to `quire-exact` (X-1), including the `model::accounting`
-  meter. QSL value modules outside the kernel row move to `semantic_value`
-  (QSL-165), a separate change blocked by QSL-131 cutting the edges named
-  above, not by M-2 or M-5. After M-2 and QSL-165, `model` depends on
-  `semantic_value`, F and K only. This breaks SCC S2.
+  meter — X-1 added the kernel copy but left the QSL `model` and `value`
+  copies of `Meter`, `Incomplete` and `LimitKind` in place, unchanged;
+  **QSL-166** owns finishing that consolidation (§7.3). QSL value modules
+  outside the kernel row move to `semantic_value` (QSL-165), a separate
+  change blocked by QSL-131 cutting the edges named above, not by M-2 or
+  M-5. After M-2 and QSL-165, `model` depends on `semantic_value`, F and K
+  only. This breaks SCC S2.
 - **The temporal evaluator, under `value::expression`, sits below orchestration
   and never imports a wire module.** Wire emission and reading live in S4
   `package`, and temporal evaluation lives in S6a. This breaks SCC S3.
@@ -742,7 +745,7 @@ Module table:
 | `value::containment` | 3 `semantic_value` | FR-143 `ValueGraph`; its `protocol_artifact` consumer retires with SEAM-3 (QSL-165) |
 | `model` (`dispatch`, `domain_package`, `key`, `normalize`, `population`, `refusal`, `systems`, `conformance` type conformance) | 3 `model` | `model::intake` is I1 |
 | `model::checked_dispatch`, `model::conformance::check_field_refinement_obligation` | 3 `check` | M-2, blocked by M-5 (corrected 2026-09-20: moving `model` code is M-2's job, not M-5's — M-5 only unblocks it by relocating the `value::expression` types both moves depend on; see §7.3) |
-| `model::accounting` | K `quire-exact` | one kernel `Meter` (X-1) |
+| `model::accounting` | K `quire-exact` | one kernel `Meter` (QSL-166; X-1's disposition landed incomplete — X-1 added the kernel copy but left the QSL `model` and `value` copies of `Meter`, `Incomplete` and `LimitKind` in place, used by nine call sites) |
 | `state` | replaced by a family evaluator under layer-5 `value::expression` in #120, #121 and #164 (design #220) | It is typed on SEAM-1 and SEAM-3 types (`native_model`, `protocol_artifact::wire`, `ProtocolNumber`, `Locus`) and on IR `ValueType` (`state/evaluation.rs:15`, `:21`). The PR among #120, #121 and #164 that lands the evaluator over checked forms and S3 `model` deletes the old module (M-6c). |
 | `temporal` | replaced by a family evaluator under layer-5 `value::expression` in #188 and #189 (design #222) | typed on `protocol_artifact::wire` and `ProtocolNumber` (`temporal/formula.rs:10`, `temporal/mapping.rs:19`). The PR among #188 and #189 that lands the evaluator over checked forms only (FB-03) deletes the old module (M-6c). |
 | `protocol_artifact` | SEAM-3 | |
