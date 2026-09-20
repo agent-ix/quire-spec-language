@@ -116,8 +116,10 @@ mod value;
 // cross-crate call site in `quire_spec_language` (revert each in isolation,
 // recompile `--workspace --all-targets --all-features`, confirm a genuine
 // `E0624` at that method's own real callers -- 151 across the 17, not the
-// 137 a first, non-isolated pass under-counted by masking `shifted_left`'s
-// one caller behind a cascading error on the same expression). `Integer`
+// 137 a first, non-isolated pass under-counted by masking 14 real call
+// sites across six methods behind a cascading error earlier in the same
+// expression (`add` +5, `neg` +3, `sub` +2, `mul` +2, `exact_div` +1,
+// `shifted_left` +1). `Integer`
 // and `IntegerInterval` were already exported below (this facade only
 // gates the type; an inherent method's own `pub`/`pub(crate)` is not listed
 // here separately) -- what changed is that their methods are now reachable

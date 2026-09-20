@@ -20,15 +20,23 @@
 //! [`power_product_bits`](Integer::power_product_bits),
 //! [`spanning`](IntegerInterval::spanning), [`from_big`](Integer::from_big)
 //! and [`as_big`](Integer::as_big), since QSL-146 deletes QSL's own
-//! byte-identical `value::integer` and repoints its callers
-//! (`value::rational`, `value::decimal`, `value::numeric`, `value::unit`,
-//! `value::ieee`, `value::division`, `model::population`) at this module,
+//! byte-identical `value::integer` and repoints its callers at this module,
 //! now a separate crate from theirs. Each was verified against a real call
 //! site by reverting it alone to `pub(crate)` and recompiling
 //! `quire-spec-language` `--workspace --all-targets --all-features`: 151
 //! real `E0624` errors across the 17, one compile per method in isolation
 //! so no error could be a cascade from another reverted method in the same
-//! expression.
+//! expression. The complete caller set, one compile's error locations
+//! unioned across all 17 isolated reverts: `model::population`,
+//! `value::accounting`, `value::collection`, `value::composite`,
+//! `value::decimal`, `value::division`, `value::equality`,
+//! `value::expression::check`, `value::expression::evaluate`,
+//! `value::expression::facts`, `value::ieee`, `value::numeric`,
+//! `value::quantity`, `value::rational` and `value::unit` -- 15 modules.
+//! (`forms::syntax`, `model::conformance`, `value::node`,
+//! `value::expression::ir` and `value::expression::refusal` also import
+//! `Integer`/`IntegerInterval`, but only as a type, never calling one of
+//! these 17 methods, so reverting any of the 17 alone never errors there.)
 
 use std::fmt;
 use std::num::NonZeroU32;
