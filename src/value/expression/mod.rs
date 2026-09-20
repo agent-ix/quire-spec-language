@@ -12,12 +12,12 @@ mod evaluate;
 mod facts;
 mod ir;
 mod refusal;
-mod syntax;
 mod termination;
 
 use super::accounting::Meter;
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
+use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use check::{bind_parameters, Scope, Signature, Typer};
 use evaluate::{Callable, Machine};
 use facts::{CallSite, Definedness};
@@ -41,10 +41,6 @@ pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin, ProvedInterval,
     WrongSnapshotCause,
-};
-pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
-    FieldInitializer, FunctionDeclaration,
 };
 
 /// How a standalone expression is checked.
