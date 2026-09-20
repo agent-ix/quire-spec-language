@@ -10,17 +10,18 @@
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
+use quire_exact::{CollectionKind, Integer};
 use quire_spec_language::complete::{self, CompleteCause, CompleteCode};
 use quire_spec_language::value::{
-    resolve_libraries, CardinalityBound, ChargePoint, CollectionKind, CollectionType, Component,
+    resolve_libraries, CardinalityBound, ChargePoint, CollectionType, Component,
     CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal, DeclarationCause,
     EqualityOperand, EqualityOperator, ExportIdentity, FieldDeclaration, FieldExpression,
     FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, IllTyped,
-    IllTypedCause, ImportDeclaration, Incomplete, Integer, InvalidDeclaration, LibraryName,
-    LibraryPackage, LimitKind, Meter, NameReference, NodeKey, ObjectEnvironment,
-    ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, RecursionEdges, ScalarLimits,
-    TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
+    IllTypedCause, ImportDeclaration, Incomplete, InvalidDeclaration, LibraryName, LibraryPackage,
+    LimitKind, Meter, NameReference, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
+    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
+    Outcome, PackageId, Presence, RecursionEdges, ScalarLimits, TypeEnvironment, UniverseIdentity,
+    Value, ValueGraph, ValueType,
 };
 use quire_spec_language::{Limits, SourceIdentity};
 use serde_json::json;

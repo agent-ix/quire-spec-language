@@ -4,8 +4,8 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use super::integer::{Integer, IntegerInterval};
 use super::numeric::ArithmeticOperator;
+use quire_exact::{Integer, IntegerInterval};
 
 /// A reduced rational: positive denominator, `gcd(numerator, denominator) = 1`,
 /// and zero is exactly `0/1`. Construction is the only way to obtain one.

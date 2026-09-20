@@ -9,9 +9,9 @@ use std::cmp::Ordering;
 
 use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{IllTyped, IllTypedCause};
-use super::integer::Integer;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
+use quire_exact::Integer;
 
 /// An authored or computed `(coefficient, scale)` pair denoting
 /// `coefficient × 10^-scale`.
