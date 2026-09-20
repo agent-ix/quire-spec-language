@@ -38,6 +38,7 @@ macro_rules! tagged {
         #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
         #[serde(tag = "kind")]
         pub enum $name {
+            // $variant_meta is docs-only: it is NOT re-emitted onto the private `Fields` decoder enum below (unlike `record!`'s $field_meta, which mirrors onto both sides), so a future `#[serde(...)]` variant attribute here would apply on serialize but be silently dropped on deserialize.
             $($(#[$variant_meta])* #[serde(rename = $tag)] $variant { $($(#[$field_meta])* $field: $ty),* }),*
         }
         impl<'de> Deserialize<'de> for $name {
