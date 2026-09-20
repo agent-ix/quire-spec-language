@@ -436,9 +436,18 @@ mod tests {
         assert!(occurrences.is_empty());
     }
 
-    /// FR-064-AC-5's own shape: a comparison feeding an `if` condition is
-    /// branch-gating; one feeding only a logged message is not.
-    #[trace("TC-162", "FR-064-AC-5")]
+    /// FR-064-AC-5's branch-gating/non-branching distinction: a comparison
+    /// feeding an `if` condition is branch-gating; one feeding only a
+    /// logged message is not. Real, not synthetic-in-the-flagged sense
+    /// (`branch_gating_entries` actually distinguishes the two fixtures
+    /// here by their recorded `branch_gating` flag) -- but AC-5 also
+    /// requires the five named ADR-010 §4.3 sites specifically, which this
+    /// test does not touch, so it stays untagged alongside
+    /// `none_of_the_five_adr010_production_sites_can_be_allow_listed`
+    /// (PR #262 review, coordinator round 3, finding 7): FR-064's own
+    /// Status section records the whole criterion unbacked, and a tag on
+    /// only part of a criterion's requirement reads as backing the whole
+    /// of it.
     #[test]
     fn branch_gating_is_distinguished_from_a_non_branching_sink() {
         let occurrences = scan_source(
@@ -480,13 +489,15 @@ mod tests {
         assert!(occurrences[0].branch_gating);
     }
 
-    /// FR-064-AC-5 (PR #262 review, finding F11): a candidate allow-list
-    /// entry at a branch-gating occurrence's location is rejected; one at a
-    /// non-branching occurrence's location is not. Constructs its own
-    /// `AllowListEntry` fixtures rather than going through the real
-    /// (permanently empty) [`allow_list`], so this rejection is actually
-    /// exercised, not only claimed.
-    #[trace("TC-162", "FR-064-AC-5")]
+    /// FR-064-AC-5's rejection mechanism (PR #262 review, finding F11): a
+    /// candidate allow-list entry at a branch-gating occurrence's location
+    /// is rejected; one at a non-branching occurrence's location is not.
+    /// Constructs its own `AllowListEntry` fixtures rather than going
+    /// through the real (permanently empty) [`allow_list`], so this
+    /// rejection is actually exercised, not only claimed -- real, but (same
+    /// reason as the two tests above, PR #262 review, coordinator round 3,
+    /// finding 7) not the five named ADR-010 §4.3 sites AC-5 also
+    /// requires, so untagged alongside them.
     #[test]
     fn allow_list_entry_at_a_branch_gating_occurrence_is_rejected() {
         let occurrences = scan_source(
@@ -527,12 +538,27 @@ mod tests {
         assert_eq!(rejected[0].line, branch_gating_line);
     }
 
-    /// FR-064-AC-5: none of ADR-010 §4.3's five production dispatch sites
-    /// can be allow-listed, because each one gates a branch. Constructs one
-    /// fixture occurrence shaped like each site (a string comparison
-    /// selecting between two branches) and asserts `branch_gating_entries`
-    /// rejects an allow-list entry naming it.
-    #[trace("TC-162", "FR-064-AC-5")]
+    /// **Untagged (PR #262 review, coordinator round 3, finding 7).**
+    /// Constructs one *synthetic* fixture occurrence shaped like each of
+    /// ADR-010 §4.3's five named production dispatch sites (a string
+    /// comparison selecting between two branches) and asserts
+    /// `branch_gating_entries` rejects an allow-list entry naming it -- but
+    /// `branch_gating_entries` filters only on `(file, line,
+    /// branch_gating)`, never on the literal string compared
+    /// (`branch_gating_entries`'s own doc/body above), so this test passes
+    /// identically for five arbitrary branch-gating strings; it never reads
+    /// `label`/`literal` past constructing the fixture source text with
+    /// them. It demonstrates the rejection *mechanism* works on
+    /// branch-gating occurrences in general, not that these five *named,
+    /// real* sites specifically are rejected. FR-064-AC-5 requires
+    /// attempting each of the five real sites (real file, real line, real
+    /// source), which this synthetic-fixture shape cannot show; FR-064's
+    /// own Status section now records this criterion unbacked. (One of the
+    /// five, the `"allocation"` relationship-category site ADR-010 §4.3
+    /// itself flags "PR-sensitive", is already gone from `src/model/
+    /// systems.rs` on this branch -- confirmed by grep -- so a real,
+    /// current-tree version of this test could not reject all five as
+    /// currently named regardless.)
     #[test]
     fn none_of_the_five_adr010_production_sites_can_be_allow_listed() {
         let sites = [
