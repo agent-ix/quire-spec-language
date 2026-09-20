@@ -4,6 +4,7 @@ title: "Publish and read exact compiled protocol packages"
 type: FR
 relationships:
   - { target: ix://agent-ix/quire-spec-language/US-004, type: implements }
+  - { target: ix://agent-ix/quire-spec-language/US-007, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-038, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-040, type: depends_on }
@@ -225,11 +226,29 @@ result JCS identities retain their own exact roles and algorithms. Copying an
 external reference does not authorize recanonicalizing its object or substituting
 its hash into another role. The outer package canonical identity remains null.
 
-Each compiled-protocol `Model` selection SHALL name the domain package it was
-linked against by domain package identity, Semantic IR contract version and
-`sha256-jcs` digest, as admitted under
-[FR-056](FR-056-admit-domain-package-model-declarations.md). The versioned wire change is
-agent-ix/quire-spec-language#132.
+Each compiled-protocol `Model` selection SHALL name, directly and without an
+intervening producer or relation object, the exact domain package it was
+linked against under [FR-056](FR-056-admit-domain-package-model-declarations.md):
+that domain package's own identity, its own version and the `sha256-jcs`
+digest of its Semantic IR 2.0.0 document, each equal to the corresponding
+member of the `DomainPackageRef` FR-056 admitted at linking. The wire
+contract SHALL carry no `ProducerObject` record and no `Correspondence`
+record, and a `Model` SHALL carry no `correspondence`, `producer` or
+`interface` member (agent-ix/quire-spec-language#132). Under
+[NFR-011's](../non-functional/NFR-011-vendor-resources-from-exact-pins.md)
+prerelease disposition, this record's constructors and reader change in
+place: the wire, media and schema identities the encoding table names stay
+`quire.compiled-protocol/1`, and a payload that still carries the deleted
+`correspondence`, `producer` or `interface` member refuses as an unrecognized
+field under the contract's existing closed-shape rule (`deny_unknown_fields`),
+not through a separate version-number check. `quire.compiled-protocol/2`
+([FR-050](FR-050-publish-authenticated-temporal-artifacts.md)) and
+`quire.compiled-protocol/3` ([FR-054](FR-054-publish-control-temporal-activation-map.md))
+each embed this same shared `Model` population and change with it, without
+their own `temporal_bindings`/activation-mapping deltas changing. Whether a
+breaking change to a record shared by three already-minted wire identities
+should instead mint its own new identity is an open question for the
+architect; see Open Questions.
 
 The strict reader SHALL verify the expected byte seal and exact accepted
 contract/compiler-binary/baseline/source/domain-package/profile/dependency/feature selections before
@@ -336,13 +355,19 @@ Each dynamic choice rebuilds its private read index and lowering records;
 than measuring peak live memory. Multiple individually admissible decisions may
 therefore exhaust one invocation's shared limits; this returns incomplete.
 
+## Constraints
+
+| ID | Constraint | Type | Validation |
+| --- | --- | --- | --- |
+| FR-042-CON-1 | Compiler source SHALL contain no `ProducerObject` type, no `Correspondence` type and no wire tag or field named `correspondence`, `producer-object` or `producer_object`. | Maintainability | Inspection |
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-042-AC-1 | A complete source-derived package containing a protocol and its predicate/state/temporal dependencies emits the exact registered media/schema/type/encoding/numeric selections, complete original inventory and immutable external byte reference. Missing family admission, a type/proof-only result or an arbitrary wire fixture cannot invoke production emission. | Test (TC-121) |
 | FR-042-AC-2 | Fixed compact JSON vectors retain field order, Unicode escaping and authored sequence order; permitted inventory reordering yields identical bytes. Integer safe endpoints, signed-64 extrema and normalized rationals retain exact kind/components in every value/bound field; invalid field-domain values, bare native numbers, floats and noncanonical structural integers refuse without rounding or repair. | Test (TC-121) |
-| FR-042-AC-3 | One-axis changes to compiler binary, domain package identity or digest, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
+| FR-042-AC-3 | One-axis changes to compiler binary, domain package identity, version or digest, accepted baseline, contract, source authority/native/formal revision or bytes, profile/rule closure, dependency/export, outer interpretation and required/optional features refuse the affected selection. Source/model/config/manifest/lock/IR/result digests cannot substitute for the expected compiled-artifact or native model byte digest. | Test (TC-121) |
 | FR-042-AC-4 | Typed values preserve exact nominal/unit/domain identities, cross-unit callee owners, ordered arguments, all eight query forms, graph-export authority, Boolean roots, source loci, scope and pre/post/activation/capture origins. Wrong type/owner, dangling/cyclic value references, missing totality and proof-witness substitution cannot produce an emitted package. | Test (TC-121) |
 | FR-042-AC-5 | Sequence, owned labeled choice, parallel/join, bounded progress, await branches and termination retain their declared causal relations and finite bounds. Received, own-attempt and same-owner domain-event Boolean choices preserve exact atom/owner/provenance identity and prove one case for every abstract valuation; equal ordered advertised-result vectors select the same case, including composite formulas without disclosing their individual operands; unsupported visibility or an unproved partition returns FamilyProof, while evaluated closed overlap/hole remains Invalid(Control). Equal role model types do not grant ownership. Compensation-qualified events retain their registration prerequisite; Boolean observations grant no activation or effect-success evidence. A dynamic choice establishes continuing-loop progress only when every feasible branch progresses. An observed repeat guard preserves the same atom/owner/provenance identity and partitions the continuing and exhausting branches; a foreign-role, unlisted or composite guard atom returns FamilyProof, an atom established only inside the body refuses earlier as out of scope, a non-progressing continuing body remains Invalid(Control), and an unproved one returns FamilyProof. An observed repeat whose false guard valuation is feasible contributes no progress to an enclosing obligation, so an enclosing repeat relying on it alone remains Invalid(Control); an infeasible false valuation contributes the continuing body's progress exactly as a true constant guard does, and an infeasible true valuation contributes no progress and carries no body obligation, like a closed false guard. Missing/foreign joins, unbounded or zero-progress repetition, wrong-kind event targets and cross-channel FIFO assumptions refuse independently. | Test (TC-121) |
 | FR-042-AC-6 | Two workflows sharing a provider retain distinct binding subjects; one send/two deliveries/one effect remains 1/2/1. A forward attempt authored inside a bounded repeat retains one static attempt identity, distinct from the carrying delivery and from the single business effect; bounded iteration mints no further attempt record and no ordinal field, and a retried attempt inherits no earlier effect. Effect-dependent registration, bounded retries through the signed-64 maximum, commit boundaries and full versus partial recovery retain exact relations and authorities. Producer and reader derive identical recovery population membership through original operand, binder-initializer and selected-origin reachability, preserving captured anchors without span-based or proof-folded substitutions. Compensation effects retain exact operation/subject/retry/attempt identity even when a type is inserted; an otherwise valid typed compensation effect remains explicitly unsupported. Missing/cross-wired registration, activation, clock or recovery prerequisites, unrelated recovery/population records, null model, an ordinary effect with null type, or an operation-success shortcut refuse. | Test (TC-121) |
@@ -350,6 +375,13 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. Every protocol-role admission refusal locus pairs a source index and span from the same owning declaration; a multi-unit invalid protocol role identifies and slices that exact role rather than a preceding source. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
 | FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
+| FR-042-AC-11 | Reading a `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored. | Test (TC-121) |
+
+## Open Questions
+
+| Question | Owner | Blocked criteria |
+| --- | --- | --- |
+| Removing `ProducerObject`/`Correspondence` and adding domain-package naming changes the `Model` record shared by `quire.compiled-protocol/1`, `/2` ([FR-050](FR-050-publish-authenticated-temporal-artifacts.md)) and `/3` ([FR-054](FR-054-publish-control-temporal-activation-map.md)), which each so far only added fields and stated they changed no version-1 field. This requirement changes `Model` in place at each identity rather than minting a new one, on the evidence that both existing golden directories (`artifacts/compiled-protocol-v1`, `artifacts/compiled-protocol-v2`) are regenerated under their own existing wire tags, not replaced by a new directory. Whether a breaking change to a record three already-minted identities share should instead mint its own wire identity is an architect decision this requirement does not make. | Architect decision | None in this requirement; a future amendment to FR-050/FR-054's own wording if the architect rules otherwise |
 
 ## Dependencies
 
@@ -374,3 +406,18 @@ General dynamic choice/progress proofs, first-class relationship exports,
 runtime recovery and the actual B public consumer handoff remain open until
 implemented and exercised through the corresponding public interfaces. A's
 emission and local reader check do not satisfy FR-042-AC-10 by themselves.
+
+[FR-056](FR-056-admit-domain-package-model-declarations.md) admits the domain
+package this requirement's `Model` names, and
+[IT-012](../integration/IT-012-domain-package-model-intake.md) exercises that
+admission over the filament-core-data#173 architecture fixture bundle. The
+[Rust emitter recipe](../../examples/protocol-handoff/README.md) is rewritten
+over that same architecture fixture bundle rather than a hand-authored model
+fixture, so its emitted `Model` names a domain package FR-056 actually
+admitted, not one supplied only for the recipe.
+[US-007](../usecase/US-007-trust-domain-package-provenance.md) is the
+consumer story for FR-042-AC-11. Vendoring the resources this recipe and
+TC-121 depend on against QSpec main is
+[NFR-011](../non-functional/NFR-011-vendor-resources-from-exact-pins.md)'s
+concern, not this requirement's. See Open Questions for the wire-identity
+question this requirement leaves to the architect.
