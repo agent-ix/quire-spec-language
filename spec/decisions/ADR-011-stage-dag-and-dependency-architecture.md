@@ -732,17 +732,17 @@ Module table:
 | `quire_source` | I3 | the extraction adapter stays at S0; its call into `mapped` retires with SEAM-1 |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1; the v2 emitter and the I2 byte reader are new in M-4 |
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `node`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15 (TK-10), and the operations over them (X-1, carried out as #213 S-1) |
-| `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `key`, `reference` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (M-2) |
+| `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `key`, `reference` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (QSL-165) |
 | `value::division::negotiate_*`, `value::ieee::negotiate_*` | RT | AD-016 Shared-type row: the `negotiate_*` predicates stay in RT, and CG negotiates (arrow 3). AD-016 WP7 decides the predicate list (OBS-004). #213 S-1 (X-1) moves `division` and `ieee` into K but leaves the QSL copies of `negotiate_*` in place, unchanged (`src/value/division.rs:223`, `src/value/ieee.rs:882`); QSL-131 (#213 S-1b) owns their removal. |
 | `value::expression::syntax` | 2 `forms` | M-3a |
 | `value::expression::check`, `facts`, `termination`, `ir` | 3 `check` | `ir` is the checked expression output (M-5) |
 | `value::expression::refusal` | split | check causes move to `check`; `InputRefusal` moves to argument admission in `CheckedPackage::call`, before S6a (M-5) |
 | `value::expression::evaluate`, `value::expression` `CheckedPackage::call` | 5 `value::expression` | S6a and the replay executor, at the AD-016 arrow 7 path |
 | `value::library`, `value::package_identity`, `value::model_query` | 3 `library`, 3 `library`, 3 `model` | `package_identity` is a structural preimage reader with no wire I/O; `library` imports it (`value/library.rs:25`) |
-| `value::containment` | 3 `semantic_value` | FR-143 `ValueGraph`; its `protocol_artifact` consumer retires with SEAM-3 |
+| `value::containment` | 3 `semantic_value` | FR-143 `ValueGraph`; its `protocol_artifact` consumer retires with SEAM-3 (QSL-165) |
 | `model` (`dispatch`, `domain_package`, `key`, `normalize`, `population`, `refusal`, `systems`, `conformance` type conformance) | 3 `model` | `model::intake` is I1 |
 | `model::checked_dispatch`, `model::conformance::check_field_refinement_obligation` | 3 `check` | M-2, blocked by M-5 (corrected 2026-09-20: moving `model` code is M-2's job, not M-5's — M-5 only unblocks it by relocating the `value::expression` types both moves depend on; see §7.3) |
-| `model::accounting` | K `quire-exact` | one kernel `Meter` (M-2 with X-1) |
+| `model::accounting` | K `quire-exact` | one kernel `Meter` (X-1) |
 | `state` | replaced by a family evaluator under layer-5 `value::expression` in #120, #121 and #164 (design #220) | It is typed on SEAM-1 and SEAM-3 types (`native_model`, `protocol_artifact::wire`, `ProtocolNumber`, `Locus`) and on IR `ValueType` (`state/evaluation.rs:15`, `:21`). The PR among #120, #121 and #164 that lands the evaluator over checked forms and S3 `model` deletes the old module (M-6c). |
 | `temporal` | replaced by a family evaluator under layer-5 `value::expression` in #188 and #189 (design #222) | typed on `protocol_artifact::wire` and `ProtocolNumber` (`temporal/formula.rs:10`, `temporal/mapping.rs:19`). The PR among #188 and #189 that lands the evaluator over checked forms only (FB-03) deletes the old module (M-6c). |
 | `protocol_artifact` | SEAM-3 | |
@@ -828,8 +828,8 @@ never justifies a crate.
 ### 7.3 Proposed extractions and module moves
 
 Each row is one change, except M-3b, which is incremental, one per family's
-migration ticket, and QSL-165, split out of M-2's original scope (below).
-M-3a and M-5 are one change each, and separate from each other.
+migration ticket. QSL-165, split out of M-2's original scope (below), is one
+change too. M-3a and M-5 are one change each, and separate from each other.
 
 **Order correction (2026-09-20).** This section originally stated the order
 X-1, M-2, M-3a and M-5, one at a time, with the reason given as a shared
@@ -875,10 +875,10 @@ submodules (`enumeration`, `quantity`) — in the allowed direction, layer-3
 depending on earlier. Nothing in that submodule set requires `semantic_value`
 to exist first.
 
-The real order is **X-1 → M-5 (QSL-139) → M-2 (QSL-7)**, and, independently,
-**QSL-131 → QSL-165**. M-3a depends only on X-1, landed correctly ahead of
-M-2, and is otherwise outside both chains — its only contact point with M-2
-is `src/value/mod.rs`, where both remove submodule declarations. **QSL-131
+The real order is **X-1 → M-3a → M-5 (QSL-139) → M-2 (QSL-7)**, and,
+independently, **QSL-131 → QSL-165**. M-3a depends only on X-1 and landed
+correctly ahead of M-2; its only contact point with M-2 is
+`src/value/mod.rs`, where both remove submodule declarations. **QSL-131
 is unstaffed**, blocking QSL-165.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
@@ -1083,7 +1083,7 @@ The owner delegated these to the #205 coordinator.
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
 | T-5 | Confirm that agent-ix/quire-contract-ir#141 (v2 intake admission of value, expression and temporal nodes) also removes the IR root → QSL edge | agent-ix/quire-contract-ir#141, with #218 and #223 |
 | T-6 | Record X-1 `quire-exact` extraction as #213 S-1, with its kernel gate under §2.3 and the blocking edge from the AD-016 amendment (TK-10, QC-15) | QSL #213 and RT |
-| T-7 | M-2 (`model` below `check`, `semantic_value`) with the #205 edge M-2 → #214 | QSL |
+| T-7 | M-2 (`model` below `check`) and QSL-165 (`semantic_value`) with the #205 edge M-2 → #214 | QSL |
 | T-8 | M-4 (S4 v2 emitter and I2 reader) | QSL, before #216 |
 | T-9 | RT `qsl-agreement` retarget to `quire-exact` against QSpec vectors | agent-ix/quire-contract-runtime#55, after X-1 and TK-03 (agent-ix/quire-contract-runtime#56) |
 | T-10 | CG generated-harness gate under §2.3: claimed-module list, `unreached` failure, SUCCESS-only discharge floor, mutation control, shared-helper list, and a run mutation of each shared helper that fails the proof (#245) | CG |
