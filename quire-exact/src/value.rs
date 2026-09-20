@@ -175,7 +175,8 @@ impl ValueType {
 }
 
 /// A completed kernel value. It deliberately has no structural `PartialEq`:
-/// equality is the relation [`crate::equality`] plans and evaluates.
+/// equality is the relation [`crate::plan_equality`]/[`crate::planned_equality`]
+/// plans and evaluates.
 #[derive(Clone, Debug)]
 pub enum Value {
     /// A Boolean.
