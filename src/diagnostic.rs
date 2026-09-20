@@ -381,3 +381,292 @@ pub(crate) fn error(
         runtime: None,
     })
 }
+
+// ADR-013 slice S-5 (agent-ix/quire-spec-language#213), part one of a split
+// slice ("S-5a"; the owner's ruling on QSL-26, 2026-09-20). This is the start
+// of this module's move to the ADR-011 §6.1 foundation `diagnostic` module
+// (M-1: "codes, typed causes, locus"), which lands piecemeal across #213's
+// slices. `Code`, `Phase` and `Diagnostic` above are the pre-existing
+// native-v1 lane-private catalog (ADR-013 §6: "Box<Diagnostic> 45-variant
+// Code"); they retain no canonical authority and gain no new consumer (R-09),
+// and nothing below converts to or from them.
+//
+// Held back as S-5b, not built here: `RefusalRecord` and `LimitExceeded`
+// both carry the foundation `Locus` (ADR-013 T-5), which is slice S-4's row
+// and has not landed; `LimitKind`'s only consumer is `LimitExceeded`, so it
+// stays with it. O-22's version-refusal readers all construct a
+// `RefusalRecord` too -- for a wire reader specifically, ADR-013 T-5 assigns
+// `Locus::Artifact{digest, pointer}`, which additionally needs the O-18
+// digest record (S-2's row, gated on quire-specification#138) -- so O-22
+// stays in S-5b in full, blocked on both S-4 and S-2.
+
+/// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
+/// result maps into. Exactly the eight values ADR-013 §3 O-16's category
+/// table names in its first column; not a kernel type (`quire-exact` carries
+/// no category), and this crate is its only owner. Category-mapping
+/// functions from each family's own outcome (C-08, C-09, C-23) match this
+/// enum exhaustively with no `_` arm, so a ninth category fails every one of
+/// them to compile rather than silently falling into an existing row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Category {
+    /// A completed value, or a claim's `Completed(false)` (a violation is
+    /// its own, separate category below).
+    Success,
+    /// A claim's `Completed(false)`: a false predicate, not a refusal.
+    Violation,
+    /// The operation has no mathematical value (kernel `Undefined`).
+    Undefined,
+    /// The operation is defined but its result, or the request itself, is
+    /// not admitted.
+    Refusal,
+    /// A well-formed request naming a real, catalogued capability this
+    /// build, backend or solver does not supply.
+    Unsupported,
+    /// A named charge was unavailable and no partial value exists: timeout,
+    /// cancellation or bound exhaustion.
+    Incomplete,
+    /// Neither proved nor refuted -- including a vacuous proof and a replay
+    /// parity disagreement.
+    Inconclusive,
+    /// A runtime, evaluator or mapping invariant broke; never a `Refusal`.
+    InternalFailure,
+}
+
+impl Category {
+    /// Every value, in the ADR-013 O-16 category table's row order.
+    pub const ALL: [Self; 8] = [
+        Self::Success,
+        Self::Violation,
+        Self::Undefined,
+        Self::Refusal,
+        Self::Unsupported,
+        Self::Incomplete,
+        Self::Inconclusive,
+        Self::InternalFailure,
+    ];
+
+    /// A stable display spelling. ADR-013 O-16 fixes the eight values and
+    /// states that category values "compare lexically on their wire
+    /// strings", but names no QSpec wire contract for this QSL-internal
+    /// type, so this spelling is QSL's own and carries no QSpec authority.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Violation => "violation",
+            Self::Undefined => "undefined",
+            Self::Refusal => "refusal",
+            Self::Unsupported => "unsupported",
+            Self::Incomplete => "incomplete",
+            Self::Inconclusive => "inconclusive",
+            Self::InternalFailure => "internal-failure",
+        }
+    }
+}
+
+impl std::fmt::Display for Category {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// ADR-013 O-17: one `quire.native.diagnostics/v1` code and cause, exactly as
+/// the vendored catalog (`resources/complete-value/.../native-diagnostics.md`)
+/// spells them. Every `catalog_code()` across every stage returns this same
+/// type (C-15); there is no conversion back to a typed cause, and no
+/// consumer reads the catalog's message -- only the code, the cause and the
+/// structured fields the catalog defines for that pair. Equality is lexical
+/// on both fields, matching ADR-013 O-17's stated equality kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct CatalogCode {
+    code: &'static str,
+    cause: &'static str,
+}
+
+impl CatalogCode {
+    /// Construct a code/cause pair. Callers name codes and causes exactly as
+    /// the vendored catalog spells them (ADR-013 R-07: a typed-cause-to-code
+    /// conversion never invents a code the catalog does not define).
+    pub const fn new(code: &'static str, cause: &'static str) -> Self {
+        Self { code, cause }
+    }
+
+    /// The catalog's top-level code, e.g. `"runtime_invariant"`.
+    pub const fn code(&self) -> &'static str {
+        self.code
+    }
+
+    /// The catalog's cause under that code, e.g.
+    /// `"established-invariant-broken"`.
+    pub const fn cause(&self) -> &'static str {
+        self.cause
+    }
+}
+
+impl std::fmt::Display for CatalogCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.code, self.cause)
+    }
+}
+
+/// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
+/// from a compiler stage, the I2 reader, `replay` or `route` (and, for
+/// evaluation, `CheckedPackage::call`). Names the stage and the violated
+/// invariant, each by a stable identifier -- not a display string (ADR-013
+/// R-05) and not itself a closed enum: T-4 gives `LimitKind` alone the
+/// "closed enum" qualifier, and the set of stages and invariants that can
+/// raise a fault is expected to grow as later slices add stages, without
+/// widening this type. `InternalFault` maps to exactly one catalog code
+/// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
+/// vendored catalog's revision `1-draft.6` note) and exactly one category
+/// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct InternalFault {
+    stage: &'static str,
+    invariant: &'static str,
+}
+
+impl InternalFault {
+    /// `stage` and `invariant` are stable identifiers the raising site
+    /// names, never derived from a display string or message (ADR-013 R-05).
+    pub const fn new(stage: &'static str, invariant: &'static str) -> Self {
+        Self { stage, invariant }
+    }
+
+    /// The stage, reader or module that raised this fault.
+    pub const fn stage(&self) -> &'static str {
+        self.stage
+    }
+
+    /// The stable identifier of the violated invariant.
+    pub const fn invariant(&self) -> &'static str {
+        self.invariant
+    }
+
+    /// Always `runtime_invariant`/`established-invariant-broken` (ADR-013
+    /// T-4): an internal fault is never a `Refusal` and never any other
+    /// catalog code.
+    pub fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("runtime_invariant", "established-invariant-broken")
+    }
+
+    /// Always `Category::InternalFailure` (ADR-013 O-16).
+    pub fn category(&self) -> Category {
+        Category::InternalFailure
+    }
+}
+
+#[cfg(test)]
+mod foundation_tests {
+    use super::{CatalogCode, Category, InternalFault};
+
+    /// The vendored `quire.native.diagnostics/v1` catalog, read fresh from
+    /// disk rather than compiled in with `include_str!`, so a re-vendor that
+    /// drops or renames a code this module depends on fails this test
+    /// instead of silently going stale.
+    fn vendored_catalog() -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md",
+        );
+        std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    }
+
+    #[test]
+    fn category_has_exactly_the_adr_013_o16_eight_values() {
+        let spellings: Vec<&str> = Category::ALL
+            .iter()
+            .map(|category| category.as_str())
+            .collect();
+        assert_eq!(
+            spellings,
+            vec![
+                "success",
+                "violation",
+                "undefined",
+                "refusal",
+                "unsupported",
+                "incomplete",
+                "inconclusive",
+                "internal-failure",
+            ]
+        );
+        // Every match over `Category` in this crate must be exhaustive; a
+        // ninth variant added here without a corresponding compile error
+        // elsewhere would mean some consumer grew a `_` arm.
+        for category in Category::ALL {
+            match category {
+                Category::Success
+                | Category::Violation
+                | Category::Undefined
+                | Category::Refusal
+                | Category::Unsupported
+                | Category::Incomplete
+                | Category::Inconclusive
+                | Category::InternalFailure => {}
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_code_display_is_code_slash_cause() {
+        let code = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+        assert_eq!(code.code(), "runtime_invariant");
+        assert_eq!(code.cause(), "established-invariant-broken");
+        assert_eq!(
+            code.to_string(),
+            "runtime_invariant/established-invariant-broken"
+        );
+    }
+
+    #[test]
+    fn internal_fault_never_reports_a_refusal_code_or_category() {
+        let fault = InternalFault::new("S3", "checked-node-not-in-model-correspondence");
+        assert_eq!(fault.stage(), "S3");
+        assert_eq!(
+            fault.invariant(),
+            "checked-node-not-in-model-correspondence"
+        );
+        assert_eq!(
+            fault.catalog_code(),
+            CatalogCode::new("runtime_invariant", "established-invariant-broken")
+        );
+        assert_eq!(fault.category(), Category::InternalFailure);
+    }
+
+    #[test]
+    fn internal_fault_catalog_code_is_in_the_vendored_catalog() {
+        let catalog = vendored_catalog();
+        // The top-level code, as its own table cell.
+        assert!(
+            catalog.contains("| `runtime_invariant` |"),
+            "vendored catalog no longer lists `runtime_invariant`; \
+             InternalFault::catalog_code() is now stale"
+        );
+        // The cause the row actually names.
+        assert!(
+            catalog.contains("`established-invariant-broken`"),
+            "vendored catalog no longer lists `established-invariant-broken`; \
+             InternalFault::catalog_code() is now stale"
+        );
+    }
+
+    #[test]
+    fn vendored_catalog_names_the_t4_stage_limit_kinds() {
+        // Not built yet (LimitExceeded/LimitKind are S-5b, blocked on the
+        // foundation `Locus`, ADR-013 T-5). This only confirms the QC-11
+        // codes S-5b will need are already vendored, so the revendor this
+        // commit performs is not wasted.
+        let catalog = vendored_catalog();
+        assert!(catalog.contains("`stage_limit_exceeded`"));
+        for cause in [
+            "input-bytes-exceeded",
+            "nesting-depth-exceeded",
+            "node-count-exceeded",
+            "work-budget-exceeded",
+        ] {
+            assert!(
+                catalog.contains(cause),
+                "vendored catalog is missing stage_limit_exceeded cause {cause:?}"
+            );
+        }
+    }
+}
