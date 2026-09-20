@@ -315,6 +315,50 @@ pub fn admit<'a>(
     Ok((package_ref, bytes.as_slice()))
 }
 
+/// ADR-013 O-01: admits every selection in `offered`, in order, through
+/// [`admit`], and additionally refuses a second selection naming a
+/// domain-package `identity` already admitted earlier in this same call --
+/// "a package selects at most one version of a domain-package identity"
+/// (QC-5, catalogued `duplicate_selection`/`duplicate-identity`, revision
+/// `1-draft.6`) -- whether or not the repeated selection's version matches
+/// the one already admitted. Checked before [`admit`]'s own byte-level work
+/// for the repeated item, since the defect is in the selection list itself,
+/// not in that item's bytes. No production caller offers more than one
+/// domain package yet; this is the single-selection rule #131 was asked to
+/// wire together with [`admit`] and did not (ADR-013 O-01's own "Implementing
+/// ticket" row).
+pub fn admit_selections<'a>(
+    offered: &[DomainPackageRef],
+    digest_domain: &str,
+    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<Vec<(DomainPackageRef, &'a [u8])>, ModelRefusal> {
+    let mut admitted = Vec::with_capacity(offered.len());
+    let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
+    for selection in offered {
+        if let Some(&already_selected_version) = selected_versions.get(selection.identity.as_str())
+        {
+            return Err(ModelRefusal {
+                code: Code::DuplicateSelection,
+                cause: ModelRefusalCause::DuplicateSelection {
+                    identity: selection.identity.clone(),
+                    already_selected_version: already_selected_version.to_owned(),
+                    requested_version: selection.version.clone(),
+                },
+                detail: format!(
+                    "domain package identity {:?} is already selected at version {:?}; this call \
+                     additionally selects it at version {:?}, and a package selects at most one \
+                     version of a domain-package identity",
+                    selection.identity, already_selected_version, selection.version
+                ),
+            });
+        }
+        let (admitted_ref, bytes) = admit(selection, digest_domain, bytes_by_digest)?;
+        selected_versions.insert(&selection.identity, &selection.version);
+        admitted.push((admitted_ref, bytes));
+    }
+    Ok(admitted)
+}
+
 // ---------------------------------------------------------------------------
 // Declaration identity form (model-complete.md's Identity row; FCD #199 gap
 // 2, "the identity form"): a type-definition node's identity is exactly

@@ -104,12 +104,13 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
             code.exit_code()
         );
     }
-    // Counted directly against `Code::all()` on this branch (43 pre-existing
-    // variants from `main` after #143/#144/#149, plus this PR's 2 new FR-153
-    // codes: `ForeignReference`, `CardinalityOutOfBound`) rather than derived
-    // by arithmetic — `Code::all()` lists exactly 45 entries, one per
+    // Counted directly against `Code::all()` on this branch (45 pre-existing
+    // variants from `main` after #143/#144/#149's FR-153 codes
+    // (`ForeignReference`, `CardinalityOutOfBound`), plus QSL#213 S-2's
+    // `DuplicateSelection`, ADR-013 O-01/QC-5) rather than derived by
+    // arithmetic — `Code::all()` lists exactly 46 entries, one per
     // `pub enum Code` variant, none missing and none duplicated.
-    assert_eq!(seen.len(), 45);
+    assert_eq!(seen.len(), 46);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
     assert_eq!(
         Code::from_code("invalid_runtime_input"),
