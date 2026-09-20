@@ -65,6 +65,33 @@ file its `url`/`sha256`) in `VENDOR.json`, then re-run `revendor`; it removes
 any file the new pin no longer lists rather than leaving it behind as a stray
 file.
 
+### Split pin: `native-diagnostics.md` at a later commit (QSL#213 S-5a)
+
+`VENDOR.json` currently carries **two** `quire-specification` sources: the
+main one above, still at `d227270fbeb28289df6abba7e94173118345c028`, and a
+second one holding only `proposals/quire-v1/definitions/native-diagnostics.md`,
+pinned separately at `e8a81b569d0efe8d0cf72f3cecb2d21889cc258a` (merged
+agent-ix/quire-specification#144, revision `1-draft.6` -- QC-11's
+`stage_limit_exceeded` and `runtime_invariant` catalog codes, ADR-013
+§7 S-5, tracked on QSL-26).
+
+This is deliberate, not an oversight: bumping the whole source to `e8a81b56`
+also pulls in 15 other upstream PRs across 35 other files, including QC-18's
+`ModelOwner.version` node-identity preimage change, which is QSL#213 **S-2's**
+row, not S-5's -- landing it here would be doing S-2's work silently, and it
+broke tests in modules S-5 does not touch. `revendor`/`revendor-check` check
+each source's files against its own `commit` independently (a hand-edit to
+either file is caught by `revendor-check` the same way), so a per-source pin
+is exactly what the multi-source schema is for, not a workaround. It is also
+not a compatibility layer: there is one vendored copy of this file, at one
+stated pin, and no code path chooses between versions -- the split states
+*when* this tree took a given upstream change, nothing more.
+
+**Convergence condition:** once QSL#213 S-2 lands QC-18 (and whatever else of
+the intervening 15 PRs it needs), the main source's `commit` advances to
+cover `native-diagnostics.md`'s content too, and this second source entry is
+deleted. Do not carry it past S-2.
+
 FR-148 IEEE profiles (TC-193) read the `quire.value.ieee754-2019-default/v1`
 definition, the FR-148 rule and the TC-193 procedure; `tests/ieee_profiles.rs`
 reads the procedure's vector ids.
