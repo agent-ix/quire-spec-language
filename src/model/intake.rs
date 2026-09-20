@@ -1371,9 +1371,7 @@ pub fn read_records(
     package_identity: &str,
     document: &[u8],
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
-    if let Err(refusals) = validate_with_semantic_ir(document) {
-        return Err(refusals);
-    }
+    validate_with_semantic_ir(document)?;
     // `agent-ix-semantic-ir`'s own independent parser (called above by
     // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
     // and parse as JSON *and* fit within its own `json::MAX_DEPTH` (200), so
