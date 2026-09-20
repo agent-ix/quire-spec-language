@@ -21,13 +21,13 @@ use super::decimal::{
     DecimalOperation, DecimalType,
 };
 use super::enumeration::compare_enum;
-use super::integer::Integer;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, Quantity, QuantityTarget,
 };
 use super::rational::Rational;
 use super::text::compare_text;
+use quire_exact::Integer;
 
 /// The grammar's equality operators.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

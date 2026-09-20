@@ -6,11 +6,12 @@
 //! so they have no variant here.
 
 use super::accounting::Incomplete;
-use super::collection::{CardinalityBound, CollectionKind};
+use super::collection::CardinalityBound;
 use super::expression::WrongSnapshotCause;
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::diagnostic::Code;
+use quire_exact::CollectionKind;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2,16 +2,16 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
-use super::super::collection::{CollectionKind, CollectionType};
+use super::super::collection::CollectionType;
 use super::super::composite::{Value, ValueType};
 use super::super::decimal::DecimalType;
 use super::super::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
-use super::super::integer::IntegerInterval;
 use super::super::node::NodeKey;
 use super::super::numeric::{ArithmeticOperator, OrderingOperator};
 use super::super::rational::RationalDomain;
 use super::refusal::Location;
-use crate::model::population::AbsenceMode;
+use crate::absence::AbsenceMode;
+use quire_exact::{CollectionKind, IntegerInterval};
 use std::collections::BTreeSet;
 
 /// A local slot of one function frame or checked expression.

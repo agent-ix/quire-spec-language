@@ -6,8 +6,8 @@
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::definition::AdmittedIntegerDivision;
-use super::integer::{Integer, IntegerDomain, IntegerInterval};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
+use quire_exact::{Integer, IntegerDomain, IntegerInterval};
 
 /// A selectable `div`/`rem` law.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -23,6 +23,7 @@ quire-extraction = ["dep:quire-rs"]
 test-support = []
 
 [dependencies]
+quire-exact = { path = "quire-exact" }
 quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
 logos = "=0.16.1"
 num-bigint = "=0.4.8"

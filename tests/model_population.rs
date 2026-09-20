@@ -15,6 +15,8 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use quire_exact::Integer;
+use quire_spec_language::absence::AbsenceMode;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
@@ -28,7 +30,7 @@ use quire_spec_language::model::normalize::{
     OfferedSelection,
 };
 use quire_spec_language::model::population::{
-    admit_binding, admit_invocation, all_instances, lookup, AbsenceMode, AdmissionChargePoint,
+    admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
     AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
     InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
     PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
@@ -453,10 +455,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
     assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
     assert_eq!(incomplete.limit, 4);
     assert_eq!(incomplete.consumed, 4);
-    assert_eq!(
-        incomplete.next_charge,
-        quire_spec_language::value::Integer::from(1_u64)
-    );
+    assert_eq!(incomplete.next_charge, Integer::from(1_u64));
     assert_eq!(incomplete.charge_point, ChargePoint::CollectionResultRetain);
 }
 

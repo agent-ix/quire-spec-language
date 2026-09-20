@@ -61,18 +61,18 @@ impl Integer {
     }
 
     /// The magnitude `|self|`.
-    pub(crate) fn abs(&self) -> Self {
+    pub fn abs(&self) -> Self {
         Self(self.0.abs())
     }
 
     /// `self^|exponent|`. Callers bound the result size before calling.
-    pub(crate) fn pow(&self, exponent: &Self) -> Self {
+    pub fn pow(&self, exponent: &Self) -> Self {
         Self(num_traits::Pow::pow(&self.0, exponent.0.magnitude()))
     }
 
     /// `(self / 2^k, k)` for the greatest `k <= limit` with `2^k | self`.
     /// Zero has no greatest such `k` and is returned with `k = 0`.
-    pub(crate) fn split_factor_two(&self, limit: u64) -> (Self, u64) {
+    pub fn split_factor_two(&self, limit: u64) -> (Self, u64) {
         match self.0.trailing_zeros() {
             None => (self.clone(), 0),
             Some(zeros) => {
@@ -83,7 +83,7 @@ impl Integer {
     }
 
     /// `self × 2^shift`. Callers bound the result size before calling.
-    pub(crate) fn shifted_left(&self, shift: u64) -> Self {
+    pub fn shifted_left(&self, shift: u64) -> Self {
         Self(&self.0 << shift)
     }
 
@@ -92,45 +92,45 @@ impl Integer {
         self.0.is_even()
     }
 
-    pub(crate) fn add(&self, other: &Self) -> Self {
+    pub fn add(&self, other: &Self) -> Self {
         Self(&self.0 + &other.0)
     }
 
-    pub(crate) fn sub(&self, other: &Self) -> Self {
+    pub fn sub(&self, other: &Self) -> Self {
         Self(&self.0 - &other.0)
     }
 
-    pub(crate) fn mul(&self, other: &Self) -> Self {
+    pub fn mul(&self, other: &Self) -> Self {
         Self(&self.0 * &other.0)
     }
 
-    pub(crate) fn neg(&self) -> Self {
+    pub fn neg(&self) -> Self {
         Self(-&self.0)
     }
 
-    pub(crate) fn gcd(&self, other: &Self) -> Self {
+    pub fn gcd(&self, other: &Self) -> Self {
         Self(self.0.gcd(&other.0))
     }
 
     /// Exact quotient of a division known to be exact; `divisor` is nonzero.
-    pub(crate) fn exact_div(&self, divisor: &Self) -> Self {
+    pub fn exact_div(&self, divisor: &Self) -> Self {
         Self(&self.0 / &divisor.0)
     }
 
     /// Truncating quotient/remainder; `divisor` is nonzero.
-    pub(crate) fn div_rem_truncating(&self, divisor: &Self) -> (Self, Self) {
+    pub fn div_rem_truncating(&self, divisor: &Self) -> (Self, Self) {
         let (quotient, remainder) = self.0.div_rem(&divisor.0);
         (Self(quotient), Self(remainder))
     }
 
     /// Floor quotient/remainder; `divisor` is nonzero.
-    pub(crate) fn div_mod_floor(&self, divisor: &Self) -> (Self, Self) {
+    pub fn div_mod_floor(&self, divisor: &Self) -> (Self, Self) {
         let (quotient, remainder) = self.0.div_mod_floor(&divisor.0);
         (Self(quotient), Self(remainder))
     }
 
     /// Exact `10^exponent`.
-    pub(crate) fn power_of_ten(exponent: u64) -> Self {
+    pub fn power_of_ten(exponent: u64) -> Self {
         let mut result = BigInt::one();
         let mut base = BigInt::from(10_u8);
         let mut remaining = exponent;
@@ -154,7 +154,7 @@ impl Integer {
     /// exponent, and `P` doubles until both brackets have one bit length. The
     /// product is then not a power of two, so a finite precision separates it
     /// from the nearest power of two and the loop terminates.
-    pub(crate) fn power_product_bits(factor: &Self, base: &Self, exponent: &Self) -> Self {
+    pub fn power_product_bits(factor: &Self, base: &Self, exponent: &Self) -> Self {
         let factor = factor.0.magnitude();
         let base = base.0.magnitude();
         let exponent = exponent.0.magnitude();
@@ -318,7 +318,7 @@ impl IntegerInterval {
     }
 
     /// The smallest interval containing both `a` and `b`, in either order.
-    pub(crate) fn spanning(a: Integer, b: Integer) -> Self {
+    pub fn spanning(a: Integer, b: Integer) -> Self {
         if a <= b {
             Self { lower: a, upper: b }
         } else {
@@ -409,12 +409,12 @@ impl IntegerDomain {
 
 impl Integer {
     /// Wrap an arbitrary-precision integer (IEEE exact conversions).
-    pub(crate) fn from_big(value: BigInt) -> Self {
+    pub fn from_big(value: BigInt) -> Self {
         Self(value)
     }
 
     /// The arbitrary-precision integer (IEEE exact conversions).
-    pub(crate) fn as_big(&self) -> &BigInt {
+    pub fn as_big(&self) -> &BigInt {
         &self.0
     }
 }

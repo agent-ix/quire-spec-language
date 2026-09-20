@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::integer::Integer;
+use quire_exact::Integer;
 
 /// A `usize` length or count as an accounting amount.
 ///

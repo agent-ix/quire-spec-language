@@ -8,8 +8,9 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`Expression::children`] lists the children.
 
-use crate::model::population::AbsenceMode;
-use crate::value::{CollectionKind, Integer, ValueType};
+use crate::absence::AbsenceMode;
+use crate::value::ValueType;
+use quire_exact::{CollectionKind, Integer};
 
 /// A binary operator of the expression grammar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
