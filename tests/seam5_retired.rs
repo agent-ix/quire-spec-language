@@ -10,9 +10,12 @@
 //! so this scan can pass while [the declaration-occurrence type] still
 //! exists in source") and names the source-wide reference scan (AC-6, this
 //! test) as the load-bearing check; this test backs that load-bearing
-//! check. It also backs TC-168 step 2 (AC-5): `complete::mod`'s re-export
-//! list is itself a `.rs` file under `src/`, so an absence check over
-//! every file's contents already reaches it, without a separate pass.
+//! check, and backs AC-5 itself along with it: this scan covers every
+//! `.rs` file under `src/`, so zero source references anywhere in `src/`
+//! entails no definition anywhere in `src/`, which entails no compiled
+//! symbol — AC-5's own claim, not only AC-6's. It also backs TC-168 step 2
+//! (AC-5): `complete::mod`'s re-export list is itself a `.rs` file under
+//! `src/`, so this same scan already reaches it, without a separate pass.
 //!
 //! This file's own source never spells any of the three retired names out
 //! as one literal substring — [`banned_names`] builds each from two
