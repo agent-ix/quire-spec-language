@@ -33,8 +33,8 @@ use quire_spec_language::value::{
     Expression, FunctionDeclaration, IllTypedCause, InputRefusal, Integer, IntegerInterval,
     InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey, ObjectEnvironment,
     ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity,
+    Value, ValueType,
 };
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -486,7 +486,11 @@ fn checked_package_call_refuses_a_synthesized_dispatch_candidate_by_name() {
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
         .call(
-            "candidate.body",
+            // Two segments, not one: a synthesized dispatch candidate's
+            // internal name is never a single identifier a `QualifiedName`
+            // could name unqualified, so this resolves against no
+            // declaration regardless of `callable_by_name`.
+            &QualifiedName::new(vec!["candidate".to_owned(), "body".to_owned()]).unwrap(),
             vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
             &objects,
             &mut meter,
@@ -494,7 +498,7 @@ fn checked_package_call_refuses_a_synthesized_dispatch_candidate_by_name() {
         .expect_err("a synthesized dispatch candidate body must not be callable by name");
     assert_eq!(
         refusal,
-        InputRefusal::UnknownFunction("candidate.body".to_owned())
+        InputRefusal::UnknownFunction("candidate::body".to_owned())
     );
 }
 

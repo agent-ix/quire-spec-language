@@ -7,6 +7,20 @@
 //! by the declared [`CheckingLimits`] depth, whose maximum keeps checking off
 //! the host stack limit; reaching a declared limit is `resource_exhausted`,
 //! never an admission verdict.
+//!
+//! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
+//! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
+//! form this migration does not touch (literals, operators, `let`, `if`,
+//! records, collections); only the function-application arm moved to a
+//! thin call into [`super::family`]. `infer_form` itself carries
+//! `#[deny(clippy::wildcard_enum_match_arm)]` (see its own doc) rather than
+//! this whole module: the module also holds several pre-existing, unrelated
+//! wildcard arms over *other* enums (`ValueType`, `BinaryOperator`) in
+//! small type-eligibility helpers that predate this migration and are
+//! outside FR-065-CON-1's scope ("no internal representation of any family
+//! other than `Value`'s function-declaration and function-application
+//! forms") to rework under this ticket. The denial is pointed at the one
+//! seam the review actually flagged.
 
 use super::super::collection::{CardinalityBound, CollectionKind, CollectionType};
 use super::super::comparison::IllTypedCause;
@@ -680,6 +694,24 @@ impl<'a> Typer<'a> {
         Ok(typed)
     }
 
+    /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3). The
+    /// function-application arm (`Expression::Call`) makes exactly one call
+    /// into [`super::family::mint_call_identity`]/[`Self::call`] and holds
+    /// no semantic logic of its own (FR-065-AC-4); every other arm is
+    /// unchanged by this migration.
+    ///
+    /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
+    /// QSL-25 implementation by owner ruling): a future change that wants
+    /// to delete an arm from this `match` cannot restore exhaustiveness
+    /// with a `_ => ...` catch-all -- that is the exact "escape hatch"
+    /// closed here, not merely by convention. Removing `Expression::Call`
+    /// as a variant is not required (and would be wrong: a call is an
+    /// ordinary, still-nestable operand of every other `Value` form), so
+    /// this arm stays; what this attribute forbids is silently absorbing a
+    /// *future* removed arm behind a catch-all instead of deleting the
+    /// corresponding variant.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    #[deny(clippy::match_wildcard_for_single_variants)]
     fn infer_form(
         &mut self,
         expression: &Expression,
@@ -1524,8 +1556,19 @@ impl<'a> Typer<'a> {
             {
                 typed.push(self.check_as(argument, parameter, &location.child(index))?);
             }
+            // FR-062/FR-065: identity is minted from the call's *parsed*
+            // structure (`name`, `arguments` before typing), never from
+            // `function` (a position-dependent index into `self.signatures`
+            // that shifts when unrelated declarations reorder) -- see
+            // `super::family::mint_call_identity`'s doc.
+            let identity = super::family::mint_call_identity(
+                super::family::DEFAULT_PACKAGE_IDENTITY,
+                name,
+                arguments,
+            );
             return Ok(node(
                 NodeKind::Call {
+                    identity,
                     function,
                     arguments: typed,
                 },

@@ -34,6 +34,8 @@ pub enum Code {
     MissingClone,
     Drift,
     CargoPin,
+    SeamProbe,
+    StringEdge,
 }
 
 impl Code {
@@ -46,6 +48,8 @@ impl Code {
             Self::MissingClone => "missing-clone",
             Self::Drift => "drift",
             Self::CargoPin => "cargo-pin",
+            Self::SeamProbe => "seam-probe",
+            Self::StringEdge => "string-edge",
         }
     }
 }
@@ -138,6 +142,39 @@ pub enum Error {
         manifest_commit: String,
         cargo_rev: String,
     },
+    #[error("cannot spawn cargo for the seam probe: {source}")]
+    SeamProbeSpawn {
+        #[source]
+        source: io::Error,
+    },
+    #[error("seam-probe: the normal (non-probe) build failed to compile; nothing else about the probe is meaningful until it succeeds")]
+    SeamProbeNormalBuildFailed,
+    #[error("seam-probe: the normal (non-probe) build reported E0004 at: {locations}; the probe variant must be unreachable outside the probe build (FR-063-AC-3)")]
+    SeamProbeNormalBuildHasE0004 { locations: String },
+    #[error("seam-probe: the build under RUSTFLAGS=--cfg seam_probe succeeded; it must fail with E0004 at every checked-in seam location")]
+    SeamProbeBuildUnexpectedlySucceeded,
+    #[error(
+        "seam-probe: checked-in list and the probe build's E0004 locations differ -- \
+         unexpected-but-present: {unexpected_but_present}; expected-but-missing: {expected_but_missing}"
+    )]
+    SeamProbeMismatch {
+        unexpected_but_present: String,
+        expected_but_missing: String,
+    },
+    #[error("string-edge: cannot parse {path} as Rust source: {source}")]
+    StringEdgeParse {
+        path: PathBuf,
+        #[source]
+        source: syn::Error,
+    },
+    #[error(
+        "string-edge: allow-list entry {file}:{line} gates a branch (feeds an if/while \
+         condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
+         from the allow-list and mark the call site #[string_edge] instead"
+    )]
+    StringEdgeAllowListGatesABranch { file: String, line: u32 },
+    #[error("{summary}")]
+    StringEdgeFound { summary: String },
 }
 
 impl Error {
@@ -161,13 +198,21 @@ impl Error {
                 Code::Drift
             }
             Self::CargoPinMissing { .. } | Self::CargoPinDisagreement { .. } => Code::CargoPin,
+            Self::SeamProbeSpawn { .. }
+            | Self::SeamProbeNormalBuildFailed
+            | Self::SeamProbeNormalBuildHasE0004 { .. }
+            | Self::SeamProbeBuildUnexpectedlySucceeded
+            | Self::SeamProbeMismatch { .. } => Code::SeamProbe,
+            Self::StringEdgeParse { .. }
+            | Self::StringEdgeAllowListGatesABranch { .. }
+            | Self::StringEdgeFound { .. } => Code::StringEdge,
         }
     }
 
     /// Distinguish usage/environment failure (2) from a genuine content drift (1).
     pub fn exit_code(&self) -> u8 {
         match self.code() {
-            Code::Drift => 1,
+            Code::Drift | Code::SeamProbe | Code::StringEdge => 1,
             Code::Usage
             | Code::Io
             | Code::Manifest

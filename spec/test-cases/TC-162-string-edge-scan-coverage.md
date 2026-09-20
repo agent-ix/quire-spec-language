@@ -17,6 +17,20 @@ its report is non-empty, rejects an allow-list entry that gates a branch
 (including each of ADR-010 §4.3's five named production sites), and that the
 lint gate fails when the tool does. Scope: FR-064-AC-1 through FR-064-AC-6.
 
+**Scope correction.** `xtask string-edge` itself (steps 1-6 below) is fully
+implemented and exercised by unit fixtures, and is clean over every file
+#214 adds or touches (`xtask/src/*`). Step 7 (the lint-gate wiring) is
+implemented only as a standalone `make string-edge` target, not as part of
+`ci:`/the lint gate: the real QSL crate today has 60 pre-existing,
+unmarked, mostly branch-gating occurrences outside `src/family/*` and
+`src/value/expression/*`, which the allow-list cannot admit and which
+#214 does not own converting (see
+[QSL-145](https://linear.app/agent-ix/issue/QSL-145) and FR-064's own
+Status section). No test in this delivery stubs the gate's target list to
+demonstrate step 7's mechanism in isolation from the real crate's current
+state; this is recorded as a gap alongside QSL-145 rather than asserted as
+satisfied.
+
 ## Test Procedure
 
 1. Build a fixture QSL-shaped source tree with one string comparison inside

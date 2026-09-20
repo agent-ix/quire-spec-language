@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL #138: the closed set of vendored resource trees this command knows.
 use crate::error::Error;
+use qsl_attrs::string_edge;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,6 +33,9 @@ impl Tree {
         }
     }
 
+    /// FR-064's own edge function shape: one total conversion from a CLI
+    /// `--tree` value to this closed enum, or a typed refusal.
+    #[string_edge]
     pub fn from_arg(text: &str) -> Result<Self, Error> {
         match text {
             "native-v1" => Ok(Self::NativeV1),

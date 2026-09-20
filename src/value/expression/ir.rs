@@ -14,6 +14,13 @@ use super::refusal::Location;
 use crate::model::population::AbsenceMode;
 use std::collections::BTreeSet;
 
+/// FR-062/FR-065: a checked function-application node's identity (ADR-013
+/// O-04), minted by [`super::family::mint_call_identity`]. Aliased from the
+/// pre-existing local `NodeKey` (a same-name, unrelated composite-type
+/// identity this module already imports for `Tuple`/`Record`) so the two are
+/// never confused at a call site.
+pub(crate) use quire_exact::NodeKey as FamilyNodeKey;
+
 /// A local slot of one function frame or checked expression.
 pub(crate) type Slot = usize;
 
@@ -280,6 +287,11 @@ pub(crate) enum NodeKind {
     Present(Box<Node>),
     Value(Box<Node>),
     Call {
+        /// FR-062/FR-065: content-addressed identity, minted once at check
+        /// from the call's parsed structure (not from `function`, which is
+        /// a position-dependent index -- see
+        /// [`super::family::mint_call_identity`]'s doc).
+        identity: FamilyNodeKey,
         function: usize,
         arguments: Vec<Node>,
     },
@@ -468,6 +480,21 @@ impl Node {
             .into_iter()
             .filter(|node| matches!(node.kind, NodeKind::Attribute { .. }))
             .map(|node| node.location.clone())
+            .collect()
+    }
+
+    /// FR-062-AC-2/FR-065-AC-3: every function-application occurrence in
+    /// this subtree, as (checked identity, source location) -- the source
+    /// half of the occurrence-keyed source map `PackageDeclarations::check`
+    /// builds. Reads each `NodeKind::Call`'s own identity and location
+    /// fields; mints nothing and re-derives no span.
+    pub(crate) fn call_occurrences(&self) -> Vec<(FamilyNodeKey, Location)> {
+        self.descendants()
+            .into_iter()
+            .filter_map(|node| match &node.kind {
+                NodeKind::Call { identity, .. } => Some((*identity, node.location.clone())),
+                _ => None,
+            })
             .collect()
     }
 }

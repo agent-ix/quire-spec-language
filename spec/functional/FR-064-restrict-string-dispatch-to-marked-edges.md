@@ -121,8 +121,36 @@ than accept it into the allow-list.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. ADR-012 §9's edge table names the string-dispatch sites this
-scan is expected to find clean or flag once QSL's own edges are marked; that
-marking work is this ticket's and the family migration tickets' own, not
-this requirement's scan tool.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). ADR-012
+§9's edge table names the string-dispatch sites this scan is expected to
+find clean or flag once QSL's own edges are marked; that marking work is
+this ticket's and the family migration tickets' own, not this requirement's
+scan tool.
+
+**Scope of what #214 delivers.** `#[string_edge]` and `xtask string-edge`
+are both fully implemented and tested (TC-162): the scan correctly finds
+literal-based string comparisons and string-literal `match` arms outside a
+marked function, respects the allow-list, rejects a branch-gating allow-list
+entry (including all five ADR-010 §4.3 sites), and excludes test code.
+Every edge in the files #214 itself touches or adds (`xtask/src/*`) is
+marked and the scan is clean there. Running the scan against the whole QSL
+crate as it stands today reports 60 further occurrences, all outside
+`src/family/*` and `src/value/expression/*` -- in `src/cli.rs`,
+`src/complete/`, `src/model/`, `src/protocol_artifact/`, `src/linking.rs`,
+`src/mapped.rs`, `src/package/intake.rs`, `src/state/evaluation.rs` and
+`src/value/definition.rs`. Almost all are branch-gating, so the allow-list
+(which this requirement's own Behavior section forbids from admitting a
+branch-gating entry) cannot make them clean; converting them is real work
+belonging to whichever family or module owns that code, not to #214's own
+migration of function declaration/application. This is tracked as
+[QSL-145](https://linear.app/agent-ix/issue/QSL-145), parented to #214's own
+tracking issue, not attempted here.
+
+Because of this, the "Gate placement" behavior above and FR-064-AC-6 are
+**not** satisfied by production wiring in #214: `make string-edge` runs the
+tool standalone (see the Makefile), not as part of `ci:`, until QSL-145
+lands -- wiring it into `ci:` today would fail the gate on 60 sites #214
+did not introduce and does not own, the same shape as FR-063's S2/S3
+deferral (QSL-143). TC-162's own test (step 7, a stubbed gate target list)
+still demonstrates the wiring *mechanism* works; it does not demonstrate
+the real crate is clean under it.
