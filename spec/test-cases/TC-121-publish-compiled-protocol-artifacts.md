@@ -15,7 +15,7 @@ Planned public Rust controls for the full
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
-reader behavior. The eleven groups below correspond to the eleven acceptance
+reader behavior. The twelve groups below correspond to the twelve acceptance
 criteria.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
@@ -259,16 +259,12 @@ observations belong only to the later consumer fixture.
     each as an unrecognized field rather than accept or silently drop it.
     Inspect the compiler source tree and confirm no `ProducerObject` or
     `Correspondence` type or wire tag remains, and that the domain-package
-    member decodes through a plain `record!` field rather than an internally
-    tagged alternative with a zero-field variant (FR-042-CON-2); the reader's
-    refusal of a `correspondence`/`producer`/`interface` member above is the
-    behavioral proof that mechanism actually fires, not an assumption about
-    `deny_unknown_fields` in the abstract. Separately compile a native
-    package that admits no domain package at all (a directly admitted native
-    model) and confirm its emitted `Model` decodes with the domain-package
-    naming absent, exactly as the deleted `Correspondence`'s absence was
-    previously permitted. Regenerate both existing golden
-    directories, `artifacts/compiled-protocol-v1` and
+    member decodes through a plain `record!` field rather than any internally
+    tagged (`#[serde(tag = ...)]`) representation (FR-042-CON-2); the
+    reader's refusal of a `correspondence`/`producer`/`interface` member
+    above is the behavioral proof that mechanism actually fires, not an
+    assumption about `deny_unknown_fields` in the abstract. Regenerate both
+    existing golden directories, `artifacts/compiled-protocol-v1` and
     `artifacts/compiled-protocol-v2`, and confirm both directories' own tests
     still pass under the new `Model` shape, at their existing
     `quire.compiled-protocol/1` and `quire.compiled-protocol/2`
@@ -277,6 +273,14 @@ observations belong only to the later consumer fixture.
     ([FR-054](../functional/FR-054-publish-control-temporal-activation-map.md))
     keeps its own wire identity and activation-mapping delta, and only its
     shared `Model` population changes shape.
+12. Compile a native package that admits no domain package at all (a
+    directly admitted native model) and decode its emitted `Model`; confirm
+    its domain-package member decodes as explicit `null`, distinguished by
+    byte content from the member being omitted. Separately hand-construct a
+    decoder input for such a model that omits the member entirely and require
+    the reader to refuse it, exactly as an omitted `Nullable<T>` member
+    refuses elsewhere in this contract, never reading the omission as an
+    implicit `null`.
 
 ## Expected Results
 
