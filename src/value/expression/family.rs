@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use quire_exact::{Location, NodeKey, Origin, Role};
 
-use super::syntax::{Expression, FunctionDeclaration};
+use crate::forms::{Expression, FunctionDeclaration};
 
 /// ADR-013 O-11: a non-empty sequence of identifiers, `::`-separated on
 /// display -- the layer-6 `replay` facade's (and, for this ticket,
@@ -742,5 +742,36 @@ mod tests {
         let bytes = emit_v2(&[("f".to_owned(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
         assert_eq!(decoded, vec![("f".to_owned(), after_check)]);
+    }
+
+    /// F16 (rust-review, pre-handoff pass): `#[serde(deny_unknown_fields)]`
+    /// on `FunctionPackageV2`/`FunctionEntryV2` (decoded from externally
+    /// supplied bytes through the `pub` `decode_function_package_v2`)
+    /// actually refuses an unknown field, rather than silently dropping it.
+    #[test]
+    fn decode_v2_refuses_an_unknown_top_level_field() {
+        let bytes = br#"{"version":"quire.checked-function-package/v2","functions":[],"extra":true}"#;
+        assert_eq!(decode_v2(bytes), Err(DecodeV2Error::Malformed));
+    }
+
+    /// F16: same, for an unknown field on one entry rather than the
+    /// top-level package.
+    #[test]
+    fn decode_v2_refuses_an_unknown_entry_field() {
+        let bytes = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"00000000000000000000000000000000000000000000000000000000000000","extra":true}]}"#;
+        assert_eq!(decode_v2(bytes), Err(DecodeV2Error::Malformed));
+    }
+
+    /// Existing (pre-#262-review) coverage this pass confirmed is real: an
+    /// unrecognised version and a non-hex identity are each refused with
+    /// their own distinct variant, not `Malformed`.
+    #[test]
+    fn decode_v2_distinguishes_version_and_identity_refusals() {
+        let wrong_version =
+            br#"{"version":"quire.checked-function-package/v1","functions":[]}"#;
+        assert_eq!(decode_v2(wrong_version), Err(DecodeV2Error::Version));
+
+        let bad_identity = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"not-hex"}]}"#;
+        assert_eq!(decode_v2(bad_identity), Err(DecodeV2Error::InvalidIdentity));
     }
 }

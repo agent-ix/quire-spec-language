@@ -52,6 +52,7 @@ mod ieee;
 mod integer;
 mod key;
 mod library;
+mod member;
 mod model_query;
 mod node;
 mod numeric;
@@ -104,14 +105,23 @@ pub use equality::{
     EqualityPlan, EqualitySchedule,
 };
 pub use expression::{
-    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal,
-    CheckedExpression, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    ClauseKind, CollectionLoss, CollectionProperty, DeclaredClauseKind, DecodeV2Error,
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
+    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DecodeV2Error,
     DepthAboveMaximum, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    EnumBinding, Evaluation, Expression, FieldInitializer, FunctionDeclaration, InputRefusal,
-    InvalidDispatchDeclaration, InvalidQualifiedName, LocatedLoss, Location, MeasureObligation,
-    Obligation, Origin, PackageDeclarations, ProvedInterval, QualifiedName, ValueLoss,
-    WrongSnapshotCause, MAX_CHECKING_DEPTH,
+    EnumBinding, Evaluation, InputRefusal, InvalidDispatchDeclaration, InvalidQualifiedName,
+    LocatedLoss, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
+    ProvedInterval, QualifiedName, ValueLoss, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+};
+// The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
+// moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
+// is their one defining module (FR-067-AC-9). `value::Expression` etc. were
+// already this module's own aggregation path before the move (this file
+// re-exports dozens of other types the same way, from their own owning
+// submodules); the move changes which module they aggregate from, not
+// whether `value` aggregates them.
+pub use crate::forms::{
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
+    FieldInitializer, FunctionDeclaration,
 };
 // `crate::model::conformance`'s FR-151 refinement obligation reuses this
 // crate's own FR-146 fact-derivation primitive (see
@@ -138,6 +148,7 @@ pub use library::{
     LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause,
     IDENTITY_PREIMAGE_PATH, PACKAGE_ID_PATH,
 };
+pub use member::{Identifier, InvalidIdentifier, Member};
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
     SemanticGraphCause, NODE_KEY_DOMAIN,
