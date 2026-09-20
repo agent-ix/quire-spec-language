@@ -51,7 +51,7 @@
 //! deleted in the same review round that removed its one (fabricated)
 //! construction site, rather than migrated onto `src/diagnostic.rs`'s --
 //! that migration, for `Staged`/`StageFailure`/`LimitExceeded` too, is real
-//! work a future change does deliberately, not a byproduct of this one.
+//! work QSL-162 does deliberately, not a byproduct of this one.
 //!
 //! **The sixth contract part, `Requirements` (ADR-012 §2), is deferred.**
 //! No family this repository has migrated -- `Value`'s function-declaration
