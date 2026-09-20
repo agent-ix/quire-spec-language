@@ -2141,14 +2141,21 @@ mod tests {
     // one's own refusal/success shape is pinned independently of any one
     // fixture document.
 
-    /// PR #200 review R2-4: untagged, not re-traced. This drives
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced. This drives
     /// [`read_value_type_ref`] directly -- a native `typeRef`'s own
     /// resolution rule, no FR-056 AC's subject (AC-1 covers per-IR-node
-    /// declaration production: meaning, exports, artifact id, span). No
-    /// FR-056 AC or other traced criterion in this repo names native
-    /// `typeRef` resolution, so this stays untagged rather than mistagged
-    /// (the same honest-untag choice as `xtask/src/cargo_pin.rs`'s tests,
-    /// F6).
+    /// declaration production: meaning, exports, artifact id, span). FR-152
+    /// (`quire-specification`) does carry acceptance criteria for the
+    /// systems binder's own reference resolution (FR-152-AC-1..8), but no
+    /// `FR-151-AC` or `FR-152-AC` row exists anywhere in this repo's own
+    /// matrices (`spec/model-linking/tests.md` and siblings) -- tagging a
+    /// test with one would point at a row that does not exist locally.
+    /// FR-152-AC-4 in particular ("port direction, port interface type and
+    /// multiplicity are all enforced before a connection is exposed",
+    /// verified by TC-197) is about the binder's own `check_connection`
+    /// (`crate::model::systems`), not about intake's wire-level `typeRef`
+    /// reading this test exercises. Untagged rather than mistagged, the
+    /// same honest-untag choice as `xtask/src/cargo_pin.rs`'s tests (F6).
     #[test]
     fn resolves_a_known_native_type_ref() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -2158,9 +2165,12 @@ mod tests {
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
     }
 
-    /// PR #200 review R2-4: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
-    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
+    /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
+    /// the binder's `check_connection`, not intake's typeRef reading).
+    /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
+    /// subject.
     #[test]
     fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
@@ -2202,9 +2212,12 @@ mod tests {
     /// stops occurring, but as a consequence of what the *document* emits,
     /// not because this test or this reader changed.
     ///
-    /// PR #200 review R2-4: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
-    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
+    /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
+    /// the binder's `check_connection`, not intake's typeRef reading).
+    /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
+    /// subject.
     #[test]
     fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
@@ -2235,9 +2248,12 @@ mod tests {
     /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
     /// unconditionally, naming which parameters are unexpressable, never
     /// resolving to a made-up declaration.
-    /// PR #200 review R2-4: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment. Also a direct
-    /// `read_value_type_ref` test, not AC-3's kind/meaning subject.
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
+    /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
+    /// the binder's `check_connection`, not intake's typeRef reading).
+    /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
+    /// subject.
     #[test]
     fn refuses_a_parameterized_native_type_as_unsupported() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
@@ -3002,12 +3018,18 @@ mod tests {
     /// multiplicity at all is schema-valid to FCD and reaches this reader's
     /// own check.
     ///
-    /// PR #200 review R2-4: untagged, not re-traced -- this is
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- this is
     /// `read_connection`'s own connection-end shape check, not AC-3's
-    /// kind/meaning subject, and this repo carries no local FR-152 text to
-    /// cite for the connection-end rule itself (FR-056-AC-8 cites FR-152
-    /// only end to end). Same honest-untag choice as
-    /// `resolves_a_known_native_type_ref`'s doc comment describes (F6).
+    /// kind/meaning subject. `quire-specification`'s FR-152 does carry
+    /// acceptance criteria for the systems binder's own multiplicity/
+    /// direction/interface-type enforcement (FR-152-AC-4), but no
+    /// `FR-152-AC` row exists in this repo's own matrices to tag against
+    /// (FR-056-AC-8 cites FR-152 only end to end, not this connection-end
+    /// wire-shape check), and FR-152-AC-4 covers the binder's own
+    /// `check_connection` (`crate::model::systems`, verified by TC-197 in
+    /// `quire-specification`), not this reader's wire-shape check. Same
+    /// honest-untag choice as `resolves_a_known_native_type_ref`'s doc
+    /// comment describes (F6).
     #[test]
     fn refuses_a_connection_end_with_no_multiplicity() {
         let document = wire_envelope(
@@ -3167,8 +3189,9 @@ mod tests {
         );
     }
 
-    /// PR #200 review R2-4: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment. This one drives
+    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
+    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
+    /// FR-151-AC/FR-152-AC row exists to tag against). This one drives
     /// `read_records` end to end rather than `read_value_type_ref` directly,
     /// but its subject is still typeRef resolution, not AC-1's per-node
     /// declaration production.
