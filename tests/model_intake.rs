@@ -808,13 +808,20 @@ fn charges_normalize_record_once_per_intake_declaration() {
         declaration_records: 2,
         ..ModelNormalizationLimits::UNLIMITED
     };
-    assert!(
-        matches!(
-            normalize(&domain_package, exact),
-            NormalizeOutcome::Completed(_)
-        ),
-        "exactly 2 declarations at a declaration_records bound of 2 completes"
-    );
+    // R2-6 (PR #200 review round 2): TC-147's Expected Results say "the
+    // exact bound completes with N declarations" -- inspect the
+    // `EffectiveView`'s own entry count, not just that some `Completed`
+    // came back.
+    match normalize(&domain_package, exact) {
+        NormalizeOutcome::Completed(view) => {
+            assert_eq!(
+                view.declarations.len(),
+                2,
+                "the completed view carries both declarations, not just any Completed outcome"
+            );
+        }
+        other => panic!("expected Completed with 2 declarations, got {other:?}"),
+    }
 
     let one_less = ModelNormalizationLimits {
         declaration_records: 1,
