@@ -14,7 +14,7 @@ use quire_spec_language::model::accounting::{
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{
     DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_REDEFINE,
@@ -36,6 +36,7 @@ fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
         supertypes: supertypes
             .into_iter()
             .map(DeclarationKey::fixture)
@@ -60,7 +61,7 @@ fn field_member_redefining(
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
@@ -380,27 +381,31 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: root.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: owner_orders.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![root.clone()],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: owner_other.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![root.clone()],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: d.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![owner_orders.clone(), owner_other.clone()],
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: root_x.clone(),
                 owner: root.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: None,
@@ -411,7 +416,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
                     node: "model.A.x2".to_owned(),
                 },
                 owner: owner_orders.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
@@ -422,7 +427,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
                     node: "model.A.x3".to_owned(),
                 },
                 owner: owner_other.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
@@ -504,27 +509,31 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: root.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: low.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![root.clone()],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: mid.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![low.clone()],
             }),
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: d2.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: vec![mid.clone()],
             }),
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: root_x.clone(),
                 owner: root.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: None,
@@ -535,7 +544,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                     node: "model.Shared.w".to_owned(),
                 },
                 owner: low.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
@@ -546,7 +555,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                     node: "model.Shared.z1".to_owned(),
                 },
                 owner: mid.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
@@ -557,7 +566,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
                     node: "model.Shared.z2".to_owned(),
                 },
                 owner: mid.clone(),
-                value_type: root.clone(),
+                value_type: ValueTypeRef::Package(root.clone()),
                 multiplicity: MULTIPLICITY_0_1,
                 subsets: vec![],
                 redefines: Some(root_x.clone()),
@@ -1859,6 +1868,7 @@ fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
         vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
             key: key.clone(),
             interface_features: None,
+            abstract_type: false,
             supertypes: Vec::new(),
         })],
     );
@@ -1897,6 +1907,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
             DomainPackageRecord::ObjectType(ObjectTypeRecord {
                 key: malformed_key.clone(),
                 interface_features: None,
+                abstract_type: false,
                 supertypes: Vec::new(),
             }),
         ],

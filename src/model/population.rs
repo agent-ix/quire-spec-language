@@ -749,6 +749,27 @@ pub fn admit_binding(
     // see the `generals` field's own doc comment.
     let generals = generals_by_specific(domain_package);
 
+    // D05 (`model-complete.md:156`): indexed once, alongside `type_lookup`
+    // above, so the abstract-instance check below is a lookup rather than a
+    // rescan of `domain_package.records` per member.
+    let abstract_types: BTreeMap<DeclarationKey, bool> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::ObjectType(object) => {
+                Some((object.key.clone(), object.abstract_type))
+            }
+            DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::OperationMember(_)
+            | DomainPackageRecord::Component(_)
+            | DomainPackageRecord::Endpoint(_)
+            | DomainPackageRecord::Relationship(_)
+            | DomainPackageRecord::Allocation(_)
+            | DomainPackageRecord::Population(_) => None,
+        })
+        .collect();
+
     let mut admitted: BTreeMap<ReferenceKey, DeclarationKey> = BTreeMap::new();
     let mut by_object: BTreeMap<String, ReferenceKey> = BTreeMap::new();
     for (position, member) in document.members.iter().enumerate() {
@@ -772,6 +793,55 @@ pub fn admit_binding(
                 ),
             });
         };
+
+        // FR-153:57/:72: a member type not covered by the population's own
+        // declared `member_types` is foreign, even when it exists elsewhere
+        // in the domain package. "Covered" is the member type itself, or a
+        // type conforming to a declared member type.
+        let mut covered = false;
+        for declared in &population.member_types {
+            match type_conforms(&generals, &member.type_identity, declared) {
+                Ok(true) => {
+                    covered = true;
+                    break;
+                }
+                Ok(false) => {}
+                Err(refusal) => return AdmissionOutcome::Refused(refusal),
+            }
+        }
+        if !covered {
+            return AdmissionOutcome::Refused(ModelRefusal {
+                code: Code::ForeignReference,
+                cause: ModelRefusalCause::ForeignType {
+                    member: member.object.clone(),
+                    type_name: member.type_identity.clone(),
+                },
+                detail: format!(
+                    "member {} names type {}, not covered by population {}'s member types",
+                    member.object, member.type_identity.node, population.key.node
+                ),
+            });
+        }
+
+        // D05 (`model-complete.md:156`): a member whose most-specific type
+        // is abstract has no direct instances.
+        if abstract_types
+            .get(&member.type_identity)
+            .copied()
+            .unwrap_or(false)
+        {
+            return AdmissionOutcome::Refused(ModelRefusal {
+                code: Code::InvalidRuntimeInput,
+                cause: ModelRefusalCause::AbstractInstance {
+                    member: member.object.clone(),
+                    abstract_type: member.type_identity.clone(),
+                },
+                detail: format!(
+                    "member {} names abstract type {}, which has no direct instances",
+                    member.object, member.type_identity.node
+                ),
+            });
+        }
 
         let key = ReferenceKey {
             universe: universe.clone(),

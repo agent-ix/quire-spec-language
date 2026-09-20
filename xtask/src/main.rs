@@ -14,21 +14,24 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use xtask::{
+    cargo_pin,
     error::{Error, Result},
     manifest::Manifest,
     revendor, revendor_check, Sources, Tree,
 };
 
-const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|all> [--qspec-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|all>]";
+const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all> [--qspec-clone <path>] [--fcd-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all>]";
 
 struct Args {
     tree: Option<Tree>,
     qspec_clone: Option<PathBuf>,
+    fcd_clone: Option<PathBuf>,
 }
 
 fn parse_flags(operands: &[OsString]) -> Result<Args> {
     let mut tree = None;
     let mut qspec_clone = None;
+    let mut fcd_clone = None;
     let mut iter = operands.iter();
     while let Some(flag) = iter.next() {
         let flag = flag.to_str().ok_or(Error::Usage(USAGE))?;
@@ -46,10 +49,18 @@ fn parse_flags(operands: &[OsString]) -> Result<Args> {
                 let value = iter.next().ok_or(Error::Usage(USAGE))?;
                 qspec_clone = Some(PathBuf::from(value));
             }
+            "--fcd-clone" => {
+                let value = iter.next().ok_or(Error::Usage(USAGE))?;
+                fcd_clone = Some(PathBuf::from(value));
+            }
             _ => return Err(Error::Usage(USAGE)),
         }
     }
-    Ok(Args { tree, qspec_clone })
+    Ok(Args {
+        tree,
+        qspec_clone,
+        fcd_clone,
+    })
 }
 
 fn trees(selected: Option<Tree>) -> Vec<Tree> {
@@ -67,6 +78,7 @@ fn run_revendor(workspace_root: &Path, args: &Args) -> Result<String> {
         let sources = Sources {
             workspace_root,
             qspec_clone: args.qspec_clone.as_deref(),
+            fcd_clone: args.fcd_clone.as_deref(),
         };
         let report = revendor(&mut manifest, &tree.root(workspace_root), &sources)?;
         manifest.save(&manifest_path)?;
@@ -96,12 +108,16 @@ fn run_check(workspace_root: &Path, args: &Args) -> Result<String> {
         // present. `--qspec-clone` has no effect here.
         return Err(Error::CheckRefusesQspecClone);
     }
+    if args.fcd_clone.is_some() {
+        return Err(Error::CheckRefusesFcdClone);
+    }
+    let expected_fcd_commit = cargo_pin::read_agent_ix_semantic_ir_rev(workspace_root)?;
     let mut summary = String::new();
     let mut clean = true;
     for tree in trees(args.tree) {
         let manifest_path = tree.manifest_path(workspace_root);
         let manifest = Manifest::load(&manifest_path)?;
-        let report = revendor_check(&manifest, &tree.root(workspace_root))?;
+        let report = revendor_check(&manifest, &tree.root(workspace_root), &expected_fcd_commit)?;
         summary.push_str(&format!(
             "{}: {} matched, {} drifted, {} stray\n",
             tree.dir_name(),
@@ -192,8 +208,26 @@ mod tests {
         let args = Args {
             tree: None,
             qspec_clone: Some(PathBuf::from("/nonexistent")),
+            fcd_clone: None,
         };
         let error = run_check(&workspace_root, &args).unwrap_err();
         assert!(matches!(error, Error::CheckRefusesQspecClone));
+    }
+
+    /// Tracing: TC-149.
+    #[trace("TC-149", "NFR-011-AC-1")]
+    #[test]
+    fn tc_149_check_refuses_an_fcd_clone_flag_with_its_own_error_variant() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let args = Args {
+            tree: None,
+            qspec_clone: None,
+            fcd_clone: Some(PathBuf::from("/nonexistent")),
+        };
+        let error = run_check(&workspace_root, &args).unwrap_err();
+        assert!(matches!(error, Error::CheckRefusesFcdClone));
     }
 }

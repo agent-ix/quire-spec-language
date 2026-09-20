@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL #138: re-vendor `resources/native-v1` and `resources/complete-value`
 //! from an explicit pinned commit, and check the vendored tree for drift.
+//! QSL #131 PR 3 extends the same mechanism to `tests/fixtures/architecture`
+//! and `tests/fixtures/modules`, vendored from `agent-ix/filament-core-data`
+//! (`Source::Fcd`) at the single commit `Cargo.toml` pins its
+//! `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` git deps to.
 //!
 //! `resources/native-v1` is a **historical selection**, not a mirror of any
 //! current source tree (see its README and
@@ -12,13 +16,14 @@
 //! pins.
 #![forbid(unsafe_code)]
 
+pub mod cargo_pin;
 pub mod error;
 mod fsutil;
 pub mod git;
 pub mod manifest;
 pub mod tree;
 
-pub use error::{Error, Result};
+pub use error::{CommitOwner, Error, Result};
 pub use manifest::{ExternalFile, Manifest, PinnedFile, Source};
 pub use tree::Tree;
 
@@ -33,6 +38,9 @@ pub struct Sources<'a> {
     /// A local `agent-ix/quire-specification` clone, used for `Source::Qspec`.
     /// Required only when the manifest actually contains a `Qspec` source.
     pub qspec_clone: Option<&'a Path>,
+    /// A local `agent-ix/filament-core-data` clone, used for `Source::Fcd`.
+    /// Required only when the manifest actually contains an `Fcd` source.
+    pub fcd_clone: Option<&'a Path>,
 }
 
 impl Sources<'_> {
@@ -40,16 +48,17 @@ impl Sources<'_> {
         match commit_owner {
             CommitOwner::SelfRepo => Ok(self.workspace_root),
             CommitOwner::Qspec => self.qspec_clone.ok_or_else(|| Error::MissingClone {
+                owner: commit_owner,
                 commit: commit.to_owned(),
+                flag: "--qspec-clone",
+            }),
+            CommitOwner::Fcd => self.fcd_clone.ok_or_else(|| Error::MissingClone {
+                owner: commit_owner,
+                commit: commit.to_owned(),
+                flag: "--fcd-clone",
             }),
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum CommitOwner {
-    SelfRepo,
-    Qspec,
 }
 
 /// Outcome of one `revendor` run over a single manifest.
@@ -124,9 +133,12 @@ pub fn revendor(
             } => {
                 revendor_pinned(
                     sources,
-                    CommitOwner::Qspec,
-                    commit,
-                    dest_prefix,
+                    PinnedSource {
+                        owner: CommitOwner::Qspec,
+                        commit,
+                        source_prefix: "",
+                        dest_prefix,
+                    },
                     files,
                     tree_root,
                     &mut report,
@@ -139,9 +151,32 @@ pub fn revendor(
             } => {
                 revendor_pinned(
                     sources,
-                    CommitOwner::SelfRepo,
-                    commit,
-                    dest_prefix,
+                    PinnedSource {
+                        owner: CommitOwner::SelfRepo,
+                        commit,
+                        source_prefix: "",
+                        dest_prefix,
+                    },
+                    files,
+                    tree_root,
+                    &mut report,
+                )?;
+            }
+            Source::Fcd {
+                commit,
+                source_prefix,
+                dest_prefix,
+                files,
+                ..
+            } => {
+                revendor_pinned(
+                    sources,
+                    PinnedSource {
+                        owner: CommitOwner::Fcd,
+                        commit,
+                        source_prefix,
+                        dest_prefix,
+                    },
                     files,
                     tree_root,
                     &mut report,
@@ -186,21 +221,32 @@ fn remove_files_the_manifest_no_longer_lists(
     Ok(())
 }
 
+/// One pinned source's own coordinates -- which repo owns `commit`, and the
+/// (possibly differing) read/write path prefixes -- grouped so
+/// [`revendor_pinned`] takes one struct rather than four flat parameters.
+struct PinnedSource<'a> {
+    owner: CommitOwner,
+    commit: &'a str,
+    /// Repo-relative read path (empty for `Qspec`/`SelfRepo`, whose own
+    /// paths already mirror their destinations).
+    source_prefix: &'a str,
+    dest_prefix: &'a str,
+}
+
 fn revendor_pinned(
     sources: &Sources<'_>,
-    owner: CommitOwner,
-    commit: &str,
-    dest_prefix: &str,
+    source: PinnedSource<'_>,
     files: &mut [PinnedFile],
     tree_root: &Path,
     report: &mut RevendorReport,
 ) -> Result<()> {
-    let repo = sources.repo_for(owner, commit)?;
-    git::require_commit(repo, commit)?;
+    let repo = sources.repo_for(source.owner, source.commit)?;
+    git::require_commit(repo, source.commit)?;
     for file in files.iter_mut() {
-        let bytes = git::show(repo, commit, &file.path)?;
+        let source_path = manifest::join_source(source.source_prefix, &file.path);
+        let bytes = git::show(repo, source.commit, &source_path)?;
         let digest = digest_of(&bytes);
-        let dest = manifest::join_dest(dest_prefix, &file.path);
+        let dest = manifest::join_dest(source.dest_prefix, &file.path);
         let changed = fsutil::write_if_changed(tree_root, &dest, &bytes)?;
         file.sha256 = digest;
         if changed {
@@ -217,7 +263,34 @@ fn revendor_pinned(
 /// `tree_root` (other than `VENDOR.json` and `README.md`) must be recorded
 /// in the manifest. Needs no git repository and no network access, so it is
 /// safe to run from `cargo test`.
-pub fn revendor_check(manifest: &Manifest, tree_root: &Path) -> Result<CheckReport> {
+///
+/// `expected_fcd_commit` is this workspace's own single *authoritative*
+/// source for the commit any `Source::Fcd` entry must be pinned to (QSL #131
+/// PR 3, M1: `agent-ix-semantic-ir`'s rev, read from `Cargo.toml`/
+/// `Cargo.lock` by [`cargo_pin::read_agent_ix_semantic_ir_rev`]). Each
+/// `Source::Fcd` entry's own `VENDOR.json` `commit` field is still a
+/// separate, hand-edited value (`revendor` reads bytes at exactly that
+/// commit, so it needs one before this check can compare anything) --
+/// `expected_fcd_commit` is what that hand-edited value is checked against,
+/// not a value `VENDOR.json` never repeats. A manifest with no `Source::Fcd`
+/// entry never reads this parameter at all.
+pub fn revendor_check(
+    manifest: &Manifest,
+    tree_root: &Path,
+    expected_fcd_commit: &str,
+) -> Result<CheckReport> {
+    for source in &manifest.sources {
+        if let Source::Fcd { commit, .. } = source {
+            if commit != expected_fcd_commit {
+                return Err(Error::FcdRevMismatch {
+                    tree_root: tree_root.to_owned(),
+                    crate_name: cargo_pin::AGENT_IX_SEMANTIC_IR,
+                    manifest_commit: commit.clone(),
+                    cargo_rev: expected_fcd_commit.to_owned(),
+                });
+            }
+        }
+    }
     let mut report = CheckReport::default();
     let mut known: BTreeSet<String> = BTreeSet::new();
     for source in &manifest.sources {

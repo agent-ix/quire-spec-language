@@ -7,15 +7,28 @@ use std::path::{Path, PathBuf};
 pub enum Tree {
     NativeV1,
     CompleteValue,
+    /// `tests/fixtures/architecture`, vendored from FCD's own
+    /// `crates/extraction-frontend/fixtures/architecture` (QSL #131 PR 3).
+    TestFixturesArchitecture,
+    /// `tests/fixtures/modules`, vendored from FCD's own
+    /// `crates/extraction-frontend/fixtures/modules` (QSL #131 PR 3).
+    TestFixturesModules,
 }
 
 impl Tree {
-    pub const ALL: [Self; 2] = [Self::NativeV1, Self::CompleteValue];
+    pub const ALL: [Self; 4] = [
+        Self::NativeV1,
+        Self::CompleteValue,
+        Self::TestFixturesArchitecture,
+        Self::TestFixturesModules,
+    ];
 
     pub fn dir_name(self) -> &'static str {
         match self {
             Self::NativeV1 => "native-v1",
             Self::CompleteValue => "complete-value",
+            Self::TestFixturesArchitecture => "test-fixtures-architecture",
+            Self::TestFixturesModules => "test-fixtures-modules",
         }
     }
 
@@ -23,18 +36,35 @@ impl Tree {
         match text {
             "native-v1" => Ok(Self::NativeV1),
             "complete-value" => Ok(Self::CompleteValue),
+            "test-fixtures-architecture" => Ok(Self::TestFixturesArchitecture),
+            "test-fixtures-modules" => Ok(Self::TestFixturesModules),
             _ => Err(Error::Usage(
-                "--tree must be native-v1, complete-value or all",
+                "--tree must be native-v1, complete-value, test-fixtures-architecture, \
+                 test-fixtures-modules or all",
             )),
         }
     }
 
-    /// `resources/<tree>` under the given workspace root.
+    /// The vendored tree's own root under the given workspace root:
+    /// `resources/<tree>` for the two resource trees, `tests/fixtures/<name>`
+    /// for the two test-fixture trees.
     pub fn root(self, workspace_root: &Path) -> PathBuf {
-        workspace_root.join("resources").join(self.dir_name())
+        match self {
+            Self::NativeV1 | Self::CompleteValue => {
+                workspace_root.join("resources").join(self.dir_name())
+            }
+            Self::TestFixturesArchitecture => workspace_root
+                .join("tests")
+                .join("fixtures")
+                .join("architecture"),
+            Self::TestFixturesModules => workspace_root
+                .join("tests")
+                .join("fixtures")
+                .join("modules"),
+        }
     }
 
-    /// `resources/<tree>/VENDOR.json` under the given workspace root.
+    /// `<tree root>/VENDOR.json` under the given workspace root.
     pub fn manifest_path(self, workspace_root: &Path) -> PathBuf {
         self.root(workspace_root).join("VENDOR.json")
     }

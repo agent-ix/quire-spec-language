@@ -1,10 +1,13 @@
 # QSL #138: re-vendor resources/native-v1 and resources/complete-value from
 # an explicit pinned commit recorded in resources/<tree>/VENDOR.json.
+# QSL #131 PR 3 adds tests/fixtures/architecture and tests/fixtures/modules,
+# vendored from agent-ix/filament-core-data at the same commit Cargo.toml
+# pins its agent-ix-extraction-frontend/agent-ix-semantic-ir git deps to.
 #
-# `revendor` writes bytes; it needs QSPEC_CLONE only when the target tree's
-# manifest actually contains a `qspec`-kind source (both do today). It never
-# resolves "latest" and never fetches over the network -- QSPEC_CLONE must
-# already contain the pinned commit.
+# `revendor` writes bytes; it needs QSPEC_CLONE/FCD_CLONE only when the
+# target tree's manifest actually contains a `qspec`/`fcd`-kind source. It
+# never resolves "latest" and never fetches over the network -- the clone
+# must already contain the pinned commit.
 #
 # `revendor-check` is offline: it verifies the vendored trees against the
 # manifests' own recorded digests and flags any file the manifest does not
@@ -13,11 +16,12 @@
 
 TREE ?= all
 QSPEC_CLONE ?=
+FCD_CLONE ?=
 
 .PHONY: revendor revendor-check ci ci-default-features ci-all-features ci-clean-build
 
 revendor:
-	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE))
+	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
 
 revendor-check:
 	cargo xtask revendor-check --tree $(TREE)
