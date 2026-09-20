@@ -15,8 +15,8 @@ The owning ticket is private language #3; branch agent-a/lc02-linked-packages
 starts from merged runtime 789c636. No package implementation preceded review.
 
 Agent A used the actual installed QUOIN 0.22.5 specify, spec-matrix,
-spec-review and all seven analysis skills under
-/home/peter/.codex/plugins/cache/quoin/quoin/0.22.5/skills/. The authoring pack
+spec-review and all seven analysis skills from the installed Quoin
+plugin 0.22.5 skills cache. The authoring pack
 was fetched once for FR,NFR,IT,TC,TestMatrix,SpecReview; the installed catalog
 resolved agent-ix and supplied the discrete artifact skeletons/schemas.
 No applicable AssuranceProfile was found. The existing owner choice is all
@@ -48,14 +48,15 @@ installed Plan/Task schemas and index/log skeletons. Strict validation reports
 remain not_started. The next executable work is Task-016's independent Rust
 fixtures and genuine missing-API test, followed by implementation.
 Static native-domain
-registration, independent FS05 consumption, compiled ConfigVersion/backend
-parity and Quire integration remain full-assignment acceptance work. No Cargo
+registration, FS05 consumption, compiled ConfigVersion/backend
+parity and Quire integration are tracked as separate full-assignment work. No Cargo
 build, additional agent, hosted dispatch or public posting ran in this review.
 
 Recorded 2026-09-07. The [requirements index](../spec/spec.md) contains 24 draft
 artifacts: one master, one StR, four US, eleven FR, four NFR and three IT.
-These document the existing syntax implementation and the remaining LC02–LC05
-work. The full healthy/violating/refused-or-incomplete state workflow is still
+These document requirements spanning syntax, linking, checking and runtime
+evaluation as drafted so far. The full
+healthy/violating/refused-or-incomplete state workflow is still
 required; syntax success does not satisfy that acceptance.
 
 This opening count describes the original review checkpoint. LR02 adds FR-012,
@@ -68,9 +69,9 @@ counts and hosted observations below retain their original scope.
 
 Authoring follows the installed Quoin plugin 0.20.0 skills:
 
-- `/home/peter/.claude/plugins/cache/quoin/quoin/0.20.0/skills/specify/SKILL.md`
+- `specify/SKILL.md` from the installed Quoin plugin 0.20.0 skills cache
   (SHA-256 `6f9075e93e35bb46dc23140bcfe648d9f56d621472f7f567cd0404c1c225cdbd`).
-- `/home/peter/.claude/plugins/cache/quoin/quoin/0.20.0/skills/spec-review/SKILL.md`
+- `spec-review/SKILL.md` from the installed Quoin plugin 0.20.0 skills cache
   (SHA-256 `8c23b0f67e77d16a21a034885e7f78c835dff3c819ad9d7b23f121fe4489741d`).
 
 The `quoin write` authoring pack was requested once for
@@ -158,8 +159,8 @@ target-selection step; no plan-completion verdict was invented.
 
 The owner subsequently required Rust remediation of all four Python verification
 helpers, including the two CI paths. This reopens a bounded specification cycle.
-The private LC01 campaign audit also requires a separate owner disposition for
-fresh TypeSpec/Node producer qualification. Historical results retain their pins;
+Fresh TypeSpec/Node producer qualification also requires a separate owner
+disposition. Historical results retain their pins;
 a Rust runner does not implicitly approve that external executable language.
 
 ## LR02 implementation and CI checkpoint
@@ -195,7 +196,7 @@ build. Quire now binds 41/41 test symbols, 28/28 native ACs and TM-002's 9/9
 cases. This supersedes the earlier native trace debt, while preserving its
 historical reports. The catalog status-header conflict remains visible;
 the final plan audit records its scoped disposition before private landing.
-At that readiness review, linking/typechecking and FS02/FS03/FS05 adoption
+At that readiness review, linking, typechecking and shared-evidence adoption
 remained future work. The later adoption below supersedes the decision status.
 
 ## LC02 internal adoption and evidence design — 2026-09-08
@@ -210,26 +211,22 @@ LC02's IT-005, TM-003 and TC-020–029 cover the existing ten FR-005/006
 acceptance criteria. SR-030–037 record the retained base plus seven analyses.
 The cases remain planned: Quire reports TM-003 0/10 backed and the existing
 41/41 Rust test symbols bound. No new runtime execution is claimed.
-The actual shared typed-model/reference interface and qualified rule-model
-realization remain prerequisites; A will specify its concrete native API and
-resource limits against that shared interface before implementation.
-Broader FS acceptance, independent B/C adoption and publication remain separate.
+A will specify its concrete native API and resource limits against the actual
+shared typed-model/reference interface and qualified rule-model realization.
+Broader FS acceptance, independent B/C adoption and publication are tracked
+as separate work.
 
 ## Current ownership correction — 2026-09-08
 
-The owner clarified that the retired contract-agent-core's remaining work was
-already reassigned to quire-agent-a/b/c, and indicated that quire-agent-c
-largely assumed that track. The separate contract-agent-c still owns tl-*.
-A's earlier request for a transfer from the retired agent was based on stale
-records and is withdrawn. IR #54 belongs in the current A/B/C work allocation,
-with its concrete inherited-track claim coordinated through quire-agent-c.
-The private CO01 handoff requests that claim and the adapter specification/API.
-It does not assert that C has begun implementation merely because A posted it.
+The owner clarified current work ownership. A's earlier request for a transfer
+was based on stale records and is withdrawn. IR #54 belongs in the current
+A/B/C work allocation. It does not assert that C has begun implementation
+merely because A posted it.
 
 This corrects work ownership only. The adopted semantics, IT-005 prerequisites,
 ten planned LC02 cases and SR-030–037 technical findings are unchanged. Actual
 adapter availability still requires code and qualification evidence; it is no
-longer described as a dependency on the retired core session.
+longer described as a dependency on an inactive work track.
 
 ## IR #54 resolution — 2026-09-08
 
@@ -329,10 +326,11 @@ Runtime rows remain planned; existing tests are not relabeled as runtime evidenc
 The actual local code-review/rust-review skills and non-semantic gap reconciliation
 remain mandatory during implementation qualification.
 
-This native API milestone still requires subsequent LC02/FS03 acceptance,
-compiled ConfigVersion/backend qualification and Quire integration for the
-original assignment. It introduces no B/C/TL/Filament ownership change, new
-portable result authority, decoder, producer-language execution or hosted CI run.
+This native API milestone is scoped to LC03. LC02/FS03 acceptance, compiled
+ConfigVersion/backend qualification and Quire integration for the original
+assignment are tracked as separate work. It introduces no B/C/TL/Filament
+ownership change, new portable result authority, decoder, producer-language
+execution or hosted CI run.
 
 ## LC03 input construction qualified — 2026-09-09
 

@@ -11,7 +11,7 @@ description: "Actual native linker progress."
   Native resolution is unblocked on the existing IR surface. B's PR8 packet
   has been delivered separately and is not a compiler implementation gate.
 - 2026-09-08: Specification PR8 landed at 8ab058beff03cc76c0f39cc06c87ef98f76e8d78;
-  B received the exact main pin on PR8 and CO01. B's reader adoption is independent.
+  B received the exact main pin on PR8. B's reader adoption is independent.
 - 2026-09-08: Corrected the qualification example's namespace and reserved field
   spelling at ecaf4cf; all eight reviews re-evaluated it at 01e597d before the
   corrected tests continued. Initial setup failures are not linkage evidence.
@@ -25,7 +25,7 @@ description: "Actual native linker progress."
   the interruption alone and no hosted CI is dispatched.
 - 2026-09-08: Native implementation d44e974 and Rust/gap reviews 3924dbb pushed
   to compiler PR8. The PR was made ready and the exact handoff posted to LC02
-  (issuecomment-5594753863) and CO01 (issuecomment-5594757398). Task-006's
+  (issuecomment-5594753863). Task-006's
   reviewable-PR deliverable is complete. The five FR-006 cases and full workflow
   remain open; the private threads retain the eventual merge state.
 - 2026-09-08: Final IT-005 consistency check found the remaining reserved field

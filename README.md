@@ -396,7 +396,7 @@ and deferred standard-artifact terms. No public release is authorized.
 
 Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),
 [compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
-The shared contracts and LC02–LC05 acceptance remain separate work.
+The shared contracts and LC02–LC05 work are tracked separately, in their own issues.
 
 ## Review fixture audits
 
