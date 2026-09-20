@@ -43,6 +43,20 @@ pub enum Source {
         dest_prefix: String,
         files: Vec<PinnedFile>,
     },
+    /// Bytes read from `agent-ix/filament-core-data` at an explicit commit.
+    /// Unlike [`Self::Qspec`]/[`Self::SelfRepo`], the source tree's own shape
+    /// (`crates/extraction-frontend/fixtures/...`) does not match this
+    /// repository's vendored destination (`tests/fixtures/...`), so `path` is
+    /// a shared relative tail joined onto `source_prefix` to read and onto
+    /// `dest_prefix` to write.
+    Fcd {
+        repo: String,
+        commit: String,
+        source_prefix: String,
+        #[serde(default)]
+        dest_prefix: String,
+        files: Vec<PinnedFile>,
+    },
     /// Bytes downloaded once from an external host and pinned by digest;
     /// `revendor`/`revendor_check` verify the digest and never fetch it.
     ExternalUrl { files: Vec<ExternalFile> },
@@ -95,6 +109,18 @@ pub(crate) fn join_dest(dest_prefix: &str, path: &str) -> String {
     }
 }
 
+/// A pinned file's repo-relative read path: `source_prefix` joined onto its
+/// own `path`, mirroring [`join_dest`] for the write side. Kept as its own
+/// named function (rather than reusing `join_dest` for both directions) so
+/// a read site and a write site never silently trade places.
+pub(crate) fn join_source(source_prefix: &str, path: &str) -> String {
+    if source_prefix.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{source_prefix}/{path}")
+    }
+}
+
 impl Source {
     /// Every tree-relative destination path this source vendors.
     pub fn dest_paths(&self) -> Vec<String> {
@@ -112,6 +138,9 @@ impl Source {
                 dest_prefix, files, ..
             }
             | Self::SelfRepo {
+                dest_prefix, files, ..
+            }
+            | Self::Fcd {
                 dest_prefix, files, ..
             } => files
                 .iter()
@@ -154,7 +183,10 @@ impl Manifest {
             });
         }
         for source in &self.sources {
-            if let Source::Qspec { commit, .. } | Source::SelfRepo { commit, .. } = source {
+            if let Source::Qspec { commit, .. }
+            | Source::SelfRepo { commit, .. }
+            | Source::Fcd { commit, .. } = source
+            {
                 if !is_full_commit_sha(commit) {
                     return Err(Error::InvalidManifest {
                         path: path.to_owned(),
@@ -165,11 +197,26 @@ impl Manifest {
                     });
                 }
             }
+            if let Source::Fcd { source_prefix, .. } = source {
+                if !is_safe_relative_path(source_prefix) {
+                    return Err(Error::InvalidManifest {
+                        path: path.to_owned(),
+                        message: format!(
+                            "{source_prefix}: source_prefix is not a safe tree-relative path; \
+                             an absolute path, a backslash and a \".\" or \"..\" component are \
+                             refused"
+                        ),
+                    });
+                }
+            }
             match source {
                 Source::Qspec {
                     dest_prefix, files, ..
                 }
                 | Source::SelfRepo {
+                    dest_prefix, files, ..
+                }
+                | Source::Fcd {
                     dest_prefix, files, ..
                 } => {
                     if !dest_prefix.is_empty() && !is_safe_relative_path(dest_prefix) {

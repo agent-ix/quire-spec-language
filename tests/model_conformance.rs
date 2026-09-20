@@ -15,7 +15,7 @@ use quire_spec_language::model::conformance::{
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, PostconditionClause, ScalarTypeRecord,
+    OperationResult, PostconditionClause, ScalarTypeRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
@@ -36,6 +36,7 @@ fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
         supertypes: supertypes
             .into_iter()
             .map(DeclarationKey::fixture)
@@ -66,7 +67,7 @@ fn field_member_redefining(
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: DeclarationKey::fixture(identity),
         owner: DeclarationKey::fixture(owner),
-        value_type: DeclarationKey::fixture(value_type),
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: m,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
@@ -127,12 +128,12 @@ fn operation_redefining(
             .into_iter()
             .map(|(id, ty, m)| OperationParameterRecord {
                 key: DeclarationKey::fixture(id),
-                value_type: DeclarationKey::fixture(ty),
+                value_type: ValueTypeRef::Package(DeclarationKey::fixture(ty)),
                 multiplicity: m,
             })
             .collect(),
         result: result.map(|(ty, m)| OperationResult {
-            value_type: DeclarationKey::fixture(ty),
+            value_type: ValueTypeRef::Package(DeclarationKey::fixture(ty)),
             multiplicity: m,
         }),
         effect: OperationEffect {
@@ -408,8 +409,8 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
                 causes[0],
                 ModelRefusalCause::VarianceParameter {
                     index: 1,
-                    declared: DeclarationKey::fixture("model.A"),
-                    redefined: DeclarationKey::fixture("model.B"),
+                    declared: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
+                    redefined: ValueTypeRef::Package(DeclarationKey::fixture("model.B")),
                 }
             );
             assert_eq!(
@@ -569,8 +570,8 @@ fn r06_subsetting_type_and_multiplicity_axes() {
             assert_eq!(
                 failures[0].cause,
                 ModelRefusalCause::SubsettingType {
-                    subsetting: DeclarationKey::fixture("model.C"),
-                    subsetted: DeclarationKey::fixture("model.A"),
+                    subsetting: ValueTypeRef::Package(DeclarationKey::fixture("model.C")),
+                    subsetted: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
                 }
             );
         }
@@ -1338,7 +1339,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
             DomainPackageRecord::FieldMember(FieldMemberRecord {
                 key: DeclarationKey::fixture("model.B.xb"),
                 owner: DeclarationKey::fixture("model.B"),
-                value_type: redefining_value_type,
+                value_type: ValueTypeRef::Package(redefining_value_type),
                 multiplicity: mult(1, Some(1)),
                 subsets: vec![],
                 redefines: Some(DeclarationKey::fixture("model.A.x")),

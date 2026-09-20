@@ -15,7 +15,8 @@ relationships:
 
 ## Statement
 
-When `resources/native-v1` or `resources/complete-value` is vendored or
+When `resources/native-v1`, `resources/complete-value`,
+`tests/fixtures/architecture` or `tests/fixtures/modules` is vendored or
 re-vendored, the `quire-spec-language` repository shall read every path from
 the exact commit recorded in that tree's `VENDOR.json` manifest (or verify an
 externally hosted file by its recorded digest alone), write exactly those
@@ -24,13 +25,23 @@ untracked file offline with no clone and no network access.
 
 ## Scope
 
-This applies to `resources/native-v1` and `resources/complete-value`, their
-`VENDOR.json` manifests, and the `xtask` `revendor`/`revendor-check` commands
-that read and check them. Every source is named by a full commit sha read
-from a local clone or by a recorded digest, and the closed registry
-(`src/linking/composed/definition_source.rs`) interprets the resulting bytes
-under its own rules. `resources/native-v1` is a historical selection pinned
-at its recorded commits.
+This applies to all four vendored trees -- `resources/native-v1`,
+`resources/complete-value`, `tests/fixtures/architecture` and
+`tests/fixtures/modules` -- their `VENDOR.json` manifests, and the `xtask`
+`revendor`/`revendor-check` commands that read and check them. Every
+source is named by a full commit sha read from a local clone
+(`agent-ix/quire-specification` for a `Qspec` source, this repository's
+own history for a `SelfRepo` source, or `agent-ix/filament-core-data` for
+an `Fcd` source -- `--qspec-clone`/`--fcd-clone`) or by a recorded digest,
+and the closed registry (`src/linking/composed/definition_source.rs`)
+interprets `resources/native-v1`'s resulting bytes under its own rules;
+`tests/fixtures/architecture`/`tests/fixtures/modules` are read directly
+by this crate's own tests. `resources/native-v1` is a historical
+selection pinned at its recorded commits. An `Fcd` source's own `commit`
+is additionally checked against this workspace's
+`Cargo.toml`/`Cargo.lock` `agent-ix-semantic-ir` pin (`xtask::cargo_pin`),
+a separate consistency check this NFR does not itself define an
+acceptance criterion for.
 
 ## Measurement and Evaluation
 
@@ -45,11 +56,14 @@ at its recorded commits.
 
 Run `cargo test --workspace`, which exercises `xtask/tests/revendor.rs` and
 the `xtask` unit tests as part of the default suite. Run `cargo xtask
-revendor-check` (or `make revendor-check`) for both `native-v1` and
-`complete-value` and confirm it reports zero drifted and zero stray paths.
-Run `cargo xtask revendor` against a local `quire-specification` clone and
-confirm it reports nothing written when the manifests already match that
-clone's pinned commits.
+revendor-check` (or `make revendor-check`) for all four trees --
+`native-v1`, `complete-value`, `test-fixtures-architecture` and
+`test-fixtures-modules` -- and confirm it reports zero drifted and zero
+stray paths. Run `cargo xtask revendor` against a local
+`quire-specification` clone (`--qspec-clone`) for the trees with a `Qspec`
+source and against a local `filament-core-data` clone (`--fcd-clone`) for
+the two `tests/fixtures/*` trees, and confirm each reports nothing written
+when the manifests already match that clone's pinned commits.
 
 ## Acceptance Criteria
 

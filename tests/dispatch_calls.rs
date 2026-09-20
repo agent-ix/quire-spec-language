@@ -21,7 +21,7 @@ use quire_spec_language::model::checked_dispatch::{
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
-    OperationEffect, OperationMemberRecord, OperationResult,
+    OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{
@@ -1367,6 +1367,7 @@ fn object_type_record(identity: &str, supertypes: Vec<&str>) -> DomainPackageRec
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
         interface_features: None,
+        abstract_type: false,
         supertypes: supertypes
             .into_iter()
             .map(DeclarationKey::fixture)
@@ -1395,7 +1396,7 @@ fn operation_record(
         owner: DeclarationKey::fixture(owner),
         parameters: Vec::new(),
         result: Some(OperationResult {
-            value_type: DeclarationKey::fixture(owner),
+            value_type: ValueTypeRef::Package(DeclarationKey::fixture(owner)),
             multiplicity: Multiplicity {
                 lower: 1,
                 upper: Some(1),
@@ -1760,7 +1761,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_no_result() {
 fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect() {
     let domain_package = not_a_query_bundle(
         Some(OperationResult {
-            value_type: DeclarationKey::fixture("model.A"),
+            value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
             multiplicity: Multiplicity {
                 lower: 1,
                 upper: Some(1),
