@@ -197,7 +197,7 @@ tags as they exist in the delivered code today:** none carries a
   round (a genuine probe-build failure at exactly the checked-in location,
   a clean normal build, a non-zero exit on a deliberate mismatch) -- but
   none carries its own trace tag in a dedicated test, so all six are
-  recorded unbacked rather than claimed. Owner: QSL-149 (AC-1, 2, 3, 4, 7).
+  recorded unbacked rather than claimed. Owner: QSL-149 (AC-1, 2, 3, 4, 6, 7).
   AC-5's second half (the gate-stubbing test this criterion's own text
   requires) is tracked as a spec defect against this requirement's text,
   owned by QSL-155.
@@ -214,7 +214,15 @@ tags as they exist in the delivered code today:** none carries a
   to itself -- and the other two exercise `enclosing_item_name`, the F14
   line-to-item-name helper, which is not this criterion's subject. All
   three are now untagged; they remain as real tests of what they actually
-  verify (the literal's shape, and the F14 helper), not of AC-6.
+  verify (the literal's shape, and the F14 helper), not of AC-6. Owner:
+  QSL-149, which owns this criterion alongside AC-1/2/3/4/7 (above) even
+  though it stays unbacked regardless of who owns it: the five categories
+  this criterion names land under three different tickets -- the S2/S3
+  categories under QSL-143, the S4 (family `Cause` `catalog_code()`)
+  category under QSL-152, and the stage-participation-table category only
+  when `stage_hooks` (deleted, PR #262 review finding F7) returns with a
+  real caller -- so QSL-149 tracks the criterion's own probe-mechanism
+  coverage, not a promise that landing QSL-149 alone backs AC-6.
 
 Zero of this requirement's seven Acceptance Criteria are backed by a
 dedicated, trace-tagged test today.
