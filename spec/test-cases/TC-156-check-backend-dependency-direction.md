@@ -14,8 +14,9 @@ Verify that `arch-lint direction` classifies resolved packages by repository,
 reports every FB-05 edge into QSL other than CG's normal dependency, reports
 every FB-11 cycle over the combined normal+dev edge graph exactly once, and
 reproduces ADR-011 OBS-029's real, currently observed violation when run
-against quire-contract-ir's real current-head `cargo metadata` output. Scope:
-FR-059-AC-1 through FR-059-AC-6.
+against quire-contract-ir's real current-head `cargo metadata` output, and
+that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
+even built. Scope: FR-059-AC-1 through FR-059-AC-7.
 
 ## Test Procedure
 
@@ -34,6 +35,14 @@ FR-059-AC-1 through FR-059-AC-6.
    originates from QSL or CG). Run the check.
 6. Run `arch-lint direction` against real `cargo metadata` output for QSL's
    own manifest and a real local checkout of quire-contract-ir's current head.
+7. Call the freshness comparison directly with a resolved revision that does
+   not match a captured remote `main` head (the reviewer's real repro:
+   quire-contract-codegen resolved at local main `bda01f1...`, remote main at
+   `a4b2a733...`), and separately with a resolved revision that does match a
+   captured remote head (quire-contract-ir at `ef11217...` on both sides).
+   Then run `arch-lint direction` end to end against `--qsl .` and a real
+   local checkout, and inspect the printed report for the resolved revision
+   of every root.
 
 ## Expected Results
 
@@ -50,6 +59,12 @@ FR-059-AC-1 through FR-059-AC-6.
   QSL that ADR-011 OBS-029 already documents, and the FB-11 report names the
   corresponding real cycle(s); this output is captured for the PR body as
   real, not synthetic, evidence.
+- Step 7: the mismatched-revision call fails distinctly (`Code::Stale`), and
+  the error names both the stale local revision and the remote's current
+  head; the matched-revision call passes; the end-to-end run's report prints
+  the resolved revision for every root, including `--qsl`'s, regardless of
+  whether the run passes, fails, or is skipping the comparison via
+  `--offline`.
 
 ## Metadata
 
