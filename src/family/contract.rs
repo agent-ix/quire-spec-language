@@ -266,9 +266,10 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// better, given #262's own ruling that a structured outcome undone by a
 /// panic at its one call site is the wrong trade. `Refused` therefore
 /// stays, kept honest about being unreached by any caller today rather
-/// than presented as exercised: the layer-6 `replay` facade widening
-/// (#243) is the plausible first caller that resolves `checked` from a bare
-/// identity with no prior name lookup, and could genuinely trigger it.
+/// than presented as exercised: #243 (the layer-6 `replay` facade
+/// widening) resolves `checked` from a bare identity with no prior name
+/// lookup, and is the named, tracked owner of the change that would
+/// genuinely trigger this path -- not a guess at whoever comes first.
 ///
 /// **No `Incomplete` variant.** ADR-012 §2 reserves `evaluate` as the one
 /// hook allowed to return the kernel meter's `Incomplete` outcome, and that
@@ -277,9 +278,14 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// `pub(crate)` inside `quire-exact` (`quire-exact/src/accounting.rs:551,
 /// 595`), not exported to this crate. QSL cannot charge the kernel meter
 /// through any public API today, so nothing here could construct an
-/// `Incomplete` for real; this is an export gap in `quire-exact` (#213 S-1),
-/// tracked separately, not a consequence of how many families are migrated.
-/// The first caller with public charge access adds this variant back.
+/// `Incomplete` for real. **QSL-153 owns this export gap** (PR #262
+/// review round 4: the previous attribution here, "#213 S-1", named
+/// QSL-26/#213, which is Done and never covered this gap -- QSL-153 is
+/// already this same file's correct attribution for `StageLimits`'
+/// deleted limit kinds, above at [`StageLimits`]'s own doc; this
+/// paragraph now matches it instead of contradicting it), not a
+/// consequence of how many families are migrated. QSL-153 adds this
+/// variant back together with public charge access.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EvaluateRefusal {
     #[error("evaluation refused: {0}")]

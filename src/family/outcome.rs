@@ -107,9 +107,9 @@ impl LimitExceeded {
 /// still constructible *empty* -- `Refused { causes: Vec::new() }` compiles
 /// and asserts nothing, a causeless refusal. Rather than ship a variant only
 /// reachable via that hazard, `#214` narrows `StageFailure` to the one way
-/// this ticket's family can genuinely fail; the first family with a real
-/// typed refusal cause adds `Refused` back, parameterised over its own
-/// (inhabited) `Cause` type.
+/// this ticket's family can genuinely fail; QSL-152 owns adding `Refused`
+/// back, parameterised over a real, inhabited `Cause` type, alongside the
+/// rest of the contract's deferred parts (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StageFailure {
     Limit(LimitExceeded),
