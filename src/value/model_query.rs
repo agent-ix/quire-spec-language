@@ -133,7 +133,7 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
     binding
         .type_catalog()
         .iter()
-        .map(|(producer, effective)| (effective.clone(), producer.clone()))
+        .map(|(producer, effective)| (*effective, producer.clone()))
         .collect()
 }
 

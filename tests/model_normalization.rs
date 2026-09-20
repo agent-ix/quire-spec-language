@@ -17,8 +17,7 @@ use quire_spec_language::model::domain_package::{
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
 use quire_spec_language::model::key::{
-    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, EffectiveIdExt, Fact,
-    RULE_REDEFINE,
+    DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, EffectiveIdExt, Fact, RULE_REDEFINE,
 };
 use quire_spec_language::model::normalize::{
     normalize, normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause,
@@ -789,7 +788,7 @@ fn n01_normalizes_f1_to_the_exact_ground_truth_identities() {
     assert_eq!(view.identity().hex(), vector_sha256(&vectors, "n01-view"));
 
     let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
-    assert_eq!(universe.root_types, vec![type_a.effective_id.clone()]);
+    assert_eq!(universe.root_types, vec![type_a.effective_id]);
     assert_eq!(
         universe.identity().hex(),
         vector_sha256(&vectors, "n01-universe")
@@ -1400,7 +1399,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
     // Type-level identities are unaffected by phase 4 (field-only): D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find(&view, &vector_sha256(&vectors, "n02-type-D")[..8]);
-    let owner_d = type_d.effective_id.clone();
+    let owner_d = type_d.effective_id;
 
     let winner = find_member(&view, &owner_d, "model.D.x4");
     assert!(
@@ -2892,8 +2891,7 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
                     && entry.preimage.original.node == "model.O"
             })
             .unwrap_or_else(|| panic!("no type declaration for model.O in {n_parents}-parent view"))
-            .effective_id
-            .clone();
+            .effective_id;
 
         let winner = find_member(&view, &owner_o, "model.O.z");
         assert!(

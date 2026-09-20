@@ -125,7 +125,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
         .find(|entry| {
             entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
         })
-        .map(|entry| entry.effective_id.clone())
+        .map(|entry| entry.effective_id)
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 

@@ -213,7 +213,7 @@ fn l01_an_import_binds_the_library_package_id() {
         })
     );
 
-    let raw_source = PackageId(Sha256::digest(b"library L version 1 { R }").into());
+    let raw_source = PackageId::fixture(Sha256::digest(b"library L version 1 { R }").into());
     let by_bytes = over_l("P", "1", raw_source);
     assert_library_refusal(
         resolve_libraries(&by_bytes, &[library_l()]),
@@ -895,7 +895,7 @@ fn l01_export_node_keys_derive_from_a_checked_package_v2_identity_projection() {
     ))
     .unwrap();
     let digest = fixture["package_id"]["digest"].as_str().unwrap();
-    let claimed = PackageId(*NodeKey::from_hex(digest).unwrap().as_bytes());
+    let claimed = PackageId::fixture(*NodeKey::from_hex(digest).unwrap().as_bytes());
     let library = LibraryPackage {
         library: name("Example"),
         version: "1".to_owned(),
