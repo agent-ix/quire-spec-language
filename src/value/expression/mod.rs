@@ -10,6 +10,7 @@
 mod check;
 mod evaluate;
 mod facts;
+mod family;
 mod ir;
 mod refusal;
 mod syntax;
@@ -18,6 +19,7 @@ mod termination;
 use super::accounting::Meter;
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
+use crate::family::{FamilyContract, ReferenceEvaluation};
 use check::{bind_parameters, Scope, Signature, Typer};
 use evaluate::{Callable, Machine};
 use facts::{CallSite, Definedness};
@@ -36,6 +38,7 @@ pub use check::{
     MAX_CHECKING_DEPTH,
 };
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
+pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
@@ -60,6 +63,11 @@ pub enum CheckMode {
 /// A checked function.
 #[derive(Debug)]
 struct CheckedFunction {
+    /// FR-062/FR-065: content-addressed identity, minted once at check from
+    /// the declaration's own parsed structure (`family::
+    /// mint_declaration_identity`), independent of this function's position
+    /// in the package's function list.
+    identity: quire_exact::NodeKey,
     signature: Signature,
     body: Node,
     measure: Option<Node>,
@@ -72,6 +80,11 @@ pub struct CheckedPackage {
     scope: Scope,
     functions: Vec<CheckedFunction>,
     dispatch_tables: Vec<DispatchTable>,
+    /// FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map (identity,
+    /// role, ordinal) -> source [`Location`], for every function
+    /// declaration and function-application occurrence this package
+    /// checked.
+    occurrences: family::OccurrenceMap<Location>,
 }
 
 /// A checked standalone expression over named parameters.
@@ -344,8 +357,66 @@ impl PackageDeclarations {
             .collect();
         let mut nodes = 0_u64;
         let mut functions = Vec::with_capacity(self.functions.len());
+        // FR-062/FR-065: identity is minted through the checked-family
+        // contract's own `check` hook (`family::ValueFunctionFamily`), not
+        // by calling `family::mint_declaration_identity` directly -- this
+        // is what makes the contract (`CheckContext`, `Staged`,
+        // `StageFailure`) the one path this migration's declarations go
+        // through, not a free function beside it.
+        let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
+        let contract_limits = crate::family::StageLimits {
+            input_bytes: u64::MAX,
+            nesting_depth: MAX_CHECKING_DEPTH,
+            node_count: u64::MAX,
+        };
+        let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units: u64::MAX,
+            result_units: u64::MAX,
+        });
+        let mut contract_diagnostics = crate::family::DiagnosticSink::default();
+        let mut contract_scopes = crate::family::ScopeStack::default();
+        let mut contract_checked = 0_usize;
+        crate::family::assert_distinct_catalog_code_prefixes();
+        assert_eq!(
+            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Check),
+            crate::family::HookStatus::Implemented,
+            "Value must report Implemented at Check to admit function declarations through the contract"
+        );
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
+            let mut contract_cx = crate::family::CheckContext::new(
+                &package_identity,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let identity = match family::ValueFunctionFamily::check(function.clone(), &mut contract_cx) {
+                Ok(staged) => staged.value,
+                Err(crate::family::StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::ResourceExhausted {
+                            stage: CheckingStage::Typing,
+                            kind: CheckingLimitKind::Depth,
+                            limit: limit.configured_bound,
+                        },
+                    });
+                    continue;
+                }
+                Err(crate::family::StageFailure::Fault(fault)) => {
+                    panic!("ValueFunctionFamily::check's internal invariant failed at {}: {}", fault.stage, fault.invariant)
+                }
+            };
+            contract_checked += 1;
             let typed = (|| {
                 let mut typer = Typer::new(
                     &scope,
@@ -383,6 +454,7 @@ impl PackageDeclarations {
             })();
             match typed {
                 Ok((body, measure, slots)) => functions.push(CheckedFunction {
+                    identity,
                     signature: Signature {
                         name: function.name,
                         parameters: function.parameters,
@@ -402,6 +474,16 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-062-AC-3: `ValueFunctionFamily::check` records exactly one
+        // diagnostic per function it admitted through the contract --
+        // `DiagnosticSink::entries`'s only real caller, and a real
+        // (non-test) coherence check on the contract's own side effect, not
+        // a fabricated read.
+        assert_eq!(
+            contract_diagnostics.entries().len(),
+            contract_checked,
+            "ValueFunctionFamily::check must record exactly one diagnostic per admitted function"
+        );
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -441,10 +523,40 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        // FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map, built
+        // from each function's own minted declaration identity and every
+        // `NodeKind::Call` identity its checked body (and measure, if any)
+        // already carries -- reads locations `Typer` already recorded, mints
+        // no new identity or span here.
+        let mut occurrences = family::OccurrenceMap::default();
+        for (index, function) in functions.iter().enumerate() {
+            occurrences.record(
+                function.identity,
+                "declaration",
+                body_location(index, &function.signature.name),
+            );
+            for (identity, location) in function.body.call_occurrences() {
+                occurrences.record(identity, "reference", location);
+            }
+            if let Some(measure) = &function.measure {
+                for (identity, location) in measure.call_occurrences() {
+                    occurrences.record(identity, "reference", location);
+                }
+            }
+        }
+        // FR-062-AC-2: every admitted function has at least its own
+        // "declaration" occurrence -- `OccurrenceMap::entries`'s only real
+        // (non-test) caller, and a real coherence check on the map this
+        // loop just built, not a fabricated read.
+        assert!(
+            occurrences.entries().len() >= functions.len(),
+            "every admitted function must have at least one recorded occurrence"
+        );
         Ok(CheckedPackage {
             scope,
             functions,
             dispatch_tables,
+            occurrences,
         })
     }
 }
@@ -579,6 +691,62 @@ impl CheckedPackage {
             .find(|(_, function)| function.signature.name == name)
     }
 
+    /// The checked function whose minted identity is `identity`, if this
+    /// package admitted one (the identity-keyed lookup [`Self::call`]'s
+    /// `QualifiedName`-keyed lookup cannot serve, and evaluation-by-identity
+    /// needs).
+    fn function_by_identity(&self, identity: quire_exact::NodeKey) -> Option<&CheckedFunction> {
+        self.functions
+            .iter()
+            .find(|function| function.identity == identity)
+    }
+
+    /// FR-065-AC-2: `name`'s checked identity, minted once at `check` and
+    /// unchanged by anything else in the package. `None` for an undeclared
+    /// name.
+    pub fn function_identity(&self, name: &str) -> Option<quire_exact::NodeKey> {
+        self.function(name).map(|(_, function)| function.identity)
+    }
+
+    /// FR-062-AC-2/FR-065-AC-3: the source location recorded for one
+    /// occurrence (identity, role, ordinal) of a checked function
+    /// declaration or function-application call, if `check` recorded one.
+    pub fn occurrence(&self, identity: quire_exact::NodeKey, origin: &quire_exact::Origin) -> Option<&Location> {
+        self.occurrences.resolve(identity, origin)
+    }
+
+    /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
+    /// bytes -- the checked-package producer's own public entry point
+    /// (calls [`family::ValueFunctionFamily::package`] once per function,
+    /// S4-links each identity first, all-or-nothing per function per
+    /// [`crate::family::FamilyContract::package`]'s own doc). Reads no CST,
+    /// no source text, only each function's already-checked identity.
+    pub fn emit_function_package_v2(&self) -> Vec<u8> {
+        assert_eq!(
+            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Package),
+            crate::family::HookStatus::Implemented,
+            "Value must report Implemented at Package to emit v2 bytes through the contract"
+        );
+        let mut entries = Vec::with_capacity(self.functions.len());
+        for function in &self.functions {
+            let linked = family::link_function_identity(function.identity);
+            let mut scratch = Vec::new();
+            family::ValueFunctionFamily::package(&linked, &mut scratch);
+            entries.push((function.signature.name.clone(), linked));
+        }
+        family::emit_v2(&entries)
+    }
+
+    /// Decode `quire.checked-function-package/v2` bytes emitted by
+    /// [`Self::emit_function_package_v2`] back into (qualified name,
+    /// identity) pairs, for a caller verifying identity survived the round
+    /// trip (FR-065-AC-2).
+    pub fn decode_function_package_v2(
+        bytes: &[u8],
+    ) -> Result<Vec<(String, quire_exact::NodeKey)>, family::DecodeV2Error> {
+        family::decode_v2(bytes)
+    }
+
     fn callables(&self) -> Vec<Callable<'_>> {
         self.functions
             .iter()
@@ -647,27 +815,59 @@ impl CheckedPackage {
     /// ordinary checked `Expression::Call` can (`check.rs`'s own
     /// `callable_by_name` gate, TC-196 D07's bypass this closes at the other
     /// entry point).
+    ///
+    /// FR-065-AC-6/ADR-013 O-11: `function` is a typed [`QualifiedName`],
+    /// never a bare `&str` — this is the layer-6 `replay` facade's executor
+    /// entry for `Value`'s function family (the `mod.rs:635` bare-`&str`
+    /// lookup this requirement replaces). A name this package's
+    /// declarations do not resolve refuses with `UnknownFunction`, naming
+    /// it; it never falls back to a display-name string comparison.
     pub fn call(
         &self,
-        function: &str,
+        function: &QualifiedName,
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, InputRefusal> {
+        let name = function
+            .as_unqualified()
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         let (_, checked) = self
-            .function(function)
+            .function(name)
             .filter(|(_, checked)| checked.signature.callable_by_name)
-            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_owned()))?;
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         Self::validate(&checked.signature.parameters, &arguments, objects)?;
-        let callables = self.callables();
-        Ok(Machine::new(
-            &self.scope,
-            &callables,
+        // FR-062/FR-065: this family's own `evaluate` hook
+        // (`crate::family::ReferenceEvaluation`) is the one path that runs
+        // checked function-application code, not a second, parallel
+        // `Machine` call beside it.
+        assert_eq!(
+            crate::family::stage_hooks(crate::family::FamilyKind::Value, crate::family::Stage::Evaluate),
+            crate::family::HookStatus::Implemented,
+            "Value must report Implemented at Evaluate to run checked functions through the contract"
+        );
+        let identity = checked.identity;
+        let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units: u64::MAX,
+            result_units: u64::MAX,
+        });
+        let mut env = family::EvaluationEnv {
+            package: self,
             objects,
-            meter,
-            &self.dispatch_tables,
-        )
-        .run(&checked.body, checked.slots, arguments, true))
+            arguments: Some(arguments),
+            local_meter: meter,
+        };
+        family::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter).map_err(|refusal| match refusal {
+            crate::family::EvaluateRefusal::Refused(reason) => InputRefusal::UnknownFunction(reason),
+        })
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.

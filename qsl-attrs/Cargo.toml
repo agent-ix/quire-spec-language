@@ -1,0 +1,17 @@
+[package]
+name = "qsl-attrs"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "QSL#214 (FR-064): the #[string_edge] tool attribute. An identity transform with no runtime behaviour -- it exists only for `xtask string-edge` (ADR-012 §9) to read at the syntax level. No other feature or default path depends on this crate changing what the marked item compiles to."
+
+[lib]
+proc-macro = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"

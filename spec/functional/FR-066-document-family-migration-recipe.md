@@ -103,6 +103,6 @@ from the ADRs.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. This requirement's implementation waits on FR-065's
-implementation for its worked-example citations.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214).
+Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
+citing FR-065's implementation for its worked-example section.
