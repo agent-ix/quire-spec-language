@@ -11,11 +11,12 @@
 //!
 //! `EnumDeclaration::admit`/`admit_member` mint these node ids the same way
 //! `value::expression::check` mints checked-expression node ids (ADR-013
-//! O-04): this module is one of ADR-011 §1's S3 "today" implementers,
-//! colocated with its own domain type rather than living in `check`, exactly
-//! as `value::library` is. No check-stage caller invokes them yet (#118
-//! scoped identity semantics only); today they are exercised only by this
-//! crate's own tests (ADR-011 §1, #211).
+//! O-04), but this module is not itself a `check`-stage implementer: no
+//! `src/` caller builds an `EnumDeclaration` today (#118 scoped this module
+//! to I04/I05 identity semantics only, never a check-stage wiring), so this
+//! is outside ADR-011 §6.1's "only `check` calls the kernel `NodeKey`
+//! constructor" rule (ADR-011 FB-13, #211). Today it is exercised only by
+//! this crate's own tests. Remaining work: #131 wires a check-stage caller.
 
 use std::collections::BTreeSet;
 
