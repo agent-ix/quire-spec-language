@@ -139,7 +139,7 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
-use crate::model::key::{hex, DeclarationKey, EffectiveId, EffectiveIdExt};
+use crate::model::key::{hex, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
@@ -861,9 +861,7 @@ pub fn admit_binding(
                 },
                 detail: format!(
                     "object {} is declared with conflicting types {} and {}",
-                    key.object,
-                    existing.type_identity.hex(),
-                    key.type_identity.hex()
+                    key.object, existing.type_identity, key.type_identity
                 ),
             });
         }
@@ -1721,7 +1719,7 @@ fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal 
         detail: format!(
             "reference key names universe {}, not the binding's {}",
             hex(actual),
-            binding.universe().hex()
+            binding.universe()
         ),
     }
 }

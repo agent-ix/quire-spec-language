@@ -169,8 +169,6 @@ impl Fact {
 pub trait EffectiveIdExt {
     /// The first eight hex digits, as TC-195's vectors abbreviate identities.
     fn short_hex(&self) -> String;
-    /// The full 64-hex digest.
-    fn hex(&self) -> String;
     /// This identity's `{domain, digest}` wire form
     /// (`model-effective-declaration.schema.json`).
     fn to_json(&self) -> Value;
@@ -181,17 +179,13 @@ impl EffectiveIdExt for EffectiveId {
         hex(&self.as_bytes()[..4])
     }
 
-    fn hex(&self) -> String {
-        hex(self.as_bytes())
-    }
-
     fn to_json(&self) -> Value {
         let mut object = Map::new();
         object.insert(
             "domain".to_owned(),
             Value::String(EFFECTIVE_DECLARATION_DOMAIN.to_owned()),
         );
-        object.insert("digest".to_owned(), Value::String(self.hex()));
+        object.insert("digest".to_owned(), Value::String(self.to_string()));
         Value::Object(object)
     }
 }

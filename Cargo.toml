@@ -71,10 +71,8 @@ path = "tools/arch-lint/main.rs"
 
 # These integration tests call the `test-support`-gated fixture constructors
 # (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
-# `DomainPackageRef::fixture_with_version`, `PackageId::fixture` --
-# ADR-013 O-02, #213 S-2: added once `PackageId`'s byte constructor was
-# privatized so production code cannot bypass `of_preimage`) documented above
-# `test-support`. Declaring `required-features` here — rather
+# `DomainPackageRef::fixture_with_version`) documented above `test-support`.
+# Declaring `required-features` here — rather
 # than gating the calls inside each test file — keeps a default-feature
 # `cargo clippy --all-targets`/`cargo test` build (no `test-support`) skipping
 # these targets outright instead of failing to compile them (#154).
@@ -111,11 +109,6 @@ required-features = ["test-support"]
 [[test]]
 name = "dispatch_calls"
 path = "tests/dispatch_calls.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "library_resolution"
-path = "tests/library_resolution.rs"
 required-features = ["test-support"]
 
 [lints.rust]

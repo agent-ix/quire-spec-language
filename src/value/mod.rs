@@ -138,7 +138,7 @@ pub use library::{
     LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause,
     IDENTITY_PREIMAGE_PATH, PACKAGE_ID_PATH,
 };
-pub use member::Member;
+pub use member::{Identifier, InvalidIdentifier, Member};
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
     SemanticGraphCause, NODE_KEY_DOMAIN,

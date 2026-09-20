@@ -72,7 +72,7 @@
 use std::collections::HashMap;
 
 use crate::diagnostic::Code;
-use crate::model::key::{DeclarationKey, EffectiveId, EffectiveIdExt};
+use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     all_instances, lookup, AbsenceMode, AllInstancesOutcome, LookupKey, LookupOutcome,
@@ -159,7 +159,7 @@ fn resolve_target(
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} is not a declared type of this population's model",
-                target_id.hex()
+                target_id
             ),
         })
     })
