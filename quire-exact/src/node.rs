@@ -11,10 +11,19 @@
 //! already-computed digest. It does not hash: the preimage schema, RFC 8785
 //! JCS canonicalization and the SHA-256 computation over that canonical form
 //! all stay in QSL, which computes the digest and passes the finished 32
-//! bytes in. Only QSL's `check` module calls this constructor in production
-//! (the ADR-011 T-12 API-surface check enforces that no other crate that
-//! depends on `quire-exact` calls it either); this crate's own tests call it
-//! freely to exercise the type.
+//! bytes in. Only QSL's `check` module is meant to call this constructor in
+//! production; this crate's own tests call it freely to exercise the type.
+//!
+//! **Not yet enforced.** ADR-011 T-12's `arch-lint api-surface` check names
+//! this rule, but as of this crate's own addition `tools/arch-lint/
+//! api_surface.rs` still targets the pre-extraction call patterns
+//! (`NodeKey::of(`, `NodeKey::from_bytes(`, `node_key_of(`) against
+//! `src/value/node.rs` on `origin/main`, with its own
+//! `pending_reason: "unreachable: NodeKey is defined in src/value/node.rs on
+//! origin/main"`. It does not yet name `quire_exact::node::NodeKey`,
+//! `from_digest`, or this crate at all, so nothing today actually fails a
+//! caller of this constructor outside QSL `check`. Updating the check to
+//! this crate's real constructor is follow-on work, not part of this slice.
 //!
 //! `NodeKey::from_bytes` (the QSL `value/node.rs:49` internal escape hatch)
 //! and the public `NodeKey::from_hex` (`value/node.rs:25`) are both retired by

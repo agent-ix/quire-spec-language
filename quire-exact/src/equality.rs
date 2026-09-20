@@ -5,23 +5,27 @@
 //! occurrence-pair plan: [`plan_pairs`], [`plan_equality`], `planned_equality`
 //! and [`EqualityPlan`]. Everything the original module built on top of that
 //! plan is dropped, because it needs the declaration registry
-//! (`TypeEnvironment::check_equality`, `contains_ieee`), the enum
-//! declaration (`compare_enum`'s ordering/case lookup -- gone along with
-//! `ValueType::Enum`, see `crate::value`'s module doc comment) or the unit
-//! graph (`operand_value`'s Quantity conversion arm, `admits_equality_conversion`'s
-//! Quantity row): `EqualityOperator`/`EqualityOperand`/`EqualitySchedule`/
-//! `CheckedEquality`/`check_equality`/`operand_value`/
-//! `admits_equality_conversion`/`integer_to_decimal`/`decimal_to_rational`.
-//! Selecting and running the top-level text/enum/quantity schedules ahead of
-//! the generic occurrence-pair plan is therefore QSL's job, done above the
-//! kernel with the registry and unit graph it holds.
+//! (`TypeEnvironment::check_equality`, `contains_ieee`), the original
+//! declaration-aware `EnumValue`'s ordering/case lookup (`compare_enum` --
+//! superseded here by `ValueType::Enum`'s inline `EnumShape` set, see
+//! `crate::value`'s module doc comment, which needs no declaration lookup)
+//! or the unit graph (`operand_value`'s Quantity conversion arm,
+//! `admits_equality_conversion`'s Quantity row): `EqualityOperator`/
+//! `EqualityOperand`/`EqualitySchedule`/`CheckedEquality`/`check_equality`/
+//! `operand_value`/`admits_equality_conversion`/`integer_to_decimal`/
+//! `decimal_to_rational`. Selecting and running the top-level text/enum/
+//! quantity schedules ahead of the generic occurrence-pair plan is therefore
+//! QSL's job, done above the kernel with the registry and unit graph it
+//! holds.
 //!
-//! The leaf comparison inside `plan_pairs` is adapted for the kernel's
-//! bare payloads: an enum pair compares equal by raw `VariantId` digest
-//! (T-6: no declaration to check same-enum membership against, so any two
-//! equal digests compare equal -- the kernel does not know which enum they
-//! belong to), and a quantity pair compares equal only in the same unit,
-//! exactly as before.
+//! The leaf comparison inside `plan_pairs` is adapted for the kernel's bare
+//! `Value::Enum` payload: two enum values compare equal exactly when their
+//! `VariantId` digests are equal. A checked program guarantees both operands
+//! share one declared `ValueType::Enum(EnumShape)` before this ever runs --
+//! the same invariant every other leaf type here relies on (an `Integer`
+//! carries no declared bound either) -- so this needs no same-enum check of
+//! its own, exactly as before. A quantity pair compares equal only in the
+//! same unit.
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::integer::Integer;

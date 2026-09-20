@@ -20,8 +20,10 @@
 //!
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
-//! - [`value`]: no `ValueType` variant admits a `Value::Enum`, and
-//!   `Value::Population` has no kernel payload at all.
+//! - [`value`]: `Value::Population` has no kernel payload at all (the
+//!   `ValueType::Enum` shape, by contrast, carries its variant set inline
+//!   per ADR-013 O-14, so it needs no declaration lookup and is not a
+//!   capability loss).
 //! - [`key`] and [`equality`]: an enum pair keys and compares equal by raw
 //!   digest, with no declaration-aware ordering or same-enum check.
 //! - [`quantity`]: no cross-unit arithmetic, comparison or equality; only
@@ -30,9 +32,13 @@
 //!   the closed equality-conversion table are dropped along with the
 //!   declaration registry and unit graph they need.
 //!
-//! Every one of these is a candidate for the ADR-011 §2.3 kernel proof gate's
-//! claimed-module list (see `docs/kernel-proof-gate.md`), which currently
-//! claims a first slice of modules with no cross-crate dependency risk.
+//! **The ADR-011 §2.3 kernel proof gate does not exist yet.** This crate
+//! ships with zero discharged propositions and no claimed-module list.
+//! `cargo kani` cannot run against this workspace at all today: Kani 0.67.0's
+//! bundled toolchain is `rustc 1.93.0-nightly`, while this workspace declares
+//! `rust-version = "1.98"`, and `cargo kani` separately fails on a vendored
+//! dependency's fixture `Cargo.toml`. Building the gate is tracked
+//! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 
 #![forbid(unsafe_code)]
 

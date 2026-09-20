@@ -14,8 +14,10 @@
 //! declared position/case order; a declaration-ordered enum's canonical
 //! collection order is something the layer that still holds the enum
 //! declaration (QSL `model`) must reproduce on top of this, not something
-//! this kernel key can give it. Flagged for review alongside the identical
-//! cut in `crate::value`'s module doc comment.
+//! this kernel key can give it. This is unrelated to `ValueType::Enum`'s own
+//! shape (see `crate::value`'s module doc comment): that type gained back an
+//! inline `EnumShape` variant set for admission checking, but the bare
+//! `Value::Enum` payload this key compares is unchanged either way.
 
 use std::cmp::Ordering;
 

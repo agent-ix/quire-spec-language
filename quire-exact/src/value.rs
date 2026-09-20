@@ -8,12 +8,14 @@
 //! generalization, `Reference<T>` target lookup) stay layer 3 in QSL, not
 //! the kernel. Concretely, against `value::composite`:
 //!
-//! - `ValueType::Enum(NodeKey)` is **dropped**. A bare `Value::Enum(VariantId)`
-//!   (T-6: "no `NodeKey`") gives `ValueType::admits` nothing to look up an
-//!   enum declaration by, so the kernel cannot type-check enum membership at
-//!   all; that check now belongs to whichever layer holds the enum
-//!   declaration (QSL `model`/`check`). This is a real, deliberate capability
-//!   loss at the kernel boundary, not an oversight -- flagged for review.
+//! - `ValueType::Enum(NodeKey)` becomes `ValueType::Enum(EnumShape)` (ADR-013
+//!   O-14, T-6): the declaration-keyed `NodeKey` lookup is dropped, but the
+//!   shape carries its admitted variant set inline, as opaque `VariantId`
+//!   digests, so `ValueType::admits` needs no declaration lookup at all --
+//!   membership is a pure set-membership test against the shape the type
+//!   itself carries. A bare `Value::Enum(VariantId)` (T-6: "no `NodeKey`") is
+//!   unaffected: it names one variant, and the shape says which variants a
+//!   given enum type admits.
 //! - `ValueType::Reference(NodeKey)` becomes `ValueType::Reference(EffectiveId)`
 //!   and `Value::Reference(ObjectReference)` carries the T-6 triple
 //!   (`EffectiveId`, `UniverseId`, `ObjectId`) from [`crate::reference`],
@@ -37,12 +39,13 @@
 //!   own registry -- mirroring [`OptionValue::from_admitted`]'s identical
 //!   role, which is likewise widened from `pub(crate)` to `pub` here.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::collection::{CollectionType, CollectionValue};
 use crate::decimal::{Decimal, DecimalType};
-use crate::identity::{EffectiveId, UnitId, VariantId};
+use crate::identity::{EffectiveId, MemberId, UnitId, VariantId};
 use crate::ieee::{IeeeValue, IeeeWidth};
 use crate::integer::{Integer, IntegerInterval};
 use crate::node::NodeKey;
@@ -51,6 +54,31 @@ use crate::quantity::Quantity;
 use crate::rational::{Rational, RationalDomain};
 use crate::reference::ObjectReference;
 use crate::text::{Text, TextType};
+
+/// The inline set of an enum type's admitted variants (ADR-013 O-14): the
+/// kernel `ValueType::Enum` carries its variant set directly, as opaque
+/// [`VariantId`] digests, so `admits` is a pure set-membership test needing
+/// no declaration lookup. Two shapes are the same shape exactly when they
+/// admit the same variant set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumShape(BTreeSet<VariantId>);
+
+impl EnumShape {
+    /// The enum shape admitting exactly `variants`.
+    pub fn new(variants: impl IntoIterator<Item = VariantId>) -> Self {
+        Self(variants.into_iter().collect())
+    }
+
+    /// Whether `variant` is one of this shape's admitted variants.
+    pub fn contains(&self, variant: VariantId) -> bool {
+        self.0.contains(&variant)
+    }
+
+    /// The admitted variants, in canonical digest order.
+    pub fn variants(&self) -> impl Iterator<Item = VariantId> + '_ {
+        self.0.iter().copied()
+    }
+}
 
 /// A declared kernel value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.
@@ -72,6 +100,9 @@ pub enum ValueType {
     Quantity(UnitId),
     /// A `Text[min, max; profile]`.
     Text(TextType),
+    /// An `Enum` type admitting exactly this inline variant set (ADR-013
+    /// O-14).
+    Enum(EnumShape),
     /// `Option<T>`: `none` or a present `T`.
     Option(Box<ValueType>),
     /// The record or tuple declaration with this node key.
@@ -98,9 +129,10 @@ impl ValueType {
 
     /// Whether `value` is a member of this declared type. Composite, option
     /// and collection values carry their declared type, which must be this
-    /// type; their contents were admitted at construction. No `ValueType`
-    /// variant admits a `Value::Enum` (see the module doc comment): enum
-    /// membership is not a kernel-checkable fact.
+    /// type; their contents were admitted at construction. An `Enum` shape
+    /// admits a `Value::Enum` exactly when the shape contains the value's
+    /// variant (ADR-013 O-14): a pure set-membership test, no declaration
+    /// lookup needed.
     pub fn admits(&self, value: &Value) -> bool {
         match (self, value) {
             (Self::Boolean, Value::Boolean(_)) | (Self::Integer, Value::Integer(_)) => true,
@@ -110,6 +142,7 @@ impl ValueType {
             (Self::Float(width), Value::Float(float)) => float.width() == *width,
             (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
             (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
+            (Self::Enum(shape), Value::Enum(variant)) => shape.contains(*variant),
             (Self::Option(payload), Value::Option(option)) => option.payload_type() == &**payload,
             (Self::Composite(declaration), Value::Composite(composite)) => {
                 composite.declaration() == *declaration
@@ -129,6 +162,7 @@ impl ValueType {
                 | Self::Float(_)
                 | Self::Quantity(_)
                 | Self::Text(_)
+                | Self::Enum(_)
                 | Self::Option(_)
                 | Self::Composite(_)
                 | Self::Collection(_)
@@ -274,25 +308,42 @@ pub enum FieldValue {
     Null,
 }
 
-/// A declaration-owned named field.
+/// A declaration-owned named field. The kernel carries a member only as an
+/// opaque [`MemberId`] digest (ADR-013 O-06): `name` is retained solely as a
+/// human-readable label for `Debug`/diagnostics, and no public semantic
+/// dispatch here keys on it (#213's own acceptance criterion) -- every
+/// lookup, refusal component and slot match below keys on `member`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldDeclaration {
+    member: MemberId,
     name: String,
     value_type: ValueType,
     presence: Presence,
 }
 
 impl FieldDeclaration {
-    /// The field `name: value_type` or `name: value_type?`.
-    pub fn new(name: impl Into<String>, value_type: ValueType, presence: Presence) -> Self {
+    /// The field `member` (`name: value_type` or `name: value_type?`, where
+    /// `name` is a display label only -- see the struct doc comment).
+    pub fn new(
+        member: MemberId,
+        name: impl Into<String>,
+        value_type: ValueType,
+        presence: Presence,
+    ) -> Self {
         Self {
+            member,
             name: name.into(),
             value_type,
             presence,
         }
     }
 
-    /// The field identifier.
+    /// The opaque member identity dispatch keys on.
+    pub fn member(&self) -> MemberId {
+        self.member
+    }
+
+    /// The field's human-readable label. Not used for dispatch.
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -314,7 +365,7 @@ impl FieldDeclaration {
 pub fn record(
     shape: &[FieldDeclaration],
     declaration: NodeKey,
-    fields: Vec<(&str, FieldValue)>,
+    fields: Vec<(MemberId, FieldValue)>,
 ) -> Result<Value, ConstructionRefusal> {
     let slots = fill_slots(shape, fields)?;
     Ok(composite(declaration, slots))
@@ -357,14 +408,14 @@ pub fn tuple(
 pub fn evaluate_record(
     shape: &[FieldDeclaration],
     declaration: NodeKey,
-    fields: Vec<(&str, FieldExpression<'_>)>,
+    fields: Vec<(MemberId, FieldExpression<'_>)>,
     meter: &mut Meter,
 ) -> Result<Outcome<Value>, ConstructionRefusal> {
-    let mut supplied = match_names(shape, fields)?;
+    let mut supplied = match_members(shape, fields)?;
     let mut plan = Vec::with_capacity(shape.len());
     for field in shape {
-        let expression = supplied.remove(field.name.as_str());
-        let component = || Component::Field(field.name.clone());
+        let expression = supplied.remove(&field.member);
+        let component = || Component::Field(field.member);
         match (&expression, field.presence) {
             (None, Presence::Required) => {
                 return refuse(component(), ConstructionCause::MissingField)
@@ -476,8 +527,10 @@ pub(crate) fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value,
 pub enum Component {
     /// The composite value as a whole (its declaration or arity).
     Value,
-    /// A named record field or object attribute.
-    Field(String),
+    /// A named record field or object attribute, by its opaque member
+    /// identity (ADR-013 O-06). No public semantic dispatch depends on
+    /// display text (#213's own acceptance criterion).
+    Field(MemberId),
     /// A zero-based tuple position.
     Position(usize),
     /// A zero-based collection occurrence in source order.
@@ -522,37 +575,35 @@ fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, Constr
     Err(ConstructionRefusal { component, cause })
 }
 
-/// Index supplied entries by declared name, refusing an undeclared or
-/// repeated name.
-fn match_names<'n, T>(
+/// Index supplied entries by declared member, refusing an undeclared or
+/// repeated member.
+fn match_members<T>(
     declared: &[FieldDeclaration],
-    supplied: Vec<(&'n str, T)>,
-) -> Result<std::collections::BTreeMap<&'n str, T>, ConstructionRefusal> {
-    let mut by_name = std::collections::BTreeMap::new();
-    for (name, entry) in supplied {
-        let component = || Component::Field(name.to_owned());
-        if !declared.iter().any(|field| field.name == name) {
+    supplied: Vec<(MemberId, T)>,
+) -> Result<std::collections::BTreeMap<MemberId, T>, ConstructionRefusal> {
+    let mut by_member = std::collections::BTreeMap::new();
+    for (member, entry) in supplied {
+        let component = || Component::Field(member);
+        if !declared.iter().any(|field| field.member == member) {
             return refuse(component(), ConstructionCause::UndeclaredField);
         }
-        if by_name.insert(name, entry).is_some() {
+        if by_member.insert(member, entry).is_some() {
             return refuse(component(), ConstructionCause::DuplicateField);
         }
     }
-    Ok(by_name)
+    Ok(by_member)
 }
 
 /// Declaration-ordered slots of a record from supplied fields.
 pub fn fill_slots(
     declared: &[FieldDeclaration],
-    supplied: Vec<(&str, FieldValue)>,
+    supplied: Vec<(MemberId, FieldValue)>,
 ) -> Result<Box<[FieldValue]>, ConstructionRefusal> {
-    let mut by_name = match_names(declared, supplied)?;
+    let mut by_member = match_members(declared, supplied)?;
     let mut slots = Vec::with_capacity(declared.len());
     for field in declared {
-        let component = || Component::Field(field.name.clone());
-        let slot = by_name
-            .remove(field.name.as_str())
-            .unwrap_or(FieldValue::Absent);
+        let component = || Component::Field(field.member);
+        let slot = by_member.remove(&field.member).unwrap_or(FieldValue::Absent);
         match (&slot, field.presence) {
             (FieldValue::Absent, Presence::Required) => {
                 return refuse(component(), ConstructionCause::MissingField)
@@ -636,14 +687,18 @@ mod tests {
         assert!(!ValueType::Boolean.admits(&Value::Integer(Integer::one())));
     }
 
-    /// TC-308: no `ValueType` admits a `Value::Enum` (the documented kernel
-    /// capability loss at the T-6 boundary).
+    /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it
+    /// contains, and refuses one it does not (ADR-013 O-14 set-membership
+    /// admission, no declaration lookup).
     #[trace("TC-308")]
     #[test]
-    fn tc_308_no_value_type_admits_a_bare_enum_value() {
-        let variant = Value::Enum(VariantId::from_digest(digest(1)));
-        assert!(!ValueType::Boolean.admits(&variant));
-        assert!(!ValueType::Integer.admits(&variant));
+    fn tc_308_enum_shape_admits_only_its_own_variants() {
+        let in_shape = VariantId::from_digest(digest(1));
+        let out_of_shape = VariantId::from_digest(digest(2));
+        let shape = ValueType::Enum(EnumShape::new([in_shape]));
+        assert!(shape.admits(&Value::Enum(in_shape)));
+        assert!(!shape.admits(&Value::Enum(out_of_shape)));
+        assert!(!ValueType::Boolean.admits(&Value::Enum(in_shape)));
     }
 
     /// TC-309: building a record with a missing required field is refused
@@ -651,13 +706,15 @@ mod tests {
     #[trace("TC-309")]
     #[test]
     fn tc_309_record_refuses_a_missing_required_field() {
+        let member = MemberId::from_digest(digest(2));
         let shape = vec![FieldDeclaration::new(
+            member,
             "count",
             ValueType::Integer,
             Presence::Required,
         )];
         let err = record(&shape, NodeKey::from_digest(digest(1)), vec![]).unwrap_err();
-        assert_eq!(err.component, Component::Field("count".to_owned()));
+        assert_eq!(err.component, Component::Field(member));
         assert_eq!(err.cause, ConstructionCause::MissingField);
     }
 

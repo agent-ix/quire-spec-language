@@ -10,12 +10,34 @@
 //! [`crate::node::NodeKey::from_digest`]: the kernel wraps an already-computed
 //! digest and never hashes. QSL's `check`/`model` compute each digest over
 //! their own preimage schema and mint the id; this crate holds no preimage
-//! knowledge for any of them.
+//! knowledge for any of them. As with `NodeKey` (see [`crate::node`]'s module
+//! doc), the ADR-011 T-12 `arch-lint api-surface` check that is meant to
+//! enforce "only `model` calls `EffectiveId::from_digest`" does not yet do
+//! so: it currently matches `EffectiveId::from_digest_bytes(`, a different
+//! name from this crate's real `from_digest`. Nothing today fails a caller
+//! outside `model`.
 //!
 //! The six types share one shape (an opaque 32-byte digest, `Eq`/`Ord`/`Hash`,
 //! hex `Display`/`Debug`), so [`digest_identity!`] generates all six from one
 //! macro body rather than repeating the impls six times ("one fact, one
 //! place").
+//!
+//! **Domain strings.** `EffectiveId`'s domain, `quire.model.effective-
+//! declaration/v1`, is the real value already live at
+//! `src/model/key.rs:26`'s `EFFECTIVE_DECLARATION_DOMAIN` (confirmed against
+//! ADR-013 O-05 and ADR-010's DA-02 row). The other five domain strings below
+//! (`UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`) do not appear
+//! anywhere in `spec/` or `src/` today -- there is no existing canonical
+//! value to copy the way there was for `EffectiveId`. They are placeholders,
+//! not settled product semantics: ADR-013 QC-2 requires an FR-201 amendment
+//! to list the model digest domains, scoped to #213 S-2, not this slice. Each
+//! of the five types they belong to is genuinely used elsewhere in this
+//! crate ([`crate::reference::ObjectReference`] for `UniverseId`/`ObjectId`,
+//! [`crate::quantity::Quantity`] and `ValueType::Quantity` for `UnitId`,
+//! `Value::Enum` and `ValueType`'s enum sum shape for `VariantId`,
+//! [`crate::value::FieldDeclaration`] for `MemberId`) -- kept for that reason
+//! -- but their domain *strings* are not to be treated as ratified until the
+//! FR-201 amendment lands.
 
 use std::fmt;
 
@@ -63,13 +85,14 @@ macro_rules! digest_identity {
 }
 
 digest_identity!(
-    /// An opaque `quire.effective-declaration/v1` identity (ADR-013 O-05):
-    /// the effective, fully-resolved identity of a declaration after
-    /// archetype composition. Only QSL's `model` calls
-    /// [`EffectiveId::from_digest`] in production.
+    /// An opaque `quire.model.effective-declaration/v1` identity (ADR-013
+    /// O-05, confirmed against the live `src/model/key.rs:26`
+    /// `EFFECTIVE_DECLARATION_DOMAIN`): the effective, fully-resolved
+    /// identity of a declaration after archetype composition. Only QSL's
+    /// `model` calls [`EffectiveId::from_digest`] in production.
     EffectiveId,
     EFFECTIVE_ID_DOMAIN,
-    "quire.effective-declaration/v1"
+    "quire.model.effective-declaration/v1"
 );
 
 digest_identity!(
