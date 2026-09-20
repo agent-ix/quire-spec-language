@@ -20,17 +20,36 @@
 //! The category-mapping table and `FamilyOutcome`/`FamilyRefusal` that union
 //! several evaluators' outcomes into one reported shape are QSL concepts
 //! layered on top of this and are not kernel (ADR-013 O-16).
+//!
+//! **M-4: `Undefined::PreconditionFalse(PreconditionFailure)` is dropped**
+//! against the original (it carried `{ operation, selected, receiver }`: the
+//! called member name, the selected redefinition candidate's identity as a
+//! bare `String`, and the receiver reference). Choosing among several
+//! redefinition candidates by the receiver's most-specific runtime type is
+//! family dispatch, and T-6 is explicit that family-dispatch causes are
+//! never kernel causes: resolving *which* candidate linked, and reporting
+//! that its precondition evaluated false, is QSL `model`/`check`'s own
+//! concept, layered on top of this module the same way the category-mapping
+//! table above it is. Retyping `selected` to `EffectiveId` would still leave
+//! a dispatch-resolution cause sitting in the kernel's closed `Undefined`
+//! set, so removing the variant, not retyping its payload, is the fix.
 
 use crate::accounting::Incomplete;
 use crate::collection::{CardinalityBound, CollectionKind};
 use crate::ieee::IeeeFlags;
-use crate::reference::ObjectReference;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[must_use]
 pub enum Outcome<T> {
-    /// A completed value with its provenance and any typed loss.
+    /// A completed value. `T` itself carries any typed loss where the
+    /// operation has one (e.g. `DecimalResult::loss`); `Outcome` does not
+    /// separately carry [`crate::Location`]/[`crate::Origin`] provenance --
+    /// M-3, correcting a previous, false claim here. Nothing in this crate
+    /// wires the two together: a caller that wants a completed value's
+    /// occurrence provenance holds it itself, the way a call locus is
+    /// already the caller's own concept (see `PreconditionFailure`'s former
+    /// doc comment, now removed as M-4).
     Completed(T),
     /// The operation has no mathematical value.
     Undefined(Undefined),
@@ -87,25 +106,6 @@ pub enum Undefined {
     /// reference is not a member of the bound population, and the query
     /// names no mathematical value for that case.
     AbsentKey,
-    /// A dispatched call's linked candidate's effective precondition
-    /// evaluated to `false`; the call's result is not a mathematical value
-    /// for that receiver.
-    PreconditionFalse(Box<PreconditionFailure>),
-}
-
-/// The precondition-failure payload: the called effective operation, the
-/// selected method's effective identity, and the receiver reference the
-/// call was made on. The call locus is the caller's own location concept,
-/// not repeated here.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct PreconditionFailure {
-    /// The called effective operation's unqualified member name.
-    pub operation: String,
-    /// The selected method's effective identity: the redefinition candidate
-    /// the receiver's most-specific runtime type actually linked to.
-    pub selected: String,
-    /// The receiver reference the call was made on.
-    pub receiver: ObjectReference,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
