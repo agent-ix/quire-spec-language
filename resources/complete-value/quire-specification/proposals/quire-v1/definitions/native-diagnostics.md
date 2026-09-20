@@ -1,6 +1,6 @@
 # Native diagnostic interpretation candidate
 
-Interpretation identity: `quire.native.diagnostics/v1`; revision: `1-draft.4`.
+Interpretation identity: `quire.native.diagnostics/v1`; revision: `1-draft.6`.
 **The interpretation role is accepted by FS01; this semantic revision remains
 proposed and is not adopted or fully implemented.** This supplies the versioned catalog
 required by FR-047. It interprets native producer diagnostics in their existing
@@ -82,7 +82,7 @@ context, but that context cannot replace a required cause field or variant.
 | `invalid_package` | `malformed-json`, `missing-member`, `duplicate-member`, `unknown-member`, `wrong-value-kind`, `invalid-value`, `definition-cycle`, `conflicting-definition`, `incompatible-definition`, `feature-set-mismatch`, `unknown-operation`, `operation-class-mismatch`, `operation-law-missing`, `operation-law-mismatch`, `operation-law-unselected`, `operation-mode-mismatch`, `operation-member-mismatch`, `operation-mode-type-mismatch`, `stale-node-key` or `declaration-nominal-mismatch`; retain the actual field/index path or dependency edges/feature sets appropriate to that variant. Under `quire.model.complete/v1`, `definition-cycle` also covers a call-graph cycle through a dispatch edge (FR-151) and retains the cycle's call edges in the FR-151 order. The eight operation variants (revision `1-draft.4`) retain the application node key, the pre-order ordinal of the application inside that node, the leaf path (empty for the operation itself) and the supplied operation identity and operator class, plus: `unknown-operation` nothing further; `operation-class-mismatch` the catalogued operator class; `operation-law-missing` the required law role; `operation-law-mismatch` the supplied law and the catalogued `DefinitionRef` set of its role; `operation-law-unselected` the unselected law `DefinitionRef`; `operation-mode-mismatch` the required mode kind (or none) and the supplied mode; `operation-member-mismatch` the required member kind (or none) and the supplied member; `operation-mode-type-mismatch` the supplied mode value and the set of mode values pinned by the operand and result types, all as published by `proposals/checked-package-v2/operation-catalog.json`. For a clause application (`temporal`, `protocol_control`, `state_transition`, `claim`) the law role is the profile-selection role the catalog names (`temporal_profile` or `protocol_profile`), the catalogued `DefinitionRef` set is the package lock's `profile_selections` of that role, and `operation-member-mismatch` for a `profile_operator` member also retains the operator set the selected profile defines. `stale-node-key` retains the application node key as retained, the recomputed `quire.application-node/v1` digest and the node's ordinal in the package graph. `declaration-nominal-mismatch` retains the node key, its `declaration.qualified_name` and its nominal `qualified_declaration`. |
 | `invalid_model_binding` | `wrong-artifact-role`, `wrong-model-selection`, `wrong-export`, `wrong-context`, `conflicting-binding`, `unpreserved-model-meaning`, `specialization-cycle`, `redefinition-target`, `derivation-conflict`, `malformed-declaration` or `port-direction`; retain the required/actual declaration or contract, referring location and affected meaning. Missing versus explicit null may not be collapsed into a generic absent value. `wrong-export` for a systems-model kind retains the required kind, the actual kind (`none` when the declaration maps to no kind) and both declaration keys. `specialization-cycle` retains the cycle's type declaration keys in path order. `redefinition-target` retains every redefining member's declaration key and the zero or several resolved targets. `derivation-conflict` retains both derivation paths and exposes no chosen effective member. `malformed-declaration` retains the IR node identity, the member path that is invalid, the source artifact id and the source span. `port-direction` retains the connection's declaration key, its declared `direction` and both ports' directions. Every model intake and model feature refusal also retains the source artifact id and span of the IR node it names. |
 | `ill_typed` | `type-mismatch`, `unit-mismatch`, `operator-ineligible`, `ambiguous-literal`, `non-boolean-root`, `variance-parameter`, `variance-result`, `multiplicity-narrowing`, `effect-escape` or `subsetting-type`; retain the operator/input locus and expected/actual named type, unit or kind. The five conformance causes retain the redefining and redefined effective member identities, the axis (parameter index for `variance-parameter`), the expected and actual effective type, typed multiplicity or effect entry, and every contributing declaration key in effective-identity order. |
-| `undefined_expression` | `unproved-range`, `unproved-nonzero`, `unproved-presence`, `unproved-decrease` or `unproved-refinement`; retain the potentially evaluated operation, exact operand/read identity and applicable guard/anchor context, and for `unproved-decrease` the recursive component cycle, call edge and failed measure obligation. `unproved-refinement` retains the redefining field's effective identity, the writing operation's effective identity and the obligation `field-domain`, `field-presence` or `no-proof-form`. Failure to prove definedness is not logical violation. |
+| `undefined_expression` | `unproved-range`, `unproved-nonzero`, `unproved-presence`, `unproved-decrease`, `unproved-refinement` or `unproved-exhaustiveness`; retain the potentially evaluated operation, exact operand/read identity and applicable guard/anchor context, and for `unproved-decrease` the recursive component cycle, call edge and failed measure obligation. `unproved-refinement` retains the redefining field's effective identity, the writing operation's effective identity and the obligation `field-domain`, `field-presence` or `no-proof-form`. `unproved-exhaustiveness` (revision `1-draft.4`) retains the scrutinized `union-decl`'s declaration identity, the `case` expression's arm set and the failed obligation `duplicate-arm`, `unknown-member`, `arm-arity` or `missing-arm`. Failure to prove definedness is not logical violation. |
 | `ambiguous_dispatch` | `multiple-undominated` or `no-applicable`; retain the called effective operation, the closed subtype for which selection fails, every candidate effective method identity and, for `multiple-undominated`, every dominance pair among the candidates. It is a link-time refusal; no source or registration order resolves it. |
 | `cardinality_out_of_bound` | `below-minimum` or `above-maximum`; retain the collection type, its inclusive bound, the formed occurrence or member count and the constructing or converting expression locus. It is a runtime refusal of a known out-of-bound collection value, not a type error or resource exhaustion. |
 | `wrong_snapshot` | `wrong-observation`, `wrong-invocation`, `wrong-anchor` or `forbidden-pre-read`; retain required and supplied observation/invocation/anchor selections, or the exact prohibited read. |
@@ -93,20 +93,28 @@ context, but that context cannot replace a required cause field or variant.
 | `dangling_reference` | `absent-target-in-complete-population`; retain the reference identity, exact required universe and admitted completeness selection. Without that complete population, use the incomplete-population outcome instead. |
 | `population_delta_mismatch`, `frame_violation` | `delta-disagreement` or `unauthorized-change`, respectively; retain the invocation, pre/post selections, affected object/field or State root, and the declared delta/frame permission. |
 | `resource_exhausted`, `cancelled` | `insufficient-next-charge` or `caller-cancelled`, respectively; retain the actual stage, accounting contract, effective limit or cancellation source, prior usage and the work item that could not proceed. A semantic maximum is not a caller work budget. |
-| `unsupported_projection` | `unsupported-requested-capability`; retain the exact admitted subject, requested claim/target and selected backend. It cannot reclassify a valid source as malformed. |
+| `duplicate_selection` | `duplicate-identity`; retain the repeated domain-package `identity` and both the already-selected and newly-requested `version`. A package selects at most one version of a domain-package identity (QSL ADR-013 O-01, QC-5). |
+| `stage_limit_exceeded` | `input-bytes-exceeded`, `nesting-depth-exceeded`, `node-count-exceeded` or `work-budget-exceeded`; retain the exceeded stage limit kind, its configured bound, the actual counter and the source location where it was reached, when known. This is a `LimitExceeded` limit kind T-4 defines for compiler stages S1-S4, the I2 reader, a family `check`, the layer-6 `replay` facade and the layer-R `route` module (QSL ADR-013 T-4); it is distinct from `resource_exhausted`'s caller work-budget meter, not from any one of these surfaces. |
+| `unsupported_projection` | `unsupported-requested-capability`, `unbounded-extent` or `tool-unavailable`; retain the exact admitted subject, requested claim/target and selected backend. `unsupported-requested-capability` also retains the item's FR-290 capability kind and any named backend when its candidate set is empty, or the obligation form the one candidate's negotiation arm does not discharge. `unbounded-extent` retains the capability kind, the candidate and its advertised modes for an unbounded extent on a bounded-only advertisement with no finite bound available. `tool-unavailable` retains the capability kind, the routed backend and the expected and actual (or absent) tool identity; it accompanies FR-331 result `unsupported` when the probe finds the tool unavailable, and result `failed` when the tool changes after a passing probe. It cannot reclassify a valid source as malformed. |
+| `invalid_capability` | `absent-kind`, `unknown-kind`, `unsupported-version`, `unknown-mode`, `duplicate-backend`, `absent-extent`, `unknown-backend`, `inconsistent-candidates` or `ambiguous-backend`; retain the request item index, for a registration cause the backend identity, and for `unsupported-version` the refused carrier. `unknown-kind` and `unknown-mode` retain the exact supplied value; `unsupported-version` retains the supplied vocabulary identity, or its absence, and refuses the whole carrier; `duplicate-backend` retains the repeated backend identity; `unknown-backend` retains the named unregistered backend identity, or the registered backend with no negotiation arm; `inconsistent-candidates` retains every offending candidate; `ambiguous-backend` retains every candidate in candidate order. No cause maps a refused label to an FR-290 member. |
 | `projection_binding`, `invalid_projection_correspondence` | `upstream-refusal` or `correspondence-loss`, respectively; retain the originating structured IR/mapping cause and exact source/derived identities. |
 | `extraction-requires-run`, `extraction-package-conflict`, `extraction-clause-count` | Distinct `wrong-command-mode`, `conflicting-compilation-inputs` and `binding-cardinality` variants, respectively; retain the requested mode, conflicting selectors or actual count. These three refusals cannot share only an English distinction. |
 | `runtime_invariant` | `established-invariant-broken`; retain the named violated evaluator/input invariant and originating stage/context. It is a failed evaluation, not a false predicate. |
 
 `ambiguous_dispatch` and `foreign_reference` are catalog-owned spellings of
-this revision. Their spelling and causes are selected by this table even where
+revision `1-draft.3`, and `invalid_capability` is a catalog-owned spelling of
+revision `1-draft.5`. Their spelling and causes are selected by this table even where
 the pinned compiler inventory above does not enumerate them; a producer claiming
-revision `1-draft.3` emits them with these closed causes, and a re-pinned
+revision `1-draft.3` or later emits `ambiguous_dispatch` and
+`foreign_reference`, and one claiming `1-draft.5` or later emits
+`invalid_capability`, each with these closed causes, and a re-pinned
 compiler inventory must agree with them.
 
 Revision `1-draft.4` adds the eight `invalid_package` operation variants,
-`stale-node-key` and `declaration-nominal-mismatch` above, and the V2
-`ambiguous-name` use. A `quire.checked-package/v2` reader emits exactly one
+`stale-node-key` and `declaration-nominal-mismatch` above, the V2
+`ambiguous-name` use, and `unproved-exhaustiveness` of `undefined_expression`
+for an unproved FR-146 `case` exhaustiveness obligation over a `union-decl`
+scrutinee. A `quire.checked-package/v2` reader emits exactly one
 diagnostic for the first refusal it finds, and never a broader code:
 
 1. schema refusals (`invalid_package`, their structural causes);
@@ -137,6 +145,22 @@ diagnostic for the first refusal it finds, and never a broader code:
    and `operation-mode-type-mismatch`.
 
 A producer claiming revision `1-draft.3` emits none of these causes.
+
+Revision `1-draft.5` adds `invalid_capability` with its nine causes, and the
+`unbounded-extent` and `tool-unavailable` causes of `unsupported_projection`,
+for FR-290 capability-kind admission, candidate-set negotiation and tool
+absence. A producer claiming revision `1-draft.4` or earlier emits none of
+them.
+
+Revision `1-draft.6` adds `duplicate_selection` for a second domain-package
+model selection of an already-selected identity (QSL ADR-013 QC-5), and
+`stage_limit_exceeded` for T-4's `LimitExceeded` limit kind, raised from
+compiler stages S1-S4, the I2 reader, a family `check`, `replay` and `route`,
+with one cause per closed limit kind (QSL ADR-013 QC-11). A producer
+claiming revision `1-draft.5` or earlier emits neither. `runtime_invariant`
+also carries a T-4 `InternalFault` raised from compiler stages S1-S4, the I2
+reader, `replay` and `route`, and not only from `CheckedPackage::call`'s
+failed evaluation.
 
 Other retained host/source codes keep their selected broad meaning and original
 structured producer cause: I/O error, malformed command, invalid digest/identifier,
