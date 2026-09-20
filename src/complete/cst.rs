@@ -499,3 +499,67 @@ fn append_tokens(tokens: &[CstToken], start: usize, end: usize, output: &mut Vec
             .map(|(offset, _)| CstElement::Token(first + offset)),
     );
 }
+
+#[cfg(test)]
+impl LosslessCst {
+    /// Test-only fixture: a lossless CST over the given significant token
+    /// spellings (space-joined into the backing source text, in order), one
+    /// root node — spanning only the last spelling, not the whole text; see
+    /// below — and the given recovery stream.
+    ///
+    /// The real complete-V1 grammar admits only `edition "1-draft"` and a
+    /// closed declaration keyword set (`grammar.rs`'s `CompleteUnit`/`Header`
+    /// rules), so it cannot produce a CST carrying an out-of-catalog literal
+    /// edition or an unrecognized leading token — exactly the shapes the S2
+    /// `forms` stage's own tests need to exercise the carry-through and
+    /// dispatch mechanism without depending on a real family (FR-067-AC-1,
+    /// AC-7, AC-8; TC-167). This fixture builds the CST directly instead.
+    ///
+    /// `spellings` is the whole token stream (any leading header/prelude
+    /// tokens, in order); its last entry is the "root construct" the S2
+    /// forms stage dispatches on, so the root node's span covers only that
+    /// last token, not the whole text — matching a single declaration's own
+    /// CST subtree, whose leading token is its own, not the file header's.
+    /// The root node has no children: nothing in `forms` reads a node's
+    /// children, only [`Self::tokens`] (the whole stream) and
+    /// [`Self::root`]'s own span.
+    pub(crate) fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
+        assert!(!spellings.is_empty(), "a fixture needs at least one token");
+        let mut text = String::new();
+        let mut tokens = Vec::with_capacity(spellings.len());
+        let mut root_span = Span { start: 0, end: 0 };
+        for (index, spelling) in spellings.iter().enumerate() {
+            if index > 0 {
+                text.push(' ');
+            }
+            let start = text.len();
+            text.push_str(spelling);
+            let end = text.len();
+            tokens.push(token(
+                TokenClass::Token,
+                TokenKind::Grammar,
+                Span { start, end },
+                spelling.as_bytes(),
+            ));
+            if index == spellings.len() - 1 {
+                root_span = Span { start, end };
+            }
+        }
+        let source = crate::Source::read(
+            crate::SourceIdentity {
+                identity: "forms-fixture".into(),
+                revision: "0".into(),
+            },
+            "forms-fixture",
+            text.as_bytes(),
+            crate::source::MAX_SOURCE_BYTES,
+        )
+        .expect("fixture text is within the byte limit");
+        let root = RawNode {
+            production: Production::CompleteUnit,
+            span: root_span,
+            children: Vec::new(),
+        };
+        Self::new(source, tokens, vec![root], 0, recoveries)
+    }
+}
