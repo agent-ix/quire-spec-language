@@ -476,3 +476,246 @@ impl FunctionDeclaration {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// TC-169 / FR-067-AC-9 / FR-067-CON-3: this move relocates the eight
+    /// types' defining module only, adding, removing or renaming no
+    /// variant, field or method. An exhaustive match with every field named
+    /// (no `..`) fails to compile the moment a variant or a field is added,
+    /// removed or renamed — E0004 (non-exhaustive match) for a variant,
+    /// E0026/E0027 (unknown/missing field) for a field — so this test is
+    /// itself the shape check, not just evidence run under it.
+    #[trace("TC-169", "FR-067-AC-9", "FR-067-CON-3")]
+    #[test]
+    fn every_variant_and_field_of_the_moved_types_is_unchanged() {
+        fn binary_operator(value: BinaryOperator) -> &'static str {
+            match value {
+                BinaryOperator::Add => "Add",
+                BinaryOperator::Subtract => "Subtract",
+                BinaryOperator::Multiply => "Multiply",
+                BinaryOperator::Divide => "Divide",
+                BinaryOperator::Equal => "Equal",
+                BinaryOperator::NotEqual => "NotEqual",
+                BinaryOperator::Less => "Less",
+                BinaryOperator::LessOrEqual => "LessOrEqual",
+                BinaryOperator::Greater => "Greater",
+                BinaryOperator::GreaterOrEqual => "GreaterOrEqual",
+                BinaryOperator::And => "And",
+                BinaryOperator::Or => "Or",
+                BinaryOperator::Implies => "Implies",
+            }
+        }
+        assert_eq!(binary_operator(BinaryOperator::Add), "Add");
+
+        fn binder_query(value: BinderQuery) -> &'static str {
+            match value {
+                BinderQuery::Map => "Map",
+                BinderQuery::Filter => "Filter",
+                BinderQuery::FlatMap => "FlatMap",
+                BinderQuery::Forall => "Forall",
+                BinderQuery::Exists => "Exists",
+            }
+        }
+        assert_eq!(binder_query(BinderQuery::Map), "Map");
+
+        fn accumulation(value: Accumulation) -> &'static str {
+            match value {
+                Accumulation::Fold => "Fold",
+                Accumulation::Reduce => "Reduce",
+            }
+        }
+        assert_eq!(accumulation(Accumulation::Fold), "Fold");
+
+        fn clause_kind(value: ClauseKind) -> &'static str {
+            match value {
+                ClauseKind::Invariant => "Invariant",
+                ClauseKind::Precondition => "Precondition",
+                ClauseKind::Postcondition => "Postcondition",
+                ClauseKind::Body => "Body",
+            }
+        }
+        assert_eq!(clause_kind(ClauseKind::Body), "Body");
+
+        fn declared_clause_kind(value: DeclaredClauseKind) -> &'static str {
+            match value {
+                DeclaredClauseKind::Invariant => "Invariant",
+                DeclaredClauseKind::Precondition => "Precondition",
+                DeclaredClauseKind::Body => "Body",
+            }
+        }
+        assert_eq!(declared_clause_kind(DeclaredClauseKind::Body), "Body");
+        assert_eq!(
+            ClauseKind::from(DeclaredClauseKind::Precondition),
+            ClauseKind::Precondition
+        );
+
+        fn field_initializer(value: &FieldInitializer) -> &'static str {
+            match value {
+                FieldInitializer::Value(_) => "Value",
+                FieldInitializer::Null => "Null",
+            }
+        }
+        assert_eq!(
+            field_initializer(&FieldInitializer::Value(Expression::Boolean(true))),
+            "Value"
+        );
+        assert_eq!(field_initializer(&FieldInitializer::Null), "Null");
+
+        fn function_declaration_fields(value: &FunctionDeclaration) -> &'static str {
+            let FunctionDeclaration {
+                name: _,
+                parameters: _,
+                result: _,
+                measure: _,
+                body: _,
+                clause_kind: _,
+                callable_by_name: _,
+            } = value;
+            "FunctionDeclaration"
+        }
+        let declaration = FunctionDeclaration::new(
+            "f",
+            Vec::new(),
+            ValueType::Boolean,
+            None,
+            Expression::Boolean(true),
+        );
+        assert_eq!(
+            function_declaration_fields(&declaration),
+            "FunctionDeclaration"
+        );
+
+        fn expression(value: &Expression) -> &'static str {
+            match value {
+                Expression::Boolean(_) => "Boolean",
+                Expression::Integer(_) => "Integer",
+                Expression::Rational(_, _) => "Rational",
+                Expression::Name(_) => "Name",
+                Expression::Let {
+                    name: _,
+                    value: _,
+                    body: _,
+                } => "Let",
+                Expression::If {
+                    condition: _,
+                    then: _,
+                    otherwise: _,
+                } => "If",
+                Expression::Binary {
+                    operator: _,
+                    left: _,
+                    right: _,
+                } => "Binary",
+                Expression::Negate(_) => "Negate",
+                Expression::Not(_) => "Not",
+                Expression::Field {
+                    operand: _,
+                    field: _,
+                } => "Field",
+                Expression::Present(_) => "Present",
+                Expression::Value(_) => "Value",
+                Expression::Deref(_) => "Deref",
+                Expression::Call {
+                    name: _,
+                    arguments: _,
+                } => "Call",
+                Expression::Record { name: _, fields: _ } => "Record",
+                Expression::Collection {
+                    kind: _,
+                    elements: _,
+                } => "Collection",
+                Expression::Convert {
+                    target: _,
+                    operand: _,
+                } => "Convert",
+                Expression::Query {
+                    query: _,
+                    binder: _,
+                    source: _,
+                    body: _,
+                } => "Query",
+                Expression::Flatten(_) => "Flatten",
+                Expression::Accumulate {
+                    form: _,
+                    accumulator_type: _,
+                    accumulator: _,
+                    binder: _,
+                    source: _,
+                    step: _,
+                    identity: _,
+                } => "Accumulate",
+                Expression::Count {
+                    result_type: _,
+                    binder: _,
+                    source: _,
+                    predicate: _,
+                } => "Count",
+                Expression::Sum {
+                    result_type: _,
+                    binder: _,
+                    source: _,
+                    summand: _,
+                } => "Sum",
+                Expression::Size(_) => "Size",
+                Expression::Contains {
+                    collection: _,
+                    item: _,
+                } => "Contains",
+                Expression::AllInstances {
+                    target: _,
+                    population: _,
+                } => "AllInstances",
+                Expression::Lookup {
+                    target: _,
+                    population: _,
+                    reference: _,
+                    absence: _,
+                } => "Lookup",
+                Expression::Dispatch {
+                    receiver: _,
+                    member: _,
+                    arguments: _,
+                } => "Dispatch",
+                Expression::Pre(_) => "Pre",
+            }
+        }
+        assert_eq!(expression(&Expression::Boolean(true)), "Boolean");
+        assert_eq!(expression(&declaration.body), "Boolean");
+
+        // `Expression::children` (the one method besides construction this
+        // requirement's move must leave callable, per this module's own doc)
+        // still exists and still walks direct subexpressions.
+        let nested = Expression::Not(Box::new(Expression::Boolean(false)));
+        assert_eq!(nested.children().len(), 1);
+    }
+
+    /// TC-169 step 1 / FR-067-AC-9: `value::expression::syntax` is absent
+    /// from the module tree, checked directly against this repository's
+    /// file-per-module convention (`value::expression::mod`'s own `mod X;`
+    /// declarations map 1:1 to `src/value/expression/X.rs`), rather than
+    /// only through the public-API `compile_fail` doctest on this crate's
+    /// `forms` module doc, which cannot by itself distinguish "absent" from
+    /// "still present but private".
+    #[trace("TC-169", "FR-067-AC-9")]
+    #[test]
+    fn value_expression_syntax_is_absent_from_the_module_tree() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            !manifest_dir.join("src/value/expression/syntax.rs").exists(),
+            "src/value/expression/syntax.rs still exists on disk"
+        );
+        let mod_rs = std::fs::read_to_string(manifest_dir.join("src/value/expression/mod.rs"))
+            .expect("src/value/expression/mod.rs exists");
+        let declares_syntax_module = mod_rs
+            .lines()
+            .any(|line| line.trim() == "mod syntax;" || line.trim() == "pub mod syntax;");
+        assert!(
+            !declares_syntax_module,
+            "value::expression::mod still declares a syntax submodule"
+        );
+    }
+}

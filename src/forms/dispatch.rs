@@ -38,20 +38,20 @@ use crate::Span;
 /// ```compile_fail
 /// use quire_spec_language::forms::ParsedForm;
 /// fn read_identity(form: &ParsedForm) {
-///     let _: () = form.node_key();
+///     let _ = form.node_key();
 /// }
 /// ```
 ///
 /// ```compile_fail
 /// use quire_spec_language::forms::ParsedForm;
 /// fn read_declaration(form: &ParsedForm) {
-///     let _: () = form.declaration_key();
+///     let _ = form.declaration_key();
 /// }
 /// ```
 #[derive(Clone, Debug)]
 pub struct ParsedForm {
     span: Span,
-    edition: String,
+    edition: Option<String>,
     declared_extent: Option<Box<str>>,
     expression: Expression,
 }
@@ -62,9 +62,11 @@ impl ParsedForm {
         self.span
     }
 
-    /// The edition the originating CST recorded, unchanged.
-    pub fn edition(&self) -> &str {
-        &self.edition
+    /// The edition the originating CST recorded, unchanged; `None` when the
+    /// CST's header declared none (absence is never defaulted to a
+    /// particular edition string).
+    pub fn edition(&self) -> Option<&str> {
+        self.edition.as_deref()
     }
 
     /// The originating construct's declared bound or extent, carried as
@@ -163,16 +165,28 @@ fn leading_token_kind(cst: &LosslessCst) -> Option<LeadingTokenKind> {
     from_spelling(spelling)
 }
 
-/// The first significant (non-whitespace, non-comment) token spanned by the
-/// CST's root node.
+/// The first significant (non-whitespace, non-comment) token wholly inside
+/// the CST's root node's own span — not merely at or after its start, so a
+/// root with no token of its own (once M-3b wires a real family, a
+/// construct whose own leading token happens to be absent, malformed, or
+/// otherwise not covered by the root's span) never silently reads past the
+/// root's end into the next construct's leading token instead.
 fn leading_token_spelling(cst: &LosslessCst) -> Option<&[u8]> {
-    let root_start = cst.root().span().start;
+    let root_span = cst.root().span();
     cst.tokens()
         .iter()
-        .find(|token| token.class() == TokenClass::Token && token.span().start >= root_start)
+        .find(|token| {
+            token.class() == TokenClass::Token
+                && token.span().start >= root_span.start
+                && token.span().end <= root_span.end
+        })
         .map(|token| token.spelling())
 }
 
+/// Maps a leading-token spelling to its dispatch-table entry, or `None`
+/// when it selects no entry. It has no production arm in M-3a
+/// (FR-067-CON-2): every real (non-`#[cfg(test)]`) spelling maps to `None`
+/// until a family's migration ticket adds its own arm here (M-3b).
 fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
     #[cfg(test)]
     if spelling == test_support::PROBE_SPELLING.as_bytes() {
@@ -183,11 +197,13 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
 }
 
 /// The header's declared edition literal, decoded, from the CST's own
-/// token stream: `language <name> edition <text>`. Empty when the header
-/// has no edition clause (ADR-011 §2.2 E2 row, version: "Edition carried" —
-/// this reads the value E1 minted, unchanged; it never recomputes or
-/// defaults it).
-fn declared_edition(cst: &LosslessCst) -> String {
+/// token stream: `language <name> edition <text>`. `None` when the header
+/// has no edition clause, or when its literal is not valid UTF-8 (ADR-011
+/// §2.2 E2 row, version: "Edition carried" — this reads the value E1
+/// minted, unchanged; a missing value stays absent rather than becoming a
+/// default string, since a default would itself be a recomputation FR-067
+/// forbids).
+fn declared_edition(cst: &LosslessCst) -> Option<String> {
     let significant: Vec<_> = cst
         .tokens()
         .iter()
@@ -199,12 +215,11 @@ fn declared_edition(cst: &LosslessCst) -> String {
                 .get(index + 2)
                 .is_some_and(|edition| edition.spelling() == b"edition")
         {
-            if let Some(literal) = significant.get(index + 3) {
-                return unquote(literal.spelling());
-            }
+            let literal = significant.get(index + 3)?;
+            return unquote(literal.spelling());
         }
     }
-    String::new()
+    None
 }
 
 /// The originating construct's declared bound or extent, carried as syntax
@@ -232,15 +247,20 @@ fn declared_extent(cst: &LosslessCst) -> Option<Box<str>> {
 }
 
 /// Strips one matching pair of leading/trailing double quotes, if present.
-/// The complete-V1 text-literal token pattern admits no raw control
-/// character (`grammar.rs`), and this fixture-facing decode does not need
-/// to unescape a JSON escape sequence beyond that.
-fn unquote(spelling: &[u8]) -> String {
-    let text = String::from_utf8_lossy(spelling);
-    text.strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap_or(&text)
-        .to_owned()
+/// `None` when `spelling` is not valid UTF-8 — the same explicit disposition
+/// [`declared_extent`] already gives non-UTF-8 syntax, rather than the
+/// lossy substitution a `from_utf8_lossy` decode would silently apply. The
+/// complete-V1 text-literal token pattern admits no raw control character
+/// (`grammar.rs`), and this fixture-facing decode does not need to unescape
+/// a JSON escape sequence beyond stripping the surrounding quotes.
+fn unquote(spelling: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(spelling).ok()?;
+    Some(
+        text.strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+            .unwrap_or(text)
+            .to_owned(),
+    )
 }
 
 #[cfg(test)]
@@ -386,8 +406,16 @@ mod tests {
         );
         let form0 = build_form(&draft0).unwrap();
         let form1 = build_form(&draft1).unwrap();
-        assert_eq!(form0.edition(), "0-draft");
-        assert_eq!(form1.edition(), "1-draft");
+        assert_eq!(form0.edition(), Some("0-draft"));
+        assert_eq!(form1.edition(), Some("1-draft"));
+    }
+
+    #[trace("TC-167")]
+    #[test]
+    fn edition_is_absent_rather_than_defaulted_when_the_cst_declares_none() {
+        let no_header = LosslessCst::fixture(&[PROBE_SPELLING], Vec::new());
+        let form = build_form(&no_header).unwrap();
+        assert_eq!(form.edition(), None);
     }
 
     #[trace("TC-167", "FR-067-AC-8")]
@@ -423,6 +451,7 @@ mod tests {
         assert_eq!(form20.declared_extent(), Some("20"));
     }
 
+    #[trace("TC-167")]
     #[test]
     fn no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token() {
         let cst = LosslessCst::fixture(

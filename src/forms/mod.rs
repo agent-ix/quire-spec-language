@@ -15,6 +15,38 @@
 //! top level. `value::expression`'s own submodules, and `crate::value`'s
 //! aggregating re-export, import them from here; neither is a second
 //! definition (FR-067-AC-9).
+//!
+//! `value::expression::syntax` no longer exists as a module (FR-067-AC-9,
+//! TC-169 step 1); this fails to compile because that path is absent:
+//!
+//! ```compile_fail
+//! use quire_spec_language::value::expression::syntax::Expression;
+//! ```
+//!
+//! ## Declared layer violation (QSL-146)
+//!
+//! `forms` is layer 2 (ADR-011 §6.1), whose allow-list is layer 1 (`cst`)
+//! and F only. This module does not conform: [`syntax::Expression`]'s
+//! `Lookup` variant carries a `model::population::AbsenceMode` field (layer
+//! 3), and its `AllInstances`/`Lookup` variants carry a `value::ValueType`
+//! field (layer 5); `Expression`'s other variants reach `value::Integer` and
+//! `value::CollectionKind` (also layer 5) the same way. `ParsedForm`'s
+//! `expression` field is unconditional production code (not test-only), so
+//! this is a hard dependency of the `forms` core on layers 3 and 5, not an
+//! incidental one.
+//!
+//! This is a contradiction between two decision records, not an
+//! implementation mistake this module can fix alone: ADR-012 §4.3 places
+//! the one shared `Expression` enum inside the `forms` core by design, and
+//! ADR-011 §6.1 assigns `forms` a layer-2 allow-list that `Expression`'s own
+//! fields cannot satisfy while `AbsenceMode`, `CollectionKind`, `Integer`
+//! and `ValueType` live where they live today. QSL-146 (extracting the
+//! kernel value types into `quire-exact`, and moving `AbsenceMode` into F)
+//! resolves it: once those moves land, `crate::value::{CollectionKind,
+//! Integer, ValueType}` in [`syntax`] retarget to `quire_exact`'s copies
+//! (layer K, allow-listed), and `AbsenceMode` moves to F (also
+//! allow-listed), and `forms` becomes layer-2-legal without a further
+//! change to this module's shape.
 
 mod dispatch;
 mod syntax;

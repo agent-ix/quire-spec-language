@@ -504,7 +504,8 @@ fn append_tokens(tokens: &[CstToken], start: usize, end: usize, output: &mut Vec
 impl LosslessCst {
     /// Test-only fixture: a lossless CST over the given significant token
     /// spellings (space-joined into the backing source text, in order), one
-    /// root node spanning the whole text, and the given recovery stream.
+    /// root node — spanning only the last spelling, not the whole text; see
+    /// below — and the given recovery stream.
     ///
     /// The real complete-V1 grammar admits only `edition "1-draft"` and a
     /// closed declaration keyword set (`grammar.rs`'s `CompleteUnit`/`Header`

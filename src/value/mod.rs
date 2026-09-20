@@ -113,8 +113,11 @@ pub use expression::{
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
-// is their one defining module (FR-067-AC-9); `value` keeps naming them at
-// this path so its existing downstream consumers are unaffected by the move.
+// is their one defining module (FR-067-AC-9). `value::Expression` etc. were
+// already this module's own aggregation path before the move (this file
+// re-exports dozens of other types the same way, from their own owning
+// submodules); the move changes which module they aggregate from, not
+// whether `value` aggregates them.
 pub use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
     FieldInitializer, FunctionDeclaration,
