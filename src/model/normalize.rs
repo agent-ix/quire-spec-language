@@ -46,18 +46,18 @@
 //! [`ModelNormalizationLimits`] — the same inputs always retrace the same
 //! derivation and the same bytes.
 //!
-//! [`build`] enumerates ancestor paths and derivation facts under a fact
+//! `build` enumerates ancestor paths and derivation facts under a fact
 //! budget derived from `limits` itself (PR #140 F1): a diamond
 //! generalization graph produces an ancestor-path count exponential in
 //! depth, so an adversarial domain package enumerated without bound before any
-//! charge is consulted can exhaust memory long before [`charge_all`] gets a
+//! charge is consulted can exhaust memory long before `charge_all` gets a
 //! chance to deny anything — `ModelNormalizationLimits` protects nothing if
 //! it is only consulted after the fact. `remaining_fact_budget` and
 //! `fact_budget_exceeded` both only ever *overestimate* remaining capacity
 //! (never underestimate it), so a domain package that legitimately completes under
 //! `limits` is never truncated: enumeration only stops once continuing is
 //! certainly futile, and it always generates at least one fact past that
-//! point so [`charge_all`]'s real, exact replay is the one that reports the
+//! point so `charge_all`'s real, exact replay is the one that reports the
 //! [`Incomplete`] — `build` itself never guesses at `limit`/`consumed`/
 //! `next_charge`. In the (adversarial, meter-already-saturated) case where a
 //! type's own budget is already exhausted before its ancestor paths are
@@ -69,7 +69,7 @@
 //!
 //! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
 //! every contributing declaration in the cycle, rotated to start at its
-//! least key. [`ancestor_paths`] charges every closing extension it finds
+//! least key. `ancestor_paths` charges every closing extension it finds
 //! (`value-accounting.md:491`: "a closing extension is charged even when
 //! its cycle's edge set was already reported") and keeps walking past it —
 //! this frame's remaining siblings, every other frame still on its stack,
@@ -85,11 +85,11 @@
 //!
 //! Phase 4's own dominance check (deciding which of several redefiners of
 //! the same target wins) asks a different question than phase 3's own
-//! [`ancestor_paths`]: only *reachability* between two specific owners, never
+//! `ancestor_paths`: only *reachability* between two specific owners, never
 //! every path between them. Two earlier attempts got this wrong: reusing
-//! [`ancestor_paths`] itself under a budget that silently reset on every
+//! `ancestor_paths` itself under a budget that silently reset on every
 //! call (QSL #145), and then delegating to
-//! [`crate::model::conformance::ancestor_closure`]'s bounded
+//! `ancestor_closure`'s bounded
 //! (`MAX_CONFORMANCE_DEPTH`-ceiling) walk, which counts *breadth* (total
 //! distinct nodes visited) against a ceiling named for depth — a wide but
 //! uncontested ancestry (128+ direct generalizations) could exhaust it on a
@@ -108,7 +108,7 @@
 //! truncated path set could otherwise derive a false `derivation-conflict`
 //! from an owner ancestry that looks incomplete rather than merely
 //! unresolved, where the correct outcome is the `Incomplete`
-//! [`charge_all`]'s own replay already reports for the phase 2/3 facts that
+//! `charge_all`'s own replay already reports for the phase 2/3 facts that
 //! triggered the truncation, reached in charge order well before phase 4's
 //! own charges. The pairwise dominance loop itself is still `O(|edges|^2)`
 //! in the worst case, but each contesting redefinition edge's *owner* — not
@@ -180,8 +180,8 @@
 //! `normalize.redefinition-check`, every phase-4 `normalize.fact`, every
 //! `normalize.conflict-check` — must all be admitted before the refusals
 //! they expose are reported. `build` collects every such refusal, of any of
-//! these shapes, tagged with its own [`Phase4Rank`]
-//! (`record_phase4_refusal`'s own doc, next to [`Phase4Accounting`]), and
+//! these shapes, tagged with its own `Phase4Rank`
+//! (`record_phase4_refusal`'s own doc, next to `Phase4Accounting`), and
 //! keeps resolving every remaining type and target group regardless, so
 //! every later phase-4 charge amount is still computed correctly; once every
 //! call has returned, `build` sorts the whole collection into charge order
@@ -2784,7 +2784,7 @@ pub fn normalize_with_meter(
 }
 
 /// The object universe `domain_package` normalizes to, independent of `charge_all`'s
-/// bookkeeping (test and caller convenience; recomputes via [`build`], under
+/// bookkeeping (test and caller convenience; recomputes via `build`, under
 /// [`ModelNormalizationLimits::UNLIMITED`]). Under `UNLIMITED` nothing ever
 /// runs out, so `build`'s own deferred refusal-vec fields (`intake_refusals`,
 /// `phase3_refusals`, `phase4_refusals` — see the module docs) are surfaced

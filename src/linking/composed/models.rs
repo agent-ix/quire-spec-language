@@ -77,11 +77,20 @@ pub enum ImportRefusal {
     /// No candidate has all selected revision/digest components.
     StaleSelection,
     /// Multiple candidates match the complete selection.
-    AmbiguousSelection { inputs: Vec<usize> },
+    AmbiguousSelection {
+        /// Indices into ModelBindings::inputs() for the matching candidates.
+        inputs: Vec<usize>,
+    },
     /// Shared conflict indices into ModelBindings::conflicts().
-    ConflictingModel { groups: Vec<usize> },
+    ConflictingModel {
+        /// Indices into ModelBindings::conflicts() for the shared conflicts.
+        groups: Vec<usize>,
+    },
     /// The exact selected producer interface has no admitted correspondence.
-    UnsupportedCorrespondence { input: usize },
+    UnsupportedCorrespondence {
+        /// Index into ModelBindings::inputs() for the selected, unsupported producer.
+        input: usize,
+    },
 }
 
 /// One authored model import, kept even when no export can bind through it.
@@ -114,9 +123,15 @@ pub enum ModelErrorKind {
     /// The declaring source has no such model alias.
     MissingAlias,
     /// More than one local import defines this alias; indices address imports().
-    AmbiguousAlias { imports: Vec<usize> },
+    AmbiguousAlias {
+        /// Indices into imports() for the competing local imports.
+        imports: Vec<usize>,
+    },
     /// The selected import refused; index addresses imports().
-    RefusedImport { import: usize },
+    RefusedImport {
+        /// Index into imports() for the import that refused.
+        import: usize,
+    },
     /// No permitted export has this name.
     MissingExport,
     /// Scalar and formal type namespaces export the same qualified type spelling.

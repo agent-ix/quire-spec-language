@@ -3,9 +3,12 @@
 use crate::error::Error;
 use std::path::{Path, PathBuf};
 
+/// One vendored resource tree this command knows how to revendor or check.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tree {
+    /// `resources/native-v1`, the native-syntax historical selection.
     NativeV1,
+    /// `resources/complete-value`, the complete-value historical selection.
     CompleteValue,
     /// `tests/fixtures/architecture`, vendored from FCD's own
     /// `crates/extraction-frontend/fixtures/architecture` (QSL #131 PR 3).
@@ -16,6 +19,7 @@ pub enum Tree {
 }
 
 impl Tree {
+    /// Every known tree, in the order `--tree all` processes them.
     pub const ALL: [Self; 4] = [
         Self::NativeV1,
         Self::CompleteValue,
@@ -23,6 +27,7 @@ impl Tree {
         Self::TestFixturesModules,
     ];
 
+    /// This tree's `--tree`/directory-name spelling.
     pub fn dir_name(self) -> &'static str {
         match self {
             Self::NativeV1 => "native-v1",
@@ -32,6 +37,7 @@ impl Tree {
         }
     }
 
+    /// Parse a `--tree` command-line argument, refusing anything not in [`Self::ALL`].
     pub fn from_arg(text: &str) -> Result<Self, Error> {
         match text {
             "native-v1" => Ok(Self::NativeV1),

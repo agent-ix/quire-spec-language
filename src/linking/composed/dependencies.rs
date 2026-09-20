@@ -53,22 +53,34 @@ pub struct DependencyReference {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DependencyRefusal {
     /// No package declaration supplies the authored name.
-    MissingTarget { reference: usize },
+    MissingTarget {
+        /// Index into the owning declaration's references.
+        reference: usize,
+    },
     /// Namespace lookup retains multiple conflicting declaration candidates.
-    AmbiguousTarget { reference: usize },
+    AmbiguousTarget {
+        /// Index into the owning declaration's references.
+        reference: usize,
+    },
     /// The unique declaration has a different kind than this occurrence requires.
     WrongTargetKind {
+        /// Index into the owning declaration's references.
         reference: usize,
+        /// The unique declaration found, whose kind does not satisfy the reference.
         target: DeclarationId,
     },
     /// This reference is an edge within a semantic declaration cycle.
     Cycle {
+        /// Index into the owning declaration's references.
         reference: usize,
+        /// The declaration this edge leads to within the cycle.
         target: DeclarationId,
     },
     /// A directly required declaration refused, possibly through another dependency.
     RefusedTarget {
+        /// Index into the owning declaration's references.
         reference: usize,
+        /// The required declaration whose refusal propagated through this reference.
         target: DeclarationId,
     },
 }

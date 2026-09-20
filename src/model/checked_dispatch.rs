@@ -8,12 +8,12 @@
 //! link-time linking only). This module is the other half: for one
 //! dispatch-eligible root operation, it types every linked candidate's
 //! effective precondition and body against
-//! [`crate::value::expression::PackageDeclarations`], and translates
+//! [`crate::value::PackageDeclarations`], and translates
 //! `link_dispatch`'s [`DeclarationKey`]-keyed
 //! [`crate::model::dispatch::DispatchTable`] into the checked layer's
 //! [`NodeKey`]- and function-index-keyed
-//! [`crate::value::expression::DispatchTable`], ready for
-//! [`PackageDeclarations::check`](crate::value::expression::PackageDeclarations)
+//! [`crate::value::DispatchTable`], ready for
+//! [`PackageDeclarations::check`](crate::value::PackageDeclarations)
 //! and the evaluator.
 //!
 //! Pure: no intake, no I/O. It takes a caller-supplied [`DomainPackage`] and an
@@ -66,14 +66,14 @@
 //! redefines... An absent precondition is `true`") are computed twice, for
 //! two different consumers, over the same redefinition ancestry:
 //!
-//! - [`effective_terms`] is the *runtime* computation: Boolean absorption
+//! - `effective_terms` is the *runtime* computation: Boolean absorption
 //!   (`true ∨ X = true`) means the walk stops the instant any node in the
 //!   ancestry (starting at the candidate itself) has an absent own clause,
 //!   yielding [`DispatchCandidate::precondition`] — `None` exactly when the
 //!   effective precondition is unconditionally `true` (TC-196 D06: B.size's
 //!   own precondition is absent, so its guard is skipped even though A.size
 //!   still declares one).
-//! - [`ancestor_closure`] is the *static* FR-146 call-graph computation: it
+//! - `ancestor_closure` is the *static* FR-146 call-graph computation: it
 //!   walks the full ancestry unconditionally, regardless of runtime
 //!   short-circuiting, because the call-graph edge FR-151 requires ("an
 //!   edge... to every precondition clause of every candidate's effective
@@ -187,7 +187,7 @@ pub enum DispatchBridgeRefusal {
         subtype: Box<DeclarationKey>,
     },
     /// The effective-precondition ancestor walk exceeded
-    /// [`MAX_ANCESTOR_DEPTH`] redefinition steps, built from
+    /// `MAX_ANCESTOR_DEPTH` redefinition steps, built from
     /// [`ModelRefusalCause::DispatchFamilyDepth`] exactly as
     /// `crate::model::dispatch::build_family`'s own depth-exceeded refusal
     /// is, rather than a bridge-only cause. Boxed: `ModelRefusal` is far
@@ -307,10 +307,10 @@ pub struct DispatchRoot {
 /// Every declared object type's own `supertypes` (H1, #204 round 1),
 /// translated from `domain_package.records`' [`DeclarationKey`]s through
 /// `object_keys` into checker [`NodeKey`]s -- the exact shape
-/// [`crate::value::composite::ObjectTypeDeclaration::with_supertypes`]
+/// [`crate::value::ObjectTypeDeclaration::with_supertypes`]
 /// needs, and the same kind of pre-translated bridge input as
 /// [`OperationClauses`] is for clause data (see the module docs). No
-/// production code builds a [`crate::value::composite::TypeEnvironment`]
+/// production code builds a [`crate::value::TypeEnvironment`]
 /// yet (only test scaffolding does), so this is test-support infrastructure
 /// today; #131's own real intake can call it exactly as tests do.
 pub fn object_type_supertypes(

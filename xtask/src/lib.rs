@@ -86,21 +86,28 @@ impl RevendorReport {
 /// One vendored file whose on-disk bytes no longer match its recorded pin.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DriftedFile {
+    /// The destination path (relative to the vendored tree root) that drifted.
     pub dest: String,
+    /// The digest recorded in the manifest for `dest`.
     pub expected_sha256: String,
+    /// The digest actually found on disk for `dest`, or `"missing"` when the
+    /// file is absent.
     pub actual_sha256: String,
 }
 
 /// Outcome of a `revendor_check` run over a single manifest.
 #[derive(Debug, Default)]
 pub struct CheckReport {
+    /// Destination paths whose on-disk bytes matched the manifest's recorded digest.
     pub matched: Vec<String>,
+    /// Destination paths whose on-disk bytes disagree with the manifest, or are missing.
     pub drifted: Vec<DriftedFile>,
     /// Files present in the tree that the manifest does not mention.
     pub stray: Vec<String>,
 }
 
 impl CheckReport {
+    /// Whether the tree exactly matches the manifest: no drifted or stray files.
     pub fn is_clean(&self) -> bool {
         self.drifted.is_empty() && self.stray.is_empty()
     }
