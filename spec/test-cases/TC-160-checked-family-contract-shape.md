@@ -10,19 +10,28 @@ relationships:
 
 ## Description
 
-Verify that the shared checked-family contract exposes exactly its six parts
-(identity, provenance, checked input, requirements, structured outcome, stage
-hooks), that identity is content-addressed and occurrence keys are distinct
-from identity, that the typing context has no side door, that requirements
-are a pure function of a checked node, that a work-budget limit is distinct
-from a refusal, and that the `Relation` family's evaluation hook returns a
-named non-native-evaluability refusal rather than a panic or a silent
-success. Scope: FR-062-AC-1 through FR-062-AC-6.
+Verify that the shared checked-family contract's four separately-omittable
+parts (checked input, requirements, package, evaluate) each fail to compile
+when omitted, that identity is content-addressed and occurrence keys are
+distinct from identity (verifying identity and provenance behaviorally,
+since neither is a separate trait item to omit), that the typing context has
+no side door, that requirements are a pure function of a checked node, that
+a reached limit is distinct from both a refusal and `Incomplete`, that
+`Incomplete` is returned only by `evaluate`, that a recursion-depth limit
+prevents a native stack overflow, that `package` is all-or-nothing, and that
+the `Relation` family's evaluation hook returns a named
+non-native-evaluability refusal rather than a panic or a silent success.
+Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
 
 ## Test Procedure
 
-1. Compile a minimal family implementation that omits one of the six
-   contract parts and confirm the build fails; repeat once per part.
+1. Compile a minimal family implementation against the contract that in turn
+   omits, one at a time: the checked-input (typing context) parameter type
+   on `check`; the `requirements` method; the `package` hook; the `evaluate`
+   hook (for a family other than `Relation`). Confirm each omission fails to
+   compile. Identity and provenance are not tested this way: they are
+   properties of the `Checked` node type and the package's source map, not
+   separate trait items, and are instead exercised by steps 2 and 3 below.
 2. Parse two structurally identical forms into the same package and check
    both; also arrange for the same node to occur twice in the source (for
    example, a repeated identical sub-expression). Read the identity of each
@@ -37,19 +46,29 @@ success. Scope: FR-062-AC-1 through FR-062-AC-6.
 5. Call the pure requirements function on a checked node from a claim form
    with no FR-057 kind, and on one from a claim form with a kind. Call it
    twice on the same checked node.
-6. Configure a work budget small enough that checking a form exhausts it;
-   check the form and inspect the returned outcome's variant. Separately,
-   check a form with an actual semantic error and inspect the refusal's
-   `catalog_code()` result.
-7. Invoke the `Relation` family's evaluation hook on a checked `Relation`
+6. Configure a work budget small enough that checking a form reaches it;
+   check the form and inspect the returned outcome's variant, confirming it
+   is a `Limit` outcome, not `Incomplete` and not a refusal. Separately, run
+   a family's `evaluate` hook on a checked node under a meter small enough to
+   exhaust mid-evaluation and confirm it returns `Incomplete`. Run `check`
+   and `package` across the same fixture set and confirm neither ever
+   returns `Incomplete`.
+7. Construct a form nested well past a configured nesting-depth limit (for
+   example, deeply nested function application) and check it with the limit
+   configured; separately, check the same form with the limit removed or set
+   far beyond the test process's available stack.
+8. Given a checked item requiring more than one v2 node, inject a fault
+   partway through `package`'s emission for that item (after the first node
+   is written, before the last); read whatever v2 bytes resulted.
+9. Invoke the `Relation` family's evaluation hook on a checked `Relation`
    node built only from checked input. Instrument every other family's
    evaluation hook with a test double that panics if a CST, token or display
    string is touched, then invoke each on a checked node.
 
 ## Expected Results
 
-- Step 1: each omission fails to compile; no partial implementation is
-  accepted.
+- Step 1: each of the four omissions fails to compile; no partial
+  implementation is accepted.
 - Steps 2 and 3: the two structurally identical forms mint one shared
   identity; the two occurrences of one node get distinct occurrence keys
   (identity, role, ordinal) that differ only in ordinal after reordering, and
@@ -59,12 +78,19 @@ success. Scope: FR-062-AC-1 through FR-062-AC-6.
   shows none of them.
 - Step 5: the no-kind claim form yields no `Requirements` value; the
   kind-bearing claim form yields exactly one, equal across both calls.
-- Step 6: the exhausted-budget check returns a limit outcome naming the
-  work-budget kind, distinct in type from both a checked node and a refusal;
-  the semantic-error check returns a refusal whose `catalog_code()` result is
-  a stable catalog code, produced by an exhaustive mapping with no fallback
-  arm (confirmed by inspecting that the mapping's match has no `_` arm).
-- Step 7: the `Relation` invocation returns a named refusal stating
+- Step 6: the reached-limit check returns a `Limit` outcome naming the
+  work-budget kind, distinct in type from a checked node, a refusal and
+  `Incomplete`; the exhausted `evaluate` call returns `Incomplete`; `check`
+  and `package` return `Incomplete` in no observed case.
+- Step 7: with the limit configured, `check` returns a `Limit` outcome
+  naming the nesting-depth limit and the process does not crash; with the
+  limit removed or raised beyond the available stack, the same fixture
+  aborts the process (stack overflow), showing the configured limit, not
+  incidental luck, prevented the crash.
+- Step 8: the result is either a refusal with no v2 bytes for the item, or a
+  complete v2 node set for the item; no reading finds a partial node set (for
+  example, a declaration node with no body).
+- Step 9: the `Relation` invocation returns a named refusal stating
   non-native evaluability, never a panic and never a successful evaluated
   result; every other family's evaluation hook completes without the test
   double panicking, showing no CST, token or display string was read.

@@ -23,9 +23,10 @@ FR-065-AC-4.
    node and with a raw source string; attempt the same call with a checked
    node and with verified checked-package bytes.
 2. Parse a source file declaring one function and one call to it. Check it,
-   read the function declaration's identity. Link the checked graph into a
-   checked package and read the identity again. Emit v2 bytes and decode
-   them, reading the identity a third time.
+   read the function declaration's identity immediately after `check`. Link
+   the checked graph into a checked package and read the identity again
+   after linking. Emit v2 bytes and decode them, reading the identity a
+   third time after decoding.
 3. Reorder unrelated top-level declarations in the source file from step 2
    (leaving the function and its call unchanged) and repeat step 2.
 4. From the same source file, resolve the call's source occurrence
@@ -42,7 +43,8 @@ FR-065-AC-4.
 - Step 1: the CST and raw-string calls fail to compile (no accepting
   overload or conversion exists); the checked-node and checked-package-bytes
   calls succeed.
-- Step 2: all three identity readings are equal.
+- Step 2: the identity read after `check`, after linking, and after decoding
+  are all equal.
 - Step 3: the identity from step 2 is unchanged by the reorder.
 - Step 4: all three occurrence resolutions return the same byte span.
 - Step 5: the corrupted package's resolved span differs from step 4's,

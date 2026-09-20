@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-065
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-063
+    type: traces_to
 ---
 # FR-062: Implement the shared checked-family contract
 
@@ -47,12 +49,29 @@ The contract's six parts (ADR-012 §2):
 5. **Structured outcome.** A family's `check` SHALL return the checked node,
    or a refusal carrying a family-owned typed cause that maps to a catalog
    code through one exhaustive function with no fallback arm; a `check` that
-   exhausts its work budget SHALL return a limit outcome naming the work
-   budget, distinct from a refusal.
+   reaches a limit SHALL return a limit outcome naming the exhausted limit
+   kind (input bytes, nesting depth, node count or work budget), distinct
+   from a refusal. A family's `evaluate` hook (stage S6a) SHALL be the only
+   hook that returns `Incomplete` (a meter-budget outcome). `check` and
+   `package` SHALL NOT return `Incomplete`. `check` and `package` SHALL
+   instead return a `Limit` outcome when a limit is what they reached.
 6. **Stage hooks.** A family SHALL implement one hook for each stage it
    participates in (check, package, requirements, and, for every family
    except `Relation`, evaluate); every hook SHALL take only checked input,
-   and none SHALL take a CST, a token stream or a display string.
+   and none SHALL take a CST, a token stream or a display string. A
+   family's `package` hook SHALL be all-or-nothing for one item.
+   `package` SHALL emit every v2 node an item requires when it returns
+   success for that item.
+   `package` SHALL emit no v2 node for an item when it returns the
+   refusal for that item.
+   `package` SHALL NOT emit a partial set of v2 nodes for one item.
+   The layer-6 `replay` facade SHALL reach a family's checked node only
+   through that family's `evaluate` hook, widened to accept a replay
+   request; the facade SHALL select the node to evaluate by a typed
+   identity (a `QualifiedName` resolved against the recompiled package's
+   declarations,
+   ADR-013 O-11), and SHALL NOT select it by a bare string compared against
+   a display name.
 
 A family that does not evaluate natively (`Relation`) SHALL return a named
 refusal at the evaluation hook rather than omitting the hook silently, so
@@ -112,27 +131,57 @@ environment or a limit except through the typing context parameter. `check`
 SHALL be given no way to mutate anything except the meter, the diagnostic
 sink and the scope stack the typing context exposes.
 
+### Explicit limits bound every stage entry, including recursion
+
+Every stage entry (`check`, and every other stage ADR-011 §2.3 names) SHALL
+take explicit limits: input bytes, nesting depth, node count and work
+budget, as that stage needs them. A stage that is recursive (`check` is one;
+ADR-011 §2.3 also names S1, S2 and S6a) SHALL bound its recursion depth by
+one of these explicit limits, checked before each recursive step, and SHALL
+NOT rely on the native call stack to bound recursion. A family's `check`
+called on an arbitrarily deeply nested form (for example, nested function
+application) SHALL refuse with a limit outcome naming the nesting-depth
+limit once that limit is reached, rather than exhaust the native stack.
+
+### Packaging is all-or-nothing
+
+A family's `package` hook, given one checked item, SHALL either emit every
+v2 node ADR-012 §2 requires for that item and return success, or emit no v2
+node for that item and return the refusal. A partial emission (some but not
+all of an item's required v2 nodes, with no accompanying refusal) SHALL NOT
+occur; a package reader that later finds a declaration node with no body
+because emission stopped partway is evidence of a defect, not an admitted
+outcome.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once; an implementation missing any part fails to compile. A correct-looking implementation that instead defines its own free-standing `check`/`package`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
+| FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once. A family implementation that omits the checked-input parameter type on `check`, the `requirements` method, the `package` hook, or the `evaluate` hook (for a family other than `Relation`) fails to compile. Identity and provenance are structural properties of the `Checked` node type and the package's source map, not separate trait items a family can individually omit; they are instead enforced behaviorally by FR-062-AC-2. A correct-looking implementation that instead defines its own free-standing `check`/`package`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
 | FR-062-AC-2 | Given two parsed forms with identical structure checked into the same package, the checker mints one identity for both, and given the same node occurring twice in the source, the source map carries two distinct occurrence keys (identity, role, ordinal) for the one identity. Reordering the two source occurrences changes only their ordinal, never the identity. | Test (TC-160) |
 | FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
 | FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and a claim form with a kind yields exactly one `Requirements` value naming that kind; calling the requirements function twice on the same checked node yields equal values. | Test (TC-160) |
-| FR-062-AC-5 | A `check` that exhausts its work budget returns a limit outcome naming the work-budget limit kind, and a test asserts the returned value is not a refusal and not a checked node; a `check` given a form with an actual semantic error returns a refusal whose cause maps to a catalog code through the family's `catalog_code()`, and no fallback arm exists in that mapping (a compile-time exhaustiveness property, checked by removing the exhaustive match's implicit totality and observing a compile failure). | Test (TC-160) |
+| FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts neither `check` nor `package` ever returns `Incomplete` across the same fixture set. | Test (TC-160) |
 | FR-062-AC-6 | The `Relation` family's evaluation hook, invoked on a checked `Relation` node, returns a named refusal stating non-native evaluability rather than a panic, a silently omitted call, or a successful evaluated result. Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
+| FR-062-AC-7 | Given a form nested past a configured nesting-depth limit (for example, function application nested past the limit), `check` returns a `Limit` outcome naming the nesting-depth limit before the native stack is exhausted; a test runs the same fixture with the limit removed or raised far beyond the test's available stack and observes the process abort (stack overflow) instead, showing the limit, not incidental luck, is what prevents the crash at the configured depth. | Test (TC-160) |
+| FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
+| FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
+| FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 
 ## Dependencies
 
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §2
-  designs the six-part contract this requirement implements, and §1 the
-  closed `FamilyKind` catalogue whose members implement it.
+  designs the six-part contract this requirement implements (including the
+  `package` all-or-nothing rule and the replay stage's use of `evaluate`,
+  §8), and §1 the closed `FamilyKind` catalogue whose members implement it.
+- [FR-063](FR-063-exhaustive-family-extension-seam-probe.md) is this
+  requirement's mechanism for demonstrating FR-062-AC-8; this requirement
+  does not re-verify exhaustiveness by inspection.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
-  O-04 (checked node identity), O-07 (source occurrence identity), O-12
-  (source locations and provenance) and O-16 (outcomes) own the canonical
-  types this contract's parts are built from; `quire-exact` (#213 S-1)
-  implements them.
+  O-04 (checked node identity), O-07 (source occurrence identity), O-11
+  (qualified names), O-12 (source locations and provenance) and O-16
+  (outcomes) own the canonical types this contract's parts are built from;
+  `quire-exact` (#213 S-1) implements them.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §2.1
   and §2.3 own the stage edges and the structured-result shape
   (`Result<Staged<T>, StageFailure<C>>`) the contract's outcomes are built

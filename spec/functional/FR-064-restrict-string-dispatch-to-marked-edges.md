@@ -65,13 +65,31 @@ and SHALL report each occurrence found outside a function carrying
 The allow-list SHALL be a checked-in file naming each allowed occurrence by
 file and line (or by a stable anchor if the file is expected to move), with a
 one-line reason. An allow-list entry SHALL name only a comparison of a
-user-supplied value (for example, an error message the user chose to log,
-compared for a test's own assertion) that selects no program behaviour based
-on its content. An entry that gates a branch, a lookup or a dispatch
-decision on the compared string's value SHALL NOT be added to the allow-list;
-such an occurrence is refused by making its function an edge, marking it
-`#[string_edge]`, and converting the string once, or by moving the dispatch
-to a closed enum or typed identity.
+user-supplied value that selects no program behaviour based on its content
+-- for example, a `debug_assert_eq!` in production code that compares a
+freshly computed digest's hex string against a cached one purely as an
+internal consistency check, compiled out of release builds and reachable by
+no code path in a release binary. An entry that gates a branch, a lookup or
+a dispatch decision on the compared string's value SHALL NOT be added to the
+allow-list; such an occurrence is refused by making its function an edge,
+marking it `#[string_edge]`, and converting the string once, or by moving
+the dispatch to a closed enum or typed identity.
+
+`xtask string-edge` SHALL reject an allow-list entry whose comparison result
+feeds an `if` condition or a `match` scrutinee that selects between
+different code paths, reporting the entry's file and line and refusing to
+treat it as allowed; it SHALL accept an entry only when the comparison's
+result feeds a non-branching sink (a logged or displayed message, a
+diagnostic payload, a test assertion, or code compiled out of the checked
+build). None of the five production dispatch sites ADR-010 §4.3 names (the
+`"allocation"` relationship-category string, the
+`"quire.protocol.finite-global/v1"` profile string, the
+`"filament-canonical-json-1"` canonicalization string, the
+`"quire.state.authority-adapter"` adapter string, and the `clock:` prefix)
+can be accepted into the allow-list, because each one gates a branch; where
+a site is not yet converted by its owning family's ticket, `xtask
+string-edge` SHALL continue to report it as an unresolved violation rather
+than accept it into the allow-list.
 
 ### Gate placement
 
@@ -85,13 +103,14 @@ to a closed enum or typed identity.
 | FR-064-AC-2 | Given an unmarked occurrence whose file and line matches an allow-list entry, `xtask string-edge` does not report it; removing that allow-list entry causes the same occurrence to be reported on the next scan, with no change to the source. | Test (TC-162) |
 | FR-064-AC-3 | `xtask string-edge` scans no file under a `tests/` directory and no `#[cfg(test)]` module; a string `match` placed only inside such a module is not reported even when unmarked and not allow-listed. | Test (TC-162) |
 | FR-064-AC-4 | `xtask string-edge` exits non-zero when its report is non-empty and exits zero when its report is empty; a test constructs one fixture tree of each shape and asserts both exit codes. | Test (TC-162) |
-| FR-064-AC-5 | Applying `#[string_edge]` to a function changes no compiled behaviour: a test compiles the function with and without the attribute and asserts the generated behaviour (via its observable outputs, not its assembly) is identical. | Test (TC-162) |
+| FR-064-AC-5 | Given one allow-list entry whose comparison result feeds an `if`/`match` condition that selects between two different code paths, and one entry whose comparison result feeds only a logged message, `xtask string-edge` rejects the first (naming its file and line) and accepts the second. A test attempts to add each of the five ADR-010 §4.3 production dispatch sites (named in this requirement's Behavior) as an allow-list entry and asserts the tool rejects all five; a wrong implementation that allow-lists all five to force a clean scan does not satisfy this criterion. | Test (TC-162) |
 | FR-064-AC-6 | The lint gate invokes `xtask string-edge`, and a test that stubs the gate's target list shows the gate fails when `xtask string-edge` exits non-zero. | Test (TC-162) |
 
 ## Dependencies
 
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §9
-  (string dispatch rule and the edge table).
+  (string dispatch rule and the edge table, which cites ADR-010 §4.3's five
+  production dispatch sites this requirement's allow-list rejection names).
 - [FR-062](FR-062-implement-checked-family-contract.md).
 - [US-006](../usecase/US-006-extend-a-family-without-breaking-seams.md).
 - agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run

@@ -22,12 +22,14 @@ those later tickets follow: the required tests, the required conversions,
 and the conditions under which a family's old composed-checker path is
 removed.
 
-The recipe is a documented procedure for later tickets to follow. It is not
-a compatibility layer, a fallback or a bridge: each later ticket's
-implementation deletes its family's old composed-checker path in the same
-change that lands that family's checked-family replacement (ADR-011 §7.3
-M-6e), so at no point does an old path and its replacement both run for the
-same family.
+The recipe is a documented procedure: each later ticket's implementation
+deletes its family's old composed-checker path in the same change that
+lands that family's checked-family replacement (ADR-011 §7.3 M-6e), so at no
+point does an old path and its replacement both run for the same family.
+[FR-065](FR-065-migrate-function-application-to-checked-family.md) performs
+this deletion for function declaration and application directly, as this
+ticket's own migrated family; this recipe covers the families that follow
+it.
 
 ## Inputs
 

@@ -14,9 +14,11 @@ Verify that a build under the `seam-probe` cargo feature fails to compile
 with exactly the checked-in set of seam-function locations, that removing a
 checked-in entry or removing an actual compiler error each causes
 `xtask seam-probe` to report a mismatch, that the feature is unreachable
-under default features, that the tool's exit code reflects set equality, and
-that the full gate fails when the tool does. Scope: FR-063-AC-1 through
-FR-063-AC-5.
+under default features, that the tool's exit code reflects set equality,
+that the full gate fails when the tool does, that the checked-in list covers
+every named category, and that a wildcard-arm escape or a
+`#[non_exhaustive]` enum is caught by the lint gate rather than silently
+passing the probe. Scope: FR-063-AC-1 through FR-063-AC-7.
 
 ## Test Procedure
 
@@ -39,6 +41,16 @@ FR-063-AC-5.
 7. Stub the full gate's target list to include `xtask seam-probe`, then
    simulate a non-zero exit from the tool and observe the gate's own exit
    code.
+8. Inspect the checked-in seam-function list and confirm it names at least
+   one entry for each of the five categories FR-063-AC-6 lists; remove the
+   entry for one category at a time (five runs) and re-run `xtask seam-probe`
+   against the real build.
+9. In a fixture seam module, replace one seam's exhaustive `match` with one
+   carrying a `_ => unsupported(...)` fallback arm. Build the fixture with
+   `--features seam-probe` and collect its `E0004` locations; separately run
+   `cargo clippy` over the fixture module.
+10. Inspect the definitions of `FamilyKind`, the parsed form enum, the
+    checked node enum and each family `Cause` enum for `#[non_exhaustive]`.
 
 ## Expected Results
 
@@ -59,3 +71,12 @@ FR-063-AC-5.
 - Step 6: the wrong list produces a non-zero exit naming the missing entry;
   the correct list produces a zero exit.
 - Step 7: the full gate exits non-zero when `xtask seam-probe` does.
+- Step 8: each of the five removals causes `xtask seam-probe` to fail,
+  naming that category's location as expected-but-absent from the list; the
+  list as checked in (before any removal) contains all five.
+- Step 9: the fixture build with the fallback arm produces no `E0004` at
+  that seam (the fallback arm compiles, so `xtask seam-probe` alone would
+  report the sets as equal and exit 0 against a list that omits it); the
+  `cargo clippy` run over the fixture module fails on
+  `clippy::wildcard_enum_match_arm` or `clippy::match_wildcard_for_single_variants`.
+- Step 10: none of the four enums carries `#[non_exhaustive]`.
