@@ -233,31 +233,15 @@ relation object, the exact domain package it was linked against under
 package's own identity, its own version and the `sha256-jcs` digest of its
 Semantic IR 2.0.0 document, each equal to the corresponding member of the
 `DomainPackageRef` FR-056 admitted at linking. For a directly admitted native
-model with no domain-package import, this naming is absent, exactly as the
-removed `Correspondence`'s absence was permitted. The wire contract SHALL
-carry no `ProducerObject` record and no `Correspondence` record.
+model with no domain-package import, `Model` SHALL carry this member as an
+explicit `null`; omitting the member instead SHALL refuse, exactly as this
+contract's other `Nullable<T>` members already refuse an omission. The wire
+contract SHALL carry no `ProducerObject` record and no `Correspondence`
+record.
 
 `Model` SHALL carry this domain-package naming as a direct, nullable member
-of `Model` itself (the same present-or-explicit-`null` `Nullable<T>` pattern
-this contract already uses elsewhere, for example for the removed
-`correspondence` member), and SHALL NOT carry it behind an internally tagged
-alternative with a zero-field ("unit") variant. This distinction is
-load-bearing for FR-042-AC-11's refusal, not cosmetic: this contract's
-`deny_unknown_fields` guard is implemented as an inner `Fields` struct on a
-genuine object decode (the `record!` macro), which correctly rejects an
-unrecognized member name on `Model` itself. The narrower, different
-ecosystem gap is that an internally tagged enum whose alternative is a
-zero-field struct variant does not reject unrecognized content beside that
-variant's tag; three such zero-field variants already exist elsewhere in
-this same wire module (`Type::Boolean`, `Origin::Independent`,
-`Ordering::Unordered`). `Model`, `ProducerObject` and `Correspondence` today
-are each a plain `record!` struct, none a tagged enum with a zero-field
-variant, so a payload's `correspondence`, `producer` or `interface` member is
-unrecognized `Model` object content caught by the ordinary struct decode,
-never by any tagged alternative. The compiler SHALL decode `Model`'s
-domain-package member through that same plain-record shape, never through an
-internally tagged representation, so a future implementation choosing one
-does not reopen the zero-field-variant gap.
+of `Model` itself, decoded through a plain `record!` field (FR-042-CON-2),
+never through any internally tagged (`#[serde(tag = ...)]`) alternative.
 
 This is a versioned wire change (agent-ix/quire-spec-language#132) that lands
 in place. QSL is prerelease with no consumer of the deleted `Correspondence`
@@ -384,8 +368,8 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-042-CON-1 | Compiler source SHALL contain no `ProducerObject` type, no `Correspondence` type and no wire tag or field named `correspondence`, `producer-object` or `producer_object`. | Maintainability | Inspection |
-| FR-042-CON-2 | Compiler source SHALL decode `Model`'s domain-package member through a plain `record!` field, never through an internally tagged enum with a zero-field ("unit") variant, anywhere in the domain-package naming path. | Security | Inspection, Test (TC-121) |
+| FR-042-CON-1 | Within the `quire.compiled-protocol/*` wire module (`src/protocol_artifact/`), source SHALL contain no `ProducerObject` type, no `Correspondence` type and no wire tag or field named `correspondence`, `producer-object` or `producer_object`. This does not reach an unrelated `correspondence` member of another wire record, such as the native-temporal request's own `correspondence` evidence reference. | Maintainability | Inspection |
+| FR-042-CON-2 | `Model`'s domain-package member SHALL decode through a plain `record!` field, never through a unit variant or any other internally tagged (`#[serde(tag = ...)]`) representation, whether or not that representation is built with the `tagged!` macro. | Security | Inspection, Test (TC-121) |
 
 ## Acceptance Criteria
 
@@ -401,7 +385,8 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-8 | Partial, unsupported and resource-incomplete compilation retains independent results but emits no fully linked package. An independently unsupported projection does not erase an admitted global-protocol subject or become complete package/assessment success; historical package/profile identities and entry-point refusals remain unchanged. Every protocol-role admission refusal locus pairs a source index and span from the same owning declaration; a multi-unit invalid protocol role identifies and slices that exact role rather than a preceding source. | Test (TC-121) |
 | FR-042-AC-9 | Independently counted source/dependency/table/reference/control and canonical-output vectors distinguish zero, exact and one-short limits in each artifact work dimension, including deep/shared graphs, repeated traversal and bounded iteration. Overflow/clamping and fresh retry retain exact stage/locus/usage without a partially admitted artifact. | Test (TC-121) |
 | FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
-| FR-042-AC-11 | For a model whose native package imports a domain package, reading `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them; for a directly admitted native model with no domain-package import, this naming decodes as absent. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored — this refusal fires because the member is unrecognized content on a plain-record object decode (FR-042-CON-2), not because of a tag a wrong implementation could route around a zero-field variant. | Test (TC-121) |
+| FR-042-AC-11 | For a model whose native package imports a domain package, reading `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored. | Test (TC-121) |
+| FR-042-AC-12 | For a directly admitted native model with no domain-package import, `Model`'s domain-package member decodes as explicit `null`; a payload that omits the member entirely refuses exactly as an omitted `Nullable<T>` member already refuses elsewhere in this contract, and is never read as an implicit `null`. | Test (TC-121) |
 
 ## Dependencies
 
@@ -436,25 +421,41 @@ over that same architecture fixture bundle rather than a hand-authored model
 fixture, so its emitted `Model` names a domain package FR-056 actually
 admitted, not one supplied only for the recipe.
 [US-008](../usecase/US-008-trust-domain-package-provenance.md) is the
-consumer story for FR-042-AC-11. Vendoring the resources this recipe and
-TC-121 depend on against QSpec main is
+consumer story for FR-042-AC-11 and FR-042-AC-12. Vendoring the resources
+this recipe and TC-121 depend on against QSpec main is
 [NFR-011](../non-functional/NFR-011-vendor-resources-from-exact-pins.md)'s
 concern, not this requirement's; `NFR-011-AC-2` and `NFR-011-AC-4` already
 cover vendored bytes matching the pinned source and `revendor-check` drift
 detection, so no new artifact specifies that half of
 agent-ix/quire-spec-language#132.
 
-**Recorded consequence for FR-050 and FR-054 (owner ruling, this ticket):**
-this requirement changes `Model` in place at the existing
-`quire.compiled-protocol/1` identity rather than minting a new one — a fresh
-identity that let the deleted `Correspondence` shape keep existing would be a
-compatibility layer with no consumer to protect, which this prerelease
-repository does not build. `quire.compiled-protocol/2`
+**Recorded consequence for FR-050, FR-054 and the wire contract docs (owner
+ruling, this ticket):** this requirement changes `Model` in place at the
+existing `quire.compiled-protocol/1` identity rather than minting a new one —
+a fresh identity that let the deleted `Correspondence` shape keep existing
+would be a compatibility layer with no consumer to protect, which this
+prerelease repository does not build. `quire.compiled-protocol/2`
 ([FR-050](FR-050-publish-authenticated-temporal-artifacts.md)) and
 `quire.compiled-protocol/3` ([FR-054](FR-054-publish-control-temporal-activation-map.md))
-each embed the same shared `Model` population and change in place with it.
-Each of those two requirements currently states that its own delta changes no
-version-1 field; once this requirement lands, that sentence is false for both
-of them, because the shared `Model` they both embed did change. FR-050 and
-FR-054 each need an amendment from their own owner to that sentence; this
-requirement does not amend either FR itself.
+each embed the same shared `Model` population and change in place with it,
+falsifying stronger statements than a shared sentence in the wire docs:
+**`FR-050-AC-4`**, marked `✅ Passed` in
+[`spec/model-linking/tests.md`](../model-linking/tests.md), states "`/1`
+bytes remain byte-identical and readable only by the unchanged strict `/1`
+reader"; this requirement changes those `/1` bytes and that `/1` reader, so
+that criterion's `✅ Passed` status becomes false the moment this lands, and
+its owner needs to re-verify and re-mark it. **FR-054**'s Description states
+"The compiler SHALL leave the frozen `/1` and `/2` bytes, readers and
+semantics unchanged"; this requirement invalidates that SHALL. Neither FR
+contains the "does not change any version-1 field" sentence — that sentence
+is [`docs/compiled-protocol-v2.md:6`](../../docs/compiled-protocol-v2.md)'s,
+the wire contract doc FR-050 owns, and it becomes false too.
+[`docs/compiled-protocol-v1.md`](../../docs/compiled-protocol-v1.md), which
+[TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md)'s own
+Description points an implementer at, defines the exact `ProducerObject`,
+`Correspondence` and `Model` shapes this requirement deletes and replaces,
+the dependency-index rules that mention them, and `ProducerCorrespondence` as
+an `Unsupported` reason; it needs the matching rewrite. This requirement does
+not amend FR-050, FR-054 or either wire-contract doc itself: their owners
+need to re-verify FR-050-AC-4, restate FR-054's SHALL and rewrite the two
+docs once this lands.

@@ -392,7 +392,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented |
 | [IT-010](integration/IT-010-config-version-numeric-backends.md) | IT | Locally tested ConfigVersion numeric backend parity |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
-| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11; `Model` domain-package identity/version/digest naming and removal of `ProducerObject`/`Correspondence` specified under #132 (FR-042-AC-11), not yet implemented |
+| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11; `Model` domain-package identity/version/digest naming and removal of `ProducerObject`/`Correspondence` specified under #132 (FR-042-AC-11, FR-042-AC-12), not yet implemented |
 | [FR-043](functional/FR-043-evaluate-bounded-native-temporal.md) | FR | Planned bounded temporal evaluation; compiler #38 |
 | [FR-044](functional/FR-044-activate-temporal-obligations.md) | FR | Planned temporal activation and immutable captures; compiler #38 |
 | [FR-045](functional/FR-045-classify-temporal-mapping-support.md) | FR | Native-to-TL mapping support classification, including the `/2` authenticated selection; bridge emission blocked on quire-contract-ir #63/#64; compiler #38 |
@@ -411,7 +411,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
-| [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131; the compiled-protocol `Model` naming this admits directly is specified under #132 (FR-042-AC-11) |
+| [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131; the compiled-protocol `Model` naming this admits directly is specified under #132 (FR-042-AC-11, FR-042-AC-12) |
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
