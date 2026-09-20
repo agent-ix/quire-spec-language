@@ -1930,13 +1930,18 @@ impl<'a> Typer<'a> {
     /// (`crate::value::expression::evaluate`), so [`NodeKind::Lookup`] does
     /// not restate it. FR-153 also refuses `ill_typed`/`type-mismatch` at
     /// check time when `S` does not conform to `T` (TC-198 L03's last case,
-    /// "before any charge") -- this checker cannot decide that here without
-    /// the model's own generalization graph, which `TypeEnvironment` does not
-    /// carry (the "TypeEnvironment island", tracked at
-    /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
-    /// refusal is deferred to evaluation, inside
+    /// "before any charge"): checked below via `self.scope.types`'s own
+    /// admitted generalization graph (H1, #204 round 1), the same source
+    /// [`Self::check_dispatch_argument`]'s reference-upcast case uses.
     /// `crate::model::population::lookup`'s own `type_conforms` call
-    /// (`crate::value::model_query::evaluate_lookup`).
+    /// (`crate::value::model_query::evaluate_lookup`) still refuses the
+    /// identical case at evaluation, as a backstop for a [`NodeKind::Lookup`]
+    /// built without going through this checker. The two are not fully
+    /// equivalent: `conforms`'s ancestor closure is unbounded while
+    /// `type_conforms` walks at most 128 steps, so a chain deeper than that
+    /// is admitted here and `ResourceExhausted`-refused there -- a known,
+    /// documented divergence (`crate::value::model_query`'s module docs),
+    /// not a silent-admission hazard.
     fn lookup(
         &mut self,
         target: &ValueType,
@@ -1946,9 +1951,9 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         self.check_declared_type(target, location)?;
-        if !matches!(target, ValueType::Reference(_)) {
+        let ValueType::Reference(t) = target else {
             return Err(mismatch(location));
-        }
+        };
         let population = self.infer(population, None, &location.child(0))?;
         // FR-153 requires `p` to be a population binding with a declared
         // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
@@ -1957,7 +1962,10 @@ impl<'a> Typer<'a> {
             return Err(ineligible(&population.location));
         }
         let reference = self.infer(reference, None, &location.child(1))?;
-        if !matches!(reference.value_type, ValueType::Reference(_)) {
+        let ValueType::Reference(s) = reference.value_type else {
+            return Err(mismatch(&reference.location));
+        };
+        if !self.scope.types.conforms(s, *t) {
             return Err(mismatch(&reference.location));
         }
         let value_type = match absence {

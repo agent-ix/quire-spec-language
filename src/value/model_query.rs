@@ -50,24 +50,35 @@
 //!
 //! # The TypeEnvironment island
 //!
-//! This module bridges identities, never model *conformance*, on its own:
-//! `crate::value`'s `TypeEnvironment` (`crate::value::composite`) admits no
-//! generalization graph, so nothing on this side of the bridge can decide
-//! whether one object type conforms to another by itself -- only
-//! `crate::model::conformance` (reachable from a runtime
-//! [`PopulationBinding`], never from a checked package's static types) can.
-//! `allInstances`/`lookup`'s own conformance decisions
-//! ([`all_instances`]/[`lookup`]) run entirely inside
-//! `crate::model::population`, which does carry that graph -- including,
-//! for a malformed reference, the short-circuit above, since [`lookup`]
-//! itself decides `type_conforms(S, T)` before any charge for every
-//! reference it is called with, well-formed or not. Three FR-153/FR-149
-//! obligations that would need this graph at *check* time still cannot get
-//! it, tracked at
-//! <https://github.com/agent-ix/quire-spec-language/issues/164>: `deref(r).f`
-//! display-name resolution, TC-198 L08 upcast equality, and refusing
-//! `lookup<T>(p, r)` at check time when `r`'s declared type does not conform
-//! to `T` (today refused only at evaluation).
+//! This module bridges identities; model *conformance* still runs entirely
+//! inside `crate::model::population`/`crate::model::conformance`, reachable
+//! from a runtime [`PopulationBinding`], never from a checked package's
+//! static types -- including, for a malformed reference, the short-circuit
+//! above, since [`lookup`] itself decides `type_conforms(S, T)` before any
+//! charge for every reference it is called with, well-formed or not.
+//!
+//! `crate::value`'s `TypeEnvironment` (`crate::value::composite`) *does* now
+//! admit its own object-type generalization graph (`ancestors`/`conforms`,
+//! PR #204) for the checked package's own declared supertypes, and the
+//! checker uses it directly for TC-198 L08 upcast equality and check-time
+//! `lookup<T>(p, r)` S-vs-T conformance (`crate::value::expression::check`,
+//! `crate::value::equality`) -- no bridge through this module is needed for
+//! either. Two things this graph still cannot do, tracked at
+//! <https://github.com/agent-ix/quire-spec-language/issues/164>: resolve
+//! `deref(r).f` through an inherited, non-overridden field (a storage
+//! question -- `ObjectEnvironment`'s slots are sized to an object's own
+//! declared type alone, so an ancestor-only field has nowhere to live on a
+//! subtype's instance, not just nowhere to look it up); and reach a real
+//! *production* checked package at all -- `crate::model::checked_dispatch`'s
+//! sole production `PackageDeclarations` builder leaves `types` at
+//! `TypeEnvironment::default()` (empty), so today `ancestors`/`conforms` are
+//! exercised only where a caller hand-builds a `TypeEnvironment`, as tests
+//! do. `TypeEnvironment::conforms` is also a precomputed, unbounded-depth
+//! transitive closure, unlike `type_conforms`'s bounded (128-step) walk
+//! here, so a supertype chain deeper than that is checker-admitted and
+//! evaluation-`ResourceExhausted`-refused -- a real, currently accepted
+//! divergence between the two, not a soundness gap (evaluation still
+//! refuses, never silently admits).
 
 use std::collections::HashMap;
 
