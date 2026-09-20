@@ -316,12 +316,15 @@ pub fn run(workspace_root: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
 
-    /// FR-063-AC-6, S1 portion only (see this module's own scope note).
-    /// One location, not two: `stage_hooks`'s match is deleted (PR #262
-    /// review F7).
-    #[trace("TC-161", "FR-063-AC-6")]
+    /// **Untagged (PR #262 review, coordinator round 3, finding 6).** This
+    /// test asserts `checked_in_locations()` returns the same literal three
+    /// lines above it already hardcodes -- a constant compared to itself,
+    /// which cannot fail regardless of whether AC-6's actual coverage
+    /// requirement holds. It stays as a real guard against an accidental
+    /// edit to the literal (FR-063-AC-1/AC-2's own "update the checked-in
+    /// list in the same change" rule), but is not evidence for AC-6, which
+    /// FR-063's own Status section now records unbacked.
     #[test]
     fn checked_in_locations_are_the_one_family_kind_match() {
         let locations = checked_in_locations();
@@ -335,7 +338,11 @@ mod tests {
     /// F14: the checked-in key is the enclosing item, not a line number --
     /// resolving a line elsewhere inside the same function's body (not just
     /// its `match` keyword's own line) must still name that function.
-    #[trace("TC-161", "FR-063-AC-6")]
+    ///
+    /// **Untagged (PR #262 review, coordinator round 3, finding 6).** This
+    /// exercises `enclosing_item_name`, the F14 line-to-item-name helper --
+    /// a real mechanism test, but not AC-6's subject (the checked-in list's
+    /// category coverage), so it carries no `FR-063-AC-6` tag.
     #[test]
     fn enclosing_item_name_resolves_any_line_inside_the_function_body() {
         let source = r#"
@@ -362,7 +369,10 @@ mod tests {
 
     /// F14: a bare module-level function (no enclosing `impl`) resolves to
     /// its own unqualified name.
-    #[trace("TC-161", "FR-063-AC-6")]
+    ///
+    /// **Untagged (PR #262 review, coordinator round 3, finding 6).** Same
+    /// reason as `enclosing_item_name_resolves_any_line_inside_the_function_
+    /// body` above: exercises the F14 helper, not AC-6's own subject.
     #[test]
     fn enclosing_item_name_resolves_a_bare_function() {
         let source = "fn free_function() {\n    let x = 1;\n}\n";
