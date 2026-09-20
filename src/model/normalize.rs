@@ -644,6 +644,7 @@ impl Index {
                 DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
                 | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {}
             }
         }
@@ -1209,42 +1210,47 @@ fn check_node<'a>(
                     ),
                 });
             }
+            // A native value type ([`ValueTypeRef::Native`]) names no
+            // node of any package, so it has nothing to dangle against
+            // here; only a package value type is checked.
             for parameter in &op.parameters {
-                if !index.types.contains(&parameter.value_type)
-                    && !index.known_scalars.contains(&parameter.value_type)
-                {
-                    refusals.push(ModelRefusal {
-                        code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownValueType {
-                            operation: op.key.clone(),
-                            parameter: Some(parameter.key.clone()),
-                            value_type: parameter.value_type.clone(),
-                        },
-                        detail: format!(
-                            "operation {} parameter {} names value type {}, which is not a declared type",
-                            op.key.node,
-                            parameter.key.node,
-                            parameter.value_type.node
-                        ),
-                    });
+                if let Some(value_type) = parameter.value_type.as_package() {
+                    if !index.types.contains(value_type)
+                        && !index.known_scalars.contains(value_type)
+                    {
+                        refusals.push(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::UnknownValueType {
+                                operation: op.key.clone(),
+                                parameter: Some(parameter.key.clone()),
+                                value_type: parameter.value_type.clone(),
+                            },
+                            detail: format!(
+                                "operation {} parameter {} names value type {}, which is not a declared type",
+                                op.key.node, parameter.key.node, parameter.value_type
+                            ),
+                        });
+                    }
                 }
             }
             if let Some(result) = &op.result {
-                if !index.types.contains(&result.value_type)
-                    && !index.known_scalars.contains(&result.value_type)
-                {
-                    refusals.push(ModelRefusal {
-                        code: Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownValueType {
-                            operation: op.key.clone(),
-                            parameter: None,
-                            value_type: result.value_type.clone(),
-                        },
-                        detail: format!(
-                            "operation {} result names value type {}, which is not a declared type",
-                            op.key.node, result.value_type.node
-                        ),
-                    });
+                if let Some(value_type) = result.value_type.as_package() {
+                    if !index.types.contains(value_type)
+                        && !index.known_scalars.contains(value_type)
+                    {
+                        refusals.push(ModelRefusal {
+                            code: Code::DanglingReference,
+                            cause: ModelRefusalCause::UnknownValueType {
+                                operation: op.key.clone(),
+                                parameter: None,
+                                value_type: result.value_type.clone(),
+                            },
+                            detail: format!(
+                                "operation {} result names value type {}, which is not a declared type",
+                                op.key.node, result.value_type
+                            ),
+                        });
+                    }
                 }
             }
             for field in &op.effect.modifies {
@@ -1300,7 +1306,8 @@ fn check_node<'a>(
         // not concern itself with them.
         DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_) => {}
+        | DomainPackageRecord::Relationship(_)
+        | DomainPackageRecord::Allocation(_) => {}
         // model-complete.md's "Populations" row: each member type names
         // a declared object type; a missing one refuses
         // `missing_declaration`/`missing-name`.

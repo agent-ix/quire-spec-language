@@ -35,11 +35,11 @@ for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
 the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
 for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
-The lock now selects 180 packages including this crate, optional and target-specific
+The lock now selects 198 packages including this crate, optional and target-specific
 dependencies. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
-FR-030 adds optional quire-rs 0.46.0 at
-8b8020e665c61a11bc74f3f23b84617c80c0c442 under its declared AGPL-3.0-or-later grant.
+FR-030 adds optional quire-rs 0.46.0, pinned at
+2823a93bd3797c970c1d389afae9b893dea6f232 under its declared AGPL-3.0-or-later grant.
 Its default, Python and wasm features are disabled; default native builds omit it.
 The additional 40 locked entries retain their declared grants below, including
 Quire's target-specific Loom dependencies; this consumer does not run Loom or
@@ -48,13 +48,25 @@ The public IR dependency is pinned to 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f;
 ix-trace-rs remains pinned to 2ce4ebf47f726b9d76388220545cd0abda8a5cfb.
 Serde 1.0.228 is selected consistently with IR's exact dependency.
 
-#131 removes the `agent-ix-baseline-producer` dependency, `tests/producer_correspondence.rs`
-and the whole Producer 1.2/Filament correspondence adapter (`AdmittedProducerModel`,
-`ProducerCompatibilitySelection` and the `_with_producers` reader/admission
-family). Nothing in this prerelease repo consumed that path, so it is deleted
-outright rather than bridged. Remaining work: #131 replaces model intake with
-the `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` crates for
-domain-package model intake (FR-056), in a follow-up PR.
+#131 removed the Producer 1.2/Filament correspondence adapter and its own
+dependency, along with `tests/producer_correspondence.rs`; nothing in this
+prerelease repo consumed that path, so it was deleted outright rather than
+bridged. Model intake reads Semantic IR 2.0.0 domain
+packages (FR-056) through the `agent-ix-extraction-frontend` and
+`agent-ix-semantic-ir` crates, both pinned by their `Cargo.toml` `rev` --
+this workspace's own single *authoritative* source for that commit --
+under their declared AGPL-3.0-or-later grant. `tests/fixtures/architecture`
+and `tests/fixtures/modules` are vendored from the same repository at that
+same commit, but each tree's own `VENDOR.json` still carries that commit
+again by hand in its own `commit` field (`Source::Fcd` requires one before
+`revendor` can read anything to compare it against); `xtask::cargo_pin`
+checks that hand-edited value against the authoritative pin rather than
+trusting it (`cargo xtask revendor --tree
+test-fixtures-architecture|test-fixtures-modules`,
+`tests/fixtures/{architecture,modules}/VENDOR.json`). `tempfile` moves from a qualification-only
+dependency to a production one: `agent-ix-extraction-frontend`'s `lift` entry
+always writes its document to a required output path, and intake supplies a
+scratch directory for it.
 
 FR-020 selects the reviewed `unbounded_depth` feature on the existing serde_json
 pin. Only package intake disables the library recursion guard; its metered

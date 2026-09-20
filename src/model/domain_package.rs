@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The domain package: FR-150's normalization input.
 //!
-//! QSL does not (yet) receive this domain package from a live Semantic IR 2.0.0
-//! intake (`filament-core-data#173`, unmerged); the shape below is the
-//! `model-effective-declaration.schema.json`/`model-complete.md` domain
-//! package exactly as FR-154 defines it, so normalization built against it
-//! needs no rewrite once a real intake supplies one. This module owns no
-//! registry: a [`DomainPackage`] is a value the caller passes in and
-//! [`crate::model::normalize`] consumes; nothing here is reachable except
-//! through that value.
+//! The shape below is the `model-effective-declaration.schema.json`/
+//! `model-complete.md` domain package exactly as FR-154 defines it. This
+//! module owns no registry: a [`DomainPackage`] is a value the caller passes
+//! in and [`crate::model::normalize`] consumes; nothing here is reachable
+//! except through that value. [`crate::model::intake`] admits Semantic IR
+//! 2.0.0 document bytes against a selection and reads an admitted
+//! document's IR nodes into these records.
 
 use crate::model::key::DeclarationKey;
 use crate::value::OrderingOperator;
@@ -26,7 +25,7 @@ pub struct Multiplicity {
     pub unique: bool,
 }
 
-/// An object type export: `{key, interfaceFeatures, supertypes}`.
+/// An object type export: `{key, interfaceFeatures, abstract, supertypes}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeRecord {
     /// This type's original declaration key.
@@ -36,12 +35,133 @@ pub struct ObjectTypeRecord {
     /// is a real, valid interface with zero declared features; the
     /// distinction from `None` is the capability itself, not emptiness.
     pub interface_features: Option<Vec<DeclarationKey>>,
+    /// D05 (`model-complete.md:156`): an abstract type has no direct
+    /// instances. A population member whose most-specific type is abstract
+    /// is refused (`invalid_runtime_input`/`abstract-instance`), and
+    /// dispatch covers only concrete subtypes. Named `abstract_type`, not
+    /// `abstract`, since the latter is a reserved Rust keyword.
+    pub abstract_type: bool,
     /// This type's declared `supertypes[]` (`model-complete.md`:155/159/160
     /// and :270/271): every entry names an object type of the package this
     /// type directly generalizes to. An inline property of the object type
     /// itself -- there is no producer key of its own for one generalization
     /// edge.
     pub supertypes: Vec<DeclarationKey>,
+}
+
+/// QSL's own closed native value-type vocabulary (shared-grammar.md's
+/// `type-ref` production): the unparameterized value-type keywords a
+/// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
+/// naming a node of any package. `Boolean`, `Integer`, `Float32` and
+/// `Float64` take no parameters. `Integer`'s own optional inline bound
+/// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
+/// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
+/// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
+/// `Text[min,max;profile]`) and REQUIRE their full parameter set to resolve
+/// (see [`Self::unsupported_parameters`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeValueType {
+    /// `Boolean`.
+    Boolean,
+    /// `Integer`.
+    Integer,
+    /// `Rational`.
+    Rational,
+    /// `Decimal`.
+    Decimal,
+    /// `Float32`.
+    Float32,
+    /// `Float64`.
+    Float64,
+    /// `Text`.
+    Text,
+}
+
+impl NativeValueType {
+    /// The `<Name>` past `ix://quire/native/`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Boolean => "Boolean",
+            Self::Integer => "Integer",
+            Self::Rational => "Rational",
+            Self::Decimal => "Decimal",
+            Self::Float32 => "Float32",
+            Self::Float64 => "Float64",
+            Self::Text => "Text",
+        }
+    }
+
+    /// The required parameter names (shared-grammar.md's own labels for
+    /// each production: `Rational`/`Decimal`'s `dmin`/`dmax`, `Text`'s
+    /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
+    /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
+    /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
+    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for at
+    /// all -- so a `typeRef` naming this native type can never resolve, no
+    /// matter what a producer's own document supplies. `Rational`/`Decimal`
+    /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
+    /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
+    /// `Float32` and `Float64` take no required parameter, so this is empty
+    /// for them.
+    pub fn unsupported_parameters(&self) -> &'static [&'static str] {
+        match self {
+            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 => &[],
+            Self::Rational | Self::Decimal => &["dmin", "dmax"],
+            Self::Text => &["profile"],
+        }
+    }
+}
+
+impl std::str::FromStr for NativeValueType {
+    type Err = ();
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "Boolean" => Ok(Self::Boolean),
+            "Integer" => Ok(Self::Integer),
+            "Rational" => Ok(Self::Rational),
+            "Decimal" => Ok(Self::Decimal),
+            "Float32" => Ok(Self::Float32),
+            "Float64" => Ok(Self::Float64),
+            "Text" => Ok(Self::Text),
+            _ => Err(()),
+        }
+    }
+}
+
+/// A field, parameter or result's resolved value type: QSL's own closed
+/// native vocabulary, declaring no node of any package, or a node of some
+/// package. The sole output shape [`crate::model::intake`]'s unified
+/// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
+/// made-up "quire/native" package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueTypeRef {
+    /// A native value type: `ix://quire/native/<Name>`.
+    Native(NativeValueType),
+    /// A node of a package: `ix://<package>/<artifact id>`.
+    Package(DeclarationKey),
+}
+
+impl ValueTypeRef {
+    /// This value type's own declaration key, when it names a node of a
+    /// package; `None` for a native value type, which names no node.
+    pub fn as_package(&self) -> Option<&DeclarationKey> {
+        match self {
+            Self::Native(_) => None,
+            Self::Package(key) => Some(key),
+        }
+    }
+}
+
+impl std::fmt::Display for ValueTypeRef {
+    /// The value type's own identity string, exactly as a `typeRef`
+    /// resolving to it would spell it on the wire.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
+            Self::Package(key) => f.write_str(&key.node),
+        }
+    }
 }
 
 /// A field member of an object type: `{key, owner, value_type, multiplicity,
@@ -52,8 +172,8 @@ pub struct FieldMemberRecord {
     pub key: DeclarationKey,
     /// The owning object type's original declaration key.
     pub owner: DeclarationKey,
-    /// The declared value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared value type.
+    pub value_type: ValueTypeRef,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
     /// This field's declared `subsets[]` (`model-complete.md`:161): every
@@ -87,8 +207,8 @@ pub struct ScalarTypeRecord {
 pub struct OperationParameterRecord {
     /// This parameter's own original declaration key.
     pub key: DeclarationKey,
-    /// The declared parameter value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared parameter value type.
+    pub value_type: ValueTypeRef,
     /// The declared parameter multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -97,8 +217,8 @@ pub struct OperationParameterRecord {
 /// entirely when the operation has no result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationResult {
-    /// The declared result value type's original declaration key.
-    pub value_type: DeclarationKey,
+    /// The declared result value type.
+    pub value_type: ValueTypeRef,
     /// The declared result multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -241,14 +361,24 @@ pub struct EndpointRecord {
     pub multiplicity: Multiplicity,
 }
 
-/// One end of a [`RelationshipRecord`]: `{type_identity, multiplicity}`.
+/// One end of a [`RelationshipRecord`]: `{type_identity, role, multiplicity}`.
 /// `type_identity` names whatever the end's `typeIdentity` names in the
 /// correspondence — an endpoint, a component, an operation member or an
 /// object type — which [`crate::model::systems`] resolves by kind.
+///
+/// `role` (model-complete.md's Relationships row: "each end has a role and
+/// a multiplicity") is `Some` when the producer's own end shape carries one
+/// -- a type's inline `relationships[]` entry always does on its source end
+/// and may on its target end -- and `None` when the end's own producer
+/// shape carries no role concept at all, as a Connection node's
+/// `sourceEnd`/`targetEnd` never do (`ConnectionEnd` has no `role` member).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipEnd {
     /// The named producer key.
     pub type_identity: DeclarationKey,
+    /// `Some(role)` when the producer's own end shape carries a role;
+    /// `None` when it does not.
+    pub role: Option<String>,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
 }
@@ -266,9 +396,12 @@ pub enum RelationshipDirection {
     Undirected,
 }
 
-/// FCD FR-115 relationship record: FR-152's Connection/Allocation candidate,
-/// or (when both ends name object types) a navigation-only relationship
-/// with no kind.
+/// FCD FR-115 relationship record: FR-152's Connection candidate, or (when
+/// both ends name object types) a navigation-only relationship with no
+/// kind. Never an Allocation: an allocation's wire shape names only a
+/// source and a target element and carries neither ends' multiplicity nor a
+/// direction (`model-complete.md`:335 — see [`AllocationRecord`]), so it is
+/// read as one, never folded into this shape with fabricated fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
@@ -277,13 +410,25 @@ pub struct RelationshipRecord {
     pub source: RelationshipEnd,
     /// The target end.
     pub target: RelationshipEnd,
-    /// The producer's `semantics.category` bytes, e.g. `"allocation"`,
-    /// `"connection"`, `"composition"`. Compared verbatim, never mapped
-    /// through a closed Rust enum: FR-152 checks this field for exact byte
-    /// equality to `"allocation"` and otherwise leaves it to the producer.
-    pub category: String,
     /// The producer's `semantics.direction`.
     pub direction: RelationshipDirection,
+}
+
+/// FR-152's Allocation candidate (`model-complete.md`:335,
+/// `quire.model.systems.allocation/v1`): a source element (a Part, Port or
+/// operation) and a target element (a Part), and nothing else. Allocation
+/// compatibility has no other rule -- no multiplicity, no direction -- so
+/// this record carries none; a caller that needs one is asking a question
+/// this declaration kind has no answer to, not receiving a fabricated
+/// default.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllocationRecord {
+    /// This allocation's own original declaration key.
+    pub key: DeclarationKey,
+    /// The source element's original declaration key.
+    pub source_element: DeclarationKey,
+    /// The target element's original declaration key.
+    pub target_element: DeclarationKey,
 }
 
 /// FR-153's population declaration extent: `closed` or `open`. Object
@@ -331,8 +476,11 @@ pub enum DomainPackageRecord {
     Component(ComponentRecord),
     /// FCD FR-114 endpoint (FR-152 Port candidate).
     Endpoint(EndpointRecord),
-    /// FCD FR-115 relationship (FR-152 Connection/Allocation candidate).
+    /// FCD FR-115 relationship (FR-152 Connection candidate, or a
+    /// navigation-only relationship).
     Relationship(RelationshipRecord),
+    /// FR-152 Allocation declaration.
+    Allocation(AllocationRecord),
     /// FR-153 population declaration.
     Population(PopulationRecord),
 }
@@ -348,6 +496,7 @@ impl DomainPackageRecord {
             Self::Component(record) => &record.key,
             Self::Endpoint(record) => &record.key,
             Self::Relationship(record) => &record.key,
+            Self::Allocation(record) => &record.key,
             Self::Population(record) => &record.key,
         }
     }

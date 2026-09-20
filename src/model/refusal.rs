@@ -14,8 +14,9 @@
 
 use std::collections::BTreeSet;
 
-use crate::model::domain_package::{DomainPackageRef, Multiplicity};
+use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::source::LocatedSpan;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay
@@ -131,7 +132,7 @@ pub enum ModelRefusalCause {
         /// instead — the two construction sites' only difference in shape.
         parameter: Option<DeclarationKey>,
         /// The absent value type.
-        value_type: DeclarationKey,
+        value_type: ValueTypeRef,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
@@ -190,9 +191,9 @@ pub enum ModelRefusalCause {
     /// field's value type.
     SubsettingType {
         /// The subsetting field's value type.
-        subsetting: DeclarationKey,
+        subsetting: ValueTypeRef,
         /// The subsetted field's value type.
-        subsetted: DeclarationKey,
+        subsetted: ValueTypeRef,
     },
     /// Two compared items disagree in kind, arity or declared type where
     /// FR-151/FR-152 require agreement.
@@ -203,9 +204,9 @@ pub enum ModelRefusalCause {
         /// The parameter's position.
         index: usize,
         /// The redefining (declared) parameter's value type.
-        declared: DeclarationKey,
+        declared: ValueTypeRef,
         /// The redefined parameter's value type.
-        redefined: DeclarationKey,
+        redefined: ValueTypeRef,
     },
     /// A redefining operation's effect writes a field the redefined
     /// operation's effect does not cover.
@@ -254,12 +255,23 @@ pub enum ModelRefusalCause {
         /// `None` when the document declares no members.
         type_name: Option<DeclarationKey>,
     },
-    /// A population member names a type absent from the effective view.
+    /// A population member's type is not covered by the population's own
+    /// declared `member_types` (FR-153:57/:72: covered means the member
+    /// type itself, or a type conforming to a declared member type), or is
+    /// absent from the effective view outright.
     ForeignType {
         /// The member.
         member: String,
-        /// The absent type.
+        /// The uncovered or absent type.
         type_name: DeclarationKey,
+    },
+    /// D05 (`model-complete.md:156`): a population member's most-specific
+    /// type is abstract, which has no direct instances.
+    AbstractInstance {
+        /// The member.
+        member: String,
+        /// The member's abstract most-specific type.
+        abstract_type: DeclarationKey,
     },
     /// A population declaration's `member_types` names a type that is not a
     /// declared object type (model-complete.md's "Populations" row).
@@ -424,6 +436,80 @@ pub enum ModelRefusalCause {
     /// one construction site's data is the domain's own numeric
     /// lower/upper bounds, not an identity/path/name.
     MalformedDeclaration,
+    /// FR-154's own intake malformed-declaration cause
+    /// (`model-complete.md`:74-83): a read IR node is not a well-formed
+    /// declaration under QSpec's own shape -- carrying the node's own
+    /// identity, its source artifact and its span, exactly as FR-154
+    /// requires a malformed-declaration refusal to carry. Kept distinct
+    /// from the unit [`Self::MalformedDeclaration`] above (#157's scalar-
+    /// domain-bounds case, whose one construction site has no identity of
+    /// its own): every [`crate::model::intake`] construction site shares
+    /// this one shape, so it carries it, sharing the same tag string via
+    /// [`Self::as_str`] rather than a second free-text-only cause.
+    IntakeMalformedDeclaration {
+        /// The node's own identity string, exactly as the wire supplied it
+        /// -- not a [`DeclarationKey`], since the identity itself may be
+        /// the very thing that is malformed.
+        node: String,
+        /// The node's source artifact (FCD's `origin.source.sourceIdentity`),
+        /// or `None` when the node's origin is `generated` rather than
+        /// `source`, or is itself absent or malformed.
+        artifact: Option<String>,
+        /// The node's source position, mapped from FCD's `origin.source`
+        /// (`startLine`/`startColumn`, one-based) into
+        /// [`crate::source::LocatedSpan`]'s own `{start, end}` shape. FCD's
+        /// wire carries a start position only, no byte offset and no end
+        /// position, so both ends of the mapped span are that same point
+        /// and its byte offset is `0` -- a placeholder QSL does not treat
+        /// as meaningful. `None` under the same conditions as `artifact`.
+        span: Option<LocatedSpan>,
+    },
+    /// A type's resolved construct meaning, or a member capability, is real
+    /// under FR-208 but [`crate::model::intake`] has no reader for it yet
+    /// (model-complete.md's declaration-kinds table) -- distinct from
+    /// [`Self::IntakeMalformedDeclaration`]'s "not a real QSpec meaning at
+    /// all": this one names a legitimate declaration kind this reader does
+    /// not yet turn into a [`crate::model::domain_package::DomainPackageRecord`].
+    UnsupportedDeclarationForm {
+        /// The node's own identity.
+        node: String,
+        /// The unresolved but real capability: a construct meaning id
+        /// (e.g. `quire.meaning.model.record-value-type/v1`) or a short
+        /// label naming the unread member (e.g. `"operation.frame"`).
+        what: String,
+    },
+    /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
+    /// digest domain is not the one domain Intake accepts.
+    DigestDomainMismatch {
+        /// The one digest domain Intake accepts (`sha256-jcs`).
+        expected: &'static str,
+        /// The selection's actual digest domain.
+        actual: String,
+    },
+    /// FR-154 Intake check 2 (`model-complete.md:68`): the package input
+    /// supplies no bytes under the selection's digest.
+    MissingSelection {
+        /// The caller's selection, already admitted past check 1.
+        selection: DomainPackageRef,
+    },
+    /// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
+    /// package's JCS bytes does not equal the selected digest.
+    ByteDigestMismatch {
+        /// The selected digest.
+        expected: [u8; 32],
+        /// The digest actually computed over the supplied bytes.
+        actual: [u8; 32],
+    },
+    /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
+    /// identity and version disagree with the selection.
+    WrongModelSelection {
+        /// The caller's selection.
+        selection: DomainPackageRef,
+        /// The package's own declared identity.
+        actual_identity: String,
+        /// The package's own declared version.
+        actual_version: String,
+    },
     /// A population member declares the same field twice in its
     /// `field_values`. FR-272's `invalid_runtime_input` cause list is
     /// closed; there is no dedicated duplicate-field variant, so this is
@@ -553,6 +639,7 @@ impl ModelRefusalCause {
             Self::IncompleteScope { .. } => "incomplete-scope",
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
             Self::ForeignType { .. } => "foreign-type",
+            Self::AbstractInstance { .. } => "abstract-instance",
             Self::UnknownPopulationMemberType { .. } => "missing-name",
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
@@ -573,7 +660,14 @@ impl ModelRefusalCause {
             Self::UnknownEndpoint { .. } => "unknown-endpoint",
             Self::UnsortedDerivation { .. } => "unsorted-derivation",
             Self::DuplicatePath { .. } => "duplicate-path",
-            Self::MalformedDeclaration => "malformed-declaration",
+            Self::MalformedDeclaration | Self::IntakeMalformedDeclaration { .. } => {
+                "malformed-declaration"
+            }
+            Self::UnsupportedDeclarationForm { .. } => "declaration-form",
+            Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
+            Self::MissingSelection { .. } => "missing-selection",
+            Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
             Self::FrameCreateOutsideGrant { .. }
@@ -598,8 +692,9 @@ mod tests {
     use serde_json::Value;
 
     use super::{ModelRefusalCause, OfferedSelection};
-    use crate::model::domain_package::Multiplicity;
+    use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::{digest_of, DeclarationKey};
+    use crate::source::{LocatedSpan, Position};
 
     fn key(identity: &str) -> DeclarationKey {
         DeclarationKey::fixture(identity)
@@ -663,6 +758,7 @@ mod tests {
             ModelRefusalCause::IncompleteScope { .. } => "incomplete-scope",
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
             ModelRefusalCause::ForeignType { .. } => "foreign-type",
+            ModelRefusalCause::AbstractInstance { .. } => "abstract-instance",
             ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing-name",
             ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
             ModelRefusalCause::OperatorIneligible => "operator-ineligible",
@@ -683,7 +779,13 @@ mod tests {
             ModelRefusalCause::UnknownEndpoint { .. } => "unknown-endpoint",
             ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
-            ModelRefusalCause::MalformedDeclaration => "malformed-declaration",
+            ModelRefusalCause::MalformedDeclaration
+            | ModelRefusalCause::IntakeMalformedDeclaration { .. } => "malformed-declaration",
+            ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
+            ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
+            ModelRefusalCause::MissingSelection { .. } => "missing-selection",
+            ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
+            ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
             ModelRefusalCause::FrameCreateOutsideGrant { .. }
@@ -724,7 +826,7 @@ mod tests {
             ModelRefusalCause::UnknownValueType {
                 operation: key("p"),
                 parameter: Some(key("p")),
-                value_type: key("p"),
+                value_type: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::UnknownFieldWrite {
                 operation: key("p"),
@@ -751,14 +853,14 @@ mod tests {
                 to: multiplicity(),
             },
             ModelRefusalCause::SubsettingType {
-                subsetting: key("p"),
-                subsetted: key("p"),
+                subsetting: ValueTypeRef::Package(key("p")),
+                subsetted: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::TypeMismatch,
             ModelRefusalCause::VarianceParameter {
                 index: 0,
-                declared: key("p"),
-                redefined: key("p"),
+                declared: ValueTypeRef::Package(key("p")),
+                redefined: ValueTypeRef::Package(key("p")),
             },
             ModelRefusalCause::EffectEscape { field: key("p") },
             ModelRefusalCause::UnprovedRefinement,
@@ -780,6 +882,10 @@ mod tests {
             ModelRefusalCause::ForeignType {
                 member: String::new(),
                 type_name: key("p"),
+            },
+            ModelRefusalCause::AbstractInstance {
+                member: String::new(),
+                abstract_type: key("p"),
             },
             ModelRefusalCause::UnknownPopulationMemberType {
                 population: key("p"),
@@ -835,6 +941,42 @@ mod tests {
                 later: 0,
             },
             ModelRefusalCause::MalformedDeclaration,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: String::new(),
+                artifact: Some(String::new()),
+                span: Some(LocatedSpan {
+                    start: Position {
+                        byte: 0,
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Position {
+                        byte: 0,
+                        line: 1,
+                        column: 1,
+                    },
+                }),
+            },
+            ModelRefusalCause::UnsupportedDeclarationForm {
+                node: String::new(),
+                what: String::new(),
+            },
+            ModelRefusalCause::DigestDomainMismatch {
+                expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
+                actual: String::new(),
+            },
+            ModelRefusalCause::MissingSelection {
+                selection: DomainPackageRef::fixture("p"),
+            },
+            ModelRefusalCause::ByteDigestMismatch {
+                expected: [0; 32],
+                actual: [0; 32],
+            },
+            ModelRefusalCause::WrongModelSelection {
+                selection: DomainPackageRef::fixture("p"),
+                actual_identity: String::new(),
+                actual_version: String::new(),
+            },
             ModelRefusalCause::DuplicateMember {
                 object: String::new(),
                 field: key("p"),

@@ -1,0 +1,49 @@
+{
+  "compiler": {
+    "name": "@typespec/compiler",
+    "version": "1.15.0"
+  },
+  "emitter": {
+    "name": "@typespec/json-schema",
+    "version": "1.15.0"
+  },
+  "semanticCore": {
+    "name": "@agent-ix/semantic-core",
+    "version": "0.2.0"
+  },
+  "base": "https://schemas.agent-ix.org/agent-ix/spec-objects-business/0.7.0/",
+  "normalization": {
+    "name": "absolute-id-and-ref",
+    "version": "1.0.0",
+    "issue": "https://github.com/agent-ix/spec-objects-business/issues/4",
+    "applied": true,
+    "rewrittenFiles": [
+      "Event.json"
+    ],
+    "note": "rewrote relative $id/$ref to the module base or semantic-core 0.2.0"
+  },
+  "files": [
+    "AggregateRoot.json",
+    "Domain.json",
+    "Entity.json",
+    "Enumeration.json",
+    "Event.json",
+    "IdentityField.json",
+    "NestedEntity.json",
+    "ObjectFrontmatter.json",
+    "ObjectId.json",
+    "OccurrenceField.json",
+    "OccurrenceTypeRef.json",
+    "Population.json",
+    "PopulationMember.json",
+    "Process.json",
+    "ProcessStep.json",
+    "Repository.json",
+    "StateMachine.json",
+    "StepKind.json",
+    "Term.json",
+    "Transition.json",
+    "ValueObject.json"
+  ],
+  "digest": "sha256:4e3dac4ce4f5ad37388a5abdfbdca91ce7c7bf4c2764d03fcbdfeb175e605b0c"
+}

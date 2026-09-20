@@ -47,8 +47,8 @@ use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
 use crate::model::domain_package::{
-    ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord, PortDirection,
-    RelationshipRecord,
+    AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
+    PortDirection, RelationshipRecord,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -65,9 +65,9 @@ pub enum Kind {
     Port,
     /// An object type export with `interfaceFeatures`.
     Interface,
-    /// A non-allocation relationship whose two ends are both Ports.
+    /// A relationship whose two ends are both Ports.
     Connection,
-    /// A relationship whose `semantics.category` is exactly `"allocation"`.
+    /// An [`AllocationRecord`].
     Allocation,
     /// No kind: a missing capability, a cascaded dependency refusal, or a
     /// navigation-only relationship.
@@ -97,15 +97,21 @@ impl Kind {
 pub struct SystemsClassification {
     component_kinds: HashMap<DeclarationKey, Kind>,
     endpoint_kinds: HashMap<DeclarationKey, Kind>,
-    relationship_kinds: HashMap<DeclarationKey, Kind>,
+    /// Both Connection and Allocation edges' resolved kinds, keyed
+    /// together: the two producer records ([`RelationshipRecord`],
+    /// [`AllocationRecord`]) are disjoint shapes with disjoint keys, so one
+    /// lookup map over both is unambiguous and matches [`Self::actual_kind`]'s
+    /// single-kind-per-key contract.
+    edge_kinds: HashMap<DeclarationKey, Kind>,
     interface_types: HashSet<DeclarationKey>,
     components: HashMap<DeclarationKey, ComponentRecord>,
     endpoints: HashMap<DeclarationKey, EndpointRecord>,
     relationships: HashMap<DeclarationKey, RelationshipRecord>,
+    allocations: HashMap<DeclarationKey, AllocationRecord>,
     object_types: HashSet<DeclarationKey>,
     /// Every kind-mapping cascade refusal, in emission order (ascending
     /// producer key within each of components, then endpoints, then
-    /// relationships).
+    /// relationships, then allocations).
     pub refusals: Vec<ModelRefusal>,
 }
 
@@ -123,7 +129,7 @@ impl SystemsClassification {
         if let Some(kind) = self.endpoint_kinds.get(key) {
             return *kind;
         }
-        if let Some(kind) = self.relationship_kinds.get(key) {
+        if let Some(kind) = self.edge_kinds.get(key) {
             return *kind;
         }
         Kind::None
@@ -139,9 +145,8 @@ impl SystemsClassification {
             Kind::Interface => self.interface_types.get(key).cloned(),
             Kind::Part => self.components.get(key).map(|record| record.key.clone()),
             Kind::Port => self.endpoints.get(key).map(|record| record.key.clone()),
-            Kind::Connection | Kind::Allocation => {
-                self.relationships.get(key).map(|record| record.key.clone())
-            }
+            Kind::Connection => self.relationships.get(key).map(|record| record.key.clone()),
+            Kind::Allocation => self.allocations.get(key).map(|record| record.key.clone()),
             Kind::None => None,
         }
     }
@@ -195,6 +200,7 @@ pub fn classify(
     let mut components: Vec<&ComponentRecord> = Vec::new();
     let mut endpoints: Vec<&EndpointRecord> = Vec::new();
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
+    let mut allocations: Vec<&AllocationRecord> = Vec::new();
     let mut object_types: HashSet<DeclarationKey> = HashSet::new();
     let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
 
@@ -203,6 +209,7 @@ pub fn classify(
             DomainPackageRecord::Component(component) => components.push(component),
             DomainPackageRecord::Endpoint(endpoint) => endpoints.push(endpoint),
             DomainPackageRecord::Relationship(relationship) => relationships.push(relationship),
+            DomainPackageRecord::Allocation(allocation) => allocations.push(allocation),
             DomainPackageRecord::ObjectType(object_type) => {
                 object_types.insert(object_type.key.clone());
                 if object_type.interface_features.is_some() {
@@ -218,10 +225,11 @@ pub fn classify(
     components.sort_by_key(|component| component.key.clone());
     endpoints.sort_by_key(|endpoint| endpoint.key.clone());
     relationships.sort_by_key(|relationship| relationship.key.clone());
+    allocations.sort_by_key(|allocation| allocation.key.clone());
 
     let mut component_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut endpoint_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
-    let mut relationship_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
+    let mut edge_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut refusals: Vec<ModelRefusal> = Vec::new();
 
     for component in &components {
@@ -266,57 +274,62 @@ pub fn classify(
 
     for relationship in &relationships {
         charge_kind(meter)?;
-        let kind = if relationship.category == "allocation" {
-            Kind::Allocation
+        let source_is_type = object_types.contains(&relationship.source.type_identity);
+        let target_is_type = object_types.contains(&relationship.target.type_identity);
+        let kind = if source_is_type && target_is_type {
+            Kind::None // navigation relationship: no kind, not an error.
         } else {
-            let source_is_type = object_types.contains(&relationship.source.type_identity);
-            let target_is_type = object_types.contains(&relationship.target.type_identity);
-            if source_is_type && target_is_type {
-                Kind::None // navigation relationship: no kind, not an error.
-            } else {
-                let mut ends_ok = true;
-                for (end, label) in [
-                    (&relationship.source, "source"),
-                    (&relationship.target, "target"),
-                ] {
-                    match endpoint_kinds.get(&end.type_identity) {
-                        None => {
-                            refusals.push(dangling(
-                                ModelRefusalCause::UnknownEndpoint {
-                                    end: label,
-                                    relationship: relationship.key.clone(),
-                                    missing: end.type_identity.clone(),
-                                },
-                                &end.type_identity.node,
-                                &format!("{} end of {}", label, relationship.key.node),
-                            ));
-                            ends_ok = false;
-                        }
-                        Some(&Kind::Port) => {}
-                        Some(&end_kind) => {
-                            refusals.push(wrong_export(
-                                Kind::Port,
-                                end_kind,
-                                &format!("{} end of {}", label, relationship.key.node),
-                            ));
-                            ends_ok = false;
-                        }
+            let mut ends_ok = true;
+            for (end, label) in [
+                (&relationship.source, "source"),
+                (&relationship.target, "target"),
+            ] {
+                match endpoint_kinds.get(&end.type_identity) {
+                    None => {
+                        refusals.push(dangling(
+                            ModelRefusalCause::UnknownEndpoint {
+                                end: label,
+                                relationship: relationship.key.clone(),
+                                missing: end.type_identity.clone(),
+                            },
+                            &end.type_identity.node,
+                            &format!("{} end of {}", label, relationship.key.node),
+                        ));
+                        ends_ok = false;
+                    }
+                    Some(&Kind::Port) => {}
+                    Some(&end_kind) => {
+                        refusals.push(wrong_export(
+                            Kind::Port,
+                            end_kind,
+                            &format!("{} end of {}", label, relationship.key.node),
+                        ));
+                        ends_ok = false;
                     }
                 }
-                if ends_ok {
-                    Kind::Connection
-                } else {
-                    Kind::None
-                }
+            }
+            if ends_ok {
+                Kind::Connection
+            } else {
+                Kind::None
             }
         };
-        relationship_kinds.insert(relationship.key.clone(), kind);
+        edge_kinds.insert(relationship.key.clone(), kind);
+    }
+
+    for allocation in &allocations {
+        charge_kind(meter)?;
+        // `quire.model.systems.kind-mapping/v1`: an Allocation names a
+        // source and target element and nothing else, so no capability or
+        // end-resolution check applies at classification time. Actual
+        // target-is-a-Part admission is `check_allocation`'s own job.
+        edge_kinds.insert(allocation.key.clone(), Kind::Allocation);
     }
 
     Ok(SystemsClassification {
         component_kinds,
         endpoint_kinds,
-        relationship_kinds,
+        edge_kinds,
         interface_types,
         components: components
             .into_iter()
@@ -329,6 +342,10 @@ pub fn classify(
         relationships: relationships
             .into_iter()
             .map(|r| (r.key.clone(), r.clone()))
+            .collect(),
+        allocations: allocations
+            .into_iter()
+            .map(|a| (a.key.clone(), a.clone()))
             .collect(),
         object_types,
         refusals,
@@ -631,23 +648,23 @@ pub fn check_allocation(
     if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::SystemsAllocation)) {
         return AllocationCheckOutcome::Incomplete(incomplete);
     }
-    let Some(relationship) = classification.relationships.get(relationship_key) else {
+    let Some(allocation) = classification.allocations.get(relationship_key) else {
         return AllocationCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownRelationship {
                 relationship: relationship_key.clone(),
             },
-            detail: format!("{} is not a declared relationship", relationship_key.node),
+            detail: format!("{} is not a declared allocation", relationship_key.node),
         });
     };
-    let target_kind = classification.actual_kind(&relationship.target.type_identity);
+    let target_kind = classification.actual_kind(&allocation.target_element);
     if target_kind == Kind::Part {
         AllocationCheckOutcome::Admitted
     } else {
         AllocationCheckOutcome::Refused(wrong_export(
             Kind::Part,
             target_kind,
-            &relationship.target.type_identity.node,
+            &allocation.target_element.node,
         ))
     }
 }

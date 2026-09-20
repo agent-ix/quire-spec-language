@@ -1,0 +1,7 @@
+{
+	"roots": [
+		"modules/spec-objects-business",
+		"modules/edge-vocabulary",
+		"modules/spec-objects-architecture"
+	]
+}
