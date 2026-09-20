@@ -820,7 +820,7 @@ impl CheckedPackage {
     }
 
     /// Call the named function: `function.call`, then its body. Refused
-    /// `InputRefusal::UnknownFunction` for a name [`Self::function`] finds
+    /// `InputRefusal::UnknownFunction` for a name `function` finds
     /// but whose `callable_by_name` is `false` — the same refusal an
     /// undeclared name gets, not a distinct one — so this public runtime
     /// entry point cannot reach a crate-internal FR-151 synthesized dispatch

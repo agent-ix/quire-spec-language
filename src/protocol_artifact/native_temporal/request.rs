@@ -29,49 +29,73 @@ pub const CONTRACT: &str = REQUEST_CONTRACT;
 #[derive(Clone, Debug)]
 /// One decision or surrounding-execution progress assertion.
 pub struct ProgressInput {
+    /// Evidence reference that grounds this progress assertion.
     pub reference: EvidenceRef,
+    /// Monotonic progress watermark carried by this assertion.
     pub watermark: i64,
 }
 
 #[derive(Clone, Debug)]
 /// One independently referenced closure assertion.
 pub struct ClosureInput {
+    /// Evidence reference that grounds this closure assertion.
     pub reference: EvidenceRef,
+    /// Open/closed state being asserted for the covered scope.
     pub state: temporal::Closure,
 }
 
 #[derive(Clone, Debug)]
 /// Completeness authority and the exact fact population it covers.
 pub struct CompletenessInput {
+    /// Evidence reference for the completeness authority.
     pub reference: EvidenceRef,
+    /// Complete/incomplete state being asserted.
     pub state: temporal::Completeness,
+    /// Exact population of fact references the completeness state covers.
     pub facts: Vec<EvidenceRef>,
 }
 
 #[derive(Clone, Debug)]
 /// One observation-bound native trace position.
 pub struct ObservedPosition {
+    /// Evidence reference for the observation backing this position.
     pub observation: EvidenceRef,
+    /// Native trace position observed at that evidence.
     pub position: temporal::Position,
 }
 
 #[derive(Clone, Debug)]
 /// Complete downstream-supplied native evaluation input; it contains no result fields.
 pub struct Input {
+    /// Identity of the temporal instance this input evaluates.
     pub instance: String,
+    /// Evidence reference correlating this input to its originating execution.
     pub correspondence: EvidenceRef,
+    /// Observed native trace positions supplied for evaluation.
     pub positions: Vec<ObservedPosition>,
+    /// Anchor identity the input's trigger and captures are bound to.
     pub anchor: String,
+    /// Trigger occurrences supplied alongside this input.
     pub triggers: Vec<temporal::Trigger>,
+    /// Whether trigger evidence was admitted, missing, or refused.
     pub trigger_evidence: temporal::Evidence,
+    /// Open/closed scope covering the supplied triggers.
     pub trigger_scope: temporal::Closure,
+    /// Progress assertion for the decision axis.
     pub decision_progress: ProgressInput,
+    /// Closure assertion for the decision axis.
     pub decision_closure: ClosureInput,
+    /// Progress assertion for the surrounding-execution axis.
     pub surrounding_progress: ProgressInput,
+    /// Closure assertion for the surrounding-execution axis.
     pub surrounding_closure: ClosureInput,
+    /// Completed/failed outcome of the surrounding execution.
     pub execution: temporal::Execution,
+    /// Completeness authority and the covered fact population.
     pub completeness: CompletenessInput,
+    /// Whether this input originates at the authoritative execution origin.
     pub authoritative_origin: bool,
+    /// Evictions applied to the trace prior to this input.
     pub evicted: Vec<temporal::Eviction>,
 }
 
@@ -86,12 +110,15 @@ pub struct Document {
 }
 
 impl Document {
+    /// Returns the canonical request bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Returns the digest of the canonical request bytes.
     pub const fn digest(&self) -> ByteDigest {
         self.digest
     }
+    /// Returns the request's content-derived identity string.
     pub fn identity(&self) -> &str {
         &self.wire.identity
     }
@@ -111,78 +138,103 @@ pub struct ValidatedRequest {
 }
 
 impl ValidatedRequest {
+    /// Returns the underlying validated document.
     pub fn document(&self) -> &Document {
         &self.document
     }
+    /// Returns the identity of the checked temporal subject this request was validated against.
     pub fn subject_identity(&self) -> &str {
         &self.document.wire.subject.identity
     }
+    /// Returns the digest of the checked temporal subject this request was validated against.
     pub fn subject_digest(&self) -> &str {
         &self.document.wire.subject.digest
     }
+    /// Returns the digest of the package that owns the subject's declaration.
     pub fn package_digest(&self) -> &str {
         &self.document.wire.subject.package_digest
     }
+    /// Returns the index of the subject's declaration within its owning package.
     pub const fn declaration(&self) -> u32 {
         self.document.wire.subject.declaration
     }
+    /// Returns the handle to the subject's root formula node.
     pub fn root(&self) -> &w::Handle {
         &self.document.wire.subject.root
     }
+    /// Returns the identity of the temporal instance this request evaluates.
     pub fn instance(&self) -> &str {
         &self.document.wire.instance
     }
+    /// Returns the evidence reference correlating this request to its originating execution.
     pub fn correspondence(&self) -> &EvidenceRef {
         &self.document.wire.correspondence
     }
+    /// Returns the anchor identity this request's triggers and captures are bound to.
     pub fn anchor(&self) -> &str {
         &self.document.wire.anchor
     }
+    /// Returns the identity of the temporal profile this request was produced against.
     pub fn profile_identity(&self) -> &str {
         &self.document.wire.definition.profile_identity
     }
+    /// Returns the revision of the temporal profile this request was produced against.
     pub fn profile_revision(&self) -> &str {
         &self.document.wire.definition.profile_revision
     }
+    /// Returns the name of the clock binding used to evaluate this request.
     pub fn clock_name(&self) -> &str {
         &self.document.wire.definition.clock_name
     }
+    /// Returns the clock configuration used to evaluate this request.
     pub fn clock_configuration(&self) -> &v2::wire::ClockConfiguration {
         &self.document.wire.definition.clock_configuration
     }
+    /// Returns an iterator over the observed trace positions carried by this request.
     pub fn positions(&self) -> impl ExactSizeIterator<Item = PositionView<'_>> {
         self.document.wire.positions.iter().map(PositionView)
     }
+    /// Returns a view onto the decision-axis progress assertion.
     pub fn decision_progress(&self) -> ProgressView<'_> {
         ProgressView(&self.document.wire.axes.decision_progress)
     }
+    /// Returns a view onto the decision-axis closure assertion.
     pub fn decision_closure(&self) -> ClosureView<'_> {
         ClosureView(&self.document.wire.axes.decision_closure)
     }
+    /// Returns a view onto the surrounding-execution progress assertion.
     pub fn surrounding_progress(&self) -> ProgressView<'_> {
         ProgressView(&self.document.wire.axes.surrounding_progress)
     }
+    /// Returns a view onto the surrounding-execution closure assertion.
     pub fn surrounding_closure(&self) -> ClosureView<'_> {
         ClosureView(&self.document.wire.axes.surrounding_closure)
     }
+    /// Returns a view onto the completeness authority and the facts it covers.
     pub fn completeness(&self) -> CompletenessView<'_> {
         CompletenessView(&self.document.wire.completeness)
     }
+    /// Returns an iterator over the trigger occurrences carried by this request.
     pub fn triggers(&self) -> impl ExactSizeIterator<Item = TriggerView<'_>> {
         self.document.wire.triggers.iter().map(TriggerView)
     }
+    /// Returns whether trigger evidence was admitted, missing, or refused.
     pub fn trigger_evidence(&self) -> temporal::Evidence {
         self.document.wire.trigger_evidence.into()
     }
+    /// Returns the open/closed scope covering this request's triggers.
     pub fn trigger_scope(&self) -> temporal::Closure {
         self.document.wire.trigger_scope.into()
     }
+    /// Returns the completed/failed outcome of the surrounding execution.
     pub fn execution(&self) -> temporal::Execution {
         self.document.trace.execution
     }
+    /// Returns whether this request originates at the authoritative execution origin.
     pub const fn authoritative_origin(&self) -> bool {
         self.document.trace.authoritative_origin
     }
+    /// Returns the resource limits this request was validated under.
     pub fn limits(&self) -> Limits {
         self.document.limits
     }
@@ -199,24 +251,31 @@ impl ValidatedRequest {
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view onto one trigger occurrence carried by a validated request.
 pub struct TriggerView<'a>(&'a TriggerWire);
 
 impl<'a> TriggerView<'a> {
+    /// Returns the trigger's identity string.
     pub fn identity(self) -> &'a str {
         &self.0.identity
     }
+    /// Returns the trigger's receipt string.
     pub fn receipt(self) -> &'a str {
         &self.0.receipt
     }
+    /// Returns the anchor identity the trigger is bound to.
     pub fn anchor(self) -> &'a str {
         &self.0.anchor
     }
+    /// Returns the trigger's payload as a string.
     pub fn payload(self) -> &'a str {
         &self.0.payload
     }
+    /// Returns the trigger's optional guard evaluation result.
     pub const fn guard(self) -> Option<bool> {
         self.0.guard
     }
+    /// Returns an iterator over the outcomes of the trigger's captures.
     pub fn captures(self) -> impl ExactSizeIterator<Item = CaptureView<'a>> {
         self.0.captures.iter().map(|capture| match capture {
             CaptureWire::Value { anchor, value } => CaptureView::Value { anchor, value },
@@ -229,33 +288,50 @@ impl<'a> TriggerView<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Outcome of one capture attempt made against a trigger.
 pub enum CaptureView<'a> {
-    Value { anchor: &'a str, value: &'a str },
+    /// The capture succeeded and produced an anchor/value pair.
+    Value {
+        /// Anchor identity the captured value is attached to.
+        anchor: &'a str,
+        /// Captured value, as a validated string.
+        value: &'a str,
+    },
+    /// The capture target was absent.
     Missing,
+    /// The capture target was present but null.
     Null,
+    /// The capture target was present but of the wrong type.
     WrongType,
+    /// The capture target was present but stale relative to the trigger.
     Stale,
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view onto one observed trace position carried by a validated request.
 pub struct PositionView<'a>(&'a PositionWire);
 
 impl<'a> PositionView<'a> {
+    /// Returns the position's content-derived identity string.
     pub fn identity(self) -> &'a str {
         &self.0.identity
     }
+    /// Returns the evidence reference for the observation backing this position.
     pub fn observation(self) -> &'a EvidenceRef {
         &self.0.observation
     }
+    /// Returns the position's clock coordinate.
     pub const fn coordinate(self) -> i64 {
         self.0.coordinate
     }
+    /// Returns the position's tie-breaking order authority and key, if present.
     pub fn order(self) -> Option<(&'a str, i64)> {
         self.0
             .order
             .as_ref()
             .map(|order| (order.authority.as_str(), order.key))
     }
+    /// Returns an iterator over each formula leaf's node index, handle, and Boolean valuation at this position.
     pub fn valuations(self) -> impl ExactSizeIterator<Item = (u32, &'a w::Handle, bool)> {
         self.0
             .valuations
@@ -265,36 +341,46 @@ impl<'a> PositionView<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view onto a progress assertion carried by a validated request.
 pub struct ProgressView<'a>(&'a ProgressWire);
 impl<'a> ProgressView<'a> {
+    /// Returns the evidence reference grounding this progress assertion.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns the progress watermark value asserted.
     pub const fn watermark(self) -> i64 {
         self.0.watermark
     }
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view onto a closure assertion carried by a validated request.
 pub struct ClosureView<'a>(&'a ClosureWire);
 impl<'a> ClosureView<'a> {
+    /// Returns the evidence reference grounding this closure assertion.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns the asserted open/closed state.
     pub fn state(self) -> temporal::Closure {
         self.0.state.into()
     }
 }
 
 #[derive(Clone, Copy)]
+/// Read-only view onto the completeness authority carried by a validated request.
 pub struct CompletenessView<'a>(&'a CompletenessWire);
 impl<'a> CompletenessView<'a> {
+    /// Returns the evidence reference for the completeness authority.
     pub fn reference(self) -> &'a EvidenceRef {
         &self.0.reference
     }
+    /// Returns the asserted complete/incomplete state.
     pub fn state(self) -> temporal::Completeness {
         self.0.state.into()
     }
+    /// Returns an iterator over the fact references the completeness state covers.
     pub fn facts(self) -> impl ExactSizeIterator<Item = &'a EvidenceRef> {
         self.0.facts.iter()
     }

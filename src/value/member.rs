@@ -33,7 +33,7 @@ use super::node::NODE_KEY_DOMAIN;
 /// (`^[A-Za-z_][A-Za-z0-9_]*$`): the type every `Member` name/operator field
 /// carries, so an invalid identifier is refused at construction instead of
 /// being serialized as a schema-invalid `OperationMember` (ADR-013 O-06).
-/// Reuses [`is_identifier`], the same character-class check this crate's
+/// Reuses `is_identifier`, the same character-class check this crate's
 /// other identifier-shaped fields already use ("one fact, one place"),
 /// rather than a second copy of the schema's character class.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

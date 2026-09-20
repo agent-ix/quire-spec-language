@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! Wire spellings for assessment-boundary `ArtifactKind`/`BindingKind` members.
 
 use ix_trace_rs::trace;
 use quire_spec_language::protocol_artifact::wire::{ArtifactKind, BindingKind};
