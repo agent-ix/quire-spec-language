@@ -16,12 +16,33 @@ use crate::replay::identity::{RawSourceRef, TracePosition};
 use crate::replay::proof_result::{ProofCategory, ToolPin};
 
 /// The verdict a proved or replayed outcome settles to, taken from the
-/// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8).
-/// #231 carries the O-16 category itself unchanged as that verdict (the map
-/// QSpec fixes is not vendored in this repo; this module needs only that
-/// two verdicts either agree or do not, which the category's own equality
-/// already gives).
-pub type Verdict = ProofCategory;
+/// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
+/// newtype over the category, not a bare alias: FR-072 says the verdict
+/// comes from "the QSpec outcome-to-verdict map fixed per O-16 category",
+/// so [`Self::from_category`] is the one place that map lands, rather than
+/// every `settle` call site treating plain category equality as agreement
+/// by construction. The map itself is not vendored in this repo (see this
+/// module's own doc note); until it lands, `from_category` is the identity
+/// map, and this module needs only that two verdicts either agree or do
+/// not, which the category's own equality already gives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct Verdict(ProofCategory);
+
+impl Verdict {
+    /// The one place the QSpec outcome-to-verdict map (fixed per ADR-013
+    /// O-16 category, QC-8) lands. Presently the identity map over the
+    /// category -- the real map is QSpec's, not re-derived or guessed here
+    /// -- so that when it lands, only this function's body changes.
+    pub fn from_category(category: ProofCategory) -> Self {
+        Self(category)
+    }
+
+    /// The category this verdict is presently defined as (identity map; see
+    /// [`Self::from_category`]'s doc).
+    pub fn category(self) -> ProofCategory {
+        self.0
+    }
+}
 
 /// A verdict disagreement's typed cause (FR-072-AC-2): the two verdicts
 /// that disagreed, never a display string.
@@ -289,13 +310,50 @@ pub enum ReplayResult {
     Input(InputArmResult),
 }
 
+/// `resolved_regions`'/`toolchain_pin`'s combined byte length -- shared by
+/// both arms of [`measured_encoded_bytes`].
+fn common_measured_bytes(resolved_regions: &[ResolvedRegion], toolchain_pin: &ToolPin) -> usize {
+    toolchain_pin.as_str().len()
+        + resolved_regions
+            .iter()
+            .map(|region| {
+                region.source.authority().len()
+                    + region.source.identity().len()
+                    + region.source.revision().len()
+            })
+            .sum::<usize>()
+}
+
+/// [`read_bounded`]'s own measurement of `result`'s encoded size
+/// (FR-072-AC-5): every variable-length member's own byte length -- the
+/// nested FR-351 record's value-path segments among them -- never a
+/// caller-declared number a result could understate to launder oversized
+/// content past the bound (B3).
+fn measured_encoded_bytes(result: &ReplayResult) -> usize {
+    match result {
+        ReplayResult::Witness(arm) => {
+            common_measured_bytes(arm.resolved_regions(), arm.toolchain_pin())
+                + arm.record().map_or(0, |record| {
+                    record.value_path.iter().map(String::len).sum::<usize>()
+                        + record
+                            .trace_position
+                            .as_ref()
+                            .map_or(0, |position| position.as_str().len())
+                })
+        }
+        ReplayResult::Input(arm) => {
+            common_measured_bytes(arm.resolved_regions(), arm.toolchain_pin())
+        }
+    }
+}
+
 /// [`ReplayResult`]'s bound-checked reader (FR-072-AC-5): refuses an
-/// oversized encoding rather than decoding a truncated result.
-pub fn read_bounded(
-    encoded_bytes: usize,
-    result: ReplayResult,
-) -> Result<ReplayResult, BoundExceeded> {
-    BoundExceeded::check(encoded_bytes)?;
+/// oversized encoding rather than decoding a truncated result. B3: the
+/// bound is measured from `result`'s own content -- there is no
+/// caller-declared `encoded_bytes` a caller could understate to launder an
+/// oversized value past the check.
+pub fn read_bounded(result: ReplayResult) -> Result<ReplayResult, BoundExceeded> {
+    BoundExceeded::check(measured_encoded_bytes(&result))?;
     Ok(result)
 }
 
@@ -356,8 +414,8 @@ mod tests {
     #[test]
     fn tc_189_witness_and_input_arms_stay_distinct() {
         let witness_result = WitnessArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Success,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
             EvaluatedValue(1),
             record(vec!["field"]),
@@ -366,8 +424,8 @@ mod tests {
             ToolPin::new("kani-0.67.0"),
         );
         let input_result = InputArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Success,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
             EvaluatedValue(1),
             regions(),
@@ -401,8 +459,8 @@ mod tests {
     #[test]
     fn tc_190_disagreement_settles_inconclusive_and_is_never_repaired() {
         let disagreeing = WitnessArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Refusal,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
             EvaluatedValue(0),
             record(vec!["field"]),
@@ -414,16 +472,16 @@ mod tests {
         assert_eq!(
             disagreeing.disagreement(),
             Some(DisagreementCause {
-                proved: ProofCategory::Success,
-                replayed: ProofCategory::Refusal,
+                proved: Verdict::from_category(ProofCategory::Success),
+                replayed: Verdict::from_category(ProofCategory::Refusal),
             })
         );
         // A disagreement never carries a decisive record.
         assert!(disagreeing.record().is_none());
 
         let disagreeing_input = InputArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Refusal,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
             EvaluatedValue(0),
             regions(),
@@ -437,18 +495,22 @@ mod tests {
     }
 
     /// FR-072-AC-3 (TC-191): a decisive `Witness`-arm result's nested
-    /// FR-351 record round-trips its four fields exactly (round trip
-    /// modeled as re-`settle`ing from the read-back fields, since #231
-    /// builds no separate `native-run-result/2` wire serializer -- that is
-    /// #186's, FR-072-CON-1), and comparing two results reads only those
-    /// typed fields: two results with the same rendered text but different
-    /// value paths compare unequal.
+    /// FR-351 record round-trips its four fields exactly -- construct via
+    /// `settle`, "serialize" by reading the record's own typed fields back
+    /// out, "read" by re-`settle`ing a *second, independent* result from
+    /// those read-back fields (since #231 builds no separate
+    /// `native-run-result/2` wire serializer -- that is #186's,
+    /// FR-072-CON-1) -- and comparing two results reads only those typed
+    /// fields: two results with the same rendered text but different value
+    /// paths compare unequal. N2: this is a real construct/serialize/read
+    /// round trip between two distinct `WitnessArmResult` values, not a
+    /// same-object field read asserted against the fixture's own constants.
     #[trace("TC-191", "FR-072-AC-3", "FR-072-AC-5")]
     #[test]
     fn tc_191_round_trips_the_fr351_record_and_compares_structurally() {
         let first = WitnessArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Success,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
             EvaluatedValue(9),
             record(vec!["outer", "items", "member"]),
@@ -456,21 +518,41 @@ mod tests {
             charges(),
             ToolPin::new("kani-0.67.0"),
         );
+
+        // "Serialize": read the record's own typed fields back out.
         let read_back_record = first.record().unwrap().clone();
-        assert_eq!(read_back_record.deciding_element, EvaluatedValue(7));
-        assert_eq!(read_back_record.index, 2);
+
+        // "Read": re-`settle` an independent, second result from exactly
+        // those read-back fields -- not from the fixture's own constants --
+        // and confirm the record makes it across unchanged.
+        let round_tripped = WitnessArmResult::settle(
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
+            ProofCategory::Success,
+            EvaluatedValue(9),
+            read_back_record.clone(),
+            regions(),
+            charges(),
+            ToolPin::new("kani-0.67.0"),
+        );
+        assert_eq!(round_tripped.record(), Some(&read_back_record));
         assert_eq!(
-            read_back_record.value_path,
+            round_tripped.record().unwrap().deciding_element,
+            EvaluatedValue(7)
+        );
+        assert_eq!(round_tripped.record().unwrap().index, 2);
+        assert_eq!(
+            round_tripped.record().unwrap().value_path,
             vec!["outer", "items", "member"]
         );
         assert_eq!(
-            read_back_record.trace_position,
+            round_tripped.record().unwrap().trace_position,
             Some(TracePosition::new("frame-0".to_owned()))
         );
 
         let second = WitnessArmResult::settle(
-            ProofCategory::Success,
-            ProofCategory::Success,
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
             EvaluatedValue(9),
             record(vec!["outer", "items", "other_member"]),
@@ -487,8 +569,21 @@ mod tests {
             second.record().unwrap().value_path
         );
 
-        // FR-072-AC-5: an oversized encoding refuses.
-        let oversized = read_bounded(MAX_ENCODED_BYTES + 1, ReplayResult::Witness(first));
+        // FR-072-AC-5: an oversized encoding refuses. B3: `read_bounded`
+        // measures the result's own content, so the oversized case has to
+        // actually carry oversized content -- a huge value-path segment.
+        let huge_segment = "x".repeat(MAX_ENCODED_BYTES + 1);
+        let oversized_result = WitnessArmResult::settle(
+            Verdict::from_category(ProofCategory::Success),
+            Verdict::from_category(ProofCategory::Success),
+            ProofCategory::Success,
+            EvaluatedValue(9),
+            record(vec![huge_segment.as_str()]),
+            regions(),
+            charges(),
+            ToolPin::new("kani-0.67.0"),
+        );
+        let oversized = read_bounded(ReplayResult::Witness(oversized_result));
         assert!(oversized.is_err());
     }
 
@@ -497,7 +592,11 @@ mod tests {
     /// with only the FR-069 through FR-072 types -- no new witness or
     /// replay type is defined for it. A second, structurally different
     /// function (different arity) reuses the identical types unchanged.
-    #[trace("TC-192", "FR-072-AC-4")]
+    ///
+    /// N1: no `#[trace]` tag -- TC-192's literal claim ("no fifth type is
+    /// defined for #217's exemplar") is a fact about #217's own, separate
+    /// repository scope that nothing runnable in this repo can observe;
+    /// `spec/tests.md` attributes that row to #217, not to #231's debt.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
         use crate::replay::identity::{OccurrenceKey, QualifiedName, WireNodeId};
@@ -520,7 +619,6 @@ mod tests {
             ),
             tool_pin: "kani-0.67.0".to_owned(),
             items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
-            encoded_bytes: 64,
         };
         let proof_envelopes = read_backend_provider_envelope(&proof_source).unwrap();
         assert_eq!(proof_envelopes[0].category(), ProofCategory::Violation);
@@ -579,7 +677,6 @@ mod tests {
                     trace_position: Some(None),
                     source: Some(ReplaySource::Witness(witness)),
                     family_payload: Some(NoPayload),
-                    encoded_bytes: 128,
                 };
                 WitnessEnvelope::reconstruct(packet).unwrap()
             };
@@ -591,8 +688,8 @@ mod tests {
         // FR-072: the replay result, built with exactly this module's own
         // types -- no fifth type is defined anywhere in this test.
         let result = ReplayResult::Witness(WitnessArmResult::settle(
-            ProofCategory::Violation,
-            ProofCategory::Violation,
+            Verdict::from_category(ProofCategory::Violation),
+            Verdict::from_category(ProofCategory::Violation),
             ProofCategory::Violation,
             EvaluatedValue(1),
             record(vec!["x"]),

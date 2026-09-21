@@ -207,6 +207,7 @@ pub struct ProofResultEnvelope {
     record: TerminalRecord,
     backend: Backend,
     tool_pin: ToolPin,
+    inconclusive_cause: Option<InconclusiveCause>,
 }
 
 impl ProofResultEnvelope {
@@ -228,6 +229,16 @@ impl ProofResultEnvelope {
     /// The executor/tool pin.
     pub fn tool_pin(&self) -> &ToolPin {
         &self.tool_pin
+    }
+
+    /// FR-069 Behavior's typed vacuous-proof cause: `Some(KaniVacuousProof)`
+    /// when this envelope's category is `Inconclusive` because the run was a
+    /// vacuous `Proved` (zero SUCCESS checks); `None` for every other
+    /// category. Reachable directly here, so a consumer that reads
+    /// `category() == Inconclusive` never has to re-derive the cause by
+    /// re-counting SUCCESS checks against [`Self::record`] itself.
+    pub fn inconclusive_cause(&self) -> Option<InconclusiveCause> {
+        self.inconclusive_cause
     }
 }
 
@@ -270,9 +281,23 @@ pub struct BackendProviderSource {
     pub tool_pin: String,
     /// The per-item terminal records this envelope reports.
     pub items: Vec<TerminalRecord>,
-    /// Approximate encoded size, used only to exercise the bound check
-    /// (FR-069-AC-4); a real wire reader would measure its own input bytes.
-    pub encoded_bytes: usize,
+}
+
+/// The reader's own measurement of `source`'s encoded size (FR-069-AC-4):
+/// every string member's byte length plus a fixed per-item allowance for the
+/// terminal-value tag -- never a caller-declared number a source could
+/// understate to launder an oversized item list past the bound (B3).
+fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
+    source.contract_version.len()
+        + source.capability_vocabulary.as_deref().map_or(0, str::len)
+        + source.backend_identity.len()
+        + source.manifest_digest.as_bytes().len()
+        + source.tool_pin.len()
+        + source
+            .items
+            .iter()
+            .map(|record| record.item().len() + std::mem::size_of::<TerminalValue>())
+            .sum::<usize>()
 }
 
 /// FR-069's reader: read every item of `source` into its
@@ -286,11 +311,9 @@ pub fn read_backend_provider_envelope(
     // Bound, version and vocabulary checks happen strictly first: nothing
     // below this point touches `source.items` until every one of these
     // three checks has passed.
-    if source.encoded_bytes > MAX_ENCODED_BYTES {
-        return Err(BoundExceeded {
-            actual: source.encoded_bytes,
-        }
-        .into());
+    let measured = measured_encoded_bytes(source);
+    if measured > MAX_ENCODED_BYTES {
+        return Err(BoundExceeded { actual: measured }.into());
     }
     if source.contract_version != CONTRACT_VERSION {
         return Err(ProofResultRefusal::UnknownContractVersion(
@@ -309,11 +332,35 @@ pub fn read_backend_provider_envelope(
         .iter()
         .map(|record| ProofResultEnvelope {
             category: record.value.category(),
+            inconclusive_cause: record.value.vacuous_proof_cause(),
             record: record.clone(),
             backend: backend.clone(),
             tool_pin: tool_pin.clone(),
         })
         .collect())
+}
+
+impl ProofResultEnvelope {
+    /// Re-serialize `envelopes` (every one read from a single source) back
+    /// into the [`BackendProviderSource`] shape [`read_backend_provider_envelope`]
+    /// consumes, for round-tripping a positive read through the reader again
+    /// (FR-069-AC-3's construct -> serialize -> read round trip). Every
+    /// envelope this reader ever produces shares one `backend`/`tool_pin`
+    /// (they all come from the one source it read), so the first envelope's
+    /// is representative.
+    pub fn to_source(envelopes: &[Self]) -> BackendProviderSource {
+        let first = envelopes
+            .first()
+            .expect("at least one envelope to serialize");
+        BackendProviderSource {
+            contract_version: CONTRACT_VERSION.to_owned(),
+            capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
+            backend_identity: first.backend.identity().to_owned(),
+            manifest_digest: first.backend.manifest_digest(),
+            tool_pin: first.tool_pin.as_str().to_owned(),
+            items: envelopes.iter().map(|e| e.record.clone()).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -334,7 +381,6 @@ mod tests {
             manifest_digest: manifest_digest(),
             tool_pin: "kani-0.67.0".to_owned(),
             items,
-            encoded_bytes: 128,
         }
     }
 
@@ -401,6 +447,43 @@ mod tests {
         // categories, showing the reader inspects the SUCCESS-check count
         // and not merely the outer `Proved` tag.
         assert_ne!(envelopes[0].category(), envelopes[1].category());
+
+        // B4: the vacuous `Proved` envelope carries the typed cause, and no
+        // other envelope does.
+        assert_eq!(envelopes[0].inconclusive_cause(), None);
+        assert_eq!(
+            envelopes[1].inconclusive_cause(),
+            Some(InconclusiveCause::KaniVacuousProof)
+        );
+        for (i, envelope) in envelopes.iter().enumerate() {
+            if i != 1 {
+                assert_eq!(envelope.inconclusive_cause(), None, "item {i}");
+            }
+        }
+    }
+
+    /// B4: [`ProofCategory::ALL`] names exactly the set of categories every
+    /// [`TerminalValue`] case actually produces -- a real caller and test
+    /// for an array that previously had neither.
+    #[test]
+    fn all_categories_are_exactly_the_ones_terminal_value_produces() {
+        let mut produced: Vec<ProofCategory> = vec![
+            TerminalValue::Proved { success_checks: 1 }.category(),
+            TerminalValue::Proved { success_checks: 0 }.category(),
+            TerminalValue::Tested.category(),
+            TerminalValue::Refuted.category(),
+            TerminalValue::Declined(ProofRefusalCause::Refused).category(),
+            TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent).category(),
+            TerminalValue::Incomplete(IncompleteCause::TimedOut).category(),
+            TerminalValue::Failed.category(),
+        ];
+        produced.sort_by_key(|c| format!("{c:?}"));
+        produced.dedup();
+
+        let mut all: Vec<ProofCategory> = ProofCategory::ALL.to_vec();
+        all.sort_by_key(|c| format!("{c:?}"));
+
+        assert_eq!(produced, all);
     }
 
     /// FR-069-AC-2/AC-4 (TC-178): an unknown `contract_version`, a mismatched
@@ -430,18 +513,27 @@ mod tests {
             Err(ProofResultRefusal::UnknownCapabilityVocabulary)
         ));
 
-        let mut oversized = source(vec![TerminalRecord::new("x", TerminalValue::Tested)]);
-        oversized.encoded_bytes = MAX_ENCODED_BYTES + 1;
+        // B3: the bound check measures the source's own content -- there is
+        // no `encoded_bytes` field a caller could understate -- so an
+        // oversized source has to actually carry oversized content.
+        let oversized = source(vec![TerminalRecord::new(
+            "x".repeat(MAX_ENCODED_BYTES + 1),
+            TerminalValue::Tested,
+        )]);
         let result = read_backend_provider_envelope(&oversized);
         assert!(matches!(result, Err(ProofResultRefusal::BoundExceeded(_))));
     }
 
     /// FR-069-AC-3 (TC-179): a positive envelope's construct -> serialize ->
-    /// read round trip (modeled here as reading the same source twice,
-    /// since #231 builds no separate wire serializer for the backend
-    /// envelope itself) preserves the `backend` member, tool pin and every
-    /// per-item disposition byte for byte, with no re-derivation of the
-    /// manifest digest.
+    /// read round trip -- construct via [`read_backend_provider_envelope`],
+    /// serialize via [`ProofResultEnvelope::to_source`] (#231 builds no
+    /// byte-level wire serializer for the backend envelope, so this is the
+    /// in-process shape that stands in for one), read via
+    /// [`read_backend_provider_envelope`] again -- preserves the `backend`
+    /// member, tool pin and every per-item disposition byte for byte, with
+    /// no re-derivation of the manifest digest. N2: this is a real
+    /// construct/serialize/read round trip through `to_source`, not two
+    /// reads of the same untouched source.
     #[trace("TC-179", "FR-069-AC-3")]
     #[test]
     fn tc_179_round_trip_preserves_backend_tool_pin_and_dispositions() {
@@ -451,7 +543,8 @@ mod tests {
         ];
         let original = source(items);
         let first = read_backend_provider_envelope(&original).unwrap();
-        let second = read_backend_provider_envelope(&original).unwrap();
+        let serialized = ProofResultEnvelope::to_source(&first);
+        let second = read_backend_provider_envelope(&serialized).unwrap();
         assert_eq!(first, second);
         for envelope in &first {
             assert_eq!(envelope.backend().identity(), "kani-backend-1");

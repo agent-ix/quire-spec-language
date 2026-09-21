@@ -56,7 +56,7 @@ pub use result::{
     ResolvedRegion, SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
 };
 pub use witness::{
-    CanonicalAssignment, FamilyPayload, MalformedTranscript, MissingBinding, NoPayload,
+    CanonicalAssignment, DecodeRefusal, FamilyPayload, MalformedTranscript, NoPayload,
     ReplaySource, Witness, WitnessEnvelope, WitnessPacket, WitnessRefusal,
 };
 
@@ -65,7 +65,7 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use crate::digest::{DigestDomain, DigestRecord};
+    use crate::digest::{ByteDigest, DigestDomain, DigestRecord};
     use crate::replay::identity::WireNodeId;
     use crate::value::Identifier;
 
@@ -94,7 +94,7 @@ mod redaction_tests {
     fn tc_211_refusal_causes_redact_while_typed_accessors_stay_readable() {
         // Half 1: replay request byte-digest mismatch.
         let entry_x: Vec<u8> = (0..4096u32).map(|i| (i % 241) as u8).collect();
-        let correct_digest = identity::sha256(&entry_x);
+        let correct_digest = ByteDigest::of(&entry_x).as_bytes();
         let mut mismatched_bytes = entry_x.clone();
         mismatched_bytes[0] ^= 0xFF;
 
@@ -139,7 +139,6 @@ mod redaction_tests {
                 source_digest_record.hex(),
                 mismatched_bytes,
             )],
-            encoded_bytes: 8192,
         };
         let refusal = ReplayRequest::decode(wire).unwrap_err();
         let rendered = format!("{refusal:?} {refusal}");
@@ -189,7 +188,6 @@ mod redaction_tests {
                 source_digest_record.hex(),
                 entry_x.clone(),
             )],
-            encoded_bytes: 8192,
         };
         let valid_request = ReplayRequest::decode(valid_wire).unwrap();
         let looked_up = valid_request
