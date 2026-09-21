@@ -1861,11 +1861,8 @@ dependencies = [
  "ix-trace-rs",
  "proc-macro2",
  "qsl-attrs",
- "quire-spec-language",
- "serde",
  "serde_json",
  "syn 2.0.119",
- "tempfile",
  "thiserror",
 ]
 
