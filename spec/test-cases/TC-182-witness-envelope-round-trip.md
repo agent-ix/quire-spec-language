@@ -26,26 +26,33 @@ Scope: FR-070-AC-3, FR-070-CON-1.
 
 ## Test Procedure
 
-1. Construct a witness envelope with two structurally identical clause
-   occurrences distinguished only by occurrence key (same node id, different
-   role/ordinal), and with a `RawSourceRef` digest, a set of semantic
-   profile selections, a proof bound, a `backend` member, a trace position,
-   and a `ReplaySource::Witness` payload.
-2. Serialize and read the envelope back.
+1. Construct two witness envelopes, A and B, whose clause occurrence keys
+   name the same node id but a different role/ordinal (the envelope carries
+   one occurrence key each, per FR-070's Behavior; the two envelopes stand
+   in for two source occurrences of one structurally identical node). Give
+   both the same `RawSourceRef` digest, semantic profile selections, proof
+   bound, `backend` member, trace position, and a `ReplaySource::Witness`
+   payload — identical in every member except the occurrence key.
+2. Serialize and read both envelopes back.
 3. Compare every listed member, and the transcript, field by field between
-   the constructed and read-back envelopes.
-4. Construct a second envelope on the `ReplaySource::Input` arm (no
+   each envelope's constructed and read-back form.
+4. Compare envelope A's read-back occurrence key against envelope B's: they
+   name the same node id but must remain distinguishable by role/ordinal.
+5. Construct a third envelope on the `ReplaySource::Input` arm (no
    transcript) and repeat steps 2-3 for its members.
-5. Confirm that no step in the round trip or in comparing the two
-   occurrences from step 1 calls a text-rendering or display-formatting
-   function on the transcript.
+6. Confirm that no step in the round trip, or in the comparison in step 4,
+   calls a text-rendering or display-formatting function on the transcript
+   or on any member.
 
 ## Expected Results
 
 - Every O-25 member and the transcript are identical, byte for byte,
-  between the constructed and read-back envelopes for both the `Witness`
-  arm (step 3) and the `Input` arm (step 4).
-- The two structurally identical occurrences from step 1 remain
-  distinguishable by occurrence key after the round trip.
+  between each envelope's constructed and read-back form (step 3), for both
+  the `Witness` arm (envelopes A and B) and the `Input` arm (step 5).
+- Envelopes A and B's occurrence keys, identical in node id, remain
+  distinguishable by role/ordinal after the round trip (step 4) — a
+  read-back that re-derived the occurrence key from the node id alone,
+  losing the role/ordinal distinction, would make A and B compare equal on
+  this member and fail this check.
 - No display-text or rendering function participates in the round trip or
-  the comparison (step 5).
+  the comparison (step 6).

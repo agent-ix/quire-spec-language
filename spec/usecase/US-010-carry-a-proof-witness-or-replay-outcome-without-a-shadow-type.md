@@ -63,13 +63,25 @@ building the executor itself is explicitly out of scope here.
 
 ### US-010-EX-3: A stale package fails closed, not open
 
+"Stale package identity" splits into two checks, each owned by a different
+ticket, and this ticket owns only the first:
+
+- **Given** a replay request whose byte-provision entry's stored bytes do
+  not hash to that entry's own declared digest.
+- **When** this ticket's own decoder constructs the request.
+- **Then** construction refuses with a structured
+  `stale_dependency`/`byte-digest-mismatch` cause, before any recompilation
+  is attempted, and never returns a partial or best-effort request
+  (FR-071-AC-6).
+
 - **Given** a replay request naming a `package_id` that no longer matches
-  the source it recompiles to.
-- **When** #243's executor (a later ticket) or this ticket's own decoder
-  checks it.
-- **Then** the request-side type gives the checker everything it needs to
-  refuse with a structured `DependencyIdentityMismatch`/`stale_dependency`
-  cause and never lets a partial or best-effort request through.
+  the source the byte provision recompiles to.
+- **When** #243's executor (a later ticket) recompiles that source and
+  compares the result's `package_id` against the request's declared one.
+- **Then** the executor refuses with a structured
+  `DependencyIdentityMismatch`/`stale_dependency` cause; this ticket builds
+  the request type the executor reads to do that comparison, but performs
+  no recompilation and makes no `package_id` comparison itself.
 
 ### US-010-EX-4: A new family plugs in without touching the shared envelope
 
