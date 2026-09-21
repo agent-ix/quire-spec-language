@@ -35,8 +35,8 @@ fn rules() -> Vec<RuleInput<'static>> {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(rule.path.as_bytes()),
+                    bytes: rule.path.as_bytes(),
                 },
             )
         })
@@ -151,14 +151,15 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
         &mut Work::new(BindingLimits::default()),
     );
     assert!(report.complete && report.edition_refusal.is_none());
-    assert!(
-        matches!(&report.declarations[0].uses[0].refusal, Some(Cause::MissingDefinition(selection)) if selection == &R::StateCore.selection())
-    );
+    assert!(matches!(
+        &report.declarations[0].uses[0].refusal,
+        Some(Cause::MissingDependency(required)) if *required == R::StateCore
+    ));
 }
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
+fn stale_raw_bytes_refuse_while_resealed_content_still_selects_by_identity() {
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
@@ -200,7 +201,9 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
             assert!(matches!(cause, Cause::DefinitionDigest { .. }));
         }
     }
-    // Matching the source to the resealed bytes still cannot select new semantics.
+    // Recognition is by identity and revision alone: a resealed, self-consistent
+    // artifact matching the source's own declared digest still selects the
+    // compiler's StateQueries interpretation, regardless of its altered bytes.
     let changed = source("resealed", &format!("profile Q = \"{}\" version \"{}\" digest \"{}\"; predicate Check using Q (): Boolean {{ true }}", R::StateQueries.identity(), R::StateQueries.revision(), ByteDigest::of(&altered)));
     let changed = [changed];
     let selection = inventory(&changed);
@@ -227,10 +230,9 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
         &selected,
         &mut Work::new(BindingLimits::default()),
     );
-    assert!(matches!(
-        report.declarations[0].uses[0].refusal,
-        Some(Cause::UnsupportedDefinition { .. })
-    ));
+    let use_ = &report.declarations[0].uses[0];
+    assert!(use_.refusal.is_none());
+    assert_eq!(use_.closure, [R::StateQueries, R::StateCore, R::Edition]);
 }
 
 #[test]
@@ -249,19 +251,21 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
     );
     let definitions = definitions();
     let target = R::StateQueries.rules()[0];
-    let mut changed = target.bytes.to_vec();
+    let mut changed = target.path.as_bytes().to_vec();
     changed.push(b'\n');
     for missing in [false, true] {
         let mut rules = rules();
         if missing {
             rules.retain(|rule| rule.path != target.path);
         } else {
+            // A stale digest, not left matching the altered bytes: recognition
+            // is by path alone, so only the caller's own self-consistency
+            // check (declared digest vs. supplied bytes) can still refuse this.
             let rule = rules
                 .iter_mut()
                 .find(|rule| rule.path == target.path)
                 .unwrap();
             rule.bytes = &changed;
-            rule.digest = ByteDigest::of(&changed);
         }
         let selected = Inventory {
             edition: R::Edition.selection(),

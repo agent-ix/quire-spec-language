@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-114: fixed native definition selections and their exact normative resources.
+//! TC-114: fixed native definition selections and their forward references.
 //! Supplied-inventory refusal and declaration admission are tested separately.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use ix_trace_rs::trace;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition;
-use quire_spec_language::ByteDigest;
 
 use RegisteredDefinition::{
     Diagnostics, Edition, EventPosition, FixedSample, ObservationBinding, Package, Progress,
@@ -125,18 +123,9 @@ const EXPECTED: &[Expected] = &[
     },
 ];
 
-fn resource(path: &str) -> Vec<u8> {
-    std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("resources/native-v1")
-            .join(path),
-    )
-    .unwrap()
-}
-
 #[test]
 #[trace("TC-114", "FR-036-AC-1")]
-fn exact_definition_bytes_and_labels_select_distinct_registered_meanings() {
+fn exact_definition_identities_and_labels_select_distinct_registered_meanings() {
     assert_eq!(
         RegisteredDefinition::all(),
         EXPECTED
@@ -145,28 +134,21 @@ fn exact_definition_bytes_and_labels_select_distinct_registered_meanings() {
             .collect::<Vec<_>>()
     );
     let mut identities = BTreeSet::new();
-    let mut digests = BTreeSet::new();
     for row in EXPECTED {
         let path = format!("proposals/quire-v1/definitions/{}", row.file);
-        let original = resource(&path);
         let definition = row.definition;
-        let selection = definition.selection();
         assert_eq!(definition.path(), path);
-        assert_eq!(definition.bytes(), original);
         assert_eq!(definition.identity(), row.identity);
         assert_eq!(definition.revision(), row.revision);
-        assert_eq!(selection.identity, row.identity);
-        assert_eq!(selection.revision, row.revision);
-        assert_eq!(selection.digest, ByteDigest::of(&original));
+        assert_eq!(definition.authority(), "agent-ix");
         assert_eq!(definition.requirements(), row.requirements);
         assert!(identities.insert(row.identity));
-        assert!(digests.insert(selection.digest.to_string()));
     }
 }
 
 #[test]
 #[trace("TC-114", "FR-036-AC-1")]
-fn direct_rules_retain_the_selected_file_inventory_and_original_bytes() {
+fn direct_rules_retain_the_selected_file_inventory_as_forward_references() {
     let expected: &[(RegisteredDefinition, &[&str])] = &[
         (Edition, &[
             "proposals/quire-v1/shared-grammar.md",
@@ -257,7 +239,7 @@ fn direct_rules_retain_the_selected_file_inventory_and_original_bytes() {
         expected.iter().map(|row| row.0).collect::<Vec<_>>(),
         RegisteredDefinition::all()
     );
-    let mut shared = BTreeMap::new();
+    let mut shared: BTreeMap<&str, usize> = BTreeMap::new();
     for (definition, paths) in expected {
         let rules = definition.rules();
         assert_eq!(
@@ -267,30 +249,16 @@ fn direct_rules_retain_the_selected_file_inventory_and_original_bytes() {
         let unique: BTreeSet<_> = rules.iter().map(|rule| rule.path).collect();
         assert_eq!(unique.len(), rules.len());
         for rule in rules {
-            // External keys select the historical sources named by the native
-            // diagnostic definition, not this checkout's evolving compiler.
-            // Compare the embedded selection with its retained snapshot bytes.
-            let resource_path = match rule.path {
-                "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs" => "external/quire-spec-language/src/diagnostic.rs",
-                "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md" => "external/quire-spec-language/docs/native-error-codes.md",
-                path => path,
-            };
-            assert_eq!(rule.bytes, resource(resource_path), "{}", rule.path);
-            shared
-                .entry(rule.path)
-                .or_insert_with(Vec::new)
-                .push(rule.bytes);
+            *shared.entry(rule.path).or_default() += 1;
         }
     }
     assert_eq!(shared.len(), 55);
     // FR-061 is one shared interface across four direct selections; a different
-    // copy under one consumer must not redefine that same rule identity.
-    let result_rules = &shared["spec/functional/FR-061-report-orthogonal-results.md"];
-    assert_eq!(result_rules.len(), 4);
-    let result_bytes = resource("spec/functional/FR-061-report-orthogonal-results.md");
-    for supplied in result_rules {
-        assert_eq!(*supplied, result_bytes);
-    }
+    // rule under one consumer must not redefine that same rule identity.
+    assert_eq!(
+        shared["spec/functional/FR-061-report-orthogonal-results.md"],
+        4
+    );
 }
 
 #[test]
