@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-154 intake against FCD's real architecture fixture bundle
-//! (`agent-ix/filament-core-data`, vendored under `tests/fixtures/architecture`
-//! and `tests/fixtures/modules` at the same rev `Cargo.toml` pins its
-//! `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` git deps to -- the
-//! rev is pinned in that one place, not repeated here).
+//! (`agent-ix/filament-core-data`), read at test time from the checked-out
+//! `agent-ix-extraction-frontend` git dependency's own
+//! `crates/extraction-frontend/fixtures/architecture` and `fixtures/modules`
+//! directories, resolved via `cargo metadata` (the rev is pinned once, in
+//! `Cargo.toml`, and not repeated here).
 //!
 //! `lifts_the_architecture_bundle_and_admits_it` proves
 //! `crate::model::intake::lift_document` drives FCD's real `lift` pipeline
@@ -13,15 +14,16 @@
 //! matching selection.
 //!
 //! `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types`
-//! carries FCD PR #200's own architecture golden (vendored under
-//! `tests/fixtures/architecture/expected/semantic-ir.json`, now that the pin
-//! covers it) into `intake::read_records` and asserts the measured, per-node
-//! breakdown: `validate_with_semantic_ir` admits the whole document at this
-//! pin, so `read_records` reaches per-node reading, and 5 of the golden's 12
-//! types refuse while 7 read clean -- see that test's own doc comment for
-//! the breakdown, including PR #200 review finding H1 (a missing identity
-//! check on relationship members, fixed in `read_relationship`), which is
-//! why the count is 5 rather than the 4 first measured.
+//! carries FCD PR #200's own architecture golden
+//! (`crates/extraction-frontend/fixtures/architecture/expected/semantic-ir.json`
+//! in the pinned dependency checkout) into `intake::read_records` and
+//! asserts the measured, per-node breakdown: `validate_with_semantic_ir`
+//! admits the whole document at this pin, so `read_records` reaches
+//! per-node reading, and 5 of the golden's 12 types refuse while 7 read
+//! clean -- see that test's own doc comment for the breakdown, including PR
+//! #200 review finding H1 (a missing identity check on relationship
+//! members, fixed in `read_relationship`), which is why the count is 5
+//! rather than the 4 first measured.
 //!
 //! `reads_pump_out_as_a_real_endpoint_record` asserts real record content
 //! for one of the 7 clean-reading types, which the whole-document test
@@ -38,7 +40,9 @@
 //! outcome.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use quire_spec_language::model::accounting::{
@@ -55,14 +59,55 @@ use quire_spec_language::model::systems::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+/// Resolves to the checked-out `agent-ix-extraction-frontend` git
+/// dependency's own `fixtures` directory
+/// (`crates/extraction-frontend/fixtures` in the pinned
+/// `agent-ix/filament-core-data` checkout), via `cargo metadata`'s
+/// `manifest_path` for that package -- the same shell-out-and-parse pattern
+/// `tools/arch-lint/metadata.rs` and `tests/contract_model_architecture.rs`
+/// already use. Memoized: every test below that needs it calls this, and
+/// `cargo metadata` is not free.
+fn fcd_fixtures_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let output = Command::new(env!("CARGO"))
+            .args(["metadata", "--format-version", "1", "--locked", "--offline"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("run Cargo's locked offline metadata resolver");
+        assert!(
+            output.status.success(),
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let metadata: Value =
+            serde_json::from_slice(&output.stdout).expect("decode cargo metadata");
+        let packages = metadata["packages"]
+            .as_array()
+            .expect("metadata packages array");
+        let manifest_path = packages
+            .iter()
+            .find(|package| package["name"] == "agent-ix-extraction-frontend")
+            .unwrap_or_else(|| {
+                panic!(
+                    "agent-ix-extraction-frontend is not in cargo metadata's package list -- \
+                     is Cargo.toml's git dependency on agent-ix/filament-core-data still \
+                     present and resolvable?"
+                )
+            })["manifest_path"]
+            .as_str()
+            .expect("package manifest_path is a string");
+        Path::new(manifest_path)
+            .parent()
+            .expect("a package manifest_path has a parent directory")
+            .join("fixtures")
+    })
 }
 
 #[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn lifts_the_architecture_bundle_and_admits_it() {
-    let fixtures = fixtures_dir();
+    let fixtures = fcd_fixtures_dir();
     let bundle_root = fixtures.join("architecture");
     let module_roots = vec![
         fixtures.join("modules/spec-objects-business"),
@@ -126,9 +171,9 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 
 /// (a): `agent-ix/filament-core-data` PR #200 (merged; this crate's pinned
 /// `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` rev now includes
-/// it) fixes FCD #199's four gaps and produces the architecture golden
-/// vendored at `tests/fixtures/architecture/expected/semantic-ir.json`
-/// (`cargo xtask revendor --tree test-fixtures-architecture`): 12 types,
+/// it) fixes FCD #199's four gaps and produces the architecture golden at
+/// `crates/extraction-frontend/fixtures/architecture/expected/semantic-ir.json`
+/// in the pinned dependency checkout: 12 types,
 /// `kind: {module, name}`, no package-local scalar/alias nodes, no
 /// `/type//field//operation/` identity segments, and `Flow2`'s inline
 /// `relationships[]` in the real `sourceEnd`/`targetEnd`
@@ -190,9 +235,13 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 #[test]
 fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
-    let document = include_str!("fixtures/architecture/expected/semantic-ir.json");
+    let document = std::fs::read_to_string(
+        fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"),
+    )
+    .expect("the pinned agent-ix-extraction-frontend checkout carries its own architecture golden");
 
-    let parsed: Value = serde_json::from_str(document).expect("the vendored golden is valid JSON");
+    let parsed: Value =
+        serde_json::from_str(&document).expect("the golden is valid JSON");
     assert_eq!(
         parsed["types"]
             .as_array()
@@ -303,8 +352,11 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
 #[test]
 fn reads_pump_out_as_a_real_endpoint_record() {
     let package_identity = "agent-ix/architecture";
-    let document = include_str!("fixtures/architecture/expected/semantic-ir.json");
-    let parsed: Value = serde_json::from_str(document).expect("the vendored golden is valid JSON");
+    let document = std::fs::read_to_string(
+        fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"),
+    )
+    .expect("the pinned agent-ix-extraction-frontend checkout carries its own architecture golden");
+    let parsed: Value = serde_json::from_str(&document).expect("the golden is valid JSON");
     let all_types = parsed["types"].as_array().expect("types is an array");
     let find = |identity: &str| -> Value {
         all_types
@@ -1007,7 +1059,7 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
         "spec/spec.md",
         "---\ntype: master-requirements\nname: config-service\ntitle: \"Config Service\"\n---\n# Config Service\n",
     )]);
-    let fixtures = fixtures_dir();
+    let fixtures = fcd_fixtures_dir();
     let module_roots = vec![
         fixtures.join("modules/spec-objects-business"),
         fixtures.join("modules/edge-vocabulary"),
@@ -1077,7 +1129,7 @@ fn lift_document_blocks_on_a_duplicate_identity() {
             "---\nid: FR-001\ntitle: Note\nobject: entity\ntype: FR\n---\n# FR-001: Note\n\n## Description\n\nAn authored fixture record whose field and whose own operation mint the\nsame member identity.\n\n## Properties\n\n| Field | Type | Multiplicity | Constraints |\n|-------|------|--------------|-------------|\n| revision | Integer | 1 | |\n| id | UUID | 1 | identity |\n\n## Operations\n\n### revision\n\nReturns: Integer [1]\n",
         ),
     ]);
-    let fixtures = fixtures_dir();
+    let fixtures = fcd_fixtures_dir();
     let module_roots = vec![
         fixtures.join("modules/spec-objects-business"),
         fixtures.join("modules/edge-vocabulary"),
