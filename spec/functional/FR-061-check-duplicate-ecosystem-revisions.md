@@ -117,7 +117,7 @@ resolved here).
 Run against the current-head lane's own `Cargo.lock`
 (`make arch-lint-duplicate-revisions-lane`), the check reports no duplicate:
 the lane's `[patch]` table (`integration/current-head/Cargo.toml`) redirects
-every QSL/IR/RT node in its graph to one vendored-head or path source per
+every QSL/IR/RT node in its graph to one head-tracked git or path source per
 repository, so `cargo update` converges that lock to exactly one revision
 each for quire-contract-codegen, quire-contract-ir, quire-contract-model,
 quire-contract-runtime, quire-observation, quire-protocol and

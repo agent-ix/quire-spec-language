@@ -55,15 +55,7 @@ bridged. Model intake reads Semantic IR 2.0.0 domain
 packages (FR-056) through the `agent-ix-extraction-frontend` and
 `agent-ix-semantic-ir` crates, both pinned by their `Cargo.toml` `rev` --
 this workspace's own single *authoritative* source for that commit --
-under their declared AGPL-3.0-or-later grant. `tests/fixtures/architecture`
-and `tests/fixtures/modules` are vendored from the same repository at that
-same commit, but each tree's own `VENDOR.json` still carries that commit
-again by hand in its own `commit` field (`Source::Fcd` requires one before
-`revendor` can read anything to compare it against); `xtask::cargo_pin`
-checks that hand-edited value against the authoritative pin rather than
-trusting it (`cargo xtask revendor --tree
-test-fixtures-architecture|test-fixtures-modules`,
-`tests/fixtures/{architecture,modules}/VENDOR.json`). `tempfile` moves from a qualification-only
+under their declared AGPL-3.0-or-later grant. `tempfile` moves from a qualification-only
 dependency to a production one: `agent-ix-extraction-frontend`'s `lift` entry
 always writes its document to a required output path, and intake supplies a
 scratch directory for it.
