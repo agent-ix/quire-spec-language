@@ -66,9 +66,7 @@ stages retain their own default limits; no limit is disabled to accommodate a
 build. Existing
 output directories are refused. Publication is not atomic: an I/O failure may
 leave a partial directory. Retry with a new path, or inspect and remove the
-incomplete output before reusing its path. No source file or synthetic producer
-string stands in for the executable digest; it is always computed from the
-actual running binary.
+incomplete output before reusing its path.
 
 The output directory contains:
 

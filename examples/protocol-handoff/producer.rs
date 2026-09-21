@@ -47,7 +47,11 @@ const CONTRACT_V2: &[u8] = include_bytes!("../../docs/compiled-protocol-v2.md");
 /// a digest over these bytes (see `producer_source_digest`), so its identity
 /// is exactly what anyone with this repository can independently recompute
 /// (`sha256sum examples/protocol-handoff/producer.rs`) -- unlike a compiled
-/// executable, which nobody retains and which moves with the toolchain.
+/// executable, which nobody retains and which moves with the toolchain. The
+/// digest covers `producer.rs` alone -- not this example's other files, and
+/// not the `quire_spec_language` library that actually performs compilation
+/// -- so "producer identity" means exactly this file, not the example
+/// binary or its dependency closure.
 const PRODUCER_SOURCE: &[u8] = include_bytes!("producer.rs");
 const EVENT_CLOCK: &[u8] =
     b"{ \"kind\": \"event_position\", \"sequence_authority\": \"workflow-events\" }\n";

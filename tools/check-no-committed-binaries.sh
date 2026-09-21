@@ -24,13 +24,15 @@
 #
 # No allow-list carve-outs: a tracked file that trips this check is the next
 # thing to remove, not an exception to add here.
+#
+# Uses GNU `stat -c%s`; a BSD/macOS `stat` will fail here (not silently).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 # The largest legitimate tracked text artifact today is
-# artifacts/compiled-protocol-v2/mutations/binding-surplus.json at 224,338
+# artifacts/compiled-protocol-v2/mutations/binding-surplus.json at 223,978
 # bytes, one of ~30 near-identical mutation-corpus JSON fixtures in that
 # family. 1 MiB (1,048,576 bytes) is ~4.7x that measured largest file -- real
 # headroom for that fixture family to grow, while sitting more than 23x below
