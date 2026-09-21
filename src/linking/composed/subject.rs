@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: compare the static subject through its declared semantic components.
 //!
-//! The [package contract][contract] names the static components as Sources,
-//! Language, Profiles, Models, Native dependencies and Binding requirements.
-//! This module retains exactly those components from a completed binding report
-//! and compares two subjects component by component.
+//! The package contract (`proposals/quire-v1/package-contract.md` under the
+//! [`RegisteredDefinition::Edition`] rule set) names the static components as
+//! Sources, Language, Profiles, Models, Native dependencies and Binding
+//! requirements. This module retains exactly those components from a
+//! completed binding report and compares two subjects component by component.
 //!
 //! No canonical digest, structural hash or JSON fingerprint is derived here.
 //! The contract states that canonical identity is unavailable until its exact
@@ -13,8 +14,6 @@
 //!
 //! Build provenance is retained separately. A resource-only configuration change
 //! is visible in [`BuildProvenance`] and changes no static component.
-//!
-//! [contract]: ../../../../resources/native-v1/proposals/quire-v1/package-contract.md
 
 use super::binding;
 use super::binding_work;
@@ -63,7 +62,7 @@ pub struct LanguageComponent {
     /// Exact supplied edition definition identity, revision and byte digest.
     pub definition: Selection,
     /// Checked edition closure, empty when the edition selection refused.
-    pub closure: Vec<Selection>,
+    pub closure: Vec<RegisteredDefinition>,
     /// Edition-level refusal, itself part of the subject's declared meaning.
     pub refusal: Option<Cause>,
 }
@@ -77,8 +76,8 @@ pub struct ProfileComponent {
     pub kind: UseKind,
     /// Unit-local alias, retained for diagnostics rather than as a lookup key.
     pub alias: String,
-    /// Root-first closure as exact identity/revision/digest selections.
-    pub closure: Vec<Selection>,
+    /// Root-first closure of compiler-recognized definitions.
+    pub closure: Vec<RegisteredDefinition>,
     /// First failed selection in this occurrence's closure, if any.
     pub refusal: Option<Cause>,
 }
@@ -229,7 +228,7 @@ impl StaticSubject {
             language: inventory.language.clone(),
             edition: inventory.edition.clone(),
             definition: definitions.inventory.edition.clone(),
-            closure: definitions.edition.iter().map(selection).collect(),
+            closure: definitions.edition.clone(),
             refusal: definitions.edition_refusal.clone(),
         };
 
@@ -257,7 +256,7 @@ impl StaticSubject {
                     declaration: name(entry.declaration)?,
                     kind: use_site.kind,
                     alias: use_site.alias.value.clone(),
-                    closure: use_site.closure.iter().map(selection).collect(),
+                    closure: use_site.closure.clone(),
                     refusal: use_site.refusal.clone(),
                 });
             }
@@ -394,10 +393,6 @@ impl BuildProvenance {
             binding_usage: report.usage(),
         }
     }
-}
-
-fn selection(definition: &RegisteredDefinition) -> Selection {
-    definition.selection()
 }
 
 fn model_selection(inputs: &[ModelInput<'_>], input: usize) -> Option<ModelSelection> {

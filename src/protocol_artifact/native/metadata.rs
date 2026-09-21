@@ -67,19 +67,23 @@ fn dependency(
     }
     Err(Error::Invalid(Invalid::Dependency))
 }
-fn matching_bytes(
+/// Find the one supplied `Source` dependency whose artifact identity matches
+/// `identity`. Recognition is by identity alone, never by content: a
+/// definition's identity is its own compiler-registered identity, and a
+/// rule's identity is its own baseline path.
+fn matching_identity(
     dependencies: &[artifact::SuppliedDependency<'_>],
-    bytes: &[u8],
+    identity: &str,
     work: &mut Work,
 ) -> Result<u32, Error> {
     let mut result = None;
     for (i, d) in dependencies.iter().enumerate() {
         work.visit()?;
-        if d.artifact.kind != w::ArtifactKind::Source || d.bytes.len() != bytes.len() {
+        if d.artifact.kind != w::ArtifactKind::Source {
             continue;
         }
-        work.bytes(bytes.len().saturating_mul(2))?;
-        if d.bytes == bytes {
+        work.bytes(identity.len().saturating_add(d.artifact.identity.len()))?;
+        if d.artifact.identity == identity {
             if result.is_some() {
                 return Err(Error::Invalid(Invalid::Duplicate));
             }
@@ -95,7 +99,7 @@ fn definitions(
 ) -> Result<(Vec<R>, Vec<w::Definition>), Error> {
     let mut selected = Vec::new();
     for &registered in R::all() {
-        match matching_bytes(dependencies, registered.bytes(), work) {
+        match matching_identity(dependencies, registered.identity(), work) {
             Ok(at) => {
                 work.charge(Dimension::Entries, 1)?;
                 selected.push((registered, at));
@@ -122,7 +126,7 @@ fn definitions(
         let mut rules = Vec::new();
         for rule in registered.rules() {
             work.charge(Dimension::Entries, 1)?;
-            rules.push(matching_bytes(dependencies, rule.bytes, work)?);
+            rules.push(matching_identity(dependencies, rule.path, work)?);
         }
         rules.sort_unstable();
         work.charge(Dimension::Entries, 1)?;
