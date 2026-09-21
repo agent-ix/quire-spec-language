@@ -177,6 +177,14 @@ impl fmt::Display for QualifiedName {
     }
 }
 
+/// The wire shape a [`RawSourceRef`] decodes from: `(authority, identity,
+/// revision, digest domain, digest hex)`. Named once here and reused by
+/// every envelope's wire struct (`replay::witness::WitnessPacket`,
+/// `replay::request::ReplayRequestWire`) that carries a list of these, both
+/// to avoid clippy's `type_complexity` lint on the bare nested tuple and so
+/// the shape is stated in one place rather than repeated per call site.
+pub type SourceDigestWire = (String, String, String, Option<String>, String);
+
 /// ADR-013 O-07: names a source document a proved package or one of its
 /// dependencies was generated from -- authority, identity, revision, and
 /// its `quire.source.bytes/v1` digest (`crate::digest`).

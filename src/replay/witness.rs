@@ -19,13 +19,15 @@
 
 use std::fmt;
 
-use quire_exact::{Origin, ScalarLimits};
+use quire_exact::ScalarLimits;
+#[cfg(test)]
+use quire_exact::Origin;
 
 use crate::digest::{DigestDomain, DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
 use crate::replay::identity::{
     sha256, Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition, WireNodeId,
+    QualifiedName, RawSourceRef, SourceDigestWire, TracePosition, WireNodeId,
 };
 
 // ---------------------------------------------------------------------------
@@ -479,7 +481,7 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub package_contract_version: Option<String>,
     /// `(authority, identity, revision, digest domain, digest hex)` per
     /// declared source reference.
-    pub source_digests: Option<Vec<(String, String, String, Option<String>, String)>>,
+    pub source_digests: Option<Vec<SourceDigestWire>>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
     /// The proving run's scalar accounting bounds.
