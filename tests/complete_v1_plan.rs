@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Plan-013 (complete-V1 delivery) task and acceptance-criteria bookkeeping.
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use ix_trace_rs::trace;
 
@@ -74,6 +75,76 @@ fn expected_ticket(capability: &str) -> &'static str {
         ("TOOL", 9) => "WASM #6",
         _ => panic!("capability is outside Agent-A ownership: {capability}"),
     }
+}
+
+/// The content digest Plan-013 and `FR-055-AC-1` name for the adopted
+/// complete-V1 baseline.
+///
+/// `quire-spec-language` cannot resolve a `quire-specification` commit from
+/// the inside, so an acceptance criterion that pins one is unfalsifiable here
+/// -- which is why the revision clause this replaces was never asserted. A
+/// digest over the vendored bytes is checkable offline, in this repo, and is
+/// what `NFR-011`'s "vendor resources from exact pins" is actually after.
+const COMPLETE_VALUE_DIGEST: &str =
+    "sha256:97cf9f886cfbc2fbabca298ce6743d36eb1b0c92cb100e135094bfb75d4ee5d4";
+
+/// Digest every vendored file under `tree`, excluding the manifest and README
+/// that describe it rather than form part of the baseline.
+///
+/// Recomputed from the bytes on disk rather than read back from `VENDOR.json`:
+/// a digest compared against the file that records it would pass whatever the
+/// tree contained.
+fn tree_digest(tree: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut entries: Vec<(String, String)> = Vec::new();
+    let mut stack = vec![tree.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("vendored tree is readable") {
+            let path = entry.expect("readable dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let relative = path
+                .strip_prefix(tree)
+                .expect("walked paths sit under the tree")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative == "VENDOR.json" || relative == "README.md" {
+                continue;
+            }
+            let bytes = std::fs::read(&path).expect("vendored file is readable");
+            entries.push((relative, hex(&Sha256::digest(&bytes))));
+        }
+    }
+    entries.sort();
+
+    let joined = entries
+        .iter()
+        .map(|(path, digest)| format!("{path} {digest}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("sha256:{}", hex(&Sha256::digest(joined.as_bytes())))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[trace("TC-144", "FR-055-AC-1")]
+#[test]
+fn complete_v1_plan_identifies_the_vendored_baseline_by_content_digest() {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/complete-value");
+    assert_eq!(
+        tree_digest(&tree),
+        COMPLETE_VALUE_DIGEST,
+        "the vendored complete-value tree no longer matches the digest FR-055-AC-1 names"
+    );
+    assert!(
+        PLAN.contains(COMPLETE_VALUE_DIGEST),
+        "Plan-013 must identify the adopted baseline by its content digest"
+    );
 }
 
 #[trace("TC-144", "FR-055-AC-1", "FR-055-AC-2", "FR-055-AC-3")]
