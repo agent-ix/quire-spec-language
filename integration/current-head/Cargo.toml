@@ -24,7 +24,7 @@ description = "FR-058 current-head cross-repository integration lane for QSL/IR/
 quire-spec-language = { path = "../..", default-features = false }
 # Declared at the exact source quire-spec-language's own root `Cargo.toml`
 # pins (same `rev`), so the `[patch]` below overrides this declaration and
-# quire-spec-language's identical transitive one to the same vendored-head
+# quire-spec-language's identical transitive one to the same current-head
 # clone together. Cargo refuses to `[patch]` a git source with a different
 # branch/rev of the *same* git URL ("points to the same source"); redirecting
 # to a local path clone of the current head, as this patch does, is Cargo's
@@ -45,18 +45,18 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # tool/Cargo.toml.
 
 # `current-head-lane prepare` clones/refreshes quire-contract-ir's default
-# branch into `.vendor/quire-contract-ir` (git-ignored) before every build;
+# branch into `.deps/quire-contract-ir` (git-ignored) before every build;
 # see FR-058, this crate's README and `src/main.rs`. This does not touch
 # quire-spec-language's dev-dependency `quire-contract-ir-historical` (a
 # different package name, `quire-contract-ir`, from the same repository),
 # which stays pinned -- that alias is QSL's own deliberate
 # historical-compatibility fixture, not part of this lane.
 [patch."https://github.com/agent-ix/quire-contract-ir"]
-quire-contract-model = { path = ".vendor/quire-contract-ir/crates/quire-contract-model" }
-quire-contract-ir = { path = ".vendor/quire-contract-ir" }
+quire-contract-model = { path = ".deps/quire-contract-ir/crates/quire-contract-model" }
+quire-contract-ir = { path = ".deps/quire-contract-ir" }
 
 [patch."https://github.com/agent-ix/quire-contract-runtime"]
-quire-contract-runtime = { path = ".vendor/quire-contract-runtime" }
+quire-contract-runtime = { path = ".deps/quire-contract-runtime" }
 
 [patch."https://github.com/agent-ix/quire-spec-language"]
 quire-spec-language = { path = "../.." }

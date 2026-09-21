@@ -41,8 +41,8 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
 
 - Network access to fetch quire-contract-ir's, quire-contract-runtime's and
   quire-contract-codegen's default branches.
-- `integration/current-head/.vendor/quire-contract-ir` and
-  `integration/current-head/.vendor/quire-contract-runtime`, both prepared by
+- `integration/current-head/.deps/quire-contract-ir` and
+  `integration/current-head/.deps/quire-contract-runtime`, both prepared by
   `make integration-current-head-prepare` (`tool/` subcommand `prepare`),
   which also refreshes this lane's own `Cargo.lock` to each dependency's
   current head (#249 review HIGH-1).

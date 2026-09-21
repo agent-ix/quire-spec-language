@@ -19,8 +19,8 @@ use std::{
 };
 
 fn usage() -> String {
-    "current-head-lane prepare --vendor-root <path> --manifest <path>\n\
-     current-head-lane revision-log --qsl <path> --manifest <path> --vendor-root <path>\n\
+    "current-head-lane prepare --deps-root <path> --manifest <path>\n\
+     current-head-lane revision-log --qsl <path> --manifest <path> --deps-root <path>\n\
      current-head-lane check-incompatible-fixture --manifest <path>"
         .to_owned()
 }
@@ -63,7 +63,7 @@ fn clone_or_refresh_branch(dest: &Path, url: &str, branch: &str) -> Result<(), S
     run_git(&["-C", &dest_str, "checkout", "--detach", "FETCH_HEAD"])
 }
 
-/// FR-058: refresh every locally vendored clone this lane's `[patch]`
+/// FR-058: refresh every locally cloned checkout this lane's `[patch]`
 /// entries need, then re-resolve the lane's own manifest so its committed
 /// `Cargo.lock` picks up each dependency's current head (#249 review,
 /// HIGH-1) -- this is what stops the lane silently going stale between
@@ -71,12 +71,12 @@ fn clone_or_refresh_branch(dest: &Path, url: &str, branch: &str) -> Result<(), S
 /// than from a fresh `cargo update`). `cargo update --manifest-path
 /// <lane manifest>` only ever rewrites *this* lane's own lock; it never
 /// touches the root workspace's `Cargo.lock`.
-fn run_prepare(vendor_root: &Path, lane_manifest: &Path) -> Result<String, String> {
-    std::fs::create_dir_all(vendor_root)
-        .map_err(|error| format!("cannot create {}: {error}", vendor_root.display()))?;
-    let ir_head = vendor_root.join("quire-contract-ir");
+fn run_prepare(deps_root: &Path, lane_manifest: &Path) -> Result<String, String> {
+    std::fs::create_dir_all(deps_root)
+        .map_err(|error| format!("cannot create {}: {error}", deps_root.display()))?;
+    let ir_head = deps_root.join("quire-contract-ir");
     clone_or_refresh_branch(&ir_head, IR_URL, "main")?;
-    let rt_head = vendor_root.join("quire-contract-runtime");
+    let rt_head = deps_root.join("quire-contract-runtime");
     clone_or_refresh_branch(&rt_head, RT_URL, "main")?;
     run_cargo_update(lane_manifest)?;
     Ok(format!(
@@ -182,10 +182,10 @@ fn git_head(root: &Path) -> Result<String, String> {
 
 /// One resolved ecosystem repository's commit, keyed by the package name(s)
 /// `cargo metadata` reports for it. quire-contract-ir and quire-contract-runtime
-/// are not listed here: the lane's `[patch]` resolves both to a local vendored
+/// are not listed here: the lane's `[patch]` resolves both to a local
 /// path (see `../README.md`), so `cargo metadata` reports no git `source` for
 /// either; `run_revision_log` reads their commits directly from those
-/// vendored clones instead (`REPOS_VIA_VENDOR`).
+/// local clones instead (`REPOS_VIA_LOCAL_CLONE`).
 struct Repo {
     label: &'static str,
     package_names: &'static [&'static str],
@@ -196,10 +196,10 @@ const REPOS: &[Repo] = &[Repo {
     package_names: &["quire-contract-codegen"],
 }];
 
-/// `(label, vendored directory name, remote URL)` for every repository this
-/// lane resolves through a local `[patch]`-ed clone rather than a live git
-/// dependency `cargo metadata` can read a `source` for.
-const REPOS_VIA_VENDOR: &[(&str, &str, &str)] = &[
+/// `(label, local clone directory name, remote URL)` for every repository
+/// this lane resolves through a local `[patch]`-ed clone rather than a live
+/// git dependency `cargo metadata` can read a `source` for.
+const REPOS_VIA_LOCAL_CLONE: &[(&str, &str, &str)] = &[
     ("quire-contract-ir", "quire-contract-ir", IR_URL),
     ("quire-contract-runtime", "quire-contract-runtime", RT_URL),
 ];
@@ -227,14 +227,10 @@ fn cargo_metadata(manifest: &Path) -> Result<Value, String> {
 /// FR-058-AC-2/AC-4: record the exact commit resolved for QSL itself and for
 /// each of IR/RT/CG, and refuse to report a resolved commit for IR/RT/CG as
 /// "current head" when it no longer matches that repository's real remote
-/// `main` (#249 review, HIGH-1) -- otherwise a stale local vendor clone or an
+/// `main` (#249 review, HIGH-1) -- otherwise a stale local clone or an
 /// un-refreshed lane lock would silently report itself as current-head,
 /// exactly the silent substitution FR-058 exists to rule out.
-fn run_revision_log(
-    qsl_root: &Path,
-    manifest: &Path,
-    vendor_root: &Path,
-) -> Result<String, String> {
+fn run_revision_log(qsl_root: &Path, manifest: &Path, deps_root: &Path) -> Result<String, String> {
     let document = cargo_metadata(manifest)?;
     let packages = document
         .get("packages")
@@ -242,8 +238,8 @@ fn run_revision_log(
         .ok_or("unexpected cargo metadata shape: no packages array")?;
 
     let mut lines = vec![format!("quire-spec-language {}", git_head(qsl_root)?)];
-    for (label, dir_name, url) in REPOS_VIA_VENDOR {
-        let commit = git_head(&vendor_root.join(dir_name))?;
+    for (label, dir_name, url) in REPOS_VIA_LOCAL_CLONE {
+        let commit = git_head(&deps_root.join(dir_name))?;
         require_current_head(label, url, &commit)?;
         lines.push(format!("{label} {commit}"));
     }
@@ -330,10 +326,10 @@ fn main() -> ExitCode {
     let mode = args.remove(0);
     let result = match mode.as_str() {
         "prepare" => {
-            let vendor_root = take_flag(&mut args, "--vendor-root").map(PathBuf::from);
+            let deps_root = take_flag(&mut args, "--deps-root").map(PathBuf::from);
             let manifest = take_flag(&mut args, "--manifest").map(PathBuf::from);
-            match (vendor_root, manifest) {
-                (Some(vendor_root), Some(manifest)) => run_prepare(&vendor_root, &manifest),
+            match (deps_root, manifest) {
+                (Some(deps_root), Some(manifest)) => run_prepare(&deps_root, &manifest),
                 _ => {
                     eprintln!("{}", usage());
                     return ExitCode::from(2);
@@ -343,10 +339,10 @@ fn main() -> ExitCode {
         "revision-log" => {
             let qsl = take_flag(&mut args, "--qsl").map(PathBuf::from);
             let manifest = take_flag(&mut args, "--manifest").map(PathBuf::from);
-            let vendor_root = take_flag(&mut args, "--vendor-root").map(PathBuf::from);
-            match (qsl, manifest, vendor_root) {
-                (Some(qsl), Some(manifest), Some(vendor_root)) => {
-                    run_revision_log(&qsl, &manifest, &vendor_root)
+            let deps_root = take_flag(&mut args, "--deps-root").map(PathBuf::from);
+            match (qsl, manifest, deps_root) {
+                (Some(qsl), Some(manifest), Some(deps_root)) => {
+                    run_revision_log(&qsl, &manifest, &deps_root)
                 }
                 _ => {
                     eprintln!("{}", usage());
