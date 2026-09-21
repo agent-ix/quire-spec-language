@@ -291,7 +291,10 @@ pub enum ReplayResult {
 
 /// [`ReplayResult`]'s bound-checked reader (FR-072-AC-5): refuses an
 /// oversized encoding rather than decoding a truncated result.
-pub fn read_bounded(encoded_bytes: usize, result: ReplayResult) -> Result<ReplayResult, BoundExceeded> {
+pub fn read_bounded(
+    encoded_bytes: usize,
+    result: ReplayResult,
+) -> Result<ReplayResult, BoundExceeded> {
     BoundExceeded::check(encoded_bytes)?;
     Ok(result)
 }
@@ -308,7 +311,10 @@ mod tests {
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "rev-1".to_owned(),
-                crate::digest::DigestRecord::mint(crate::digest::DigestDomain::SourceBytesV1, [3; 32]),
+                crate::digest::DigestRecord::mint(
+                    crate::digest::DigestDomain::SourceBytesV1,
+                    [3; 32],
+                ),
             ),
             byte_start: 10,
             byte_end: 20,
@@ -373,7 +379,10 @@ mod tests {
             witness_result.settlement(),
             WitnessSettlement::ReproducedWithEvaluatedWitness
         );
-        assert_eq!(input_result.settlement(), InputSettlement::ReproducedWithoutWitness);
+        assert_eq!(
+            input_result.settlement(),
+            InputSettlement::ReproducedWithoutWitness
+        );
 
         // Structurally distinct types: a function requiring a
         // `WitnessArmResult` cannot be called with `input_result` -- there
@@ -421,7 +430,10 @@ mod tests {
             charges(),
             ToolPin::new("kani-0.67.0"),
         );
-        assert_eq!(disagreeing_input.settlement(), InputSettlement::Inconclusive);
+        assert_eq!(
+            disagreeing_input.settlement(),
+            InputSettlement::Inconclusive
+        );
     }
 
     /// FR-072-AC-3 (TC-191): a decisive `Witness`-arm result's nested
@@ -447,7 +459,10 @@ mod tests {
         let read_back_record = first.record().unwrap().clone();
         assert_eq!(read_back_record.deciding_element, EvaluatedValue(7));
         assert_eq!(read_back_record.index, 2);
-        assert_eq!(read_back_record.value_path, vec!["outer", "items", "member"]);
+        assert_eq!(
+            read_back_record.value_path,
+            vec!["outer", "items", "member"]
+        );
         assert_eq!(
             read_back_record.trace_position,
             Some(TracePosition::new("frame-0".to_owned()))
@@ -489,7 +504,9 @@ mod tests {
         use crate::replay::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };
-        use crate::replay::witness::{origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket};
+        use crate::replay::witness::{
+            origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
+        };
         use crate::value::Identifier;
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
@@ -511,40 +528,61 @@ mod tests {
         // FR-070: a witness envelope decoding a function call's
         // counterexample, built for two structurally different functions
         // (one and two arguments) to confirm no per-arity type is needed.
-        let build_witness_envelope = |function_name: &str, values: &str| -> WitnessEnvelope<NoPayload> {
-            let witness = Witness::parse(format!("<<<assertion|harness|check|{values}>>>")).unwrap();
-            let packet = WitnessPacket::<NoPayload> {
-                obligation_identity: Some([2; 32]),
-                occurrence_key: Some(OccurrenceKey::new(WireNodeId::from_digest([3; 32]), origin("reference", 0))),
-                clause_node: Some(WireNodeId::from_digest([4; 32])),
-                selected_function: Some(
-                    QualifiedName::new(vec![
-                        Identifier::new("module").unwrap(),
-                        Identifier::new(function_name).unwrap(),
-                    ])
-                    .unwrap(),
-                ),
-                package_id: Some((
-                    Some(crate::digest::DigestDomain::PackageSemanticV2.as_str().to_owned()),
-                    crate::digest::DigestRecord::mint(crate::digest::DigestDomain::PackageSemanticV2, [5; 32]).hex(),
-                )),
-                package_contract_version: Some("quire.checked-package/v2".to_owned()),
-                source_digests: Some(vec![]),
-                profile_selections: Some(vec![]),
-                proof_bounds: Some(charges()),
-                declared_domains: Some(vec![]),
-                backend: Some((
-                    "kani-backend-1".to_owned(),
-                    Some(crate::digest::DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
-                    crate::digest::DigestRecord::mint(crate::digest::DigestDomain::ToolManifestJcsV1, [6; 32]).hex(),
-                )),
-                trace_position: Some(None),
-                source: Some(ReplaySource::Witness(witness)),
-                family_payload: Some(NoPayload),
-                encoded_bytes: 128,
+        let build_witness_envelope =
+            |function_name: &str, values: &str| -> WitnessEnvelope<NoPayload> {
+                let witness =
+                    Witness::parse(format!("<<<assertion|harness|check|{values}>>>")).unwrap();
+                let packet = WitnessPacket::<NoPayload> {
+                    obligation_identity: Some([2; 32]),
+                    occurrence_key: Some(OccurrenceKey::new(
+                        WireNodeId::from_digest([3; 32]),
+                        origin("reference", 0),
+                    )),
+                    clause_node: Some(WireNodeId::from_digest([4; 32])),
+                    selected_function: Some(
+                        QualifiedName::new(vec![
+                            Identifier::new("module").unwrap(),
+                            Identifier::new(function_name).unwrap(),
+                        ])
+                        .unwrap(),
+                    ),
+                    package_id: Some((
+                        Some(
+                            crate::digest::DigestDomain::PackageSemanticV2
+                                .as_str()
+                                .to_owned(),
+                        ),
+                        crate::digest::DigestRecord::mint(
+                            crate::digest::DigestDomain::PackageSemanticV2,
+                            [5; 32],
+                        )
+                        .hex(),
+                    )),
+                    package_contract_version: Some("quire.checked-package/v2".to_owned()),
+                    source_digests: Some(vec![]),
+                    profile_selections: Some(vec![]),
+                    proof_bounds: Some(charges()),
+                    declared_domains: Some(vec![]),
+                    backend: Some((
+                        "kani-backend-1".to_owned(),
+                        Some(
+                            crate::digest::DigestDomain::ToolManifestJcsV1
+                                .as_str()
+                                .to_owned(),
+                        ),
+                        crate::digest::DigestRecord::mint(
+                            crate::digest::DigestDomain::ToolManifestJcsV1,
+                            [6; 32],
+                        )
+                        .hex(),
+                    )),
+                    trace_position: Some(None),
+                    source: Some(ReplaySource::Witness(witness)),
+                    family_payload: Some(NoPayload),
+                    encoded_bytes: 128,
+                };
+                WitnessEnvelope::reconstruct(packet).unwrap()
             };
-            WitnessEnvelope::reconstruct(packet).unwrap()
-        };
         let one_arg = build_witness_envelope("one_arg_fn", "x=1");
         let two_arg = build_witness_envelope("two_arg_fn", "x=1;y=2");
         assert_eq!(one_arg.selected_function().segments().len(), 2);

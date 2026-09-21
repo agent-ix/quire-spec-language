@@ -190,7 +190,12 @@ pub struct RawSourceRef {
 
 impl RawSourceRef {
     /// Name a source document by authority, identity, revision and digest.
-    pub fn new(authority: String, identity: String, revision: String, digest: DigestRecord) -> Self {
+    pub fn new(
+        authority: String,
+        identity: String,
+        revision: String,
+        digest: DigestRecord,
+    ) -> Self {
         Self {
             authority,
             identity,

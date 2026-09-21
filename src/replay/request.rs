@@ -16,7 +16,9 @@ use quire_exact::ScalarLimits;
 
 use crate::digest::{DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
-use crate::replay::identity::{sha256, Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef};
+use crate::replay::identity::{
+    sha256, Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+};
 use crate::replay::witness::ReplaySource;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
@@ -77,10 +79,6 @@ impl ByteProvision {
     /// type has; there is no path- or location-typed alternative.
     pub fn get(&self, digest: DigestRecord) -> Option<&[u8]> {
         self.0.get(&digest).map(Vec::as_slice)
-    }
-
-    fn digests(&self) -> impl Iterator<Item = DigestRecord> + '_ {
-        self.0.keys().copied()
     }
 }
 
@@ -230,7 +228,9 @@ pub enum ReplayRequestRefusal {
     UnknownCapabilityVocabulary,
     /// A profile selection names a semantic profile outside the closed
     /// known set.
-    #[error("invalid_capability/unsupported-version: semantic profile {0:?} is outside the closed set")]
+    #[error(
+        "invalid_capability/unsupported-version: semantic profile {0:?} is outside the closed set"
+    )]
     UnknownSemanticProfile(String),
     /// A digest names a domain outside the closed FR-201 set, or is
     /// otherwise malformed.
@@ -257,7 +257,9 @@ impl ReplayRequest {
     pub fn decode(wire: ReplayRequestWire) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(wire.encoded_bytes)?;
         if wire.contract_version != REQUEST_CONTRACT_VERSION {
-            return Err(ReplayRequestRefusal::UnknownContractVersion(wire.contract_version));
+            return Err(ReplayRequestRefusal::UnknownContractVersion(
+                wire.contract_version,
+            ));
         }
         match wire.capability_vocabulary.as_deref() {
             Some(KNOWN_CAPABILITY_VOCABULARY) => {}
@@ -279,17 +281,19 @@ impl ReplayRequest {
 
         let mut source_digests = Vec::with_capacity(wire.source_digests.len());
         for (authority, identity, revision, domain, hex) in wire.source_digests {
-            let digest =
-                DigestRecord::from_wire(domain.as_deref(), &hex).map_err(ReplayRequestRefusal::InvalidDigest)?;
+            let digest = DigestRecord::from_wire(domain.as_deref(), &hex)
+                .map_err(ReplayRequestRefusal::InvalidDigest)?;
             source_digests.push(RawSourceRef::new(authority, identity, revision, digest));
         }
 
         let mut provision = BTreeMap::new();
         for (domain, hex, bytes) in wire.byte_provision {
-            let digest =
-                DigestRecord::from_wire(domain.as_deref(), &hex).map_err(ReplayRequestRefusal::InvalidDigest)?;
+            let digest = DigestRecord::from_wire(domain.as_deref(), &hex)
+                .map_err(ReplayRequestRefusal::InvalidDigest)?;
             if sha256(&bytes) != *digest.as_bytes() {
-                return Err(ReplayRequestRefusal::ByteDigestMismatch(format!("{digest:?}")));
+                return Err(ReplayRequestRefusal::ByteDigestMismatch(format!(
+                    "{digest:?}"
+                )));
             }
             provision.insert(digest, bytes);
         }
@@ -354,7 +358,9 @@ impl ReplayRequest {
                 .collect(),
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
-            originating_counterexample_identity: *self.originating_counterexample_identity.as_bytes(),
+            originating_counterexample_identity: *self
+                .originating_counterexample_identity
+                .as_bytes(),
             backend: (
                 self.backend.identity().to_owned(),
                 Some(self.backend.manifest_digest().domain().as_str().to_owned()),
@@ -379,7 +385,6 @@ impl ReplayRequest {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

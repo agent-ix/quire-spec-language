@@ -158,7 +158,10 @@ impl fmt::Debug for Witness {
             .field("transcript_len", &self.transcript.len())
             .field(
                 "transcript_digest",
-                &DigestRecord::mint(DigestDomain::VerificationJcs, sha256(self.transcript.as_bytes())),
+                &DigestRecord::mint(
+                    DigestDomain::VerificationJcs,
+                    sha256(self.transcript.as_bytes()),
+                ),
             )
             .finish()
     }
@@ -442,7 +445,10 @@ mod witness_tests {
         assert!(display.len() < text.len());
 
         // The typed accessor is unaffected by rendering redaction.
-        assert!(witness.concrete_values().iter().any(|(name, _)| name == marker));
+        assert!(witness
+            .concrete_values()
+            .iter()
+            .any(|(name, _)| name == marker));
         assert_eq!(witness.transcript(), text);
     }
 }
@@ -568,7 +574,9 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let trace_position = packet
             .trace_position
             .ok_or(WitnessRefusal::MissingMember("trace_position"))?;
-        let source = packet.source.ok_or(WitnessRefusal::MissingMember("source"))?;
+        let source = packet
+            .source
+            .ok_or(WitnessRefusal::MissingMember("source"))?;
         let family_payload = packet
             .family_payload
             .ok_or(WitnessRefusal::MissingMember("family_payload"))?;
@@ -638,9 +646,12 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
 }
 
 /// Build an [`Origin`] from a role string and ordinal, this module's own
-/// small convenience over `quire_exact::Origin::new`. `pub(crate)`: used to
-/// build occurrence keys in this module's and its siblings' tests, never
-/// part of the CG-facing public API this module re-exports (ADR-011 FB-05).
+/// small convenience over `quire_exact::Origin::new`. `#[cfg(test)]`: used
+/// only to build occurrence keys in this module's and its siblings' test
+/// fixtures, never part of the CG-facing public API this module re-exports
+/// (ADR-011 FB-05) -- genuinely test-only, not product surface, so it lives
+/// under the same cfg as its callers rather than behind `#[allow(dead_code)]`.
+#[cfg(test)]
 pub(crate) fn origin(role: &str, ordinal: u64) -> Origin {
     Origin::new(role.into(), ordinal)
 }
@@ -679,7 +690,9 @@ mod envelope_tests {
                 origin("reference", occurrence_ordinal),
             )),
             clause_node: Some(WireNodeId::from_digest(digest(3))),
-            selected_function: Some(QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap()),
+            selected_function: Some(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            ),
             package_id: Some((
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, digest(4)).hex(),
@@ -740,7 +753,10 @@ mod envelope_tests {
             round_tripped_a.occurrence_key().origin().ordinal(),
             round_tripped_b.occurrence_key().origin().ordinal()
         );
-        assert_ne!(round_tripped_a.occurrence_key(), round_tripped_b.occurrence_key());
+        assert_ne!(
+            round_tripped_a.occurrence_key(),
+            round_tripped_b.occurrence_key()
+        );
 
         // `Input`-arm envelope round trip too.
         let mut input_packet = full_packet(0);

@@ -33,7 +33,9 @@ impl BoundExceeded {
     /// it is over the bound.
     pub fn check(encoded_bytes: usize) -> Result<(), Self> {
         if encoded_bytes > MAX_ENCODED_BYTES {
-            Err(Self { actual: encoded_bytes })
+            Err(Self {
+                actual: encoded_bytes,
+            })
         } else {
             Ok(())
         }

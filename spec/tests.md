@@ -81,25 +81,25 @@ operational validation remains outside this audit-only plan.
 | TC-206 | The registry module lint gate finds no static, OnceLock or thread_local | Integration | P1 | FR-080-AC-3 | 🚧 Planned; #185 |
 | TC-207 | One unit test exists and passes per ADR-012 §5.2 row | Unit | P1 | FR-080-AC-4 | 🚧 Planned; #185 |
 | TC-208 | The S7 seam probe fails to compile the registry arm on an unhandled capability-kind variant | Integration | P1 | FR-080-AC-5 | 🚧 Planned; #185 |
-| TC-177 | The proof-result envelope maps every FR-331 outcome to its exact O-16 category | Property | P1 | FR-069-AC-1 | 🚧 Planned; #231 |
-| TC-178 | The proof-result reader refuses an unknown version, vocabulary, or oversized envelope before consumption | Unit | P1 | FR-069-AC-2, FR-069-AC-4 | 🚧 Planned; #231 |
-| TC-179 | A positive proof-result envelope round-trips its backend identity, tool pin and dispositions exactly | Unit | P1 | FR-069-AC-3 | 🚧 Planned; #231 |
-| TC-180 | The witness envelope stores the transcript once and derives every other fact from it | Unit | P1 | FR-070-AC-1 | 🚧 Planned; #231 |
-| TC-181 | The witness envelope refuses a malformed transcript, an out-of-domain digest, or an oversized encoding | Property | P1 | FR-070-AC-2, FR-070-AC-6, FR-070-AC-7 | 🚧 Planned; #231 |
-| TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | 🚧 Planned; #231 |
-| TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | 🚧 Planned; #231 |
-| TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | 🚧 Planned; #231 |
-| TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | 🚧 Planned; #231 |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 | 🚧 Planned; #231 |
+| TC-177 | The proof-result envelope maps every FR-331 outcome to its exact O-16 category | Property | P1 | FR-069-AC-1 | ✅ Passed locally |
+| TC-178 | The proof-result reader refuses an unknown version, vocabulary, or oversized envelope before consumption | Unit | P1 | FR-069-AC-2, FR-069-AC-4 | ✅ Passed locally |
+| TC-179 | A positive proof-result envelope round-trips its backend identity, tool pin and dispositions exactly | Unit | P1 | FR-069-AC-3 | ✅ Passed locally |
+| TC-180 | The witness envelope stores the transcript once and derives every other fact from it | Unit | P1 | FR-070-AC-1 | ✅ Passed locally |
+| TC-181 | The witness envelope refuses a malformed transcript, an out-of-domain digest, or an oversized encoding | Property | P1 | FR-070-AC-2, FR-070-AC-6, FR-070-AC-7 | ✅ Passed locally |
+| TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | ✅ Passed locally |
+| TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
+| TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
+| TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 | ✅ Passed locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
-| TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | 🚧 Planned; #231 |
-| TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | 🚧 Planned; #231 |
-| TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | 🚧 Planned; #231 |
-| TC-191 | A replay result's nested witness record round-trips exactly, compares without display-text interpretation, and refuses an oversized encoding | Unit | P1 | FR-072-AC-3, FR-072-AC-5 | 🚧 Planned; #231 |
+| TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | ✅ Passed locally |
+| TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
+| TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | ✅ Passed locally |
+| TC-191 | A replay result's nested witness record round-trips exactly, compares without display-text interpretation, and refuses an oversized encoding | Unit | P1 | FR-072-AC-3, FR-072-AC-5 | ✅ Passed locally |
 | TC-192 | #217's function exemplar builds on the existing result/request/witness types with no new type | Integration | P1 | FR-072-AC-4 | 🚧 Planned; #231 |
-| TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | 🚧 Planned; #231 |
-| TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | 🚧 Planned; #231 |
-| TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | 🚧 Planned; #231 |
+| TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | ✅ Passed locally |
+| TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | ✅ Passed locally |
+| TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | ✅ Passed locally |
 | TC-213 | Original declaration keys survive normalization unchanged | Unit | P1 | FR-081-AC-1 | ✅ Passed locally |
 | TC-214 | Structurally identical declarations from distinct originals never collapse to one effective identity | Unit | P1 | FR-081-AC-2 | 🚧 Planned; #120 |
 | TC-215 | A dominated redefinition is retained for provenance, not deleted | Unit | P1 | FR-081-AC-3 | ✅ Passed locally |
@@ -130,6 +130,56 @@ operational validation remains outside this audit-only plan.
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Planned; #120 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
+
+## Typed replay envelopes (FR-069–073) coverage
+
+[FR-069](../spec/functional/FR-069-implement-typed-proof-result-envelope.md)
+through [FR-073](../spec/functional/FR-073-implement-redacted-safe-diagnostic-rendering.md)
+are implemented under issue #231, in `src/replay/{bounds,identity,proof_result,
+witness,request,result}.rs`. Every TC below was red/green falsified during
+implementation: the targeted behavior was independently removed (one code
+mutation per test — e.g. the vacuous-proof category branch, the
+`contract_version` refusal, an `Option`-member's `?` refusal, the redacted
+`Debug` impl), the suite was run once and only the intended test(s) failed,
+the mutation was reverted, and the suite was confirmed green again. This was
+done as one batched mutation-and-revert pair (not one recompile per test) to
+respect this session's shared build-lock load; ten of the nineteen TC rows —
+TC-177, 178, 179, 183, 185, 186, 189, 190, 191, 209 — were each independently
+mutated this way. The remaining nine (TC-180, 181, 182, 184, 187, 188, 192,
+210, 211) were not independently mutated but were read in full and share the
+identical code shape (the same `.ok_or(Refusal::X)?` early-refusal pattern,
+the same round-trip-equality pattern, or the same redacted-`Debug` pattern)
+as a row that was.
+
+- TC-177 (FR-069-AC-1): `src/replay/proof_result.rs::tests::tc_177_every_fr331_value_maps_to_its_exact_category`
+- TC-178 (FR-069-AC-2, FR-069-AC-4): `src/replay/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
+- TC-179 (FR-069-AC-3): `src/replay/proof_result.rs::tests::tc_179_round_trip_preserves_backend_tool_pin_and_dispositions`
+- TC-180 (FR-070-AC-1): `src/replay/witness.rs::witness_tests::tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript`
+- TC-181 (FR-070-AC-2, FR-070-AC-6, FR-070-AC-7): `src/replay/witness.rs::witness_tests::tc_181_refuses_malformed_transcripts`, `::envelope_tests::tc_181_refuses_an_out_of_domain_digest`, `::envelope_tests::tc_181_refuses_an_oversized_encoding`
+- TC-182 (FR-070-AC-3): `src/replay/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`
+- TC-183 (FR-070-AC-4): `src/replay/witness.rs::envelope_tests::tc_183_refuses_reconstruction_when_any_o25_member_is_missing` — caveat: this is a `Property`-typed row, but the test asserts only four of the roughly thirteen O-25 members individually (`backend`, `trace_position`, `source_digests`, `obligation_identity`); the rest share the identical `.ok_or(WitnessRefusal::MissingMember(...))?` pattern but are not each individually exercised.
+- TC-184 (FR-070-AC-5): `src/replay/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
+- TC-185 (FR-071-AC-1): `src/replay/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
+- TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `src/replay/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
+- TC-188 (FR-071-AC-4): `src/replay/request.rs::tests::tc_188_refuses_unknown_version_or_profile_before_recompilation`
+- TC-189 (FR-072-AC-1): `src/replay/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
+- TC-190 (FR-072-AC-2): `src/replay/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
+- TC-191 (FR-072-AC-3, FR-072-AC-5): `src/replay/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`
+- TC-209 (FR-073-AC-1): `src/replay/witness.rs::witness_tests::tc_209_debug_and_display_never_reproduce_the_full_transcript`
+- TC-210 (FR-073-AC-2): `src/replay/request.rs::tests::tc_210_debug_never_reproduces_byte_provision_raw_bytes`
+- TC-211 (FR-073-AC-3): `src/replay/mod.rs::redaction_tests::tc_211_refusal_causes_redact_while_typed_accessors_stay_readable`
+
+TC-187 and TC-192 stay `🚧 Planned; #231`: both rows' core claim is an
+absence of something (no bare-`&str`/`String` entry point exists anywhere on
+`ReplayRequest`'s public API for TC-187; no fifth type is defined for
+TC-192's exemplar) that only a source-level inspection can establish, not a
+runtime assertion inside the test itself. The positive half of each (a
+multi-segment name round-trips its segments; two structurally different
+functions reuse the four #231 types) is exercised by
+`src/replay/request.rs::tests::tc_187_selection_is_always_a_typed_qualified_name`
+and `src/replay/result.rs::tests::tc_192_function_exemplar_reuses_the_four_types_with_none_new`
+respectively, but the row's literal claim is broader than what either test
+asserts at runtime, so both stay Planned rather than overclaim.
 
 ## Model graph binding (FR-081–086) retrospective coverage
 
