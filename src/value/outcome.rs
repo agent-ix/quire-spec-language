@@ -7,9 +7,9 @@
 
 use super::accounting::Incomplete;
 use super::collection::CardinalityBound;
-use super::expression::WrongSnapshotCause;
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
+use crate::check::WrongSnapshotCause;
 use crate::diagnostic::Code;
 use quire_exact::CollectionKind;
 
@@ -157,7 +157,7 @@ pub enum Refusal {
     /// FR-153's `pre(..)` anchor selection (`evaluate.rs`'s `select_anchor`)
     /// meeting a `Value::Population` with no attached pre binding --
     /// `wrong_snapshot`, with the identical closed [`WrongSnapshotCause`]
-    /// cause set the checker uses (`crate::value::expression`'s own
+    /// cause set the checker uses (`crate::check`'s own
     /// `WrongSnapshotCause`, reused rather than a separately invented
     /// runtime cause, since FR-272/native-diagnostics.md catalogues exactly
     /// one `wrong_snapshot` cause list). The checker only admits `pre(..)`

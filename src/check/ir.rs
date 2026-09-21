@@ -2,15 +2,15 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
-use super::super::collection::CollectionType;
-use super::super::composite::{Value, ValueType};
-use super::super::decimal::DecimalType;
-use super::super::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
-use super::super::node::NodeKey;
-use super::super::numeric::{ArithmeticOperator, OrderingOperator};
-use super::super::rational::RationalDomain;
 use super::refusal::Location;
 use crate::absence::AbsenceMode;
+use crate::value::CollectionType;
+use crate::value::DecimalType;
+use crate::value::NodeKey;
+use crate::value::RationalDomain;
+use crate::value::{ArithmeticOperator, OrderingOperator};
+use crate::value::{CheckedEquality, EqualityOperand, EqualityOperator};
+use crate::value::{Value, ValueType};
 use quire_exact::{CollectionKind, IntegerInterval};
 use std::collections::BTreeSet;
 

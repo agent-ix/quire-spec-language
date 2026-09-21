@@ -4,10 +4,10 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
-use super::super::composite::ValueType;
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{Node, NodeKind, Slot};
 use super::refusal::{CheckCause, CheckRefusal, Location, MeasureObligation};
+use crate::value::ValueType;
 
 /// One element of a measure, naming the parameter it measures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -106,9 +106,18 @@ use crate::model::dispatch::{
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
+// ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated these four names to the
+// layer-3 `check` module. This is the interim `model` -> `check` edge
+// FR-068-AC-9/FR-068-CON-5 declare and bound to exactly this file and
+// `model/conformance.rs`: it stays forbidden by ADR-011 §6.1's
+// intra-layer-3 order until M-2 (QSL-7) moves `model::checked_dispatch`
+// into `check` itself, and it is imported directly here, never through
+// `crate::value`'s aggregate re-export, so the edge stays visible to a
+// textual scan of this file's own `use` lines.
+use crate::check::{DispatchCandidate, DispatchOperation, DispatchTable, PackageDeclarations};
 use crate::value::{
-    BinaryOperator, DeclaredClauseKind, DispatchCandidate, DispatchOperation, DispatchTable,
-    Expression, FieldInitializer, FunctionDeclaration, NodeKey, PackageDeclarations, ValueType,
+    BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration, NodeKey,
+    ValueType,
 };
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
