@@ -319,7 +319,7 @@ pub enum InvalidDispatchDeclaration {
     /// Two dispatch operations in the package's own `dispatch_operations`
     /// share a `(receiver_type, member)` pair. A well-formed package exposes
     /// each static receiver type/member name once; a duplicate means two
-    /// bridge calls (see `crate::model::checked_dispatch`) were merged for
+    /// bridge calls (see `crate::check::checked_dispatch`) were merged for
     /// overlapping roots, and name lookup at a call site would otherwise
     /// silently pick whichever entry happens to come first.
     DuplicateOperation {

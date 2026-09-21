@@ -5,8 +5,9 @@
 //! decision (D06), the clause-kind restriction on a dispatched
 //! `receiver.member(args)` call (D07), and the FR-146 call-graph refusal of
 //! a cycle through a dispatch edge (D08) — plus one end-to-end test of the
-//! `crate::model::checked_dispatch` bridge linking a real model family and
-//! evaluating a dispatched call through it.
+//! `crate::check::checked_dispatch` bridge (ADR-011 §7.3 M-2, QSL-7: moved
+//! here from `crate::model::checked_dispatch`) linking a real model family
+//! and evaluating a dispatched call through it.
 
 use std::collections::BTreeMap;
 
@@ -14,11 +15,11 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use quire_exact::{Integer, IntegerInterval};
-use quire_spec_language::diagnostic::Code;
-use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::checked_dispatch::{
+use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
+use quire_spec_language::diagnostic::Code;
+use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
@@ -1570,7 +1571,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     }
 }
 
-// --- Bridge integration: crate::model::checked_dispatch -------------------
+// --- Bridge integration: crate::check::checked_dispatch -------------------
 
 fn object_type_record(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
@@ -1663,7 +1664,7 @@ fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
     clauses
 }
 
-/// End-to-end: `crate::model::checked_dispatch::checked_dispatch_operation`
+/// End-to-end: `crate::check::checked_dispatch::checked_dispatch_operation`
 /// links `model.A.size`'s real two-candidate dispatch family (`model.A.size`
 /// and `model.B.size`, which redefines it) from a `DomainPackage`, types both
 /// candidates' bodies, and hands back a `PackageDeclarations` whose

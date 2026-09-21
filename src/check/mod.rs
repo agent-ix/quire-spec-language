@@ -12,23 +12,31 @@
 //! through the accessor methods below, never through a private field: the
 //! two modules no longer share private state (US-009).
 //!
-//! # The interim `model` -> `check` edge (FR-068-AC-9, FR-068-CON-5)
+//! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2, QSL-7)
 //!
-//! `model::checked_dispatch.rs` and `model::conformance.rs` import thirteen
-//! names this module now defines
+//! FR-068 (M-5) left an interim `model` -> `check` edge: `model::checked_dispatch.rs`
+//! and `model::conformance.rs` imported thirteen names this module defined
 //! (`DispatchCandidate`/`DispatchOperation`/`DispatchTable`/
 //! `PackageDeclarations` and
 //! `established_field_fact`/`Connective`/`Established`/`Location`/`Node`/
-//! `NodeKind`/`OrderedKind`/`Origin`/`ProvedInterval`), directly from
-//! `crate::check`, not through `crate::value`'s aggregate re-export. Before
-//! this move that dependency sat inside `value::expression`, a module not
-//! yet cleanly assigned to one ADR-011 §6.1 layer; after this move it is a
+//! `NodeKind`/`OrderedKind`/`Origin`/`ProvedInterval`) directly from
+//! `crate::check`, not through `crate::value`'s aggregate re-export -- a
 //! legible `model` (layer-3-earlier) -> `check` (layer-3-later) reverse
-//! edge, forbidden by §6.1's intra-layer-3 order until M-2 (QSL-7) moves
-//! `model::checked_dispatch` and
-//! `model::conformance::check_field_refinement_obligation` into `check`
-//! itself. This requirement declares the edge rather than hiding it: see
-//! FR-068's Behavior section, "The interim `model` -> `check` edge."
+//! edge, forbidden by §6.1's intra-layer-3 order, declared rather than
+//! hidden (FR-068-AC-9/FR-068-CON-5; see FR-068's Behavior section, "The
+//! interim `model` -> `check` edge," now superseded).
+//!
+//! **M-2 (QSL-7) closes it.** `model::checked_dispatch` moved to this
+//! module's own `checked_dispatch` submodule (a private module, not
+//! resolvable as an intra-doc link, matching this crate's own convention;
+//! see [`checked_dispatch_operation`] for its re-exported entry point), and
+//! `model::conformance::check_field_refinement_obligation` moved to this
+//! module's own `field_refinement` submodule (see
+//! [`check_field_refinement_obligation`]) -- `check` (layer-3-later)
+//! importing from `model` (layer-3-earlier) is the *forward* direction
+//! §6.1's order permits, not a reverse edge, so `model_check_edges`
+//! (`xtask`'s TC-176 scan) is empty from here on. `grep -rn "use crate::check"
+//! src/model/` finds nothing.
 //!
 //! # `family.rs`
 //!
@@ -49,8 +57,10 @@
 // accidental collision this file introduced.
 #[allow(clippy::module_inception)]
 mod check;
+mod checked_dispatch;
 mod facts;
 mod family;
+mod field_refinement;
 mod ir;
 mod refusal;
 mod termination;
@@ -62,15 +72,7 @@ use crate::family::FamilyContract;
 use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use crate::value::composite::ValueType;
 
-// `crate::model::conformance`'s FR-151 refinement obligation reuses this
-// crate's own FR-146 fact-derivation primitive rather than a second
-// implementation (see `established_field_fact`'s own doc); exposed
-// crate-internal-only, the same `pub(crate) use` pattern
-// `crate::value::mod`'s own `length_amount`/`Charge` re-export already uses
-// for `model`<->`value` reuse. `model/conformance.rs` imports these
-// directly from here (FR-068-CON-5), not through `crate::value`.
 pub(crate) use check::Scope;
-pub(crate) use facts::{established_field_fact, Established};
 pub(crate) use family::{ValueFunctionFamily, SCALAR_LIMITS_UNLIMITED};
 // `mint_declaration_identity`, `OccurrenceMap` and `DEFAULT_PACKAGE_IDENTITY`
 // are consumed only by `value::expression::family`'s `#[cfg(test)]` modules
@@ -89,6 +91,11 @@ pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     MAX_CHECKING_DEPTH,
 };
+pub use checked_dispatch::{
+    checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
+    MissingClauseField, OperationClauses,
+};
+pub use field_refinement::check_field_refinement_obligation;
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
