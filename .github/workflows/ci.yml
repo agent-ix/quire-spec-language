@@ -10,6 +10,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: No committed binaries
+        run: tools/check-no-committed-binaries.sh
       - name: Spec index completeness (FR/TC master index)
         run: tools/check-index-completeness.sh
       - name: Install pinned toolchain

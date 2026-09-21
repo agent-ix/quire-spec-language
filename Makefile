@@ -1,35 +1,15 @@
-# QSL #138: re-vendor resources/native-v1 and resources/complete-value from
-# an explicit pinned commit recorded in resources/<tree>/VENDOR.json.
-# QSL #131 PR 3 adds tests/fixtures/architecture and tests/fixtures/modules,
-# vendored from agent-ix/filament-core-data at the same commit Cargo.toml
-# pins its agent-ix-extraction-frontend/agent-ix-semantic-ir git deps to.
-#
-# `revendor` writes bytes; it needs QSPEC_CLONE/FCD_CLONE only when the
-# target tree's manifest actually contains a `qspec`/`fcd`-kind source. It
-# never resolves "latest" and never fetches over the network -- the clone
-# must already contain the pinned commit.
-#
-# `revendor-check` is offline: it verifies the vendored trees against the
-# manifests' own recorded digests and flags any file the manifest does not
-# mention. No clone is required; this is also what `cargo test --workspace`
-# runs on every build.
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
 
-TREE ?= all
-QSPEC_CLONE ?=
-FCD_CLONE ?=
-
-.PHONY: revendor revendor-check check-index-completeness seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
-
-revendor:
-	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
+# QSL-169: fail when a tracked file is executable/binary content or exceeds
+# the size ceiling. See the script's own header for the detection method and
+# the ceiling's derivation.
+check-no-committed-binaries:
+	tools/check-no-committed-binaries.sh
 
 # QSL-168: fail when an FR or TC artifact under spec/ has no row in the
 # master index (spec/spec.md, spec/**/tests.md). Offline, no build required.
 check-index-completeness:
 	tools/check-index-completeness.sh
-
-revendor-check:
-	cargo xtask revendor-check --tree $(TREE)
 
 # QSL#214 (FR-063-AC-5): demonstrated on every full-gate run, not only when
 # run by hand. Builds the QSL crate twice on its own (once under
@@ -100,7 +80,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: revendor-check check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
+ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
