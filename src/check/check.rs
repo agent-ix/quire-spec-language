@@ -442,7 +442,7 @@ impl<'a> Typer<'a> {
     /// is still aliasing, transitively, through any of the shapes FR-153
     /// lets a population-typed expression take between `let`s, however many
     /// sit in between (PR #168 review round 4, finding 1). Neither FR-042
-    /// nor FR-153's vendored spec text states a "bare identifier only"
+    /// nor FR-153's own spec text states a "bare identifier only"
     /// restriction for this specific alias-capture rule -- `bind_parameters`'s
     /// own FR-153 "direct operand" doc governs the unrelated `Population`
     /// *value-type* placement, not this syntactic alias check -- so this

@@ -425,8 +425,7 @@ mod digest_record_tests {
 
     /// (#213 S-2, O-18) every FR-201 domain round-trips through
     /// `from_wire`/`hex`/`domain` with no loss. The label table below is
-    /// hand-written against FR-201's own text (not vendored in this repo --
-    /// `grep -rln FR-201 resources/` is empty), independent of
+    /// hand-written against FR-201's own text, independent of
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
     /// `ModelEffectiveDeclarationV1` silently becoming `.../v2`) fails the
     /// first assertion in the loop rather than round-tripping only against
