@@ -45,7 +45,7 @@ a static identity paired with a `sha256` digest in the
 enforces. Moving these identities to the FR-056 domain package's `sha256-jcs`
 digests is tracked separately (refs #131). F's selected observation binding
 and assessment-input contract at the accepted native-v1 baseline
-`4d6230eb8aa9766ff3017360962f2d6368d74cb3` supplies concrete records,
+`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f` supplies concrete records,
 occurrence correlation, membership, observation anchors, progress and
 completeness. That accepted baseline's own observation contract additionally
 names a producer interface version for each assessment input; `StaticAuthority`
