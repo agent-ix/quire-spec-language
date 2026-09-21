@@ -475,7 +475,8 @@ const CATALOG: [CatalogEntry; 21] = [
     },
     CatalogEntry {
         role: CatalogRole::RuleFr149,
-        artifact_path: "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
+        artifact_path:
+            "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
         authority: AGENT_IX,
         identity: "quire.rule.fr-149/v1",
         revision_namespace: DRAFT,
