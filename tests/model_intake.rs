@@ -235,13 +235,13 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 #[test]
 fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
-    let document = std::fs::read_to_string(
-        fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"),
-    )
-    .expect("the pinned agent-ix-extraction-frontend checkout carries its own architecture golden");
+    let document =
+        std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
+            .expect(
+            "the pinned agent-ix-extraction-frontend checkout carries its own architecture golden",
+        );
 
-    let parsed: Value =
-        serde_json::from_str(&document).expect("the golden is valid JSON");
+    let parsed: Value = serde_json::from_str(&document).expect("the golden is valid JSON");
     assert_eq!(
         parsed["types"]
             .as_array()
@@ -352,10 +352,11 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
 #[test]
 fn reads_pump_out_as_a_real_endpoint_record() {
     let package_identity = "agent-ix/architecture";
-    let document = std::fs::read_to_string(
-        fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"),
-    )
-    .expect("the pinned agent-ix-extraction-frontend checkout carries its own architecture golden");
+    let document =
+        std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
+            .expect(
+            "the pinned agent-ix-extraction-frontend checkout carries its own architecture golden",
+        );
     let parsed: Value = serde_json::from_str(&document).expect("the golden is valid JSON");
     let all_types = parsed["types"].as_array().expect("types is an array");
     let find = |identity: &str| -> Value {

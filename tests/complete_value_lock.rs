@@ -88,11 +88,7 @@ fn admit_selection_accepts_every_trigger_combination_exactly_once() {
 
     let every_trigger = accept(
         &["text_bearing", "ieee_operation", "integer_div_rem"],
-        &[
-            "text_profile",
-            "ieee_profile",
-            "integer_division_euclidean",
-        ],
+        &["text_profile", "ieee_profile", "integer_division_euclidean"],
     );
     assert_eq!(
         every_trigger.triggers(),

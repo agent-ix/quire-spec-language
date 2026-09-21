@@ -13,8 +13,8 @@ use quire_spec_language::value::{
     divide, modulo, negotiate_integer_division, AdmittedIntegerDivision, CatalogRole, ChargePoint,
     DefinitionLock, DefinitionReference, DefinitionRevision, DivisionProfile, Incomplete,
     InjectedDenial, IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition,
-    LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode,
-    QuotientRemainder, Refusal, ScalarLimits, Undefined,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode, QuotientRemainder,
+    Refusal, ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
