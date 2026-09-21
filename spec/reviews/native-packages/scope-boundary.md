@@ -94,5 +94,4 @@ the installed QUOIN 0.22.5 skills serially under the owner's existing all-review
 selection; no required AssuranceProfile applies. This is the author's recorded
 review, not independent B/C acceptance. All package cases remain planned.
 Changes to the reviewed requirements or interface reopen specify/spec-review.
-Full LC02/FS05 interchange, LC04 backend qualification and LC05 Quire integration
-remain required. No Cargo build, additional agent or hosted CI dispatch ran.
+Interchange, backend qualification and integration remain required. No Cargo build, additional agent or hosted CI dispatch ran.

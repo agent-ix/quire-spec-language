@@ -48,7 +48,7 @@ decision.
   single capability negotiation point, and it makes QSL admission
   language-only. This record applies AD-016's per-arrow contract to every
   family in #210's scope and does not reopen it.
-- QSpec FR-290 and AD-010, as amended by QSpec PR #133 (merged, 818f555),
+- QSpec FR-290 and AD-010, as amended on agent-ix/quire-specification#133,
   restate the single negotiation point and its four terminal dispositions:
   `supported`, `requires-bound`, `unsupported` (warned) and `invalid-request`.
 
@@ -59,7 +59,7 @@ Sibling tickets own adjacent decisions. This record cites them as "decided in
 |---|---|
 | #209 | stages, stage edges, the crate and module DAG, and where each hook's code lives (ADR-011) |
 | #211 | canonical types, identities, outcomes, refusals, provenance and version representations, and conversions (ADR-013, QSL PR #236; its O-rows are cited as `ADR-013 O-nn`) |
-| agent-ix/quire-specification#134 | the capability vocabulary (FR-290's kinds) and its wire spelling, delivered as QSpec PR #135 at 046d1bd; FR-331 there carries the candidate set |
+| agent-ix/quire-specification#134 | the capability vocabulary (FR-290's kinds) and its wire spelling; FR-331 there carries the candidate set |
 | #229 | QSL's capability specification, aligned to agent-ix/quire-specification#134 (QSL PR #237): the absence policy, how a family declares, a backend advertises and a request selects a capability, and the claim form → kind table (FR-057). #229 consumes §6 and §7.1 of this record for the selection mechanics. |
 | #213 | the canonical Rust `Capability` value type and the shared outcome types |
 | #185 | the capability registry and routing; it alone implements them |
@@ -574,8 +574,7 @@ item is not re-routed later.
 
 The candidate set reaches CG as a typed argument of the negotiation request. Its
 wire form is a field of the QSpec FR-331 negotiation request, and QSpec owns
-that field (agent-ix/quire-specification#134 scope item 4; FR-331 in QSpec PR
-#135).
+that field (agent-ix/quire-specification#134 scope item 4).
 
 ### 7.3 Backend absence
 
@@ -705,8 +704,8 @@ states the contract; the change belongs to their own tickets (§14).
 | ADR-010 OBS-013 | The Kani backend is one `BackendDescriptor` in the #185 registry. Its implementation is CG (harness and its `negotiate_*` arm) plus IR (outcome), per AD-016. QSL owns the registry, not the backend. FR-290's wording "quire-spec-language's Kani backend" is corrected by agent-ix/quire-specification#134 (scope item 5). |
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
 | ADR-010 OBS-033 | Cross-repository dispatch is on closed enums decoded at v2 intake; no vocabulary is re-derived from a wire string after intake (§9, seams S6 and S9). The enum sets follow the vocabulary as widened by agent-ix/quire-specification#134. agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 implement it; RT owns its edits. |
-| ADR-010 DA-11 | One authority per role. Vocabulary and wire spelling: agent-ix/quire-specification#134 (FR-290, QSpec PR #135). QSL alignment and the claim form → kind table: #229 (FR-057, QSL PR #237). Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for QSL's alignment to the vocabulary. |
-| QSpec PR #59 (FR-300, deferred to #210 by ADR-010 §8) | The control-to-temporal mapping belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1). PR #59 does not wait on #210. Its QSL consumer is #188. |
+| ADR-010 DA-11 | One authority per role. Vocabulary and wire spelling: agent-ix/quire-specification#134 (FR-290). QSL alignment and the claim form → kind table: #229 (FR-057, QSL PR #237). Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for QSL's alignment to the vocabulary. |
+| FR-300 control-to-temporal mapping (deferred to #210 by ADR-010 §8) | The mapping belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1). It does not wait on #210. Its QSL consumer is #188. |
 
 ## 11. L1-D1: which ladder tickets wait on #185
 
@@ -871,7 +870,7 @@ scope item 5.
 1. agent-ix/quire-specification#134 widens FR-290 to value, state, replay and
    temporal claims and adds the FR-331 candidate set. #212 needs #134 settled,
    because §7 cannot select a backend for the #217 function exemplar without a
-   kind. Owner: agent-ix/quire-specification#134, delivered as QSpec PR #135.
+   kind. Owner: agent-ix/quire-specification#134.
 
 Answered: when more than one backend matches and the request names none, the
 item settles `invalid-request` with no preference order
@@ -983,7 +982,7 @@ Requirements needed before implementation starts:
   would be testable only through complete constructs.
 - **Dispositions settled by the registry, or by a negotiator in each backend
   repository.** Rejected. Either adds a second negotiation point beside CG
-  `negotiate_*`, which AD-016 and QSpec PR #133 forbid.
+  `negotiate_*`, which AD-016 and agent-ix/quire-specification#133 forbid.
 - **Candidates matched on (capability kind, mode).** Rejected. An unbounded
   claim would find no bounded-only backend, so no path would settle
   `requires-bound`.

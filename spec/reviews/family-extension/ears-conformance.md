@@ -142,7 +142,7 @@ response. Round-1 verdict: ACCEPT WITH FINDINGS (FND-001 and FND-002 high).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-023 | low | §10's QSpec PR #59 row says "PR #59 no longer waits on #210", which narrates a change. Fix: "PR #59 does not wait on #210." | ADR-012 §10 |
+| FND-023 | low | §10's FR-300 row narrates a change rather than stating the state. Fix: "PR #59 does not wait on #210." | ADR-012 §10 |
 | FND-024 | low | The §5.2 row for an unregistered `BackendId` settles `invalid-request` "unless the CLI edge refused it first". §9 and the `--target` row say the CLI always resolves the backend argument by registry lookup and refuses an unknown name. So the same input has two stated outcomes, and only one produces an FR-331 record. Fix: state that the CLI edge refuses an unknown name, and that `negotiate_*` settles `invalid-request` only for a request that reaches it by another path (a wire-decoded request). | ADR-012 §5.2, §9 |
 | FND-025 | low | Extent is per `Requirements` entry (§2), but §1.1 and §7.2 step 3 compare "the claim's extent" or "the item's extent", in the singular. They do not say which extent governs when entries differ. "Within an advertised mode" and "the form's own disposition" are also undefined for a bounded extent on a backend that advertises only unbounded mode. Fix: state that `negotiate_*` applies the §1.1 rules per entry and that the item settles the most restrictive result. Define "within" (bounded is within bounded and unbounded modes, unbounded only within unbounded). | ADR-012 §1.1, §2, §7.2 |
 

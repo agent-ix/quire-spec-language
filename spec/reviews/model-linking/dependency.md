@@ -29,7 +29,7 @@ identified below. This review does not authorize a substitute model binder.
 
 ## Analysis and dispositions
 
-FR-005 and FR-006 are features: native name resolution and static judgment. Existing FR-001/002 syntax/source are prior enablement. The explicit sequence is accepted FS02/FS03/FS05 target -> qualified shared #54 model/reference view -> FR-005 -> FR-006 -> IT-002's runtime/backend workflow. Current BoundPackage belongs after native qualification; it cannot serve as a model loader. This DAG has no cycle. Owner adoption at specification e897f81 resolves the normative internal-target choice; adapter release/API, reference representation, qualified rule-model realization and native implementation contracts remain unavailable. No task claims those dependencies done.
+FR-005 and FR-006 are features: native name resolution and static judgment. Existing FR-001/002 syntax/source are prior enablement. Within this repository the sequence is FR-005 -> FR-006 -> IT-002's runtime/backend workflow, each downstream of the shared model/reference view it consumes. Current BoundPackage belongs after native qualification; it cannot serve as a model loader. This DAG has no cycle. Owner adoption at specification e897f81 resolves the normative internal-target choice; adapter release/API, reference representation, qualified rule-model realization and native implementation contracts remain unavailable. No task claims those dependencies done.
 
 ## Provenance and validation
 
