@@ -11,8 +11,8 @@ The [native package specification](../spec/native-packages/index.md) is authored
 at 9a80805 with the canonical control-escape clarification at
 41da6e5eb86bb727fbad5370fd23b38d330bcfea. It covers FR-019/020/021,
 NFR-007, IT-007 and TM-005's 14 planned cases for 27 functional criteria.
-The owning ticket is private language #3; branch agent-a/lc02-linked-packages
-starts from merged runtime 789c636. No package implementation preceded review.
+The owning ticket is tracked privately; the authoring branch starts from
+merged runtime 789c636. No package implementation preceded review.
 
 Agent A used the actual installed QUOIN 0.22.5 specify, spec-matrix,
 spec-review and all seven analysis skills from the installed Quoin
@@ -299,8 +299,7 @@ backend qualification and existing-extractor integration remain work.
 ## LC03 reviewed runtime packet — 2026-09-09
 
 PR10 landed the qualified native model/checker at bfac17d; Plan-005 and
-SR-083–087 retain its actual implementation evidence. The next owning task is
-private LC03 language issue #4 on agent-a/lc03-native-runtime.
+SR-083–087 retain its actual implementation evidence. The next owning task is tracked privately.
 
 The actual QUOIN 0.22.5 skills specify, spec-matrix, spec-review and all seven
 selected analysis skills authored the runtime packet at 045025f. It contains

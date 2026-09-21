@@ -32,7 +32,7 @@ use crate::check::ValueFunctionFamily;
 /// string (FR-065-AC-6).
 ///
 /// `Serialize`/`Deserialize` (PR #262 review, finding F6) round-trip through
-/// the same `::`-joined spelling [`std::fmt::Display`] and [`FromStr`]
+/// the same `::`-joined spelling [`std::fmt::Display`] and [`std::str::FromStr`]
 /// already use, via `#[serde(try_from = "String", into = "String")]` --
 /// `emit_v2`/`decode_v2`'s wire `name` field is typed on `QualifiedName`
 /// itself now, not a bare `String` a caller has to re-parse and re-validate
@@ -565,9 +565,11 @@ mod family_contract_tests {
 mod tests {
     use super::*;
     use crate::check::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{BinaryOperator, Expression, FunctionDeclaration};
     use crate::value::composite::ValueType;
+    use crate::value::{CardinalityBound, CollectionType, TextProfile, TextType};
     use ix_trace_rs::trace;
+    use quire_exact::CollectionKind;
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
         FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
@@ -691,5 +693,76 @@ mod tests {
             r#"{{"version":"{FUNCTION_PACKAGE_V2_VERSION}","functions":[{{"name":"not an identifier","identity":"{identity}"}}]}}"#
         );
         assert_eq!(decode_v2(bytes.as_bytes()), Err(DecodeV2Error::Malformed));
+    }
+
+    /// PR #262 review, round 2: the eleven other tests in this module either
+    /// compare two identities minted in the same process, or round-trip
+    /// through `emit_v2`/`decode_v2` -- none of them can catch a change to
+    /// the preimage's own byte grammar. `crate::check::family`'s
+    /// `encode_expression`/`encode_value_type` exhaustive `match`es only
+    /// force a compile error for a *new* variant; reordering two
+    /// `write_str` calls, or renaming a tag (`"add"` to `"plus"`),
+    /// recompiles clean and passes every other test in this file while
+    /// silently changing every identity this preimage mints. This fixture
+    /// exercises `Let`, `If`, `Binary`, `Call`, `Collection` and `Convert`
+    /// on the `Expression` side and `Int`, `Text` and `Collection` (with a
+    /// nested `Int` element) on the `ValueType` side -- enough surface that
+    /// a reordered write or a renamed tag anywhere in either `match` moves
+    /// the digest below. A failure here means the wire preimage grammar
+    /// changed; regenerate the constant only when that change is the one
+    /// actually intended (and say so in the commit, per this repository's
+    /// own digest-freshness rule in `CLAUDE.md`), never to make a red test
+    /// green.
+    #[test]
+    fn mint_declaration_identity_matches_a_checked_in_digest() {
+        let element_type = ValueType::Int(
+            quire_exact::IntegerInterval::new(
+                quire_exact::Integer::from(0_i64),
+                quire_exact::Integer::from(10_i64),
+            )
+            .unwrap(),
+        );
+        let parameters = vec![
+            ("n".to_owned(), element_type.clone()),
+            (
+                "label".to_owned(),
+                ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
+            ),
+        ];
+        let result = ValueType::Collection(Box::new(CollectionType::new(
+            CollectionKind::Sequence,
+            element_type,
+            CardinalityBound::new(0, 5).unwrap(),
+        )));
+        let body = Expression::Let {
+            name: "x".to_owned(),
+            value: Box::new(Expression::Integer(quire_exact::Integer::from(2_i64))),
+            body: Box::new(Expression::If {
+                condition: Box::new(Expression::Binary {
+                    operator: BinaryOperator::Greater,
+                    left: Box::new(Expression::Name("x".to_owned())),
+                    right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+                }),
+                then: Box::new(Expression::Call {
+                    name: "helper".to_owned(),
+                    arguments: vec![Expression::Name("x".to_owned())],
+                }),
+                otherwise: Box::new(Expression::Convert {
+                    target: ValueType::Integer,
+                    operand: Box::new(Expression::Collection {
+                        kind: CollectionKind::Sequence,
+                        elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
+                    }),
+                }),
+            }),
+        };
+        let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
+        let identity = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        assert_eq!(
+            identity.to_string(),
+            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
+            "the preimage byte grammar changed -- see this test's own doc \
+             before regenerating this constant"
+        );
     }
 }

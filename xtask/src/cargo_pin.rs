@@ -12,8 +12,10 @@
 //! module reads the authoritative rev so `revendor_check` can catch a
 //! `VENDOR.json` `Fcd` source whose hand-edited `commit` has drifted from
 //! it, in exactly the same way `revendor_check` catches any other drift.
-use crate::error::{Error, Result};
+use qsl_attrs::string_edge;
 use std::path::Path;
+
+use crate::error::{Error, Result};
 
 /// The crate name whose pinned git rev is this repository's single source
 /// of truth for every `Source::Fcd` vendoring pin (QSL #131 PR 3's own
@@ -72,6 +74,18 @@ fn dependency_rev(cargo_toml: &str, crate_name: &str) -> Option<String> {
 
 /// `Cargo.lock`'s own `[[package]]` block for `crate_name`'s `source =
 /// "git+<repo>?rev=<rev>#<rev>"` line's `rev` query parameter.
+///
+/// `#[string_edge]` (PR #262 review, round 2, F5 follow-up): `strip_prefix`
+/// with a literal `"source = \""` argument, its result branching an `if
+/// let`, is real string-based dispatch over `Cargo.lock`'s own hand-parsed
+/// text -- the scanner's `ends_with`/`strip_prefix`/`trim_start_matches`
+/// extension found this genuine, pre-existing occurrence inside `xtask/*`
+/// itself for the first time; it belongs to this file's own hand-rolled
+/// `Cargo.lock`/`Cargo.toml` text parser (this module's own doc explains
+/// why: no `toml` crate dependency to parse the file structurally), not to
+/// ADR-012 §9's family-dispatch rule, so it is marked rather than
+/// restructured.
+#[string_edge]
 fn locked_rev(cargo_lock: &str, crate_name: &str) -> Option<String> {
     let marker = format!("name = \"{crate_name}\"");
     let mut lines = cargo_lock.lines();
