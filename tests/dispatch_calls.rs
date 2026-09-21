@@ -29,13 +29,13 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimits,
-    ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
-    DispatchTable, Expression, FunctionDeclaration, IllTypedCause, InputRefusal,
-    InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity,
-    Value, ValueType,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind,
+    CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind, DispatchCandidate,
+    DispatchFunctionRole, DispatchOperation, DispatchTable, Expression, FunctionDeclaration,
+    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome,
+    PackageDeclarations, PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -607,12 +607,15 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
         "check must record target's own declaration occurrence, resolvable by (identity, origin)"
     );
 
-    let bytes = target_first.emit_function_package_v2();
+    let target_name = QualifiedName::unqualified("target").expect("\"target\" is an identifier");
+    let bytes = target_first
+        .emit_function_package_v2()
+        .expect("every declared name here is identifier-shaped");
     let decoded = CheckedPackage::decode_function_package_v2(&bytes)
         .expect("this crate's own emit_function_package_v2 output decodes cleanly");
     let decoded_identity = decoded
         .into_iter()
-        .find(|(name, _)| name == "target")
+        .find(|(name, _)| *name == target_name)
         .map(|(_, identity)| identity)
         .expect("target survives the v2 round trip");
     assert_eq!(
@@ -628,13 +631,15 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     // only half-covered at the v2 checkpoint (PR #262 review round 4, item
     // 6). Round-trip `unrelated_first` too and compare against the same
     // target identity.
-    let unrelated_first_bytes = unrelated_first.emit_function_package_v2();
+    let unrelated_first_bytes = unrelated_first
+        .emit_function_package_v2()
+        .expect("every declared name here is identifier-shaped");
     let unrelated_first_decoded =
         CheckedPackage::decode_function_package_v2(&unrelated_first_bytes)
             .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
     let unrelated_first_decoded_identity = unrelated_first_decoded
         .into_iter()
-        .find(|(name, _)| name == "target")
+        .find(|(name, _)| *name == target_name)
         .map(|(_, identity)| identity)
         .expect("target survives the v2 round trip from the reordered package too");
     assert_eq!(
@@ -642,6 +647,63 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
         "target's identity must survive check, linking and a v2 round trip identically \
          regardless of unrelated's position"
     );
+}
+
+/// PR #262 review, finding F4: `PackageDeclarations::check` used to hardcode
+/// the checked-family contract's own nesting-depth `StageLimits` at
+/// `MAX_CHECKING_DEPTH`, ignoring the caller's own `CheckingLimits` entirely
+/// -- so the contract's `StageFailure::Limit` -> `CheckCause::
+/// ResourceExhausted` arm was dead through this, the only production entry
+/// point that reaches it. This test calls `check` with `CheckingLimits::new(
+/// _, 0)` (this method's own `depth()` bound wired through, per this
+/// finding's fix) and asserts a real `ResourceExhausted` refusal comes back
+/// -- if the wiring reverts to the hardcoded constant, `enter_nesting`'s
+/// `0 >= 128` never holds and this package checks cleanly instead, failing
+/// this test.
+///
+/// **Untagged.** `check`'s contract-level nesting bound still has no real
+/// recursive-descent fixture behind it (`ValueFunctionFamily::check`'s own
+/// `nesting_depth_limit_is_the_proximate_cause` test doc, `value::
+/// expression::family`, explains why: QSL-148 owns moving real recursive
+/// checking there). This test proves the *wiring* is live through the
+/// public API, not FR-062-AC-7's own fixture-at-depth-D requirement.
+#[test]
+fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
+    let declaration = |name: &str| {
+        FunctionDeclaration::new(
+            name,
+            Vec::new(),
+            ValueType::Boolean,
+            None,
+            Expression::Boolean(true),
+        )
+    };
+    let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
+    let refused = PackageDeclarations {
+        functions: vec![declaration("f")],
+        ..PackageDeclarations::default()
+    }
+    .check(tight_limits)
+    .expect_err("a zero-depth limit must refuse every declaration's contract-level check");
+    assert!(
+        refused.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::ResourceExhausted {
+                stage: CheckingStage::Typing,
+                kind: CheckingLimitKind::Depth,
+                limit: 0,
+            }
+        )),
+        "expected a contract-level ResourceExhausted(Depth, limit=0) refusal, got {refused:?}"
+    );
+
+    let admitting_limits = CheckingLimits::default();
+    PackageDeclarations {
+        functions: vec![declaration("f")],
+        ..PackageDeclarations::default()
+    }
+    .check(admitting_limits)
+    .expect("the default depth limit admits an ordinary boolean-literal function");
 }
 
 /// [`FunctionDeclaration::clause`] takes [`DeclaredClauseKind`], which has

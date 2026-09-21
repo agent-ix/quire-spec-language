@@ -376,21 +376,26 @@ impl PackageDeclarations {
         // that has ever existed for this form, and the contract's `check`
         // was never built to replace it).
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
+        // PR #262 review, finding F4: this used to hardcode
+        // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
+        // method's own caller-supplied `CheckingLimits`) declared, and a
+        // fresh `CheckContext` is built inside the per-declaration loop
+        // below (`depth` starts at 0 every time) -- so `enter_nesting`'s
+        // `0 >= nesting_depth` never held for any real caller, and the
+        // `StageFailure::Limit` arm below was dead through this, the only
+        // production entry point. Reading `limits.depth()` here (the same
+        // `CheckingLimits` the unchanged `Typer` below already honors)
+        // makes the contract's own resource bound live: a caller declaring
+        // `CheckingLimits::new(_, 0)` now genuinely refuses every
+        // declaration with `ResourceExhausted`, reachable through
+        // `PackageDeclarations::check` -- see
+        // `contract_nesting_limit_reflects_the_callers_own_checking_limits`
+        // below (`tests/dispatch_calls.rs`) for a test that fails if this
+        // line reverts to the hardcoded constant.
         let contract_limits = crate::family::StageLimits {
-            nesting_depth: MAX_CHECKING_DEPTH,
+            nesting_depth: limits.depth(),
         };
-        let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
-            integer_bits: u64::MAX,
-            decimal_digits: u64::MAX,
-            scale_expansion: u64::MAX,
-            text_input_bytes: u64::MAX,
-            text_scalars: u64::MAX,
-            normalized_scalars: u64::MAX,
-            unit_edges: u64::MAX,
-            value_occurrences: u64::MAX,
-            work_units: u64::MAX,
-            result_units: u64::MAX,
-        });
+        let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         for (index, function) in self.functions.into_iter().enumerate() {
@@ -738,16 +743,27 @@ impl CheckedPackage {
     /// back, which that trait method has since been deleted for -- see its
     /// own doc). Reads no CST, no source text, only each function's
     /// already-checked identity.
-    pub fn emit_function_package_v2(&self) -> Vec<u8> {
+    ///
+    /// `Result<_, InvalidQualifiedName>` (PR #262 review, finding F6): the
+    /// v2 wire format is now typed on `QualifiedName`, matching `call`'s own
+    /// `&QualifiedName` parameter, not a bare `String` a decode caller has
+    /// to re-parse and re-validate one function over. A declared function
+    /// name that is not identifier-shaped (`FunctionDeclaration::new` does
+    /// not itself validate that -- see `crate::family`'s module doc on why
+    /// this API-constructed family has no text-parser intake to validate it
+    /// at) refuses here rather than either panicking or silently emitting
+    /// v2 bytes that could never decode back into a `QualifiedName` anyway.
+    pub fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
         let entries = self
             .functions
             .iter()
             .map(|function| {
                 let linked = family::link_function_identity(function.identity);
-                (function.signature.name.clone(), linked)
+                QualifiedName::unqualified(function.signature.name.clone())
+                    .map(|name| (name, linked))
             })
-            .collect::<Vec<_>>();
-        family::emit_v2(&entries)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(family::emit_v2(&entries))
     }
 
     /// Decode `quire.checked-function-package/v2` bytes emitted by
@@ -756,7 +772,7 @@ impl CheckedPackage {
     /// trip (FR-065-AC-2).
     pub fn decode_function_package_v2(
         bytes: &[u8],
-    ) -> Result<Vec<(String, quire_exact::NodeKey)>, family::DecodeV2Error> {
+    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error> {
         family::decode_v2(bytes)
     }
 
@@ -855,18 +871,19 @@ impl CheckedPackage {
         // checked function-application code, not a second, parallel
         // `Machine` call beside it.
         let identity = checked.identity;
-        let mut contract_meter = quire_exact::Meter::new(quire_exact::ScalarLimits {
-            integer_bits: u64::MAX,
-            decimal_digits: u64::MAX,
-            scale_expansion: u64::MAX,
-            text_input_bytes: u64::MAX,
-            text_scalars: u64::MAX,
-            normalized_scalars: u64::MAX,
-            unit_edges: u64::MAX,
-            value_occurrences: u64::MAX,
-            work_units: u64::MAX,
-            result_units: u64::MAX,
-        });
+        // `ReferenceEvaluation::evaluate`'s `meter` parameter is
+        // `ValueFunctionFamily`'s own `_meter: &mut quire_exact::Meter`
+        // (`family.rs`), unused in its body today (PR #262 review, nit):
+        // ADR-012 §2/FR-062-AC-5 reserve this hook alone for a future
+        // meter-budget `Incomplete` outcome, which `EvaluateRefusal`'s own
+        // doc states this ticket does not add yet. `contract_meter` is
+        // therefore built unlimited (`SCALAR_LIMITS_UNLIMITED`) and passed
+        // to satisfy the trait's signature, not to bound anything here --
+        // this call site charges nothing against it and nothing should
+        // observe that as a limit today. `meter` (this method's own
+        // parameter, `EvaluationEnv::local_meter` below) is the accounting
+        // path that is actually charged.
+        let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
         let mut env = family::EvaluationEnv {
             package: self,
             objects,
@@ -875,8 +892,51 @@ impl CheckedPackage {
         };
         family::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter).map_err(
             |refusal| match refusal {
-                crate::family::EvaluateRefusal::Refused(reason) => {
-                    InputRefusal::UnknownFunction(reason)
+                // PR #262 review, finding F3: `EvaluateRefusal` used to be
+                // one `Refused(String)` variant standing for both
+                // conditions below, collapsed here into `UnknownFunction`
+                // regardless of which one actually happened -- so a caller
+                // matching `UnknownFunction` to report "no such function"
+                // could have printed `EnvironmentAlreadyConsumed`'s internal
+                // invariant text as a user-facing name error. The two are
+                // now distinct variants, handled distinctly.
+                // PR #262 review, nit: `call` already resolved `identity`
+                // from a successful, `callable_by_name`-filtered
+                // `self.function(name)` lookup above, so `evaluate`'s own
+                // `function_by_identity` re-lookup (same package, same
+                // identity) cannot fail through this call site either --
+                // both lookups search the same `self.functions`. This arm
+                // is not folded into `unreachable!()` the way
+                // `EnvironmentAlreadyConsumed` is, though: that arm's
+                // unreachability is a fact about `call`'s own five lines
+                // above it; this one depends on `function` and
+                // `function_by_identity` staying in agreement across two
+                // separate methods, a fact this call site cannot see or
+                // enforce. `ReferenceEvaluation::evaluate` is also generic
+                // over every family (`FamilyContract`'s shared, GAT-based
+                // dispatch shape), so it takes an identity rather than a
+                // borrowed `&CheckedFunction` and re-resolves through `env`
+                // by design, not as an accidental duplicate of `call`'s own
+                // lookup -- a future family, or a future caller of
+                // `evaluate` other than `call`, can make this reachable.
+                // Kept a typed, non-panicking refusal for that reason.
+                crate::family::EvaluateRefusal::UnknownIdentity { .. } => {
+                    InputRefusal::UnknownFunction(function.to_string())
+                }
+                crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed => {
+                    // This function always builds a fresh `EvaluationEnv`
+                    // with `Some(arguments)` (above) and calls `evaluate`
+                    // exactly once, so this arm cannot be produced by any
+                    // call through `call()` -- only by a future bug in this
+                    // function's own wiring reusing one `EvaluationEnv`
+                    // across two calls. It is not folded into
+                    // `UnknownFunction`: that would report a purely
+                    // internal invariant violation as a public "no such
+                    // function" input error to a caller who supplied
+                    // nothing wrong.
+                    unreachable!(
+                        "CheckedPackage::call built a fresh EvaluationEnv and must not reuse it"
+                    )
                 }
             },
         )
