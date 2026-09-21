@@ -336,14 +336,6 @@ impl TracePosition {
     }
 }
 
-/// SHA-256 of `bytes`, shared by every redacted `Debug`/`Display` impl in
-/// this module that needs a bounded content descriptor (FR-073) and by the
-/// byte-provision digest-match check (FR-071-AC-6).
-pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

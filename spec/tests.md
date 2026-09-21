@@ -96,7 +96,7 @@ operational validation remains outside this audit-only plan.
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
 | TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | ✅ Passed locally |
 | TC-191 | A replay result's nested witness record round-trips exactly, compares without display-text interpretation, and refuses an oversized encoding | Unit | P1 | FR-072-AC-3, FR-072-AC-5 | ✅ Passed locally |
-| TC-192 | #217's function exemplar builds on the existing result/request/witness types with no new type | Integration | P1 | FR-072-AC-4 | 🚧 Planned; #231 |
+| TC-192 | #217's function exemplar builds on the existing result/request/witness types with no new type | Integration | P1 | FR-072-AC-4 | 🚧 Planned; #217 |
 | TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | ✅ Passed locally |
 | TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | ✅ Passed locally |
 | TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | ✅ Passed locally |
@@ -169,17 +169,27 @@ as a row that was.
 - TC-210 (FR-073-AC-2): `src/replay/request.rs::tests::tc_210_debug_never_reproduces_byte_provision_raw_bytes`
 - TC-211 (FR-073-AC-3): `src/replay/mod.rs::redaction_tests::tc_211_refusal_causes_redact_while_typed_accessors_stay_readable`
 
-TC-187 and TC-192 stay `🚧 Planned; #231`: both rows' core claim is an
-absence of something (no bare-`&str`/`String` entry point exists anywhere on
-`ReplayRequest`'s public API for TC-187; no fifth type is defined for
-TC-192's exemplar) that only a source-level inspection can establish, not a
-runtime assertion inside the test itself. The positive half of each (a
-multi-segment name round-trips its segments; two structurally different
-functions reuse the four #231 types) is exercised by
+TC-187 stays `🚧 Planned; #231` and TC-192 is now attributed
+`🚧 Planned; #217`: both rows' core claim is an absence of something (no
+bare-`&str`/`String` entry point exists anywhere on `ReplayRequest`'s public
+API for TC-187; no fifth type is defined for TC-192's exemplar) that only a
+source-level inspection can establish, not a runtime assertion inside the
+test itself, so neither test carries a `#[trace]` tag naming the AC it
+cannot fail on. The positive half of each (a multi-segment name round-trips
+its segments; two structurally different functions reuse the four #231
+types) is exercised by
 `src/replay/request.rs::tests::tc_187_selection_is_always_a_typed_qualified_name`
 and `src/replay/result.rs::tests::tc_192_function_exemplar_reuses_the_four_types_with_none_new`
 respectively, but the row's literal claim is broader than what either test
-asserts at runtime, so both stay Planned rather than overclaim.
+asserts at runtime. TC-192's row is attributed to #217 rather than #231
+because its claim ("no fifth type is defined in #217's repository scope") is
+a property of #217's own, separate repository -- nothing in this repo's test
+suite can observe another repository's type definitions, so this repo's
+suite can never discharge that row regardless of what #231 builds; #231's
+own obligation (FR-072-AC-4's "using this type together with FR-070's
+witness envelope and FR-071's request type") is what
+`tc_192_function_exemplar_reuses_the_four_types_with_none_new` actually
+demonstrates.
 
 ## Model graph binding (FR-081–086) retrospective coverage
 

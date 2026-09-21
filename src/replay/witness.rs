@@ -23,11 +23,11 @@ use std::fmt;
 use quire_exact::Origin;
 use quire_exact::ScalarLimits;
 
-use crate::digest::{DigestDomain, DigestRecord, InvalidDigestRecord};
+use crate::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
 use crate::replay::identity::{
-    sha256, Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection,
-    QualifiedName, RawSourceRef, SourceDigestWire, TracePosition, WireNodeId,
+    Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection, QualifiedName,
+    RawSourceRef, SourceDigestWire, TracePosition, WireNodeId,
 };
 
 // ---------------------------------------------------------------------------
@@ -114,43 +114,74 @@ impl Witness {
         self.fields().check_text
     }
 
-    /// The transcript's concrete `(name, value)` bindings, recomputed from
-    /// the stored transcript on every call.
-    pub fn concrete_values(&self) -> Vec<(String, i64)> {
+    /// The transcript's raw `(name, value text)` bindings, split but not yet
+    /// parsed -- an entry whose text after `=` does not parse as an integer
+    /// still appears here, unlike [`Self::concrete_values`], so
+    /// [`Self::decode`] can tell "no binding named this parameter" apart
+    /// from "a binding named it but its value was malformed" (the diagnosis
+    /// [`Self::concrete_values`]'s silent `Option`-drop used to erase).
+    fn raw_bindings(&self) -> Vec<(&str, &str)> {
         self.fields()
             .values
             .split(';')
             .filter(|entry| !entry.is_empty())
-            .filter_map(|entry| {
-                let (name, value) = entry.split_once('=')?;
-                Some((name.to_owned(), value.parse().ok()?))
-            })
+            .filter_map(|entry| entry.split_once('='))
+            .collect()
+    }
+
+    /// The transcript's concrete `(name, value)` bindings, recomputed from
+    /// the stored transcript on every call. A binding whose text does not
+    /// parse as an integer is skipped here; [`Self::decode`] reports that
+    /// case with a typed [`DecodeRefusal::Malformed`] rather than silently
+    /// treating the parameter as unbound.
+    pub fn concrete_values(&self) -> Vec<(String, i64)> {
+        self.raw_bindings()
+            .into_iter()
+            .filter_map(|(name, value)| Some((name.to_owned(), value.parse().ok()?)))
             .collect()
     }
 
     /// [`Self::concrete_values`] projected onto `order`'s parameter names,
     /// the harness argument order (ADR-013 O-25: "harness argument order
-    /// equals `arguments` order"). Refuses if a name in `order` has no
-    /// binding in the transcript.
-    pub fn decode(&self, order: &[String]) -> Result<Vec<i64>, MissingBinding> {
-        let values = self.concrete_values();
+    /// equals `arguments` order"). Refuses with [`DecodeRefusal::Missing`]
+    /// if a name in `order` has no binding in the transcript at all, or
+    /// [`DecodeRefusal::Malformed`] if it has a binding whose text does not
+    /// parse as an integer -- the two are distinguished by reading
+    /// [`Self::raw_bindings`] directly rather than through
+    /// [`Self::concrete_values`]'s already-filtered, already-parsed list.
+    pub fn decode(&self, order: &[String]) -> Result<Vec<i64>, DecodeRefusal> {
+        let bindings = self.raw_bindings();
         order
             .iter()
             .map(|name| {
-                values
+                match bindings
                     .iter()
-                    .find(|(bound_name, _)| bound_name == name)
-                    .map(|(_, value)| *value)
-                    .ok_or_else(|| MissingBinding(name.clone()))
+                    .find(|(bound_name, _)| *bound_name == name.as_str())
+                {
+                    Some((_, text)) => text
+                        .parse()
+                        .map_err(|_| DecodeRefusal::Malformed(name.clone(), (*text).to_owned())),
+                    None => Err(DecodeRefusal::Missing(name.clone())),
+                }
             })
             .collect()
     }
 }
 
-/// [`Witness::decode`] found no binding for a named parameter.
+/// [`Witness::decode`]'s structured refusal: a named parameter with no
+/// binding at all in the transcript, distinguished from one whose bound text
+/// failed to parse as an integer -- conflating the two would report a
+/// malformed value as an absent parameter.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("no witness binding for parameter {0:?}")]
-pub struct MissingBinding(String);
+pub enum DecodeRefusal {
+    /// No witness binding names this parameter at all.
+    #[error("no witness binding for parameter {0:?}")]
+    Missing(String),
+    /// A witness binding names this parameter, but its bound text does not
+    /// parse as an integer.
+    #[error("witness binding for parameter {0:?} does not parse as an integer: {1:?}")]
+    Malformed(String, String),
+}
 
 /// FR-073: `Debug` never reproduces the full transcript -- only a bounded
 /// descriptor (its byte length and a content digest).
@@ -162,7 +193,7 @@ impl fmt::Debug for Witness {
                 "transcript_digest",
                 &DigestRecord::mint(
                     DigestDomain::VerificationJcs,
-                    sha256(self.transcript.as_bytes()),
+                    ByteDigest::of(self.transcript.as_bytes()).as_bytes(),
                 ),
             )
             .finish()
@@ -192,9 +223,8 @@ struct BlockFields<'a> {
 /// any wider fidelity.
 fn find_blocks(text: &str) -> Vec<&str> {
     let mut blocks = Vec::new();
-    let rest = text;
     let mut offset = 0;
-    while let Some(start) = rest[offset..].find("<<<") {
+    while let Some(start) = text[offset..].find("<<<") {
         let start = offset + start;
         if let Some(end_rel) = text[start..].find(">>>") {
             let end = start + end_rel + 3;
@@ -242,7 +272,7 @@ pub struct CanonicalAssignment {
 /// transcript; `Input` is replayed from its own stored canonical
 /// assignments (a corpus counterexample), and settles
 /// `reproduced-without-witness`, never backend evidence (FR-072).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum ReplaySource {
     /// Replay derives its input from a backend transcript.
     Witness(Witness),
@@ -250,6 +280,30 @@ pub enum ReplaySource {
     /// counterexample); settles `reproduced-without-witness`, never backend
     /// evidence.
     Input(Vec<CanonicalAssignment>),
+}
+
+/// FR-073-AC-2/AC-3: neither arm's rendering reproduces its full content.
+/// The `Witness` arm delegates to [`Witness`]'s own redacted `Debug`; the
+/// `Input` arm renders only its entry count and a content digest, never any
+/// [`CanonicalAssignment::value`] (the concrete-argument payload FR-073's
+/// Behavior names).
+impl fmt::Debug for ReplaySource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Witness(witness) => f.debug_tuple("Witness").field(witness).finish(),
+            Self::Input(assignments) => {
+                let mut buf = Vec::with_capacity(assignments.len() * 40);
+                for assignment in assignments {
+                    buf.extend_from_slice(assignment.parameter.as_bytes());
+                    buf.extend_from_slice(&assignment.value.to_le_bytes());
+                }
+                f.debug_struct("Input")
+                    .field("entries", &assignments.len())
+                    .field("digest", &ByteDigest::of(&buf))
+                    .finish()
+            }
+        }
+    }
 }
 
 /// FR-070's extension point (FR-070-AC-5): a family attaches its own typed
@@ -269,11 +323,13 @@ impl FamilyPayload for NoPayload {}
 /// requires). Every field below is one of ADR-013 O-25's own listed
 /// members; there is no `String`-keyed or otherwise untyped extra field.
 ///
-/// `derive(Debug)` is safe here for FR-073: the one bulk-content field this
-/// type can carry is the transcript, reachable only through `source`'s
-/// `ReplaySource::Witness(Witness)` arm, and [`Witness`] implements its own
-/// redacted `Debug`/`Display` -- the derive here delegates to that impl for
-/// the nested field rather than dumping raw bytes itself.
+/// `derive(Debug)` is safe here for FR-073: the bulk-content fields this
+/// type can carry are the transcript (through `source`'s
+/// `ReplaySource::Witness(Witness)` arm) and the canonical assignment
+/// values (through `source`'s `ReplaySource::Input(Vec<CanonicalAssignment>)`
+/// arm), and [`ReplaySource`] implements its own redacted `Debug` covering
+/// both arms -- the derive here delegates to that impl for the nested field
+/// rather than dumping raw content itself.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WitnessEnvelope<P: FamilyPayload> {
     obligation_identity: ObligationIdentity,
@@ -361,6 +417,21 @@ mod witness_tests {
         format!("<<<assertion|{harness}|{check}|{values}>>>")
     }
 
+    /// N5: `check()` and `check_text()` are named in FR-070's Behavior
+    /// (`harness_symbol()`, `check()`/`check_text()`, `concrete_values()`
+    /// and `decode()` "each recompute their answer from the stored
+    /// transcript"), but neither had a test.
+    #[test]
+    fn check_and_check_text_recompute_from_the_stored_transcript() {
+        let witness = Witness::parse(assertion("harness_a", "x == 1", "x=1")).unwrap();
+        assert_eq!(witness.check(), "assertion");
+        assert_eq!(witness.check_text(), "x == 1");
+
+        let other = Witness::parse(assertion("harness_b", "y != 0", "y=2")).unwrap();
+        assert_eq!(other.check_text(), "y != 0");
+        assert_ne!(witness.check_text(), other.check_text());
+    }
+
     /// FR-070-AC-1 (TC-180): the type has exactly one field (the
     /// transcript), so an exhaustive no-`..` destructure naming only it
     /// compiles; this is the falsifier a construction-time cache (e.g. a
@@ -424,6 +495,36 @@ mod witness_tests {
             Witness::parse(two_blocks),
             Err(MalformedTranscript::MultipleAssertionBlocks)
         );
+    }
+
+    /// N5: `decode` distinguishes a parameter with no binding at all from
+    /// one whose bound text fails to parse as an integer -- the fix for
+    /// `concrete_values`'s old silent `.ok()?` drop, which used to make
+    /// `decode` misreport a malformed value as a missing parameter.
+    #[test]
+    fn decode_distinguishes_malformed_value_from_missing_binding() {
+        let witness = Witness::parse(assertion("h", "c", "x=not-a-number;y=2")).unwrap();
+
+        assert_eq!(
+            witness.decode(&["x".to_owned()]),
+            Err(DecodeRefusal::Malformed(
+                "x".to_owned(),
+                "not-a-number".to_owned()
+            ))
+        );
+        assert_eq!(
+            witness.decode(&["z".to_owned()]),
+            Err(DecodeRefusal::Missing("z".to_owned()))
+        );
+        assert_eq!(witness.decode(&["y".to_owned()]), Ok(vec![2]));
+
+        // `concrete_values()` still silently skips the malformed entry (its
+        // own documented behavior); only `decode` must not conflate the two
+        // causes.
+        assert!(witness
+            .concrete_values()
+            .iter()
+            .all(|(name, _)| name != "x"));
     }
 
     /// FR-073-AC-1 (TC-209): neither `Debug` nor `Display` of a constructed
@@ -499,9 +600,64 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub source: Option<ReplaySource>,
     /// The family-owned typed extension payload.
     pub family_payload: Option<P>,
-    /// The wire encoding's approximate size, checked against the reader
-    /// bound before any other member is read.
-    pub encoded_bytes: usize,
+}
+
+/// The reader's own measurement of `packet`'s encoded size (FR-070-AC-7):
+/// the sum of every variable-length member's own byte length -- never a
+/// caller-declared number a packet could understate to launder an oversized
+/// transcript or byte-provision content past the bound (B3). `Option`s the
+/// packet omitted contribute zero, exactly like an absent wire member would.
+fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize {
+    let mut total = 0usize;
+    total += packet
+        .selected_function
+        .as_ref()
+        .map_or(0, |name| name.to_string().len());
+    total += packet.package_id.as_ref().map_or(0, |(_, hex)| hex.len());
+    total += packet
+        .package_contract_version
+        .as_deref()
+        .map_or(0, str::len);
+    total += packet.source_digests.as_ref().map_or(0, |digests| {
+        digests
+            .iter()
+            .map(|(authority, identity, revision, _, hex)| {
+                authority.len() + identity.len() + revision.len() + hex.len()
+            })
+            .sum()
+    });
+    total += packet.profile_selections.as_ref().map_or(0, |selections| {
+        selections
+            .iter()
+            .map(|s| s.profile().len() + s.value().len())
+            .sum()
+    });
+    total += packet
+        .declared_domains
+        .as_ref()
+        .map_or(0, |domains| domains.iter().map(|d| d.domain().len()).sum());
+    total += packet
+        .backend
+        .as_ref()
+        .map_or(0, |(identity, _, hex)| identity.len() + hex.len());
+    total += packet
+        .trace_position
+        .as_ref()
+        .and_then(|position| position.as_ref())
+        .map_or(0, |position| position.as_str().len());
+    total += match &packet.source {
+        Some(ReplaySource::Witness(witness)) => witness.transcript().len(),
+        // Each canonical assignment is a 32-byte node id plus an 8-byte
+        // integer value on the wire (QC-1's digest-addressed shape) -- a
+        // fixed per-entry size, no `Debug`-rendered text involved.
+        Some(ReplaySource::Input(assignments)) => assignments.len() * (32 + 8),
+        None => 0,
+    };
+    total += packet
+        .family_payload
+        .as_ref()
+        .map_or(0, std::mem::size_of_val);
+    total
 }
 
 /// [`WitnessEnvelope::reconstruct`]'s structured refusal.
@@ -510,13 +666,29 @@ pub enum WitnessRefusal {
     /// A required O-25 member is absent from the packet.
     #[error("missing_declaration: O-25 member {0:?} is absent")]
     MissingMember(&'static str),
-    /// A digest names a domain outside the closed FR-201 set, or is
-    /// otherwise malformed (`stale_dependency`/`digest-domain-mismatch`).
+    /// A digest names a domain outside the closed FR-201 set, or supplies no
+    /// domain at all.
     #[error("stale_dependency/digest-domain-mismatch: {0:?}: {1}")]
-    InvalidDigest(&'static str, InvalidDigestRecord),
+    DigestDomainMismatch(&'static str, InvalidDigestRecord),
+    /// A digest names a domain FR-201 admits, but its own hex encoding is
+    /// malformed (wrong length, or not lowercase hex) -- not a domain
+    /// problem, so it is never spelled `digest-domain-mismatch`.
+    #[error("invalid_digest/malformed-encoding: {0:?}: {1}")]
+    MalformedDigest(&'static str, InvalidDigestRecord),
     /// The encoded packet exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+}
+
+/// Route `err` to [`WitnessRefusal::DigestDomainMismatch`] or
+/// [`WitnessRefusal::MalformedDigest`] by its real cause, so a wrong hex
+/// length is never reported as a domain problem.
+fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> WitnessRefusal {
+    if err.is_domain_mismatch() {
+        WitnessRefusal::DigestDomainMismatch(member, err)
+    } else {
+        WitnessRefusal::MalformedDigest(member, err)
+    }
 }
 
 impl<P: FamilyPayload> WitnessEnvelope<P> {
@@ -525,7 +697,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// configured bound, if any O-25 member is absent, or if a digest
     /// names a domain outside the closed FR-201 set.
     pub fn reconstruct(packet: WitnessPacket<P>) -> Result<Self, WitnessRefusal> {
-        BoundExceeded::check(packet.encoded_bytes)?;
+        BoundExceeded::check(measured_encoded_bytes(&packet))?;
 
         let obligation_identity = packet
             .obligation_identity
@@ -544,7 +716,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             .package_id
             .ok_or(WitnessRefusal::MissingMember("package_id"))?;
         let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
-            .map_err(|e| WitnessRefusal::InvalidDigest("package_id", e))?;
+            .map_err(|e| classify_digest_error("package_id", e))?;
         let package_contract_version = packet
             .package_contract_version
             .ok_or(WitnessRefusal::MissingMember("package_contract_version"))?;
@@ -554,7 +726,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             .into_iter()
             .map(|(authority, identity, revision, domain, hex)| {
                 let digest = DigestRecord::from_wire(domain.as_deref(), &hex)
-                    .map_err(|e| WitnessRefusal::InvalidDigest("source_digests", e))?;
+                    .map_err(|e| classify_digest_error("source_digests", e))?;
                 Ok(RawSourceRef::new(authority, identity, revision, digest))
             })
             .collect::<Result<Vec<_>, WitnessRefusal>>()?;
@@ -571,7 +743,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             .backend
             .ok_or(WitnessRefusal::MissingMember("backend"))?;
         let backend_digest = DigestRecord::from_wire(backend_domain.as_deref(), &backend_hex)
-            .map_err(|e| WitnessRefusal::InvalidDigest("backend", e))?;
+            .map_err(|e| classify_digest_error("backend", e))?;
         let backend = Backend::new(backend_identity, backend_digest);
         let trace_position = packet
             .trace_position
@@ -642,7 +814,6 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
             family_payload: Some(self.family_payload.clone()),
-            encoded_bytes: 0,
         }
     }
 }
@@ -726,7 +897,6 @@ mod envelope_tests {
                 Witness::parse("<<<assertion|h|c|x=1>>>").unwrap(),
             )),
             family_payload: Some(NoPayload),
-            encoded_bytes: 256,
         }
     }
 
@@ -847,7 +1017,27 @@ mod envelope_tests {
         )]);
         assert!(matches!(
             WitnessEnvelope::reconstruct(packet),
-            Err(WitnessRefusal::InvalidDigest("source_digests", _))
+            Err(WitnessRefusal::DigestDomainMismatch("source_digests", _))
+        ));
+    }
+
+    /// N5: a `RawSourceRef` digest with a valid FR-201 domain but malformed
+    /// hex (wrong length) refuses distinctly from an out-of-domain digest --
+    /// never spelled `digest-domain-mismatch`, since the domain itself named
+    /// no problem here.
+    #[test]
+    fn refuses_a_malformed_digest_encoding_distinctly_from_a_domain_mismatch() {
+        let mut packet = full_packet(0);
+        packet.source_digests = Some(vec![(
+            "registry".to_owned(),
+            "pkg-a".to_owned(),
+            "rev-1".to_owned(),
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            "ab".repeat(31), // 62 hex chars, not 64
+        )]);
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(packet),
+            Err(WitnessRefusal::MalformedDigest("source_digests", _))
         ));
     }
 
@@ -856,8 +1046,11 @@ mod envelope_tests {
     #[trace("TC-181", "FR-070-AC-7")]
     #[test]
     fn tc_181_refuses_an_oversized_encoding() {
+        // B3: the bound check measures the packet's own content -- there is
+        // no `encoded_bytes` field a caller could understate -- so an
+        // oversized packet has to actually carry oversized content.
         let mut packet = full_packet(0);
-        packet.encoded_bytes = MAX_ENCODED_BYTES + 1;
+        packet.package_contract_version = Some("x".repeat(MAX_ENCODED_BYTES + 1));
         assert!(matches!(
             WitnessEnvelope::reconstruct(packet),
             Err(WitnessRefusal::BoundExceeded(_))
@@ -885,7 +1078,6 @@ mod envelope_tests {
                 trace_position: self.trace_position,
                 source: self.source,
                 family_payload: None,
-                encoded_bytes: self.encoded_bytes,
             }
         }
     }
