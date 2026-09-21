@@ -31,7 +31,7 @@ use crate::value::{IeeeWidth, QuantityUnit, RoundingMode, TextProfile, ValueType
 /// string (FR-065-AC-6).
 ///
 /// `Serialize`/`Deserialize` (PR #262 review, finding F6) round-trip through
-/// the same `::`-joined spelling [`std::fmt::Display`] and [`FromStr`]
+/// the same `::`-joined spelling [`std::fmt::Display`] and [`std::str::FromStr`]
 /// already use, via `#[serde(try_from = "String", into = "String")]` --
 /// `emit_v2`/`decode_v2`'s wire `name` field is typed on `QualifiedName`
 /// itself now, not a bare `String` a caller has to re-parse and re-validate
