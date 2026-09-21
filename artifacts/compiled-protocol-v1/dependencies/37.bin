@@ -1,6 +1,6 @@
 ---
-id: FR-044
-title: "Establish exact numeric definedness in the selected domain"
+id: FR-045
+title: "Preserve conditional evaluation and exact optional-value facts"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,36 +8,29 @@ relationships:
 ---
 ## Description
 
-When checking an admitted numeric expression, the checker SHALL establish that each potentially evaluated result lies in its selected exact authored domain before permitting evaluation.
+When checking and evaluating a state control expression, the implementation SHALL preserve the selected branch and exact observation-qualified guard facts defined by the native expression.
 
 ## Inputs
 
-Named integer/rational types with explicit bounds and units, expression operations, unique literal contexts, sound guard facts and checking resource controls.
+A typed control expression, exact optional-value identities, immutable lexical bindings and execution/probe capability information.
 
 ## Outputs
 
-A checked defined expression, a typed type/domain/definedness refusal, or an explicit resource-incomplete checking result.
+The specified result and available source activation facts, or a typed definedness/refusal/incomplete outcome.
 
 ## Behavior
 
-Ordinary operands/results share their named numeric type and exact unit. The state contract specifies permitted operations, rational normalization-before-bounds and sum's explicit result-domain transfer. No float, saturation, machine-width inference, implicit conversion or silent widening is permitted. Failure to establish totality is reported as unproved definedness, distinct from a proved type/domain error or observed logical violation. Checking may be conservative but cannot certify unproved operations or label its limitation a counterexample.
-
-Rational division additionally requires a proved nonzero divisor, exact quotient
-normalization and result bounds in the same named dimensionless rational type.
-Integer division/remainder remain refused. The literal constructor does not
-implicitly convert integer operands or introduce quotient rounding.
+And/or/implies evaluate their left operand once and skip right for false/true/false respectively. If evaluates only the selected branch; let initializes once. Static name/type/profile admission still covers unselected syntax. Optional access is justified only by a sound guard for the same immutable optional value/field/observation; lexical aliases preserve that identity when they preserve the value. A Boolean result does not establish that an implication consequent ran, and missing probes cannot be reported as observed inactivity.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-044-AC-1 | An unguarded possible out-of-range result refuses; a sound guard narrowing every potentially evaluated result within inclusive bounds permits checking. | Test (TC-044) |
-| FR-044-AC-2 | Normalized rational operation results are checked after sign/gcd reduction, including raw intermediates above normalized bounds, without floating approximation. | Test (TC-044) |
-| FR-044-AC-3 | Wrong named types/units, implicit integer-to-rational conversion and prohibited division/remainder refuse, including in unreachable syntax. | Test (TC-044) |
-| FR-044-AC-4 | A minimum-only integer remains unadmitted without inventing a maximum; signed-64 boundary overflow cannot wrap or widen. | Test (TC-044) |
-| FR-044-AC-5 | Insufficient proof capability is identified as unproved definedness, and exhausted checking resources as incomplete; neither is a completed Boolean violation. | Test (TC-044) |
-| FR-044-AC-6 | For a dimensionless rational type with normalized numerator [-1,1] and denominator [1,2], (1/2) divided by (1/2) admits as 1/1 after reducing raw 2/2, while 1 divided by (1/2) refuses its result bound and division by zero refuses definedness. | Test (TC-044) |
-| FR-044-AC-7 | An exact nonzero guard permits an otherwise total rational quotient only where that operand's guard fact holds; an unguarded possible zero divisor or a guard for another value cannot discharge the obligation. | Test (TC-044) |
+| FR-045-AC-1 | False-and, true-or and false-implies skip right and return false, true and true respectively; reached right operands retain their actual evaluation facts. | Test (TC-045) |
+| FR-045-AC-2 | If selects one branch and let initializes once even when its binding is read repeatedly; resource exhaustion never creates a completed result. | Test (TC-045) |
+| FR-045-AC-3 | A guard can justify an alias of the same immutable optional value, but not a same-named field on another object or observation. | Test (TC-045) |
+| FR-045-AC-4 | An unknown name or prohibited source construct in an unselected branch still refuses static admission. | Test (TC-045) |
+| FR-045-AC-5 | A completed vacuous implication does not claim consequent participation; an unavailable activation probe remains unavailable. | Test (TC-045) |
 
 ## Dependencies
 

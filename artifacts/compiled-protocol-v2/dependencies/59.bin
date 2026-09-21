@@ -1,74 +1,68 @@
 ---
-id: FR-092
-title: "Evaluate bounded past temporal operators"
+id: FR-093
+title: "Bind temporal activation and immutable captures"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-008
     type: implements
+  - target: ix://agent-ix/quire-specification/FR-034
+    type: references
   - target: ix://agent-ix/quire-specification/FR-090
     type: references
 ---
 ## Description
 
-When evaluating an admitted bounded past operator, the temporal evaluator shall
-distinguish positions before an authoritative execution origin from required
-history that was omitted or evicted.
+When a temporal scope activates, the evaluator shall create a distinct
+obligation instance initialized with every declared capture evaluated exactly
+once at the authored activation anchor.
 
 ## Inputs
 
-A temporal subject and anchor, inclusive integer bounds `0 <= a <= b`, total
-Boolean predicate valuations, and either an authoritative execution origin or
-the complete required history identified by the observation binding.
+A linked temporal clause, its scope/trigger definition, one admitted trigger
+event or whole-execution origin, typed predicate/capture bindings, and exact
+source, model, observation and anchor identities.
 
 ## Outputs
 
-A true or false past-time result, or a separate incomplete/refused disposition
-that identifies missing history, an unsupported profile/operator or a resource
-failure.
+An inactive scope, an activated obligation with immutable typed captures, or a
+located incomplete/refused activation result.
 
 ## Behavior
 
-For an anchor whose history is complete back to an authoritative origin, the
-false-extension profiles shall treat atomic predicates before that origin as
-false and Boolean constants as unchanged. They shall use:
+Each event-triggered instance shall be identified by the clause subject and
+semantic trigger-event identity, not by timestamp, display name or equal payload
+alone. Repeated delivery of the same semantic trigger shall not create a second
+instance; a distinct semantic trigger shall create a distinct instance even if
+its captured values compare equal.
 
-| Operator | Exact past meaning |
-| --- | --- |
-| `once[a,b] p` | Some offset `d` in `[a,b]` makes `p` true at `i-d` |
-| `historically[a,b] p` | Every offset `d` in `[a,b]` makes `p` true at `i-d` |
-| `p since[a,b] q` | Some `d` in `[a,b]` makes `q` true at `i-d`, and every `e` in `[a,d)` makes `p` true at `i-e` |
-| `p triggered[a,b] q` | The Boolean dual of `not p since[a,b] not q` under the same profile |
+Each capture shall retain its declared expression, type, value, source/model
+binding and activation anchor. Later mutable observations shall not replace the
+captured value. A capture that cannot be established shall prevent healthy
+activation and shall identify the missing or inconsistent input. One instance's
+captures shall not satisfy another instance's propositions.
 
-A supplied history cutoff is not an execution origin. If the cutoff does not
-prove that every needed position is inside the available history, then the
-evaluator shall report missing history rather than apply false extension.
-
-The timestamped finite-window profile shall quantify admitted past instants by
-inclusive clock distance.
-
-The timestamped finite-window evaluator shall require complete history over the
-window before applying empty-window duals.
-
-The v1 profile shall define strong previous as `once[1,1]`.
-
-If a later profile admits weak previous, then that profile shall define its
-boundary separately from strong previous.
-
-The v1 temporal profiles shall refuse unbounded past and implicit history
-reconstruction.
+Activation, temporal truth and participation shall remain separate dimensions.
+A trigger scope that is authoritatively closed and complete without an admitted
+trigger shall produce inactive activation; it is not a true obligation and is
+not evidence that recovery behavior was exercised. An open trigger scope shall
+produce activation-unknown with open completeness. Missing or refused trigger
+evidence shall produce activation-unknown with its incomplete or refused
+assessment-execution disposition. This requirement does not define protocol
+choice/conformance or the observation transport schema.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-092-AC-1 | Independent truth tables distinguish all four past operators, inclusive endpoints, zero-width intervals, nonzero lower bounds and each origin boundary. | Test (TC-112) |
-| FR-092-AC-2 | The same visible suffix yields a Boolean when its start is the authoritative execution origin and missing-history incomplete when it is merely a cutoff. | Test (TC-112) |
-| FR-092-AC-3 | `p since[1,2] q` uses `p` only between the lower bound and its witness, symmetrically with the selected future `until` convention. | Test (TC-112) |
-| FR-092-AC-4 | Missing, evicted, stale or binding-mismatched history never becomes false padding or a conclusive Boolean. | Test (TC-118) |
-| FR-092-AC-5 | Current TL future-only profiles are reported unsupported for every past operator until a separately reviewed past-time TL profile establishes exact correspondence. | Test (TC-117) |
+| FR-093-AC-1 | Two distinct failed-order triggers with equal amounts create distinct obligations, and neither refund can satisfy the other's captured payment identity. | Test (TC-114) |
+| FR-093-AC-2 | A duplicate receipt for one semantic trigger retains receipt provenance but creates no duplicate obligation instance. | Test (TC-114) |
+| FR-093-AC-3 | Changing mutable source state after activation cannot change an already captured amount, reference or predicate valuation environment. | Test (TC-114) |
+| FR-093-AC-4 | Missing, nullable, wrong-type, stale or anchor-mismatched capture input reports incomplete/refused activation before temporal evaluation. | Test (TC-114) |
+| FR-093-AC-5 | A closed-complete trigger scope with no trigger reports inactive; an open scope or missing/refused trigger evidence reports activation-unknown with its distinct completeness/execution state, and neither case becomes temporal truth. | Test (TC-116) |
 
 ## Dependencies
 
-- [FR-090](./FR-090-select-temporal-profile-and-clock.md).
-- The future/past profile-evolution work remains separately owned in the TL
-  ecosystem; ticket existence is not implementation evidence.
+- [FR-034](./FR-034-bind-cross-family-predicates.md) owns common predicate
+  evaluation environments.
+- Agent B owns protocol activation/participation result contracts; Agent F owns
+  trigger observation binding and duplicate-delivery provenance.

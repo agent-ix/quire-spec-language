@@ -1,47 +1,46 @@
 ---
-id: FR-050
-title: "Bind protocol roles and instances to exact subjects"
+id: FR-051
+title: "Preserve message, delivery, attempt and effect identities"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-006
     type: implements
-  - target: ix://agent-ix/quire-specification/FR-035
+  - target: ix://agent-ix/quire-specification/FR-050
     type: depends_on
 ---
 ## Description
 
-When admitting a native protocol definition, the protocol linker SHALL bind every role, role instance, workflow instance, message and channel reference to its exact typed declaration and configuration identity before conformance evaluation.
+When binding communications and business observations to a protocol instance, the protocol binder SHALL preserve message, send, receive, delivery, attempt and effect as distinct typed subjects.
 
 ## Inputs
 
-An admitted native package, protocol definition, A-owned source/profile identities,
-D-owned model/configuration identities and explicit workflow-instance bindings.
+A linked protocol, typed message/channel declarations and F-owned observation
+bindings with explicit business relationships and provenance.
 
 ## Outputs
 
-A finite linked protocol representation with exact subject references, or a
-located typed refusal for every unresolved, ambiguous or substituted subject.
+Bound protocol events and effects, or typed identity/correlation refusals and
+explicitly missing-observation dependencies.
 
 ## Behavior
 
-The linker SHALL keep roles distinct from components, endpoints and channels.
-The linker SHALL keep role instances and workflow instances distinct from their
-static definitions. The linker SHALL refuse duplicate role authorities,
-ambiguous instance bindings and name-only substitutions. Internal and external
-participants use the same identity rules; an external role is not assumed to be
-fully observable.
+The binder SHALL require explicit relationships between transport records,
+attempts and effects. The binder SHALL NOT infer a business effect from a send,
+receive, successful transport status, repeated delivery, trace identifier or
+equal payload alone. The binder SHALL retain source and observation identities
+for every accepted correspondence.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-050-AC-1 | A protocol with internal order, inventory and fulfillment roles plus an external payment role retains every definition and instance identity independently. | Test (TC-050) |
-| FR-050-AC-2 | Substituting an endpoint or channel identity for a role, or a component identity for a role instance, refuses linking with the affected source location. | Test (TC-050) |
-| FR-050-AC-3 | Two concurrent workflow instances sharing one provider remain distinct assessment subjects. | Test (TC-050) |
-| FR-050-AC-4 | An unresolved, duplicate or ambiguous role/instance reference prevents dependent evaluation without removing independent valid definitions. | Test (TC-050) |
+| FR-051-AC-1 | One message sent once, delivered twice and applied as one payment effect retains cardinalities 1, 2 and 1 for the respective subjects. | Test (TC-051) |
+| FR-051-AC-2 | Relabeling a duplicate delivery as a second business effect refuses the binding or yields the authored duplicate-effect violation. | Test (TC-051) |
+| FR-051-AC-3 | A payment attempt with no established effect remains an attempt and cannot activate effect-dependent compensation. | Test (TC-051) |
+| FR-051-AC-4 | A transport trace ID substituted for an authored workflow, attempt or effect identity refuses before conformance evaluation. | Test (TC-051) |
 
 ## Dependencies
 
-- [US-006](../usecase/US-006-assess-distributed-protocols.md).
-- [Shared foundation](../../proposals/quire-v1/shared-foundation.md).
-- [Protocol contract](../../proposals/quire-v1/protocol-contract.md).
+- [FR-050](./FR-050-bind-protocol-instances.md).
+- [Shared ecosystem binding](./FR-035-bind-ecosystem-subjects.md).
+- F-owned observation/correlation contract under OB01.

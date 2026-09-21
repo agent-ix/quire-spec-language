@@ -251,9 +251,11 @@ The directory contains:
   every clock-alternative/member, malformed-member and original-definition-byte
   substitutions;
 - the four original `.native` files and `model-source.json`; and
-- `dependencies/*.bin`: every exact original definition, rule, model package,
-  contract and producer executable selected by the invocation, with paths,
-  identities, direct prerequisites and raw-byte digests in `expected-v2.json`.
+- `dependencies/*.bin`: every exact original definition, rule, model package
+  and contract selected by the invocation, with paths, identities, direct
+  prerequisites and raw-byte digests in `expected-v2.json`. The producer's own
+  executable is not among them: it is Producer identity, recorded as a digest
+  on `producer.binary` rather than as one of these exact-byte dependencies.
 
 `expected-v2.json` and `mutations/manifest.json` are the two interchange files a
 consumer decodes, so their record shapes are published as
@@ -264,7 +266,7 @@ files. The published records are inert data: decoding one admits nothing, and a
 consumer still constructs the borrowed `Expected`/`ExpectedV2` reader inputs
 itself. `MutationCase::expected_refusal_code` is an `Error::code()` spelling.
 
-The focused stripped-release control is the ignored test
+The focused release-recipe control is the test
 `stripped_release_v2_producer_writes_the_independently_read_handoff` in
 [`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
 The non-release mutation controls remain in

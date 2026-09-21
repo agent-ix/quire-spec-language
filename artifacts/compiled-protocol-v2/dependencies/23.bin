@@ -1,6 +1,6 @@
-# Native fixed-sample temporal definition
+# Native timestamped-window temporal definition
 
-Profile identity: `quire.temporal.fixed-sample.false-extension/v1`; revision: `1-draft.3`.
+Profile identity: `quire.temporal.timestamped-event.finite-window/v1`; revision: `1-draft.3`.
 Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
 
 ## Required definition
@@ -11,26 +11,27 @@ Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
 
 ## Selected interpretation
 
-One interval tick is one required sample of the declared positive rational
-period from the declared epoch, with exact unit and clock authority. Epoch,
-period and unit are runtime clock-binding inputs constrained by this profile;
-changing one changes that binding/assessment identity without selecting an
-event-position clock. There is no floating approximation or implicit resampling.
+One interval tick is one tick of the declared timestamp unit under the exact
+clock binding. Quantification ranges over admitted instants whose clock distance
+from the anchor lies in the inclusive interval. The binding supplies the unit,
+clock, window/scope, admitted order and required completeness authority.
 
-Each required sample supplies a total valuation. A missing sample is a
-runtime incomplete disposition under a valid binding, never a false sample or
-removal of its position. A malformed, missing or incompatible clock definition
-or binding instead refuses before evaluation.
-Declared sample progress advances through ticks even without a business event.
-Only complete decision-scope closure authorizes false extension of atoms after
-the last sample; an authoritative origin controls the past boundary. Constants
-retain their values. An omitted history interval cannot be padded.
+An event exactly at the upper endpoint participates before settlement.
+An empty existential window is false and an empty universal window is true
+only when the authority establishes the needed complete window; missing
+observations cannot establish either. A valid early witness may settle an
+existential result without closing the execution or unrelated windows.
 
-Future/past operators use inclusive sample offsets and the common exact
-lower-bound/dual rules. One complete sample with p=true distinguishes
-`always[0,1] holds(p)` (false) from `always[0,1] true` (true).
-Current TL future mappings additionally preserve epoch/period/unit and total
-sample correspondence; no past-time support is inferred.
+Until/since use the admitted order from the interval's lower bound to their
+witness; release/triggered are their Boolean duals. Equal timestamps without an
+admitted order refuse order-sensitive operators. Ingestion order is not an
+implicit causal or temporal tie-breaker. Past windows require complete history
+or the appropriate authoritative origin under the selected window meaning.
+
+For a complete window containing only the anchor with p=true,
+`always[0,1] holds(p)` is true: no synthetic false atom is added after closure.
+The current index-based TL profiles do not preserve this meaning; lowering
+there is unsupported and cannot silently convert timestamps into event indices.
 
 This selects exactly the corresponding FR-090 meaning in the required common
 definition. The other clock/boundary interpretations are different source

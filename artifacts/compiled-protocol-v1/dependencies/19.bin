@@ -1,6 +1,6 @@
-# Native finite graph definition
+# Native predicate and sequence-query definition
 
-Profile identity: `quire.state.graph/v1`; revision: `1-draft.3`.
+Profile identity: `quire.state.queries/v1`; revision: `1-draft.3`.
 Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
 
 This is a working definition in one coherent draft. Required definitions and
@@ -12,36 +12,38 @@ selected immutable identities, revisions and digest domains.
 
 | Identity | Revision | Definition artifact |
 | --- | --- | --- |
-| `quire.state.queries/v1` | `1-draft.3` | [Predicates and queries](state-queries.md) |
+| `quire.state.core/v1` | `1-draft.3` | [State core](state-core.md) |
 
 ## Explicit extension
 
-Retain the complete core and query contracts. Add identity-bearing object and
-reference values, explicit dereference through their typed finite supplied
-universe, object/reference identity equality and positive-length `reaches`.
-Identity includes universe, declared object type and object identifier; source
-sequences retain repeated reference occurrences. Reachability checks the target
-before suppressing repeated expansion and expands each identity at most once.
-A self-loop can establish positive-length self-reachability.
+Retain all state-core forms and constraints. Add typed acyclic named Boolean
+predicate declarations/calls, `filter`, `map`, `count` and `sum`.
+Queries preserve occurrence order and duplicates; sum performs the explicit
+same-representation/same-unit transfer into its named result domain, with exact
+zero and every-prefix bounds. No implicit flattening, general casts or unit
+conversion is introduced.
 
-Snapshot-qualified references retain the observation they read. An identity
-comparison across pre/post does not permit a field read to switch observations.
-Missing targets, foreign universes, unknown closure and resource exhaustion
-cannot become false reachability or empty populations. The exact model and
-population bindings supply this authority; no scalar-to-object cast, implicit
-foreign-key lookup, recursive record expansion or ambient store is introduced.
+Predicate parameters and captures are explicit immutable typed inputs.
+A reusable predicate has no ambient self, operation result or historical state.
+An imported callee keeps its checked profile, type and anchor interpretation.
+General value-returning functions, recursive calls, dynamic dispatch, overloads
+and hidden effects remain refused. Reference/object identity, navigation and
+reachability remain refused until the graph extension is selected.
 
-This is the state profile providing the complete required v1 state/query/graph
-scope. It does not supply temporal/protocol semantics, realize their requested
-backend claims, or qualify the original minimum-only ConfigVersion model.
-That original model still needs an explicit authored finite-domain disposition
-and exact relationship mapping; its historical example is preserved.
+Other families may consume this profile's checked Boolean predicate and shared
+value-expression interface with explicit argument/anchor bindings. That interface
+does not itself grant temporal/protocol declaration admission or turn a monitor
+status into a Boolean. A caller selecting this profile cannot upgrade a callee
+bound to state core.
 
-## Selected graph rules
+## Selected extension rules
 
-Core/query definitions and their current state contract remain inherited
-dependencies. The following current rule supplies the graph extension.
+State-core rules remain inherited dependencies. The following current rules
+supply the explicit query and predicate extension.
 
 | Rule |
 | --- |
-| [FR-043](../../../spec/functional/FR-043-evaluate-finite-graph-relations.md) |
+| [FR-033](../../../spec/functional/FR-033-admit-reusable-predicates.md) |
+| [FR-034](../../../spec/functional/FR-034-bind-cross-family-predicates.md) |
+| [FR-041](../../../spec/functional/FR-041-evaluate-ordered-queries.md) |
+| [FR-042](../../../spec/functional/FR-042-select-pre-state-reads.md) |

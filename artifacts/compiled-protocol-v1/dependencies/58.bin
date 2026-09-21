@@ -1,68 +1,96 @@
 ---
-id: FR-093
-title: "Bind temporal activation and immutable captures"
+id: FR-094
+title: "Interpret temporal progress, history and closure"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-008
     type: implements
-  - target: ix://agent-ix/quire-specification/FR-034
+  - target: ix://agent-ix/quire-specification/FR-091
     type: references
-  - target: ix://agent-ix/quire-specification/FR-090
+  - target: ix://agent-ix/quire-specification/FR-092
     type: references
 ---
 ## Description
 
-When a temporal scope activates, the evaluator shall create a distinct
-obligation instance initialized with every declared capture evaluated exactly
-once at the authored activation anchor.
+When an evaluator consumes a validated progress or closure assertion, it shall
+apply that assertion only to the named clock, subjects, decision scope,
+surrounding execution, interval and history boundary. The evaluator shall
+preserve the independent progress/closure states and the distinction between
+complete and incomplete inputs.
 
 ## Inputs
 
-A linked temporal clause, its scope/trigger definition, one admitted trigger
-event or whole-execution origin, typed predicate/capture bindings, and exact
-source, model, observation and anchor identities.
+An active temporal obligation; its required future horizon and past-history
+bound; exact decision-scope and surrounding-execution identities; validated
+progress/completeness/closure assertions supplied by the observation authority;
+and any earlier result identities affected by them.
 
 ## Outputs
 
-An inactive scope, an activated obligation with immutable typed captures, or a
-located incomplete/refused activation result.
+An updated temporal disposition carrying assessment execution, independent
+decision-scope and surrounding-execution progress/closure, settlement basis and
+exact decision support through the shared result contract, or a typed
+contradiction, incomplete or refused result. Historical result bytes are
+retained when a later assertion invalidates their premises.
 
 ## Behavior
 
-Each event-triggered instance shall be identified by the clause subject and
-semantic trigger-event identity, not by timestamp, display name or equal payload
-alone. Repeated delivery of the same semantic trigger shall not create a second
-instance; a distinct semantic trigger shall create a distinct instance even if
-its captured values compare equal.
+Progress shall be monotonic within its identified binding. A regressing or
+same-revision conflicting assertion shall produce a typed contradiction or
+refusal and shall not roll back progress, restamp closure or replace earlier
+result bytes.
 
-Each capture shall retain its declared expression, type, value, source/model
-binding and activation anchor. Later mutable observations shall not replace the
-captured value. A capture that cannot be established shall prevent healthy
-activation and shall identify the missing or inconsistent input. One instance's
-captures shall not satisfy another instance's propositions.
+Progress shall cover an inclusive boundary.
 
-Activation, temporal truth and participation shall remain separate dimensions.
-A trigger scope that is authoritatively closed and complete without an admitted
-trigger shall produce inactive activation; it is not a true obligation and is
-not evidence that recovery behavior was exercised. An open trigger scope shall
-produce activation-unknown with open completeness. Missing or refused trigger
-evidence shall produce activation-unknown with its incomplete or refused
-assessment-execution disposition. This requirement does not define protocol
-choice/conformance or the observation transport schema.
+A timestamped watermark at `W` permits settlement of a
+deadline `D` only when `W >= D` and completeness covers every required source,
+subject and valuation through `D`. A fixed-sample progress assertion advances
+sample ticks even when no business predicate is true. Event-position time shall
+not advance during silence merely because wall time passed.
+
+A complete closed decision scope shall authorize the selected closed-boundary
+rule and settlement basis `closed-scope`. It shall not restamp the surrounding
+execution as closed. An open decision scope shall leave unobserved admitted
+continuations possible, but may settle from a `decisive-witness` or
+`decisive-counterexample` only under [FR-091](./FR-091-evaluate-bounded-future.md).
+All other open futures remain `unsettled` and pending.
+
+The evaluator shall classify end-of-file, consumer shutdown or a file labelled
+closed without complete required observations as an incomplete input.
+
+The evaluator shall not apply false extension or finite-window empty truth to
+an incomplete input.
+
+Assessment execution, decision-scope progress/closure, surrounding-execution
+progress/closure, truth, settlement basis and completeness shall remain
+independent. The temporal handoff shall retain the exact decision-support set.
+A missing fact inside that set makes the associated truth unavailable; a
+missing fact outside a completed support set remains a completeness/adequacy
+gap without falsifying or delaying that settled truth.
+
+Past evaluation shall require history through its computed lower boundary or an
+authoritative execution origin. A later record inside an interval previously
+declared complete is a completeness contradiction supplied by Agent F's
+contract. The evaluator shall supersede or invalidate affected results without
+rewriting their historical bytes. The v1 evaluator shall not infer watermark
+authority or automatically repair settled history.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-093-AC-1 | Two distinct failed-order triggers with equal amounts create distinct obligations, and neither refund can satisfy the other's captured payment identity. | Test (TC-114) |
-| FR-093-AC-2 | A duplicate receipt for one semantic trigger retains receipt provenance but creates no duplicate obligation instance. | Test (TC-114) |
-| FR-093-AC-3 | Changing mutable source state after activation cannot change an already captured amount, reference or predicate valuation environment. | Test (TC-114) |
-| FR-093-AC-4 | Missing, nullable, wrong-type, stale or anchor-mismatched capture input reports incomplete/refused activation before temporal evaluation. | Test (TC-114) |
-| FR-093-AC-5 | A closed-complete trigger scope with no trigger reports inactive; an open scope or missing/refused trigger evidence reports activation-unknown with its distinct completeness/execution state, and neither case becomes temporal truth. | Test (TC-116) |
+| FR-094-AC-1 | A timestamped response exactly at an inclusive deadline participates before progress settles the window; the same response after the deadline does not. | Test (TC-115) |
+| FR-094-AC-2 | With no business event, complete timestamp/sample progress through a deadline settles the applicable bounded obligation, while event-position time does not advance. | Test (TC-115) |
+| FR-094-AC-3 | Open/closed decision scope, open/closed surrounding execution, completed/failed assessment execution and complete/incomplete input remain independently represented; closing one axis cannot close or complete another. | Test (TC-116) |
+| FR-094-AC-4 | Progress for a foreign clock, subject, source set or binding cannot settle the obligation. | Test (TC-115) |
+| FR-094-AC-5 | A late completeness contradiction identifies the assertion and affected historical result; no earlier bytes or profile identity are restamped. | Test (TC-116) |
+| FR-094-AC-6 | Missing predecessor/history on restart requires replay or an admitted state-restoration contract and cannot resume as a fresh complete stream. | Test (TC-118) |
+| FR-094-AC-7 | `closed-scope`, `decisive-witness`, `decisive-counterexample`, `unsettled` and `unavailable` are accepted only with their valid truth, scope and exact deciding-fact combinations; every one-axis substitution is refused. | Test (TC-116) |
+| FR-094-AC-8 | A same-binding progress regression or conflicting assertion revision produces a typed contradiction/refusal and cannot roll back progress, closure or an earlier result identity. | Test (TC-115) |
 
 ## Dependencies
 
-- [FR-034](./FR-034-bind-cross-family-predicates.md) owns common predicate
-  evaluation environments.
-- Agent B owns protocol activation/participation result contracts; Agent F owns
-  trigger observation binding and duplicate-delivery provenance.
+- Agent F owns the validity, provenance and replay form of observation,
+  progress, completeness and contradiction assertions. This requirement owns
+  only their temporal interpretation.
+- Agent B owns the shared result-dimension wire contract.

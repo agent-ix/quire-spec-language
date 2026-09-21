@@ -1,46 +1,45 @@
 ---
-id: FR-056
-title: "Register compensation only after a successful effect"
+id: FR-057
+title: "Enforce commit boundaries and authored recovery relations"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-006
     type: implements
-  - target: ix://agent-ix/quire-specification/FR-051
-    type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-055
+  - target: ix://agent-ix/quire-specification/FR-056
     type: depends_on
 ---
 ## Description
 
-When an authored forward effect is established, the conformance evaluator SHALL register exactly the compensation obligations paired with that effect and bind each registration to its role, eligibility conditions, retry policy, commit boundary and recovery relation.
+When evaluating compensation, the conformance evaluator SHALL check authored commit ordering and decide recovery only through the compensation's exact typed recovery relation.
 
 ## Inputs
 
-An admitted compensation definition and a successfully established forward
-effect with exact workflow/effect identity.
+A registered compensation obligation, commit observations, compensation
+attempt/effect observations, immutable captures and an authored recovery
+predicate evaluated under the selected state/temporal profiles.
 
 ## Outputs
 
-Registered compensation obligations or typed violations/refusals; the evaluator
-does not invoke the compensating operation.
+A compensation obligation result with separate attempt, effect, commit and
+recovery facts, or a typed violation/incomplete outcome.
 
 ## Behavior
 
-The evaluator SHALL NOT register compensation from a send, receive, delivery or
-attempt that lacks the required successful effect. Repeated observation of one
-effect SHALL NOT create additional registrations. Each registration SHALL retain
-the source definition and effect that created it.
+The evaluator SHALL reject or violate registration after a forbidding commit,
+compensation before the paired effect and compensation after a forbidding commit.
+The evaluator SHALL NOT infer recovery success from compensation-operation success.
+The evaluator SHALL retain the target and achieved states used by the recovery relation.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-056-AC-1 | One successful payment effect registers one matching refund obligation after the effect. | Test (TC-056) |
-| FR-056-AC-2 | Failed payment attempts and duplicate deliveries register no refund obligation. | Test (TC-056) |
-| FR-056-AC-3 | Replaying the same effect identity does not create a second registration. | Test (TC-056) |
-| FR-056-AC-4 | Compensation observed before its forward effect produces an ordering violation and cannot retroactively validate registration. | Test (TC-056) |
+| FR-057-AC-1 | A full refund effect before commit satisfies a full-restoration relation only when the captured amount and target state match. | Test (TC-057) |
+| FR-057-AC-2 | A successful partial refund can satisfy an authored partial-recovery relation while failing full restoration. | Test (TC-057) |
+| FR-057-AC-3 | Registration after commit and compensation before the forward effect or after a forbidding commit are distinct ordering violations. | Test (TC-057) |
+| FR-057-AC-4 | Missing state, commit or compensation-effect inputs yield incomplete/pending rather than recovery success. | Test (TC-057) |
 
 ## Dependencies
 
-- [FR-051](./FR-051-preserve-communication-identities.md).
-- [FR-055](./FR-055-activate-protocol-obligations.md).
+- [FR-056](./FR-056-register-compensation.md).
+- Agent A's state predicates and E's temporal/closure semantics.
