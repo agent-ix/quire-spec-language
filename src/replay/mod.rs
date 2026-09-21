@@ -39,24 +39,25 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, OccurrenceKey, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition, WireNodeId,
+    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, OccurrenceKey,
+    ProfileSelection, QualifiedName, RawSourceRef, TracePosition, WireNodeId,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, IncompleteCause, InconclusiveCause, ProofCategory,
-    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, TerminalRecord, TerminalValue, ToolPin,
-    UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, IncompleteCause, InconclusiveCause,
+    ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, TerminalRecord,
+    TerminalValue, ToolPin, UnavailabilityCause,
 };
 pub use request::{
-    ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits, StateEnvironment,
+    ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,
+    StateEnvironment,
 };
 pub use result::{
     read_bounded, DisagreementCause, EvaluatedValue, InputArmResult, InputSettlement, ReplayResult,
     ResolvedRegion, SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
 };
 pub use witness::{
-    CanonicalAssignment, FamilyPayload, MalformedTranscript, MissingBinding, NoPayload, ReplaySource, Witness,
-    WitnessEnvelope, WitnessPacket, WitnessRefusal,
+    CanonicalAssignment, FamilyPayload, MalformedTranscript, MissingBinding, NoPayload,
+    ReplaySource, Witness, WitnessEnvelope, WitnessPacket, WitnessRefusal,
 };
 
 #[cfg(test)]
@@ -191,7 +192,10 @@ mod redaction_tests {
             encoded_bytes: 8192,
         };
         let valid_request = ReplayRequest::decode(valid_wire).unwrap();
-        let looked_up = valid_request.byte_provision().get(source_digest_record).unwrap();
+        let looked_up = valid_request
+            .byte_provision()
+            .get(source_digest_record)
+            .unwrap();
         assert_eq!(looked_up, entry_x.as_slice());
 
         // Half 2: witness envelope malformed-transcript refusal.

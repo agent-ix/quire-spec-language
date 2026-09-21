@@ -347,8 +347,14 @@ mod tests {
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
         let cases = [
-            (TerminalValue::Proved { success_checks: 1 }, ProofCategory::Success),
-            (TerminalValue::Proved { success_checks: 0 }, ProofCategory::Inconclusive),
+            (
+                TerminalValue::Proved { success_checks: 1 },
+                ProofCategory::Success,
+            ),
+            (
+                TerminalValue::Proved { success_checks: 0 },
+                ProofCategory::Inconclusive,
+            ),
             (TerminalValue::Tested, ProofCategory::Success),
             (TerminalValue::Refuted, ProofCategory::Violation),
             (
