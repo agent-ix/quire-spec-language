@@ -96,7 +96,7 @@ flowchart LR
 
 | Dependency | Type | Assumed or Guaranteed | Contract |
 | --- | --- | --- | --- |
-| QSpec FR-290 six kinds | Vocabulary | Guaranteed | TC-153 step 1 reads the vendored FR-290 Values table |
+| QSpec FR-290 six kinds | Vocabulary | Guaranteed | TC-153 step 1 reads a committed copy of the FR-290 Values table |
 | QSpec FR-271 diagnostic catalog | Code vocabulary | Assumed | None yet (FND-002) |
 | QSpec checked-package/v2 wire | Serialized carrier | Assumed | FR-322; carrier ownership in #211 (FND-003) |
 | CG `negotiate_*` | Negotiation | Assumed | AD-016 arrow 4, interface_013; TC-155 step 3 needs an owner (FND-001) |

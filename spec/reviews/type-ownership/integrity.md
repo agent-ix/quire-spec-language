@@ -41,7 +41,7 @@ What holds:
   capability chain and the #222 design / #213 implementation split for bounds
   are recorded as the program rules require.
 - **Verified claims.** Spot-checked claims hold: the FR-322 `OperationMember`
-  union, the revision `1-draft.4` catalog vendored under
+  union, the revision `1-draft.4` catalog held as a copy under
   `resources/complete-value`, the 10 `KaniOutcomeKind` kinds, and the IR PR
   #139 head `417ec86`.
 
@@ -129,7 +129,7 @@ are medium and should be fixed before the #212 gate).
 - **QSL code spot-checks** in the worktree: `ByteDigest` (`src/digest.rs:8`),
   `LocatedSpan` (`src/source.rs:47`), `EffectiveId` (`src/model/key.rs:157`),
   `NodeKey` (`src/value/node.rs:22`) and `DomainPackageRef`
-  (`src/model/domain_package.rs:359`). Also checked: the vendored catalog
+  (`src/model/domain_package.rs:359`). Also checked: the copied catalog
   revision `1-draft.4`, and the `1-draft.3` claim at
   `src/complete/diagnostic.rs:13`.
 - **Program rules.** No compatibility layer, shim, fallback or migration path

@@ -197,8 +197,8 @@ label that points back at the test it was added to supplement.
 
 **PASS** for evidence readiness of FR-043, FR-044, FR-045 and NFR-008 at this
 revision. Every criterion has a verification method that matches what can
-actually establish it, every NFR-008 metric row honours the vendored NFR-040
-method assignment, every metric names its population, the counters those metrics
+actually establish it, every NFR-008 metric row honours the NFR-040
+method assignment held as a copy in this repo, every metric names its population, the counters those metrics
 are measured against are published with kinds, units and defaults, and the two
 obligations this revision does not discharge — mutation adequacy and
 artifact-side checking of declared clock parameters — are recorded as outstanding

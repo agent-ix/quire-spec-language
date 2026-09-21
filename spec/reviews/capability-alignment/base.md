@@ -45,8 +45,8 @@ Base checklist:
 - **ID formats.** FR-057, TC-153, TC-154, TC-155 and SR-490..SR-497 are well
   formed. No `spec/` document on `origin/main` or any other branch uses them.
   `resources/native-v1/spec/functional/FR-057-enforce-commit-recovery.md` is
-  quire-specification's vendored FR-057, in a different namespace, and is
-  outside the validation scope. The AC IDs FR-057-AC-1..AC-10 are sequential
+  quire-specification's copy of FR-057, held in this repo in a different
+  namespace, and is outside the validation scope. The AC IDs FR-057-AC-1..AC-10 are sequential
   and unique.
 - **FR quality.** Every FR-057 criterion is verified by Test and names its TC.
   Round-2 statement-level defects are recorded in SR-492 FND-011 and SR-497
