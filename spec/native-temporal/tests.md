@@ -49,16 +49,16 @@ manual-dispatch. The 53 controls are `tests/composed_temporal_evaluation.rs` (14
 `cargo fmt --all -- --check` and Clippy clean under both the minimal and the
 `quire-extraction` lanes.
 
-Every coverage table uses the single `Coverage Status` column from
-`spec-artifacts-process#87`, and the installed `quire coverage` at this revision
-reports no `status-column-matches-nothing` diagnostic for any matrix, so the
-status check ran rather than being skipped.
+Every coverage table uses the single `Status` column that
+`spec-artifacts-process#87` collapsed the naming to, and the installed `quire
+coverage` at this revision reports no `status-column-matches-nothing`
+diagnostic for any matrix, so the status check ran rather than being skipped.
 
 ## Requirements Traceability
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-043 | FR-043-AC-1 | TC-122 | ✅ Tested |
 | FR-043 | FR-043-AC-2 | TC-122 | ✅ Tested |

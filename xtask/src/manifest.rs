@@ -104,6 +104,15 @@ pub struct ExternalFile {
     pub sha256: String,
 }
 
+/// A recorded `commit` is **provenance, not a contract**. It is never
+/// resolved, fetched or compared against an upstream repository -- only
+/// checked for shape. What this repo actually guarantees about a vendored
+/// tree is its per-file `sha256`, verified offline by `make revendor-check`.
+///
+/// So a `commit` that no longer exists upstream -- after a history rewrite,
+/// say -- breaks nothing and is not a merge blocker. Move it when you next
+/// re-vendor; do not stop work to repoint it, and do not treat prose that
+/// cites it as something that must be kept in sync.
 fn is_full_commit_sha(commit: &str) -> bool {
     commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit())
 }

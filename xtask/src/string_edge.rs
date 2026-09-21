@@ -8,13 +8,14 @@
 //! type inference): it reports an equality/ordering comparison where at
 //! least one operand is a string *literal* (`x == "foo"`), a `match` whose
 //! scrutinee has at least one string-literal arm pattern (`"foo" => ...`),
-//! and (PR #262 review, finding F5) a `starts_with`/`contains`/
-//! `eq_ignore_ascii_case` method call with a string-literal argument --
-//! method calls a `syn::ExprBinary` walk cannot see, and this PR's own new
-//! `xtask::seam_probe::offline_registry_unavailable` (`stderr.contains(
-//! "--offline")`) was exactly this blind spot, invisible until this scan
-//! grew a method-call form to find it. It does not detect a comparison
-//! between two `&str` bindings with no literal on either side (`x == y`,
+//! and (PR #262 review, finding F5; extended round 2) a
+//! `starts_with`/`ends_with`/`contains`/`eq_ignore_ascii_case`/
+//! `strip_prefix`/`trim_start_matches` method call with a string-literal
+//! argument -- method calls a `syn::ExprBinary` walk cannot see, and this
+//! PR's own new `xtask::seam_probe::offline_registry_unavailable`
+//! (`stderr.contains("--offline")`) was exactly this blind spot, invisible
+//! until this scan grew a method-call form to find it. It does not detect
+//! a comparison between two `&str` bindings with no literal on either side (`x == y`,
 //! both variables), or a comparison against a named `const` rather than a
 //! literal -- both need a real type checker, not an AST walk, to know
 //! either side is a string at all. ADR-012 §9's own named violation sites
@@ -149,11 +150,15 @@ fn is_comparison_op(op: syn::BinOp) -> bool {
 }
 
 /// The literal-taking string methods this scan additionally covers
-/// (PR #262 review, finding F5): `starts_with`, `contains` and
-/// `eq_ignore_ascii_case` are method calls, not `syn::ExprBinary`, so the
-/// original `visit_expr_binary`-only scan could not see them -- this PR's
-/// own `xtask::seam_probe::offline_registry_unavailable` (`stderr.contains(
-/// "--offline")`) was exactly this blind spot.
+/// (PR #262 review, finding F5, extended in round 2 with `ends_with`,
+/// `strip_prefix` and `trim_start_matches`): these are method calls, not
+/// `syn::ExprBinary`, so the original `visit_expr_binary`-only scan could
+/// not see them -- this PR's own `xtask::seam_probe::
+/// offline_registry_unavailable` (`stderr.contains("--offline")`) was
+/// exactly this blind spot. `ends_with` is `starts_with`'s obvious sibling;
+/// `strip_prefix`/`trim_start_matches` take a literal in the same position
+/// for the same dispatch-by-literal reason and cost nothing extra to add to
+/// this list -- all five feed the same `is_string_edge_method` check below.
 ///
 /// Named here as data, not as a literal at the comparison site itself (the
 /// same `has_attr_named`/`has_cfg_test` shape already used above in this
@@ -162,7 +167,14 @@ fn is_comparison_op(op: syn::BinOp) -> bool {
 /// directly, so the scanner's own AST walk over this file does not see a
 /// literal operand at a `==`/`match` site here and flag this detector's own
 /// implementation.
-const STRING_EDGE_METHODS: [&str; 3] = ["starts_with", "contains", "eq_ignore_ascii_case"];
+const STRING_EDGE_METHODS: [&str; 6] = [
+    "starts_with",
+    "ends_with",
+    "contains",
+    "eq_ignore_ascii_case",
+    "strip_prefix",
+    "trim_start_matches",
+];
 
 fn is_string_edge_method(method: &syn::Ident) -> bool {
     STRING_EDGE_METHODS.contains(&method.to_string().as_str())
@@ -690,10 +702,11 @@ mod tests {
         assert_eq!(before[0].item, after[0].item);
     }
 
-    /// F5: `starts_with`/`contains`/`eq_ignore_ascii_case` are method calls,
-    /// not `syn::ExprBinary`, so they need their own detection path. Covers
-    /// a literal receiver, a literal argument, and the one production
-    /// method call this PR's own review found invisible
+    /// F5 (round 2 extends the method list with `ends_with`, `strip_prefix`
+    /// and `trim_start_matches`): all six `STRING_EDGE_METHODS` are method
+    /// calls, not `syn::ExprBinary`, so they need their own detection path.
+    /// Covers a literal receiver, a literal argument, and the one
+    /// production method call this PR's own review found invisible
     /// (`xtask::seam_probe::offline_registry_unavailable`'s
     /// `stderr.contains("--offline")`).
     #[test]
@@ -704,15 +717,21 @@ mod tests {
             fn b(value: &str) -> bool { "literal".eq_ignore_ascii_case(value) }
             fn c(stderr: &str) -> bool { stderr.contains("--offline") }
             fn d(value: &str) -> bool { value.starts_with(other()) }
+            fn e(value: &str) -> bool { value.ends_with("suffix") }
+            fn f(value: &str) -> Option<&str> { value.strip_prefix("prefix") }
+            fn g(value: &str) -> &str { value.trim_start_matches("prefix") }
             "#,
         );
-        // `a`, `b` and `c` each report exactly one occurrence; `d`'s
-        // argument is not a literal, so it reports none.
-        assert_eq!(occurrences.len(), 3);
+        // `a`, `b`, `c`, `e`, `f` and `g` each report exactly one
+        // occurrence; `d`'s argument is not a literal, so it reports none.
+        assert_eq!(occurrences.len(), 6);
         assert!(occurrences.iter().any(|o| o.item == "a"));
         assert!(occurrences.iter().any(|o| o.item == "b"));
         assert!(occurrences.iter().any(|o| o.item == "c"));
         assert!(!occurrences.iter().any(|o| o.item == "d"));
+        assert!(occurrences.iter().any(|o| o.item == "e"));
+        assert!(occurrences.iter().any(|o| o.item == "f"));
+        assert!(occurrences.iter().any(|o| o.item == "g"));
     }
 
     /// F5: a method call inside a `#[string_edge]`-marked function is

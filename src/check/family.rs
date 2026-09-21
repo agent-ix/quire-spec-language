@@ -88,6 +88,17 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// adding a variant to `Expression`, `ValueType` or any nested enum this
 /// preimage reads is a compile error here, forcing this file to pick an
 /// explicit new tag, not a silent reinterpretation of the old bytes.
+///
+/// An exhaustive `match` only catches a *new* variant, though (PR #262
+/// review, round 2): it forces nothing about the order two existing writes
+/// happen in, or the spelling of an existing tag, and every test in this
+/// file until round 2 only ever compared two identities minted in the same
+/// process or round-tripped through `emit_v2`/`decode_v2`, so a reordered
+/// write or a renamed tag would have recompiled clean and passed every one
+/// of them while silently changing every minted identity. See
+/// `mint_declaration_identity_matches_a_checked_in_digest`
+/// (`value::expression::family`'s `tests` module) for the golden-digest test
+/// that closes that gap.
 struct Preimage(Vec<u8>);
 
 impl Preimage {
@@ -203,6 +214,24 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
     }
 }
 
+// PR #262 review, round 2: this function and `encode_expression` write
+// several `quire_exact::Integer` leaves through `.to_string()`
+// (`Int`/`Rational`/`Decimal` bounds below; `Expression::Integer`/
+// `Rational` literals in `encode_expression`) -- `Display`, the same
+// mechanism `{:?}` (`Debug`) was rejected for elsewhere in this file. The
+// two are not equivalent here: `Integer`'s `Display` is not incidental
+// formatting `std` warns is unstable, it is `quire_exact::integer::
+// Integer`'s own documented "canonical wire spelling used by complete-V1
+// schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
+// `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
+// etc.) -- a real, enforced, round-tripping contract, not a Debug-style
+// dump of whatever fields happen to exist. `src/value/node.rs`'s own
+// `CanonicalRational` already relies on exactly this contract for this
+// codebase's other content-addressed digest (RFC 8785 JCS preimages).
+// Repointing these leaves at a bespoke byte encoding would introduce a
+// second, parallel integer serialization where one canonical, tested one
+// already exists and is already trusted for identity purposes -- so they
+// are left on `Integer::to_string()` deliberately, not as an oversight.
 fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
     match value_type {
         ValueType::Boolean => out.write_str("boolean"),
@@ -284,6 +313,9 @@ fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) 
     }
 }
 
+// `Expression::Integer`/`Rational`'s `.to_string()` below: same
+// `Integer::Display` canonical-wire-spelling contract, same reasoning --
+// see `encode_value_type`'s own doc comment above.
 fn encode_expression(out: &mut Preimage, expr: &Expression) {
     match expr {
         Expression::Boolean(value) => {

@@ -18,10 +18,15 @@ TREE ?= all
 QSPEC_CLONE ?=
 FCD_CLONE ?=
 
-.PHONY: revendor revendor-check seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
+.PHONY: revendor revendor-check check-index-completeness seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
 
 revendor:
 	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
+
+# QSL-168: fail when an FR or TC artifact under spec/ has no row in the
+# master index (spec/spec.md, spec/**/tests.md). Offline, no build required.
+check-index-completeness:
+	tools/check-index-completeness.sh
 
 revendor-check:
 	cargo xtask revendor-check --tree $(TREE)
@@ -36,24 +41,31 @@ seam-probe:
 # QSL#214 (FR-064): scans the QSL crates' non-test source for a string
 # comparison or string `match` outside a `#[string_edge]`-marked function.
 # FR-064's own text requires this tool to run "in the lint gate", but the
-# real, unmarked crate today has 60 pre-existing occurrences outside every
+# real, unmarked crate today has 67 pre-existing occurrences outside every
 # file #214 touches (src/cli.rs, src/complete/, src/model/,
 # src/protocol_artifact/, src/state/evaluation.rs, src/value/definition.rs,
 # src/linking.rs, src/mapped.rs). PR #262 review, finding F5: that "none of
-# the 60 are reachable from src/family/*/src/value/expression/*" claim rested
+# them are reachable from src/family/*/src/value/expression/*" claim rested
 # on the scanner's own known limits (literal-operand `ExprBinary` comparisons
 # only -- no method-call forms like `starts_with`/`contains`, and no
 # const-named operand), not on those two directories actually being clean;
 # the same PR's own new code had two unmarked comparisons the scanner missed
 # for exactly that reason, now fixed and (where genuine) marked
-# `#[string_edge]`. FR-064's allow-list mechanism cannot paper over the
-# remaining 60 (it refuses any branch-gating entry, which is what almost all
-# of them are), so making them clean is real conversion work belonging to the
-# family this string selects, not to #214. `xtask string-edge` itself is
-# complete and its own footprint (xtask/*) is clean under it (verified: 0
-# findings), so this target runs it standalone -- like `arch-lint` below, it
-# is not part of `ci:` until the crate-wide marking sweep QSL-145 tracks
-# lands. Remaining work: QSL-145.
+# `#[string_edge]`. Round 2 of the same review extended the method-call
+# detection to `ends_with`/`strip_prefix`/`trim_start_matches` (the count
+# moved 60 -> 67, all seven new findings outside src/family/*/src/value/
+# expression/* -- one of the seven was inside xtask/* itself,
+# xtask/src/cargo_pin.rs's `locked_rev`, now marked `#[string_edge]` for the
+# same reason `seam_probe`'s `offline_registry_unavailable` already was: a
+# real branch gate over hand-parsed `Cargo.lock` text, not a family-dispatch
+# smell to launder). FR-064's allow-list mechanism cannot paper over the
+# remaining 67 in src/* (it refuses any branch-gating entry, which is what
+# almost all of them are), so making them clean is real conversion work
+# belonging to the family this string selects, not to #214. `xtask
+# string-edge` itself is complete and its own footprint (xtask/*) is clean
+# under it (verified: 0 findings), so this target runs it standalone -- like
+# `arch-lint` below, it is not part of `ci:` until the crate-wide marking
+# sweep QSL-145 tracks lands. Remaining work: QSL-145.
 string-edge:
 	cargo xtask string-edge
 
@@ -88,7 +100,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
+ci: revendor-check check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
