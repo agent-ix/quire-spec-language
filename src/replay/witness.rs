@@ -19,9 +19,9 @@
 
 use std::fmt;
 
-use quire_exact::ScalarLimits;
 #[cfg(test)]
 use quire_exact::Origin;
+use quire_exact::ScalarLimits;
 
 use crate::digest::{DigestDomain, DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
