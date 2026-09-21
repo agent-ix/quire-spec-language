@@ -15,6 +15,15 @@ impl ByteDigest {
         Self(Sha256::digest(bytes).into())
     }
 
+    /// The raw 32-byte digest. `pub(crate)`: outside this module, the
+    /// `sha256:`-prefixed [`fmt::Display`] form is `ByteDigest`'s public
+    /// spelling; this is an internal accessor for callers, such as
+    /// `replay::identity`'s digest-match checks, that need the raw bytes
+    /// rather than the prefixed text.
+    pub(crate) fn as_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
     // Native input fields declare the algorithm through their enclosing format.
     // Other digest domains retain the algorithm-prefixed FromStr contract.
     pub(crate) fn from_hex(hex: &str) -> Result<Self, InvalidDigest> {
@@ -215,6 +224,33 @@ impl DigestDomain {
     }
 }
 
+impl DigestDomain {
+    /// Whether this domain digests exactly the raw bytes it addresses, with
+    /// no RFC 8785/JCS canonicalization or structural preimage in between.
+    /// A byte-provision entry (ADR-013 O-26/QC-1: "every source, definition
+    /// and domain-package input") is admitted only under one of these
+    /// domains: the byte-provision integrity check (FR-071-AC-6) is exactly
+    /// "the entry's raw bytes hash to its own declared digest", which is
+    /// only ever true for a domain defined that way. A `sha256-jcs` or
+    /// `.../jcs/v1` domain digests a canonicalized form this repo has no
+    /// canonicalizer for; a `quire.package.semantic/v2` or
+    /// `quire.checked-semantic-node/v1` domain digests a structural
+    /// preimage, not arbitrary bytes. Admitting one of those here would
+    /// make every entry under it fail the raw-bytes check with a spurious
+    /// `byte-digest-mismatch`, naming a staleness that does not exist for a
+    /// domain the entry was never eligible to declare in the first place.
+    pub(crate) fn is_raw_byte_addressed(&self) -> bool {
+        matches!(
+            self,
+            Self::SourceBytesV1
+                | Self::DefinitionBytesV1
+                | Self::RawArtifactDigest
+                | Self::DiagnosticCatalogBytesV1
+                | Self::GeneratedArtifactBytesV1
+        )
+    }
+}
+
 impl fmt::Display for DigestDomain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -365,6 +401,18 @@ pub enum InvalidDigestRecord {
     /// pair as `"ab..."`.
     #[error("digest is not exactly 64 lowercase hexadecimal digits")]
     NotLowerHex,
+}
+
+impl InvalidDigestRecord {
+    /// Whether this refusal is genuinely about the digest's *domain*
+    /// (absent, or naming a label FR-201 does not define) as opposed to the
+    /// digest string's own encoding (wrong length, not lowercase hex). A
+    /// caller rendering a catalog cause for this refusal must not spell a
+    /// malformed-encoding case as `digest-domain-mismatch`: the domain named
+    /// no problem at all in that case.
+    pub(crate) fn is_domain_mismatch(&self) -> bool {
+        matches!(self, Self::AbsentDomain | Self::UnknownDomain(_))
+    }
 }
 
 #[cfg(test)]

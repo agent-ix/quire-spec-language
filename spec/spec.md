@@ -444,11 +444,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-066](functional/FR-066-document-family-migration-recipe.md) | FR | Specified under #214; not yet implemented; waits on FR-065 for its worked-example citations |
 | [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; implemented in #261 (`836dc12`) — TC-167/168/169 |
 | [FR-068](functional/FR-068-split-expression-checking-into-check-stage.md) | FR | Specified under QSL-139 (ADR-011 §7.3 M-5), split from #214 by owner ruling 2026-09-20; not yet implemented |
-| [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |
-| [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |
-| [FR-071](functional/FR-071-implement-typed-replay-request.md) | FR | Specified under #231 (QSL-88); not yet implemented |
-| [FR-072](functional/FR-072-implement-typed-replay-result.md) | FR | Specified under #231 (QSL-88); not yet implemented |
-| [FR-073](functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Implemented under #231 (QSL-88); TC-177–179 pass locally — see `spec/tests.md` |
+| [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Implemented under #231 (QSL-88); TC-180–186 pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
+| [FR-071](functional/FR-071-implement-typed-replay-request.md) | FR | Implemented under #231 (QSL-88); TC-185, TC-186, TC-188 pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
+| [FR-072](functional/FR-072-implement-typed-replay-result.md) | FR | Implemented under #231 (QSL-88); TC-189–191 pass locally, TC-192 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
+| [FR-073](functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) | FR | Implemented under #231 (QSL-88); TC-209–211 pass locally — see `spec/tests.md` |
 | [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185 (QSL-185); not yet implemented; waits on #213 for the canonical `Capability` type |
 | [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185 (QSL-185); not yet implemented; exit waits on quire-contract-codegen#86 |
 | [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185 (QSL-185); not yet implemented |
