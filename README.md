@@ -66,8 +66,8 @@ native predicate, state, temporal and protocol emission, including static
 compensation registration, activation, retries and full/partial recovery
 requirements. The [Rust producer recipe](examples/protocol-handoff/README.md)
 combines four source units, queries, population/reference roles and actual model
-operations, recording the producer's own executable identity as a digest and
-retaining independently derived selectors.
+operations, recording the producer's own source identity as a digest over its
+own source text and retaining independently derived selectors.
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
 `/1` handoff directly from the pinned crate. Version-explicit member constants
 name its offer, external reference, `Selection` record and checksum inventory;

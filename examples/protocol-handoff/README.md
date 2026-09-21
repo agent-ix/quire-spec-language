@@ -54,13 +54,16 @@ This test uses a fresh temporary output directory and checks original source and
 declaration owners, joined receive/choice provenance and Full/Partial compensation records after the producer's
 independent reader succeeds. It does not exercise B's acceptance interface.
 
-This recipe supports Linux ELF executables; Mach-O and PE executables are refused.
-The producer reads its actual `current_exe()` bytes, identifies an ELF version-1
-binary, and records only their raw digest as `Producer.binary` -- the bytes
-themselves are never retained, written to a fixture file, or supplied as a
-dependency's exact-byte content, so no size ceiling applies to them: a debug or
-release build, stripped or not, hashes the same way. All compiler stages retain
-their own default limits; no limit is disabled to accommodate a build. Existing
+The producer identifies itself by a digest over its own source text
+(`examples/protocol-handoff/producer.rs`, embedded at compile time via
+`include_bytes!`) and records only that digest as `Producer.binary` -- the
+bytes are never retained, written to a fixture file, or supplied as a
+dependency's exact-byte content, so no size ceiling applies to them, and the
+value is the same across a debug or release build, stripped or not, and
+across any toolchain: anyone with this repository can independently
+recompute it (`sha256sum examples/protocol-handoff/producer.rs`). All compiler
+stages retain their own default limits; no limit is disabled to accommodate a
+build. Existing
 output directories are refused. Publication is not atomic: an I/O failure may
 leave a partial directory. Retry with a new path, or inspect and remove the
 incomplete output before reusing its path. No source file or synthetic producer
