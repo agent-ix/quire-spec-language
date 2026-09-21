@@ -1,6 +1,6 @@
 ---
-id: FR-046
-title: "Validate state invocation inputs before clause evaluation"
+id: FR-047
+title: "Classify producer diagnostics from typed causes"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,34 +8,33 @@ relationships:
 ---
 ## Description
 
-When accepting a state assessment request, the validator SHALL establish the exact anchor, observations, context and applicable invocation/frame correspondence required by its selected clause before evaluating it.
+When reporting a native producer failure, the producer SHALL derive its machine-readable classification from a typed cause in its versioned diagnostic catalog rather than diagnostic message text.
 
 ## Inputs
 
-Operation/invocation/context/universe identities, immutable parameter/result values, exact pre/post snapshots, completeness statements and selected authored frame.
+A failure at source recognition, identity/linking, type/profile checking, input binding, capability selection or resource-limited execution, with its available source/subject context.
 
 ## Outputs
 
-A validated anchored request or a typed binding/frame refusal or unavailable-input result.
+A stable catalogued classification, failure stage and structured cause details with exact available loci; human-readable wording is presentation.
 
 ## Behavior
 
-Preconditions use pre, postconditions post, and result is post-only. Parameters come from one declared invocation. Complete pre/post populations determine actual create/delete/change inventories; caller-supplied lists must match and stay within the selected frame. Missing observation is not empty population or a frame violation. A complete post snapshot lacking required self is a context-binding refusal even when its deletion was permitted. Callers cannot select a more permissive frame or substitute another operation's observation.
+Every emitted code belongs to the selected catalog; no ad-hoc literal or English-message match determines its kind. Cause details distinguish materially different refusals sharing a broader category, including missing versus conflicting definitions, wrong anchor versus missing observation, unknown syntax versus prohibited recognized construct, and unproved definedness versus runtime logical violation. Diagnostic formatting/localization cannot change classification. Wire extension/version behavior follows the existing shared interchange contract; this requirement creates no competing result envelope.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-046-AC-1 | Correctly bound pre/post inputs and parameters from one invocation supply the expected distinct self reads and immutable parameter values. | Test (TC-046) |
-| FR-046-AC-2 | Foreign operation/invocation/universe, wrong parameter/result type or a substituted frame refuses before evaluation. | Test (TC-046) |
-| FR-046-AC-3 | For complete observations, incorrect creation/deletion inventories and changes beyond the selected frame refuse with distinct typed causes. | Test (TC-046) |
-| FR-046-AC-4 | Missing pre/post/completeness input remains unavailable/incomplete, without fabricating a delta, violation or Boolean. | Test (TC-046) |
-| FR-046-AC-5 | Allowed deletion of required post self still refuses the post-context binding; an independently qualified pre reference remains a pre reference. | Test (TC-046) |
-| FR-046-AC-6 | An invariant binds its named initialization/handler observation; a bare context type or unrelated current snapshot refuses as a substitute. | Test (TC-046) |
+| FR-047-AC-1 | Changing/localizing human-readable messages leaves the same typed failure's stage, code and cause details unchanged. | Test (TC-047) |
+| FR-047-AC-2 | Every emitted machine code resolves to the selected versioned catalog; an uncatalogued code cannot be published as a stable producer outcome. | Test (TC-047) |
+| FR-047-AC-3 | Distinct anchor, observation, profile and definedness failures retain structured discriminating causes without requiring message parsing. | Test (TC-047) |
+| FR-047-AC-4 | Original source/model/clause loci and identities remain attached where available; diagnostics do not reconstruct a location by searching for a repeated name. | Test (TC-047) |
+| FR-047-AC-5 | Per-request resource/unsupported failures keep their actual stage and prerequisites rather than becoming another clause's Boolean result. | Test (TC-047) |
 
 ## Dependencies
 
-- [Detailed draft contract](../../proposals/quire-v1/state-contract.md).
+- [Detailed draft contract](../../proposals/quire-v1/shared-foundation.md).
 - [Shared grammar](../../proposals/quire-v1/shared-grammar.md).
 - [Planned acceptance matrix](../composed-foundation/tests.md).
 

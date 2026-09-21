@@ -185,11 +185,11 @@ pub(super) fn lower(
             requires,
         });
     }
-    for r in [
-        selections.contract,
-        selections.baseline,
-        &selections.producer.binary,
-    ] {
+    // The producer's own binary is identity, not a dependency: it is
+    // recorded and checked as a digest on `Producer.binary` (validated by
+    // `copy_reference` below), never as one of these exact-byte
+    // dependencies, so its bytes are never required here.
+    for r in [selections.contract, selections.baseline] {
         dependency(&dependencies, r, work)?;
     }
     artifact::intake::name(selections.definition_revision_namespace)?;

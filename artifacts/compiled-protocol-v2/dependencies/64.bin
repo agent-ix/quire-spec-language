@@ -1,60 +1,56 @@
 ---
-id: FR-116
-title: "Map observation outcomes to executable and output consumers"
-type: FR
+id: NFR-010
+title: "Bound composed processing without fabricating results"
+type: NFR
+quality_attribute: reliability
 relationships:
-  - target: ix://agent-ix/quire-specification/US-009
-    type: implements
+  - target: ix://agent-ix/quire-specification/FR-036
+    type: constrains
+  - target: ix://agent-ix/quire-specification/FR-041
+    type: constrains
+  - target: ix://agent-ix/quire-specification/FR-043
+    type: constrains
+  - target: ix://agent-ix/quire-specification/FR-044
+    type: constrains
 ---
-## Description
+## Statement
 
-When delivering an observation assessment to an executable or exported consumer,
-the consumer adapter SHALL retain the requested subject, capability, immutable
-source/binding/progress/definition/profile identity-revision-digest selections,
-assessment execution, decision-scope progress, decision-scope closure,
-surrounding-execution progress, surrounding-execution closure,
-complete-global-conformance closure, truth, settlement basis, exact decision
-support, per-obligation disposition, completeness reasons, and mapping-loss
-classification as separate facts.
+When a composed processing request cannot perform its next required work within a declared resource limit, the
+implementation SHALL stop the affected work with an explicit incomplete outcome
+before publishing an unestablished result or silently dropping required input.
 
-## Behavior
+## Scope
 
-The adapter SHALL classify each mapped obligation as preserved, conditional,
-unrepresented, or refused; incomplete, pending, and refused outcomes are not
-Boolean success. It SHALL consume A-owned interchange identities and B-owned
-result semantics; codegen and export mappings do not become clause authorities.
-It SHALL preserve a late contradiction's prior-result identity and linked
-superseding/invalidating result without rewriting historical bytes. It SHALL
-refuse definition/profile identity, revision, or digest drift rather than emit a
-mapping under a current default.
+Source/token/node admission, model and profile dependency expansion, numeric
+proof/normalization, query traversal/materialization and finite-graph traversal.
+F/E/B extend this policy to their owned monitor/protocol accounting contracts.
+Semantic domain limits and caller-lowered work controls are different inputs;
+zero does not disable a limit. Every selected processing boundary must declare
+its accounting version and effective limits before accepting work.
 
-The adapter SHALL retain the four decision-scope/surrounding-execution
-progress/closure axes with their exact scope, authority and boundary identities
-under [FR-061](FR-061-report-orthogonal-results.md). It SHALL retain the fifth
-typed complete-global-conformance closure record: `closed`, `open`, `incomplete`
-or `contradicted` with the exact required execution, branch and workflow
-closure-premise identities for a global-conformance claim; `not-required` with
-no global premise set for another claim. It SHALL refuse omitted, duplicated,
-cross-wired or scope-mismatched required axes, records or premises, a global
-premise under `not-required`, or `not-required` substituted for a global claim
-or another axis. Assessment completion, completeness, settled truth or another
-closure axis SHALL NOT replace a required closure fact or global premise.
-When the selected consumer cannot represent a required fact, the adapter SHALL
-retain the source fact and explicit mapping loss as conditional, unrepresented
-or refused; missing representation SHALL NOT be classified as preserved.
+## Measurement and Evaluation
 
-## Acceptance Criteria
+| Metric | Target | Threshold | Method |
+| --- | --- | --- | --- |
+| Completed affected results after an insufficient limit | 0 | 0 | Test |
+| Required inputs or live work silently dropped to report success | 0 | 0 | Test |
+| Allocations/expansions beyond the declared admission/work charge | 0 | 0 | Test |
 
-| ID | Criteria | Verification |
-| --- | --- | --- |
-| FR-116-AC-1 | A consumer receives source/binding/progress provenance with each per-obligation disposition. | Test (TC-146) |
-| FR-116-AC-2 | An unsupported or lossy mapping is visible as conditional, unrepresented, or refused. | Test (TC-146) |
-| FR-116-AC-3 | A consumer cannot convert pending, incomplete, or refused into a passed Boolean result. | Test (TC-146) |
-| FR-116-AC-4 | Parsing, serializing, or accepting emitted target text does not alter a mapping outcome or establish semantic preservation. | Test (TC-146) |
-| FR-116-AC-5 | Consumer delivery preserves assessment execution, decision-scope progress, decision-scope closure, surrounding-execution progress, surrounding-execution closure, the fifth typed complete-global-conformance closure record with its exact required global premises or non-global `not-required` with no global premises, truth, settlement basis, exact decision support, immutable definition/profile dependencies, and late-result supersession without Boolean or historical-byte promotion. Each required axis, record and premise remains independently scope-bound; omission, duplication, cross-wiring, scope mismatch or invalid `not-required` substitution refuses. Missing target representation remains explicit mapping loss and cannot become preservation. | Test (TC-146) |
+## Verification
+
+[TC-048](../test-cases/TC-048-bound-composed-processing.md) plans zero, sufficient,
+exact-boundary and one-below-sufficient controls for every implemented boundary.
+Its budget, adverse-input and instrumented allocation controls respectively
+measure the three metrics above; the Method cells use the catalog's Test class.
+The domain includes nested sequences whose individual maxima are valid but
+aggregate work is large, acyclic predicate fan-out, reducible rational inputs,
+and long/cyclic graphs. A prior phase may fail first and must retain that actual
+cause. No unimplemented boundary is claimed covered by another phase's tests.
+Do not prescribe a universal memory ceiling from the historical compiler's
+current defaults or confuse the local Cargo job limit with language semantics.
 
 ## Dependencies
 
-- [Shared foundation](../../proposals/quire-v1/shared-foundation.md).
-- [Observation result consumer and output-mapping contract](../../proposals/quire-v1/observation-output-mapping-contract.md).
-- A owns interchange/versioning; B owns result semantics; D/E own their mapping meanings.
+- [State/query/graph contract](../../proposals/quire-v1/state-contract.md).
+- [Typed producer causes](../functional/FR-047-emit-typed-located-causes.md).
+- [Historical exhaustion distinction](NFR-002-classify-resource-incompleteness.md).

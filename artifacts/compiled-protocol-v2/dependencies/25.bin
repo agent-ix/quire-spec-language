@@ -1,6 +1,6 @@
 ---
-id: FR-030
-title: "Bind every clause to its exact semantic definitions"
+id: FR-031
+title: "Report each requested assessment capability independently"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,48 +8,28 @@ relationships:
 ---
 ## Description
 
-When admitting a composed native package, the frontend SHALL bind every clause to its explicitly selected language edition, profile definitions and exact model dependency closure before permitting that clause to execute.
+When assessing an admitted native package, the dispatcher SHALL report a disposition for every requested clause/capability pair without converting an unsupported request into success or removing an independent supported result.
 
 ## Inputs
 
-Native source with exact byte/revision/span identity, clause declarations, selected definition name/revision/byte-digest tuples and imported model identities. Selection is authored or explicitly supplied by the source profile; installed backends never choose it.
+An admitted package, explicit requested clause/capability pairs, validated runtime inputs and the selected backend's declared support. A pair includes the requested claim, such as finite replay or local projection.
 
 ## Outputs
 
-A linked clause with resolved definition and model dependencies, or a located typed admission refusal.
+Per-request results or refusals, each bound to its clause, semantic profile, requested claim, backend and prerequisite outcome.
 
 ## Behavior
 
-A reused profile name with a different revision or digest is a different selection, not an alias for an installed definition. Unknown or conflicting definitions refuse all clauses depending on them. A source- or model-identity conflict prevents dependent admission; unrelated valid clauses may remain inspectable. Repeated declarations cannot introduce a second editable authority. Runtime observations and changing monitor state do not participate in static package identity.
-
-The [package contract](../../proposals/quire-v1/package-contract.md) defines the
-static components, exact import digest and typed binding requirements. The
-compiler input inventory closes the native declaration namespace. Checked output
-retains per-declaration dependency dispositions; partial admission is not a
-complete package. Static subject identity differs from serialized artifact bytes
-and build provenance; an unqualified canonical digest is not claimed.
-
-The linker's prerequisites follow the package contract's processing-stage table.
-Concrete populations, windows and observations are later assessment inputs,
-not prerequisites for type-checking a valid future obligation. When a producer
-supplies canonical model/profile objects, the linker retains the declared
-producer/native correspondence instead of substituting that canonical digest
-for a compiled-model or definition byte digest.
+A dependency-closed supported request can execute when another independent request is unsupported. A failed shared prerequisite prevents all of its dependents from executing. Package-level complete success requires every selected required request to complete successfully; partial results retain their limitations. Unsupported method, refused input, resource-incomplete execution and logical violation are distinct outcomes. Backend selection never rewrites the admitted language subject.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-030-AC-1 | A package with state, temporal and protocol clauses retains each exact selected definition and a shared exact model closure. | Test (TC-030) |
-| FR-030-AC-2 | An unknown revision, digest mismatch or conflicting definition refuses dependent clauses before execution and identifies the failed selection. | Test (TC-030) |
-| FR-030-AC-3 | Changing a runtime trace while keeping source, model and selected definitions fixed does not change static package identity; changing a semantic dependency does. | Test (TC-030) |
-| FR-030-AC-4 | Duplicating a clause's editable authority refuses admission rather than choosing the first or last declaration. | Test (TC-030) |
-| FR-030-AC-5 | An omitted required source unit prevents namespace closure; an extra file outside the explicit inventory cannot add or shadow a declaration. | Test (TC-030) |
-| FR-030-AC-6 | Substituting a manifest/lock digest or package fingerprint for the compiled model import's byte digest refuses the import. | Test (TC-030) |
-| FR-030-AC-7 | Linked binding roles retain owning declaration, source region, kind, exact type/contract, anchor and scope prerequisites; equal local names in different clauses do not merge their roles. | Test (TC-030) |
-| FR-030-AC-8 | A compile configuration change limited to resource controls remains visible in provenance while preserving the static subject; a changed semantic selection changes the static subject. | Test (TC-030) |
-| FR-030-AC-9 | A valid three-family template links with exact static model/definition/binding contracts and no runtime population, window or observations; removing a required static definition still refuses its dependent declaration. | Test (TC-030) |
-| FR-030-AC-10 | A declared producer/native correspondence retains and validates each selection in its own digest domain; missing correspondence, foreign exports and cross-domain digest substitutions refuse the dependent static binding. | Test (TC-030) |
+| FR-031-AC-1 | For one admitted protocol, supported finite replay can return its scoped result while unsupported local projection is explicitly reported. | Test (TC-031) |
+| FR-031-AC-2 | For a supported state request and unsupported independent temporal lowering, both dispositions appear and package-level complete success is unavailable. | Test (TC-031) |
+| FR-031-AC-3 | A failed shared model or observation prerequisite prevents all dependent requests from executing; an independent request keeps its result. | Test (TC-031) |
+| FR-031-AC-4 | Replacing the requested backend leaves the admitted semantic subject unchanged and identifies the selected backend in the result. | Test (TC-031) |
 
 ## Dependencies
 

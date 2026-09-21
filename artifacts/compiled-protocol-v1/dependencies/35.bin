@@ -1,6 +1,6 @@
 ---
-id: FR-042
-title: "Select pre-state reads without retagging captured values"
+id: FR-043
+title: "Evaluate identity and reachability in explicit finite graphs"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,29 +8,29 @@ relationships:
 ---
 ## Description
 
-When binding a postcondition pre(expression), the checker SHALL select that invocation's pre observation for eligible state reads inside the expression while preserving lexical and invocation-value provenance.
+When evaluating an admitted finite-graph relation, the evaluator SHALL use the declared typed universe and qualified snapshot without substituting structural records, ambient lookups or a path cutoff.
 
 ## Inputs
 
-An exact postcondition invocation environment, located expression, lexical captures, declared operation parameters/result and pre/post snapshot identities.
+A complete finite typed object environment, exact universe/snapshot identities, references, resolved edge field and explicit work limits.
 
 ## Outputs
 
-A source-bound pre-selected expression or a typed anchor/provenance refusal.
+An identity/reachability result with retained bindings, or a typed model/binding/refusal or incomplete execution.
 
 ## Behavior
 
-The state contract's anchor table and correspondence examples define the selection. Pre is refused in invariants/preconditions, on bare parameters/constants/captures, and for post-only result access. Pure immutable parameters may accompany a permitted pre state read in a composite expression. A let initialized outside pre is not re-executed, and a post-qualified captured value/reference cannot be retagged. A let inside pre reads that selected observation. Nested eligible pre is idempotent. Presence facts never cross observation identity.
+Identity equality uses universe, stable object type and object ID, preserving snapshot qualifiers for reads. Traversal requires the same type/universe/snapshot and one-or-more edges over Ref(T), Option(Ref(T)) or ordered Seq(Ref(T),N). Check a discovered target before suppressing repeated expansion; expand each identity at most once. Reference cycles are permitted while structural containment remains acyclic. No opaque scalar gains navigation or implicit heterogeneous relation semantics.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-042-AC-1 | pre(self.version + delta) and pre(P(self.version, delta)) bind the field to pre and delta to the same immutable invocation parameter. | Test (TC-042) |
-| FR-042-AC-2 | pre(let v = self.version in v + delta) reads pre; pre(pre(self.version)) retains the same observation and original selector loci. | Test (TC-042) |
-| FR-042-AC-3 | let v = self.version in pre(v) and let s = self in pre(s.version) refuse instead of replaying or retagging post captures. | Test (TC-042) |
-| FR-042-AC-4 | pre(delta), pre(result), invariant/precondition historical access and a pre guard used for a post optional value refuse with their exact cause and source. | Test (TC-042) |
-| FR-042-AC-5 | A pre-qualified reference keeps pre navigation after deletion in post; a post reference cannot become pre merely because its object ID matches. | Test (TC-042) |
+| FR-043-AC-1 | The same typed object identity compares equal across pre/post of one universe while its field reads keep their respective observations; matching labels in different universes/types cannot substitute. | Test (TC-043) |
+| FR-043-AC-2 | An isolated object does not reach itself; a self-loop or cycle back to the start does. Empty/absent outgoing edges stop expansion. | Test (TC-043) |
+| FR-043-AC-3 | Branching ordered edges and duplicates preserve the reachability result without repeated expansion; a path longer than an implementation convenience threshold is not reported unreachable. | Test (TC-043) |
+| FR-043-AC-4 | Duplicate objects, dangling targets in a declared-complete universe, mismatched traversal snapshots/types and unsupported edge shapes refuse; unavailable completeness stays incomplete. | Test (TC-043) |
+| FR-043-AC-5 | Work exhaustion returns incomplete rather than false; an opaque UUID or recursive record cannot act as the missing graph representation. | Test (TC-043) |
 
 ## Dependencies
 

@@ -404,7 +404,11 @@ families from real source/type/proof owners, including static compensation and
 full/partial recovery requirements; strict-reader fixtures alone do not establish
 that authority. The [Rust emitter recipe](../../examples/protocol-handoff/README.md)
 retains four original source units, cross-unit dependencies, queries,
-population/reference roles, admitted model operations and actual executable bytes.
+population/reference roles, admitted model operations and the producer's own
+source identity as a digest over its own source text, recorded on
+`Producer.binary` rather than retained as a dependency's original bytes --
+checkable by anyone with this repository, unlike a compiled executable that
+nobody retains and that moves with the toolchain.
 Its joined receive/Boolean-choice scenario retains both received facts and
 authored branches alongside those dependencies and recovery obligations.
 General dynamic choice/progress proofs, first-class relationship exports,
