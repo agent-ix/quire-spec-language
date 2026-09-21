@@ -28,9 +28,17 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
 
 ## Inputs
 
-- A `BackendDescriptor { id: BackendId, advertises: set of (Capability, mode) }`
-  per registration, where `mode` is `bounded` or `unbounded`
-  (ADR-012 §7.1).
+- A `BackendDescriptor { id: BackendId, manifest_digest: Digest, advertises: set of (Capability, mode) }`
+  per registration, where `mode` is `bounded` or `unbounded` (ADR-012 §7.1).
+  `manifest_digest` is the digest of the backend's own FR-331 provider
+  manifest content, computed under `quire.tool-manifest.jcs/v1`'s digest
+  rule (ADR-012 §7.1, ADR-013 O-19); the registry receives it as part of
+  the descriptor and does not compute it. A backend supplies one descriptor
+  per registration, so one `BackendId` carries exactly one
+  `manifest_digest` at a time; a second registration under the same
+  `BackendId` with a different `manifest_digest` is a repeated identity and
+  is refused under FR-075-AC-4, the same as a second registration with an
+  unchanged digest.
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it) and, optionally, a named `BackendId`.
 - The registry's current contents at the moment candidates are computed.
@@ -113,7 +121,7 @@ registrations were added.
 | FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item. | Test (TC-194) |
 | FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises only from a registered backend that does not advertise the item's kind, or from no registrant advertising the kind at all). | Test (TC-195) |
 | FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry, the registration is refused with `invalid_capability`/`duplicate-backend` naming the identity, and a subsequent candidate computation still reflects only the original registration's advertised kinds. | Test (TC-196) |
-| FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Inspection |
+| FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 
 ## Dependencies
 
@@ -130,6 +138,17 @@ registrations were added.
   is the normative source for the ten capability-kind labels, the
   `(kind, mode)` advertisement shape, and the candidate-set ordering rule
   this requirement's Outputs section restates.
+- [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)'s
+  issue body describes "the canonical six-kind `Capability` value type,"
+  taking the `protocol` family's six members (FR-290's `Families` table, the
+  set FR-060 dispatches independently) as the whole vocabulary. That phrase
+  is stale: FR-290's "Vocabulary authority" section states verbatim that its
+  ten labels, not six, "are the single capability-kind vocabulary of the
+  Quire ecosystem," from which "`quire-spec-language`'s `Capability` type,
+  the backend descriptors registered in its registry... take their
+  members." FR-290 governs; this requirement and FR-057 specify against the
+  ten-label vocabulary throughout, and #213's `Capability` type is expected
+  to carry all ten.
 - The canonical `Capability` value type and its outcome constructors are
   owned by [quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213);
   this requirement consumes that type and specifies no shape for it.

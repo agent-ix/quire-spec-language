@@ -76,7 +76,7 @@ accepted by this function.
 |----|----------|--------------|
 | FR-077-AC-1 | `requests::report`'s signature contains no parameter of a `Backend`-shaped type; a call site supplying no backend argument compiles and produces a complete request report. | Test (TC-199) |
 | FR-077-AC-2 | The disposition type returned by, or reachable from, `requests::report` contains no `UnsupportedCapability` variant and no `UnsupportedFamily` variant. | Test (TC-199) |
-| FR-077-AC-3 | Given a set of admitted requested pairs, `requests::report` records every pair (declaration, capability kind, `required` flag, request index) in its output; a test that removes the negotiation call from a reference build still observes the full pair set in the report, showing recording is independent of negotiation. | Test (TC-200) |
+| FR-077-AC-3 | Given a set of at least four admitted requested pairs spanning at least three distinct capability kinds and both `required` values, `requests::report` (with no negotiation code path present at all, per FR-077-AC-1 and FR-077-AC-2) records every pair's declaration, capability kind, `required` flag and request index in its output, unchanged from its pre-removal input, showing recording does not depend on the negotiation logic this requirement removes. | Test (TC-200) |
 
 ## Dependencies
 

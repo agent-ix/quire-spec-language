@@ -30,9 +30,11 @@ location list is vacuously satisfied by not being checked at all.
 2. Run `xtask seam-probe` against the unmodified tree and confirm it
    passes (the probe variant, gated behind the feature, produces the
    expected checked-in `E0004` set and no others).
-3. Temporarily add a `#[cfg(not(feature = "seam-probe"))]` wildcard `_` arm
-   to the registry's capability-kind match (simulating a regression that
-   defeats exhaustiveness) and re-run `xtask seam-probe`.
+3. Temporarily add an unconditional wildcard `_` arm to the registry's
+   capability-kind match (not gated by the `seam-probe` feature or any
+   other `cfg`, so it is present in the probe build too, simulating a
+   regression that defeats exhaustiveness in every build) and re-run
+   `xtask seam-probe`.
 4. Temporarily remove the registry's match site from the checked-in
    expected-location list without changing the code, and re-run
    `xtask seam-probe`.

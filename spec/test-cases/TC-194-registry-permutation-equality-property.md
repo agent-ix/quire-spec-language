@@ -27,6 +27,15 @@ happens to pass on one hand-picked pair of orderings (e.g. only testing
 "forward" vs. "reversed") but fails on a third order the property generator
 samples, which a fixed two-case example test would not catch.
 
+[TC-155](TC-155-keep-admission-backend-independent.md) (FR-057-AC-8, on
+`main`) already asserts order-independence as one step (forward order vs.
+one reversed order) inside a broader fixture-based admission-and-routing
+scenario. This test case is narrower and stronger on that one property: it
+targets the registry (FR-075/FR-080) directly, not through admission, and
+samples at least 20 generated orderings rather than one reversed pair, so
+it is the test that can actually falsify an order-dependent registry
+implementation that happens to pass on a simple forward/reverse check.
+
 ## Test Procedure
 
 1. Construct a fixed set of at least three `BackendDescriptor` values with
