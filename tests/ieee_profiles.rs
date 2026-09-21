@@ -22,8 +22,8 @@ use quire_spec_language::value::{
     DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison,
     IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation,
     IeeeResult, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
-    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain,
-    Refusal, RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain, Refusal,
+    RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
