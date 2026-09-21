@@ -41,6 +41,11 @@
 //! module doc). Without it, `check`'s real import graph would reach back
 //! into `value::expression::family`, which FR-068-AC-3 forbids.
 
+// FR-068 itself names both the destination module (`check`) and the moved
+// file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
+// resolution and typing) -- the inception is the spec's own naming, not an
+// accidental collision this file introduced.
+#[allow(clippy::module_inception)]
 mod check;
 mod facts;
 mod family;
@@ -62,18 +67,20 @@ use crate::value::ValueType;
 // `crate::value::mod`'s own `length_amount`/`Charge` re-export already uses
 // for `model`<->`value` reuse. `model/conformance.rs` imports these
 // directly from here (FR-068-CON-5), not through `crate::value`.
-pub(crate) use facts::{established_field_fact, Established};
-// `mint_declaration_identity`, `OccurrenceMap` and `DEFAULT_PACKAGE_IDENTITY`
-// are re-exported for `value::expression::family`'s `#[cfg(test)]` modules,
-// which exercise this module's identity-minting content directly (layer 5
-// depending on layer 3 is permitted); a plain `cargo check`/`cargo build`
-// does not compile that consumer, so these three show as unused there but
-// not under `cargo test`/`cargo clippy --all-targets`.
 pub(crate) use check::Scope;
-pub(crate) use family::{
-    mint_declaration_identity, OccurrenceMap, ValueFunctionFamily, DEFAULT_PACKAGE_IDENTITY,
-    SCALAR_LIMITS_UNLIMITED,
-};
+pub(crate) use facts::{established_field_fact, Established};
+pub(crate) use family::{ValueFunctionFamily, SCALAR_LIMITS_UNLIMITED};
+// `mint_declaration_identity`, `OccurrenceMap` and `DEFAULT_PACKAGE_IDENTITY`
+// are consumed only by `value::expression::family`'s `#[cfg(test)]` modules
+// (layer 5 depending on layer 3 is permitted), so this re-export is itself
+// `#[cfg(test)]`-gated rather than plain: a plain `pub(crate) use` here is
+// genuinely unused in a non-test build (`cargo check`/`cargo build`/`cargo
+// clippy` without `--all-targets`), and `-D warnings` promotes that to a
+// hard compile error before cargo ever reaches the test binaries where it
+// would be used -- gating on `cfg(test)` keeps both builds clean instead of
+// papering over the non-test one with `#[allow(unused_imports)]`.
+#[cfg(test)]
+pub(crate) use family::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use check::{
