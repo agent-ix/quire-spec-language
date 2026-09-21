@@ -1,6 +1,6 @@
 ---
-id: FR-051
-title: "Preserve message, delivery, attempt and effect identities"
+id: FR-052
+title: "Represent bounded causal protocol control"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-006
@@ -10,37 +10,37 @@ relationships:
 ---
 ## Description
 
-When binding communications and business observations to a protocol instance, the protocol binder SHALL preserve message, send, receive, delivery, attempt and effect as distinct typed subjects.
+When linking a protocol body, the protocol linker SHALL construct a finite causal graph for authored sequence, labeled choice, parallel branches, join, bounded iteration and termination without deriving causal edges from source order or timestamps.
 
 ## Inputs
 
-A linked protocol, typed message/channel declarations and F-owned observation
-bindings with explicit business relationships and provenance.
+Typed protocol nodes, authored control edges, finite iteration maxima, branch
+join rules and termination declarations.
 
 ## Outputs
 
-Bound protocol events and effects, or typed identity/correlation refusals and
-explicitly missing-observation dependencies.
+An acyclic finite control representation with explicit branch and progress edges,
+or a located typed refusal.
 
 ## Behavior
 
-The binder SHALL require explicit relationships between transport records,
-attempts and effects. The binder SHALL NOT infer a business effect from a send,
-receive, successful transport status, repeated delivery, trace identifier or
-equal payload alone. The binder SHALL retain source and observation identities
-for every accepted correspondence.
+Sequence SHALL add only its authored order. Parallel branches SHALL admit every
+interleaving that preserves each branch's causal edges. A join SHALL name the
+branches and completion rule it awaits. Iteration SHALL carry an authored finite
+maximum and progress edge. The linker SHALL refuse missing joins, cyclic causal
+dependencies, unbounded repetition and termination conditions that cannot be
+reached within the declared finite graph.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-051-AC-1 | One message sent once, delivered twice and applied as one payment effect retains cardinalities 1, 2 and 1 for the respective subjects. | Test (TC-051) |
-| FR-051-AC-2 | Relabeling a duplicate delivery as a second business effect refuses the binding or yields the authored duplicate-effect violation. | Test (TC-051) |
-| FR-051-AC-3 | A payment attempt with no established effect remains an attempt and cannot activate effect-dependent compensation. | Test (TC-051) |
-| FR-051-AC-4 | A transport trace ID substituted for an authored workflow, attempt or effect identity refuses before conformance evaluation. | Test (TC-051) |
+| FR-052-AC-1 | Split shipments S1 and S2 may interleave while each branch preserves its own order and both satisfy the authored join before completion. | Test (TC-052) |
+| FR-052-AC-2 | Reordering equal-time events does not add a causal edge absent from the protocol. | Test (TC-052) |
+| FR-052-AC-3 | A missing join input, causal cycle, zero-progress loop or absent finite iteration maximum refuses admission. | Test (TC-052) |
+| FR-052-AC-4 | Changing a branch, join rule or iteration maximum changes protocol identity and preserves the original source span. | Test (TC-052) |
 
 ## Dependencies
 
 - [FR-050](./FR-050-bind-protocol-instances.md).
-- [Shared ecosystem binding](./FR-035-bind-ecosystem-subjects.md).
-- F-owned observation/correlation contract under OB01.
+- Agent A's shared grammar and predicate contracts.

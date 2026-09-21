@@ -1,6 +1,6 @@
 ---
-id: FR-045
-title: "Preserve conditional evaluation and exact optional-value facts"
+id: FR-046
+title: "Validate state invocation inputs before clause evaluation"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,29 +8,30 @@ relationships:
 ---
 ## Description
 
-When checking and evaluating a state control expression, the implementation SHALL preserve the selected branch and exact observation-qualified guard facts defined by the native expression.
+When accepting a state assessment request, the validator SHALL establish the exact anchor, observations, context and applicable invocation/frame correspondence required by its selected clause before evaluating it.
 
 ## Inputs
 
-A typed control expression, exact optional-value identities, immutable lexical bindings and execution/probe capability information.
+Operation/invocation/context/universe identities, immutable parameter/result values, exact pre/post snapshots, completeness statements and selected authored frame.
 
 ## Outputs
 
-The specified result and available source activation facts, or a typed definedness/refusal/incomplete outcome.
+A validated anchored request or a typed binding/frame refusal or unavailable-input result.
 
 ## Behavior
 
-And/or/implies evaluate their left operand once and skip right for false/true/false respectively. If evaluates only the selected branch; let initializes once. Static name/type/profile admission still covers unselected syntax. Optional access is justified only by a sound guard for the same immutable optional value/field/observation; lexical aliases preserve that identity when they preserve the value. A Boolean result does not establish that an implication consequent ran, and missing probes cannot be reported as observed inactivity.
+Preconditions use pre, postconditions post, and result is post-only. Parameters come from one declared invocation. Complete pre/post populations determine actual create/delete/change inventories; caller-supplied lists must match and stay within the selected frame. Missing observation is not empty population or a frame violation. A complete post snapshot lacking required self is a context-binding refusal even when its deletion was permitted. Callers cannot select a more permissive frame or substitute another operation's observation.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-045-AC-1 | False-and, true-or and false-implies skip right and return false, true and true respectively; reached right operands retain their actual evaluation facts. | Test (TC-045) |
-| FR-045-AC-2 | If selects one branch and let initializes once even when its binding is read repeatedly; resource exhaustion never creates a completed result. | Test (TC-045) |
-| FR-045-AC-3 | A guard can justify an alias of the same immutable optional value, but not a same-named field on another object or observation. | Test (TC-045) |
-| FR-045-AC-4 | An unknown name or prohibited source construct in an unselected branch still refuses static admission. | Test (TC-045) |
-| FR-045-AC-5 | A completed vacuous implication does not claim consequent participation; an unavailable activation probe remains unavailable. | Test (TC-045) |
+| FR-046-AC-1 | Correctly bound pre/post inputs and parameters from one invocation supply the expected distinct self reads and immutable parameter values. | Test (TC-046) |
+| FR-046-AC-2 | Foreign operation/invocation/universe, wrong parameter/result type or a substituted frame refuses before evaluation. | Test (TC-046) |
+| FR-046-AC-3 | For complete observations, incorrect creation/deletion inventories and changes beyond the selected frame refuse with distinct typed causes. | Test (TC-046) |
+| FR-046-AC-4 | Missing pre/post/completeness input remains unavailable/incomplete, without fabricating a delta, violation or Boolean. | Test (TC-046) |
+| FR-046-AC-5 | Allowed deletion of required post self still refuses the post-context binding; an independently qualified pre reference remains a pre reference. | Test (TC-046) |
+| FR-046-AC-6 | An invariant binds its named initialization/handler observation; a bare context type or unrelated current snapshot refuses as a substitute. | Test (TC-046) |
 
 ## Dependencies
 

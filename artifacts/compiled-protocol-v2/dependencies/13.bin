@@ -1,83 +1,94 @@
-# Observation binding definition candidate
+# Observation progress and restoration definition candidate
 
-Selection identity: `quire.observation.binding/v1`; revision: `1-draft.3`.
+Selection identity: `quire.observation.progress/v1`; revision: `1-draft.3`.
 **Candidate only: not adopted, serialized, canonicalized, or implemented.**
 
 Working draft: local rule and dependency links select the current checkout.
 Git preserves drafting history; a coherent baseline is frozen at acceptance.
 This editing policy does not relax immutable runtime selections or digest checks.
 
-This definition selects the observation-binding contract consumed by a linked
-package, including role sharing, correlation, availability, independent result
-axes and the explicit correspondence for all three clock families. It is not a
-native source profile, wire schema, model schema, result store, adapter protocol
-or executable interface.
+This definition selects scoped assertions, contradiction and restoration rules
+with the range-aware binding for all three clock families. It is not a clock
+profile, event schema, replay engine, result store or executable monitor. E owns
+clock/history/closure meaning, B owns result dispositions and D owns the selected
+subjects, relationships and populations.
 
 ## Required definitions and rules
 
 | Dependency | Identity | Revision/version | Current normative contract |
 | --- | --- | --- | --- |
-| Linked package interpretation | `quire.package.composed/v1` | `1-draft.2` | [Package reference](package-reference.md) |
+| Observation binding | `quire.observation.binding/v1` | `1-draft.3` | [Observation binding](observation-binding.md) |
 | Observation-range correspondence | `quire.observation.range/v1` | `1-draft.1` | [Range correspondence](observation-range.md) |
 | Observation binding rules | `quire.observation.contract/v1` | Current working draft | [Observation contract](../observation-contract.md) |
 | Temporal lifecycle/result facet | `quire.temporal.bounded-facet/v1` | `1-draft.3` | [Temporal meaning](temporal-common.md) |
-| Protocol result/conformance root | `quire.protocol.finite-global/v1` | `1-draft.4` | [Protocol meaning](protocol-finite.md) |
-| Producer interface | FCD Producer interface | `1.2.0` | [Producer selection](../observation-contract.md#producer-interface-selection) |
 | Shared result rules | B FR-061 | Current working draft | [Orthogonal results](../../../spec/functional/FR-061-report-orthogonal-results.md) |
-| Observation result/output rules | F FR-115/116 | Current working draft | [Result contribution](../../../spec/functional/FR-115-report-activation-participation-and-adequacy.md) and [output mapping](../observation-output-mapping-contract.md) |
+| Producer interface | FCD Producer interface | `1.2.0` | [Producer selection](../observation-contract.md#producer-interface-selection) |
 
-An actual package/assessment selects its required dependency artifacts by exact
-identity, revision and bytes. Missing, substituted, stale or mutually inconsistent
-selections refuse the dependent request. A local draft link does not authorize
-an evaluator to replace its selected artifact with current working-tree bytes.
-Producer object, raw document, definition and result digests retain their
-declared domains; equal digest prefixes do not make them interchangeable.
+An actual assertion or restoration request selects its required dependencies by
+exact identity, revision and bytes. Missing, stale, substituted or inconsistent
+dependencies refuse the assertion; local draft links cannot select replacement
+runtime artifacts, default to a current clock/profile/result or begin a fresh
+complete stream. Producer object, raw document, definition and result digests
+remain distinct domains.
 
-## Retained binding boundary and range selection
+## Required assertion identity
 
-Roles retain their owning declaration/source-region/kind identity. One explicit
-binding may serve compatible roles, but equal local names never merge roles.
-Every required role maps exactly once; repeated or incompatible mappings refuse.
-Each applied binding retains the selected producer relationship/population/window,
-source/schema, subject, signal/value, anchor, unit, capture, scope and range
-identity. Internal/external visibility remains explicit. A signal name, trace
-identifier, endpoint, compatible field shape or adapter version cannot replace
-the selected model, relationship or observation authority.
+Every progress, completeness, closure, late-contradiction or restoration assertion
+retains the following immutable selections:
 
-Changing the selected binding meaning requires a newly linked subject. Changing
-only a concrete role mapping, admitted record set or resource limit under the same
-selected meaning changes assessment-input identity without changing the static
-subject. Concrete ranges and observations are assessment inputs, not static
-prerequisites for parsing or type-checking a future template.
+| Value | Required meaning |
+| --- | --- |
+| Assertion identity | Assertion kind, unique assertion identity and exact progress definition identity/revision/bytes. |
+| Binding selection | Exact binding definition identity/revision/bytes and applied role/binding identities. |
+| Scope selection | Exact workflow/subject/relationship handles, population or window identity, membership rule and required source set. |
+| Temporal and range selection | Exact clock/profile identity/revision/bytes, selected range and coverage row, inclusive asserted boundary and history/closure premise. |
+| Record and revision | Admitted-record identities, ingestion/order information and the retained observation/history revision to which the assertion applies. |
+| Restoration selection | Exact predecessor assessment/checkpoint identity, retained-state revision, resource-limit identity and replay basis when continuing from retained state. |
 
-A compensation role may be mapped before activation without manufacturing a
-refund record. A valid mapping cannot fabricate a causal relationship, future
-event, completeness premise or result. Once an assessment requires an unavailable
-record or premise, it retains an incomplete/refused disposition with the actual
-cause instead of false or optional-none. O2 progress cannot settle O1.
+No local clock name, timestamp, EOF marker, quiet transport, trace identifier or
+matching field shape can substitute for these selections. An assertion from O2,
+another source set or another window cannot settle O1.
 
-The selected range names exactly one clock family. Event-position records retain
-sequence/position identity without an invented timestamp; fixed samples retain
-exact epoch/period/unit/index; timestamped records retain their timestamp anchor.
-Member-object identity, record identity, and position/sample/timestamp-anchor
-identity remain independently readable. Start is included once and end is
-excluded in every selected producer range. A timestamped native inclusive
-deadline at the producer end needs a separately selected covering range; no
-closure label, membership list, or adjacent range may substitute.
+## Range-aware progress and closure
 
-The selected result interface retains assessment execution, independent
-decision-scope progress and closure, surrounding-execution progress and closure,
-complete-global-conformance closure, truth, settlement basis, exact decision support, activation, participation,
-completeness, separate observation/protocol adequacy, assumptions, claim strength,
-provenance and linked supersession. Omitting or cross-wiring a required retained
-axis refuses; completed assessment execution cannot supply a closure fact.
-A witness or counterexample inside exact admitted support may settle truth while
+Every assertion retains its authority and independently scoped decision-scope
+progress, decision-scope closure, surrounding-execution progress and
+surrounding-execution closure where applicable. A result retains each required
+axis with its exact scope, authority and boundary; omission or cross-wiring
+refuses and cannot be repaired by completeness or completed assessment execution.
+A late contradiction identifies the prior assertion/result and produces linked
+supersession or invalidation under the corrected input identity without
+rewriting historical bytes.
+
+Result consumers also retain B's independent complete-global-conformance closure
+record: global claims retain its state and exact required premises; other claims
+retain `not-required` with no global premise set. A progress assertion cannot
+manufacture that record or substitute another closure axis for it.
+
+For an event-position range `[start,end)`, progress covers only the selected
+integer positions and silence supplies no new position. For a fixed-sample range,
+progress covers exact indexed samples under the selected epoch/period/unit,
+including silent samples only when their required valuations are supplied. For a
+timestamp range, a native timestamp tick is covered only when it lies in the
+producer's half-open interval. A timestamped native inclusive endpoint equal to
+the producer end is not covered or closed by that range. Start participates once;
+end belongs only to a separately selected range that contains it.
+
+Member identity does not substitute for record identity, and record identity
+does not substitute for a position/sample/timestamp anchor. Missing required
+coverage remains incomplete; wrong authority, family, endpoint, range, or
+identity refuses. A decisive record at 29 may preserve its exact support while
 unrelated coverage remains incomplete. Compatible surrounding-execution changes
-preserve that truth/support, and decision-scope closure cannot establish complete
-global conformance without its own required execution/branch/workflow closure
-record and premises. The global record retains B's explicit state; non-global
-claims retain `not-required` with no global premise set. An absent required record,
-duplicated or foreign premise, or a cross-wired closure refuses. A later contradiction retains earlier result bytes and produces only
-linked supersession or invalidation under the corrected input identity.
-This definition consumes the shared result contract and creates no second
-result/evidence family.
+cannot erase an independently settled truth or its exact support, and closing a
+decision scope cannot supply the separate closure premises of complete global
+conformance.
+
+## Validity and restoration boundary
+
+A valid assertion is an observation input, not a result. It establishes no truth,
+activation, participation, completeness, causality or execution beyond the
+selected E/B contracts. Restart or incremental continuation without the selected
+predecessor/history and restoration basis remains incomplete or refused; it
+cannot silently replace history or infer progress. Resource-limit and record-set
+changes remain identified assessment inputs under the same selected meaning;
+a changed definition selection requires a newly linked subject.

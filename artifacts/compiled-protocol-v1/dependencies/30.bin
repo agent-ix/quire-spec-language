@@ -1,6 +1,6 @@
 ---
-id: FR-037
-title: "Parse shared expressions with explicit precedence"
+id: FR-038
+title: "Resolve predicate names under explicit lexical scopes"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
@@ -8,30 +8,29 @@ relationships:
 ---
 ## Description
 
-When parsing a supported native expression form, the parser SHALL construct the expression structure prescribed by the selected edition's shared grammar without deriving syntax from backend support.
+When resolving native predicate declarations and local bindings, the linker SHALL apply the selected grammar's explicit alias, declaration, parameter, let and quantifier scopes without ambiguous name selection.
 
 ## Inputs
 
-Located tokens, selected grammar edition, a declared expression entry point and parsing resource limits.
+Collected source-unit imports/profile aliases, linked-package declarations, predicate signatures and located call/local-name uses.
 
 ## Outputs
 
-A complete located syntax tree for the selected entry point, or a typed syntax/resource refusal.
+Each use resolved to one declaration and scope, or a located duplicate, shadowing, unresolved or ambiguous-name refusal.
 
 ## Behavior
 
-The proposed common grammar defines all three native families, predicate declarations and shared expression precedence; balanced unknown bodies are not productions. Preserve grouping and each call/field/operator locus. Require EOF for a complete unit. Grammar recognition is followed by separate name/type/profile admission. A recognized div/rem/mod/slash form does not enable prohibited integer arithmetic. Rational slash requires the exact typing, nonzero and normalized-range rules of FR-044; it is not literal punctuation.
+Aliases are source-unit scoped; native predicate declaration names are unique in the linked package. A parameter or local binding cannot shadow another visible binding, alias or native declaration. Different predicates may reuse a parameter name. A let initializer cannot refer to the binding it is introducing; a quantifier variable is not visible in its domain. Forward calls resolve after collecting declarations and remain subject to FR-033's cycle/type checks. Named predicate bodies use explicit parameters: implicit self/result/pre-state reads refuse. Callers may pass correctly anchored values. No overload or case-folded fallback selects a declaration.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-037-AC-1 | Implication associates right, addition/product associate left, multiplication binds above addition, and field access binds above unary operators. | Test (TC-037) |
-| FR-037-AC-2 | A comparison chain a < b < c refuses; explicit parentheses determine a tree that still requires type checking. | Test (TC-037) |
-| FR-037-AC-3 | Nested if/let forms, zero-argument calls and quantified expressions consume the intended body and scope boundaries without token-text rewriting. | Test (TC-037) |
-| FR-037-AC-4 | Trailing tokens, mismatched delimiters and an undefined family production refuse syntax rather than returning a successfully parsed prefix. | Test (TC-037) |
-| FR-037-AC-5 | A recognized but prohibited arithmetic operator retains its source tree for a separate profile refusal instead of enabling a backend operation. | Test (TC-037) |
-| FR-037-AC-6 | Qualified model/member names such as view.exhausted, M::result and M::Payment::retry retain their exact spelling even when the member is a keyword; the same keyword in a native binder position remains reserved. | Test (TC-037) |
+| FR-038-AC-1 | Two units may use the same local alias spelling for different exact imports without cross-binding; a duplicate native predicate name in the package refuses. | Test (TC-038) |
+| FR-038-AC-2 | Duplicate parameters and nested shadowing refuse, while distinct predicates may each use a parameter named x. | Test (TC-038) |
+| FR-038-AC-3 | A let initializer and quantifier domain cannot read their newly introduced binder; uses in the respective body resolve correctly. | Test (TC-038) |
+| FR-038-AC-4 | A forward acyclic call resolves to one declared predicate; unresolved, ambiguous and case-mismatched references refuse. | Test (TC-038) |
+| FR-038-AC-5 | Implicit self/result/pre reads inside a named predicate refuse; explicitly passed caller-anchored values retain their binding. | Test (TC-038) |
 
 ## Dependencies
 
