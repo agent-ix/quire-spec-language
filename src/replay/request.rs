@@ -18,6 +18,7 @@ use crate::digest::{DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
 use crate::replay::identity::{
     sha256, Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    SourceDigestWire,
 };
 use crate::replay::witness::ReplaySource;
 
@@ -189,7 +190,7 @@ pub struct ReplayRequestWire {
     pub package_contract_version: String,
     /// `(authority, identity, revision, digest domain, digest hex)` per
     /// declared source reference.
-    pub source_digests: Vec<(String, String, String, Option<String>, String)>,
+    pub source_digests: Vec<SourceDigestWire>,
     /// The selected function.
     pub selected_function: QualifiedName,
     /// The witness or input replay source.
