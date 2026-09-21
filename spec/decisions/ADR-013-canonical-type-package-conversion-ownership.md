@@ -400,9 +400,9 @@ their wire strings.
 | Owner | Codes: QSpec `native-diagnostics.md` (`quire.native.diagnostics/v1`). Typed causes: each layer and stage. |
 | Implementing ticket | #213 S-5a for `CatalogCode` and QSL `catalog_code()` (landed, #258); #213 S-5b for the shared `RefusalRecord` type; each downstream layer implements its own mapping (IR reader codes: IR conformance work with no ticket, §7). |
 | Public type | Each stage keeps its typed refusal cause (`CheckRefusal`, `InputRefusal`, `PackageRefusal`, `LibraryRefusal`, `ModelRefusal`, IR `CheckedPackageRefusalCode`, …). Each cause type has one exhaustive `fn catalog_code(&self) -> CatalogCode` with no `_` arm (AD-016), and a fixed O-16 category. |
-| Serialized authority | One catalog revision per QSL build: the revision vendored in `resources/complete-value` at the QSpec pin. FR-322 selects revision `1-draft.6`. A code site that claims another revision (`1-draft.1` and `1-draft.3`, ADR-010 OBS-023) is a defect, not a second catalog. |
+| Serialized authority | One catalog revision per QSL build: the revision resolved from `agent-ix/quire-specification` at the QSpec pin. FR-322 selects revision `1-draft.6`. A code site that claims another revision (`1-draft.1` and `1-draft.3`, ADR-010 OBS-023) is a defect, not a second catalog. |
 | Conversions | typed cause → catalog code (total, C-15). Catalog code → typed cause does not exist; a consumer reads the code and its structured fields, never the message. |
-| Validation and diagnostics | Per-layer `catalog_code()` totality test against the vendored catalog. IR's reader implements every FR-322 code; the 13-of-16 gap (OBS-035) is IR-owned conformance work. |
+| Validation and diagnostics | Per-layer `catalog_code()` totality test against the catalog. IR's reader implements every FR-322 code; the 13-of-16 gap (OBS-035) is IR-owned conformance work. |
 | Equality | lexical on the code string. |
 
 Family refusals (answers ADR-012 §13.2 Q3): each family owns its own `Cause`
@@ -531,12 +531,11 @@ Equality: not an identity. Each bound value compares under its owning type.
 | Tests | IR TC-048 (v2 reader); QSpec TC-255 (FR-352); #231 adds an unknown-version test for each envelope it reads. |
 | Equality | lexical on the version identifier. |
 
-#### O-23 Revision pins and vendored artifacts (OBS-022, OBS-024, OBS-034)
+#### O-23 Revision pins (OBS-022, OBS-034)
 
 | Pin | Authority | Rule |
 | --- | --- | --- |
 | Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | A revision literal elsewhere that restates a Cargo pin is checked equal to the lock by a test. This covers the package view's `ir_revision` and `STANDARD` literals (OBS-022) and CG's `IR_CANDIDATE_REVISION`, `RUNTIME_REVISION` and `assurance/pins.json` statements (OBS-034). One lock holds one revision of each git dependency (OBS-041). |
-| Vendored QSpec bytes | `VENDOR.json` at an exact QSpec commit (NFR-011) | One vendored copy per QSpec artifact per build. A second copy at another digest (the diagnostic catalog, OBS-023) is lane-private to native-v1 (§6). Stale trees are re-vendored at the pin; drift is detected by AD-016 heads check 4 once #215 builds it. |
 
 Exact release pins versus the current-head lane:
 
@@ -693,11 +692,11 @@ mutant is allow-listed (ADR-012 §5.3).
 | C-08 | kernel `Outcome` → FR-323 disposition | QSL executor | Category-preserving (O-16) | One adverse test per O-16 evaluation row (#213 S-1) |
 | C-09 | `KaniOutcomeKind` → FR-331 terminal record | IR | One exhaustive map, O-16 proof column; a vacuous `Proved` maps to `Inconclusive` with cause `kani_vacuous_proof` | IR test enumerating all ten kinds against O-16, plus a run mutation of the map (a vacuous `Proved` stays `Proved`) that turns C-09 red; `cargo mutants` on the mapping functions. Remaining work: agent-ix/quire-contract-ir#146 |
 | C-10 | Kani transcript → `Witness` | IR `Witness::parse` | Stores the selected, trimmed assertion block; cover and unwinding refuse | IR PR #139 `tc_042_*`; #231 byte-for-byte envelope round trip |
-| C-11 | `ReplaySource` + bindings → reconstructed arguments keyed by `WireNodeId` | IR `decode`, CG | `Witness` decodes its transcript; `Input` carries the canonical assignments. Lossless widening; join by parameter `WireNodeId`; mismatch refuses. The `replay` facade converts the ids to `NodeKey`s at E9 (O-04) | Vendored AD-016 seed counterexample vector; CG widening test at `i64::MIN` and `i64::MAX` (agent-ix/quire-contract-codegen#50) |
+| C-11 | `ReplaySource` + bindings → reconstructed arguments keyed by `WireNodeId` | IR `decode`, CG | `Witness` decodes its transcript; `Input` carries the canonical assignments. Lossless widening; join by parameter `WireNodeId`; mismatch refuses. The `replay` facade converts the ids to `NodeKey`s at E9 (O-04) | AD-016 seed counterexample vector; CG widening test at `i64::MIN` and `i64::MAX` (agent-ix/quire-contract-codegen#50) |
 | C-12 | Packet + #231 envelope members → FR-323 replay request | CG | Copies every O-25 member and the envelope's state environment and accounting limits, and the S1 to S4 stage limits copied from the proving run; invents none (O-26) | CG contract test (agent-ix/quire-contract-codegen#50); #231 round trip of the request type |
 | C-13 | Replay request → execution | QSL executor | Digest-addressed inputs, `package_id` and source-digest equality, select by `QualifiedName` lookup (OQ-5) | Executor tests (TK-01): a meaning-affecting edit refuses by `package_id`; a presentation-only edit refuses by source digest; a missing input refuses; a dependency source whose recompiled `package_id` differs from the proved package's record refuses with `DependencyIdentityMismatch` (`stale_dependency`) |
 | C-14 | Occurrence key → nested regions | QSL | Through the occurrence-key-keyed source map (O-07) in v2: occurrence key → regions | Source-map lookup test over the v2 positive fixtures (#213 S-4) |
-| C-15 | Typed cause → catalog code | every layer | Exhaustive, no `_` arm | Per-layer `catalog_code()` totality test against the vendored catalog; `cargo mutants` on each `catalog_code()` |
+| C-15 | Typed cause → catalog code | every layer | Exhaustive, no `_` arm | Per-layer `catalog_code()` totality test against the catalog; `cargo mutants` on each `catalog_code()` |
 | C-16 | Digest wire string ↔ QSL digest record | QSL `digest` | Domain checked first | Digest members of the v2 positive and negative fixtures, plus #213 S-2 adverse cases: uppercase hex, wrong length, a prefixed form, an absent domain and a cross-domain digest |
 | C-17 | `DomainPackageRef` → v2 lock `model_selections` → IR `CheckedDomainPackageRef` | QSL emitter, IR | Read-only on the IR side | IR reader test on the v2 lock fixtures |
 | C-18 | Checked member → v2 `OperationMember` | QSL emitter | Total over the seven variants | #213 S-2 test per variant |
@@ -771,7 +770,7 @@ lane D converges.
 | Names | native-v1 use of `ir::SymbolName` | O-11 |
 | Spans | native-v1 use of IR `SourceSpan`; native-v1 `Source`/`Span` | O-12 |
 | Outcomes | runtime `ExecutionOutcome`/`EvaluationOutcome`, state `EvaluationOutcome`, simulation `Outcome` | O-16 |
-| Diagnostics | `Box<Diagnostic>` 45-variant `Code`; `resources/native-v1` catalog copy | O-17 |
+| Diagnostics | `Box<Diagnostic>` 45-variant `Code` | O-17 |
 | Budgets | `artifact-work/1`, `temporal-work/1`, `evaluation-work/1`, `native-ref-cost/1-draft` | O-21 |
 
 `state::input::CanonicalDigest` and `ByteDigest` are not lane-private: they are
@@ -938,7 +937,7 @@ Primary-owner items:
 | DA-10 | O-17: catalog codes shared, typed causes per stage, one `catalog_code()` each. |
 | DA-12 | O-21: owners of the existing bound representations; one kernel meter; taxonomy to #222. |
 | DA-13 | O-07, O-12, T-5: QSL sole minter; FR-322 occurrence key; occurrence-key-keyed source map (O-07), occurrence key → regions; kernel location tag; foundation `Locus`. |
-| DA-14 | O-22, O-23: one version per contract; Cargo lock and `VENDOR.json` are the only pin authorities. |
+| DA-14 | O-22, O-23: one version per contract; Cargo lock is the only pin authority. |
 | DA-15 | O-18: one domain-labelled digest record in QSL `digest`. |
 | DA-16 | O-13: `quire-exact`; RT and QSL hold no kernel copies. |
 | DA-17 | O-10: layer-owned kinds with named mappings (AD-016). |
@@ -952,7 +951,6 @@ Primary-owner items:
 | OBS-021 | O-12: the occurrence-key-keyed source map (O-07), occurrence key → regions, is the authority; body↔document map is a source-stage helper. |
 | OBS-022 | O-23: revision literals checked equal to the lock by a test (#215). |
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
-| OBS-024 | O-23: re-vendor at the pin; heads check 4. |
 | OBS-025 | O-21: `model::accounting` folds into the kernel meter. |
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: IR `Witness{transcript}` admitted through `parse`, with derived accessors. |
