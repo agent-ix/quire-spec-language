@@ -49,6 +49,9 @@ pub enum Code {
     /// The `cargo xtask string-edge` scan found an allow-list defect or an
     /// unmarked, un-allow-listed occurrence.
     StringEdge,
+    /// QSL-139 (FR-068) TC-172/TC-176's resolved import-graph scan
+    /// (`xtask::import_graph`) could not parse a source file.
+    ImportGraph,
 }
 
 impl Code {
@@ -63,6 +66,7 @@ impl Code {
             Self::CargoPin => "cargo-pin",
             Self::SeamProbe => "seam-probe",
             Self::StringEdge => "string-edge",
+            Self::ImportGraph => "import-graph",
         }
     }
 }
@@ -302,6 +306,16 @@ pub enum Error {
         /// The findings, formatted for display.
         summary: String,
     },
+    /// A source file could not be parsed as Rust source by
+    /// `xtask::import_graph`'s resolver (TC-172/TC-176).
+    #[error("import-graph: cannot parse {path} as Rust source: {source}")]
+    ImportGraphParse {
+        /// The file that failed to parse.
+        path: PathBuf,
+        /// The underlying parse failure.
+        #[source]
+        source: syn::Error,
+    },
 }
 
 impl Error {
@@ -337,13 +351,14 @@ impl Error {
             Self::StringEdgeParse { .. }
             | Self::StringEdgeAllowListGatesABranch { .. }
             | Self::StringEdgeFound { .. } => Code::StringEdge,
+            Self::ImportGraphParse { .. } => Code::ImportGraph,
         }
     }
 
     /// Distinguish usage/environment failure (2) from a genuine content drift (1).
     pub fn exit_code(&self) -> u8 {
         match self.code() {
-            Code::Drift | Code::SeamProbe | Code::StringEdge => 1,
+            Code::Drift | Code::SeamProbe | Code::StringEdge | Code::ImportGraph => 1,
             Code::Usage
             | Code::Io
             | Code::Manifest

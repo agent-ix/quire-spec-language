@@ -86,10 +86,19 @@ use crate::model::domain_package::{
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::redefinition_reaches;
-use crate::value::{
-    established_field_fact, Connective, Established, Location, Node, NodeKind, OrderedKind,
-    OrderingOperator, Origin, ProvedInterval, Value, ValueType,
+// ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated these nine names to the
+// layer-3 `check` module. This is the interim `model` -> `check` edge
+// FR-068-AC-9/FR-068-CON-5 declare and bound to exactly this file and
+// `model/checked_dispatch.rs`: it stays forbidden by ADR-011 §6.1's
+// intra-layer-3 order until M-2 (QSL-7) moves this obligation into `check`
+// itself, and it is imported directly here, never through `crate::value`'s
+// aggregate re-export, so the edge stays visible to a textual scan of this
+// file's own `use` lines.
+use crate::check::{
+    established_field_fact, Connective, Established, Location, Node, NodeKind, OrderedKind, Origin,
+    ProvedInterval,
 };
+use crate::value::{OrderingOperator, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
 
 /// Bounds the proper-descendant walk `type_conforms` performs: an explicit

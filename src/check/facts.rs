@@ -10,16 +10,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::collection::CollectionType;
-use super::super::composite::{Value, ValueType};
-use super::super::equality::EqualityOperator;
-use super::super::numeric::ArithmeticOperator;
-use super::super::numeric::OrderingOperator;
 use super::check::DispatchOperation;
 use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, Slot, Visit};
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
 };
+use crate::value::collection::CollectionType;
+use crate::value::composite::{Value, ValueType};
+use crate::value::equality::EqualityOperator;
+use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{Integer, IntegerInterval};
 
 /// One step of a stable path.

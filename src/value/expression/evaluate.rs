@@ -36,12 +36,10 @@ use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperat
 use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
-use super::check::Scope;
-use super::ir::{
-    Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
+use crate::check::{
+    Arithmetic, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind, RecordSlot,
+    Scope, Slot, Visit, WrongSnapshotCause,
 };
-use super::refusal::Location;
-use super::refusal::WrongSnapshotCause;
 use crate::model::population::PopulationBinding;
 use quire_exact::{CollectionKind, Integer, IntegerInterval};
 

@@ -101,3 +101,25 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
 - Step 7: the crate builds with exactly one definition of every item this
   test checks; a second, reachable definition of any one of them fails this
   step.
+
+**Amendment (implementation, PR #282 review F1): step 6's scope, as landed.**
+`xtask::definition_scan` implements steps 1-5 and 7 as written (a real,
+whole-crate scan by name, in `real_check_module...`/
+`con3_methods_and_symbols_each_have_exactly_one_defining_location`, and the
+crate's own `cargo test` build for step 7). Step 6's literal text — an
+arbitrary structural-similarity comparison between every pair of
+differently-named items in the crate — would need a general shape-matching
+engine, which is speculative build cost against the one concrete scenario
+this step exists to catch (a stray file made reachable under a new module
+name). That concrete scenario is closed a cheaper way instead: any such
+stray file needs its own `mod` declaration somewhere reachable to be part of
+the compiled crate at all, so `xtask::definition_scan::mod_declarations`
+enumerates *every* `mod` item in `value::expression::mod.rs` (not only the
+four this test names) and asserts the resulting set is exactly `{evaluate,
+family}` — an unexpected fifth declaration is itself a finding, closing the
+one path by which a step-4/5 name-based scan could miss a renamed leftover.
+This mirrors TC-171's own established precedent in this repository: where a
+criterion's full literal scope needs new build-time machinery this PR does
+not otherwise need, the gap is recorded here rather than declared silently
+closed. See `xtask/src/definition_scan.rs`'s own module doc, "Scope of what
+this catches."
