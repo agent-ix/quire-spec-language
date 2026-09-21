@@ -386,6 +386,22 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
+| [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR | Implemented; qualified in the native-packages test matrix |
+| [FR-020](functional/FR-020-read-and-rebind-native-packages.md) | FR | Implemented; qualified in the native-packages test matrix |
+| [FR-021](functional/FR-021-derive-native-package-identity.md) | FR | Implemented; qualified in the native-packages test matrix |
+| [FR-022](functional/FR-022-compile-mapped-native-clauses.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-023](functional/FR-023-run-native-packages.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR | Implemented; tested in the native-lowering test matrix |
+| [FR-034](functional/FR-034-project-state-scalars.md) | FR | Implemented; tested in the native-lowering test matrix |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR | Implemented composed syntax; compiler #35 |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared types and supported guarded proofs implemented; query/runtime acceptance open under #35/#36 |
@@ -411,6 +427,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
+| [FR-055](functional/FR-055-govern-complete-v1-lane.md) | FR | Implemented; audited in the complete-v1 test matrix |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131; the compiled-protocol `Model` naming this admits directly is specified under #132 (FR-042-AC-11, FR-042-AC-12) |
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies, #213/#185 implement |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
@@ -420,3 +437,21 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B/T12-C live and failing at OBS-018; #215 |
 | [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
 | [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | Implemented current-head lane contract test across QSL, Contract IR, Runtime and Codegen; #215 |
+| [FR-062](functional/FR-062-implement-checked-family-contract.md) | FR | Specified under #214; not yet implemented |
+| [FR-063](functional/FR-063-exhaustive-family-extension-seam-probe.md) | FR | Specified under #214; not yet implemented |
+| [FR-064](functional/FR-064-restrict-string-dispatch-to-marked-edges.md) | FR | Specified under #214; not yet implemented |
+| [FR-065](functional/FR-065-migrate-function-application-to-checked-family.md) | FR | Specified under #214; not yet implemented; the first family slice to implement FR-062's contract |
+| [FR-066](functional/FR-066-document-family-migration-recipe.md) | FR | Specified under #214; not yet implemented; waits on FR-065 for its worked-example citations |
+| [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; not yet implemented |
+| [FR-068](functional/FR-068-split-expression-checking-into-check-stage.md) | FR | Specified under QSL-139 (ADR-011 §7.3 M-5), split from #214 by owner ruling 2026-09-20; not yet implemented |
+| [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-071](functional/FR-071-implement-typed-replay-request.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-072](functional/FR-072-implement-typed-replay-result.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-073](functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) | FR | Specified under #231 (QSL-88); not yet implemented |
+| [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185 (QSL-185); not yet implemented; waits on #213 for the canonical `Capability` type |
+| [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185 (QSL-185); not yet implemented; exit waits on quire-contract-codegen#86 |
+| [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185 (QSL-185); not yet implemented |
