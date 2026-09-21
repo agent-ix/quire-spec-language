@@ -44,28 +44,29 @@ Build and run the Rust example with a new output directory:
 CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_handoff -- /tmp/quire-native-handoff
 ```
 
-Run the named producer test with its actual stripped release test executable:
+Run the named producer test:
 
 ```console
-CARGO_PROFILE_RELEASE_STRIP=symbols cargo test --locked --offline --release --no-default-features --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations -- --ignored --test-threads=1
+cargo test --locked --offline --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations
 ```
 
 This test uses a fresh temporary output directory and checks original source and
 declaration owners, joined receive/choice provenance and Full/Partial compensation records after the producer's
-independent reader succeeds. It is ignored in ordinary test runs because the
-executable must fit the producer's ELF binary limit. It does not exercise B's
-acceptance interface.
+independent reader succeeds. It does not exercise B's acceptance interface.
 
-This recipe supports Linux ELF executables; Mach-O and PE executables are refused.
-The producer reads its actual `current_exe()` bytes, identifies an ELF version-1
-binary, and selects their raw digest. This example lowers binary input to 16 MiB
-within the artifact byte-work ceiling; larger binaries fail before output.
-An unstripped debug executable will commonly exceed that bound. All compiler
+The producer identifies itself by a digest over its own source text
+(`examples/protocol-handoff/producer.rs`, embedded at compile time via
+`include_bytes!`) and records only that digest as `Producer.binary` -- the
+bytes are never retained, written to a fixture file, or supplied as a
+dependency's exact-byte content, so no size ceiling applies to them, and the
+value is the same across a debug or release build, stripped or not, and
+across any toolchain: anyone with this repository can independently
+recompute it (`sha256sum examples/protocol-handoff/producer.rs`). All compiler
 stages retain their own default limits; no limit is disabled to accommodate a
-build. Existing output directories are refused. Publication is not atomic: an
-I/O failure may leave a partial directory. Retry with a new path, or inspect and
-remove the incomplete output before reusing its path. No source file or synthetic
-producer string stands in for the executable bytes.
+build. Existing
+output directories are refused. Publication is not atomic: an I/O failure may
+leave a partial directory. Retry with a new path, or inspect and remove the
+incomplete output before reusing its path.
 
 The output directory contains:
 
@@ -75,8 +76,10 @@ The output directory contains:
   wire records and `Expected` fields, plus relative dependency/model filenames.
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
   `model-source.json`: the complete original sources.
-- `dependencies/`: exact selected model, binary, contract, definition and rule
-  bytes; `expected.json` maps each reference to its file and direct prerequisites.
+- `dependencies/`: exact selected model, contract, definition and rule bytes;
+  `expected.json` maps each reference to its file and direct prerequisites. The
+  producer's own binary is not among them: `expected.json`'s `producer.binary`
+  records its identity as a digest.
 - `SHA256SUMS`: a deterministic complete inventory of every other generated
   handoff member, using normalized handoff-relative paths.
 

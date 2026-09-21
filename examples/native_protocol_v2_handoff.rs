@@ -38,7 +38,6 @@ mod tests {
 
     #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
     #[test]
-    #[ignore = "requires a stripped release ELF test executable within the producer's 16 MiB binary limit"]
     fn stripped_release_v2_producer_writes_the_independently_read_handoff() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("handoff-v2");

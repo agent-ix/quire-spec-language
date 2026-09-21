@@ -217,3 +217,15 @@ fn committed_v1_handoff_admits_through_the_public_reader() {
         "the published handoff must not assign two roles one authority"
     );
 }
+
+#[test]
+#[trace("TC-121", "FR-042-AC-10")]
+fn published_v1_producer_digest_matches_this_repositorys_producer_source() {
+    let root = Path::new(PUBLISHED_V1_HANDOFF);
+    let fixture = PublishedFixture::load(root);
+    assert_eq!(
+        ByteDigest::of(include_bytes!("../examples/protocol-handoff/producer.rs")),
+        fixture.selection.producer.binary.digest,
+        "FR-042-AC-10: published producer identity is this repository's producer source",
+    );
+}
