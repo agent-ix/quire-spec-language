@@ -29,13 +29,21 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckingLimits, ClauseKind,
-    DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration,
-    LimitKind, Location, Meter, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations, PreconditionFailure, ScalarLimits,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind,
+    CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind, DispatchCandidate,
+    DispatchFunctionRole, DispatchOperation, DispatchTable, Expression, FunctionDeclaration,
+    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome,
+    PackageDeclarations, PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
+
+// This crate's own `value::Origin` (imported above) is a different type
+// from `quire_exact::Origin` -- `CheckedPackage::occurrence` takes the
+// latter (ADR-013 O-07's kernel occurrence key), never the former, so both
+// are in scope here under distinct names.
+use quire_exact::Origin as ExactOrigin;
+use quire_exact::Role as ExactRole;
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -475,27 +483,227 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
 /// through a checked expression tree, so `check.rs`'s own
 /// `callable_by_name` gate on `Expression::Call` never runs), must not be
 /// able to reach a synthesized dispatch candidate body either.
+///
+/// **Rebuilt (PR #262 review, finding F5).** An earlier version of this
+/// test named the target with a two-segment `QualifiedName` (`["candidate",
+/// "body"]`), reasoning that a real FR-151 synthesized name always contains
+/// a literal `.` and so can never be a single identifier segment
+/// `QualifiedName::new` accepts (`is_identifier` admits no `.`). That is
+/// true, but it means the test never reached the `callable_by_name` filter
+/// at all: `function.as_unqualified()` already returns `None` for two
+/// segments, so `package.call` refuses at that guard, before
+/// `self.function(name).filter(|(_, checked)|
+/// checked.signature.callable_by_name)` -- the actual mechanism this test
+/// exists to probe -- ever runs. Deleting the `.filter(...)` call still made
+/// the old assertion pass, which is exactly F5's "test that cannot fail the
+/// way it is written" shape. This version instead builds a minimal package
+/// (no dispatch table needed) whose one function is declared through
+/// [`FunctionDeclaration::clause`] -- the same crate-internal, never
+/// name-callable constructor FR-151 dispatch candidates use -- under a
+/// name that *is* a single plain identifier (`FunctionDeclaration::clause`
+/// itself places no dot-free restriction on `name`; only `QualifiedName`
+/// does), so `as_unqualified()` succeeds, `self.function` finds a real
+/// declaration by that identifier, and refusal can only come from the
+/// `callable_by_name` filter itself.
 #[trace("TC-196")]
 #[test]
-fn checked_package_call_refuses_a_synthesized_dispatch_candidate_by_name() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
-    let package = one_candidate_package(receiver_type, None, ValueType::Integer)
-        .check(CheckingLimits::default())
-        .unwrap();
-    let objects = objects(receiver_type, "r1");
+fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup() {
+    let package = PackageDeclarations {
+        functions: vec![FunctionDeclaration::clause(
+            "internal_guard",
+            vec![],
+            ValueType::Boolean,
+            None,
+            Expression::Boolean(true),
+            DeclaredClauseKind::Body,
+        )],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("a single clause-kind function with no dispatch table checks cleanly");
+    let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
         .call(
-            "candidate.body",
-            vec![Value::Reference(receiver_reference(receiver_type, "r1"))],
+            &QualifiedName::unqualified("internal_guard").unwrap(),
+            Vec::new(),
             &objects,
             &mut meter,
         )
-        .expect_err("a synthesized dispatch candidate body must not be callable by name");
+        .expect_err(
+            "a function declared through FunctionDeclaration::clause must not be callable by \
+             name even when found by plain-identifier lookup",
+        );
     assert_eq!(
         refusal,
-        InputRefusal::UnknownFunction("candidate.body".to_owned())
+        InputRefusal::UnknownFunction("internal_guard".to_owned())
     );
+}
+
+/// FR-065-AC-2's reordering clause: a declaration's checked identity does
+/// not depend on any other declaration's existence or position in the
+/// package.
+///
+/// **Rebuilt (PR #262 review, coordinator round 3).** The previous version
+/// (`identity_ignores_unrelated_declarations`, `src/value/expression/
+/// family.rs`, `TC-163`) minted the same identity twice from the same
+/// `FunctionDeclaration` and compared it to itself; no second declaration
+/// was ever constructed, so there was nothing for the property to be
+/// independent *of*. This version checks two packages whose two functions
+/// are declared in opposite order and compares `target`'s checked identity
+/// across both -- a real reordering, at the one level position could
+/// actually leak (`PackageDeclarations::check`; see
+/// `mint_declaration_identity`'s own doc on why a typed body's
+/// `NodeKind::Call { function: usize, .. }` index makes checked position
+/// matter even though the *parsed* preimage this identity hashes does not).
+///
+/// Also gives a real, non-fabricated test caller to four `pub`
+/// `CheckedPackage` methods PR #262 review (coordinator round 3, finding 3)
+/// found with zero callers and zero tests anywhere in the crate:
+/// `function_identity` (read back here across both orderings), `occurrence`
+/// (the target's own declaration occurrence), and the
+/// `emit_function_package_v2`/`decode_function_package_v2` round trip
+/// (which also exercises `family::link_function_identity`, `emit_function_
+/// package_v2`'s own one caller, previously itself uncalled).
+#[trace("TC-163", "FR-065-AC-2")]
+#[test]
+fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
+    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
+        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+    }
+
+    let target = declaration("target", Expression::Boolean(true));
+    let unrelated = declaration("unrelated", Expression::Boolean(false));
+
+    let target_first = PackageDeclarations {
+        functions: vec![target.clone(), unrelated.clone()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("two unrelated boolean-literal functions check cleanly");
+    let unrelated_first = PackageDeclarations {
+        functions: vec![unrelated, target],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("reordering the same two declarations checks cleanly too");
+
+    let identity_target_first = target_first
+        .function_identity("target")
+        .expect("target is declared in this package");
+    let identity_unrelated_first = unrelated_first
+        .function_identity("target")
+        .expect("target is declared in this package, just declared second here");
+    assert_eq!(
+        identity_target_first, identity_unrelated_first,
+        "target's checked identity must not depend on unrelated's existence or position"
+    );
+
+    let origin = ExactOrigin::new(ExactRole::new("declaration"), 0);
+    assert!(
+        target_first
+            .occurrence(identity_target_first, &origin)
+            .is_some(),
+        "check must record target's own declaration occurrence, resolvable by (identity, origin)"
+    );
+
+    let target_name = QualifiedName::unqualified("target").expect("\"target\" is an identifier");
+    let bytes = target_first
+        .emit_function_package_v2()
+        .expect("every declared name here is identifier-shaped");
+    let decoded = CheckedPackage::decode_function_package_v2(&bytes)
+        .expect("this crate's own emit_function_package_v2 output decodes cleanly");
+    let decoded_identity = decoded
+        .into_iter()
+        .find(|(name, _)| *name == target_name)
+        .map(|(_, identity)| identity)
+        .expect("target survives the v2 round trip");
+    assert_eq!(
+        decoded_identity, identity_target_first,
+        "identity must survive check, S4 linking and a v2 emit/decode round trip unchanged"
+    );
+
+    // FR-065-AC-2 says identity is unchanged at all three checkpoints
+    // (check, linking, v2) *under reordering* -- the assertions above only
+    // exercise `target_first`'s v2 round trip; without this, `unrelated_
+    // first` (the reordered package) is checked and its `function_identity`
+    // compared, but never itself emitted to v2, so the reordering claim was
+    // only half-covered at the v2 checkpoint (PR #262 review round 4, item
+    // 6). Round-trip `unrelated_first` too and compare against the same
+    // target identity.
+    let unrelated_first_bytes = unrelated_first
+        .emit_function_package_v2()
+        .expect("every declared name here is identifier-shaped");
+    let unrelated_first_decoded =
+        CheckedPackage::decode_function_package_v2(&unrelated_first_bytes)
+            .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
+    let unrelated_first_decoded_identity = unrelated_first_decoded
+        .into_iter()
+        .find(|(name, _)| *name == target_name)
+        .map(|(_, identity)| identity)
+        .expect("target survives the v2 round trip from the reordered package too");
+    assert_eq!(
+        unrelated_first_decoded_identity, identity_target_first,
+        "target's identity must survive check, linking and a v2 round trip identically \
+         regardless of unrelated's position"
+    );
+}
+
+/// PR #262 review, finding F4: `PackageDeclarations::check` used to hardcode
+/// the checked-family contract's own nesting-depth `StageLimits` at
+/// `MAX_CHECKING_DEPTH`, ignoring the caller's own `CheckingLimits` entirely
+/// -- so the contract's `StageFailure::Limit` -> `CheckCause::
+/// ResourceExhausted` arm was dead through this, the only production entry
+/// point that reaches it. This test calls `check` with `CheckingLimits::new(
+/// _, 0)` (this method's own `depth()` bound wired through, per this
+/// finding's fix) and asserts a real `ResourceExhausted` refusal comes back
+/// -- if the wiring reverts to the hardcoded constant, `enter_nesting`'s
+/// `0 >= 128` never holds and this package checks cleanly instead, failing
+/// this test.
+///
+/// **Untagged.** `check`'s contract-level nesting bound still has no real
+/// recursive-descent fixture behind it (`ValueFunctionFamily::check`'s own
+/// `nesting_depth_limit_is_the_proximate_cause` test doc, `value::
+/// expression::family`, explains why: QSL-148 owns moving real recursive
+/// checking there). This test proves the *wiring* is live through the
+/// public API, not FR-062-AC-7's own fixture-at-depth-D requirement.
+#[test]
+fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
+    let declaration = |name: &str| {
+        FunctionDeclaration::new(
+            name,
+            Vec::new(),
+            ValueType::Boolean,
+            None,
+            Expression::Boolean(true),
+        )
+    };
+    let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
+    let refused = PackageDeclarations {
+        functions: vec![declaration("f")],
+        ..PackageDeclarations::default()
+    }
+    .check(tight_limits)
+    .expect_err("a zero-depth limit must refuse every declaration's contract-level check");
+    assert!(
+        refused.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::ResourceExhausted {
+                stage: CheckingStage::Typing,
+                kind: CheckingLimitKind::Depth,
+                limit: 0,
+            }
+        )),
+        "expected a contract-level ResourceExhausted(Depth, limit=0) refusal, got {refused:?}"
+    );
+
+    let admitting_limits = CheckingLimits::default();
+    PackageDeclarations {
+        functions: vec![declaration("f")],
+        ..PackageDeclarations::default()
+    }
+    .check(admitting_limits)
+    .expect("the default depth limit admits an ordinary boolean-literal function");
 }
 
 /// [`FunctionDeclaration::clause`] takes [`DeclaredClauseKind`], which has

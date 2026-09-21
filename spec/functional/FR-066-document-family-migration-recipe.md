@@ -103,6 +103,18 @@ from the ADRs.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. This requirement's implementation waits on FR-065's
-implementation for its worked-example citations.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214).
+Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
+citing FR-065's implementation for its worked-example section.
+
+**By Acceptance Criterion (PR #262 review, P3 accounting):** `TC-165` has
+zero tests in the delivered code -- no test file exists that checks the
+recipe document's content programmatically, though each AC's verification
+method is stated as "Test." All four ACs (AC-1 through AC-4) are therefore
+unbacked by that measure; their substance is satisfied by the document's
+own content (AC-4's "real deleted symbol," specifically, was corrected this
+review round -- PR #262 finding F13 -- to cite symbols that actually
+existed in a pushed commit, per `docs/family-migration-recipe.md`'s own
+correction note), but that is inspection, not the automated test TC-165
+names. Zero of four ACs are backed by a trace tag. Owner: QSL-151
+(AC-1 through AC-4).

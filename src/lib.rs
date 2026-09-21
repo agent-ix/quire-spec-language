@@ -16,6 +16,7 @@ pub mod command;
 pub mod complete;
 pub mod diagnostic;
 pub mod digest;
+pub(crate) mod family;
 pub mod formal_source;
 pub mod format;
 pub mod forms;

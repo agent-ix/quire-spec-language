@@ -260,6 +260,108 @@ a lowering or proof stage, the arm returns `unsupported` with a catalog code
 `package` is all-or-nothing. A family either emits every v2 node for the item
 or emits none and returns the refusal.
 
+**#214's implementation record.** #214 (FR-062/FR-065) implements this
+contract for real, migrating `Value`'s function-declaration and
+function-application forms as the one representative family, and finds
+that several parts of the design-level shape above have no real
+construction with only one family migrated and that family carrying no
+FR-057 capability kind and no typed refusal cause distinct from its
+existing checking refusals. Rather than keep a part of the contract that
+nothing can ever legitimately construct (an uninhabited type whose own
+`#[allow(dead_code)]` would be the only way past the lint gate), #214
+narrows the implemented trait shape to what it can back with a real
+caller, and records what is deferred here so the intent survives past this
+one PR:
+
+- `FamilyContract::requirements()` and the `Requirements`/`CapabilityKind`/
+  `Extent`/`Bound` types are **not implemented**. FR-057/#229 (QSL-11,
+  Done) states plainly that function-application has no FR-057 capability
+  kind at all ("no kind for an expression nested in a clause, such as a
+  function application"), so a `requirements()` for this family would
+  return `None` unconditionally -- not a real function, its own absence
+  wearing a signature. The family whose migration first has a claim form
+  with a real FR-057 kind adds this back to the contract in that same
+  change, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
+- `FamilyContract::Cause` is **not a trait associated type**; `check`
+  returns `CheckOutcome<Self::Checked>` with no cause type parameter.
+  Function declaration has no typed refusal cause distinct from `Value`'s
+  existing checking refusals (`CheckCause`), so a `Cause` enum for it would
+  have zero real variants; a probe over such an enum tests only its own
+  `catalog_code()` mapping, not a seam (S4, §5.1). The family whose
+  migration first has a real typed cause adds `Cause` back to the trait and
+  to FR-063's seam-probe checked-in list (S4) in that change.
+- `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
+  **deleted entirely** (PR #262 review, findings F1/F2, a correction to
+  this paragraph's earlier "`package` returns `()`" text). Its one real
+  caller, `CheckedPackage::emit_function_package_v2`, wrote `package`'s
+  output into a scratch buffer it never read back, then built its actual
+  returned bytes independently through `family::emit_v2` -- a hook nothing
+  consumed, the same forward-declared-shape hazard `requirements` already
+  is. The family whose migration first genuinely needs a shared,
+  trait-level packaging hook (for example because several families' v2
+  nodes must compose into one all-or-nothing emission a shared caller
+  drives) adds `package` back then, with a real consumer in the same
+  change.
+- `StageFailure` carries only `Limit`, not `Fault` (this paragraph's
+  earlier text) and not a family-typed `Refused`. `Fault(InternalFault)`'s
+  one construction site compared `mint_declaration_identity`'s output
+  against itself -- a pure function called twice with the same arguments,
+  which cannot fail by construction -- so PR #262 review (finding F7)
+  deleted it along with the fabricated comparison that was its only
+  caller. `src/diagnostic.rs`'s own `InternalFault` (landed after #214's
+  first pass, from #213 S-5) is that type's real eventual home for a
+  future stage entry with a genuine internal-fault outcome.
+- The S1 stage-participation table (`stage_hooks(FamilyKind, Stage) ->
+  HookStatus`) is **deleted** (PR #262 review, finding F7): its only
+  non-test callers were three `assert_eq!` sites asserting a hand-written
+  `match`'s own literal result against itself, and removing those
+  fabricated callers left the table with no real reader. FR-063-AC-6's
+  checked-in S1 list narrows from two locations to one accordingly (see
+  FR-063's and `xtask/src/seam_probe.rs`'s own correction notes).
+- `ReferenceEvaluation::EvaluateRefusal` carries only `Refused(String)`, not
+  an `Incomplete` variant carrying a real meter state: `quire-exact`'s own
+  `Meter::charge`/`charge_plan` are `pub(crate)`
+  (`quire-exact/src/accounting.rs:551,595`), not exported, so no family
+  migrated so far can construct a real `Incomplete` from outside
+  `quire-exact`. This is an export gap in `quire-exact` (#213's own scope),
+  not a QSL-side design choice; #214 defers `Incomplete` to when that gap
+  closes rather than fabricate a caller for an unreachable variant.
+
+**What #214 actually delivers against the design intent above (PR #262
+review headline finding).** The narrowing recorded here is about which
+contract *parts* have a real construction site; it is not a claim that the
+part which remains -- `check` -- performs the family's admission decision.
+It does not, for either form #214 migrates: `ValueFunctionFamily::check`
+mints an identity and records one diagnostic, refusing only on the
+nesting-depth limit; the real typing, definedness and termination verdict
+for function declarations is made entirely by the unchanged `Typer`,
+invoked unconditionally immediately after, for every declaration, and
+`Expression::Call` (function application) never calls any
+`FamilyContract` method at all -- `Self::call` in `check.rs` is Typer's own
+unchanged method, with one incidental call to `family::mint_call_identity`
+added for identity. Both the contract's `check` and the unchanged `Typer`
+run for every declaration and every call. This is not the ADR-011 §7.3
+M-6e side-by-side hazard in the narrow sense that rule targets -- `Typer`
+was never a separate, deprecated *old* admission path left running by
+oversight; it is the only checker either form has ever had, and the
+contract's `check` was never built to replace it, only to mint identity
+alongside it -- but it does mean FR-065's own text ("check... exclusively
+through the contract") is delivered only for identity and provenance
+minting, not for the checking decision itself. FR-065's Status section
+records this by Acceptance Criterion; the real migration (moving the
+checking itself into `ValueFunctionFamily::check` and removing it from
+`Typer`) is filed as its own, separate ticket rather than attempted as
+part of #214.
+
+None of this changes the six-part contract's design intent above, which
+remains the target shape; it is what #214 could back with a real,
+non-fabricated caller against the one family it migrated, and -- for the
+checking decision itself -- less than #214's own first-pass report
+claimed. See
+[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md)
+for the recipe each later family migration follows, including when each
+deferred part comes back.
+
 ## 3. Family-owned responsibilities
 
 Each family owns the following. The shared layer owns none of it.
@@ -910,6 +1012,19 @@ item settles `invalid-request` with no preference order
 | IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | agent-ix/quire-contract-ir#141 |
 | CG enum matches in place of string compares | agent-ix/quire-contract-codegen#86 |
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
+| S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | [QSL-143](https://linear.app/agent-ix/issue/QSL-143) |
+| Marking or converting the QSL crate's remaining string-dispatch sites (outside `src/family/*`/`src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
+| `FamilyContract`'s `requirements` (ADR-012 §2's sixth contract part) and a typed refusal `Cause`, for a family with a real FR-057 capability kind or a real typed refusal cause; `Relation`'s non-native-evaluability arm; FR-062-AC-8's S4 cause-bearing-family seam-probe coverage; AC-9's `package` fault-injection behavior (FR-062-AC-1, AC-4, AC-6, AC-8, AC-9) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
+| `StageLimits`'/`StageLimitKind`'s input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
+| FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |
+| Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (the production gate actually invoking `xtask string-edge`'s lint denial) | [QSL-155](https://linear.app/agent-ix/issue/QSL-155) (spec defect) |
+| The add-then-remove-reappears scan sequence, the CLI process-exit-code assertion, and a real test against the five named ADR-010 §4.3 production dispatch sites (not synthetic fixtures) for the string-dispatch restriction (FR-064-AC-2, AC-4, AC-5) | [QSL-150](https://linear.app/agent-ix/issue/QSL-150) |
+| A compile-fail test that the function packaging/lowering public API accepts no raw-CST/source-string overload, and the deleted, unreplaced occurrence-span-survives-linking test (a call's source occurrence resolves to the same byte span before linking, after linking and after v2 decode, with a corrupted-alternate control) (FR-065-AC-1, AC-3 -- AC-3 is the delivered half with zero tests, do it first) | [QSL-154](https://linear.app/agent-ix/issue/QSL-154) |
+| Moving function declaration/application checking (typing, definedness, termination) into `ValueFunctionFamily::check` and deleting it from `Typer`/`Self::call`, closing the pre-migration composed-checker entry points this ticket's rescoping decision left in place; also owns FR-062-AC-7 (a real recursive-descent fixture and a limit-varied-by-one control), unbackable against today's non-recursive `check` for the same reason (FR-062-AC-7, FR-065-AC-4, AC-5) | [QSL-148](https://linear.app/agent-ix/issue/QSL-148) |
+| Two typing contexts constructed from the same resolved declarations, checking the same form through each, produce identical checked output (FR-062-AC-3 -- untagged this round: F6 deleted the self-comparison the tag once stood in for, and the tag survived its own assertion) | [QSL-161](https://linear.app/agent-ix/issue/QSL-161) |
+| The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | [QSL-151](https://linear.app/agent-ix/issue/QSL-151) |
+| The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | [QSL-156](https://linear.app/agent-ix/issue/QSL-156) |
+| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (`TC-166` has zero tests) (FR-062-AC-10, FR-065-AC-6) -- a real owner that already existed before this table was written but was not recorded against either criterion until now | [QSL-5](https://linear.app/agent-ix/issue/QSL-5) / #243 |
 
 Requirements needed before implementation starts:
 

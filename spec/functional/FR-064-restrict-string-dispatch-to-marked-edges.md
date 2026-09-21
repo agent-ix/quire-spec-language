@@ -121,8 +121,74 @@ than accept it into the allow-list.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. ADR-012 §9's edge table names the string-dispatch sites this
-scan is expected to find clean or flag once QSL's own edges are marked; that
-marking work is this ticket's and the family migration tickets' own, not
-this requirement's scan tool.
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). ADR-012
+§9's edge table names the string-dispatch sites this scan is expected to
+find clean or flag once QSL's own edges are marked; that marking work is
+this ticket's and the family migration tickets' own, not this requirement's
+scan tool.
+
+**Scope of what #214 delivers.** `#[string_edge]` and `xtask string-edge`
+are both fully implemented and tested (TC-162): the scan correctly finds
+literal-based string comparisons and string-literal `match` arms outside a
+marked function, respects the allow-list, rejects a branch-gating allow-list
+entry (including all five ADR-010 §4.3 sites), and excludes test code.
+Every edge in the files #214 itself touches or adds (`xtask/src/*`) is
+marked and the scan is clean there. Running the scan against the whole QSL
+crate as it stands today reports 60 further occurrences, all outside
+`src/family/*` and `src/value/expression/*` -- in `src/cli.rs`,
+`src/complete/`, `src/model/`, `src/protocol_artifact/`, `src/linking.rs`,
+`src/mapped.rs`, `src/package/intake.rs`, `src/state/evaluation.rs` and
+`src/value/definition.rs`. Almost all are branch-gating, so the allow-list
+(which this requirement's own Behavior section forbids from admitting a
+branch-gating entry) cannot make them clean; converting them is real work
+belonging to whichever family or module owns that code, not to #214's own
+migration of function declaration/application. This is tracked as
+[QSL-145](https://linear.app/agent-ix/issue/QSL-145), parented to #214's own
+tracking issue, not attempted here.
+
+Because of this, the "Gate placement" behavior above and FR-064-AC-6 are
+**not** satisfied by production wiring in #214: `make string-edge` runs the
+tool standalone (see the Makefile), not as part of `ci:`, until QSL-145
+lands -- wiring it into `ci:` today would fail the gate on 60 sites #214
+did not introduce and does not own, the same shape as FR-063's S2/S3
+deferral (QSL-143). TC-162's own test (step 7, a stubbed gate target list)
+still demonstrates the wiring *mechanism* works; it does not demonstrate
+the real crate is clean under it.
+
+**By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
+tags as they exist in the delivered code today:**
+- FR-064-AC-1: backed (`TC-162`, `xtask/src/string_edge.rs`).
+- FR-064-AC-2: unbacked (untagged). The scanning half is real (any occurrence
+  the allow-list doesn't cover is reported); the specific
+  add-then-remove-reappears sequence has no dedicated tagged test. Owner:
+  QSL-150.
+- FR-064-AC-3: backed (`TC-162`, `xtask/src/string_edge.rs`).
+- FR-064-AC-4: unbacked (untagged). No test asserts the CLI's process exit
+  code directly (the underlying `Result`/`Err` shape that drives it is
+  exercised indirectly through other tagged tests). Owner: QSL-150.
+- FR-064-AC-5: unbacked (untagged; PR #262 review, coordinator round 3,
+  finding 7; previously misrecorded as backed). Its branch-gating/
+  non-branching distinction half is exercised by two real tests in
+  `xtask/src/string_edge.rs` (`branch_gating_is_distinguished_from_a_non_
+  branching_sink`, `allow_list_entry_at_a_branch_gating_occurrence_is_
+  rejected`), now untagged rather than left implying the whole criterion.
+  Its "each of the five ADR-010 §4.3 production dispatch sites" half is
+  not: `none_of_the_five_adr010_production_sites_can_be_allow_listed`
+  builds five *synthetic* fixtures shaped like the five sites, but
+  `branch_gating_entries` filters only on `(file, line, branch_gating)`,
+  never on the literal string compared, so the test passes identically for
+  five arbitrary branch-gating strings -- it never actually attempts to
+  allow-list the five real, named sites at their real file:line. One of
+  those five (the `"allocation"` relationship-category site, `QSL:model/
+  systems.rs:269` per ADR-010 §4.3's own evidence column, which that same
+  column already flags "PR-sensitive") is confirmed gone from
+  `src/model/systems.rs` on this branch, so a real test against the
+  current tree could not reject all five as currently named regardless.
+  Owner: QSL-150.
+- FR-064-AC-6: unbacked, as this section's own paragraph above already
+  states at length (no production gate wiring in #214). Owner: QSL-145
+  (the first half -- no production gate wiring); QSL-155, a spec defect,
+  owns the second half.
+
+Two of six ACs are backed (AC-1, AC-3); four are unbacked
+(AC-2, AC-4, AC-5, AC-6).

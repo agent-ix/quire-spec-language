@@ -13,14 +13,15 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use qsl_attrs::string_edge;
 use xtask::{
     cargo_pin,
     error::{Error, Result},
     manifest::Manifest,
-    revendor, revendor_check, Sources, Tree,
+    revendor, revendor_check, seam_probe, string_edge as string_edge_scan, Sources, Tree,
 };
 
-const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all> [--qspec-clone <path>] [--fcd-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all>]";
+const USAGE: &str = "usage: cargo xtask revendor --tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all> [--qspec-clone <path>] [--fcd-clone <path>]\n       cargo xtask revendor-check [--tree <native-v1|complete-value|test-fixtures-architecture|test-fixtures-modules|all>]\n       cargo xtask seam-probe\n       cargo xtask string-edge";
 
 struct Args {
     tree: Option<Tree>,
@@ -28,6 +29,9 @@ struct Args {
     fcd_clone: Option<PathBuf>,
 }
 
+/// CLI argument parsing (FR-064's own listed edge kind): converts each
+/// `--flag` string into typed `Args` fields.
+#[string_edge]
 fn parse_flags(operands: &[OsString]) -> Result<Args> {
     let mut tree = None;
     let mut qspec_clone = None;
@@ -144,6 +148,9 @@ fn run_check(workspace_root: &Path, args: &Args) -> Result<String> {
     }
 }
 
+/// CLI subcommand dispatch (FR-064's own listed edge kind): converts the
+/// leading argument string into a typed subcommand selection.
+#[string_edge]
 fn run(arguments: &[OsString]) -> Result<String> {
     let Some((command, operands)) = arguments.split_first() else {
         return Err(Error::Usage(USAGE));
@@ -153,6 +160,18 @@ fn run(arguments: &[OsString]) -> Result<String> {
         .parent()
         .expect("xtask is one level under the workspace root")
         .to_path_buf();
+    if command == "seam-probe" {
+        if !operands.is_empty() {
+            return Err(Error::Usage(USAGE));
+        }
+        return seam_probe::run(&workspace_root);
+    }
+    if command == "string-edge" {
+        if !operands.is_empty() {
+            return Err(Error::Usage(USAGE));
+        }
+        return string_edge_scan::run(&workspace_root);
+    }
     let args = parse_flags(operands)?;
     match command {
         "revendor" => run_revendor(&workspace_root, &args),
