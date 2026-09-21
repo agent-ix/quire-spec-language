@@ -125,9 +125,9 @@ impl Fixture {
                             rule.path,
                             "text/markdown",
                             "1",
-                            rule.bytes,
+                            rule.path.as_bytes(),
                         ),
-                        rule.bytes.to_vec(),
+                        rule.path.as_bytes().to_vec(),
                     )
                 });
             }

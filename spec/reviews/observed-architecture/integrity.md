@@ -88,8 +88,8 @@ medium and should be fixed before the #208 gate).
   Enum variant counts were rechecked for QSL `Value` 13, `ValueType` 14,
   `value::Refusal` 15, `Capability` 4, `Family` 4 and `KaniOutcomeKind` 10; all
   hold except the `Code` count in FND-010.
-- **Pin staleness.** Every commits-behind figure in §3.2, §3.2 Vendored and
-  §6.3 reproduces with `git rev-list --count <pin>..<main>` in the local clones
+- **Pin staleness.** Every commits-behind figure in §3.2, its copied-QSpec-
+  resources subsection, and §6.3 reproduces with `git rev-list --count <pin>..<main>` in the local clones
   that exist: 26, 33, 7, 78, 19, 5, 15, 144 and 10.
 - **Not verified.** RT, FCD and QI evidence was not spot-checked, because no
   local clones were provided.

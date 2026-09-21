@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The pinned `quire.value.definition-lock/v1` catalog, per-package selection
+//! The closed `quire.value.definition-lock/v1` catalog, per-package selection
 //! admission and integer-division profile admission.
 //!
 //! Profile misuse is refused here, at semantic admission, before any expression
 //! is evaluated. Selection refusals use the lock's closed
 //! `selection_refusal_codes`; definition-closure refusals use the I04
 //! `invalid_package` code with its closed `cause_tag` vocabulary.
+//!
+//! The qualification catalog ([`CATALOG`]) is a closed table of forward
+//! references: each row names the authority, identity, revision and
+//! artifact path a caller-supplied [`DefinitionReference`] for that role is
+//! checked against. Recognition is by identity and revision; there is no
+//! content digest in this table, because a digest exists only to verify a
+//! copy, and this table holds none.
 
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
 
 use serde::Deserialize;
 
 use super::division::DivisionProfile;
 
-/// Exact bytes of `complete-value-lock.json` at QSpec
-/// `82f84d336a4cbfdfad999cef9145e333c4213333`.
-pub const PINNED_LOCK_BYTES: &[u8] = include_bytes!(
-    "../../resources/complete-value/quire-specification/proposals/quire-v1/definitions/complete-value-lock.json"
-);
-
 /// The lock's `trigger_vocabulary`.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Trigger {
     /// The package evaluates an IEEE `float32`/`float64` type, value or operation.
     IeeeOperation,
@@ -54,8 +53,7 @@ impl Trigger {
 }
 
 /// A qualification-catalog role; each variant is the lock role of the same name.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CatalogRole {
     /// The `ix:native` language edition definition (`edition.md`).
     Edition,
@@ -95,31 +93,24 @@ pub enum CatalogRole {
     RuleSharedGrammar,
     /// The `quire.rule.ad-005/v1` rule binding AD-005's complete-value expression
     /// system (`AD-005-complete-value-expression-system.md`).
-    #[serde(rename = "rule_ad_005")]
     RuleAd005,
     /// The `quire.rule.fr-140/v1` rule binding FR-140 exact-decimal evaluation
     /// (`FR-140-evaluate-exact-decimals.md`).
-    #[serde(rename = "rule_fr_140")]
     RuleFr140,
     /// The `quire.rule.fr-141/v1` rule binding FR-141 text and enumeration
     /// evaluation (`FR-141-evaluate-text-and-enumerations.md`).
-    #[serde(rename = "rule_fr_141")]
     RuleFr141,
     /// The `quire.rule.fr-142/v1` rule binding FR-142 quantity and unit
     /// evaluation (`FR-142-evaluate-quantities-and-units.md`).
-    #[serde(rename = "rule_fr_142")]
     RuleFr142,
     /// The `quire.rule.fr-147/v1` rule binding FR-147 integer-division-domain
     /// evaluation (`FR-147-evaluate-integer-division-domains.md`).
-    #[serde(rename = "rule_fr_147")]
     RuleFr147,
     /// The `quire.rule.fr-148/v1` rule binding FR-148 IEEE floating-point
     /// profile evaluation (`FR-148-evaluate-ieee-floating-profiles.md`).
-    #[serde(rename = "rule_fr_148")]
     RuleFr148,
     /// The `quire.rule.fr-149/v1` rule binding FR-149's complete equality
     /// matrix (`FR-149-apply-complete-equality-matrix.md`).
-    #[serde(rename = "rule_fr_149")]
     RuleFr149,
 }
 
@@ -210,8 +201,7 @@ impl CatalogRole {
 }
 
 /// The lock's closed `selection_refusal_codes`, in check order.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SelectionRefusalCode {
     /// `selection_unknown_trigger`.
     SelectionUnknownTrigger,
@@ -293,179 +283,274 @@ pub struct DefinitionReference {
     pub digest: String,
 }
 
-/// One qualification-catalog entry.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
+/// One qualification-catalog entry: a closed role's artifact path and the
+/// exact identity/revision a caller-supplied [`DefinitionReference`] for that
+/// role is checked against. There is no digest here: recognizing a
+/// definition is by identity and revision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CatalogEntry {
     /// Catalog role.
     pub role: CatalogRole,
-    /// Path relative to the lock's directory in the pinned specification.
-    pub artifact_path: String,
-    /// The exact DefinitionRef.
-    pub definition: DefinitionReference,
+    /// Path relative to the standard's own definitions directory.
+    pub artifact_path: &'static str,
+    /// Publishing authority.
+    pub authority: &'static str,
+    /// Definition identity.
+    pub identity: &'static str,
+    /// Revision namespace.
+    pub revision_namespace: &'static str,
+    /// Revision value.
+    pub revision_value: &'static str,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct ConditionalSlot {
-    trigger: Trigger,
-    role: CatalogRole,
-}
+const AGENT_IX: &str = "agent-ix";
+const DRAFT: &str = "quire-draft";
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct AlternativeSlot {
-    trigger: Trigger,
-    selector: String,
-    roles: Vec<CatalogRole>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct SelectionSlots {
-    always: Vec<CatalogRole>,
-    conditional: Vec<ConditionalSlot>,
-    exactly_one: Vec<AlternativeSlot>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct LockDocument {
-    lock_version: String,
-    revision: String,
-    digest_domain: String,
-    language_edition: String,
-    trigger_vocabulary: Vec<Trigger>,
-    selection_refusal_codes: Vec<SelectionRefusalCode>,
-    qualification_catalog: Vec<CatalogEntry>,
-    package_selection: SelectionSlots,
-}
-
-/// Why lock bytes are not an admissible `quire.value.definition-lock/v1`.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum LockError {
-    /// The bytes are not the lock JSON shape.
-    #[error("malformed definition lock at line {line}, column {column}")]
-    Malformed {
-        /// One-based JSON line.
-        line: usize,
-        /// One-based JSON column.
-        column: usize,
+/// The closed qualification catalog: where each role's definition is
+/// resolved from.
+const CATALOG: [CatalogEntry; 21] = [
+    CatalogEntry {
+        role: CatalogRole::Edition,
+        artifact_path: "edition.md",
+        authority: AGENT_IX,
+        identity: "ix:native",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.2",
     },
-    /// `lock_version`, `digest_domain` or `language_edition` is not the v1 value.
-    #[error("unsupported definition lock header")]
-    UnsupportedHeader,
-    /// `trigger_vocabulary` or `selection_refusal_codes` differs from the closed set.
-    #[error("definition lock vocabulary differs from the closed v1 set")]
-    VocabularyMismatch,
-    /// A catalog role is absent or repeated.
-    #[error("catalog role {0:?} is absent or repeated")]
-    CatalogRole(CatalogRole),
-    /// A catalog entry's digest domain or digest spelling is invalid.
-    #[error("catalog role {0:?} has an invalid digest")]
-    InvalidDigest(CatalogRole),
-    /// A role is not assigned to exactly one selection slot.
-    #[error("catalog role {0:?} is not in exactly one selection slot")]
-    SelectionSlot(CatalogRole),
-}
+    CatalogEntry {
+        role: CatalogRole::Root,
+        artifact_path: "value-complete.md",
+        authority: AGENT_IX,
+        identity: "quire.value.complete/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::Accounting,
+        artifact_path: "value-accounting.md",
+        authority: AGENT_IX,
+        identity: "quire.value.accounting/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::CompoundUnit,
+        artifact_path: "value-compound-unit.md",
+        authority: AGENT_IX,
+        identity: "quire.value.compound-unit/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::CompoundUnitSchema,
+        artifact_path: "value-compound-unit.schema.json",
+        authority: AGENT_IX,
+        identity: "quire.value.compound-unit.schema/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::CompoundUnitVectors,
+        artifact_path: "value-compound-unit-vectors.json",
+        authority: AGENT_IX,
+        identity: "quire.value.compound-unit.vectors/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleManifest,
+        artifact_path: "value-complete-rules.json",
+        authority: AGENT_IX,
+        identity: "quire.value.complete.rules/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::TextProfile,
+        artifact_path: "value-text-unicode-17.md",
+        authority: AGENT_IX,
+        identity: "quire.value.text.unicode-17.0.0/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::IeeeProfile,
+        artifact_path: "value-ieee754-2019-default.md",
+        authority: AGENT_IX,
+        identity: "quire.value.ieee754-2019-default/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::IntegerDivisionEuclidean,
+        artifact_path: "value-integer-division-euclidean.md",
+        authority: AGENT_IX,
+        identity: "quire.value.integer-division.euclidean/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::IntegerDivisionFloor,
+        artifact_path: "value-integer-division-floor.md",
+        authority: AGENT_IX,
+        identity: "quire.value.integer-division.floor/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::IntegerDivisionTruncating,
+        artifact_path: "value-integer-division-truncating.md",
+        authority: AGENT_IX,
+        identity: "quire.value.integer-division.truncating/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RulePackageContract,
+        artifact_path: "../package-contract.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.package-contract/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleSharedGrammar,
+        artifact_path: "../shared-grammar.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.shared-grammar/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleAd005,
+        artifact_path: "../../../spec/assurance/AD-005-complete-value-expression-system.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.ad-005/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr140,
+        artifact_path: "../../../spec/functional/type-model/FR-140-evaluate-exact-decimals.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-140/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr141,
+        artifact_path:
+            "../../../spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-141/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr142,
+        artifact_path:
+            "../../../spec/functional/type-model/FR-142-evaluate-quantities-and-units.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-142/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr147,
+        artifact_path:
+            "../../../spec/functional/expressions/FR-147-evaluate-integer-division-domains.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-147/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr148,
+        artifact_path:
+            "../../../spec/functional/expressions/FR-148-evaluate-ieee-floating-profiles.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-148/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+    CatalogEntry {
+        role: CatalogRole::RuleFr149,
+        artifact_path:
+            "../../../spec/functional/type-model/FR-149-apply-complete-equality-matrix.md",
+        authority: AGENT_IX,
+        identity: "quire.rule.fr-149/v1",
+        revision_namespace: DRAFT,
+        revision_value: "1-draft.1",
+    },
+];
 
-/// An admitted definition lock.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DefinitionLock {
-    document: LockDocument,
-}
+/// Roles every package selects.
+const ALWAYS_ROLES: [CatalogRole; 16] = [
+    CatalogRole::Edition,
+    CatalogRole::Root,
+    CatalogRole::Accounting,
+    CatalogRole::CompoundUnit,
+    CatalogRole::CompoundUnitSchema,
+    CatalogRole::CompoundUnitVectors,
+    CatalogRole::RuleManifest,
+    CatalogRole::RulePackageContract,
+    CatalogRole::RuleSharedGrammar,
+    CatalogRole::RuleAd005,
+    CatalogRole::RuleFr140,
+    CatalogRole::RuleFr141,
+    CatalogRole::RuleFr142,
+    CatalogRole::RuleFr147,
+    CatalogRole::RuleFr148,
+    CatalogRole::RuleFr149,
+];
 
-const DIGEST_DOMAIN: &str = "quire.definition.bytes/v1";
+/// A role offered only when its trigger is present.
+const CONDITIONAL_ROLES: [(Trigger, CatalogRole); 2] = [
+    (Trigger::TextBearing, CatalogRole::TextProfile),
+    (Trigger::IeeeOperation, CatalogRole::IeeeProfile),
+];
+
+/// A trigger that requires exactly one of several roles.
+const EXACTLY_ONE_ROLES: [(Trigger, &[CatalogRole]); 1] = [(
+    Trigger::IntegerDivRem,
+    &[
+        CatalogRole::IntegerDivisionEuclidean,
+        CatalogRole::IntegerDivisionFloor,
+        CatalogRole::IntegerDivisionTruncating,
+    ],
+)];
+
+/// The closed `quire.value.definition-lock/v1` catalog and package-selection
+/// rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DefinitionLock;
+
+pub(crate) const DIGEST_DOMAIN: &str = "quire.definition.bytes/v1";
 
 impl DefinitionLock {
-    /// The lock embedded from the pinned QSpec revision.
-    pub fn pinned() -> Result<&'static Self, LockError> {
-        static PINNED: OnceLock<Result<DefinitionLock, LockError>> = OnceLock::new();
-        PINNED
-            .get_or_init(|| Self::parse(PINNED_LOCK_BYTES))
-            .as_ref()
-            .map_err(Clone::clone)
+    /// The closed definition lock.
+    pub fn pinned() -> &'static Self {
+        &Self
     }
 
-    /// Parse and validate lock bytes.
-    pub fn parse(bytes: &[u8]) -> Result<Self, LockError> {
-        let document: LockDocument =
-            serde_json::from_slice(bytes).map_err(|error| LockError::Malformed {
-                line: error.line(),
-                column: error.column(),
-            })?;
-        if document.lock_version != "quire.value.definition-lock/v1"
-            || document.digest_domain != DIGEST_DOMAIN
-            || document.language_edition != "1-draft"
-        {
-            return Err(LockError::UnsupportedHeader);
-        }
-        if document.trigger_vocabulary != Trigger::ALL {
-            return Err(LockError::VocabularyMismatch);
-        }
-        let codes: BTreeSet<_> = document.selection_refusal_codes.iter().copied().collect();
-        if codes.len() != document.selection_refusal_codes.len()
-            || codes != SelectionRefusalCode::ALL.into_iter().collect()
-        {
-            return Err(LockError::VocabularyMismatch);
-        }
-        for role in CatalogRole::ALL {
-            let mut entries = document
-                .qualification_catalog
-                .iter()
-                .filter(|entry| entry.role == role);
-            let entry = entries.next().ok_or(LockError::CatalogRole(role))?;
-            if entries.next().is_some() {
-                return Err(LockError::CatalogRole(role));
-            }
-            let definition = &entry.definition;
-            let hex = definition.digest.as_bytes();
-            if definition.digest_domain != DIGEST_DOMAIN
-                || hex.len() != 64
-                || !hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-            {
-                return Err(LockError::InvalidDigest(role));
-            }
-        }
-        let slots = &document.package_selection;
-        let assigned: Vec<CatalogRole> = slots
-            .always
-            .iter()
-            .copied()
-            .chain(slots.conditional.iter().map(|slot| slot.role))
-            .chain(
-                slots
-                    .exactly_one
-                    .iter()
-                    .flat_map(|slot| slot.roles.iter().copied()),
-            )
-            .collect();
-        for role in CatalogRole::ALL {
-            if assigned.iter().filter(|seen| **seen == role).count() != 1 {
-                return Err(LockError::SelectionSlot(role));
-            }
-        }
-        Ok(Self { document })
-    }
-
-    /// Lock revision.
-    pub fn revision(&self) -> &str {
-        &self.document.revision
+    /// The lock's revision identifier.
+    pub fn revision(&self) -> &'static str {
+        "1-draft.1"
     }
 
     /// The closed qualification catalog.
-    pub fn catalog(&self) -> &[CatalogEntry] {
-        &self.document.qualification_catalog
+    pub fn catalog(&self) -> &'static [CatalogEntry] {
+        &CATALOG
     }
 
     /// The catalog entry for `role`.
-    pub fn entry(&self, role: CatalogRole) -> Option<&CatalogEntry> {
+    pub fn entry(&self, role: CatalogRole) -> Option<&'static CatalogEntry> {
         self.catalog().iter().find(|entry| entry.role == role)
     }
 
     /// Roles every package selects.
-    pub fn always_roles(&self) -> &[CatalogRole] {
-        &self.document.package_selection.always
+    pub fn always_roles(&self) -> &'static [CatalogRole] {
+        &ALWAYS_ROLES
     }
 
     /// Admit one package's selection given its trigger and role spellings.
@@ -487,37 +572,29 @@ impl DefinitionLock {
         if selected.len() != parsed.len() {
             return Err(SelectionRefusalCode::SelectionDuplicateRole);
         }
-        let slots = &self.document.package_selection;
-        if !slots.always.iter().all(|role| selected.contains(role)) {
+        if !ALWAYS_ROLES.iter().all(|role| selected.contains(role)) {
             return Err(SelectionRefusalCode::SelectionRequiredMissing);
         }
-        if slots.exactly_one.iter().any(|slot| {
-            slot.roles
-                .iter()
-                .filter(|role| selected.contains(role))
-                .count()
-                > 1
-        }) {
+        if EXACTLY_ONE_ROLES
+            .iter()
+            .any(|(_, roles)| roles.iter().filter(|role| selected.contains(role)).count() > 1)
+        {
             return Err(SelectionRefusalCode::SelectionAlternativeConflict);
         }
-        let unsatisfied = slots
-            .conditional
+        let unsatisfied = CONDITIONAL_ROLES
             .iter()
-            .any(|slot| triggers.contains(&slot.trigger) && !selected.contains(&slot.role))
-            || slots.exactly_one.iter().any(|slot| {
-                triggers.contains(&slot.trigger)
-                    && !slot.roles.iter().any(|role| selected.contains(role))
+            .any(|(trigger, role)| triggers.contains(trigger) && !selected.contains(role))
+            || EXACTLY_ONE_ROLES.iter().any(|(trigger, roles)| {
+                triggers.contains(trigger) && !roles.iter().any(|role| selected.contains(role))
             });
         if unsatisfied {
             return Err(SelectionRefusalCode::SelectionTriggerUnsatisfied);
         }
-        let untriggered = slots
-            .conditional
+        let untriggered = CONDITIONAL_ROLES
             .iter()
-            .any(|slot| !triggers.contains(&slot.trigger) && selected.contains(&slot.role))
-            || slots.exactly_one.iter().any(|slot| {
-                !triggers.contains(&slot.trigger)
-                    && slot.roles.iter().any(|role| selected.contains(role))
+            .any(|(trigger, role)| !triggers.contains(trigger) && selected.contains(role))
+            || EXACTLY_ONE_ROLES.iter().any(|(trigger, roles)| {
+                !triggers.contains(trigger) && roles.iter().any(|role| selected.contains(role))
             });
         if untriggered {
             return Err(SelectionRefusalCode::SelectionUntriggeredProfile);
@@ -562,6 +639,7 @@ impl DefinitionLock {
         Ok(AdmittedIntegerDivision { profile })
     }
 
+    /// Resolve `reference` to a division law by identity and revision.
     fn resolve_division(
         &self,
         reference: &DefinitionReference,
@@ -571,21 +649,21 @@ impl DefinitionLock {
             .find_map(|profile| {
                 let entry = self.catalog().iter().find(|entry| {
                     entry.role.division_profile() == Some(profile)
-                        && entry.definition.identity == reference.identity
+                        && entry.identity == reference.identity
                 })?;
-                Some((profile, &entry.definition))
+                Some((profile, entry))
             })
             .ok_or(PackageRefusal::invalid_package(
                 PackageCause::IncompatibleDefinition,
             ))?;
         let cause = if reference.authority != expected.authority {
             Some(PackageCause::IncompatibleDefinition)
-        } else if reference.revision != expected.revision {
+        } else if reference.revision.namespace != expected.revision_namespace
+            || reference.revision.value != expected.revision_value
+        {
             Some(PackageCause::RevisionMismatch)
-        } else if reference.digest_domain != expected.digest_domain {
+        } else if reference.digest_domain != DIGEST_DOMAIN {
             Some(PackageCause::DigestDomainMismatch)
-        } else if reference.digest != expected.digest {
-            Some(PackageCause::ByteDigestMismatch)
         } else {
             None
         };
@@ -680,8 +758,6 @@ pub enum PackageCause {
     RevisionMismatch,
     /// `digest-domain-mismatch`.
     DigestDomainMismatch,
-    /// `byte-digest-mismatch`.
-    ByteDigestMismatch,
 }
 
 impl PackageCause {
@@ -693,7 +769,6 @@ impl PackageCause {
             Self::IncompatibleDefinition => "incompatible-definition",
             Self::RevisionMismatch => "revision-mismatch",
             Self::DigestDomainMismatch => "digest-domain-mismatch",
-            Self::ByteDigestMismatch => "byte-digest-mismatch",
         }
     }
 }

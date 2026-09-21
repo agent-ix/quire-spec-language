@@ -1,2 +1,2 @@
-# `current-head-lane prepare` vendors clones here; never committed.
-.vendor/
+# `current-head-lane prepare` clones dependencies here; never committed.
+.deps/

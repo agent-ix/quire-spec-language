@@ -58,8 +58,8 @@ fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(rule.path.as_bytes()),
+                    bytes: rule.path.as_bytes(),
                 },
             )
         })
@@ -400,8 +400,8 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
     for (new, old) in changed {
         assert_eq!(new.declaration, old.declaration);
         assert_eq!(new.alias, old.alias);
-        assert_eq!(new.closure[0], R::StateQueries.selection());
-        assert_eq!(old.closure[0], R::StateGraph.selection());
+        assert_eq!(new.closure[0], R::StateQueries);
+        assert_eq!(old.closure[0], R::StateGraph);
     }
 }
 

@@ -8,7 +8,7 @@
       "namespace": "example-output",
       "value": "1"
     },
-    "digest": "sha256:378ec642f98af8381e9f37482eeb060c543e6c95632987ad78404606d4ee3981",
+    "digest": "sha256:7c3452f663f93268650e147c3107638cae160ff9c5e3d79d25d3d19a0b37be93",
     "wire": {
       "identity": "quire.compiled-protocol",
       "version": "1"
@@ -38,7 +38,7 @@
       "namespace": "quire/native-definition-revision",
       "value": "1-draft.2"
     },
-    "digest": "sha256:6f9cb8bf8521ca51a5e6340511b545db43001879446a59c5c87efe4985acdb06",
+    "digest": "sha256:2bcf7bb34aa0f69ee4f074b06f6b1c1af89aa8640f990fb935fb479194ccbad2",
     "wire": {
       "identity": "text/markdown",
       "version": "1"
@@ -59,7 +59,7 @@
         "namespace": "crate-version",
         "value": "0.2.0"
       },
-      "digest": "sha256:8c3f11c6e1386a0df56b6cc29f221449c869be60ce6b32828acf417c6b88b3c9",
+      "digest": "sha256:60acee520cab408151ce37f1bb75cc8abab162540709a73b4a69283872899e6c",
       "wire": {
         "identity": "text/rust",
         "version": "1"
@@ -83,7 +83,7 @@
             "namespace": "native-source-revision",
             "value": "1"
           },
-          "digest": "sha256:cd00d1844da049b98e2f52fc262161cee4b6759156a1795a33eef9113a0ae26b",
+          "digest": "sha256:181a4deed8de873f6f63d880c5714b56e77aa9ac2776694a74bd1010e19c24d4",
           "wire": {
             "identity": "ix:native",
             "version": "1-draft"
@@ -101,7 +101,7 @@
             "value": "1"
           }
         },
-        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// Exact selected profile/model imports are prepended by the Rust producer.\npredicate Allowed using G (ratio: M::Ratio): Boolean {\n    ratio <= rational(1,1)\n}\n\n// The signed-64 extrema and exact rationals at both component boundaries are\n// authored here so the emitted package carries them as M::Wide/M::Exact literals.\npredicate Bounded using G (wide: M::Wide, exact: M::Exact): Boolean {\n    wide >= -9223372036854775808\n    and wide <= 9223372036854775807\n    and exact <= rational(9223372036854775807, 9223372036854775806)\n    and exact >= rational(-9223372036854775808, 9223372036854775807)\n}\n"
+        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:de9236947b9caab2cf956e389c0c3f6ba5f574365c7bfca6641156eee746e9f3\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// Exact selected profile/model imports are prepended by the Rust producer.\npredicate Allowed using G (ratio: M::Ratio): Boolean {\n    ratio <= rational(1,1)\n}\n\n// The signed-64 extrema and exact rationals at both component boundaries are\n// authored here so the emitted package carries them as M::Wide/M::Exact literals.\npredicate Bounded using G (wide: M::Wide, exact: M::Exact): Boolean {\n    wide >= -9223372036854775808\n    and wide <= 9223372036854775807\n    and exact <= rational(9223372036854775807, 9223372036854775806)\n    and exact >= rational(-9223372036854775808, 9223372036854775807)\n}\n"
       },
       "declarations": [
         {
@@ -158,7 +158,7 @@
             "namespace": "native-source-revision",
             "value": "1"
           },
-          "digest": "sha256:574ea0530fa8b21ca55fabc9921cd5f0d709597d52828339ada36c2ba2249c32",
+          "digest": "sha256:8a93cfabe9ee16c4edc23cda1b15f6b35d10f8ce2703a48350cf8a12290a9072",
           "wire": {
             "identity": "ix:native",
             "version": "1-draft"
@@ -176,7 +176,7 @@
             "value": "1"
           }
         },
-        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// A bounded sum and size over the declared receipt sequence.\ninvariant Healthy using G on M::Workflow at current {\n    Allowed(self.ratio)\n    and Bounded(self.wide, self.exact)\n    and size<M::Tally>(self.receipts) <= 5\n    and sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n    and self.peer = self.peer\n}\n\npre BeforeApply using G on M::Workflow::apply {\n    // The domain-implied amount bound exercises operation-input correspondence.\n    Allowed(self.ratio) and amount >= 1\n}\n\npost AfterApply using G on M::Workflow::apply {\n    result and Allowed(self.ratio)\n}\n"
+        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:de9236947b9caab2cf956e389c0c3f6ba5f574365c7bfca6641156eee746e9f3\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// A bounded sum and size over the declared receipt sequence.\ninvariant Healthy using G on M::Workflow at current {\n    Allowed(self.ratio)\n    and Bounded(self.wide, self.exact)\n    and size<M::Tally>(self.receipts) <= 5\n    and sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n    and self.peer = self.peer\n}\n\npre BeforeApply using G on M::Workflow::apply {\n    // The domain-implied amount bound exercises operation-input correspondence.\n    Allowed(self.ratio) and amount >= 1\n}\n\npost AfterApply using G on M::Workflow::apply {\n    result and Allowed(self.ratio)\n}\n"
       },
       "declarations": [
         {
@@ -259,7 +259,7 @@
             "namespace": "native-source-revision",
             "value": "1"
           },
-          "digest": "sha256:0fcb2ae81563b263f4f01ca33b3a350f685b19ab657d5551189d99684f3beba7",
+          "digest": "sha256:df5565d23d0f23215abfc0b766f35b17042e7f4e9d2cc859d213618c817b6364",
           "wire": {
             "identity": "ix:native",
             "version": "1-draft"
@@ -277,7 +277,7 @@
             "value": "1"
           }
         },
-        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\ntemporal Due using T over (view: M::Workflow) clock \"events\" on origin {\n    always[0,30] holds(Allowed(view.ratio))\n}\n"
+        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:de9236947b9caab2cf956e389c0c3f6ba5f574365c7bfca6641156eee746e9f3\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\ntemporal Due using T over (view: M::Workflow) clock \"events\" on origin {\n    always[0,30] holds(Allowed(view.ratio))\n}\n"
       },
       "declarations": [
         {
@@ -314,7 +314,7 @@
             "namespace": "native-source-revision",
             "value": "1"
           },
-          "digest": "sha256:a38fa6b296330dc46cc762a240437f2e95650b80ebf343a208a9a9fbd2dad33b",
+          "digest": "sha256:18e517d76bc495688498e2f45e35da66e56a47bc4b64f661ee6444746ac7ff67",
           "wire": {
             "identity": "ix:native",
             "version": "1-draft"
@@ -332,7 +332,7 @@
             "value": "1"
           }
         },
-        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// Domain/activation-implied capture conjuncts exercise binding correspondence;\n// the receipt/target comparisons specify the distinct recovery conditions.\nprotocol Flow using P over (view: M::Workflow) on origin {\n    role Service on M::Workflow;\n    role Provider on M::Provider;\n    channel Decisions from Provider to Service carries M::Notice\n        ordering unordered delivery [1,1];\n\n    compensate Full for Main::Applied as (forwardFull: M::Workflow)\n        by Service on M::Workflow::apply using T clock \"full-recovery\" {\n        capture targetFull: M::Total = forwardFull.total;\n        activate first (triggerFull: M::Notice) when { not triggerFull.ready } {\n            capture activatedFull: Boolean = triggerFull.ready;\n        }\n        within [0,30]; attempts 3 of M::Workflow;\n        retry (earlierFull: M::Workflow, laterFull: M::Workflow) {\n            earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1\n            and targetFull >= 0 and not activatedFull\n        };\n        commit Main::Committed;\n        recover (recoveredFull: M::Workflow) {\n            sum<M::Total>(refundFull in recoveredFull.receipts: refundFull) = targetFull\n            and not activatedFull\n        };\n    }\n\n    requires temporal Due;\n\n    compensate Partial for Main::Applied as (forwardPartial: M::Workflow)\n        by Service on M::Workflow::apply using T clock \"partial-recovery\" {\n        capture targetPartial: M::Total = forwardPartial.total;\n        activate first (triggerPartial: M::Notice) when { not triggerPartial.ready } {\n            capture activatedPartial: Boolean = triggerPartial.ready;\n        }\n        within [0,30]; attempts 3 of M::Workflow;\n        retry (earlierPartial: M::Workflow, laterPartial: M::Workflow) {\n            earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1\n            and targetPartial >= 0 and not activatedPartial\n        };\n        commit never;\n        recover (recoveredPartial: M::Workflow) {\n            let restoredPartial = sum<M::Total>(refundPartial in recoveredPartial.receipts: refundPartial)\n            in restoredPartial > 0 and restoredPartial < targetPartial and not activatedPartial\n        };\n    }\n\n    run sequence Main {\n        check Ready using G { Allowed(view.ratio) and deref(view.peer).ready };\n        parallel Gather {\n            branch left sequence Left {\n                send LeftSent via Decisions as (leftSent: M::Notice) { true };\n                receive LeftReply via Decisions of LeftSent as (leftReply: M::Notice) { true };\n            }\n            branch right sequence Right {\n                send RightSent via Decisions as (rightSent: M::Notice) { true };\n                receive RightReply via Decisions of RightSent as (rightReply: M::Notice) { true };\n            }\n        } join all [left,right];\n        choice Outcome by Service visible (leftReply.ready,rightReply.ready) {\n            case ready when { leftReply.ready and rightReply.ready }\n                event Confirmed by Service as (confirmed: M::Notice) { true };\n            case notReady when { not (leftReply.ready and rightReply.ready) }\n                event Unconfirmed by Service as (unconfirmed: M::Notice) { true };\n        }\n        attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]\n            as (attempted: M::Notice) { attempted.ready };\n        effect Applied of Main::Tried as (applied: M::Workflow) { Allowed(applied.ratio) };\n        event Recovered by Service for Full as (recoveryEvent: M::Notice) { recoveryEvent.ready };\n        commit Committed by Service as (committed: M::Notice) { committed.ready };\n    }\n    finish Closed as (closed: M::Workflow) { Allowed(closed.ratio) };\n}\n"
+        "text": "language \"ix:native\" edition \"1-draft\";\nprofile G = \"quire.state.graph/v1\" version \"1-draft.3\" digest \"sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9\";\nprofile T = \"quire.temporal.event-position.false-extension/v1\" version \"1-draft.3\" digest \"sha256:de9236947b9caab2cf956e389c0c3f6ba5f574365c7bfca6641156eee746e9f3\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"1-draft.4\" digest \"sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433\";\nmodel M = \"agent-ix/protocol-handoff\" version \"1\" digest \"sha256:57cc9773a8a99fdae38c0fa13579e98e3574d69469217ebe4a90dc7367dcacd4\";\n// SPDX-License-Identifier: AGPL-3.0-only\n// Domain/activation-implied capture conjuncts exercise binding correspondence;\n// the receipt/target comparisons specify the distinct recovery conditions.\nprotocol Flow using P over (view: M::Workflow) on origin {\n    role Service on M::Workflow;\n    role Provider on M::Provider;\n    channel Decisions from Provider to Service carries M::Notice\n        ordering unordered delivery [1,1];\n\n    compensate Full for Main::Applied as (forwardFull: M::Workflow)\n        by Service on M::Workflow::apply using T clock \"full-recovery\" {\n        capture targetFull: M::Total = forwardFull.total;\n        activate first (triggerFull: M::Notice) when { not triggerFull.ready } {\n            capture activatedFull: Boolean = triggerFull.ready;\n        }\n        within [0,30]; attempts 3 of M::Workflow;\n        retry (earlierFull: M::Workflow, laterFull: M::Workflow) {\n            earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1\n            and targetFull >= 0 and not activatedFull\n        };\n        commit Main::Committed;\n        recover (recoveredFull: M::Workflow) {\n            sum<M::Total>(refundFull in recoveredFull.receipts: refundFull) = targetFull\n            and not activatedFull\n        };\n    }\n\n    requires temporal Due;\n\n    compensate Partial for Main::Applied as (forwardPartial: M::Workflow)\n        by Service on M::Workflow::apply using T clock \"partial-recovery\" {\n        capture targetPartial: M::Total = forwardPartial.total;\n        activate first (triggerPartial: M::Notice) when { not triggerPartial.ready } {\n            capture activatedPartial: Boolean = triggerPartial.ready;\n        }\n        within [0,30]; attempts 3 of M::Workflow;\n        retry (earlierPartial: M::Workflow, laterPartial: M::Workflow) {\n            earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1\n            and targetPartial >= 0 and not activatedPartial\n        };\n        commit never;\n        recover (recoveredPartial: M::Workflow) {\n            let restoredPartial = sum<M::Total>(refundPartial in recoveredPartial.receipts: refundPartial)\n            in restoredPartial > 0 and restoredPartial < targetPartial and not activatedPartial\n        };\n    }\n\n    run sequence Main {\n        check Ready using G { Allowed(view.ratio) and deref(view.peer).ready };\n        parallel Gather {\n            branch left sequence Left {\n                send LeftSent via Decisions as (leftSent: M::Notice) { true };\n                receive LeftReply via Decisions of LeftSent as (leftReply: M::Notice) { true };\n            }\n            branch right sequence Right {\n                send RightSent via Decisions as (rightSent: M::Notice) { true };\n                receive RightReply via Decisions of RightSent as (rightReply: M::Notice) { true };\n            }\n        } join all [left,right];\n        choice Outcome by Service visible (leftReply.ready,rightReply.ready) {\n            case ready when { leftReply.ready and rightReply.ready }\n                event Confirmed by Service as (confirmed: M::Notice) { true };\n            case notReady when { not (leftReply.ready and rightReply.ready) }\n                event Unconfirmed by Service as (unconfirmed: M::Notice) { true };\n        }\n        attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]\n            as (attempted: M::Notice) { attempted.ready };\n        effect Applied of Main::Tried as (applied: M::Workflow) { Allowed(applied.ratio) };\n        event Recovered by Service for Full as (recoveryEvent: M::Notice) { recoveryEvent.ready };\n        commit Committed by Service as (committed: M::Notice) { committed.ready };\n    }\n    finish Closed as (closed: M::Workflow) { Allowed(closed.ratio) };\n}\n"
       },
       "declarations": [
         {
@@ -407,7 +407,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.2"
         },
-        "digest": "sha256:6f9cb8bf8521ca51a5e6340511b545db43001879446a59c5c87efe4985acdb06",
+        "digest": "sha256:2bcf7bb34aa0f69ee4f074b06f6b1c1af89aa8640f990fb935fb479194ccbad2",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -424,7 +424,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d6f74466c1afaf1f4f235668edaaf445c3b5042e3a75d690083d5713cdc4d38f",
+          "digest": "sha256:278db87b369d3ae2dff4c71ed0c3014f4531195acc22791fe8217bf4cdaa0cce",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -439,7 +439,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:4f13260e209784092e138d39d59cef6e7cdfcbe2dd33aab8b83bfacc6c1a250a",
+          "digest": "sha256:5a736a977685e28ec276e515b89092affc9b45a701bb96eea1dcf748c63d8010",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -454,7 +454,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:6c10e301352c876dd87a9b625d1596f9ef0af2951619db11ed4cd82f2a4241e2",
+          "digest": "sha256:33ce8add9b3bbca3f4e4289090da82564d30d7a3e32c5e3c770e5708b733d6b1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -469,7 +469,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:34ecc47e7a2b2e91ac81e82d480db9c301b06f0f9562ccadd949575be4d8a013",
+          "digest": "sha256:2681a8e68cefb0d381627216c82bd22dd1fee5f5a358b5bcfbfe2aa69c8b2234",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -484,7 +484,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:48964e00183dcde56c28d92e4e0479c668585a15e5ce86d1b13e638706c95b5d",
+          "digest": "sha256:4ae3d1dc4b8f7d9257b6a90b89f253f9106e269caf355ca754d377f697149f7d",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -499,7 +499,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d6997e2f42dacd4cdab81810ed42a43553cb673db4815b808bb00e5ea44aefe2",
+          "digest": "sha256:30865eca134336efa78e98d68738f1d5e85e3e73283d71e8f95a623e96ff59e6",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -514,7 +514,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:745dbbd307781ee0b31de9c2112718016a9ced8543b8478cd0613e94b7853eb7",
+          "digest": "sha256:3d3d5dd7d5967dc321e4967c0008bdc7bbe20d6cf2473449daf1419e3f1effdb",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -529,7 +529,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:0dcf6e73097d8fe0ee45d864e70731b2fcda6379eb058af331b975302b2547b2",
+          "digest": "sha256:9581be9334a3c0478ba880a0bf65e024e09a36fe3c7ce914b7f6c3f251113528",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -544,7 +544,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:8c34ca8dcfc06b229cdb1ca0463f4342064933969102e0e786bc815f054317fb",
+          "digest": "sha256:838c7766d4b2eeaf25a4ef9772758063f916b60865f75e86f294451a1e125b67",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -559,7 +559,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:c90e08be4bd46607191e6c772dae25ce5305447c7685f4c9e1be4b8af960e80e",
+          "digest": "sha256:44a2f696ba67201e3bd91e649877fa3c3a53f79a9b1c16aa51626f8c5c9e9160",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -574,7 +574,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:353b1cc9d8d4d91f6b93a72f90f9ded046895050195d7d4bca8253863e0ab030",
+          "digest": "sha256:5631b7c23c4811660b685299bb8a03f8a7419519a6de7c1bcde8778b8aad1ace",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -589,7 +589,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d9419cc39ac28a1562dea3ef74bdf7b092b5b4b32cf172f80d95976ae8baaf16",
+          "digest": "sha256:1e6b9da00f5b913e937430d9c19a7b74c0f97e0ea273e8ae13a7f3ecaecd983d",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -607,7 +607,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:04d7f34a082428a31016c592c6e22f359b0a9c7965e6d384e296b2767840877e",
+        "digest": "sha256:324fd724242bec98bca096dd859f383068b1cdbf637715922fe3bd3078e0a362",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -626,7 +626,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:e2e258cc0104eac61b026e110f60455581468611be75f66e9900f0bfe6bfce02",
+        "digest": "sha256:e48efce877dd4f5e2dbbd41c0f07b03b84df76ebe2ca78097a0e0f78fe8062f2",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -645,7 +645,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:9080a6e9cdccab3522d46d0d0706b3af86f0fd7695f870f4eadadb4b9a6f0821",
+        "digest": "sha256:c72927670d084707b2e128be6d92002f862e0322c4eb06aea85ab9f6b2b55e6a",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -664,7 +664,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:4f13260e209784092e138d39d59cef6e7cdfcbe2dd33aab8b83bfacc6c1a250a",
+        "digest": "sha256:5a736a977685e28ec276e515b89092affc9b45a701bb96eea1dcf748c63d8010",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -683,7 +683,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:28be6122f8b2202a2daabb52f56c9e498a795d41496b633a9747a0f98785812e",
+        "digest": "sha256:2d8e578f4d176041eff40ab57e5070782f4c6e91df308ea7dc799e5401816077",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -702,7 +702,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d6f74466c1afaf1f4f235668edaaf445c3b5042e3a75d690083d5713cdc4d38f",
+        "digest": "sha256:278db87b369d3ae2dff4c71ed0c3014f4531195acc22791fe8217bf4cdaa0cce",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -721,7 +721,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:c81d7f9f7463f879ce13be754859b20d78228c3b8f206f073352fc1386b7645e",
+        "digest": "sha256:9a66d432c35a53f628cfad1955a547f0d36972b2be8eb30297a6da2baf412ba8",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -740,7 +740,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:a698b4d275d790482d01ecdd3c077c6382718777b020f1bd17314ad30e09b65e",
+        "digest": "sha256:481026305165326de67ff97c279a201a1364ed74dd4fb0169ca0c5d3ded2889f",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -759,7 +759,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:c277730c339c48c8cc789f2adb93dbbe1d48624a6df39a4043d20cd0cbeca46b",
+        "digest": "sha256:1862c516465763a7deba77fa1665bb45663ba321e8e95cf6f3002fc4e6ea81f4",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -778,7 +778,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:f28bb7f80ec3acd7879ec0f434724b9ff84b923c83e02ebaf3c6ce2b05a334f1",
+        "digest": "sha256:a0d0bc088d977e6501b132c093af6c4215ffd99f1e0a8088bdf971f4d3243ab3",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -795,7 +795,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.2"
           },
-          "digest": "sha256:65e7f382e916232c212f284bc86dec5e59f47f7e10030a1f97da8135b16a8144",
+          "digest": "sha256:b305a6b90766a2d8cc6dcf86cf589c80ca316262444994a5286179863cf2d2b9",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -810,7 +810,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.1"
           },
-          "digest": "sha256:7f08e556f834847616539f7394f969238f67db7d71e566523f58c5937bcd0c54",
+          "digest": "sha256:6e70fc1a9ad87cc667e522ed5687cf16dc69454aea817f54606e14a7c85abffb",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -825,7 +825,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:f55d318c03aca647a3397c2aa809404fc23df7485afc5193437c7d9e2c843abb",
+          "digest": "sha256:9a816f297ab5058fddea22102c29c34fa4b0fd52dc0a0b5233b88f74cbf858b1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -840,7 +840,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.4"
           },
-          "digest": "sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c",
+          "digest": "sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -855,7 +855,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:e2e258cc0104eac61b026e110f60455581468611be75f66e9900f0bfe6bfce02",
+          "digest": "sha256:e48efce877dd4f5e2dbbd41c0f07b03b84df76ebe2ca78097a0e0f78fe8062f2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -870,7 +870,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:869652d38b269e356a04d57fcd96bc7a6a57287af47a8850230345f2e6df6a81",
+          "digest": "sha256:701cf01c6904929a400ba4354fbd9333ccc04f6d2b950b3462fc7cb2df4ec61b",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -885,7 +885,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:281f13064ee20fcb1bbade71d3def038f843670b3894f0e5979db379ce8d75df",
+          "digest": "sha256:c7dda62dd97824e31f80448741345ec16ba74e75e7efe3ec5e72222c292c0b95",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -900,7 +900,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:54bcf9c142c9a811c7aec2bf5726598a7c76a9b26b5b524b85d46bd54f47a534",
+          "digest": "sha256:0eec386abd64f3f47a658d75ba1f3ca63ce102eb1daad0d60bbb52c329131299",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -915,7 +915,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:9080a6e9cdccab3522d46d0d0706b3af86f0fd7695f870f4eadadb4b9a6f0821",
+          "digest": "sha256:c72927670d084707b2e128be6d92002f862e0322c4eb06aea85ab9f6b2b55e6a",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -933,7 +933,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:331fa0534c87b58edd7ed1c9afa0090badb348842940a1e7490ec47051069a9e",
+        "digest": "sha256:8c281c7d89af84f4fd0ca8ca494cb17d633c3eccdff11ee56b51fb765f176416",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -950,7 +950,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:f28bb7f80ec3acd7879ec0f434724b9ff84b923c83e02ebaf3c6ce2b05a334f1",
+          "digest": "sha256:a0d0bc088d977e6501b132c093af6c4215ffd99f1e0a8088bdf971f4d3243ab3",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -965,7 +965,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.1"
           },
-          "digest": "sha256:7f08e556f834847616539f7394f969238f67db7d71e566523f58c5937bcd0c54",
+          "digest": "sha256:6e70fc1a9ad87cc667e522ed5687cf16dc69454aea817f54606e14a7c85abffb",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -980,7 +980,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:f55d318c03aca647a3397c2aa809404fc23df7485afc5193437c7d9e2c843abb",
+          "digest": "sha256:9a816f297ab5058fddea22102c29c34fa4b0fd52dc0a0b5233b88f74cbf858b1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -995,7 +995,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:e2e258cc0104eac61b026e110f60455581468611be75f66e9900f0bfe6bfce02",
+          "digest": "sha256:e48efce877dd4f5e2dbbd41c0f07b03b84df76ebe2ca78097a0e0f78fe8062f2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1010,7 +1010,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:869652d38b269e356a04d57fcd96bc7a6a57287af47a8850230345f2e6df6a81",
+          "digest": "sha256:701cf01c6904929a400ba4354fbd9333ccc04f6d2b950b3462fc7cb2df4ec61b",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1028,7 +1028,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.1"
         },
-        "digest": "sha256:7f08e556f834847616539f7394f969238f67db7d71e566523f58c5937bcd0c54",
+        "digest": "sha256:6e70fc1a9ad87cc667e522ed5687cf16dc69454aea817f54606e14a7c85abffb",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1045,7 +1045,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:e2e258cc0104eac61b026e110f60455581468611be75f66e9900f0bfe6bfce02",
+          "digest": "sha256:e48efce877dd4f5e2dbbd41c0f07b03b84df76ebe2ca78097a0e0f78fe8062f2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1060,7 +1060,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:007aa0a53c46b3ee0193c2456208a76860d539c77fe9aa7bd02d48f83cd94369",
+          "digest": "sha256:e2cf38c2abd3e7d084c9a0f07d3f3dae3f80bd2662776cccc8364aeea5949fa7",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1078,7 +1078,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.2"
         },
-        "digest": "sha256:65e7f382e916232c212f284bc86dec5e59f47f7e10030a1f97da8135b16a8144",
+        "digest": "sha256:b305a6b90766a2d8cc6dcf86cf589c80ca316262444994a5286179863cf2d2b9",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1095,7 +1095,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.2"
           },
-          "digest": "sha256:6f9cb8bf8521ca51a5e6340511b545db43001879446a59c5c87efe4985acdb06",
+          "digest": "sha256:2bcf7bb34aa0f69ee4f074b06f6b1c1af89aa8640f990fb935fb479194ccbad2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1110,7 +1110,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:c277730c339c48c8cc789f2adb93dbbe1d48624a6df39a4043d20cd0cbeca46b",
+          "digest": "sha256:1862c516465763a7deba77fa1665bb45663ba321e8e95cf6f3002fc4e6ea81f4",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1125,7 +1125,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:a698b4d275d790482d01ecdd3c077c6382718777b020f1bd17314ad30e09b65e",
+          "digest": "sha256:481026305165326de67ff97c279a201a1364ed74dd4fb0169ca0c5d3ded2889f",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1143,7 +1143,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.4"
         },
-        "digest": "sha256:5628f5d6c99c3f12ce25f438a2a8f75fef772313a7b27f94a4fa141d1a58d90c",
+        "digest": "sha256:83329530cec256c4b0ddc0d31e6017fe7198da03a89725f87964b2b008afb433",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1160,7 +1160,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c",
+          "digest": "sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1175,7 +1175,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:f55d318c03aca647a3397c2aa809404fc23df7485afc5193437c7d9e2c843abb",
+          "digest": "sha256:9a816f297ab5058fddea22102c29c34fa4b0fd52dc0a0b5233b88f74cbf858b1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1190,7 +1190,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:c36a50b85d1f347d7666c1b3abcb1a3dd5a00a9a237737a50517014338809b09",
+          "digest": "sha256:83e14ae3b6467f8d14736213887f62118c3db46a280fa6313f09943056a8c5f6",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1205,7 +1205,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:ab7b116092f81a6210661a1a6b5d51dc0bbcebebf21fc6c317aaf855b8fd419d",
+          "digest": "sha256:4387b1ca4af7939ba623d78ed9cabecdb5137a241b210d3d36ee74dea75acff1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1220,7 +1220,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:ba73423b9430997acd4b616a8e578d8f1cc657949858ec8089025d3d4c41429c",
+          "digest": "sha256:952e46109db439b6a2133a6f72c0bd130ee663558e2380558366b94e45eeb99b",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1235,7 +1235,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:07247cd0606733e729baec76898baba01de137da72062a65d7fa2ffa0edc467d",
+          "digest": "sha256:a035f0cf2b28b56b390e9a2806a58ccf55fed1670f40198f1d39c6ae91e5fdc6",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1250,7 +1250,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d64e52b656d9baaced463478172b339498ccad685247c9c74ae8f7dc113f0b91",
+          "digest": "sha256:53376cf6b33cdffb8d0edcc5b302d6bdbbef3e3860bb5835c92ab2f438c3593a",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1265,7 +1265,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:5fb5fb6b33e9b081355720885e4ffb8e864054e24e7ccab2f10cd1d980f7ee26",
+          "digest": "sha256:26aa596f972ddb444d7e1b145d8f3a0256ad0c0776fc7c308455258862aa7bb0",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1280,7 +1280,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:263ef764bd1abc25a4c4e8da5cf6d7381b9c799963fd9a73c5cb0c5e95d54518",
+          "digest": "sha256:a1cf72d84df0cfec21b06dd21afcc12940f603125c0d977e10c20c9a54ee9aaa",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1295,7 +1295,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:72266a7fbf97a5b0f85695000882544ad5fc1e10a26c6c9bf60e164ec94706a6",
+          "digest": "sha256:927ccfe526e7ecab278f13c18caca9b77dfa0a20dc3d8fb9110bf12623f93aae",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1310,7 +1310,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:9562108f46609bf3338cbc2661e90cfbf09f7f2a872c6c8af656ec4a7427f91e",
+          "digest": "sha256:23f4f3a4e034c62afaf05c886ede041e6a0fcd611280c7a37e3ea77c204d9caa",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1325,7 +1325,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:98f2ebb1d9ca389d8ae32ff67c02bc89480ef0a2da7ee09115f1dd5824cf27a3",
+          "digest": "sha256:ae020bbb1ad6f408988d4ea570d36154265525ec467df841d845e07e9b585670",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1340,7 +1340,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:f45c0d3f2d840be8548d217acef1830dc678a012cfdd98b760137ba73c57b108",
+          "digest": "sha256:083d419f423c51817d7e168cc2fd06e9f4270c3171fd7b9175184846b796a3c3",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1355,7 +1355,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:ec3894bbf79f985e8308a70ce3e751887af56dbe68d8dd167a884623ead275c5",
+          "digest": "sha256:0600d03fd4e585dfa26e04fff92114e2e2d74b32168e2355922108ab4942104c",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1370,7 +1370,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:869652d38b269e356a04d57fcd96bc7a6a57287af47a8850230345f2e6df6a81",
+          "digest": "sha256:701cf01c6904929a400ba4354fbd9333ccc04f6d2b950b3462fc7cb2df4ec61b",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1385,7 +1385,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d54a9b062a55d15f58d14582de73fd383d53f58933d635e5d45aef47915bbc77",
+          "digest": "sha256:ebb9a78602ff2dd3a995eddf0a42064d06cddab5ff6bfe7263bff9ebd82498f4",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1400,7 +1400,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:27d1ba16dbe5fcddbd6478b4cb732b58f0f2ed0e6fefc6212dcb13cbc11cece4",
+          "digest": "sha256:82cab1a18597631256c8f149714f6fe24e598bb3998d29caf882815640f0cc17",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1415,7 +1415,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:04d7f34a082428a31016c592c6e22f359b0a9c7965e6d384e296b2767840877e",
+          "digest": "sha256:324fd724242bec98bca096dd859f383068b1cdbf637715922fe3bd3078e0a362",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1430,7 +1430,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:28be6122f8b2202a2daabb52f56c9e498a795d41496b633a9747a0f98785812e",
+          "digest": "sha256:2d8e578f4d176041eff40ab57e5070782f4c6e91df308ea7dc799e5401816077",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1448,7 +1448,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:8b0dfb092432dd49c9d45b11f2ee72b17ad9be494c8f8ffc303391f4d8bd58e9",
+        "digest": "sha256:ce48f25ac0e9299dc3179c835792410561807a466c20333ee948bc2154ddf9f0",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1465,7 +1465,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.2"
           },
-          "digest": "sha256:6f9cb8bf8521ca51a5e6340511b545db43001879446a59c5c87efe4985acdb06",
+          "digest": "sha256:2bcf7bb34aa0f69ee4f074b06f6b1c1af89aa8640f990fb935fb479194ccbad2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1480,7 +1480,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:c81d7f9f7463f879ce13be754859b20d78228c3b8f206f073352fc1386b7645e",
+          "digest": "sha256:9a66d432c35a53f628cfad1955a547f0d36972b2be8eb30297a6da2baf412ba8",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1495,7 +1495,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:a57405600b7b39d9182054f6adceebdb8559d582c8bc98ce0b9bb3b712ccd1ab",
+          "digest": "sha256:4cd5295c1d925ff97dce71f3a23bf042cdcf50a08a0a82e2965f9d695e5fecb7",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1510,7 +1510,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:ec97683039bae198463d729db4754ca707c28331698bc5c5dd64a6ec1aa35ab4",
+          "digest": "sha256:90b5e1cec01df17390365e80c3f1b4e752629ad9da8b74ef5949e2b9ad027a71",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1525,7 +1525,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:627e8f3845357e89977091ac99a719d1e4f9c67f31b9e850c15d4d373814a1de",
+          "digest": "sha256:dc460ece87cb00e7bf0c4b330e8f16f2ae4f0788f3380061a5cba10233018df3",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1540,7 +1540,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d97c9e05fd9dddcf7188dd1a539356c2db95b4c657ec714a094f084d8791e61a",
+          "digest": "sha256:3fe4a5c3b62694d29ce97d6a494d7a1480c4f846fb58927095d0c6a9f23ebb97",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1558,7 +1558,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c",
+        "digest": "sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1575,7 +1575,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:6ed60ad57f93dca7305c702691e1ffbd3a2140020adfd6b8eff3d8fbe272fdbf",
+          "digest": "sha256:06b136b0c3bd019bb5e4782f18796e8f4d77461834a955ea955f4ec81441c991",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1590,7 +1590,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:9f9266e3063df930e62e7fef8dab2f275acf46edba8f92808b4e3ffeb7a0d544",
+          "digest": "sha256:b73e100774f43327e832fcdac2638a3640f457282e751d3ecb0cee70c0629181",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1608,7 +1608,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:6ed60ad57f93dca7305c702691e1ffbd3a2140020adfd6b8eff3d8fbe272fdbf",
+        "digest": "sha256:06b136b0c3bd019bb5e4782f18796e8f4d77461834a955ea955f4ec81441c991",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1625,7 +1625,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:8b0dfb092432dd49c9d45b11f2ee72b17ad9be494c8f8ffc303391f4d8bd58e9",
+          "digest": "sha256:ce48f25ac0e9299dc3179c835792410561807a466c20333ee948bc2154ddf9f0",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1640,7 +1640,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:d008c67a0de9ce5fbd0d82d3c5681e5748dcc9569a2255bb24f194252b71f5df",
+          "digest": "sha256:6cefa620471387d838b8ed65ff1369c0f308194fd079523177aec665e4cd56e4",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1655,7 +1655,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:84a59f1fd53850f0bc2d18ff34e43ec699da862556a7804559ebe07e60e06b43",
+          "digest": "sha256:1835997893e03c05ddd2fef6851f817d1763e2aa7fb64839356880bb74f0a5b4",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1670,7 +1670,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:cb6664fbd44617e92b9e4d079c646952aa893219a1af75b26fc5b69efada4670",
+          "digest": "sha256:ae4a01193dfe5bf20486af87372810bf4bca44de86f9aa5ce6c380d24bf4f47c",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1685,7 +1685,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:51388c274df607f01542500ae054c620fb35bada3bdc996165f241d18bb95cd3",
+          "digest": "sha256:aa1494c015610e72a3ecd95c4b13ca919204b283349eec0b440cc70ceb6bb1fc",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1703,7 +1703,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:f55d318c03aca647a3397c2aa809404fc23df7485afc5193437c7d9e2c843abb",
+        "digest": "sha256:9a816f297ab5058fddea22102c29c34fa4b0fd52dc0a0b5233b88f74cbf858b1",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1720,7 +1720,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:479288386ca6d4b92dd378c60011f2fa45609f23ab840ba3d96bfa4b6a05121c",
+          "digest": "sha256:ffe0838a516bb18fa0cbebebb36f0e21323f40f2b22ca61c7d3452a86d5d2dc9",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1735,7 +1735,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:1cac8faaca860ac694102481f59b527ae2639f0ad94a1883f422ca0e75de7678",
+          "digest": "sha256:6bb079759b9ae250ef810553f0878c501537f3213ad333538c5dcfdf1ae4f417",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1750,7 +1750,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:007aa0a53c46b3ee0193c2456208a76860d539c77fe9aa7bd02d48f83cd94369",
+          "digest": "sha256:e2cf38c2abd3e7d084c9a0f07d3f3dae3f80bd2662776cccc8364aeea5949fa7",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1765,7 +1765,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:9627f2db585aaf2b40c02ce20444ed8c519f28de376d747af8bd5dacd3878980",
+          "digest": "sha256:c39d9f08b4c58a1840b9518c5ec0457634fcdec9454fdd253571eeb6bd395b6e",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1780,7 +1780,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:f33190f80bc439bb883b8ae3b60994fda2e3684794751111e42693538ff3eb6c",
+          "digest": "sha256:f11b60ecbe3fedfd77d7e22e2f046d0a57c4d8fda8e0d954c48ce104c74a402a",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1795,7 +1795,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:b2424cf9c779343e56cb434be53db4f7701722ee0589d5863e900fdcca8337c6",
+          "digest": "sha256:22b87edfac6eaf14f74c17d81aac26fe486eac00ef9c71a65b62422cd7fa9f7d",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1810,7 +1810,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:b421ec29f90b475203520fd841b893f20d8b633ad7157c09132ca61a8eaf0338",
+          "digest": "sha256:a325f026f8ba113d89d355010cdd8e2117e8f43b38a781d9d53928730b2900e2",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1825,7 +1825,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:1fa1a8546f9e1419cee60adcd8cd4b1c1c444efe8bf225ce7befe7c06836d3fc",
+          "digest": "sha256:5433d2606a7f52a41bd3e7c9a0631c8625356eedb6908de09a4cd583b8f12be6",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1840,7 +1840,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:76a76fa6658916d2990d5913a5096be43c2ccd37f8e086b73697ad96663dbac5",
+          "digest": "sha256:1ec21359f56ca1dc040ce7f8e7d5d3d41d0cb67df01aff9d5a27f1e6d5be977c",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1855,7 +1855,7 @@
             "namespace": "selected-rule-source",
             "value": "1"
           },
-          "digest": "sha256:869652d38b269e356a04d57fcd96bc7a6a57287af47a8850230345f2e6df6a81",
+          "digest": "sha256:701cf01c6904929a400ba4354fbd9333ccc04f6d2b950b3462fc7cb2df4ec61b",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1873,7 +1873,7 @@
           "namespace": "quire/native-definition-revision",
           "value": "1-draft.3"
         },
-        "digest": "sha256:03baffdf9158653b1713625e1c246a8ee6ebbab29c2895db18b8724b83dc8498",
+        "digest": "sha256:de9236947b9caab2cf956e389c0c3f6ba5f574365c7bfca6641156eee746e9f3",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1890,7 +1890,7 @@
             "namespace": "quire/native-definition-revision",
             "value": "1-draft.3"
           },
-          "digest": "sha256:f55d318c03aca647a3397c2aa809404fc23df7485afc5193437c7d9e2c843abb",
+          "digest": "sha256:9a816f297ab5058fddea22102c29c34fa4b0fd52dc0a0b5233b88f74cbf858b1",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
@@ -1908,7 +1908,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:6c10e301352c876dd87a9b625d1596f9ef0af2951619db11ed4cd82f2a4241e2",
+        "digest": "sha256:33ce8add9b3bbca3f4e4289090da82564d30d7a3e32c5e3c770e5708b733d6b1",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1927,7 +1927,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:34ecc47e7a2b2e91ac81e82d480db9c301b06f0f9562ccadd949575be4d8a013",
+        "digest": "sha256:2681a8e68cefb0d381627216c82bd22dd1fee5f5a358b5bcfbfe2aa69c8b2234",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1946,7 +1946,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:48964e00183dcde56c28d92e4e0479c668585a15e5ce86d1b13e638706c95b5d",
+        "digest": "sha256:4ae3d1dc4b8f7d9257b6a90b89f253f9106e269caf355ca754d377f697149f7d",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1965,7 +1965,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d008c67a0de9ce5fbd0d82d3c5681e5748dcc9569a2255bb24f194252b71f5df",
+        "digest": "sha256:6cefa620471387d838b8ed65ff1369c0f308194fd079523177aec665e4cd56e4",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -1984,7 +1984,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:84a59f1fd53850f0bc2d18ff34e43ec699da862556a7804559ebe07e60e06b43",
+        "digest": "sha256:1835997893e03c05ddd2fef6851f817d1763e2aa7fb64839356880bb74f0a5b4",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2003,7 +2003,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d6997e2f42dacd4cdab81810ed42a43553cb673db4815b808bb00e5ea44aefe2",
+        "digest": "sha256:30865eca134336efa78e98d68738f1d5e85e3e73283d71e8f95a623e96ff59e6",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2022,7 +2022,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:745dbbd307781ee0b31de9c2112718016a9ced8543b8478cd0613e94b7853eb7",
+        "digest": "sha256:3d3d5dd7d5967dc321e4967c0008bdc7bbe20d6cf2473449daf1419e3f1effdb",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2041,7 +2041,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:0dcf6e73097d8fe0ee45d864e70731b2fcda6379eb058af331b975302b2547b2",
+        "digest": "sha256:9581be9334a3c0478ba880a0bf65e024e09a36fe3c7ce914b7f6c3f251113528",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2060,7 +2060,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:8c34ca8dcfc06b229cdb1ca0463f4342064933969102e0e786bc815f054317fb",
+        "digest": "sha256:838c7766d4b2eeaf25a4ef9772758063f916b60865f75e86f294451a1e125b67",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2079,7 +2079,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:a57405600b7b39d9182054f6adceebdb8559d582c8bc98ce0b9bb3b712ccd1ab",
+        "digest": "sha256:4cd5295c1d925ff97dce71f3a23bf042cdcf50a08a0a82e2965f9d695e5fecb7",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2098,7 +2098,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:c90e08be4bd46607191e6c772dae25ce5305447c7685f4c9e1be4b8af960e80e",
+        "digest": "sha256:44a2f696ba67201e3bd91e649877fa3c3a53f79a9b1c16aa51626f8c5c9e9160",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2117,7 +2117,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:cb6664fbd44617e92b9e4d079c646952aa893219a1af75b26fc5b69efada4670",
+        "digest": "sha256:ae4a01193dfe5bf20486af87372810bf4bca44de86f9aa5ce6c380d24bf4f47c",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2136,7 +2136,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:51388c274df607f01542500ae054c620fb35bada3bdc996165f241d18bb95cd3",
+        "digest": "sha256:aa1494c015610e72a3ecd95c4b13ca919204b283349eec0b440cc70ceb6bb1fc",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2155,7 +2155,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:9f9266e3063df930e62e7fef8dab2f275acf46edba8f92808b4e3ffeb7a0d544",
+        "digest": "sha256:b73e100774f43327e832fcdac2638a3640f457282e751d3ecb0cee70c0629181",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2174,7 +2174,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:ec97683039bae198463d729db4754ca707c28331698bc5c5dd64a6ec1aa35ab4",
+        "digest": "sha256:90b5e1cec01df17390365e80c3f1b4e752629ad9da8b74ef5949e2b9ad027a71",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2193,7 +2193,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:627e8f3845357e89977091ac99a719d1e4f9c67f31b9e850c15d4d373814a1de",
+        "digest": "sha256:dc460ece87cb00e7bf0c4b330e8f16f2ae4f0788f3380061a5cba10233018df3",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2212,7 +2212,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d97c9e05fd9dddcf7188dd1a539356c2db95b4c657ec714a094f084d8791e61a",
+        "digest": "sha256:3fe4a5c3b62694d29ce97d6a494d7a1480c4f846fb58927095d0c6a9f23ebb97",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2231,7 +2231,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:353b1cc9d8d4d91f6b93a72f90f9ded046895050195d7d4bca8253863e0ab030",
+        "digest": "sha256:5631b7c23c4811660b685299bb8a03f8a7419519a6de7c1bcde8778b8aad1ace",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2250,7 +2250,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:1cac8faaca860ac694102481f59b527ae2639f0ad94a1883f422ca0e75de7678",
+        "digest": "sha256:6bb079759b9ae250ef810553f0878c501537f3213ad333538c5dcfdf1ae4f417",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2269,7 +2269,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:c36a50b85d1f347d7666c1b3abcb1a3dd5a00a9a237737a50517014338809b09",
+        "digest": "sha256:83e14ae3b6467f8d14736213887f62118c3db46a280fa6313f09943056a8c5f6",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2288,7 +2288,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:ab7b116092f81a6210661a1a6b5d51dc0bbcebebf21fc6c317aaf855b8fd419d",
+        "digest": "sha256:4387b1ca4af7939ba623d78ed9cabecdb5137a241b210d3d36ee74dea75acff1",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2307,7 +2307,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:ba73423b9430997acd4b616a8e578d8f1cc657949858ec8089025d3d4c41429c",
+        "digest": "sha256:952e46109db439b6a2133a6f72c0bd130ee663558e2380558366b94e45eeb99b",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2326,7 +2326,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:07247cd0606733e729baec76898baba01de137da72062a65d7fa2ffa0edc467d",
+        "digest": "sha256:a035f0cf2b28b56b390e9a2806a58ccf55fed1670f40198f1d39c6ae91e5fdc6",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2345,7 +2345,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d64e52b656d9baaced463478172b339498ccad685247c9c74ae8f7dc113f0b91",
+        "digest": "sha256:53376cf6b33cdffb8d0edcc5b302d6bdbbef3e3860bb5835c92ab2f438c3593a",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2364,7 +2364,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:5fb5fb6b33e9b081355720885e4ffb8e864054e24e7ccab2f10cd1d980f7ee26",
+        "digest": "sha256:26aa596f972ddb444d7e1b145d8f3a0256ad0c0776fc7c308455258862aa7bb0",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2383,7 +2383,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:263ef764bd1abc25a4c4e8da5cf6d7381b9c799963fd9a73c5cb0c5e95d54518",
+        "digest": "sha256:a1cf72d84df0cfec21b06dd21afcc12940f603125c0d977e10c20c9a54ee9aaa",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2402,7 +2402,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:72266a7fbf97a5b0f85695000882544ad5fc1e10a26c6c9bf60e164ec94706a6",
+        "digest": "sha256:927ccfe526e7ecab278f13c18caca9b77dfa0a20dc3d8fb9110bf12623f93aae",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2421,7 +2421,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:9562108f46609bf3338cbc2661e90cfbf09f7f2a872c6c8af656ec4a7427f91e",
+        "digest": "sha256:23f4f3a4e034c62afaf05c886ede041e6a0fcd611280c7a37e3ea77c204d9caa",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2440,7 +2440,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:98f2ebb1d9ca389d8ae32ff67c02bc89480ef0a2da7ee09115f1dd5824cf27a3",
+        "digest": "sha256:ae020bbb1ad6f408988d4ea570d36154265525ec467df841d845e07e9b585670",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2459,7 +2459,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:f45c0d3f2d840be8548d217acef1830dc678a012cfdd98b760137ba73c57b108",
+        "digest": "sha256:083d419f423c51817d7e168cc2fd06e9f4270c3171fd7b9175184846b796a3c3",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2478,7 +2478,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:ec3894bbf79f985e8308a70ce3e751887af56dbe68d8dd167a884623ead275c5",
+        "digest": "sha256:0600d03fd4e585dfa26e04fff92114e2e2d74b32168e2355922108ab4942104c",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2497,7 +2497,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:869652d38b269e356a04d57fcd96bc7a6a57287af47a8850230345f2e6df6a81",
+        "digest": "sha256:701cf01c6904929a400ba4354fbd9333ccc04f6d2b950b3462fc7cb2df4ec61b",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2516,7 +2516,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:007aa0a53c46b3ee0193c2456208a76860d539c77fe9aa7bd02d48f83cd94369",
+        "digest": "sha256:e2cf38c2abd3e7d084c9a0f07d3f3dae3f80bd2662776cccc8364aeea5949fa7",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2535,7 +2535,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:9627f2db585aaf2b40c02ce20444ed8c519f28de376d747af8bd5dacd3878980",
+        "digest": "sha256:c39d9f08b4c58a1840b9518c5ec0457634fcdec9454fdd253571eeb6bd395b6e",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2554,7 +2554,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:f33190f80bc439bb883b8ae3b60994fda2e3684794751111e42693538ff3eb6c",
+        "digest": "sha256:f11b60ecbe3fedfd77d7e22e2f046d0a57c4d8fda8e0d954c48ce104c74a402a",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2573,7 +2573,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:b2424cf9c779343e56cb434be53db4f7701722ee0589d5863e900fdcca8337c6",
+        "digest": "sha256:22b87edfac6eaf14f74c17d81aac26fe486eac00ef9c71a65b62422cd7fa9f7d",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2592,7 +2592,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:b421ec29f90b475203520fd841b893f20d8b633ad7157c09132ca61a8eaf0338",
+        "digest": "sha256:a325f026f8ba113d89d355010cdd8e2117e8f43b38a781d9d53928730b2900e2",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2611,7 +2611,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:1fa1a8546f9e1419cee60adcd8cd4b1c1c444efe8bf225ce7befe7c06836d3fc",
+        "digest": "sha256:5433d2606a7f52a41bd3e7c9a0631c8625356eedb6908de09a4cd583b8f12be6",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2630,7 +2630,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:281f13064ee20fcb1bbade71d3def038f843670b3894f0e5979db379ce8d75df",
+        "digest": "sha256:c7dda62dd97824e31f80448741345ec16ba74e75e7efe3ec5e72222c292c0b95",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2649,7 +2649,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:54bcf9c142c9a811c7aec2bf5726598a7c76a9b26b5b524b85d46bd54f47a534",
+        "digest": "sha256:0eec386abd64f3f47a658d75ba1f3ca63ce102eb1daad0d60bbb52c329131299",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2668,7 +2668,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d9419cc39ac28a1562dea3ef74bdf7b092b5b4b32cf172f80d95976ae8baaf16",
+        "digest": "sha256:1e6b9da00f5b913e937430d9c19a7b74c0f97e0ea273e8ae13a7f3ecaecd983d",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2687,7 +2687,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:d54a9b062a55d15f58d14582de73fd383d53f58933d635e5d45aef47915bbc77",
+        "digest": "sha256:ebb9a78602ff2dd3a995eddf0a42064d06cddab5ff6bfe7263bff9ebd82498f4",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2706,7 +2706,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:27d1ba16dbe5fcddbd6478b4cb732b58f0f2ed0e6fefc6212dcb13cbc11cece4",
+        "digest": "sha256:82cab1a18597631256c8f149714f6fe24e598bb3998d29caf882815640f0cc17",
         "wire": {
           "identity": "text/markdown",
           "version": "1"
@@ -2725,7 +2725,7 @@
           "namespace": "selected-rule-source",
           "value": "1"
         },
-        "digest": "sha256:76a76fa6658916d2990d5913a5096be43c2ccd37f8e086b73697ad96663dbac5",
+        "digest": "sha256:1ec21359f56ca1dc040ce7f8e7d5d3d41d0cb67df01aff9d5a27f1e6d5be977c",
         "wire": {
           "identity": "text/markdown",
           "version": "1"

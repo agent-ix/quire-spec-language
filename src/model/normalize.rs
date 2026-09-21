@@ -491,7 +491,7 @@ impl EffectiveView {
 
     /// The exact JCS bytes of this view (for `normalize.hash` accounting,
     /// and for tests asserting an exact hashed-byte length against a
-    /// vendored ground-truth vector).
+    /// ground-truth vector).
     pub fn jcs_bytes(&self) -> Vec<u8> {
         jcs_bytes(&self.to_json())
     }
@@ -551,7 +551,7 @@ impl ObjectUniverse {
 
     /// The exact JCS bytes of this universe (for `normalize.hash` accounting,
     /// and for tests asserting an exact hashed-byte length against a
-    /// vendored ground-truth vector).
+    /// ground-truth vector).
     pub fn jcs_bytes(&self) -> Vec<u8> {
         jcs_bytes(&self.to_json())
     }

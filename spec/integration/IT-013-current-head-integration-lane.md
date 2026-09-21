@@ -25,7 +25,7 @@ The lane crate under test is `integration/current-head/`. Its external
 dependencies, each resolved at current head rather than a pinned `rev`:
 
 - `quire-contract-ir` (`quire-contract-model` package) and
-  `quire-contract-runtime`, each patched via a local vendored clone of its
+  `quire-contract-runtime`, each patched via a local clone of its
   default branch (see `integration/current-head/README.md` for why a plain
   `branch = "main"` dependency cannot be used for either -- #249 review R3
   added the `quire-contract-runtime` patch to converge this lane's own
@@ -41,8 +41,8 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
 
 - Network access to fetch quire-contract-ir's, quire-contract-runtime's and
   quire-contract-codegen's default branches.
-- `integration/current-head/.vendor/quire-contract-ir` and
-  `integration/current-head/.vendor/quire-contract-runtime`, both prepared by
+- `integration/current-head/.deps/quire-contract-ir` and
+  `integration/current-head/.deps/quire-contract-runtime`, both prepared by
   `make integration-current-head-prepare` (`tool/` subcommand `prepare`),
   which also refreshes this lane's own `Cargo.lock` to each dependency's
   current head (#249 review HIGH-1).
@@ -78,7 +78,7 @@ four are real crates; none is faked, stubbed or hand-copied for this test.
    - IT-013-SC-04: none of the three backend crates' packages resolved from a
      published registry release; quire-contract-codegen resolved from its git
      default branch, and quire-contract-ir/quire-contract-model/
-     quire-contract-runtime resolved through the local vendored clones, so a
+     quire-contract-runtime resolved through the local clones, so a
      resolution failure at head cannot silently fall back to a released
      version.
 

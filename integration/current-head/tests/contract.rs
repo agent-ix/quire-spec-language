@@ -118,7 +118,7 @@ fn lockfile_stanza<'a>(lockfile: &'a str, package_name: &str) -> &'a str {
 /// resolves from its git default branch (`source = "git+..."`);
 /// quire-contract-ir, its workspace member quire-contract-model, and
 /// quire-contract-runtime resolve through this lane's `[patch]` table to a
-/// local vendored clone, so their stanzas carry no `source` field at all (a
+/// local clone, so their stanzas carry no `source` field at all (a
 /// path dependency). Either shape is a real head resolution; only a
 /// `"registry+https://github.com/rust-lang/crates.io-index"` source would be
 /// a silent fallback to a released version, and this test's real gate is

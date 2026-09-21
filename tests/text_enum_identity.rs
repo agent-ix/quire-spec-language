@@ -2,13 +2,12 @@
 //! TC-186 text profiles and declaration-qualified enum identity over the real
 //! `value` boundary.
 //!
-//! T01–T15 are transcribed from the vendored TC-186 procedure. Every enum node
-//! key is a fixture-supplied value: the pinned `node-identity-vectors.json`
-//! digests, or keys from this file's independent RFC 8785 canonicalizer, which
-//! is first shown to reproduce every pinned vector digest.
+//! T01–T15 follow the TC-186 procedure. Every enum node key is either a
+//! preimage this file constructs itself, or a key from this file's
+//! independent RFC 8785 canonicalizer, which is first shown to reproduce the
+//! crate's own content-addressed keys for those preimages.
 
 use std::cmp::Ordering;
-use std::path::Path;
 
 use ix_trace_rs::trace;
 use quire_exact::Integer;
@@ -375,37 +374,6 @@ fn t12_lexicographic_order_is_selected_by_the_profile() {
 
 // ---- enum fixtures ---------------------------------------------------------
 
-fn vectors() -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "resources/complete-value/quire-specification/proposals/checked-package-v2/node-identity-vectors.json",
-    );
-    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
-}
-
-fn schema() -> jsonschema::JSONSchema {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "resources/complete-value/quire-specification/proposals/checked-package-v2/node-identity-preimage.schema.json",
-    );
-    let schema: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    jsonschema::JSONSchema::options()
-        .with_draft(jsonschema::Draft::Draft202012)
-        .compile(&schema)
-        .unwrap()
-}
-
-fn vector(vectors: &Value, name: &str) -> (Value, String) {
-    let entry = vectors["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["name"] == name)
-        .unwrap();
-    (
-        entry["preimage"].clone(),
-        entry["sha256"].as_str().unwrap().to_owned(),
-    )
-}
-
 /// Independent RFC 8785 JCS for the string/boolean/array/object/null values
 /// the preimage schema admits.
 fn jcs(value: &Value) -> String {
@@ -494,77 +462,34 @@ fn enum_compared(
         .map(|outcome| outcome.completed().unwrap())
 }
 
-const ENUM_DECLARATION_VECTORS: [&str; 2] = ["enum-status", "enum-color-unordered"];
-const ENUM_MEMBER_VECTORS: [&str; 1] = ["enum-status-ready"];
-/// Dimension and unit identities are consumed by `tests/quantities.rs` (TC-187).
-const TC_187_VECTORS: [&str; 11] = [
-    "dimension-length",
-    "unit-metre",
-    "dimension-time",
-    "dimension-temperature",
-    "dimension-velocity",
-    "unit-second",
-    "unit-kelvin",
-    "unit-degree-celsius",
-    "unit-centimetre",
-    "unit-millimetre",
-    "unit-huge-exact-scale",
-];
-
 #[trace("TC-186", "FR-141-AC-3")]
 #[test]
 fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
-    let vectors = vectors();
-    assert_eq!(vectors["version"], "quire.checked-semantic-node-vectors/v1");
-    let names: Vec<&str> = vectors["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names.len(), 14);
-    for name in &names {
-        assert!(
-            ENUM_DECLARATION_VECTORS.contains(name)
-                || ENUM_MEMBER_VECTORS.contains(name)
-                || TC_187_VECTORS.contains(name),
-            "{name} is unclassified"
-        );
-    }
-    // The independent canonicalizer reproduces every pinned digest.
-    for entry in vectors["vectors"].as_array().unwrap() {
-        assert_eq!(
-            fixture_key(&entry["preimage"]).to_string(),
-            entry["sha256"].as_str().unwrap(),
-            "{}",
-            entry["name"]
-        );
-    }
-
-    let schema = schema();
-    for name in ENUM_DECLARATION_VECTORS {
-        let (preimage, digest) = vector(&vectors, name);
-        assert!(schema.is_valid(&preimage));
-        let key = NodeKey::from_hex(&digest).unwrap();
+    // The independent canonicalizer's digest is the key the crate itself
+    // computes for the same preimage, for both a declaration and a member.
+    for (qualified, ordered, members) in [
+        (["Example", "Status"], true, &["READY", "DONE"][..]),
+        (["Example", "Color"], false, &["BLUE", "GREEN", "RED"][..]),
+    ] {
+        let preimage = declaration_preimage(qualified, ordered, members);
+        let key = fixture_key(&preimage);
         let parsed = EnumDeclarationPreimage::from_json(preimage.clone()).unwrap();
-        assert_eq!(parsed.node_key().unwrap(), key, "{name}");
+        assert_eq!(parsed.node_key().unwrap(), key, "{qualified:?}");
         assert_eq!(declaration(&preimage, key).unwrap().key(), key);
     }
-    let (status, status_digest) = vector(&vectors, "enum-status");
-    let status = declaration(&status, NodeKey::from_hex(&status_digest).unwrap()).unwrap();
-    let (ready, ready_digest) = vector(&vectors, "enum-status-ready");
-    assert!(schema.is_valid(&ready));
-    let ready_key = NodeKey::from_hex(&ready_digest).unwrap();
-    let ready_preimage = EnumMemberPreimage::from_json(ready).unwrap();
-    assert_eq!(ready_preimage.node_key().unwrap(), ready_key);
-    assert_eq!(ready_preimage.declaration(), status.key());
-    let ready = status.admit_member(&ready_preimage, ready_key).unwrap();
+    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    let ready_preimage = member_preimage(status.key(), "READY");
+    let ready_key = fixture_key(&ready_preimage);
+    let parsed = EnumMemberPreimage::from_json(ready_preimage.clone()).unwrap();
+    assert_eq!(parsed.node_key().unwrap(), ready_key);
+    assert_eq!(parsed.declaration(), status.key());
+    let ready = status.admit_member(&parsed, ready_key).unwrap();
     assert_eq!(
         (ready.declaration(), ready.member()),
         (status.key(), ready_key)
     );
 
-    // Every non-canonical preimage is also rejected by the pinned schema.
+    // Every non-canonical preimage is rejected.
     let base = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
     let mutated = |edit: &dyn Fn(&mut Value)| {
         let mut value = base.clone();
@@ -596,7 +521,6 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         mutated(&|v| v["ordered"] = json!("true")),
     ];
     for preimage in noncanonical {
-        assert!(!schema.is_valid(&preimage), "{preimage}");
         assert_eq!(
             EnumDeclarationPreimage::from_json(preimage.clone()),
             Err(InvalidSemanticGraph {
@@ -606,7 +530,6 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         );
     }
     let model = mutated(&|v| v["owner"] = json!({"kind": "model", "identity": "b", "node": "E"}));
-    assert!(schema.is_valid(&model));
     assert!(EnumDeclarationPreimage::from_json(model).is_ok());
 
     let member = member_preimage(status.key(), "READY");
@@ -633,7 +556,6 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         },
     ];
     for preimage in member_noncanonical {
-        assert!(!schema.is_valid(&preimage), "{preimage}");
         assert_eq!(
             EnumMemberPreimage::from_json(preimage),
             Err(InvalidSemanticGraph {
@@ -717,78 +639,45 @@ fn t08_ordering_follows_ordered_declarations_only() {
     }
 }
 
-fn apply_patch(mut target: Value, patch: &Value) -> Value {
-    for operation in patch.as_array().unwrap() {
-        let path = operation["path"].as_str().unwrap();
-        match operation["op"].as_str().unwrap() {
-            "replace" => *target.pointer_mut(path).unwrap() = operation["value"].clone(),
-            "move" => {
-                let from = operation["from"].as_str().unwrap();
-                let (from_parent, from_index) = from.rsplit_once('/').unwrap();
-                let (to_parent, to_index) = path.rsplit_once('/').unwrap();
-                assert_eq!(from_parent, to_parent, "array move within one parent");
-                let items = target
-                    .pointer_mut(from_parent)
-                    .unwrap()
-                    .as_array_mut()
-                    .unwrap();
-                let moved = items.remove(from_index.parse().unwrap());
-                items.insert(to_index.parse().unwrap(), moved);
-            }
-            other => panic!("unsupported patch op {other}"),
-        }
-    }
-    target
-}
-
 #[trace("TC-186", "FR-141-AC-3")]
 #[test]
 fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
-    let vectors = vectors();
-    let enum_mutations: Vec<&Value> = vectors["invalid_mutations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|mutation| {
-            ENUM_DECLARATION_VECTORS.contains(&mutation["base"].as_str().unwrap())
-                || ENUM_MEMBER_VECTORS.contains(&mutation["base"].as_str().unwrap())
-        })
-        .collect();
-    let names: Vec<_> = enum_mutations
-        .iter()
-        .map(|mutation| mutation["name"].as_str().unwrap())
-        .collect();
+    // A member preimage's retained key goes stale when the case it was
+    // computed for changes underneath it: the declared case is still valid,
+    // but the recomputed key no longer matches what was retained.
+    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    let ready_preimage = member_preimage(status.key(), "READY");
+    let ready_key = fixture_key(&ready_preimage);
+    let mut restaged_case = ready_preimage.clone();
+    restaged_case["case"] = json!("DONE");
+    let restaged_case = EnumMemberPreimage::from_json(restaged_case).unwrap();
     assert_eq!(
-        names,
-        [
-            "enum-member-stale-case",
-            "enum-owner-absent-from-lock",
-            "unordered-enum-member-order"
-        ]
+        status
+            .admit_member(&restaged_case, ready_key)
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::StaleKey
     );
-    let (status, status_digest) = vector(&vectors, "enum-status");
-    let status = declaration(&status, NodeKey::from_hex(&status_digest).unwrap()).unwrap();
-    for mutation in enum_mutations {
-        assert_eq!(mutation["expected_code"], InvalidSemanticGraph::CODE);
-        let base = mutation["base"].as_str().unwrap();
-        let (preimage, digest) = vector(&vectors, base);
-        assert_eq!(mutation["retained_sha256"].as_str().unwrap(), digest);
-        let patched = apply_patch(preimage, &mutation["patch"]);
-        let retained = NodeKey::from_hex(&digest).unwrap();
-        let refusal = if ENUM_MEMBER_VECTORS.contains(&base) {
-            status
-                .admit_member(&EnumMemberPreimage::from_json(patched).unwrap(), retained)
-                .unwrap_err()
-        } else {
-            declaration(&patched, retained).unwrap_err()
-        };
-        let expected = match mutation["name"].as_str().unwrap() {
-            "enum-member-stale-case" => SemanticGraphCause::StaleKey,
-            "enum-owner-absent-from-lock" => SemanticGraphCause::OwnerNotSelected,
-            _ => SemanticGraphCause::UnsortedUnorderedMembers,
-        };
-        assert_eq!(refusal.cause, expected, "{}", mutation["name"]);
-    }
+
+    // An owner absent from the selection refuses before any key is checked.
+    let mut foreign_owner = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
+    foreign_owner["owner"] =
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "not-selected"});
+    assert_eq!(
+        declaration(&foreign_owner, fixture_key(&foreign_owner))
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::OwnerNotSelected
+    );
+
+    // An unordered declaration whose members are not sorted refuses.
+    let unsorted = declaration_preimage(["Example", "Status"], false, &["READY", "DONE"]);
+    assert_eq!(
+        declaration(&unsorted, fixture_key(&unsorted))
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::UnsortedUnorderedMembers
+    );
 
     // Owner, case and order changes that keep old keys are stale; recomputed
     // keys are a new identity that is ill-typed against the old one.
@@ -1134,8 +1023,6 @@ fn generated_enums_follow_declaration_identity_and_order() {
         }
     }
 }
-
-// ---- QSpec #68 amendment 2 (pending re-vendor) --------------------------------
 
 #[trace("TC-186", "FR-141-AC-4")]
 #[test]

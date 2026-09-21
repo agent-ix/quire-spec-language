@@ -64,7 +64,7 @@ records verbatim rather than re-litigating:
 - **R3 (the lane's own lock)**: FR-061 now also covers
   `integration/current-head/Cargo.lock`. Three new `[patch]` entries in
   `integration/current-head/Cargo.toml` (quire-contract-ir/-model via the
-  existing vendored clone, quire-contract-runtime via a new vendored clone,
+  existing local clone, quire-contract-runtime via a new local clone,
   quire-spec-language via a direct path) plus a real `cargo update` converge
   that lock to exactly one revision per repository. `make
   arch-lint-duplicate-revisions-lane` (new target) confirms: exit `0`, "PASS:
@@ -261,7 +261,7 @@ to spot-check.
   this session that Cargo refuses a `[patch]` whose replacement is a
   different branch/rev of the *same* git URL ("patches must point to
   different sources"), which is why the lane redirects
-  quire-contract-ir to a local vendored *path* clone rather than a second git
+  quire-contract-ir to a local *path* clone rather than a second git
   reference, and why `tool/` is a separate, dependency-free crate (a manifest
   with a `[patch]` resolves its whole graph, including that patch, before
   building anything in it, so the tool that creates the patch's prerequisite

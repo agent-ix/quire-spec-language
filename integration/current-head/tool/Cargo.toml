@@ -7,7 +7,7 @@ resolver = "2"
 # `revision-log`, `check-incompatible-fixture`). Deliberately its own
 # manifest with no cross-repository dependency and no `[patch]`: the lane
 # manifest one directory up (`../Cargo.toml`) patches quire-contract-ir to a
-# local vendored clone that `prepare` itself creates, so this tool cannot
+# local clone that `prepare` itself creates, so this tool cannot
 # live in that same manifest without a chicken-and-egg dependency-resolution
 # failure (Cargo resolves a manifest's full dependency graph, patches
 # included, before building any one of its targets). This tool only shells

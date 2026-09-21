@@ -23,7 +23,7 @@ use super::comparison::{IllTyped, IllTypedCause};
 use super::decimal::{Decimal, DecimalType, RoundingMode};
 use super::definition::{
     CatalogRole, DefinitionLock, DefinitionReference, PackageCause, PackageRefusal,
-    PackageRefusalCode,
+    PackageRefusalCode, DIGEST_DOMAIN,
 };
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
@@ -591,21 +591,20 @@ impl DefinitionLock {
         retained: &[DefinitionReference],
         declarations: &[&str],
     ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
-        let expected = &self
+        let expected = self
             .entry(CatalogRole::IeeeProfile)
-            .ok_or(invalid_package(PackageCause::MissingMember))?
-            .definition;
+            .ok_or(invalid_package(PackageCause::MissingMember))?;
         for reference in retained {
             let cause = if reference.identity != expected.identity
                 || reference.authority != expected.authority
             {
                 Some(PackageCause::IncompatibleDefinition)
-            } else if reference.revision != expected.revision {
+            } else if reference.revision.namespace != expected.revision_namespace
+                || reference.revision.value != expected.revision_value
+            {
                 Some(PackageCause::RevisionMismatch)
-            } else if reference.digest_domain != expected.digest_domain {
+            } else if reference.digest_domain != DIGEST_DOMAIN {
                 Some(PackageCause::DigestDomainMismatch)
-            } else if reference.digest != expected.digest {
-                Some(PackageCause::ByteDigestMismatch)
             } else {
                 None
             };

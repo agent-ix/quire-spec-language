@@ -17,8 +17,8 @@ relationships:
 `/code-review` dispatched the QSL #120 Rust delta through `/rust-review`. The
 delta implements FR-150 phases 1 (decode), 2 (qualify), 3 (inherit) and 5
 (canonicalize) as a pure engine over a self-defined producer-interface `1.3.0`
-bundle type, verified byte-for-byte against real vendored QSpec ground-truth
-vectors (TC-195 N01, N02, N05, N07, N09). FR-151 (conformance/redefinition/
+bundle type, verified byte-for-byte against real QSpec ground-truth
+vectors held in this repo (TC-195 N01, N02, N05, N07, N09). FR-151 (conformance/redefinition/
 dispatch), FR-152 (systems-model binding) and FR-153 (population/lookup) are
 not implemented in this delta; see the Findings and the PR body for the exact
 per-row scope.

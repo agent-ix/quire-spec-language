@@ -11,7 +11,7 @@ review_date: "2026-09-11"
 
 ## Summary
 
-Second cycle. The base checklist was re-applied at `87bc83f` against the vendored shared requirements FR-048, FR-090, FR-091, FR-092, FR-093, FR-094, FR-095 and NFR-040 and the four temporal definition artifacts. All seven findings from the first cycle at `4c1eee8` are resolved, six of them substantively and one by recording a limitation the artifact cannot currently close. Four new findings are open, none of them semantic: one broken traceability edge, one contradiction inside NFR-008's own scope text, and two under-specified output and counter vocabularies.
+Second cycle. The base checklist was re-applied at `87bc83f` against the shared requirements FR-048, FR-090, FR-091, FR-092, FR-093, FR-094, FR-095 and NFR-040 held as copies in this repo and the four temporal definition artifacts. All seven findings from the first cycle at `4c1eee8` are resolved, six of them substantively and one by recording a limitation the artifact cannot currently close. Four new findings are open, none of them semantic: one broken traceability edge, one contradiction inside NFR-008's own scope text, and two under-specified output and counter vocabularies.
 
 ### Disposition of the first-cycle findings
 
@@ -65,4 +65,4 @@ Two obligations are outstanding by declaration rather than by omission, and both
 
 ## Verdict and provenance
 
-PASS for implementation of this specified scope. FND-009, FND-010, FND-008 and FND-011 are text-level corrections to a traceability edge, an NFR scope sentence, an Outputs sentence and a dimension vocabulary; none blocks implementation and none requires a semantic decision. This review read the spec set at `87bc83f5fad724413737e0a707cf80bdbcba931a`, the eight vendored shared requirements, the four temporal definition artifacts, the new evaluation contract, and the parser, linker, checker, protocol-artifact and newly committed `src/temporal` sources. No spec file was modified, no build or test run was started, and no test-status advancement is authorized. Implementation and test completion are not claimed.
+PASS for implementation of this specified scope. FND-009, FND-010, FND-008 and FND-011 are text-level corrections to a traceability edge, an NFR scope sentence, an Outputs sentence and a dimension vocabulary; none blocks implementation and none requires a semantic decision. This review read the spec set at `87bc83f5fad724413737e0a707cf80bdbcba931a`, the eight shared requirements held as copies in this repo, the four temporal definition artifacts, the new evaluation contract, and the parser, linker, checker, protocol-artifact and newly committed `src/temporal` sources. No spec file was modified, no build or test run was started, and no test-status advancement is authorized. Implementation and test completion are not claimed.

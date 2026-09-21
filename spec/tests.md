@@ -6,7 +6,7 @@ type: TestMatrix
 
 ## Overview
 
-Scoped to FR-012/NFR-005/NFR-011 and IT-004. Status: locally verified after
+Scoped to FR-012/NFR-005 and IT-004. Status: locally verified after
 implementation. This matrix does not assert coverage of the earlier
 compiler/evaluator scope. US-004/StR-001 are the driving lineage; their full
 operational validation remains outside this audit-only plan.
@@ -40,10 +40,6 @@ operational validation remains outside this audit-only plan.
 | TC-008 | Audit resource ceilings | Property | P1 | FR-012-AC-9 | ✅ Passed locally |
 | TC-009 | CLI encoding and Rust-only execution | E2E | P1 | FR-012-AC-10, NFR-005-M-2 | ✅ Passed locally |
 | TC-010 | Owned verification language inventory | Manual | P1 | NFR-005-M-1 | ✅ Inspected locally |
-| TC-149 | Refuse a malformed or under-specified vendoring pin | Integration | P1 | NFR-011-AC-1 | ✅ Passed locally |
-| TC-150 | Vendor exact pinned bytes and verify external digests | Integration | P1 | NFR-011-AC-2 | ✅ Passed locally |
-| TC-151 | Idempotent re-vendoring at an unchanged pin | Integration | P1 | NFR-011-AC-3 | ✅ Passed locally |
-| TC-152 | Detect drift, missing/stray files offline, and replace a dropped pin wholesale | Integration | P1 | NFR-011-AC-4, NFR-011-AC-5 | ✅ Passed locally |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
@@ -241,8 +237,7 @@ treating the whole slice as unbuilt.
 
 ## Six coverage rules
 
-All nine FR-012 ACs, both NFR-005 metric obligations and all five NFR-011 ACs
-are verified above.
+All nine FR-012 ACs and both NFR-005 metric obligations are verified above.
 Modes are mutually exclusive, not combinable options. Valid/unknown modes,
 missing/extra arguments, contained/foreign paths, zero/exact/over resource
 limits, malformed fields and identity changes are covered. No asynchronous

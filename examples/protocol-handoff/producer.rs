@@ -874,7 +874,7 @@ impl DefinitionInputs {
         let selected = selected_definitions(temporal);
         let definitions = selected
             .iter()
-            .map(|definition| definitions::Artifact {
+            .map(|&definition| definitions::Artifact {
                 selection: definition.selection(),
                 bytes: definition.bytes(),
             })
@@ -888,8 +888,8 @@ impl DefinitionInputs {
             .values()
             .map(|rule| definitions::RuleInput {
                 path: rule.path,
-                digest: ByteDigest::of(rule.bytes),
-                bytes: rule.bytes,
+                digest: ByteDigest::of(rule.path.as_bytes()),
+                bytes: rule.path.as_bytes(),
             })
             .collect::<Vec<_>>();
 
@@ -1055,7 +1055,7 @@ fn selected_dependencies(
     let model = &inputs.model;
     let mut dependencies = selected
         .iter()
-        .map(|definition| Dependency {
+        .map(|&definition| Dependency {
             artifact: reference(
                 STANDARD,
                 w::ArtifactKind::Source,

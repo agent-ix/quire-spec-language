@@ -19,12 +19,12 @@ it never touches the root `Cargo.lock`.
 From the repository root:
 
 ```bash
-# Vendor/refresh the local clones the lane's [patch] entries need (see "Why
-# a vendored clone" below), then refresh this lane's own Cargo.lock to each
+# Clone/refresh the local clones the lane's [patch] entries need (see "Why
+# a local clone" below), then refresh this lane's own Cargo.lock to each
 # dependency's current head (never the root workspace's Cargo.lock). Re-run
 # any time to pick up a new IR/RT head.
 cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-  prepare --vendor-root integration/current-head/.vendor \
+  prepare --deps-root integration/current-head/.deps \
   --manifest integration/current-head/Cargo.toml
 
 # Build and test the lane at current head (needs network access to fetch
@@ -34,7 +34,7 @@ cargo test --manifest-path integration/current-head/Cargo.toml
 # Record the exact commit resolved for QSL and for each of IR/RT/CG.
 cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
   revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-  --vendor-root integration/current-head/.vendor
+  --deps-root integration/current-head/.deps
 
 # Confirm the intentionally incompatible fixture still fails, with a stable
 # diagnostic (FR-058-AC-3).
@@ -46,7 +46,7 @@ cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
 `make integration-current-head-incompatible-fixture` (repository root
 `Makefile`) run these.
 
-### Why a vendored clone, not a plain `branch = "main"` dependency
+### Why a local clone, not a plain `branch = "main"` dependency
 
 quire-contract-codegen is declared directly at `branch = "main"`, which is
 enough for it: nothing else in this lane's graph pins a conflicting revision
@@ -60,7 +60,7 @@ different branch/rev/tag of the *same* git URL ("patches must point to
 different sources") -- patch is for redirecting to a genuinely different
 source. Redirecting to a local path clone of the current head is Cargo's
 supported mechanism for this, so `tool/`'s `prepare` subcommand keeps
-`.vendor/quire-contract-ir` and `.vendor/quire-contract-runtime` (both at
+`.deps/quire-contract-ir` and `.deps/quire-contract-runtime` (both at
 current head) fresh, and the lane's `[patch]` table points IR, RT and
 quire-spec-language itself (a direct path patch, since QSL's own manifest is
 already a path dependency of this lane) at those local sources. This is what
@@ -142,19 +142,20 @@ rather than decided here:
    only") applies to any workflow that would run it, but this change adds no
    such workflow. Today the lane is local-only, via the Makefile target
    above.
-2. **How QSpec artifacts would be sourced at head.** This lane covers QSL,
-   quire-contract-ir, quire-contract-runtime and quire-contract-codegen only.
-   QSpec artifacts (the vendored trees `revendor`/`revendor-check` manage
-   under `QSPEC_CLONE`) are consumed unchanged, at whatever revision the root
-   manifest already vendors; moving that sourcing to head is unresolved.
+2. **QSpec artifact sourcing.** This lane covers QSL, quire-contract-ir,
+   quire-contract-runtime and quire-contract-codegen only. QSpec artifacts
+   are resolved by reference -- identity and revision, not a local copy --
+   at whatever revision QSL's own catalog names; moving that resolution to
+   head, the way this lane already does for the other four repositories, is
+   unresolved.
 
 ## Ownership and update procedure
 
 Owned by whoever owns ADR-011 T-12 (currently tracked under #215 and its
 successors). `prepare`'s `git clone --branch <branch> --single-branch` (no
-`--depth`) keeps `.vendor/quire-contract-ir` and `.vendor/quire-contract-runtime`
+`--depth`) keeps `.deps/quire-contract-ir` and `.deps/quire-contract-runtime`
 at full history, so step 2 below (`git bisect` or an equivalent manual walk of
-either vendored clone) is executable against them directly; it is not blocked
+either local clone) is executable against them directly; it is not blocked
 by a shallow clone (#249 review round 2 L-1). When a run fails:
 
 1. Read the failure: a compile error names the incompatible crate and symbol;

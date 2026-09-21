@@ -95,7 +95,7 @@ upstream is quire-specification `046d1bd`.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |
-| FND-001 | resolved | `invalid_capability` and all nine causes are catalogued in `quire.native.diagnostics/v1` revision `1-draft.5` (FR-057:87-91; FR-057 Dependencies at FR-057:327-329; upstream `native-diagnostics.md` `invalid_capability` row, FR-271, FR-272). QSL re-vendors that revision before #213 (FR-057:328-329). |
+| FND-001 | resolved | `invalid_capability` and all nine causes are catalogued in `quire.native.diagnostics/v1` revision `1-draft.5` (FR-057:87-91; FR-057 Dependencies at FR-057:327-329; upstream `native-diagnostics.md` `invalid_capability` row, FR-271, FR-272). QSL refreshes its copy to that revision before #213 (FR-057:328-329). |
 | FND-002 | resolved | A hold row and a definition were added (FR-057:271, 273-274). TC-155 checks that "nothing is pending after routing returns" (TC-155:58-60). |
 | FND-003 | resolved | Missing or `null` is `absent-kind`; `""` and non-string values are `unknown-kind` (FR-057:141-150). AC-2 covers both (FR-057:307), and so does TC-153 (steps 2 and 3, TC-153:24-27). |
 | FND-004 | resolved | (a) The member belongs to each format's owner: FR-331's `capability_vocabulary`, and QSL's per #211 (FR-057:133-137); the TC-154 row reads "#211/#213" (`tests.md:222,302`). (b) `v1` is pinned to FR-290 at `046d1bd` (FR-057:38-40). (c) A serialized set of kinds is carrier format. Under FR-290 the owner assigns it, and kinds compare as sets (FR-057:105-107). It is deferred to #211 with the member. |

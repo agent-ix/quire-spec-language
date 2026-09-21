@@ -2,8 +2,8 @@
 //! ADR-013 O-06: checked member identity.
 //!
 //! [`Member`] mirrors the v2 `OperationMember` union exactly
-//! (`node-identity-preimage.schema.json` `$defs.OperationMember`, vendored at
-//! `resources/complete-value/quire-specification/proposals/checked-package-v2/`,
+//! (`node-identity-preimage.schema.json` `$defs.OperationMember`, resolved
+//! from `agent-ix/quire-specification`'s `checked-package-v2` proposal,
 //! which ADR-013 O-06 names as this type's serialized authority alongside
 //! QSpec FR-322). `declaration` is a [`NodeKey`], unique across packages
 //! (O-04); the kernel itself carries a member only as an opaque `MemberId`
@@ -184,53 +184,14 @@ impl Member {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
 
     fn node(fill: u8) -> NodeKey {
         NodeKey::from_hex(&format!("{fill:02x}").repeat(32)).expect("64 lowercase hex digits")
     }
 
-    /// A validator over the vendored `$defs/OperationMember` subschema only
-    /// (not the whole `node-identity-preimage.schema.json` document, whose
-    /// own top-level `oneOf` is node preimage kinds, not `OperationMember`) --
-    /// a `{"$ref": ..., "$defs": ...}` wrapper against the same `$defs`, so
-    /// `$ref`s inside `OperationMember` (`NodeId`, `Identifier`) still
-    /// resolve. A hand-written `json!` literal restating the schema's shape
-    /// cannot catch a transcription error the schema itself would catch (a
-    /// wrong `kind` literal, a stray field `additionalProperties: false`
-    /// would reject); this validates against the vendored authority instead.
-    fn operation_member_schema() -> jsonschema::JSONSchema {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "resources/complete-value/quire-specification/proposals/checked-package-v2/\
-             node-identity-preimage.schema.json",
-        );
-        let document: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        let wrapper = json!({
-            "$ref": "#/$defs/OperationMember",
-            "$defs": document["$defs"],
-        });
-        jsonschema::JSONSchema::options()
-            .with_draft(jsonschema::Draft::Draft202012)
-            .compile(&wrapper)
-            .expect("vendored OperationMember subschema compiles")
-    }
-
-    fn assert_valid_operation_member(wire: &Value) {
-        let schema = operation_member_schema();
-        if let Err(errors) = schema.validate(wire) {
-            panic!(
-                "{wire} does not satisfy the vendored OperationMember schema: {:?}",
-                errors.collect::<Vec<_>>()
-            );
-        };
-    }
-
     /// (#213 S-2, C-18) one test per variant: each renders exactly the
-    /// vendored `OperationMember` shape, field-for-field, and validates
-    /// against the vendored schema itself (not only a hand-written literal
-    /// that could restate the same transcription error).
+    /// `OperationMember` shape, field-for-field.
     #[test]
     fn field_renders_the_schema_shape() {
         let member = Member::Field {
@@ -246,7 +207,6 @@ mod tests {
                 "name": "quantity",
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -264,7 +224,6 @@ mod tests {
                 "position": 3,
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -280,7 +239,6 @@ mod tests {
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(3).to_string()},
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -298,7 +256,6 @@ mod tests {
                 "name": "source",
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -316,7 +273,6 @@ mod tests {
                 "name": "totalPrice",
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -332,7 +288,6 @@ mod tests {
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(6).to_string()},
             })
         );
-        assert_valid_operation_member(&wire);
     }
 
     #[test]
@@ -348,22 +303,6 @@ mod tests {
                 "operator": "add",
             })
         );
-        assert_valid_operation_member(&wire);
-    }
-
-    /// A wrong `kind` literal (the exact transcription error a hand-written
-    /// literal comparison alone cannot catch, ADR-013 O-06/#260 review item
-    /// 2) is rejected by the vendored schema: `additionalProperties: false`
-    /// plus `kind: {"const": "field"}` on every real variant means no other
-    /// `kind` string satisfies any branch of `OperationMember`'s `oneOf`.
-    #[test]
-    fn a_wrong_kind_literal_fails_the_vendored_schema() {
-        let wrong = json!({
-            "kind": "fielddd",
-            "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(1).to_string()},
-            "name": "quantity",
-        });
-        assert!(!operation_member_schema().is_valid(&wrong));
     }
 
     /// ADR-013 O-06's own equality rule: a `Field` and an `Operation` on the

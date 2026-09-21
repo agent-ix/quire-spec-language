@@ -77,7 +77,7 @@ at minimum be recorded beside the clock-parameter limitation it sits next to.
 Agent A applied the QUOIN failure-domain analysis skill to the subject at
 revision 87bc83f, re-reading FR-043, FR-044, FR-045, NFR-008, TC-122 through
 TC-125, TM-008 and the published counter contract in full, against the four
-vendored source requirements and four vendored profile definitions. Two claims
+source requirements and four profile definitions held as copies in this repo. Two claims
 were checked against the implementation rather than the prose: `truth` is
 `Option<Truth>` in `src/temporal/result.rs`, and no digest field exists anywhere
 in the temporal scope. No subagents, builds or gates were run. No FR, NFR, TC or

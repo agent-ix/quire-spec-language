@@ -276,7 +276,7 @@ impl Inputs {
         let rules: BTreeMap<_, _> = R::all()
             .iter()
             .flat_map(|definition| definition.rules())
-            .map(|rule| (rule.path, rule.bytes))
+            .map(|rule| (rule.path, rule.path.as_bytes()))
             .collect();
         for (path, bytes) in rules {
             dependencies.push((

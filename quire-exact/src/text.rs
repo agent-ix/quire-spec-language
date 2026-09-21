@@ -4,12 +4,8 @@
 //!
 //! Normalization uses exactly the Unicode 17.0.0 data selected by
 //! `quire.value.text.unicode-17.0.0/v1`. The build refuses any other
-//! `unicode-normalization` table version, and QSL's own
-//! `tests/unicode_17_text.rs` checks the tables against the digest-verified
-//! UCD files and the complete `NormalizationTest.txt` corpus (unchanged by
-//! this move: that fixture-heavy conformance test stays in QSL, which vendors
-//! the corpus; this crate re-derives no vendored fixture). No locale, case
-//! folding, collation or grapheme segmentation is applied.
+//! `unicode-normalization` table version. No locale, case folding, collation
+//! or grapheme segmentation is applied.
 //!
 //! Ported from QSL `value::text` as part of QSL#213 S-1 (ADR-011 X-1). One
 //! cut (M-6): `TextPayload::from_source_literal`/`InvalidTextLiteral`,

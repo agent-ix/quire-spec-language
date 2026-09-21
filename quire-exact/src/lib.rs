@@ -45,8 +45,8 @@
 //! ships with zero discharged propositions and no claimed-module list.
 //! `cargo kani` cannot run against this workspace at all today: Kani 0.67.0's
 //! bundled toolchain is `rustc 1.93.0-nightly`, while this workspace declares
-//! `rust-version = "1.98"`, and `cargo kani` separately fails on a vendored
-//! dependency's fixture `Cargo.toml`. Building the gate is tracked
+//! `rust-version = "1.98"`, and `cargo kani` separately fails on a
+//! dependency's own fixture `Cargo.toml`. Building the gate is tracked
 //! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 //!
 //! **H-9: no acceptance criterion exists for this crate's own test suite.**

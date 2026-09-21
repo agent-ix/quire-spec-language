@@ -2,12 +2,10 @@
 //! TC-187 dimensions, units, compound units and quantities over the real
 //! `value` boundary.
 //!
-//! The dimension/unit node vectors, their invalid mutations, the compound-unit
-//! vectors and U01–U23 are read from or transcribed from the vendored
-//! quire-specification files pinned by `tests/complete_value_lock.rs`. Digests
-//! are reproduced by an independent JCS canonicalizer, never authored here.
-
-use std::path::Path;
+//! The dimension/unit node fixtures, their invalid mutations, the
+//! compound-unit fixtures and U01–U23 are self-authored preimages, checked
+//! for content-addressing against an independent JCS canonicalizer (never
+//! the code under test) and for admission against the real `value` boundary.
 
 use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
@@ -37,53 +35,6 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-// ---- vendored files --------------------------------------------------------
-
-const SPEC: &str = "resources/complete-value/quire-specification/proposals";
-
-fn read_json(relative: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(SPEC)
-        .join(relative);
-    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
-}
-
-fn compile(schema: &Value) -> jsonschema::JSONSchema {
-    jsonschema::JSONSchema::options()
-        .with_draft(jsonschema::Draft::Draft202012)
-        .compile(schema)
-        .unwrap()
-}
-
-fn node_vectors() -> Value {
-    read_json("checked-package-v2/node-identity-vectors.json")
-}
-
-fn node_schema() -> jsonschema::JSONSchema {
-    compile(&read_json(
-        "checked-package-v2/node-identity-preimage.schema.json",
-    ))
-}
-
-fn compound_vectors() -> Value {
-    read_json("quire-v1/definitions/value-compound-unit-vectors.json")
-}
-
-fn compound_schema() -> jsonschema::JSONSchema {
-    compile(&read_json(
-        "quire-v1/definitions/value-compound-unit.schema.json",
-    ))
-}
-
-fn entry<'a>(vectors: &'a Value, name: &str) -> &'a Value {
-    vectors["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["name"] == name)
-        .unwrap()
-}
-
 /// Independent RFC 8785 JCS for the string-only preimages.
 fn jcs(value: &Value) -> String {
     match value {
@@ -111,30 +62,6 @@ fn digest_hex(preimage: &Value) -> String {
 
 fn fixture_key(preimage: &Value) -> NodeKey {
     NodeKey::from_hex(&digest_hex(preimage)).unwrap()
-}
-
-fn apply_patch(mut target: Value, patch: &Value) -> Value {
-    for operation in patch.as_array().unwrap() {
-        let path = operation["path"].as_str().unwrap();
-        match operation["op"].as_str().unwrap() {
-            "replace" => *target.pointer_mut(path).unwrap() = operation["value"].clone(),
-            "move" => {
-                let from = operation["from"].as_str().unwrap();
-                let (from_parent, from_index) = from.rsplit_once('/').unwrap();
-                let (to_parent, to_index) = path.rsplit_once('/').unwrap();
-                assert_eq!(from_parent, to_parent, "array move within one parent");
-                let items = target
-                    .pointer_mut(from_parent)
-                    .unwrap()
-                    .as_array_mut()
-                    .unwrap();
-                let moved = items.remove(from_index.parse().unwrap());
-                items.insert(to_index.parse().unwrap(), moved);
-            }
-            other => panic!("unsupported patch op {other}"),
-        }
-    }
-    target
 }
 
 // ---- graph fixtures --------------------------------------------------------
@@ -366,165 +293,167 @@ fn compound_unit(fixture: &Fixture, terms: &[(NodeKey, &str)]) -> QuantityUnit {
     QuantityUnit::Compound(fixture.graph.compound_unit(&compound(terms)).unwrap())
 }
 
-// ---- node identity vectors ---------------------------------------------------
-
-const DIMENSION_VECTORS: [&str; 4] = [
-    "dimension-length",
-    "dimension-time",
-    "dimension-temperature",
-    "dimension-velocity",
-];
-const UNIT_VECTORS: [&str; 7] = [
-    "unit-metre",
-    "unit-second",
-    "unit-kelvin",
-    "unit-degree-celsius",
-    "unit-centimetre",
-    "unit-millimetre",
-    "unit-huge-exact-scale",
-];
-
-fn vector_nodes(vectors: &Value) -> Nodes {
-    let pairs = |names: &[&str]| {
-        names
-            .iter()
-            .map(|name| {
-                let entry = entry(vectors, name);
-                (
-                    entry["preimage"].clone(),
-                    NodeKey::from_hex(entry["sha256"].as_str().unwrap()).unwrap(),
-                )
-            })
-            .collect()
-    };
-    Nodes {
-        dimensions: pairs(&DIMENSION_VECTORS),
-        units: pairs(&UNIT_VECTORS),
-    }
-}
+// ---- node identity fixtures ---------------------------------------------------
 
 #[trace("TC-187", "FR-142-AC-5")]
 #[test]
-fn dimension_and_unit_node_vectors_reproduce_and_admit() {
-    let vectors = node_vectors();
-    let schema = node_schema();
-    for name in DIMENSION_VECTORS.iter().chain(&UNIT_VECTORS) {
-        let entry = entry(&vectors, name);
-        let (preimage, digest) = (&entry["preimage"], entry["sha256"].as_str().unwrap());
-        assert!(schema.is_valid(preimage), "{name}");
-        assert_eq!(digest_hex(preimage), digest, "{name}");
-        let key = if name.starts_with("dimension-") {
+fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
+    let mut nodes = Nodes::default();
+    let length = nodes.dimension(base_dimension("example-model", "Length"));
+    let time = nodes.dimension(base_dimension("example-model", "Time"));
+    let theta = nodes.dimension(base_dimension("example-model", "Temperature"));
+    let velocity_preimage = derived_dimension("Velocity", &[(time, "-1"), (length, "1")]);
+    let velocity = nodes.dimension(velocity_preimage.clone());
+    let metre_preimage = root_json("metre", length);
+    let metre = nodes.unit(metre_preimage.clone());
+    let kelvin_preimage = root_json("kelvin", theta);
+    let kelvin = nodes.unit(kelvin_preimage.clone());
+    let cm_preimage = unit_json("centimetre", length, Some(metre), ("1", "100"), ("0", "1"));
+    let cm = nodes.unit(cm_preimage.clone());
+    let mm_preimage = unit_json("millimetre", length, Some(cm), ("1", "10"), ("0", "1"));
+    let mm = nodes.unit(mm_preimage.clone());
+    let huge_scale: Integer = "340282366920938463463374607431768211457".parse().unwrap();
+    let huge_preimage = unit_json(
+        "huge_exact_scale",
+        length,
+        Some(metre),
+        (&huge_scale.to_string(), "1"),
+        ("0", "1"),
+    );
+    let huge = nodes.unit(huge_preimage.clone());
+    let celsius_preimage = unit_json(
+        "degree_Celsius",
+        theta,
+        Some(kelvin),
+        ("1", "1"),
+        ("5463", "20"),
+    );
+    let celsius = nodes.unit(celsius_preimage.clone());
+
+    // Every preimage's independently recomputed content digest matches the
+    // crate's own node key, for both the dimension and unit preimage shapes.
+    let dimensions = [(velocity_preimage, velocity)];
+    let units = [
+        (metre_preimage, metre),
+        (kelvin_preimage, kelvin),
+        (cm_preimage, cm),
+        (mm_preimage, mm),
+        (huge_preimage, huge),
+        (celsius_preimage, celsius),
+    ];
+    for (preimage, key) in &dimensions {
+        assert_eq!(NodeKey::from_hex(&digest_hex(preimage)).unwrap(), *key);
+        assert_eq!(
             DimensionPreimage::from_json(preimage.clone())
                 .unwrap()
                 .node_key()
-        } else {
+                .unwrap(),
+            *key
+        );
+    }
+    for (preimage, key) in &units {
+        assert_eq!(NodeKey::from_hex(&digest_hex(preimage)).unwrap(), *key);
+        assert_eq!(
             UnitPreimage::from_json(preimage.clone())
                 .unwrap()
                 .node_key()
-        };
-        assert_eq!(key.unwrap().to_string(), digest, "{name}");
+                .unwrap(),
+            *key
+        );
     }
 
-    let nodes = vector_nodes(&vectors);
     let graph = nodes.admit().unwrap();
-    let key = |name| NodeKey::from_hex(entry(&vectors, name)["sha256"].as_str().unwrap()).unwrap();
-    let (length, time) = (key("dimension-length"), key("dimension-time"));
-    let velocity = graph.dimension(key("dimension-velocity")).unwrap();
-    let terms: Vec<_> = velocity
+    let velocity_node = graph.dimension(velocity).unwrap();
+    let terms: Vec<_> = velocity_node
         .exponents()
         .map(|(base, exponent)| (base, exponent.clone()))
         .collect();
     assert_eq!(terms, [(time, int(-1)), (length, int(1))]);
 
-    let metre = key("unit-metre");
-    let mm = graph.unit(key("unit-millimetre")).unwrap();
-    assert_eq!(mm.root(), metre);
-    assert_eq!(mm.path().len(), 2);
-    assert_eq!(mm.canonical().scale(), &ratio(1, 1000));
-    assert!(!mm.is_affine());
-    let huge = graph.unit(key("unit-huge-exact-scale")).unwrap();
-    let huge_scale: Integer = "340282366920938463463374607431768211457".parse().unwrap();
+    let mm_node = graph.unit(mm).unwrap();
+    assert_eq!(mm_node.root(), metre);
+    assert_eq!(mm_node.path().len(), 2);
+    assert_eq!(mm_node.canonical().scale(), &ratio(1, 1000));
+    assert!(!mm_node.is_affine());
+    let huge_node = graph.unit(huge).unwrap();
     assert_eq!(
-        huge.canonical().scale(),
+        huge_node.canonical().scale(),
         &Rational::from_integer(huge_scale)
     );
-    let celsius = graph.unit(key("unit-degree-celsius")).unwrap();
-    assert!(celsius.is_affine());
-    assert_eq!(celsius.root(), key("unit-kelvin"));
-    assert_eq!(celsius.canonical().offset(), &ratio(5463, 20));
-}
-
-fn mutation_cause(name: &str) -> SemanticGraphCause {
-    match name {
-        "dimension-zero-exponent" => SemanticGraphCause::ZeroExponent,
-        "dimension-duplicate-term" => SemanticGraphCause::DuplicateTerm,
-        "dimension-unsorted-terms" => SemanticGraphCause::UnsortedTerms,
-        "root-unit-nonidentity-scale" | "nonroot-unit-missing-target" => {
-            SemanticGraphCause::NonIdentityRoot
-        }
-        "unit-unreduced-rational" => SemanticGraphCause::UnreducedRational,
-        other => panic!("unclassified semantic mutation {other}"),
-    }
+    let celsius_node = graph.unit(celsius).unwrap();
+    assert!(celsius_node.is_affine());
+    assert_eq!(celsius_node.root(), kelvin);
+    assert_eq!(celsius_node.canonical().offset(), &ratio(5463, 20));
 }
 
 #[trace("TC-187", "FR-142-AC-5")]
 #[test]
-fn dimension_and_unit_invalid_mutations_refuse_by_their_named_check() {
-    let vectors = node_vectors();
-    let schema = node_schema();
-    let mut checked = 0;
-    for mutation in vectors["invalid_mutations"].as_array().unwrap() {
-        let base = mutation["base"].as_str().unwrap();
-        if !(base.starts_with("dimension-") || base.starts_with("unit-")) {
-            continue;
-        }
-        let name = mutation["name"].as_str().unwrap();
-        assert_eq!(mutation["expected_code"], InvalidSemanticGraph::CODE);
-        let retained = NodeKey::from_hex(mutation["retained_sha256"].as_str().unwrap()).unwrap();
-        let preimage = apply_patch(
-            entry(&vectors, base)["preimage"].clone(),
-            &mutation["patch"],
-        );
-        let is_dimension = base.starts_with("dimension-");
-        let parsed = |preimage: Value| {
-            if is_dimension {
-                DimensionPreimage::from_json(preimage).map(|_| ())
-            } else {
-                UnitPreimage::from_json(preimage).map(|_| ())
-            }
-        };
-        match mutation["refused_by"].as_str().unwrap() {
-            "schema" => {
-                assert!(!schema.is_valid(&preimage), "{name}");
-                assert_eq!(
-                    parsed(preimage),
-                    Err(InvalidSemanticGraph {
-                        cause: SemanticGraphCause::NonCanonicalPreimage
-                    }),
-                    "{name}"
-                );
-            }
-            "semantic" => {
-                assert!(schema.is_valid(&preimage), "{name}");
-                let mut nodes = vector_nodes(&vectors);
-                let slot = if is_dimension {
-                    &mut nodes.dimensions
-                } else {
-                    &mut nodes.units
-                };
-                let replaced = slot.iter_mut().find(|(_, key)| *key == retained).unwrap();
-                *replaced = (preimage, retained);
-                assert_eq!(
-                    nodes.admit().unwrap_err().cause,
-                    mutation_cause(name),
-                    "{name}"
-                );
-            }
-            other => panic!("unknown refusal stage {other}"),
-        }
-        checked += 1;
-    }
-    assert_eq!(checked, 9);
+fn dimension_and_unit_semantic_mutations_refuse_by_their_named_cause() {
+    let mut base = Nodes::default();
+    let length = base.dimension(base_dimension("example-model", "Length"));
+    let time = base.dimension(base_dimension("example-model", "Time"));
+    let metre = base.unit(root_json("metre", length));
+
+    let mut zero_exponent = base.clone();
+    zero_exponent.dimension(derived_dimension("ZeroTerm", &[(length, "0")]));
+    assert_eq!(
+        zero_exponent.admit().unwrap_err().cause,
+        SemanticGraphCause::ZeroExponent
+    );
+
+    let mut duplicate_term = base.clone();
+    duplicate_term.dimension(derived_dimension(
+        "DupTerm",
+        &[(length, "1"), (length, "2")],
+    ));
+    assert_eq!(
+        duplicate_term.admit().unwrap_err().cause,
+        SemanticGraphCause::DuplicateTerm
+    );
+
+    // `derived_dimension` sorts its own terms, so an unsorted preimage is
+    // built directly: the higher key must come first.
+    let (first, second) = if length < time {
+        (time, length)
+    } else {
+        (length, time)
+    };
+    let mut unsorted_terms = base.clone();
+    unsorted_terms.dimension(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner_json("example-model"),
+        "qualified_declaration": ["Example", "Unsorted"],
+        "terms": [
+            {"dimension_node_id": node_id(first), "exponent": "1"},
+            {"dimension_node_id": node_id(second), "exponent": "1"},
+        ],
+    }));
+    assert_eq!(
+        unsorted_terms.admit().unwrap_err().cause,
+        SemanticGraphCause::UnsortedTerms
+    );
+
+    // A root unit (no target) whose scale is not the identity.
+    let mut nonidentity_root = base.clone();
+    nonidentity_root.unit(unit_json("bad_root", length, None, ("2", "1"), ("0", "1")));
+    assert_eq!(
+        nonidentity_root.admit().unwrap_err().cause,
+        SemanticGraphCause::NonIdentityRoot
+    );
+
+    // A scale rational not in lowest terms.
+    let mut unreduced = base.clone();
+    unreduced.unit(unit_json(
+        "unreduced",
+        length,
+        Some(metre),
+        ("2", "4"),
+        ("0", "1"),
+    ));
+    assert_eq!(
+        unreduced.admit().unwrap_err().cause,
+        SemanticGraphCause::UnreducedRational
+    );
 }
 
 #[trace("TC-187", "FR-142-AC-5")]
@@ -587,102 +516,94 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
     );
 }
 
-// ---- compound-unit vectors ---------------------------------------------------
+// ---- compound-unit fixtures ---------------------------------------------------
 
-fn compound_mutation_cause(name: &str) -> CompoundUnitCause {
-    match name {
-        "zero-exponent" => CompoundUnitCause::ZeroExponent,
-        "duplicate-term" => CompoundUnitCause::DuplicateTerm,
-        "unsorted-terms" => CompoundUnitCause::UnsortedTerms,
-        other => panic!("unclassified compound mutation {other}"),
-    }
+/// A compound-unit preimage over `terms`, sorted by key as the canonical form
+/// requires, kept as raw JSON so its digest can be independently recomputed.
+fn compound_preimage(terms: &[(NodeKey, &str)]) -> Value {
+    let mut terms = terms.to_vec();
+    terms.sort_by_key(|(key, _)| *key);
+    let terms: Vec<Value> = terms
+        .iter()
+        .map(|(key, exponent)| json!({"unit_node_id": node_id(*key), "exponent": exponent}))
+        .collect();
+    json!({"version": "quire.value.compound-unit/v1", "terms": terms})
 }
 
 #[trace("TC-187", "FR-142-AC-6")]
 #[test]
-fn compound_unit_vectors_reproduce_and_mutations_refuse() {
-    let vectors = compound_vectors();
-    assert_eq!(vectors["version"], "quire.value.compound-unit-vectors/v1");
-    let schema = compound_schema();
-    let nodes = vector_nodes(&node_vectors());
+fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
+    let mut nodes = Nodes::default();
+    let length = nodes.dimension(base_dimension("example-model", "Length"));
+    let time = nodes.dimension(base_dimension("example-model", "Time"));
+    let metre = nodes.unit(root_json("metre", length));
+    let second = nodes.unit(root_json("second", time));
+    let cm = nodes.unit(unit_json(
+        "centimetre",
+        length,
+        Some(metre),
+        ("1", "100"),
+        ("0", "1"),
+    ));
     let graph = nodes.admit().unwrap();
-    let names: Vec<_> = vectors["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, ["dimensionless", "metre-per-second"]);
-    for name in names {
-        let entry = entry(&vectors, name);
-        let (preimage, digest) = (&entry["preimage"], entry["sha256"].as_str().unwrap());
-        assert!(schema.is_valid(preimage), "{name}");
-        assert_eq!(digest_hex(preimage), digest, "{name}");
-        let parsed = CompoundUnitPreimage::from_json(preimage.clone()).unwrap();
-        assert_eq!(parsed.identity().to_string(), digest, "{name}");
-        let unit = graph.compound_unit(&parsed).unwrap();
-        assert_eq!(unit.identity().to_string(), digest, "{name}");
-        assert_eq!(unit.dimension().is_dimensionless(), name == "dimensionless");
-    }
 
-    let mut checked = 0;
-    for mutation in vectors["invalid_mutations"].as_array().unwrap() {
-        let name = mutation["name"].as_str().unwrap();
-        let base = mutation["base"].as_str().unwrap();
-        let retained = mutation["retained_sha256"].as_str().unwrap();
-        let preimage = apply_patch(
-            entry(&vectors, base)["preimage"].clone(),
-            &mutation["patch"],
-        );
-        match (
-            mutation["kind"].as_str().unwrap(),
-            mutation["refused_by"].as_str(),
-        ) {
-            ("stale_key", None) => {
-                assert!(schema.is_valid(&preimage), "{name}");
-                let parsed = CompoundUnitPreimage::from_json(preimage.clone()).unwrap();
-                let identity = graph.compound_unit(&parsed).unwrap().identity();
-                assert_ne!(identity.to_string(), retained, "{name}");
-                assert_eq!(identity.to_string(), digest_hex(&preimage), "{name}");
-            }
-            ("semantic", Some("schema")) => {
-                assert!(!schema.is_valid(&preimage), "{name}");
-                assert_eq!(
-                    CompoundUnitPreimage::from_json(preimage),
-                    Err(InvalidCompoundUnit {
-                        cause: CompoundUnitCause::NonCanonicalPreimage
-                    }),
-                    "{name}"
-                );
-            }
-            ("semantic", Some("semantic")) => {
-                assert!(schema.is_valid(&preimage), "{name}");
-                let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
-                assert_eq!(
-                    graph.compound_unit(&parsed),
-                    Err(InvalidCompoundUnit {
-                        cause: compound_mutation_cause(name)
-                    }),
-                    "{name}"
-                );
-            }
-            other => panic!("unknown mutation stage {other:?}"),
-        }
-        checked += 1;
+    let dimensionless_preimage = compound_preimage(&[]);
+    let per_time_preimage = compound_preimage(&[(metre, "1"), (second, "-1")]);
+    for (preimage, is_dimensionless) in [
+        (dimensionless_preimage.clone(), true),
+        (per_time_preimage.clone(), false),
+    ] {
+        let expected_digest = digest_hex(&preimage);
+        let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
+        assert_eq!(parsed.identity().to_string(), expected_digest);
+        let unit = graph.compound_unit(&parsed).unwrap();
+        assert_eq!(unit.identity().to_string(), expected_digest);
+        assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
     }
-    assert_eq!(checked, 5);
+    assert_ne!(
+        digest_hex(&dimensionless_preimage),
+        digest_hex(&per_time_preimage),
+        "distinct preimages have distinct content-addressed identities"
+    );
+
+    assert_eq!(
+        graph.compound_unit(&compound(&[(metre, "0")])),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::ZeroExponent
+        })
+    );
+    assert_eq!(
+        graph.compound_unit(&compound(&[(metre, "1"), (metre, "1")])),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::DuplicateTerm
+        })
+    );
+    // Deliberately out of ascending-key order.
+    let (first, second_term) = if metre < second {
+        (second, metre)
+    } else {
+        (metre, second)
+    };
+    assert_eq!(
+        graph.compound_unit(&compound(&[(first, "1"), (second_term, "1")])),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::UnsortedTerms
+        })
+    );
 
     // A term must name an admitted canonical root unit.
-    let centimetre = NodeKey::from_hex(
-        entry(&node_vectors(), "unit-centimetre")["sha256"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
     assert_eq!(
-        graph.compound_unit(&compound(&[(centimetre, "1")])),
+        graph.compound_unit(&compound(&[(cm, "1")])),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::NotRootUnit
+        })
+    );
+
+    let noncanonical = json!({"version": "quire.value.compound-unit/v1", "terms": [], "extra": 1});
+    assert_eq!(
+        CompoundUnitPreimage::from_json(noncanonical),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::NonCanonicalPreimage
         })
     );
 }
@@ -1182,13 +1103,11 @@ fn u12_multiplication_division_and_power_use_compound_units() {
             compound_unit(&f, &[]),
         ),
     ];
-    let vectors = compound_vectors();
     for (operation, value, unit) in cases {
         let result = exact(evaluated(operation, &mut unlimited()));
         assert_eq!(result.value(), &whole(value), "{operation:?}");
         assert_eq!(result.unit(), &unit, "{operation:?}");
     }
-    let identity = |name| entry(&vectors, name)["sha256"].as_str().unwrap().to_owned();
     let QuantityUnit::Compound(per_second) = exact(evaluated(
         QuantityOperation::Divide(&six_m, &two_s),
         &mut unlimited(),
@@ -1197,10 +1116,11 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     .clone() else {
         panic!("expected a compound unit");
     };
-    // The vectors' metre and second keys are the fixture's own.
+    // The evaluator's own compound-unit identity matches an independently
+    // recomputed content digest over the same terms.
     assert_eq!(
         per_second.identity().to_string(),
-        identity("metre-per-second")
+        digest_hex(&compound_preimage(&[(f.m, "1"), (f.s, "-1")]))
     );
     let QuantityUnit::Compound(dimensionless) = exact(evaluated(
         QuantityOperation::Divide(&five_m, &five_m),
@@ -1212,7 +1132,7 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     };
     assert_eq!(
         dimensionless.identity().to_string(),
-        identity("dimensionless")
+        digest_hex(&compound_preimage(&[]))
     );
     assert!(dimensionless.dimension().is_dimensionless());
 

@@ -372,7 +372,7 @@ Each family owns the following. The shared layer owns none of it.
 | Validation | Clause-level checks and cross-clause constraints, run through the family's builder (§4). |
 | Normalization | Any canonical form the family needs, such as sorted variant sets or resolved frame targets. It runs inside the family's `check`, before identity is minted, so identity is taken over the normalized form. |
 | Evaluation and lowering | The `evaluate` hook, the checked-package emission arm, and the family's arms in downstream IR, RT and CG seams (§8). |
-| Diagnostics | A family `Cause` enum. Every variant has a catalog code in the vendored QSpec diagnostic catalog; the catalog version and its vendoring follow ADR-013 O-17 and O-23 (OBS-023). |
+| Diagnostics | A family `Cause` enum. Every variant has a catalog code in the QSpec diagnostic catalog; the catalog version follows ADR-013 O-17 and O-23 (OBS-023). |
 | Tests | Clause-level unit tests, builder ordering tests, the seam probe (§5.3), wire totality tests, and one backend-absence corpus case per capability kind the family's claim forms request (§7). |
 
 The per-family assignment:
@@ -859,7 +859,7 @@ their `origin/main` on 2026-09-19 and are cited as `RT:`, `CG:`, `IR:` and
 | Parse | `SumCase` productions: variant declaration and `case` with arms; one leading-token kind and one entry in the parser entry table | `token` (leading-token kind); `forms` core (entry table); `forms::sum_case` | S2 |
 | Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { pattern, body }` typed subnodes | `forms::sum_case` | S2 |
 | Check | builder: scrutinee → each arm (pattern typed against the scrutinee's variants, independently) → `finish` runs the exhaustiveness obligation as its own check with its own cause | `check::sum_case`; `check` core dispatch arm | S1, S4 |
-| Diagnostics | codes for non-exhaustive, unreachable arm and wrong variant | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md`, re-vendored to `resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
+| Diagnostics | codes for non-exhaustive, unreachable arm and wrong variant | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
 | Checked node | `Case` variant in the checked node enum | `check` core | S3 |
 | Requirements | none; the existing `Value` requirements of the arm bodies apply | none | none |
 | Evaluate | `case` arm selection by variant identity | `value::expression::sum_case` | S3 |
@@ -892,7 +892,7 @@ Q2).
 | Parse | `ProtocolClause` productions for `frame` with `modifies`, `creates`, `deletes`, and for the scoped anchor | `token`; `forms` core; `forms::protocol_clause` | S2 |
 | Form | `FrameForm { modifies, creates, deletes }`, each a list of reference forms; `ScopedAnchorForm { scope, anchor }` | `forms::protocol_clause` | S2 |
 | Check | builder transitions into `Anchored` and `Framed` (§4.2): each anchor checked by its own scope function; each frame member resolved to node identities and checked against FR-340 eligibility on its own; `finish` checks that postcondition writes fall inside `modifies` | `check::protocol_clause` | S1, S4 |
-| Diagnostics | FR-340 frame and anchor cause codes | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md`, re-vendored to `resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
+| Diagnostics | FR-340 frame and anchor cause codes | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
 | Checked node | `Frame` and `ScopedAnchor` checked clause subnodes of the operation node | `check` core | S3 |
 | Requirements | the frame obligation records `operation-contract`, the kind FR-057 assigns it (§13.3 Q2). That kind exists, so the capability vocabulary is unchanged | `check::protocol_clause` | none; S7 is unchanged |
 | Evaluate | runtime frame check, `frame_violation`/`unauthorized-change` | `value::expression::protocol_clause` | S3 |
