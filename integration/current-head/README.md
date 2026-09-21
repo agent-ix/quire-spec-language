@@ -142,11 +142,11 @@ rather than decided here:
    only") applies to any workflow that would run it, but this change adds no
    such workflow. Today the lane is local-only, via the Makefile target
    above.
-2. **How QSpec artifacts would be sourced at head.** This lane covers QSL,
-   quire-contract-ir, quire-contract-runtime and quire-contract-codegen only.
-   QSpec artifacts (the trees `revendor`/`revendor-check` manage under
-   `QSPEC_CLONE`) are consumed unchanged, at whatever revision the root
-   manifest already resolves them to; moving that sourcing to head is
+2. **QSpec artifact sourcing.** This lane covers QSL, quire-contract-ir,
+   quire-contract-runtime and quire-contract-codegen only. QSpec artifacts
+   are resolved by reference -- identity and revision, not a local copy --
+   at whatever revision QSL's own catalog names; moving that resolution to
+   head, the way this lane already does for the other four repositories, is
    unresolved.
 
 ## Ownership and update procedure
