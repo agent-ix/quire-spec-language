@@ -1,0 +1,7 @@
+error: #[string_edge] takes no arguments
+ --> tests/ui/string_edge_with_args.rs:9:1
+  |
+9 | #[qsl_attrs::string_edge(anything)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `qsl_attrs::string_edge` (in Nightly builds, run with -Z macro-backtrace for more info)

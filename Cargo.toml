@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "quire-exact"]
+members = [".", "xtask", "quire-exact", "qsl-attrs"]
 resolver = "2"
 
 [package]
@@ -39,6 +39,7 @@ serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
+qsl-attrs = { path = "qsl-attrs" }
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
 agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
 # `crate::model::intake::lift_document` calls FCD's `lift`, which always
@@ -114,6 +115,14 @@ required-features = ["test-support"]
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# QSL#214 (FR-063): `seam_probe` is a `RUSTFLAGS`-set `--cfg`, not a Cargo
+# feature -- `--all-features` activates every real Cargo feature
+# unconditionally, and this probe is designed to fail to compile (`E0004`),
+# so a Cargo feature would break `--all-features` on every build once it
+# existed (measured: it did). Declaring the cfg name here is what
+# `xtask seam-probe`'s own `RUSTFLAGS=--cfg seam_probe` build needs to avoid
+# trading that break for an `unexpected_cfgs` one under `-D warnings`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"

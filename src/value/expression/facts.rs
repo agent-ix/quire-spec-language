@@ -872,6 +872,7 @@ impl<'a> Definedness<'a> {
                 self.walk(step, facts)
             }
             NodeKind::Call {
+                identity: _,
                 function,
                 arguments,
             } => {

@@ -44,6 +44,11 @@ pub enum Code {
     Drift,
     /// A `Cargo.toml`/`Cargo.lock` pin for a tracked crate is missing or disagrees.
     CargoPin,
+    /// The `cargo xtask seam-probe` build/comparison failed.
+    SeamProbe,
+    /// The `cargo xtask string-edge` scan found an allow-list defect or an
+    /// unmarked, un-allow-listed occurrence.
+    StringEdge,
 }
 
 impl Code {
@@ -56,6 +61,8 @@ impl Code {
             Self::MissingClone => "missing-clone",
             Self::Drift => "drift",
             Self::CargoPin => "cargo-pin",
+            Self::SeamProbe => "seam-probe",
+            Self::StringEdge => "string-edge",
         }
     }
 }
@@ -201,6 +208,100 @@ pub enum Error {
         /// The commit `Cargo.toml`/`Cargo.lock` actually pin the crate to.
         cargo_rev: String,
     },
+    /// `cargo` itself could not be spawned to run the seam-probe build.
+    #[error("cannot spawn cargo for the seam probe: {source}")]
+    SeamProbeSpawn {
+        /// The underlying spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// An E0004 diagnostic named a source line, but that file could not be
+    /// read back to resolve the line to its enclosing item.
+    #[error(
+        "seam-probe: cannot read {path} to resolve an E0004 line to its enclosing item: {source}"
+    )]
+    SeamProbeReadSource {
+        /// The source file an E0004 location pointed at.
+        path: PathBuf,
+        /// The underlying read failure.
+        #[source]
+        source: io::Error,
+    },
+    /// The normal (non-probe) build failed to compile, so nothing else the
+    /// probe checks is meaningful until that build succeeds on its own.
+    #[error("seam-probe: the normal (non-probe) build failed to compile; nothing else about the probe is meaningful until it succeeds. stderr:\n{stderr}")]
+    SeamProbeNormalBuildFailed {
+        /// The failed build's captured stderr.
+        stderr: String,
+    },
+    /// The normal (non-probe) build failed under `--offline` because its
+    /// registry cache was cold -- not a genuine compile error. A warm
+    /// (non-`--offline`) build must run first.
+    #[error("seam-probe: the normal (non-probe) build did not compile -- it failed dependency resolution under --offline (a cold registry cache, not a genuine compile error). Run a warm (non---offline) build first, then retry. stderr:\n{stderr}")]
+    SeamProbeOfflineRegistryUnavailable {
+        /// The failed build's captured stderr.
+        stderr: String,
+    },
+    /// The normal (non-probe) build reported E0004 at one or more
+    /// locations. FR-063-AC-3 requires every probe-marked seam to be
+    /// unreachable outside the probe build, so any E0004 in the normal
+    /// build is itself a defect.
+    #[error("seam-probe: the normal (non-probe) build reported E0004 at: {locations}; the probe variant must be unreachable outside the probe build (FR-063-AC-3)")]
+    SeamProbeNormalBuildHasE0004 {
+        /// The E0004 locations the normal build reported.
+        locations: String,
+    },
+    /// The build under `RUSTFLAGS=--cfg seam_probe` compiled cleanly. It
+    /// must instead fail with E0004 at every checked-in seam location, or
+    /// the probe is not exhaustive.
+    #[error("seam-probe: the build under RUSTFLAGS=--cfg seam_probe succeeded; it must fail with E0004 at every checked-in seam location")]
+    SeamProbeBuildUnexpectedlySucceeded,
+    /// The checked-in seam list and the probe build's actual E0004
+    /// locations disagree.
+    #[error(
+        "seam-probe: checked-in list and the probe build's E0004 locations differ -- \
+         unexpected-but-present: {unexpected_but_present}; expected-but-missing: {expected_but_missing}"
+    )]
+    SeamProbeMismatch {
+        /// Locations the checked-in list did not expect, but the probe
+        /// build reported anyway.
+        unexpected_but_present: String,
+        /// Locations the checked-in list expected, but the probe build did
+        /// not report.
+        expected_but_missing: String,
+    },
+    /// A source file could not be parsed as Rust source by `syn`.
+    #[error("string-edge: cannot parse {path} as Rust source: {source}")]
+    StringEdgeParse {
+        /// The file that failed to parse.
+        path: PathBuf,
+        /// The underlying parse failure.
+        #[source]
+        source: syn::Error,
+    },
+    /// An allow-list entry names a string comparison or match that gates a
+    /// branch (feeds an `if`/`while` condition or a `match` scrutinee/
+    /// guard). FR-064-AC-5 refuses to admit such an entry to the
+    /// allow-list; the call site must be marked `#[string_edge]` instead.
+    #[error(
+        "string-edge: allow-list entry {file}:{item} gates a branch (feeds an if/while \
+         condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
+         from the allow-list and mark the call site #[string_edge] instead"
+    )]
+    StringEdgeAllowListGatesABranch {
+        /// The file containing the offending allow-list entry.
+        file: String,
+        /// The enclosing item the offending allow-list entry names
+        /// (PR #262 review, finding F8: item-keyed, not line-keyed).
+        item: String,
+    },
+    /// The `string-edge` scan found one or more un-marked, un-allow-listed
+    /// string comparisons or matches; `summary` lists them.
+    #[error("{summary}")]
+    StringEdgeFound {
+        /// The findings, formatted for display.
+        summary: String,
+    },
 }
 
 impl Error {
@@ -226,13 +327,23 @@ impl Error {
                 Code::Drift
             }
             Self::CargoPinMissing { .. } | Self::CargoPinDisagreement { .. } => Code::CargoPin,
+            Self::SeamProbeSpawn { .. }
+            | Self::SeamProbeReadSource { .. }
+            | Self::SeamProbeNormalBuildFailed { .. }
+            | Self::SeamProbeOfflineRegistryUnavailable { .. }
+            | Self::SeamProbeNormalBuildHasE0004 { .. }
+            | Self::SeamProbeBuildUnexpectedlySucceeded
+            | Self::SeamProbeMismatch { .. } => Code::SeamProbe,
+            Self::StringEdgeParse { .. }
+            | Self::StringEdgeAllowListGatesABranch { .. }
+            | Self::StringEdgeFound { .. } => Code::StringEdge,
         }
     }
 
     /// Distinguish usage/environment failure (2) from a genuine content drift (1).
     pub fn exit_code(&self) -> u8 {
         match self.code() {
-            Code::Drift => 1,
+            Code::Drift | Code::SeamProbe | Code::StringEdge => 1,
             Code::Usage
             | Code::Io
             | Code::Manifest
