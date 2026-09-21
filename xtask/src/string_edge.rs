@@ -37,8 +37,14 @@ use crate::error::{Error, Result};
 /// One reported (or allow-listed) occurrence.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Occurrence {
+    /// The source file the occurrence was found in, relative to the
+    /// workspace root.
     pub file: String,
+    /// The 1-based line the occurrence starts on.
     pub line: u32,
+    /// Whether the comparison feeds an `if`/`while` condition or a `match`
+    /// scrutinee/guard -- the allow-list refuses any entry at such a
+    /// location (FR-064-AC-5).
     pub branch_gating: bool,
 }
 
@@ -48,8 +54,14 @@ pub struct Occurrence {
 /// branch-gating comparison).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AllowListEntry {
+    /// The source file the allow-listed occurrence is in, relative to the
+    /// workspace root.
     pub file: String,
+    /// The 1-based line the allow-listed occurrence starts on.
     pub line: u32,
+    /// Why this occurrence is not a dispatch decision (a debug-only
+    /// consistency check, a logged message, a diagnostic payload or a test
+    /// assertion -- never a branch-gating comparison).
     pub reason: &'static str,
 }
 
@@ -293,6 +305,15 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Run the full `string-edge` scan over every crate root this module's
+/// `crate_roots` covers, refusing (FR-064-AC-5) on any allow-list entry
+/// that gates a branch, then reporting every unmarked, un-allow-listed
+/// occurrence found.
+/// Returns the "clean" or "found" summary text on success (a clean scan is
+/// `Ok`, matching `cargo xtask string-edge`'s own success/failure
+/// contract); an occurrence report is returned as
+/// [`Error::StringEdgeFound`], not `Ok`, so the caller's exit code reflects
+/// the finding.
 pub fn run(workspace_root: &Path) -> Result<String> {
     let allow_list: BTreeSet<(String, u32)> = allow_list()
         .into_iter()
