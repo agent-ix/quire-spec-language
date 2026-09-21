@@ -92,6 +92,18 @@ ticket, and this ticket owns only the first:
   extension point, and the common envelope's own type, constructors and
   round-trip contract are unchanged by #186's change.
 
+### US-010-EX-5: A logged envelope never leaks its transcript or byte provision
+
+- **Given** a witness envelope holding a concrete counterexample transcript,
+  and a replay request holding a multi-kilobyte byte-provision entry.
+- **When** either value is formatted into a log line or a panic message
+  through its ordinary `Debug`/`Display` rendering, rather than read through
+  a typed accessor.
+- **Then** the rendered text carries no unredacted transcript or raw
+  byte-provision content — only a bounded descriptor such as a digest or
+  byte length — while the same content remains fully available to a caller
+  that invokes the typed accessor directly.
+
 ## Priority and Risk (Informative)
 
 Priority: High — this is the widest unblock currently available on the
@@ -112,3 +124,5 @@ system.
   replay request.
 - [FR-072](../functional/FR-072-implement-typed-replay-result.md) — typed
   replay result and record carrier.
+- [FR-073](../functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) —
+  redacted, safe diagnostic rendering for all four envelopes.
