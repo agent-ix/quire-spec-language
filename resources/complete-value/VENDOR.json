@@ -5,7 +5,7 @@
     {
       "kind": "qspec",
       "repo": "https://github.com/agent-ix/quire-specification",
-      "commit": "d227270fbeb28289df6abba7e94173118345c028",
+      "commit": "82f84d336a4cbfdfad999cef9145e333c4213333",
       "dest_prefix": "quire-specification",
       "files": [
         {
@@ -241,7 +241,7 @@
     {
       "kind": "qspec",
       "repo": "https://github.com/agent-ix/quire-specification",
-      "commit": "e8a81b569d0efe8d0cf72f3cecb2d21889cc258a",
+      "commit": "e3ccd72bb9686b867e7be406060d789515e346b9",
       "dest_prefix": "quire-specification",
       "files": [
         {

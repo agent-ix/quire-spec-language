@@ -90,7 +90,7 @@ selected profile identity and its activation record.
 The classifier SHALL use exactly this table, which restates the reviewed
 correspondence disposition in
 `ix://agent-ix/quire-specification/FR-095` at baseline
-`4d6230eb8aa9766ff3017360962f2d6368d74cb3`. The rows are evaluated in order and
+`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. The rows are evaluated in order and
 the first two are mutually exclusive with the last two, so the table is total:
 
 | Native request | TL target | Disposition |
@@ -161,7 +161,7 @@ encode. Naming them is not discharging them.
 The implementation pins the reviewed source by symbol. The `SUPPORT_TABLE`
 constant in `src/temporal/mapping.rs` names
 `ix://agent-ix/quire-specification/FR-095` at the same baseline
-(`4d6230eb8aa9766ff3017360962f2d6368d74cb3`) this requirement's Behavior
+(`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`) this requirement's Behavior
 section cites, and `classify` retains that constant on every supported
 classification, so a disposition always reports the exact source revision it
 was read against. The classifier evaluates the Behavior section's rows, which
