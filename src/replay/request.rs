@@ -177,9 +177,11 @@ impl ReplayRequest {
 /// `quire.native-runtime/v1` members (`package`, `selection`,
 /// `state_environment`, `limits`, `replay`) plus the QC-1 byte provision.
 pub struct ReplayRequestWire {
-    /// Must equal [`REQUEST_CONTRACT_VERSION`] or decoding refuses.
+    /// Must equal `REQUEST_CONTRACT_VERSION` (`"quire.native-runtime/v1"`)
+    /// or decoding refuses.
     pub contract_version: String,
-    /// Must equal [`KNOWN_CAPABILITY_VOCABULARY`] or decoding refuses.
+    /// Must equal `KNOWN_CAPABILITY_VOCABULARY`
+    /// (`"quire.capability-kind/v1"`) or decoding refuses.
     pub capability_vocabulary: Option<String>,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
