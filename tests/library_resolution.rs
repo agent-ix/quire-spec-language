@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-227 reusable semantic library resolution over the real `value`
-//! boundary (FR-307), following vectors L01–L08 of the vendored TC-227.
+//! boundary (FR-307), following TC-227's own vectors L01-L08.
 //!
 //! Each fixture package's identity preimage is a structurally valid
 //! `quire.checked-package-id/v2` JCS object whose `identity_projection` holds
@@ -890,21 +890,47 @@ fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
 #[trace("TC-227", "FR-307-AC-1")]
 #[test]
 fn l01_export_node_keys_derive_from_a_checked_package_v2_identity_projection() {
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../resources/complete-value/quire-specification/proposals/checked-package-v2/fixtures/positive-nominal-identities.json"
-    ))
-    .unwrap();
-    let digest = fixture["package_id"]["digest"].as_str().unwrap();
-    let preimage_bytes = jcs(&fixture["identity_preimage"]);
-    // Cross-check: the vendored fixture's own claimed `package_id.digest`
-    // really is the digest of its own `identity_preimage` -- not trusted
-    // blindly, computed independently of `PackageId::of_preimage` below.
-    assert_eq!(
-        NodeKey::from_hex(digest).unwrap().as_bytes(),
-        Sha256::digest(&preimage_bytes).as_slice(),
-        "positive-nominal-identities.json's package_id.digest must equal the \
-         SHA-256 of its own identity_preimage"
-    );
+    // A self-built two-export identity projection (this test's own fixture,
+    // not read from any external file): each export's node digest is the
+    // SHA-256 of its own fully qualified name (`projection_node`'s own
+    // convention, proven by every other L01-L08 test in this file), so the
+    // expected node ids below are `node(export)`, not a hardcoded constant.
+    // `declaration`/`nominal_identity_preimage` need each name segment
+    // separately (schema `QualifiedName` = one or more bare identifiers,
+    // `is_qualified_name`), so this builds the node directly rather than
+    // through `projection_node`, which only ever takes one segment.
+    fn two_segment_node(node_label: &str, segments: [&str; 2]) -> Value {
+        let reference =
+            json!({"digest": hex(node_label), "domain": "quire.checked-semantic-node/v1"});
+        json!({
+            "body": {"members": [], "term": "aggregate"},
+            "dependencies": [],
+            "node_id": reference,
+            "node_tag": "scalar_type",
+            "schema_version": "quire.checked-semantic-graph/v2",
+            "semantic_form": "enum",
+            "semantic_type": reference,
+            "nominal_identity_preimage": {
+                "members": ["READY"],
+                "ordered": true,
+                "owner": {"authority": "agent-ix", "identity": "library", "kind": "definition"},
+                "qualified_declaration": segments,
+                "version": "quire.enum-declaration-node/v1",
+            },
+            "declaration": {"qualified_name": segments},
+        })
+    }
+    let exports = ["Example::Status", "Example::metre"];
+    let segments = [["Example", "Status"], ["Example", "metre"]];
+    let mut nodes: Vec<(String, Value)> = exports
+        .iter()
+        .zip(segments)
+        .map(|(export, segments)| (hex(export), two_segment_node(export, segments)))
+        .collect();
+    nodes.sort_by(|left, right| left.0.cmp(&right.0));
+    let preimage_bytes = jcs(&preimage_value(
+        nodes.into_iter().map(|(_, node)| node).collect(),
+    ));
     let claimed = PackageId::of_preimage(&preimage_bytes);
     let library = LibraryPackage {
         library: name("Example"),
@@ -912,7 +938,7 @@ fn l01_export_node_keys_derive_from_a_checked_package_v2_identity_projection() {
         package_id: claimed,
         identity_preimage: preimage_bytes,
         imports: Vec::new(),
-        exports: vec!["Example::Status".to_owned(), "Example::metre".to_owned()],
+        exports: exports.iter().map(|export| (*export).to_owned()).collect(),
     };
     let root = package(
         "P",
@@ -921,21 +947,12 @@ fn l01_export_node_keys_derive_from_a_checked_package_v2_identity_projection() {
         vec![import("Example", "1", claimed, Some("e"))],
     );
     let lock = resolve_libraries(&root, &[library]).unwrap();
-    for (export, node_id) in [
-        (
-            "Example::Status",
-            "7928f1e1b570335b404c8d21c66da8a3b8e37e434b0ebc622f80285488811562",
-        ),
-        (
-            "Example::metre",
-            "79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4",
-        ),
-    ] {
+    for export in exports {
         assert_eq!(
             lock.resolve_name(&name("P"), &qualified("e", export)),
             Ok(ExportIdentity {
                 package: claimed,
-                node: NodeKey::from_hex(node_id).unwrap(),
+                node: node(export),
             })
         );
     }
