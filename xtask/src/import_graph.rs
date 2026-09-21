@@ -29,14 +29,21 @@
 //! **Scope of what this resolves.** This is a two-hop resolution (`use`
 //! edge -> `value::mod.rs`'s own aggregate lines), matched to the one
 //! concrete mechanism FR-068-CON-4 names, not a general name-resolution
-//! engine: it does not follow a re-export chain through a third module, and
-//! it does not evaluate `#[cfg]` attributes (a `#[cfg(test)]`-gated `use` is
-//! scanned the same as an unconditional one, which only ever makes this
-//! scan *stricter* than a build would be, since a test-only edge that
-//! would not exist in a normal build is still reported here as a finding).
-//! That matches this requirement's own real risk exactly: CON-4's aggregate
-//! is the one blind spot named in this requirement, not an open-ended claim
-//! of resolving every possible indirection in the crate.
+//! engine: it does not follow a re-export chain through a third module.
+//!
+//! **`#[cfg(test)]` handling differs by which criterion is being checked
+//! (owner ruling, PR #282 review, post-rebase).**
+//! [`check_module_violations`] (TC-172/AC-3) and [`model_check_edges`]
+//! (TC-176) do not evaluate `#[cfg]` attributes at all: a `#[cfg(test)]`-gated
+//! `use` is scanned the same as an unconditional one, which only ever makes
+//! those two scans *stricter* than a build would be, and is deliberate --
+//! `check` must import nothing from `value::expression` even in its own test
+//! code (TC-174's test lives in `value::expression` instead, precisely
+//! because of this). [`value_import_edges`] (TC-175/AC-6), by contrast,
+//! excludes `#[cfg(test)]`-gated imports on purpose: AC-6's tier bound
+//! constrains `check`'s *shipped* dependency graph, and a test-only import is
+//! not part of it -- see [`value_import_edges`]'s own doc for the concrete
+//! case (`TextType`) this distinction was written to resolve correctly.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -146,6 +153,51 @@ fn collect_use_edges(items: &[syn::Item], file: &str, out: &mut Vec<UseEdge>) {
             syn::Item::Mod(item_mod) => {
                 if let Some((_, inner_items)) = &item_mod.content {
                     collect_use_edges(inner_items, file, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        if !attr.path().is_ident("cfg") {
+            return false;
+        }
+        let mut found = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("test") {
+                found = true;
+            }
+            Ok(())
+        });
+        found
+    })
+}
+
+/// Every `use` edge declared at module scope in one already-parsed file,
+/// excluding any edge that is itself `#[cfg(test)]`-gated or that sits
+/// inside a `#[cfg(test)] mod { ... }` block -- i.e. every edge that is part
+/// of the crate's *shipped* (non-test) dependency graph. Used where a bound
+/// governs a shipped layering property rather than every line of source text
+/// (see [`value_import_edges`]'s own doc for why tier 2 uses this instead of
+/// [`use_edges_in_file`]).
+fn shipped_use_edges_in_file(parsed: &syn::File, file: &str) -> Vec<UseEdge> {
+    let mut out = Vec::new();
+    collect_shipped_use_edges(&parsed.items, file, &mut out);
+    out
+}
+
+fn collect_shipped_use_edges(items: &[syn::Item], file: &str, out: &mut Vec<UseEdge>) {
+    for item in items {
+        match item {
+            syn::Item::Use(item_use) if !has_cfg_test(&item_use.attrs) => {
+                flatten_use_tree(&item_use.tree, &[], file, out);
+            }
+            syn::Item::Mod(item_mod) if !has_cfg_test(&item_mod.attrs) => {
+                if let Some((_, inner_items)) = &item_mod.content {
+                    collect_shipped_use_edges(inner_items, file, out);
                 }
             }
             _ => {}
@@ -357,18 +409,28 @@ const K_DESIGNATED_MODULES: [&str; 9] = [
     "rational",
 ];
 
-/// FR-068-AC-6's tier-2 allow-list, amended twice by the PR #282 review
+/// FR-068-AC-6's tier-2 allow-list, amended once by the PR #282 review
 /// findings: F3 widened it from five items/two modules to seven/three
 /// (`family.rs`'s pre-existing `encode_value_type` needs
-/// `QuantityUnit`/`TextProfile`); a second pass (discovered while verifying
-/// F1/F4's moved golden-digest test, `check::family::tests::
-/// mint_declaration_identity_matches_a_checked_in_digest`) found that test's
-/// own pre-existing fixture also needs `TextType` from `value::text` to
-/// construct its `ValueType::Text` coverage case -- widening to eight items
-/// across three modules. AC-6 could not pass as written at either of the
-/// first two bounds against any conforming implementation that actually
-/// carries this test.
-const DECLARED_INTERIM_ITEMS: [(&str, &str); 8] = [
+/// `QuantityUnit`/`TextProfile`). AC-6 could not pass as originally written
+/// against any conforming implementation that actually carries `family.rs`'s
+/// production code.
+///
+/// **`TextType` is deliberately absent (owner ruling, PR #282 review,
+/// post-rebase).** `check::family::tests::
+/// mint_declaration_identity_matches_a_checked_in_digest`'s moved golden-digest
+/// fixture does import `TextType` from `value::text`, but only inside
+/// `#[cfg(test)] mod tests` -- [`value_import_edges`] excludes `#[cfg(test)]`
+/// imports from this bound by design (see its own doc), because this
+/// allow-list constrains `check`'s *shipped* dependency graph, the layering
+/// property FR-068-AC-6 actually governs; a test-only import is not part of
+/// that graph, and admitting it into tier 2 would permanently license
+/// production code to import it too, unchecked, since AC-6's own scan would
+/// then have no way to tell the two apart. Widening the list to fit a test
+/// import was tried and reverted for exactly this reason: it would have
+/// bought a green at the cost of the bound's own meaning, the same shape as
+/// an unjustified raised size limit.
+const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
     ("enumeration", "EnumDeclaration"),
     ("enumeration", "EnumValue"),
     ("quantity", "check_comparable"),
@@ -376,7 +438,6 @@ const DECLARED_INTERIM_ITEMS: [(&str, &str); 8] = [
     ("quantity", "UnitOperation"),
     ("quantity", "QuantityUnit"),
     ("text", "TextProfile"),
-    ("text", "TextType"),
 ];
 
 /// Which of FR-068-AC-6's tiers one `check` -> `value::<submodule>` edge
@@ -385,7 +446,7 @@ const DECLARED_INTERIM_ITEMS: [(&str, &str); 8] = [
 pub enum ValueImportTier {
     /// Tier 1: unbounded imports from the nine K-designated siblings.
     KDesignated,
-    /// Tier 2: exactly the eight named items (see [`DECLARED_INTERIM_ITEMS`]).
+    /// Tier 2: exactly the seven named items (see [`DECLARED_INTERIM_ITEMS`]).
     DeclaredInterim,
     /// Tier 3: forbidden -- anything else.
     Forbidden,
@@ -433,20 +494,36 @@ fn value_submodule_reexports(
     Ok(map)
 }
 
-/// TC-175: every `use` edge under `src/check/` resolving into any `value::`
-/// submodule at all (not only `expression`/`checking`, which
+/// TC-175: every *shipped* `use` edge under `src/check/` resolving into any
+/// `value::` submodule at all (not only `expression`/`checking`, which
 /// [`check_module_violations`] covers), classified into FR-068-AC-6's
 /// tiers. A flat `crate::value::Name` edge is resolved to its owning
 /// submodule by scanning `value::mod.rs`'s whole sibling re-export table,
 /// not only the two names [`value_reexports`] needs -- TC-175's own
 /// criterion is which submodule an item belongs to, not only whether it is
 /// `expression`.
+///
+/// **Shipped imports only (owner ruling, PR #282 review, post-rebase).**
+/// Unlike [`check_module_violations`] (TC-172/AC-3, deliberately stricter:
+/// `check` must import nothing from `value::expression` at all, in test code
+/// or not, so a `check`-side test can never quietly reopen that edge) and
+/// [`model_check_edges`] (TC-176), this scan uses
+/// [`shipped_use_edges_in_file`], not [`use_edges_in_file`], and so excludes
+/// `#[cfg(test)]`-gated imports. FR-068-AC-6's tier bound constrains `check`'s
+/// dependency on `value` as a layering property of the *shipped* crate; a
+/// test-only import is not part of that dependency graph, and admitting one
+/// into the tier-2 allow-list to make a test pass would permanently license
+/// production code to import it too, with no way for this scan to ever catch
+/// that widening back. `check::family::tests::
+/// mint_declaration_identity_matches_a_checked_in_digest`'s `TextType`
+/// import is the concrete case this excludes: real, `#[cfg(test)]`-gated,
+/// and out of tier 2's scope by this design choice, not by oversight.
 pub fn value_import_edges(workspace_root: &Path) -> Result<Vec<ValueImportEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
     let mut edges_found = Vec::new();
     for file in files_in(workspace_root, "src/check")? {
         let parsed = parse_file(workspace_root, &file)?;
-        for edge in use_edges_in_file(&parsed, &file) {
+        for edge in shipped_use_edges_in_file(&parsed, &file) {
             if edge.is_glob {
                 continue;
             }
@@ -686,7 +763,7 @@ mod tests {
     }
 
     /// TC-175 steps 1-2 (Expected Results): a fixture item resolving into a
-    /// K-designated module is tier 1, one of the eight named items is tier
+    /// K-designated module is tier 1, one of the seven named items is tier
     /// 2, and anything else -- including a *different* item from
     /// `enumeration`/`quantity`/`text` -- is tier 3 (forbidden). Written
     /// against the classifier directly (not the real tree) so this test
@@ -698,8 +775,14 @@ mod tests {
         assert!(K_DESIGNATED_MODULES.contains(&"numeric"));
         assert!(DECLARED_INTERIM_ITEMS.contains(&("quantity", "QuantityUnit")));
         assert!(DECLARED_INTERIM_ITEMS.contains(&("text", "TextProfile")));
-        assert!(DECLARED_INTERIM_ITEMS.contains(&("text", "TextType")));
-        // An item from a tier-2 *module* that is not one of the eight named
+        // `TextType` is deliberately NOT tier 2 (owner ruling, PR #282
+        // review, post-rebase): its only real dependency is
+        // `#[cfg(test)]`-gated, and `value_import_edges` excludes test-only
+        // imports from this bound entirely (see its own doc and
+        // `shipped_scan_excludes_a_cfg_test_only_forbidden_import` below),
+        // so it needs no tier-2 admission at all.
+        assert!(!DECLARED_INTERIM_ITEMS.contains(&("text", "TextType")));
+        // An item from a tier-2 *module* that is not one of the seven named
         // items (e.g. `quantity::Quantity`, which `check` does not import)
         // must not be silently admitted just because its module is tier 2.
         assert!(!DECLARED_INTERIM_ITEMS.contains(&("quantity", "Quantity")));
@@ -709,7 +792,13 @@ mod tests {
     /// edge is tier 1 or tier 2 (group (c) is empty), and every one is
     /// written in crate-absolute, submodule-qualified form -- PR #282
     /// review F2's rewrite, confirmed at the resolved level rather than
-    /// merely by having been the one that wrote it.
+    /// merely by having been the one that wrote it. This includes
+    /// `check::family.rs`'s own `#[cfg(test)]`-gated `TextType` import: it
+    /// resolves to `Forbidden` under [`shipped_use_edges_in_file`]'s
+    /// unfiltered sibling [`use_edges_in_file`] (see
+    /// `shipped_scan_excludes_a_cfg_test_only_forbidden_import` immediately
+    /// below for that exact assertion), but is invisible to this scan by
+    /// design, so it does not appear here at all.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn real_check_value_imports_are_bounded_to_tier_1_and_2_and_submodule_qualified() {
@@ -729,5 +818,59 @@ mod tests {
                 "edge not written in submodule-qualified form: {edge:?}"
             );
         }
+    }
+
+    /// A deliberately-introduced, non-`#[cfg(test)]` (shipped) import of an
+    /// unlisted item from a tier-2 module (`value::text::NormalizationForm`,
+    /// real in this crate, not one of the seven named tier-2 items) is
+    /// classified `Forbidden` -- this is TC-175's own falsifiability
+    /// requirement (owner ruling, PR #282 review, post-rebase): the tier
+    /// scan must actually reject something, not merely fail to reject
+    /// anything the allow-list was widened to admit. A live equivalent of
+    /// this fixture was run against the real tree (`src/check/mod.rs`,
+    /// temporarily) and confirmed `real_check_value_imports_are_bounded_
+    /// to_tier_1_and_2_and_submodule_qualified` fails with exactly this
+    /// `Forbidden` classification before being reverted; this test pins that
+    /// behavior permanently.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn shipped_forbidden_import_is_classified_forbidden() {
+        let source = r#"
+            use crate::value::text::NormalizationForm;
+        "#;
+        let parsed = syn::parse_file(source).expect("fixture parses");
+        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
+        assert_eq!(edges.len(), 1);
+        assert!(!K_DESIGNATED_MODULES.contains(&"text"));
+        assert!(!DECLARED_INTERIM_ITEMS.contains(&("text", "NormalizationForm")));
+    }
+
+    /// A `#[cfg(test)]`-gated import of the same otherwise-forbidden shape
+    /// is excluded entirely by [`shipped_use_edges_in_file`] -- the concrete
+    /// mechanism `TextType` relies on to need no tier-2 admission (owner
+    /// ruling, PR #282 review, post-rebase). [`use_edges_in_file`], by
+    /// contrast, still reports it: this test pins the difference between the
+    /// two collectors directly, not only its effect on one real name.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn shipped_scan_excludes_a_cfg_test_only_forbidden_import() {
+        let source = r#"
+            #[cfg(test)]
+            mod tests {
+                use crate::value::text::NormalizationForm;
+            }
+        "#;
+        let parsed = syn::parse_file(source).expect("fixture parses");
+        let shipped = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
+        assert!(
+            shipped.is_empty(),
+            "a #[cfg(test)]-only import must not appear in the shipped scan: {shipped:?}"
+        );
+        let unfiltered = use_edges_in_file(&parsed, "src/check/fixture.rs");
+        assert_eq!(
+            unfiltered.len(),
+            1,
+            "the unfiltered collector (used by TC-172/TC-176) must still see it: {unfiltered:?}"
+        );
     }
 }
