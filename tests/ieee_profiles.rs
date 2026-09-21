@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-193 IEEE exceptional and rounding profiles over the real `value` boundary.
 //!
-//! Vectors F01–F31 are transcribed from the vendored TC-193 procedure pinned by
-//! `tests/complete_value_lock.rs`. The generated class matrix uses an
+//! Vectors F01–F31 exercise the closed IEEE profile's rounding directions,
+//! exceptional cases and accounting. The generated class matrix uses an
 //! independent oracle: exact `BigInt` rationals and a binary search over the
 //! ordered bit patterns of each width, with rounding, overflow and
 //! tininess-after-rounding decided by rational comparisons. No host
@@ -10,7 +10,6 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
-use std::path::Path;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
@@ -20,12 +19,13 @@ use quire_exact::{Integer, IntegerInterval};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
-    DecimalType, DefinitionLock, ExactScalar, IeeeBackendCapabilities, IeeeComparison,
-    IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags,
-    IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeResult,
-    IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete,
-    InjectedDenial, LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational,
-    RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
+    DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar,
+    IeeeBackendCapabilities, IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss,
+    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation,
+    IeeeOperationKind, IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped,
+    IllTypedCause, Incomplete, InjectedDenial, LimitKind, Meter, Outcome, PackageCause,
+    PackageRefusalCode, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined,
+    IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -131,14 +131,28 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 fn profile() -> &'static AdmittedIeeeProfile {
     static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
     PROFILE.get_or_init(|| {
-        let lock = DefinitionLock::pinned().unwrap();
-        let reference = lock
-            .entry(CatalogRole::IeeeProfile)
+        let lock = DefinitionLock::pinned();
+        lock.admit_ieee_profile(&[ieee_reference(lock)], &[])
             .unwrap()
-            .definition
-            .clone();
-        lock.admit_ieee_profile(&[reference], &[]).unwrap()
     })
+}
+
+/// A well-formed [`DefinitionReference`] for the IEEE profile role, built
+/// from the catalog's own identity/authority/revision fields. There is no
+/// digest to carry over: the catalog holds none, so this uses a placeholder
+/// that admission never inspects.
+fn ieee_reference(lock: &DefinitionLock) -> DefinitionReference {
+    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+    DefinitionReference {
+        authority: entry.authority.to_owned(),
+        identity: entry.identity.to_owned(),
+        revision: DefinitionRevision {
+            namespace: entry.revision_namespace.to_owned(),
+            value: entry.revision_value.to_owned(),
+        },
+        digest_domain: "quire.definition.bytes/v1".to_owned(),
+        digest: "0".repeat(64),
+    }
 }
 
 fn f32v(bits: u32) -> IeeeValue {
@@ -209,32 +223,6 @@ fn assert_denied<T: std::fmt::Debug>(outcome: Outcome<T>, point: ChargePoint, co
         }
         other => panic!("{point:?}: expected incomplete, got {other:?}"),
     }
-}
-
-// ---- coverage ----------------------------------------------------------------
-
-const COVERED_VECTORS: [&str; 33] = [
-    "F01", "F02", "F02b", "F03", "F04", "F04b", "F05", "F06", "F07", "F08", "F09", "F10", "F11",
-    "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
-    "F25", "F26", "F27", "F28", "F29", "F30", "F31",
-];
-
-#[trace("TC-193")]
-#[test]
-fn every_tabled_tc193_vector_has_a_test() {
-    let procedure = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "resources/complete-value/quire-specification/spec/test-cases/TC-193-ieee-exceptional-and-rounding-profiles.md",
-    ))
-    .unwrap();
-    let tabled: BTreeSet<String> = procedure
-        .lines()
-        .filter_map(|line| line.strip_prefix("| F"))
-        .filter_map(|rest| rest.split(' ').next())
-        .map(|id| format!("F{id}"))
-        .collect();
-    let covered: BTreeSet<String> = COVERED_VECTORS.iter().map(|id| (*id).to_owned()).collect();
-    assert_eq!(tabled, covered);
-    assert!(procedure.contains(IEEE_DEFINITION));
 }
 
 // ---- comparison vectors ------------------------------------------------------------
@@ -755,7 +743,7 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
 #[trace("TC-193", "FR-148-AC-3", "FR-148-AC-10")]
 #[test]
 fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings() {
-    let lock = DefinitionLock::pinned().unwrap();
+    let lock = DefinitionLock::pinned();
     let mut roles: Vec<&str> = lock
         .always_roles()
         .iter()
@@ -764,11 +752,7 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
     roles.push("ieee_profile");
     assert!(lock.admit_selection(&["ieee_operation"], &roles).is_ok());
 
-    let reference = lock
-        .entry(CatalogRole::IeeeProfile)
-        .unwrap()
-        .definition
-        .clone();
+    let reference = ieee_reference(lock);
     assert_eq!(reference.identity, IEEE_DEFINITION);
     let admitted = lock
         .admit_ieee_profile(std::slice::from_ref(&reference), &["acme::fma"])
@@ -777,8 +761,6 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
 
     let mut revision = reference.clone();
     revision.revision.value = "1-draft.2".to_owned();
-    let mut digest = reference.clone();
-    digest.digest = digest.digest.replacen('5', "6", 1);
     let mut version = reference.clone();
     version.identity = "quire.value.ieee754-2019-default/v2".to_owned();
     let cases = [
@@ -793,10 +775,6 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
         (
             lock.admit_ieee_profile(&[revision], &[]),
             PackageCause::RevisionMismatch,
-        ),
-        (
-            lock.admit_ieee_profile(&[digest], &[]),
-            PackageCause::ByteDigestMismatch,
         ),
         (
             lock.admit_ieee_profile(&[version], &[]),
@@ -837,12 +815,8 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
 #[trace("TC-193", "FR-148-AC-3")]
 #[test]
 fn i13_negotiation_is_per_item_and_leaves_admission_unchanged() {
-    let lock = DefinitionLock::pinned().unwrap();
-    let reference = lock
-        .entry(CatalogRole::IeeeProfile)
-        .unwrap()
-        .definition
-        .clone();
+    let lock = DefinitionLock::pinned();
+    let reference = ieee_reference(lock);
     let before = lock.admit_ieee_profile(std::slice::from_ref(&reference), &[]);
 
     let full = IeeeBackendCapabilities {

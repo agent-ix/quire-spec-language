@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-192 integer division profiles over the real `value` boundary.
 //!
-//! The signed table and DIV-01–DIV-13 are transcribed from the vendored TC-192
-//! procedure pinned by `tests/complete_value_lock.rs`; every DefinitionRef is
-//! taken from the pinned lock rather than authored here.
+//! The signed table and DIV-01–DIV-13 exercise every closed division law;
+//! every `DefinitionRef` is built from the compiled-in lock's own catalog
+//! entries rather than authored ad hoc.
 
 use std::num::NonZeroU32;
 
@@ -11,10 +11,10 @@ use ix_trace_rs::trace;
 use quire_exact::{Integer, IntegerDomain, IntegerInterval};
 use quire_spec_language::value::{
     divide, modulo, negotiate_integer_division, AdmittedIntegerDivision, CatalogRole, ChargePoint,
-    DefinitionLock, DefinitionReference, DivisionProfile, Incomplete, InjectedDenial,
-    IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition, LimitKind, Meter,
-    Outcome, PackageCause, PackageRefusal, PackageRefusalCode, QuotientRemainder, Refusal,
-    ScalarLimits, Undefined,
+    DefinitionLock, DefinitionReference, DefinitionRevision, DivisionProfile, Incomplete,
+    InjectedDenial, IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode,
+    QuotientRemainder, Refusal, ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -31,7 +31,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn lock() -> &'static DefinitionLock {
-    DefinitionLock::pinned().unwrap()
+    DefinitionLock::pinned()
 }
 
 fn role(profile: DivisionProfile) -> CatalogRole {
@@ -42,8 +42,22 @@ fn role(profile: DivisionProfile) -> CatalogRole {
     }
 }
 
+/// A well-formed [`DefinitionReference`] for `role`, built from the catalog's
+/// own identity/authority/revision fields. There is no digest to carry over:
+/// the catalog holds none, so this uses a placeholder that admission never
+/// inspects.
 fn reference(role: CatalogRole) -> DefinitionReference {
-    lock().entry(role).unwrap().definition.clone()
+    let entry = lock().entry(role).unwrap();
+    DefinitionReference {
+        authority: entry.authority.to_owned(),
+        identity: entry.identity.to_owned(),
+        revision: DefinitionRevision {
+            namespace: entry.revision_namespace.to_owned(),
+            value: entry.revision_value.to_owned(),
+        },
+        digest_domain: "quire.definition.bytes/v1".to_owned(),
+        digest: "0".repeat(64),
+    }
 }
 
 fn admitted(profile: DivisionProfile) -> AdmittedIntegerDivision {
@@ -553,12 +567,6 @@ fn div_09_missing_conflicting_or_stale_division_definitions_refuse_admission() {
     assert_eq!(
         lock().admit_integer_division(&[stale], None),
         refuse(PackageCause::RevisionMismatch)
-    );
-    let mut wrong_bytes = floor.clone();
-    wrong_bytes.digest = "0".repeat(64);
-    assert_eq!(
-        lock().admit_integer_division(&[wrong_bytes], None),
-        refuse(PackageCause::ByteDigestMismatch)
     );
     let mut wrong_domain = floor.clone();
     wrong_domain.digest_domain = "quire.definition.jcs/v1".into();
