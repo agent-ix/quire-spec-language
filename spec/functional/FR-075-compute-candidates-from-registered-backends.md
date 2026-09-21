@@ -28,17 +28,29 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
 
 ## Inputs
 
-- A `BackendDescriptor { id: BackendId, manifest_digest: Digest, advertises: set of (Capability, mode) }`
+- A `BackendDescriptor { id: BackendId, manifest_digest: Digest, tool: pinned tool identity, advertises: set of (Capability, mode) }`
   per registration, where `mode` is `bounded` or `unbounded` (ADR-012 §7.1).
   `manifest_digest` is the digest of the backend's own FR-331 provider
   manifest content, computed under `quire.tool-manifest.jcs/v1`'s digest
   rule (ADR-012 §7.1, ADR-013 O-19); the registry receives it as part of
-  the descriptor and does not compute it. A backend supplies one descriptor
-  per registration, so one `BackendId` carries exactly one
-  `manifest_digest` at a time; a second registration under the same
-  `BackendId` with a different `manifest_digest` is a repeated identity and
-  is refused under FR-075-AC-4, the same as a second registration with an
-  unchanged digest.
+  the descriptor and does not compute it. `tool` is the backend's pinned
+  tool identity (ADR-012 §7.1); this requirement's registry carries it
+  through registration and candidate output unread and uninterpreted — the
+  probe that checks a routed backend's tool against this pin runs after
+  routing, at run time (ADR-012 §7.4, FR-290 "Tool absence"), which is
+  outside this requirement's scope. A backend supplies one descriptor per
+  registration, so one `BackendId` carries exactly one `manifest_digest`
+  and one `tool` at a time; a second registration under the same
+  `BackendId` with a different `manifest_digest` is a repeated identity
+  and is refused under FR-075-AC-4, the same as a second registration with
+  an unchanged digest. ADR-013 O-19's field-wise equality ("two backend
+  identities are equal iff both fields are equal") states when two wire
+  `backend{identity, manifest_digest}` members are the same value; it is
+  not the registry's uniqueness key. The registry's uniqueness key is
+  `BackendId` alone (FR-290 "Candidate set and negotiation": "a backend
+  identity is unique within a registry"), which is why a same-identity,
+  different-digest registration is a duplicate refusal rather than a
+  distinct, co-existing entry.
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it) and, optionally, a named `BackendId`.
 - The registry's current contents at the moment candidates are computed.
