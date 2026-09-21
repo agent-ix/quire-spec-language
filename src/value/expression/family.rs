@@ -277,8 +277,12 @@ pub(crate) fn emit_v2(functions: &[(String, NodeKey)]) -> Vec<u8> {
 /// Why v2 bytes could not be decoded.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DecodeV2Error {
+    /// The bytes did not parse as `FunctionPackageV2`'s JSON shape at all
+    /// (`serde_json::from_slice` failed).
     #[error("malformed quire.checked-function-package/v2 bytes")]
     Malformed,
+    /// The bytes parsed, but the package's `version` field did not match
+    /// this module's `FUNCTION_PACKAGE_V2_VERSION`.
     #[error("unrecognised version")]
     Version,
     // PR #262 review (F16): this used to say "64 lowercase hex digits",
@@ -287,6 +291,9 @@ pub enum DecodeV2Error {
     // (`NodeKey`'s `Display` impl, `quire-exact/src/node.rs`), so nothing
     // this crate produces is ever uppercase, but decode is genuinely
     // case-insensitive; the message now says what the code does.
+    /// An entry's `identity` string was not 64 hex digits (either case
+    /// accepted; see the note above on why the message doesn't say
+    /// "lowercase").
     #[error("identity is not 64 hex digits")]
     InvalidIdentity,
 }

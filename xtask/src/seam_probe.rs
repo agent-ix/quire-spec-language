@@ -57,12 +57,16 @@ use crate::error::{Error, Result};
 /// `E0004` diagnostic carries a primary span inside the enclosing item, not
 /// the item's own identity, so this tool resolves that span to the
 /// enclosing function's name itself (via a `syn` walk over the same source
-/// file, [`enclosing_item_name`]) and compares on that instead -- stable
+/// file, `enclosing_item_name`) and compares on that instead -- stable
 /// against everything except actually moving, renaming or removing the
 /// seam.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SeamLocation {
+    /// The source file, relative to the workspace root, exactly as rustc's
+    /// `E0004` diagnostic reports it.
     pub file: String,
+    /// The enclosing item's name -- `Type::method` inside an `impl`, or a
+    /// bare function name at module scope.
     pub item: String,
 }
 
