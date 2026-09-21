@@ -57,7 +57,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: ci-default-features ci-all-features ci-clean-build ci-docs
+ci: revendor-check ci-default-features ci-all-features ci-clean-build ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
