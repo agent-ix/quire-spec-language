@@ -22,7 +22,7 @@ use quire_spec_language::{
     temporal, ByteDigest,
 };
 use serde_json::Value;
-use setup::{Inputs, TemporalDefinitionExpectation, Unit};
+use setup::{definition_bytes, Inputs, TemporalDefinitionExpectation, Unit};
 
 #[derive(Clone, Copy)]
 enum FixtureProfile {
@@ -101,7 +101,7 @@ fn with_package_activation(
                 .iter()
                 .find(|dependency| {
                     dependency.artifact.identity == definition.identity()
-                        && dependency.bytes == definition.bytes()
+                        && dependency.bytes == definition_bytes(definition)
                 })
                 .expect("selected event-position definition")
                 .artifact;

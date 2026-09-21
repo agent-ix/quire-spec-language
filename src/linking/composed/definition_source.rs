@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-036: compiler-owned interpretations of exact native definition artifacts.
 //!
-//! Resources preserve the normative bytes from [standard PR #15][baseline].
-//! Their document license remains governed by that private standard repository;
-//! this source notice does not relicense the copied artifacts. Diagnostic rules
-//! preserve the historical compiler sources explicitly selected by the standard.
-//!
-//! This closed registry binds reviewed metadata to those bytes. It neither
-//! interprets arbitrary Markdown nor discovers omitted invocation inputs.
-//! Recognition alone establishes no model binding, type checking or execution.
+//! QSL is a graph of specs and resolves definitions by reference: this closed
+//! registry names every interpretation it recognizes by its exact identity and
+//! revision, as fixed by [standard PR #15][baseline]. It does not vendor the
+//! standard's document bytes, and it neither interprets arbitrary Markdown nor
+//! discovers omitted invocation inputs. A caller supplies the actual artifact
+//! and rule bytes for every identity/revision this registry names; recognition
+//! alone establishes no model binding, type checking or execution.
 //!
 //! [baseline]: https://github.com/agent-ix/quire-specification/pull/15
-
-use super::definitions::Selection;
-use crate::ByteDigest;
 
 /// A compiler-known interpretation, unavailable through caller-defined metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -52,27 +48,23 @@ pub enum RegisteredDefinition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuleArtifact {
     /// Standard-relative path, or the original URL for an external selection.
-    /// This is an inventory key and never an instruction to retrieve content.
+    /// This is the rule's identity: an inventory key matched against a
+    /// caller-supplied artifact's own `identity`, never an instruction to
+    /// retrieve content.
     pub path: &'static str,
-    /// Original rule bytes; their integrity domain is the raw file content.
-    pub bytes: &'static [u8],
 }
 
 struct RegisteredSource {
     identity: &'static str,
     revision: &'static str,
     path: &'static str,
-    bytes: &'static [u8],
     requirements: &'static [RegisteredDefinition],
     rules: &'static [RuleArtifact],
 }
 
 macro_rules! rule {
     ($path:literal) => {
-        RuleArtifact {
-            path: $path,
-            bytes: include_bytes!(concat!("../../../resources/native-v1/", $path)),
-        }
+        RuleArtifact { path: $path }
     };
 }
 
@@ -82,7 +74,6 @@ macro_rules! definition {
             identity: $identity,
             revision: $revision,
             path: concat!("proposals/quire-v1/definitions/", $file, ".md"),
-            bytes: include_bytes!(concat!("../../../resources/native-v1/proposals/quire-v1/definitions/", $file, ".md")),
             requirements: &[$(RegisteredDefinition::$requirement),*],
             rules: &[$($rule),*],
         }
@@ -123,21 +114,6 @@ impl RegisteredDefinition {
     /// Definition path relative to the selected standard snapshot root.
     pub fn path(self) -> &'static str {
         self.source().path
-    }
-
-    /// Original normative definition bytes, without normalization or repair.
-    pub fn bytes(self) -> &'static [u8] {
-        self.source().bytes
-    }
-
-    /// Exact selection with a digest derived from the embedded original bytes.
-    /// Invocation intake owns charging and supplied-content validation.
-    pub fn selection(self) -> Selection {
-        Selection {
-            identity: self.identity().into(),
-            revision: self.revision().into(),
-            digest: ByteDigest::of(self.bytes()),
-        }
     }
 
     /// Direct required definitions, retaining the artifact's declared order.
@@ -240,11 +216,9 @@ impl RegisteredDefinition {
             Self::Diagnostics => definition!("native-diagnostics", "quire.native.diagnostics/v1", "1-draft.1", [], [
                 RuleArtifact {
                     path: "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs",
-                    bytes: include_bytes!("../../../resources/native-v1/external/quire-spec-language/src/diagnostic.rs"),
                 },
                 RuleArtifact {
                     path: "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md",
-                    bytes: include_bytes!("../../../resources/native-v1/external/quire-spec-language/docs/native-error-codes.md"),
                 },
             ]),
         }

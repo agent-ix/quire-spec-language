@@ -15,8 +15,8 @@ Public Rust API controls for
 compiles real native temporal source through the existing parser, linker, checker
 and protocol-artifact emitter, then evaluates the emitted temporal body against an
 independently constructed observation trace. Expected truths, bases, support sets,
-premises and refusal causes come from the authored source and from the profile
-definitions under `resources/native-v1/proposals/quire-v1/definitions/`, never
+premises and refusal causes come from the authored source and from the registered
+temporal profile definitions (`src/linking/composed/definition_source.rs`), never
 from the evaluator's own output or reported usage. Each numbered group
 corresponds to the matching acceptance criterion.
 

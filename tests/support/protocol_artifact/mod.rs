@@ -20,6 +20,13 @@ pub struct Fixture {
     pub foreign_formal: w::Formal,
 }
 
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity,
+/// never by comparing its bytes to any particular snapshot (PLAT-887).
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
 fn revision(value: &str) -> w::Revision {
     w::Revision {
         namespace: "test-authored-revision".into(),
@@ -110,24 +117,25 @@ impl Fixture {
                 definition.path(),
                 "text/markdown",
                 "1",
-                definition.bytes(),
+                definition_bytes(*definition),
             );
             selected.revision = revision(definition.revision());
             inputs.insert(
                 definition.path().into(),
-                (selected, definition.bytes().to_vec()),
+                (selected, definition_bytes(*definition).to_vec()),
             );
             for rule in definition.rules() {
                 inputs.entry(rule.path.into()).or_insert_with(|| {
+                    let bytes = rule.path.as_bytes();
                     (
                         reference(
                             w::ArtifactKind::Source,
                             rule.path,
                             "text/markdown",
                             "1",
-                            rule.bytes,
+                            bytes,
                         ),
-                        rule.bytes.to_vec(),
+                        bytes.to_vec(),
                     )
                 });
             }
@@ -220,7 +228,7 @@ impl Fixture {
                 "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
                 selected.identity(),
                 selected.revision(),
-                selected.selection().digest
+                ByteDigest::of(definition_bytes(selected))
             ));
         }
         if !additional.is_empty() {
@@ -229,7 +237,7 @@ impl Fixture {
                     "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
                     selected.identity(),
                     selected.revision(),
-                    selected.selection().digest
+                    ByteDigest::of(definition_bytes(selected))
                 ));
             }
         }

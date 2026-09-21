@@ -2,7 +2,9 @@
 //! TC-122: bounded temporal truth under each selected profile.
 //!
 //! FR-043. Expected truths, bases and premises come from the authored source and
-//! from the profile definitions under `resources/native-v1/proposals/`, never
+//! from the registered temporal profile definitions
+//! (`src/linking/composed/definition_source.rs`), from the standard's
+//! [PR #15](https://github.com/agent-ix/quire-specification/pull/15), never
 //! from the evaluator's own output.
 
 #[path = "support/temporal/mod.rs"]

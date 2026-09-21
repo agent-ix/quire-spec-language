@@ -23,7 +23,7 @@ use quire_spec_language::temporal::{
     self, Closure, Dimension, Error, Refusal, Subject, Support, Unmatched,
 };
 use quire_spec_language::ByteDigest;
-use setup::{Inputs, TemporalDefinitionExpectation, Unit};
+use setup::{definition_bytes, Inputs, TemporalDefinitionExpectation, Unit};
 
 /// One authored declaration per registered profile, each reaching a bounded
 /// future operator and no past operator.
@@ -102,7 +102,7 @@ fn definition_artifact<'a>(
         .iter()
         .find(|dependency| {
             dependency.artifact.identity == definition.identity()
-                && dependency.bytes == definition.bytes()
+                && dependency.bytes == definition_bytes(definition)
         })
         .expect("selected original definition bytes")
         .artifact

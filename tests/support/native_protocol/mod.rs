@@ -4,7 +4,7 @@
 #[path = "../composed_types/mod.rs"]
 mod composed_inputs;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{self, proofs, TypeLimits};
@@ -65,6 +65,15 @@ pub struct TemporalDefinitionExpectation {
     pub revision: w::Revision,
     pub artifact: w::ArtifactRef,
     pub clock: v2::wire::ClockConfiguration,
+}
+
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity,
+/// never by comparing its bytes to any particular snapshot (PLAT-887), so any
+/// distinct, self-consistent content proves the point better than real
+/// standard text would.
+pub fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
 }
 
 fn revision(namespace: &str, value: &str) -> w::Revision {
@@ -263,22 +272,24 @@ impl Inputs {
             .collect();
         let mut dependencies = Vec::new();
         for definition in R::all() {
+            let bytes = definition_bytes(*definition);
             let mut selected = reference(
                 w::ArtifactKind::Source,
                 definition.identity(),
                 "text/markdown",
                 "1",
-                definition.bytes(),
+                bytes,
             );
             selected.revision = revision("test:definition-revision", definition.revision());
-            dependencies.push((selected, definition.bytes().to_vec()));
+            dependencies.push((selected, bytes.to_vec()));
         }
-        let rules: BTreeMap<_, _> = R::all()
+        let rule_paths: BTreeSet<_> = R::all()
             .iter()
             .flat_map(|definition| definition.rules())
-            .map(|rule| (rule.path, rule.bytes))
+            .map(|rule| rule.path)
             .collect();
-        for (path, bytes) in rules {
+        for path in rule_paths {
+            let bytes = path.as_bytes();
             dependencies.push((
                 reference(w::ArtifactKind::Source, path, "text/markdown", "1", bytes),
                 bytes.to_vec(),

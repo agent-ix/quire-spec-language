@@ -18,7 +18,7 @@ from each Agent-A capability to one downstream ticket and one central TestCase.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-055 | FR-055-AC-1 | TC-144 | ✅ Rust audit plus frozen-reference inspection |
+| FR-055 | FR-055-AC-1 | TC-144 | ✅ Rust audit |
 | FR-055 | FR-055-AC-2 | TC-144 | ✅ Rust audit |
 | FR-055 | FR-055-AC-3 | TC-144 | ✅ Rust audit plus evidence reconciliation |
 | FR-055 | FR-055-AC-4 | TC-144 | ✅ Rust audit |

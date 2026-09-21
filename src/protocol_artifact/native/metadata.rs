@@ -67,24 +67,31 @@ fn dependency(
     }
     Err(Error::Invalid(Invalid::Dependency))
 }
-fn matching_bytes(
+/// Resolve a Source-kind dependency by identity.
+///
+/// QSL resolves a definition or rule by reference: a supplied artifact is
+/// recognized when its declared `identity` matches a registered one, never by
+/// comparing its bytes to a frozen snapshot. The identity alone determines the
+/// registered meaning, since the closed registry has one revision per
+/// identity; the artifact's own `revision` is an opaque repository-object
+/// label, independent of that semantic revision (TC-121). The caller supplies
+/// both the artifact and its digest; `lower`'s seal check already verifies
+/// that digest against the caller's own bytes.
+fn matching(
     dependencies: &[artifact::SuppliedDependency<'_>],
-    bytes: &[u8],
+    identity: &str,
     work: &mut Work,
 ) -> Result<u32, Error> {
     let mut result = None;
     for (i, d) in dependencies.iter().enumerate() {
         work.visit()?;
-        if d.artifact.kind != w::ArtifactKind::Source || d.bytes.len() != bytes.len() {
+        if d.artifact.kind != w::ArtifactKind::Source || d.artifact.identity != identity {
             continue;
         }
-        work.bytes(bytes.len().saturating_mul(2))?;
-        if d.bytes == bytes {
-            if result.is_some() {
-                return Err(Error::Invalid(Invalid::Duplicate));
-            }
-            result = Some(checked_index(i)?);
+        if result.is_some() {
+            return Err(Error::Invalid(Invalid::Duplicate));
         }
+        result = Some(checked_index(i)?);
     }
     result.ok_or(Error::Unsupported(Unsupported::Definition))
 }
@@ -95,7 +102,7 @@ fn definitions(
 ) -> Result<(Vec<R>, Vec<w::Definition>), Error> {
     let mut selected = Vec::new();
     for &registered in R::all() {
-        match matching_bytes(dependencies, registered.bytes(), work) {
+        match matching(dependencies, registered.identity(), work) {
             Ok(at) => {
                 work.charge(Dimension::Entries, 1)?;
                 selected.push((registered, at));
@@ -122,7 +129,7 @@ fn definitions(
         let mut rules = Vec::new();
         for rule in registered.rules() {
             work.charge(Dimension::Entries, 1)?;
-            rules.push(matching_bytes(dependencies, rule.bytes, work)?);
+            rules.push(matching(dependencies, rule.path, work)?);
         }
         rules.sort_unstable();
         work.charge(Dimension::Entries, 1)?;

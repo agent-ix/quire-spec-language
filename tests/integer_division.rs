@@ -11,10 +11,10 @@ use ix_trace_rs::trace;
 use quire_exact::{Integer, IntegerDomain, IntegerInterval};
 use quire_spec_language::value::{
     divide, modulo, negotiate_integer_division, AdmittedIntegerDivision, CatalogRole, ChargePoint,
-    DefinitionLock, DefinitionReference, DivisionProfile, Incomplete, InjectedDenial,
-    IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition, LimitKind, Meter,
-    Outcome, PackageCause, PackageRefusal, PackageRefusalCode, QuotientRemainder, Refusal,
-    ScalarLimits, Undefined,
+    DefinitionLock, DefinitionReference, DefinitionRevision, DivisionProfile, Incomplete,
+    InjectedDenial, IntegerDivisionBounds, IntegerDivisionConsumer, IntegerDivisionDisposition,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusal, PackageRefusalCode, QuotientRemainder,
+    Refusal, ScalarLimits, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -31,7 +31,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn lock() -> &'static DefinitionLock {
-    DefinitionLock::pinned().unwrap()
+    DefinitionLock::pinned()
 }
 
 fn role(profile: DivisionProfile) -> CatalogRole {
@@ -43,7 +43,17 @@ fn role(profile: DivisionProfile) -> CatalogRole {
 }
 
 fn reference(role: CatalogRole) -> DefinitionReference {
-    lock().entry(role).unwrap().definition.clone()
+    let entry = lock().entry(role).unwrap();
+    DefinitionReference {
+        authority: entry.authority.to_owned(),
+        identity: entry.identity.to_owned(),
+        revision: DefinitionRevision {
+            namespace: entry.revision_namespace.to_owned(),
+            value: entry.revision_value.to_owned(),
+        },
+        digest_domain: "quire.definition.bytes/v1".to_owned(),
+        digest: "0".repeat(64),
+    }
 }
 
 fn admitted(profile: DivisionProfile) -> AdmittedIntegerDivision {
@@ -553,12 +563,6 @@ fn div_09_missing_conflicting_or_stale_division_definitions_refuse_admission() {
     assert_eq!(
         lock().admit_integer_division(&[stale], None),
         refuse(PackageCause::RevisionMismatch)
-    );
-    let mut wrong_bytes = floor.clone();
-    wrong_bytes.digest = "0".repeat(64);
-    assert_eq!(
-        lock().admit_integer_division(&[wrong_bytes], None),
-        refuse(PackageCause::ByteDigestMismatch)
     );
     let mut wrong_domain = floor.clone();
     wrong_domain.digest_domain = "quire.definition.jcs/v1".into();
