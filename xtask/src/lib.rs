@@ -17,9 +17,11 @@
 #![forbid(unsafe_code)]
 
 pub mod cargo_pin;
+pub mod definition_scan;
 pub mod error;
 mod fsutil;
 pub mod git;
+pub mod import_graph;
 pub mod manifest;
 pub mod seam_probe;
 pub mod string_edge;

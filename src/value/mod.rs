@@ -39,29 +39,40 @@
 //! conversion is used by any semantic path.
 
 mod accounting;
-mod collection;
-mod comparison;
-mod composite;
+// PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
+// `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
+// layer-3 sibling imports `check.rs` keeps") can name them by their real,
+// submodule-qualified crate-absolute path (`crate::value::numeric::
+// ArithmeticOperator`, not the flat `crate::value::ArithmeticOperator`
+// aggregate) -- FR-068:280-283 prescribes this form explicitly, and only
+// this form keeps AC-6's two-tier allow-list legible to a textual scan of
+// `check`'s own `use` lines (a flat import carries no tier information: it
+// reads identically whether the item is tier 1, tier 2, or the forbidden
+// tier 3). Every other `value::` submodule stays private; `check` imports
+// nothing from them.
+pub(crate) mod collection;
+pub(crate) mod comparison;
+pub(crate) mod composite;
 mod containment;
-mod decimal;
+pub(crate) mod decimal;
 mod definition;
 mod division;
-mod enumeration;
-mod equality;
+pub(crate) mod enumeration;
+pub(crate) mod equality;
 mod expression;
-mod ieee;
+pub(crate) mod ieee;
 mod key;
 mod library;
 mod member;
 mod model_query;
-mod node;
-mod numeric;
+pub(crate) mod node;
+pub(crate) mod numeric;
 mod outcome;
 mod package_identity;
-mod quantity;
-mod rational;
+pub(crate) mod quantity;
+pub(crate) mod rational;
 mod reference;
-mod text;
+pub(crate) mod text;
 mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
@@ -155,24 +166,12 @@ pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
-// `crate::check`'s tier-1 K-designated import (FR-068's Behavior section,
-// "The layer-3 sibling imports `check.rs` keeps"): `value`'s own submodules
-// are private (`mod numeric;`), so a crate-absolute `crate::value::numeric::
-// ArithmeticOperator` path -- reachable pre-move only because `check.rs` was
-// a descendant of `value` -- no longer resolves from `check`, a top-level
-// sibling. Exposed crate-internal-only here, the same `pub(crate) use`
-// pattern this file already uses for `length_amount`/`Charge`.
-pub(crate) use numeric::ArithmeticOperator;
 pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,
 };
-// `crate::check`'s tier-2 declared interim edge (FR-068's Behavior section,
-// same subsection; FR-068-AC-6): exposed crate-internal-only for the same
-// reason as `ArithmeticOperator` above.
-pub(crate) use quantity::{check_comparable, result_unit, UnitOperation};
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
