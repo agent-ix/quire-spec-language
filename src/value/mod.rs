@@ -104,13 +104,23 @@ pub use equality::{
     admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
     EqualityPlan, EqualitySchedule,
 };
-pub use expression::{
+// ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
+// `value::expression` to the layer-3 `check` module; `value`'s own
+// aggregation path continues, only its source module changes
+// (FR-068-CON-4, the same "re-export naming a new source module is not a
+// second definition" pattern FR-067-AC-9 already established for the
+// `forms` move) -- `check` is these types' one remaining defining module.
+pub use crate::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
-    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DecodeV2Error,
-    DepthAboveMaximum, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    EnumBinding, Evaluation, InputRefusal, InvalidDispatchDeclaration, InvalidQualifiedName,
-    LocatedLoss, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
-    ProvedInterval, QualifiedName, ValueLoss, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
+    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
+    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin,
+    PackageDeclarations, ProvedInterval, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+};
+// The evaluation half stays at layer 5, in `value::expression` itself.
+pub use expression::{
+    DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
+    ValueLoss,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
@@ -122,14 +132,6 @@ pub use expression::{
 pub use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
     FieldInitializer, FunctionDeclaration,
-};
-// `crate::model::conformance`'s FR-151 refinement obligation reuses this
-// crate's own FR-146 fact-derivation primitive (see
-// `expression::established_field_fact`'s own doc) rather than a second
-// implementation; exposed crate-internal-only, the same pattern as
-// `length_amount`/`Charge` above.
-pub(crate) use expression::{
-    established_field_fact, Connective, Established, Node, NodeKind, OrderedKind,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -153,12 +155,24 @@ pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
+// `crate::check`'s tier-1 K-designated import (FR-068's Behavior section,
+// "The layer-3 sibling imports `check.rs` keeps"): `value`'s own submodules
+// are private (`mod numeric;`), so a crate-absolute `crate::value::numeric::
+// ArithmeticOperator` path -- reachable pre-move only because `check.rs` was
+// a descendant of `value` -- no longer resolves from `check`, a top-level
+// sibling. Exposed crate-internal-only here, the same `pub(crate) use`
+// pattern this file already uses for `length_amount`/`Charge`.
+pub(crate) use numeric::ArithmeticOperator;
 pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,
 };
+// `crate::check`'s tier-2 declared interim edge (FR-068's Behavior section,
+// same subsection; FR-068-AC-6): exposed crate-internal-only for the same
+// reason as `ArithmeticOperator` above.
+pub(crate) use quantity::{check_comparable, result_unit, UnitOperation};
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
