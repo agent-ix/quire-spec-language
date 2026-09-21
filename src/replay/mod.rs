@@ -5,9 +5,9 @@
 //!
 //! **This change (#231, ADR-013 O-24 to O-27) builds only the four typed
 //! envelopes this module's public API exposes** -- the proof-result
-//! envelope ([`proof_result`]), the counterexample/witness envelope
-//! ([`witness`]), the replay request ([`request`]) and the replay result
-//! ([`result`]) -- their round trips, and their redacted rendering
+//! envelope (`proof_result`), the counterexample/witness envelope
+//! (`witness`), the replay request (`request`) and the replay result
+//! (`result`) -- their round trips, and their redacted rendering
 //! (FR-069 through FR-073). It builds no backend invocation, no Kani
 //! harness and no replay execution: the executor entry (ADR-013 TK-01,
 //! `CheckedPackage::call`) is #243's, which "lands it first with the
@@ -21,7 +21,7 @@
 //! assigns to a ticket that has not landed on `origin/main` as of this
 //! change (#213 slices S-3/S-4: O-07's occurrence key beyond the kernel
 //! `quire_exact::Origin`/`Location` pair, O-09's obligation identity, O-11's
-//! `QualifiedName`, O-12's resolved region). [`identity`] defines this
+//! `QualifiedName`, O-12's resolved region). `identity` defines this
 //! module's own minimal, spec-faithful versions, documented there with
 //! exactly which ticket should absorb each one. This is not a
 //! compatibility layer or a redesign of ADR-013 -- each type has the shape
