@@ -283,3 +283,215 @@ impl CheckedPackage {
         .run(expression.root(), expression.slots(), arguments, false))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! TC-174 (FR-068-AC-5): checking and evaluation produce identical
+    //! results before and after QSL-139's split -- specifically, that
+    //! `check`'s per-function accessor state (here, each function's own
+    //! `slots` count, read directly through
+    //! [`crate::check::CheckedPackage::function_states`], never inferred
+    //! from whether [`Evaluation`] happens to expose it) is not sensitive to
+    //! a function's position in the package's declaration list. This is the
+    //! bug class the Description names: `check`'s accessor for one
+    //! function's `slots` accidentally returning a different function's
+    //! `slots`, or `CheckedPackage::call`'s admission validating against the
+    //! wrong parameter list once fields became accessor calls instead of
+    //! direct reads. It is unobservable with a single-function package, or
+    //! with functions of identical shape (Description's own words), so the
+    //! fixture below deliberately declares two functions differing in
+    //! parameter count and body shape, and checks both a same-order and a
+    //! swapped-order package to rule out position-keyed lookup.
+    //!
+    //! This module (not `check`) is this test's home: `check` must import
+    //! nothing from `value::expression` at all (FR-068-AC-3, TC-172), even
+    //! in test code, but `value::expression` legitimately depends on
+    //! `check` -- this is the one module that can both call the checked
+    //! package's public `call`/`evaluate` entry points and read `check`'s
+    //! `pub(crate)` `function_states()` accessor directly in the same test.
+
+    use super::*;
+    use crate::check::{CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations};
+    use crate::forms::{BinaryOperator, Expression, FunctionDeclaration};
+    use crate::value::ScalarLimits;
+    use ix_trace_rs::trace;
+    use quire_exact::Integer;
+
+    const UNLIMITED: ScalarLimits = ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+
+    /// One parameter, no `let`: the minimal shape.
+    fn function_one() -> FunctionDeclaration {
+        FunctionDeclaration::new(
+            "one",
+            vec![("a".to_owned(), ValueType::Integer)],
+            ValueType::Integer,
+            None,
+            Expression::Name("a".to_owned()),
+        )
+    }
+
+    /// Two parameters and one `let`-bound local: deliberately a different
+    /// parameter count and slot shape from [`function_one`], so this
+    /// fixture discriminates a `check` accessor that mixes the two
+    /// functions' state up (Description's own named requirement).
+    fn function_two() -> FunctionDeclaration {
+        FunctionDeclaration::new(
+            "two",
+            vec![
+                ("a".to_owned(), ValueType::Integer),
+                ("b".to_owned(), ValueType::Integer),
+            ],
+            ValueType::Integer,
+            None,
+            Expression::Let {
+                name: "x".to_owned(),
+                value: Box::new(Expression::Binary {
+                    operator: BinaryOperator::Add,
+                    left: Box::new(Expression::Name("a".to_owned())),
+                    right: Box::new(Expression::Name("b".to_owned())),
+                }),
+                body: Box::new(Expression::Name("x".to_owned())),
+            },
+        )
+    }
+
+    fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
+        PackageDeclarations {
+            functions,
+            ..PackageDeclarations::default()
+        }
+    }
+
+    fn slots_by_name(package: &CheckedPackage) -> std::collections::BTreeMap<String, usize> {
+        package
+            .function_states()
+            .map(|state| (state.name.to_owned(), state.slots))
+            .collect()
+    }
+
+    /// TC-174 steps 1-4: each function's own `slots` count, read directly,
+    /// is unaffected by the other function's presence or by declaration
+    /// order -- and the two functions' fixture is genuinely discriminating
+    /// (their slot counts differ).
+    #[trace("TC-174", "FR-068-AC-5")]
+    #[test]
+    fn function_slots_are_stable_across_declaration_order() {
+        let solo_one = declarations(vec![function_one()])
+            .check(CheckingLimits::default())
+            .unwrap();
+        let solo_two = declarations(vec![function_two()])
+            .check(CheckingLimits::default())
+            .unwrap();
+        let solo_one_slots = slots_by_name(&solo_one)["one"];
+        let solo_two_slots = slots_by_name(&solo_two)["two"];
+        assert_ne!(
+            solo_one_slots, solo_two_slots,
+            "fixture must be discriminating: the two functions must not share a slot count"
+        );
+
+        let combo = declarations(vec![function_one(), function_two()])
+            .check(CheckingLimits::default())
+            .unwrap();
+        let combo_slots = slots_by_name(&combo);
+        assert_eq!(combo_slots["one"], solo_one_slots);
+        assert_eq!(combo_slots["two"], solo_two_slots);
+
+        let swapped = declarations(vec![function_two(), function_one()])
+            .check(CheckingLimits::default())
+            .unwrap();
+        let swapped_slots = slots_by_name(&swapped);
+        assert_eq!(swapped_slots["one"], solo_one_slots);
+        assert_eq!(swapped_slots["two"], solo_two_slots);
+    }
+
+    /// TC-174 steps 1-4: `CheckedPackage::call` resolves each function by
+    /// name, not position -- the same fixture, called through the public
+    /// runtime entry point in both declaration orders, must produce the
+    /// same result each time.
+    #[trace("TC-174", "FR-068-AC-5")]
+    #[test]
+    fn call_resolves_by_name_regardless_of_declaration_order() {
+        let objects = ObjectEnvironment::default();
+        for functions in [
+            vec![function_one(), function_two()],
+            vec![function_two(), function_one()],
+        ] {
+            let package = declarations(functions)
+                .check(CheckingLimits::default())
+                .unwrap();
+            let mut meter = Meter::new(UNLIMITED);
+            let one = package
+                .call(
+                    &QualifiedName::unqualified("one").unwrap(),
+                    vec![Value::Integer(Integer::from(5_i64))],
+                    &objects,
+                    &mut meter,
+                )
+                .unwrap();
+            assert_eq!(
+                format!("{:?}", one.outcome),
+                format!("{:?}", crate::value::Outcome::Completed(Value::Integer(Integer::from(5_i64))))
+            );
+            let mut meter = Meter::new(UNLIMITED);
+            let two = package
+                .call(
+                    &QualifiedName::unqualified("two").unwrap(),
+                    vec![
+                        Value::Integer(Integer::from(3_i64)),
+                        Value::Integer(Integer::from(4_i64)),
+                    ],
+                    &objects,
+                    &mut meter,
+                )
+                .unwrap();
+            assert_eq!(
+                format!("{:?}", two.outcome),
+                format!("{:?}", crate::value::Outcome::Completed(Value::Integer(Integer::from(7_i64))))
+            );
+        }
+    }
+
+    /// TC-174 step 1's refusal fixture: a duplicate function name is
+    /// refused `CheckCause::AmbiguousName`, unaffected by the split.
+    #[trace("TC-174", "FR-068-AC-5")]
+    #[test]
+    fn duplicate_function_name_is_refused_ambiguous_name() {
+        let result =
+            declarations(vec![function_one(), function_one()]).check(CheckingLimits::default());
+        let refusals = result.expect_err("a duplicate name must be refused, not admitted");
+        assert!(refusals.iter().any(|refusal: &CheckRefusal| matches!(
+            &refusal.cause,
+            CheckCause::AmbiguousName { name, .. } if name == "one"
+        )));
+    }
+
+    /// TC-174 step 1's `InputRefusal` fixture: calling an undeclared name
+    /// refuses `UnknownFunction`, unaffected by the split.
+    #[trace("TC-174", "FR-068-AC-5")]
+    #[test]
+    fn call_to_an_unknown_function_is_refused() {
+        let package = declarations(vec![function_one()])
+            .check(CheckingLimits::default())
+            .unwrap();
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(UNLIMITED);
+        let result = package.call(
+            &QualifiedName::unqualified("missing").unwrap(),
+            vec![Value::Integer(Integer::from(1_i64))],
+            &objects,
+            &mut meter,
+        );
+        assert!(matches!(result, Err(InputRefusal::UnknownFunction(name)) if name == "missing"));
+    }
+}

@@ -3,9 +3,10 @@
 //! (FR-062, FR-065), split out of `value::expression::family` by ADR-011
 //! §7.3 M-5.
 //!
-//! FR-068 itself names only `check`, `evaluate`, `facts`, `ir`, `refusal`,
-//! `termination` and `mod.rs` as `value::expression`'s move surface; it does
-//! not mention `family.rs` at all. `check.rs`'s own `Typer::call`, however,
+//! **Amended, PR #282 review F4:** FR-068's move surface now names
+//! `family.rs` explicitly, alongside `check`, `evaluate`, `facts`, `ir`,
+//! `refusal`, `termination` and `mod.rs` -- an omission in the requirement's
+//! original text, not a deliberate exclusion. `check.rs`'s own `Typer::call`
 //! already called `super::family::mint_call_identity` and
 //! `super::family::DEFAULT_PACKAGE_IDENTITY` directly before this move (an
 //! intra-module dependency that predates this ticket) -- moving `check.rs`
@@ -33,24 +34,23 @@ use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
 };
-// `QuantityUnit` and `TextProfile` are a genuine gap in FR-068-AC-6/TC-175's
-// exhaustive two-tier `value::` allow-list for files under `check`: tier (a)
-// is nine named modules (`collection`, `comparison`, `composite`, `decimal`,
-// `equality`, `ieee`, `node`, `numeric`, `rational`) and tier (b) is exactly
-// five named items (`EnumDeclaration`, `EnumValue` from `enumeration`;
-// `check_comparable`, `result_unit`, `UnitOperation` from `quantity`).
-// `QuantityUnit` is a sixth item from `quantity`, over tier (b)'s five;
-// `TextProfile` comes from `text`, a module neither list names (and TC-175's
-// own group (c) -- "everything else" -- must be empty). Both are real,
-// pre-existing dependencies of `encode_value_type`'s exhaustive match over
-// `ValueType::Quantity`/`ValueType::Text` (this function, and the need for
-// both types, predate this ticket -- they were already imported by the
-// original, unsplit `value::expression::family.rs`); AC-6/TC-175 only
-// starts constraining them because this ticket moves that code under
-// `check`. Reported to the ticket owner rather than silently worked around;
-// see this module's own doc for the larger context (`family.rs` was never
-// named in FR-068's move surface either).
-use crate::value::{IeeeWidth, QuantityUnit, RoundingMode, TextProfile, ValueType};
+// `QuantityUnit` and `TextProfile`: PR #282 review, F3. FR-068-AC-6/TC-175's
+// tier (b) originally bounded to five items across two modules
+// (`EnumDeclaration`, `EnumValue` from `enumeration`; `check_comparable`,
+// `result_unit`, `UnitOperation` from `quantity`) and could not pass as
+// written against any conforming implementation: `encode_value_type`'s
+// exhaustive match over `ValueType::Quantity`/`ValueType::Text` has always
+// needed both (this function, and the need for both types, predate this
+// ticket -- they were already imported by the original, unsplit
+// `value::expression::family.rs`). FR-068 now amends tier (b) to seven items
+// across three modules, admitting `QuantityUnit` (`value::quantity`) and
+// `TextProfile` (`value::text`) explicitly -- see FR-068's Behavior section,
+// "The layer-3 sibling imports `check.rs` keeps," and this module's own doc.
+use crate::value::composite::ValueType;
+use crate::value::decimal::RoundingMode;
+use crate::value::ieee::IeeeWidth;
+use crate::value::quantity::QuantityUnit;
+use crate::value::text::TextProfile;
 
 /// The declaring package's `name@version` a checked node's identity
 /// preimage includes (ADR-013 O-04). Complete-V1's `PackageDeclarations` has
@@ -757,5 +757,84 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // only reader, is deleted with it.
         cx.leave_nesting();
         Ok(crate::family::Staged::new(identity))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::{CardinalityBound, CollectionType, TextType};
+
+    /// PR #262 review, round 2 (moved here from `value::expression::family`
+    /// under QSL-139's review, since this identity-minting content itself
+    /// moved to `check`): the other tests exercising this module either
+    /// compare two identities minted in the same process, or round-trip
+    /// through `value::expression::family`'s `emit_v2`/`decode_v2` -- none
+    /// of them can catch a change to the preimage's own byte grammar.
+    /// `encode_expression`/`encode_value_type`'s exhaustive `match`es only
+    /// force a compile error for a *new* variant; reordering two
+    /// `write_str` calls, or renaming a tag (`"add"` to `"plus"`),
+    /// recompiles clean and passes every other test in this file while
+    /// silently changing every identity this preimage mints. This fixture
+    /// exercises `Let`, `If`, `Binary`, `Call`, `Collection` and `Convert`
+    /// on the `Expression` side and `Int`, `Text` and `Collection` (with a
+    /// nested `Int` element) on the `ValueType` side -- enough surface that
+    /// a reordered write or a renamed tag anywhere in either `match` moves
+    /// the digest below. A failure here means the wire preimage grammar
+    /// changed; regenerate the constant only when that change is the one
+    /// actually intended (and say so in the commit, per this repository's
+    /// own digest-freshness rule in `CLAUDE.md`), never to make a red test
+    /// green.
+    #[test]
+    fn mint_declaration_identity_matches_a_checked_in_digest() {
+        let element_type = ValueType::Int(
+            quire_exact::IntegerInterval::new(
+                quire_exact::Integer::from(0_i64),
+                quire_exact::Integer::from(10_i64),
+            )
+            .unwrap(),
+        );
+        let parameters = vec![
+            ("n".to_owned(), element_type.clone()),
+            (
+                "label".to_owned(),
+                ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
+            ),
+        ];
+        let result = ValueType::Collection(Box::new(CollectionType::new(
+            CollectionKind::Sequence,
+            element_type,
+            CardinalityBound::new(0, 5).unwrap(),
+        )));
+        let body = Expression::Let {
+            name: "x".to_owned(),
+            value: Box::new(Expression::Integer(quire_exact::Integer::from(2_i64))),
+            body: Box::new(Expression::If {
+                condition: Box::new(Expression::Binary {
+                    operator: BinaryOperator::Greater,
+                    left: Box::new(Expression::Name("x".to_owned())),
+                    right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+                }),
+                then: Box::new(Expression::Call {
+                    name: "helper".to_owned(),
+                    arguments: vec![Expression::Name("x".to_owned())],
+                }),
+                otherwise: Box::new(Expression::Convert {
+                    target: ValueType::Integer,
+                    operand: Box::new(Expression::Collection {
+                        kind: CollectionKind::Sequence,
+                        elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
+                    }),
+                }),
+            }),
+        };
+        let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
+        let identity = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        assert_eq!(
+            identity.to_string(),
+            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
+            "the preimage byte grammar changed -- see this test's own doc \
+             before regenerating this constant"
+        );
     }
 }

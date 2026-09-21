@@ -4,13 +4,13 @@
 
 use super::refusal::Location;
 use crate::absence::AbsenceMode;
-use crate::value::CollectionType;
-use crate::value::DecimalType;
-use crate::value::NodeKey;
-use crate::value::RationalDomain;
-use crate::value::{ArithmeticOperator, OrderingOperator};
-use crate::value::{CheckedEquality, EqualityOperand, EqualityOperator};
-use crate::value::{Value, ValueType};
+use crate::value::collection::CollectionType;
+use crate::value::composite::{Value, ValueType};
+use crate::value::decimal::DecimalType;
+use crate::value::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
+use crate::value::node::NodeKey;
+use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
+use crate::value::rational::RationalDomain;
 use quire_exact::{CollectionKind, IntegerInterval};
 use std::collections::BTreeSet;
 

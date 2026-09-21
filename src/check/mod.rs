@@ -29,17 +29,18 @@
 //! itself. This requirement declares the edge rather than hiding it: see
 //! FR-068's Behavior section, "The interim `model` -> `check` edge."
 //!
-//! # `family.rs`: a split FR-068 does not name
+//! # `family.rs`
 //!
-//! FR-068 scopes its move to seven submodules (`check`, `evaluate`,
-//! `facts`, `ir`, `mod` itself, `refusal`, `termination`) and does not
-//! mention the eighth, `family.rs`. `check.rs`'s own `Typer::call`,
-//! however, already called `family::mint_call_identity`/
-//! `family::DEFAULT_PACKAGE_IDENTITY` directly before this move -- so this
-//! module also carries a `family` submodule with exactly the
-//! identity-minting content those existing calls need (see `family`'s own
-//! module doc). Without it, `check`'s real import graph would reach back
-//! into `value::expression::family`, which FR-068-AC-3 forbids.
+//! **Amended, PR #282 review F4:** FR-068's move surface now names
+//! `family.rs` explicitly, alongside `check`, `evaluate`, `facts`, `ir`,
+//! `mod` itself, `refusal` and `termination` -- an omission in the
+//! requirement's original text, not a deliberate exclusion: `check.rs`'s
+//! own `Typer::call` already called `family::mint_call_identity`/
+//! `family::DEFAULT_PACKAGE_IDENTITY` directly before this move, so this
+//! module carries a `family` submodule with exactly the identity-minting
+//! content those existing calls need (see `family`'s own module doc).
+//! Without it, `check`'s real import graph would reach back into
+//! `value::expression::family`, which FR-068-AC-3 forbids.
 
 // FR-068 itself names both the destination module (`check`) and the moved
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
@@ -58,7 +59,7 @@ use facts::{CallSite, Definedness};
 
 use crate::family::FamilyContract;
 use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
-use crate::value::ValueType;
+use crate::value::composite::ValueType;
 
 // `crate::model::conformance`'s FR-151 refinement obligation reuses this
 // crate's own FR-146 fact-derivation primitive rather than a second

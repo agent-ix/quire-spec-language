@@ -8,12 +8,12 @@
 //! link-time linking only). This module is the other half: for one
 //! dispatch-eligible root operation, it types every linked candidate's
 //! effective precondition and body against
-//! [`crate::value::PackageDeclarations`], and translates
+//! [`crate::check::PackageDeclarations`], and translates
 //! `link_dispatch`'s [`DeclarationKey`]-keyed
 //! [`crate::model::dispatch::DispatchTable`] into the checked layer's
 //! [`NodeKey`]- and function-index-keyed
-//! [`crate::value::DispatchTable`], ready for
-//! [`PackageDeclarations::check`](crate::value::PackageDeclarations)
+//! [`crate::check::DispatchTable`], ready for
+//! [`PackageDeclarations::check`](crate::check::PackageDeclarations)
 //! and the evaluator.
 //!
 //! Pure: no intake, no I/O. It takes a caller-supplied [`DomainPackage`] and an

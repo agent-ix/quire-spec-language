@@ -59,7 +59,7 @@ operational validation remains outside this audit-only plan.
 | TC-168 | SEAM-5 (LoweredSourceGraph) is deleted in the same change as the S2 forms core | Integration | P1 | FR-067-AC-5, FR-067-AC-6 | ✅ Passed locally |
 | TC-169 | value::expression::syntax moves to forms with no duplicate definition | Unit | P1 | FR-067-AC-9, FR-067-CON-3 | ✅ Passed locally |
 | TC-170 | check-stage modules move to check with no duplication | Unit | P1 | FR-068-AC-1, FR-068-CON-1, FR-068-CON-3 | 🚧 Planned; QSL-139 |
-| TC-171 | CheckedPackage/CheckedExpression/CheckedFunction constructors are private to check | Unit | P1 | FR-068-AC-2 | 🚧 Planned; QSL-139 |
+| TC-171 | CheckedPackage/CheckedExpression/CheckedFunction constructors are private to check | Manual | P1 | FR-068-AC-2 | ✅ Inspected locally |
 | TC-172 | check's real import graph has no edge into value::expression or into checking, and its re-export back is bounded | Integration | P1 | FR-068-AC-3, FR-068-AC-10 | 🚧 Planned; QSL-139 |
 | TC-173 | Refusal split: check causes in check, InputRefusal in value::expression | Unit | P1 | FR-068-AC-4, FR-068-AC-8 | 🚧 Planned; QSL-139 |
 | TC-174 | Checking and evaluation produce identical results before and after the split | Integration | P1 | FR-068-AC-5 | 🚧 Planned; QSL-139 |

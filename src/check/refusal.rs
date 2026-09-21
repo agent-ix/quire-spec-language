@@ -2,8 +2,8 @@
 //! Located checking refusals and their closed codes and causes.
 
 use crate::diagnostic::Code;
-use crate::value::NodeKey;
-use crate::value::{IllTyped, IllTypedCause};
+use crate::value::comparison::{IllTyped, IllTypedCause};
+use crate::value::node::NodeKey;
 use quire_exact::Integer;
 
 /// The declaration a location belongs to.

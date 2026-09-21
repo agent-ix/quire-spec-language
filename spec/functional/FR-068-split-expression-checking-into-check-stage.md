@@ -47,6 +47,27 @@ yet physically relocated into `quire-exact`, and `check.rs:15,20`
 the sole non-K exception; none of these is a blocker (see Behavior, "The
 layer-3 sibling imports `check.rs` keeps").
 
+**Amendment (PR #282 review, findings F3/F4): `family.rs` is part of this
+requirement's move surface, and tier 2 widens to seven items across three
+modules.** The verification above covered `check.rs`, `facts.rs`, `ir.rs`
+and `termination.rs` only. `check.rs`'s own `Typer::call`, however, already
+called `family.rs`'s `mint_call_identity`/`DEFAULT_PACKAGE_IDENTITY`
+directly before this requirement, and `family.rs`'s identity-minting content
+(`encode_value_type`'s exhaustive match over `ValueType`) additionally
+imports `QuantityUnit` from `value::quantity` and `TextProfile` from
+`value::text` — real, pre-existing dependencies an implementation confirmed
+while meeting this requirement's original five-item tier 2 and ten-module
+forbidden list, neither of which named these two. Leaving `family.rs`
+unnamed would either strand it in `value::expression` (reopening the exact
+`check` → `value::expression` reverse edge FR-068-AC-3 forbids, since
+`check.rs` depends on it) or force a silent, undocumented tier-2 violation.
+This amendment adds `family.rs`'s identity-minting half (`mint_call_identity`,
+`mint_declaration_identity`, `Preimage` and its `encode_*` functions,
+`OccurrenceMap`, and `ValueFunctionFamily`'s `FamilyContract::check` half) to
+Outputs' move surface, alongside the four files already named, and widens
+tier 2 to seven items across three modules (see Behavior, "The layer-3
+sibling imports `check.rs` keeps," and Acceptance Criteria, FR-068-AC-6).
+
 **The *inbound* direction was not checked by the ruling above, and it matters
 just as much: `model` imports symbols this requirement relocates.** The
 ruling verified only what the moved code imports, not who imports the moved
@@ -75,10 +96,14 @@ that inconsistency is recorded, not resolved, here.
 
 ## Inputs
 
-- `value::expression`'s current seven submodules (`check`, `evaluate`,
-  `facts`, `ir`, `mod` itself, `refusal`, `termination`), as they exist after
-  M-3a: `syntax` has already moved to `forms`, and the seven remaining
-  submodules are this requirement's entire input surface.
+- `value::expression`'s current eight submodules (`check`, `evaluate`,
+  `facts`, `family`, `ir`, `mod` itself, `refusal`, `termination`), as they
+  exist after M-3a: `syntax` has already moved to `forms`, and the eight
+  remaining submodules are this requirement's entire input surface.
+  **Amendment (PR #282 review, F4): `family.rs` was omitted from this list in
+  the original text (seven submodules, `family.rs` unnamed) despite
+  `check.rs`'s pre-existing dependency on it; see Description's amendment
+  paragraph above.**
 - ADR-011 §4's stated *mechanism* for an S3/S4 output type: "The constructors
   of S3 and S4 output types are private to their stage modules, so no other
   module can build a checked value," worked out for the S4 type in `package`:
@@ -111,7 +136,17 @@ that inconsistency is recorded, not resolved, here.
 - A new top-level `check` module (`src/check/`, declared in `src/lib.rs`
   beside `forms`, `model` and `package`) at the layer-3 position ADR-011
   §6.1 assigns it, holding: `check.rs`, `facts.rs`, `ir.rs`, `termination.rs`
-  (each moved as a whole module, unchanged in file boundary), the check-cause
+  (each moved as a whole module, unchanged in file boundary); `family.rs`'s
+  checking-only half (**amendment, PR #282 review F4**: `mint_call_identity`,
+  `mint_declaration_identity`, `Preimage` and its `encode_*` functions,
+  `DEFAULT_PACKAGE_IDENTITY`, `SCALAR_LIMITS_UNLIMITED`, `OccurrenceMap`, and
+  `ValueFunctionFamily`'s `crate::family::FamilyContract` implementation) —
+  `family.rs` splits along the same checking/evaluation boundary as
+  `value::expression` itself, since `check.rs`'s `Typer::call` already
+  depended on this content and `value::expression::family` keeps
+  `QualifiedName`, S4 linking, the v2 emit/decode codec, and
+  `ValueFunctionFamily`'s `crate::family::ReferenceEvaluation` implementation
+  (the evaluation half) at layer 5; the check-cause
   content of `refusal.rs` (`CheckCause`, `CheckRefusal`, `Obligation`,
   `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`,
   `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`, `Origin`,
@@ -274,36 +309,66 @@ requirement named alone:
    permitted for the same reason `check.rs`'s existing `quire_exact::{
    CollectionKind, Integer}` import is permitted (K is always available to
    layer 3), and closing it is X-1's remaining scope, not this requirement's.
-2. **The one declared non-K interim edge: `enumeration`/`quantity`.**
+2. **The declared non-K interim edge: `enumeration`/`quantity`/`text`.**
    `check.rs` imports `EnumDeclaration`, `EnumValue` from `value::enumeration`
    and `check_comparable`, `result_unit`, `UnitOperation` from
    `value::quantity` (today `super::super::enumeration`/
    `super::super::quantity`, relative to `value::expression`'s nesting; after
    the move, `crate::value::enumeration`/`crate::value::quantity`, since
-   `check` is no longer nested under `value`). M-2 (QSL-7), which relabels
-   `enumeration`, `quantity` and their siblings as layer-3 `semantic_value`,
-   has not landed and is out of this requirement's scope (Order: M-5 before
-   M-2). Owner ruling on QSL-139, 2026-09-20: this one edge is not a
-   blocker, because ADR-011 §6.1's intra-layer-3 order is `semantic_value <
-   model < library < check core < family checkers`, so an edge from `check`
-   to modules bound for `semantic_value` runs later-depends-on-earlier,
-   which the allow-list permits; it is a declarable interim shape naming
-   QSL-165, not the forbidden reverse edge QSL-165 itself exists to close.
+   `check` is no longer nested under `value`). **Amendment (PR #282 review,
+   F3): `family.rs`'s identity-minting content (moved to `check` by F4's
+   amendment above) additionally needs `QuantityUnit` from `value::quantity`
+   and `TextProfile` from `value::text` for `encode_value_type`'s exhaustive
+   match over `ValueType::Quantity`/`ValueType::Text` — both real,
+   pre-existing dependencies (already present in the pre-move, unsplit
+   `family.rs`) that a conforming implementation confirmed while meeting this
+   tier's original five-item, two-module bound. Tier 2 is corrected to seven
+   items across three modules: `EnumDeclaration`, `EnumValue` from
+   `value::enumeration`; `check_comparable`, `result_unit`, `UnitOperation`,
+   `QuantityUnit` from `value::quantity`; `TextProfile` from `value::text`.**
+   M-2 (QSL-7), which relabels `enumeration`, `quantity`, `text` and their
+   siblings as layer-3 `semantic_value`, has not landed and is out of this
+   requirement's scope (Order: M-5 before M-2). Owner ruling on QSL-139,
+   2026-09-20: this tier is not a blocker, because ADR-011 §6.1's
+   intra-layer-3 order is `semantic_value < model < library < check core <
+   family checkers`, so an edge from `check` to modules bound for
+   `semantic_value` runs later-depends-on-earlier, which the allow-list
+   permits; it is a declarable interim shape naming QSL-165, not the
+   forbidden reverse edge QSL-165 itself exists to close.
 3. **Everything else is forbidden.** `definition`, `unit`, `key`, `reference`
    and `containment` — every other `semantic_value`-bound sibling per §6.2's
-   module table besides `enumeration`/`quantity` — are NOT part of tier 2:
-   M-2 has not yet relabeled them, and this requirement does not extend
-   tier 2's allowance to them by analogy. `library`, `model_query`,
+   module table besides `enumeration`/`quantity`/`text` — are NOT part of
+   tier 2: M-2 has not yet relabeled them, and this requirement does not
+   extend tier 2's allowance to them by analogy. `library`, `model_query`,
    `package_identity`, `model` and `package` (the layer-3/4 modules those
-   three files feed) are likewise forbidden. An implementation
-   that widens `check`'s imports into any of these — for example by
+   three files feed) are likewise forbidden. **Amendment (PR #282 review,
+   F3): the original text's forbidden list, both here and in FR-068-AC-6,
+   named exactly ten modules and did not include `text`, while the tier
+   structure's own "exactly two tiers and no third" framing implied `text`
+   should have been tier-3-forbidden by elimination — a real disagreement
+   between the rule and its own enumerated fail condition. `text` is now
+   explicitly part of tier 2 (point 2 above), resolving the disagreement by
+   inclusion rather than by adding `text` to this forbidden list, which
+   would have contradicted permitting it.** An implementation that widens
+   `check`'s imports into any of the ten forbidden modules — for example by
    importing a `value::` prelude, reaching into `value::definition` because
    it looks similar to `value::enumeration`, or reaching into
    `model::checked_dispatch` early — exceeds this requirement's scope even
    though M-2 will eventually legalise some of these edges.
 
 This requirement SHALL preserve exactly tier 1 and tier 2, with every import
-path updated to its crate-absolute form, and SHALL introduce no tier-3 edge.
+path updated to its crate-absolute, submodule-qualified form (**amendment,
+PR #282 review F2**: `crate::value::<submodule>::Name`, not the flat
+`crate::value::Name` aggregate FR-068-CON-4 permits every *other*
+`value`-re-exporting consumer to use — a flat import carries no tier
+information, so it would leave AC-6's own stated verification method (“a
+source scan of every `use` statement under `src/check/` against this
+two-tier allow-list”) unable to read the tier off the import text at all;
+`value`'s affected submodules (`collection`, `comparison`, `composite`,
+`decimal`, `enumeration`, `equality`, `ieee`, `node`, `numeric`, `quantity`,
+`rational`, `text`) are `pub(crate) mod`, not private, so `check` — a
+top-level sibling of `value`, not a descendant — can name them this way),
+and SHALL introduce no tier-3 edge.
 
 ### Out of scope: M-2's items stay in `model`, unmoved
 
@@ -383,7 +448,7 @@ requirement's.
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
 | FR-068-CON-1 | This requirement's implementation moves `check.rs`, `facts.rs`, `ir.rs`, `termination.rs`, `refusal.rs`'s check-cause content, and `value::expression::mod.rs`'s checking methods and checked-output types into a new `check` module in the same change that removes them from `value::expression`; no change under this requirement leaves a moved item defined in both modules at once, and no change leaves `value::expression` still declaring `mod check;`, `mod facts;`, `mod ir;` or `mod termination;`. | Process | Test (TC-170) |
-| FR-068-CON-2 | This requirement's scope is exactly ADR-011 §7.3 M-5: the checking/evaluation split of `value::expression`. It does not implement M-2 (moving `model::checked_dispatch` or `model::conformance::check_field_refinement_obligation` into `check`, or relabeling `enumeration`/`quantity`/siblings as `semantic_value`), M-4 (the S4 v2 emitter in `package`), or QSL-165 (removing tier 1's K-designated edges or tier 2's `check` → `value::enumeration`/`value::quantity` edge). A change under this requirement that performs any of these adjacent moves exceeds this requirement's scope even where the ADR eventually requires them. | Design | Inspection |
+| FR-068-CON-2 | This requirement's scope is exactly ADR-011 §7.3 M-5: the checking/evaluation split of `value::expression`. It does not implement M-2 (moving `model::checked_dispatch` or `model::conformance::check_field_refinement_obligation` into `check`, or relabeling `enumeration`/`quantity`/`text`/siblings as `semantic_value`), M-4 (the S4 v2 emitter in `package`), or QSL-165 (removing tier 1's K-designated edges or tier 2's `check` → `value::enumeration`/`value::quantity`/`value::text` edge). A change under this requirement that performs any of these adjacent moves exceeds this requirement's scope even where the ADR eventually requires them. | Design | Inspection |
 | FR-068-CON-3 | The move relocates every moved type without changing its shape: no variant, field, or method signature on `CheckCause`, `CheckRefusal`, `Obligation`, `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`, `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`, `Origin`, `ProvedInterval`, `WrongSnapshotCause`, `CheckedPackage`, `CheckedExpression`, `CheckedFunction`, `PackageDeclarations`, `CheckingLimits`, `DepthAboveMaximum`, `DispatchOperation`, `EnumBinding`, `MAX_CHECKING_DEPTH` or `CheckMode` differs between its pre-move and post-move definition, except where this requirement's own Behavior section requires a constructor to become private to `check` (a visibility change on the constructor alone, not a shape change on the type). | Design | Test (TC-170) |
 | FR-068-CON-4 | `value::mod.rs` (and any other current re-exporter **other than `model/checked_dispatch.rs` and `model/conformance.rs`, which FR-068-CON-5 governs instead**) may continue to resolve `crate::value::{CheckCause, CheckRefusal, InputRefusal, ...}` after this requirement's implementation, by re-exporting from `crate::check` (for the check-cause types) or from `crate::value::expression` (for `InputRefusal`, `Evaluation`, `LocatedLoss`, `ValueLoss`) instead of from `crate::value::expression`'s now-removed `refusal`/`check` submodules. This is `value`'s own aggregation path continuing to a new source module, the same pattern FR-067-AC-9 already establishes for the `forms` move, and is not a compatibility shim: no old defining location (`value::expression::refusal`, `value::expression::check`) remains reachable after the move. | Design | Test (TC-173) |
 | FR-068-CON-5 | `model/checked_dispatch.rs` and `model/conformance.rs` import their thirteen relocated names (see Behavior, "The interim `model` → `check` edge") directly from `crate::check`, never through `crate::value`'s aggregate re-export, so the interim `model` → `check` edge stays visible to a textual scan of `model`'s own `use` lines. This is the one place FR-068-CON-4's aggregation-continues allowance does NOT apply, precisely because applying it here would hide a genuinely forbidden-until-M-2 reverse edge behind `value`'s indirection. | Design | Test (TC-176) |
@@ -397,7 +462,7 @@ requirement's.
 | FR-068-AC-3 | The compiled crate's real `use` lines — not a table in the ADR or a prose claim — show that no module under `check` imports anything at all from `value::expression`, and that `check` and the pre-existing `checking` module (`src/checking.rs` and `src/checking/`) remain two distinct modules with no content moved between them. A source scan of every `use` statement in every file under `src/check/`, resolved at the post-macro-expansion level, fails this criterion if any import resolves into any part of `value::expression` — `Machine`, `Callable`, `Evaluation`, `InputRefusal`, `LocatedLoss` and `ValueLoss` are illustrative examples of such an import, not an exhaustive deny-list to match textually against — or if `src/checking.rs` or any file under `src/checking/` gained, lost, or changed content as part of this change. `CheckMode` is not one of these examples: this requirement's Outputs allocate it to `check` (see Outputs and FR-068-CON-3), so a `check` file defining `CheckMode` is the required shape, not a violation of this criterion; only an import of `CheckMode` from `value::expression` — meaning `check` failed to bring its own definition — would trip this criterion. | Test (TC-172) |
 | FR-068-AC-4 | After this requirement's implementation, `check` defines every check-cause type this requirement names (`CheckCause`, `CheckRefusal`, `Obligation`, `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`, `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`, `Origin`, `ProvedInterval`, `WrongSnapshotCause`) and does not define `InputRefusal`; `value::expression` defines `InputRefusal`, located beside `CheckedPackage::call`'s and `CheckedPackage::evaluate`'s admission code, and does not define any of the twelve check-cause types. A type-definition scan over both modules confirms the twelve-versus-one split exactly, failing if any check-cause type is left behind in `value::expression`, if `InputRefusal` is moved into `check`, or if any name is defined in both. | Test (TC-173) |
 | FR-068-AC-5 | Given a domain package with at least one pair of functions that differ from each other in parameter count, slot count and dispatch-table membership, whose functions and dispatch tables `PackageDeclarations::check` (now in `check`) admits without refusal, calling each function's `CheckedPackage::call` (still in `value::expression`) with valid arguments through an unchanged object environment and meter produces the same `Evaluation` result — including the correct function's own `slots` count reflected in the result — the pre-move code produced for the identical inputs; given a package `PackageDeclarations::check` refuses, the same `CheckRefusal` set is produced before and after the move. The discriminating fixture (two functions differing in shape, not one) is required because this criterion's own named wrong implementation — an accessor returning a different function's `slots` — is unobservable with only one function or with functions of identical shape; a before/after regression test run against such a fixture, comparing results field for field, fails on a split whose module-shape criteria (AC-1 through AC-4) pass but whose accessor plumbing silently swapped which function's `slots`, `body`, or dispatch table feeds `call`, `evaluate` or argument validation. | Test (TC-174) |
-| FR-068-AC-6 | Every file under `check` (`check.rs`, `facts.rs`, `ir.rs`, `termination.rs`, `refusal.rs`'s check-cause portion, and `check`'s own `mod.rs` — the file holding the relocated `CheckedPackage`, `CheckedExpression`, `CheckedFunction` and `CheckMode` type definitions and `PackageDeclarations::check`'s and the three `check_*_expression` methods' relocated bodies, per Outputs)'s cross-module imports into `value::` sort into exactly two permitted tiers and no third: (a) the nine K-designated siblings X-1 has not yet relocated (`collection`, `comparison`, `composite`, `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`), unbounded in which items they import since X-1, not this requirement, owns closing them; and (b) exactly `EnumDeclaration`, `EnumValue` from `value::enumeration` and `check_comparable`, `result_unit`, `UnitOperation` from `value::quantity`, bounded to precisely these five items. No file under `check` imports from `definition`, `unit`, `key`, `reference`, `containment`, `library`, `model_query`, `package_identity`, `model` or `package`. A source scan of every `use` statement under `src/check/` against this two-tier allow-list fails if a tier-(b) import gains an item beyond the five named, or if any import resolves into any of the ten named forbidden modules. | Test (TC-175) |
+| FR-068-AC-6 | Every file under `check` (`check.rs`, `facts.rs`, `family.rs`'s checking-only half, `ir.rs`, `termination.rs`, `refusal.rs`'s check-cause portion, and `check`'s own `mod.rs` — the file holding the relocated `CheckedPackage`, `CheckedExpression`, `CheckedFunction` and `CheckMode` type definitions and `PackageDeclarations::check`'s and the three `check_*_expression` methods' relocated bodies, per Outputs)'s cross-module imports into `value::` sort into exactly two permitted tiers and no third: (a) the nine K-designated siblings X-1 has not yet relocated (`collection`, `comparison`, `composite`, `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`), unbounded in which items they import since X-1, not this requirement, owns closing them; and (b) exactly `EnumDeclaration`, `EnumValue` from `value::enumeration`, `check_comparable`, `result_unit`, `UnitOperation`, `QuantityUnit` from `value::quantity`, and `TextProfile` from `value::text`, bounded to precisely these seven items across three modules (**amended, PR #282 review F3**: the original text bounded tier (b) to five items across two modules and did not admit `value::text` at all; `family.rs`'s pre-existing, unavoidable `QuantityUnit`/`TextProfile` dependencies, real under both the pre-move and post-move tree, are why this criterion could not pass as originally written against any conforming implementation). Every import under tier (a) and (b) is written in crate-absolute, submodule-qualified form (`crate::value::<submodule>::Name`), never through `value`'s flat aggregate re-export, so the tier each import belongs to is legible directly from its own `use` line. No file under `check` imports from `definition`, `unit`, `key`, `reference`, `containment`, `library`, `model_query`, `package_identity`, `model` or `package`. A source scan of every `use` statement under `src/check/` against this two-tier allow-list fails if a tier-(b) import gains an item beyond the seven named, if any import resolves into any of the ten named forbidden modules, or if any tier-(a)/(b) import is written through `value`'s flat aggregate rather than its owning submodule. | Test (TC-175) |
 | FR-068-AC-7 | After this requirement's implementation, `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` remain defined in `model`, unchanged, and are absent from `check`. A type/function-definition scan over `check` confirms neither symbol appears there; this criterion fails on an implementation that moves either one into `check` ahead of M-2, even if every other criterion in this requirement passes. | Test (TC-175) |
 | FR-068-AC-8 | `value::outcome.rs`'s import of `WrongSnapshotCause` resolves to `crate::check::WrongSnapshotCause` after this requirement's implementation, and the crate compiles with this one import path updated and no other change to `value::outcome.rs`. This criterion is satisfied by the path update alone; it does not require, and a correct implementation does not attempt, removing the K→3 direction of this edge (ADR-011 §6.1's X-1 obligation, QSL-131's scope). | Test (TC-173) |
 | FR-068-AC-9 | The resolved import graph shows `model` → `check` bounded to exactly two files and exactly thirteen names: `model/checked_dispatch.rs` importing `DispatchCandidate`, `DispatchOperation`, `DispatchTable`, `PackageDeclarations` directly from `crate::check`, and `model/conformance.rs` importing `established_field_fact`, `Connective`, `Established`, `Location`, `Node`, `NodeKind`, `OrderedKind`, `Origin`, `ProvedInterval` directly from `crate::check` — neither file routed through `crate::value`'s aggregate re-export for these thirteen names. This criterion fails if a third `model` file gains a `check` import, if either named file's import list grows beyond its own name count (`checked_dispatch.rs`: four; `conformance.rs`: nine), or if either file reaches these names indirectly through `crate::value` instead of directly, since the indirect form would satisfy a textual `use`-line scan of `model` while hiding the edge from it — this criterion requires the resolved-level check to also hold, not only the textual one. | Test (TC-176) |
@@ -438,7 +503,23 @@ requirement's.
 Specified under QSL-139 (ADR-011 §7.3 M-5), split out of QSL-25 (#214) by
 owner ruling, 2026-09-20, the same pattern FR-067's Status section records
 for M-3a's split from the same parent ticket. Both prerequisites — X-1 and
-M-3a (QSL-138) — have landed. Not yet implemented.
+M-3a (QSL-138) — have landed.
+
+**Amended by PR #282 review (2026-09-20).** Implementation (PR #282)
+surfaced two gaps the original text did not anticipate, both fixed in this
+document rather than worked around in code: `family.rs` was missing from
+the move surface despite `check.rs`'s pre-existing dependency on it
+(Description, Inputs, Outputs; see F4), and tier 2's five-item,
+two-module bound could not pass against any conforming implementation
+because `family.rs`'s identity-minting content also needs `QuantityUnit`
+(`value::quantity`) and `TextProfile` (`value::text`), neither named
+(Behavior, "The layer-3 sibling imports `check.rs` keeps"; AC-6; see F3).
+Tier 2 is now seven items across three modules. PR #282 also widened
+`check`'s tier-1/tier-2 imports to crate-absolute, submodule-qualified
+paths (`crate::value::<submodule>::Name`) rather than `value`'s flat
+aggregate, per F2 — required by this document as originally written
+(FR-068:280-283, "crate-absolute form") but not implemented that way in
+PR #282's first round.
 
 ## Open Questions
 
