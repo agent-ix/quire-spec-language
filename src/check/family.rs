@@ -763,7 +763,14 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::{CardinalityBound, CollectionType, TextType};
+    use crate::value::collection::{CardinalityBound, CollectionType};
+    // `TextType`: this golden-digest test was moved here verbatim from
+    // `value::expression::family` (PR #282 review F4) and its own doc
+    // deliberately exercises `ValueType::Text` as part of the fixture's
+    // grammar coverage -- a real, pre-existing dependency this move makes
+    // visible under `check` for the first time. See FR-068-AC-6's amendment
+    // (tier 2 now includes `TextType` from `value::text`).
+    use crate::value::text::TextType;
 
     /// PR #262 review, round 2 (moved here from `value::expression::family`
     /// under QSL-139's review, since this identity-minting content itself

@@ -235,18 +235,23 @@ pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
     Ok(CrateDefinitions { items, methods })
 }
 
-/// Every `mod` item's name declared at the top level of one file (not
-/// recursing into nested `mod { ... }` blocks) -- used to confirm no
-/// unexpected module declaration exists alongside the ones a requirement
-/// names explicitly (see this module's own doc, "Scope of what this
-/// catches").
+/// Every non-`#[cfg(test)]` `mod` item's name declared at the top level of
+/// one file (not recursing into nested `mod { ... }` blocks) -- used to
+/// confirm no unexpected module declaration exists alongside the ones a
+/// requirement names explicitly (see this module's own doc, "Scope of what
+/// this catches"). A `#[cfg(test)] mod tests { ... }` block is test
+/// scaffolding, not a compiled-in production module the requirement is
+/// concerned with, so it is excluded the same way [`DefScanner`] excludes
+/// `#[cfg(test)]` items elsewhere in this file.
 pub fn mod_declarations(workspace_root: &Path, relative: &str) -> Result<Vec<String>> {
     let parsed = parse_file(workspace_root, relative)?;
     Ok(parsed
         .items
         .iter()
         .filter_map(|item| match item {
-            syn::Item::Mod(item_mod) => Some(item_mod.ident.to_string()),
+            syn::Item::Mod(item_mod) if !has_cfg_test(&item_mod.attrs) => {
+                Some(item_mod.ident.to_string())
+            }
             _ => None,
         })
         .collect())
@@ -275,15 +280,16 @@ mod tests {
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
-        let mods = mod_declarations(&workspace_root(), "src/value/expression/mod.rs")
-            .expect("scan runs");
+        let mods =
+            mod_declarations(&workspace_root(), "src/value/expression/mod.rs").expect("scan runs");
         for forbidden in ["check", "facts", "ir", "termination"] {
             assert!(
                 !mods.iter().any(|name| name == forbidden),
                 "value::expression::mod.rs still declares mod {forbidden};"
             );
         }
-        let expected: std::collections::BTreeSet<&str> = ["evaluate", "family"].into_iter().collect();
+        let expected: std::collections::BTreeSet<&str> =
+            ["evaluate", "family"].into_iter().collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
@@ -299,9 +305,43 @@ mod tests {
         assert!(mods.iter().any(|name| name == "check"));
     }
 
+    /// Asserts `name` is defined exactly once under `src/check/` and not at
+    /// all under `src/value/expression/` -- TC-170's own actual intent ("no
+    /// leftover in `value::expression`, no duplicate under `check`"), not a
+    /// literal crate-wide uniqueness claim. Some CON-3/TC-173 names (e.g.
+    /// `Obligation`) collide, by plain English word, with unrelated,
+    /// pre-existing types elsewhere in the crate (`checking::composed::Obligation`,
+    /// a struct about a SEAM obligation site; `temporal::result::Obligation`,
+    /// an enum about instance-assessment outcomes) that have nothing to do
+    /// with this split and are out of scope for it; a global `locations.len()
+    /// == 1` assertion would wrongly fail on those legitimate namesakes, so
+    /// this only looks at the two directories the move actually concerns.
+    fn assert_defined_exactly_once_under_check(name: &str, locations: &[Definition]) {
+        let relevant: Vec<&Definition> = locations
+            .iter()
+            .filter(|location| {
+                location.file.starts_with("src/check/")
+                    || location.file.starts_with("src/value/expression/")
+            })
+            .collect();
+        assert_eq!(
+            relevant.len(),
+            1,
+            "{name} has {} defining location(s) under src/check/ or src/value/expression/: {relevant:?} (all locations: {locations:?})",
+            relevant.len()
+        );
+        assert!(
+            relevant[0].file.starts_with("src/check/"),
+            "{name} is defined at {:?}, not under src/check/",
+            relevant[0]
+        );
+    }
+
     /// TC-170 steps 4-5: each of the four checking methods, and each of the
-    /// twenty-one CON-3-named symbols, has exactly one defining location in
-    /// the whole crate.
+    /// twenty-one CON-3-named symbols, has exactly one defining location
+    /// under `check`/`value::expression` (see
+    /// [`assert_defined_exactly_once_under_check`] for why this is scoped
+    /// rather than crate-wide).
     #[trace("TC-170", "FR-068-CON-3")]
     #[test]
     fn con3_methods_and_symbols_each_have_exactly_one_defining_location() {
@@ -348,22 +388,14 @@ mod tests {
         ];
         for symbol in symbols {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
-            assert_eq!(
-                locations.len(),
-                1,
-                "{symbol} has {} defining location(s): {locations:?}",
-                locations.len()
-            );
-            assert!(
-                locations[0].file.starts_with("src/check/"),
-                "{symbol} is defined at {:?}, not under src/check/",
-                locations[0]
-            );
+            assert_defined_exactly_once_under_check(symbol, &locations);
         }
     }
 
     /// TC-173 step 1: the twelve check-cause types are all defined under
-    /// `check`, none under `value::expression`.
+    /// `check`, none under `value::expression` (see
+    /// [`assert_defined_exactly_once_under_check`] for why this is scoped
+    /// rather than crate-wide).
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
     fn twelve_check_cause_types_are_defined_exactly_once_under_check() {
@@ -384,8 +416,7 @@ mod tests {
         ];
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_eq!(locations.len(), 1, "{name}: {locations:?}");
-            assert!(locations[0].file.starts_with("src/check/"), "{name}: {locations:?}");
+            assert_defined_exactly_once_under_check(name, &locations);
         }
     }
 
@@ -399,14 +430,20 @@ mod tests {
     #[test]
     fn m2_items_stay_in_model_and_are_absent_from_check() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in ["checked_dispatch_operation", "check_field_refinement_obligation"] {
+        for name in [
+            "checked_dispatch_operation",
+            "check_field_refinement_obligation",
+        ] {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_eq!(locations.len(), 1, "{name}: {locations:?}");
             assert!(
                 locations[0].file.starts_with("src/model/"),
                 "{name} must stay in src/model/: {locations:?}"
             );
-            assert!(!locations[0].file.starts_with("src/check/"), "{name}: {locations:?}");
+            assert!(
+                !locations[0].file.starts_with("src/check/"),
+                "{name}: {locations:?}"
+            );
         }
     }
 
