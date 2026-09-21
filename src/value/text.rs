@@ -4,10 +4,8 @@
 //!
 //! Normalization uses exactly the Unicode 17.0.0 data selected by
 //! `quire.value.text.unicode-17.0.0/v1`. The build refuses any other
-//! `unicode-normalization` table version, and `tests/unicode_17_text.rs` checks
-//! the tables against the digest-verified UCD files and the complete
-//! `NormalizationTest.txt` corpus. No locale, case folding, collation or
-//! grapheme segmentation is applied.
+//! `unicode-normalization` table version. No locale, case folding, collation
+//! or grapheme segmentation is applied.
 
 use std::cmp::Ordering;
 use std::str::Chars;
