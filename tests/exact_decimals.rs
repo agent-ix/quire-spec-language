@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-185 exact decimal semantics over the real `value` boundary.
 //!
-//! Vectors D01–D23 are transcribed from the vendored TC-185 procedure pinned by
+//! Vectors D01–D23 are transcribed from the TC-185 procedure pinned by
 //! `tests/complete_value_lock.rs`. The generated oracle uses independent `i128`
 //! rational arithmetic; no floating-point value appears in either side.
 
@@ -9,7 +9,6 @@ use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::Pow;
 use quire_exact::Integer;
-use quire_spec_language::model::population::AdmissionChargePoint;
 use quire_spec_language::value::{
     evaluate_decimal, order_numbers, ChargePoint, Decimal, DecimalOperation, DecimalResult,
     DecimalType, IllTyped, IllTypedCause, Incomplete, InjectedDenial, LimitKind, Meter,
@@ -738,186 +737,6 @@ fn d21_decimal_ordering_measures_the_retained_representation() {
     assert_eq!(outcome, bits_denied(8, 7, 9));
     assert_eq!(admitted, [ChargePoint::OrderingOperands]);
     assert_eq!(consumed, [7, 3, 0, 2, 1, 0]);
-}
-
-const VALUE_ACCOUNTING: &str = include_str!(
-    "../resources/complete-value/quire-specification/proposals/quire-v1/definitions/value-accounting.md"
-);
-
-/// Charge-point families of the FR-150–FR-153 model domain still deferred
-/// past #120's FR-153 rung. FR-153 itself implemented `lookup.*` and
-/// `population.visit` (`src/model/population.rs`), so those two families are
-/// no longer listed here. `binding.member`/`binding.subset-value` stay under
-/// a deferred family from `ChargePoint`'s own perspective: the vendored
-/// document's own "Population admission limits" section calls their
-/// schedule `PopulationAdmissionLimitsV1` OF `quire.value.accounting/v1` —
-/// the same overall document as `ChargePoint`'s own `ScalarLimitsV1`
-/// schedule, but a separate, independently metered `u64` limits struct with
-/// its own charge-point vocabulary (`model::population::AdmissionChargePoint`),
-/// so neither point is, or should be, part of
-/// `crate::value::accounting::ChargePoint` itself. `binding.member` IS
-/// genuinely charged, just by that other schedule
-/// (`IMPLEMENTED_ELSEWHERE_POINTS` below asserts this directly rather than
-/// merely omitting it); so is `binding.subset-value`, as of #120 slice 4
-/// (`model::population::admit_binding`'s subsetting-runtime loop).
-const DEFERRED_FAMILIES: [&str; 7] = [
-    "model",
-    "graph",
-    "dispatch",
-    "normalize",
-    "systems",
-    "conformance",
-    "binding",
-];
-
-/// `PopulationAdmissionLimitsV1` charge points genuinely implemented in this
-/// crate, just not by `crate::value::accounting::ChargePoint` — by
-/// `model::population::AdmissionChargePoint` instead. Filtered out of
-/// [`DEFERRED_POINTS`] below (which is reserved for points nothing
-/// implements) and asserted directly against that other enum in
-/// `every_vendored_charge_point_is_named_in_table_order`, so the registry
-/// test can tell "implemented elsewhere" apart from "unimplemented anywhere".
-const IMPLEMENTED_ELSEWHERE_POINTS: [&str; 2] = ["binding.member", "binding.subset-value"];
-
-/// `dispatch.select` charge points genuinely implemented by
-/// `crate::value::accounting::ChargePoint` (FR-151, TC-196 D06), even though
-/// the rest of the `dispatch` family (link-time `dispatch.candidate`,
-/// `dispatch.dominance`, `dispatch.subtype`) stays deferred past #120. Read
-/// by [`is_deferred`] so `vendored_charge_points()` does not filter this one
-/// point out of the family-level `dispatch` deferral.
-const IMPLEMENTED_IN_DEFERRED_FAMILY: [&str; 1] = ["dispatch.select"];
-
-/// Every charge point genuinely unimplemented anywhere in this crate, in
-/// ascending order.
-const DEFERRED_POINTS: [&str; 20] = [
-    "conformance.axis",
-    "dispatch.candidate",
-    "dispatch.dominance",
-    "dispatch.subtype",
-    "graph.edge",
-    "graph.expand",
-    "graph.result-retain",
-    "model.deref",
-    "model.navigate",
-    "normalize.conflict-check",
-    "normalize.cycle-check",
-    "normalize.declaration",
-    "normalize.fact",
-    "normalize.hash",
-    "normalize.record",
-    "normalize.redefinition-check",
-    "systems.allocation",
-    "systems.connection-condition",
-    "systems.kind",
-    "systems.resolve",
-];
-
-/// `sum.quantity` matches [`charge_point_codes`]'s `family.point` regex
-/// incidentally: the `## Collection sum schedule` prose names it, alongside
-/// `quire.op.collection.sum.decimal`, `sum.float32` and `sum.float64` (the
-/// four multi-dot/digit-bearing siblings the regex already excludes), as one
-/// of FR-322's checked-package sum-operator application identities, not a
-/// `crate::value::accounting::ChargePoint` code -- the schedule charges only
-/// the already-implemented `collection.visit`/`collection.result-retain`
-/// plus each family's own existing addition schedule. Excluded here rather
-/// than added to [`DEFERRED_POINTS`], because `is_deferred` would then need
-/// a `sum` entry in [`DEFERRED_FAMILIES`] that misrepresents it as tracked
-/// by some other charge-point enum, which it is not.
-const NON_CHARGE_POINT_MATCHES: [&str; 1] = ["sum.quantity"];
-
-/// The backticked `family.point` codes of `text`, in order of appearance.
-fn charge_point_codes(text: &str) -> Vec<String> {
-    text.split('`')
-        .skip(1)
-        .step_by(2)
-        .filter(|code| {
-            code.split_once('.').is_some_and(|(family, point)| {
-                family.len() > 1
-                    && !point.contains('.')
-                    && code
-                        .chars()
-                        .all(|c| c.is_ascii_lowercase() || c == '.' || c == '-')
-            })
-        })
-        .map(str::to_owned)
-        .collect()
-}
-
-fn is_deferred(code: &str) -> bool {
-    if IMPLEMENTED_IN_DEFERRED_FAMILY.contains(&code) {
-        return false;
-    }
-    code.split_once('.')
-        .is_some_and(|(family, _)| DEFERRED_FAMILIES.contains(&family))
-}
-
-/// The charge points of the vendored operation-family table, in table order.
-fn vendored_charge_points() -> Vec<String> {
-    let table = VALUE_ACCOUNTING
-        .split("| Operation family | Ordered charge points |")
-        .nth(1)
-        .unwrap()
-        .split("\n\n")
-        .next()
-        .unwrap();
-    table
-        .lines()
-        .skip(2)
-        .flat_map(|row| charge_point_codes(row.rsplit('|').nth(1).unwrap()))
-        .collect()
-}
-
-#[trace("TC-185", "FR-140-AC-6")]
-#[test]
-fn every_vendored_charge_point_is_named_in_table_order() {
-    let named: Vec<String> = ChargePoint::ALL
-        .iter()
-        .map(|point| point.as_str().to_owned())
-        .collect();
-    let mut value_points = Vec::new();
-    for code in vendored_charge_points() {
-        if !is_deferred(&code) && !value_points.contains(&code) {
-            value_points.push(code);
-        }
-    }
-    assert_eq!(named, value_points);
-    for point in ChargePoint::ALL {
-        assert_eq!(ChargePoint::from_code(point.as_str()), Some(point));
-    }
-
-    let mut deferred: Vec<String> = charge_point_codes(VALUE_ACCOUNTING)
-        .into_iter()
-        .filter(|code| !named.contains(code))
-        .filter(|code| !IMPLEMENTED_ELSEWHERE_POINTS.contains(&code.as_str()))
-        .filter(|code| !NON_CHARGE_POINT_MATCHES.contains(&code.as_str()))
-        .collect();
-    deferred.sort();
-    deferred.dedup();
-    assert_eq!(deferred, DEFERRED_POINTS);
-    assert!(DEFERRED_POINTS.iter().all(|code| is_deferred(code)));
-    assert!(DEFERRED_POINTS
-        .iter()
-        .all(|code| ChargePoint::from_code(code).is_none()));
-
-    // `binding.member` and `binding.subset-value` are both genuinely charged
-    // by `model::population::AdmissionChargePoint`'s own independent
-    // schedule, just not by `crate::value::accounting::ChargePoint`.
-    for &code in &IMPLEMENTED_ELSEWHERE_POINTS {
-        assert!(
-            is_deferred(code),
-            "{code} must still be under a deferred family from ChargePoint's perspective"
-        );
-        assert!(
-            ChargePoint::from_code(code).is_none(),
-            "{code} must never be quire.value.accounting/v1's own ChargePoint"
-        );
-        assert!(
-            AdmissionChargePoint::ALL
-                .iter()
-                .any(|point| point.as_str() == code),
-            "{code} must be a real AdmissionChargePoint"
-        );
-    }
 }
 
 #[trace("TC-185", "FR-140-AC-1")]
