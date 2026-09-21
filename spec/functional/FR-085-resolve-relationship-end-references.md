@@ -24,6 +24,16 @@ domain package's closed declared object types, SHALL retain the end's
 declared role and multiplicity unchanged, and SHALL refuse a relationship
 whose end names a type absent from the domain package.
 
+Static navigation over a resolved relationship end — qualified-name
+resolution, `r.name` runtime traversal and the typed
+`Option<Reference<U>>`/`Reference<U>`/`Set<Reference<U>>`/`Bag<Reference<U>>`
+result quire-specification [FR-152](ix://agent-ix/quire-specification/FR-152)'s
+"Navigation" section defines — is out of this requirement's scope; it is
+tracked by [#147](https://github.com/agent-ix/quire-spec-language/issues/147),
+which names FR-152-AC-1/3/5/7 as its unbacked criteria. This requirement
+resolves and binds a relationship end's declared type, role and multiplicity
+only.
+
 ## Inputs
 
 - Each relationship record's declared source end and target end, each
@@ -53,9 +63,13 @@ unrelated declaration.
 
 If either end's declared type reference names a type absent from the
 admitted domain package, the model binder SHALL refuse that relationship
-record with a dangling-reference cause naming the missing type and the end
-(`source` or `target`), and SHALL admit no binding for that relationship
-record.
+record with a `missing_declaration`/`missing-name` cause naming the missing
+type and the end (`source` or `target`), and SHALL admit no binding for that
+relationship record. This is the same cause quire-specification
+[FR-154](ix://agent-ix/quire-specification/FR-154) assigns a relationship
+end naming no node of the package, which [FR-056](FR-056-admit-domain-package-model-declarations.md)-AC-5
+already states locally; this requirement does not introduce a second cause
+for the same condition.
 
 ### Role, multiplicity and direction are retained, never defaulted
 
@@ -77,9 +91,9 @@ as a Connection is
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-085-AC-1 | Given a relationship whose target end names a type absent from the admitted domain package, resolution refuses that relationship record with a dangling-reference cause naming the missing type and the `target` end, and admits no binding for it; a relationship whose both ends resolve is admitted. | Test (TC-230) |
+| FR-085-AC-1 | Given a relationship whose target end names a type absent from the admitted domain package, resolution refuses that relationship record with a `missing_declaration`/`missing-name` cause naming the missing type and the `target` end, and admits no binding for it; a relationship whose both ends resolve is admitted. | Test (TC-230) |
 | FR-085-AC-2 | Given a relationship whose source end declares a role and a bounded multiplicity, the resolved binding retains that exact role and multiplicity; no default or inferred multiplicity appears for an end that declares none. | Test (TC-231) |
-| FR-085-AC-3 | Given a relationship whose two ends both resolve to declared object types, the resolved binding carries no systems-model kind, distinguishing it from a relationship whose ends resolve to declared endpoints, which is classified separately. | Test (TC-232) |
+| FR-085-AC-3 | Given a relationship whose two ends both resolve to declared object types, and separately a relationship whose two ends both resolve to declared endpoints, resolving each under this requirement carries no systems-model kind for either — this requirement does not itself decide Connection classification; that determination is FR-086's separate, later step. | Test (TC-232) |
 
 ## Dependencies
 
@@ -88,7 +102,16 @@ as a Connection is
   [FR-056](FR-056-admit-domain-package-model-declarations.md) builds the
   relationship export and its declared ends from the domain package.
   AD-006's model-view decision keeps relationships in the checked model
-  view.
+  view. `src/model/systems.rs`'s relationship-classification loop (lines
+  275-317) is the only place a plain object-to-object relationship's ends
+  are resolved today, and it does not yet implement this requirement's
+  `missing_declaration`/`missing-name` cause: for a relationship where one
+  end resolves to a declared object type and the other end resolves to
+  neither a declared object type nor a declared endpoint, it reports both
+  ends `UnknownEndpoint`/`dangling_reference`, including the legitimately
+  resolving end, rather than refusing only the missing end with this
+  requirement's cause. FR-085-AC-1 does not ship today. Remaining work:
+  #120.
 - **Downstream:** relationship end resolution feeds the object-reference
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is

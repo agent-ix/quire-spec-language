@@ -10,9 +10,9 @@ relationships:
 
 ## Description
 
-Verify that a redefinition-family walk exceeding the bound returns a typed
-incomplete result naming the bound, with neither a linked table nor an
-ambiguity result reported, and that a family at exactly the bound links
+Verify that a redefinition-family walk exceeding the bound refuses with a
+resource-exhaustion cause naming the bound, with neither a linked table nor
+an ambiguity result reported, and that a family at exactly the bound links
 successfully. Scope: FR-083-AC-4.
 
 Catches an implementation that stops enumerating the family at the bound and
@@ -34,9 +34,12 @@ ambiguous), passing any test that checks only "some candidate was selected."
 
 ## Expected Results
 
-Step 3 returns the typed incomplete result naming the bound, not a linked
-table and not an ambiguity result. Step 4 links successfully with the
+Step 3 refuses with a resource-exhaustion cause naming the bound, not a
+linked table and not an ambiguity result. Step 4 links successfully with the
 correct unique winner. A mutant that truncates the walk at the bound and
 reports the truncated family as resolved produces a linked table in step 3
 naming a "unique" winner that is only unique because the walk never found
-the competing candidate, failing the result-type assertion.
+the competing candidate, failing the result-type assertion. A mutant that
+instead reports the bound overrun as the `Incomplete` outcome (rather than
+`Refused`) fails the same assertion: exceeding this depth ceiling is a real
+defect in the family, not a denied accounting charge.

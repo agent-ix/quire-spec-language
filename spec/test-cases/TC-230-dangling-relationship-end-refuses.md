@@ -11,10 +11,10 @@ relationships:
 ## Description
 
 Verify that a relationship whose target end names a type absent from the
-admitted domain package is refused with a dangling-reference cause naming
-the missing type and the `target` end, admitting no binding for it, while a
-relationship whose both ends resolve is admitted normally. Scope:
-FR-085-AC-1.
+admitted domain package is refused with a `missing_declaration`/
+`missing-name` cause naming the missing type and the `target` end, admitting
+no binding for it, while a relationship whose both ends resolve is admitted
+normally. Scope: FR-085-AC-1.
 
 Catches an implementation that resolves the source end, fails to resolve the
 target end, and either silently admits a one-ended (partial) relationship
@@ -37,11 +37,15 @@ when one end is dangling.
 
 ## Expected Results
 
-Step 2 refuses with a dangling-reference cause naming `Order` and `target`,
-and produces no relationship binding at all — step 4 finds nothing to
-inspect because no binding value exists, not because its target field is
-empty on an otherwise-present binding. Step 3 resolves successfully with
-both ends bound. A mutant that admits a one-ended binding for step 2
-produces a value with a populated source end and an absent target, passing a
-shallow "did resolution throw" check but failing the no-binding-at-all
-assertion.
+Step 2 refuses with a `missing_declaration`/`missing-name` cause naming
+`Order` and `target`, and produces no relationship binding at all — step 4
+finds nothing to inspect because no binding value exists, not because its
+target field is empty on an otherwise-present binding. Step 3 resolves
+successfully with both ends bound. A mutant that admits a one-ended binding
+for step 2 produces a value with a populated source end and an absent
+target, passing a shallow "did resolution throw" check but failing the
+no-binding-at-all assertion. A mutant that instead refuses *both* ends —
+including the legitimately resolving `Customer` source end — because a
+shared code path checks every end against the same lookup table regardless
+of whether it is already known to be a declared object type, fails the
+assertion that the refusal names only the `target` end.

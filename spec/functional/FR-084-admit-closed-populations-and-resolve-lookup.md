@@ -94,6 +94,27 @@ unresolved closure to that same absence outcome: an unestablished closure is
 always the distinct incomplete or unknown-closure outcome, never a resolved
 absence.
 
+### Typed results and their refusals
+
+`allInstances<T>(p)`'s admitted result is exactly
+`Set<Reference<T>>[0,N]` when `p` declares a maximum `N`, and the unbounded
+`Set<Reference<T>>` when `p` declares none — never an untyped or bare
+collection. A selected count above a declared maximum SHALL refuse with a
+cardinality-out-of-bound cause naming the maximum and the selected count;
+an unbounded population SHALL admit every selected count and SHALL NOT
+refuse cardinality-out-of-bound. `lookup<T>(p, r)`'s present result is
+`Reference<T>` in the `undefined` and `refused` absence modes and
+`Option<Reference<T>>` in the `empty` mode, in every case typed to the
+queried `T`; a key whose universe differs from `T`'s universe SHALL refuse
+with a foreign-universe cause; a receiver that is not a population binding,
+or a queried `T` that is not a model object type, SHALL refuse with an
+operator-ineligible or type-mismatch cause respectively. This is
+quire-specification [FR-153](ix://agent-ix/quire-specification/FR-153)'s
+typed-result and refusal contract (`Set<Reference<T>>[0,N]`,
+`cardinality_out_of_bound`/`above-maximum`, `foreign_reference`/
+`foreign-universe`, `ill_typed`/`operator-ineligible`), bound to this
+compiler's own types.
+
 ### Conflicting identity refuses admission outright
 
 If two runtime member records name the same universe and object identity but
@@ -116,6 +137,7 @@ their content digest are equal.
 | FR-084-AC-2 | Given a closed population whose object closure holds but whose declared member types do not cover every effective subtype of the queried type, `allInstances<T>` returns a typed incomplete result naming the missing subtype closure and no collection; given both closures established, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. | Test (TC-227) |
 | FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode; given the same binding with subtype closure not established for `T`, the result is a typed incomplete or unknown-closure outcome, never the absence mode standing in for it. | Test (TC-228) |
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
+| FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
 
 ## Dependencies
 
@@ -123,7 +145,13 @@ their content digest are equal.
   supplies the effective declarations this requirement's population binding
   is keyed against; quire-specification FR-153 owns the normative closed-
   environment query rule and AD-006 owns the decision to keep populations
-  and closed dispatch sets in the model view.
+  and closed dispatch sets in the model view. FR-153-AC-9 (the unbounded
+  `p` case of FR-084-AC-5) landed in quire-specification PR #75, after
+  `src/model/population.rs`'s `all_instances` was first written; that
+  function currently refuses `ill_typed`/`operator-ineligible` whenever `p`
+  declares no maximum, rather than returning the unbounded `Set<Reference<T>>`
+  this requirement states. FR-084-AC-5's unbounded-`p` clause does not ship
+  today. Remaining work: #120.
 - **Downstream:** [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s
   graph evaluator receives concrete object membership and closure as an
   independently supplied runtime input; this requirement is that input's own
