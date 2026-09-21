@@ -33,6 +33,23 @@ use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
 };
+// `QuantityUnit` and `TextProfile` are a genuine gap in FR-068-AC-6/TC-175's
+// exhaustive two-tier `value::` allow-list for files under `check`: tier (a)
+// is nine named modules (`collection`, `comparison`, `composite`, `decimal`,
+// `equality`, `ieee`, `node`, `numeric`, `rational`) and tier (b) is exactly
+// five named items (`EnumDeclaration`, `EnumValue` from `enumeration`;
+// `check_comparable`, `result_unit`, `UnitOperation` from `quantity`).
+// `QuantityUnit` is a sixth item from `quantity`, over tier (b)'s five;
+// `TextProfile` comes from `text`, a module neither list names (and TC-175's
+// own group (c) -- "everything else" -- must be empty). Both are real,
+// pre-existing dependencies of `encode_value_type`'s exhaustive match over
+// `ValueType::Quantity`/`ValueType::Text` (this function, and the need for
+// both types, predate this ticket -- they were already imported by the
+// original, unsplit `value::expression::family.rs`); AC-6/TC-175 only
+// starts constraining them because this ticket moves that code under
+// `check`. Reported to the ticket owner rather than silently worked around;
+// see this module's own doc for the larger context (`family.rs` was never
+// named in FR-068's move surface either).
 use crate::value::{IeeeWidth, QuantityUnit, RoundingMode, TextProfile, ValueType};
 
 /// The declaring package's `name@version` a checked node's identity
