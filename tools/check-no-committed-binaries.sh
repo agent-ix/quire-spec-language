@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Fail when a tracked file is executable/binary content, or exceeds the size
-# ceiling. Two stripped x86-64 ELF executables (5.2 MB and 5.8 MB) were
-# committed to artifacts/compiled-protocol-{v1,v2}/dependencies/0.bin,
-# behind dependencies/*.bin filenames indistinguishable from the plain-text
-# JSON members alongside them, and a size ceiling
-# (`examples/protocol-handoff/producer.rs`'s old `BINARY_BYTES`) was raised
-# to 16 MiB to let them through instead of being asked whether they should
-# exist. QSL-169.
+# ceiling. Two stripped x86-64 ELF executables (5.2 MB and 5.8 MB) were once
+# committed at a `dependencies/0.bin` path (since purged from history
+# entirely; this repository commits no `dependencies/*.bin` fixtures at all
+# now), behind filenames indistinguishable from the plain-text JSON members
+# alongside them, and a size ceiling (`examples/protocol-handoff/producer.rs`'s
+# old `BINARY_BYTES`) was raised to 16 MiB to let them through instead of
+# being asked whether they should exist. QSL-169.
 #
 # This check detects content by its actual bytes, not by filename or
 # extension: an extension allow-list is trivially defeated by naming a file

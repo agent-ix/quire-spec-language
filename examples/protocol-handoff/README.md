@@ -85,8 +85,12 @@ The output directory contains:
 
 The immutable checked-in consumer copy is addressed by
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF`; its version-explicit member
-constants prevent consumers from guessing filenames. Selecting the pinned crate
-and this owner-published directory is separate from offering the package bytes:
+constants prevent consumers from guessing filenames. It omits `dependencies/`:
+this repository does not commit exact-byte dependency fixtures, so the checked-in
+`expected.json`/`expected-v2.json` selections carry an empty `dependencies` list.
+A fresh run of the producer still writes its own `dependencies/` directory to
+its (uncommitted) output path, exactly as described above. Selecting the pinned
+crate and this owner-published directory is separate from offering the package bytes:
 decoding `Selection` remains inert until the caller constructs and invokes the
 strict public reader.
 
@@ -123,6 +127,8 @@ General dynamic choice/progress proofs, first-class D relationship/related-insta
 exports and runtime recovery remain open as specified in FR-042/TC-121. Ordinary
 object/reference exports do not supply those relationship authorities.
 
-New example source uses AGPL-3.0-only. Embedded standard documents retain their
-[original provenance and deferred licensing](../../resources/native-v1/README.md);
-the compiler license does not relicense them or authorize public distribution.
+New example source uses AGPL-3.0-only. No third-party standard-document bytes
+are embedded here: the registered-definition registry
+(`linking::composed::definition_source`) resolves each definition to a
+synthetic placeholder derived from its own identity string, never real
+document content, and this example commits no `dependencies/` fixture files.
