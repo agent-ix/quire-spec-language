@@ -88,10 +88,17 @@ over its concrete descendants.
 
 ### Family enumeration is bounded
 
-The model checker SHALL bound the depth of the redefinition-family walk. If
-the walk would exceed the bound, the model checker SHALL return a typed
-incomplete result naming the bound and SHALL NOT report a linked table or an
-ambiguity result for that family.
+The model checker SHALL bound the depth of the redefinition-family walk, at
+a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1` charge
+counter — the QSL implementation's `MAX_DISPATCH_DEPTH`
+(`src/model/dispatch.rs:55`), currently 128. If the walk would exceed the
+bound, the model checker SHALL refuse the family outright with a
+resource-exhaustion cause naming the bound and SHALL NOT report a linked
+table or an ambiguity result for that family. Exceeding this depth ceiling
+is a real defect in the redefinition family (a `Refused` outcome), never the
+`Incomplete` outcome a denied `ModelNormalizationLimitsV1` charge produces;
+see FR-082's "Ancestor and conformance walks are bounded" for the same
+distinction and its ADR-013 O-21 grounding.
 
 ## Acceptance Criteria
 
@@ -100,7 +107,7 @@ ambiguity result for that family.
 | FR-083-AC-1 | Given a redefinition family with two branches applicable to one concrete subtype where one branch's owner is a proper descendant of the other's, the linked table selects the descendant's redefinition for that subtype; permuting the family members' declaration order does not change the selection. | Test (TC-222) |
 | FR-083-AC-2 | Given a concrete subtype with no applicable family member, linking reports a no-applicable-candidate failure for it; given a concrete subtype with two undominated candidates, linking reports a multiple-undominated-candidates failure naming both candidates and the dominance relation among the family. | Test (TC-223) |
 | FR-083-AC-3 | Given a family where one subtype is ambiguous and a second subtype in the same family would resolve cleanly on its own, the outcome carries no dispatch table at all — not even an entry for the second, cleanly-resolving subtype. | Test (TC-224) |
-| FR-083-AC-4 | Given a redefinition family whose chain of `redefines` edges exceeds the bound, linking returns a typed incomplete result naming the bound and reports neither a linked table nor an ambiguity result; a family at exactly the bound links successfully. | Test (TC-225) |
+| FR-083-AC-4 | Given a redefinition family whose chain of `redefines` edges exceeds the bound, linking refuses with a resource-exhaustion cause naming the bound and reports neither a linked table nor an ambiguity result; a family at exactly the bound links successfully. | Test (TC-225) |
 
 ## Dependencies
 

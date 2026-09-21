@@ -71,6 +71,20 @@ independently. It SHALL charge one unit of conformance work before each axis
 runs, and it SHALL collect every failing axis of the member under check into
 one `Refused` outcome rather than returning after the first failing axis.
 
+### Unequal arity carves out the parameter axes
+
+Arity is checked first. When a redefining operation's parameter count does
+not equal the redefined operation's, the model checker SHALL refuse with a
+type-mismatch cause naming the arity difference and SHALL NOT check any
+per-parameter type or multiplicity axis for that pair — there is no
+parameter-by-position correspondence to check across an unequal parameter
+list. The result-type, result-multiplicity and effect axes remain
+independent of arity and are still checked and reported on their own. This
+is quire-specification [FR-151](ix://agent-ix/quire-specification/FR-151)'s
+arity row ("equal parameter count; when unequal, no parameter axis is
+checked"), which this exhaustiveness requirement's own "every independent
+axis is checked" rule above does not override.
+
 ### Subsetting and redefinition targets must exist and must not cycle
 
 If a subsetting or redefining member names a feature that is not declared on
@@ -92,15 +106,18 @@ on the strength of its declared shape alone.
 ### Ancestor and conformance walks are bounded
 
 The model checker SHALL bound every ancestor-chain and conformance walk it
-performs. If a walk would exceed the bound, the model checker SHALL refuse
-with a resource-exhaustion cause naming the bound and SHALL NOT report a
-conformance or non-conformance verdict for that walk.
-
-## Constraints
-
-| ID | Constraint | Type | Validation |
-| --- | --- | --- | --- |
-| FR-082-CON-1 | This requirement states the conformance and redefinition behavior contract only; it does not specify, and does not constrain, which QSL crate module or compiler layer implements it, and it does not contradict any bounded, temporary cross-module dependency another accepted requirement declares for that implementation. | Design | Inspection |
+performs, at a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1`
+charge counter — the QSL implementation's `MAX_CONFORMANCE_DEPTH`
+(`src/model/conformance.rs:99`), currently 128. If a walk would exceed the
+bound, the model checker SHALL refuse with a resource-exhaustion cause naming
+the bound and SHALL NOT report a conformance or non-conformance verdict for
+that walk. Exceeding this depth ceiling is a `Refused` outcome (a real
+defect: a redefinition family or ancestor chain deeper than the bound), never
+the `Incomplete` outcome `ModelNormalizationLimitsV1`'s own axis-charge and
+record-charge points produce when a charge is denied; the two are distinct
+result variants over distinct counters, consistent with ADR-013 O-21 ("an
+exhausted meter yields `Incomplete` with its charge point and limit; a stage
+limit refuses with `LimitExceeded`").
 
 ## Acceptance Criteria
 
@@ -110,6 +127,7 @@ conformance or non-conformance verdict for that walk.
 | FR-082-AC-2 | Given a member redefinition naming a target absent from any supertype the owner conforms to, and separately a declared `supertypes` cycle, each is refused with its own named cause (redefinition-target, specialization-cycle) and no conformance edge is derived across the cycle. | Test (TC-219) |
 | FR-082-AC-3 | Given a conformance ancestor chain longer than the bound, the checker refuses with a resource-exhaustion cause naming the bound and reports neither conformance nor non-conformance for that walk; a chain at exactly the bound is admitted. | Test (TC-220) |
 | FR-082-AC-4 | Given a narrowing field redefinition with no established postcondition fact proving the narrowing, the checker refuses unproved-refinement; given the same redefinition with the obligation established, the checker admits it. | Test (TC-221) |
+| FR-082-AC-5 | Given a redefining operation whose parameter count differs from the redefined operation's, the checker's `Refused` outcome names exactly the arity failure with a type-mismatch cause and checks no per-parameter type or multiplicity axis for that pair; the result-type, result-multiplicity and effect axes are still independently checked and reported when they also fail. | Test (TC-239) |
 
 ## Dependencies
 

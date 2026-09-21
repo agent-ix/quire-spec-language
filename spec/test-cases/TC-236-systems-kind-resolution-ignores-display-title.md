@@ -12,9 +12,14 @@ relationships:
 
 Verify that resolving a systems-model element by required kind matches the
 full declaration key, never a shared display title: two declarations with
-equal title but distinct declaration keys, one a genuine `Part` and one
-without the part-signature capability, classify and resolve independently.
-Scope: FR-086-AC-4.
+equal title but distinct declaration keys and distinct kinds — a genuine
+`Part` and a `Port` — classify and resolve independently. Scope:
+FR-086-AC-4.
+
+Every fixture record here is a state real intake can produce: `pump_2`'s
+`Port` kind comes from being a genuine endpoint (a real, distinct systems
+construct), never from hand-mutating a `has_part_signature` field a real
+component's meaning id always sets `true`.
 
 Catches an implementation that indexes its classification map by title (or
 by title as a fallback when a key lookup "seems" to miss), so that
@@ -25,11 +30,11 @@ case and therefore easy to leave uncaught.
 
 ## Test Procedure
 
-1. Declare component `pump_1` (artifact id `pump_1`, title "Pump") that
-   supplies the part-signature capability.
-2. Declare a second, unrelated component `pump_2` (artifact id `pump_2`,
-   title also "Pump" — the same display title as `pump_1`) that does not
-   supply the part-signature capability.
+1. Declare component `pump_1` (artifact id `pump_1`, title "Pump").
+2. Declare a second, unrelated declaration `pump_2` (artifact id `pump_2`,
+   title also "Pump" — the same display title as `pump_1`): a genuine
+   endpoint, owned by `pump_1`, with a declared direction and a valid
+   interface type, so it classifies `Port`.
 3. Classify the domain package containing both.
 4. Resolve `pump_1`'s key as required kind `Part`, and separately resolve
    `pump_2`'s key as required kind `Part`.
@@ -37,7 +42,8 @@ case and therefore easy to leave uncaught.
 ## Expected Results
 
 `pump_1` resolves successfully as `Part`. `pump_2`'s resolution refuses
-(unsupplied-producer-record), naming `pump_2`'s own key. A mutant that looks
-up classification by title, or falls back to a title-keyed index, resolves
-`pump_2` as `Part` too (borrowing `pump_1`'s classification because they
-share a title), failing the refusal assertion for `pump_2`.
+wrong-export (required `Part`, actual `Port`), naming `pump_2`'s own key. A
+mutant that looks up classification by title, or falls back to a
+title-keyed index, resolves `pump_2` as `Part` too (borrowing `pump_1`'s
+classification because they share a title), failing the refusal assertion
+for `pump_2`.
