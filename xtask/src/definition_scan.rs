@@ -420,7 +420,7 @@ mod tests {
         }
     }
 
-    /// TC-253 step 3/FR-074-AC-1/FR-074-AC-2: `model::checked_dispatch` and
+    /// TC-261 step 3/FR-074-AC-1/FR-074-AC-2: `model::checked_dispatch` and
     /// `model::conformance::check_field_refinement_obligation` -- M-2's own
     /// items -- are now defined in `check`, moved, and are absent from
     /// `model`; an implementation that leaves either one behind in `model`
@@ -429,7 +429,7 @@ mod tests {
     /// test. Inverted from FR-068-AC-7's pre-M-2 assertion (the same two
     /// names, opposite module) now that M-2 (this ticket, QSL-7) has moved
     /// them.
-    #[trace("TC-253", "FR-074-AC-1", "FR-074-AC-2")]
+    #[trace("TC-261", "FR-074-AC-1", "FR-074-AC-2")]
     #[test]
     fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");

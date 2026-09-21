@@ -699,10 +699,10 @@ mod tests {
     /// `model::conformance::check_field_refinement_obligation`, the only
     /// code that made `model` depend on `check`, into `check` itself, so
     /// the interim edge FR-068-AC-9/FR-068-CON-5 bounded to two files and
-    /// thirteen names is now bounded to zero files and zero names -- TC-254
+    /// thirteen names is now bounded to zero files and zero names -- TC-262
     /// steps 1-2 run against the real crate, not a fixture. Inverted from
     /// FR-068-AC-9's pre-M-2 bounded-but-nonempty assertion.
-    #[trace("TC-254", "FR-074-AC-3")]
+    #[trace("TC-262", "FR-074-AC-3")]
     #[test]
     fn real_model_check_edge_is_empty() {
         let edges = model_check_edges(&workspace_root()).expect("scan runs");

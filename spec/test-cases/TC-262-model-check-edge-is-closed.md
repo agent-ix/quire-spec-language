@@ -1,12 +1,12 @@
 ---
-id: TC-254
+id: TC-262
 title: "The model -> check edge is fully closed after M-2"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-074
     type: verifies
 ---
-# TC-254: The `model` → `check` edge is fully closed after M-2
+# TC-262: The `model` → `check` edge is fully closed after M-2
 
 ## Description
 

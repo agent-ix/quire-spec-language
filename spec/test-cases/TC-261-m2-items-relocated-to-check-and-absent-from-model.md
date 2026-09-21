@@ -1,12 +1,12 @@
 ---
-id: TC-253
+id: TC-261
 title: "M-2's items are relocated to check and absent from model"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-074
     type: verifies
 ---
-# TC-253: M-2's items are relocated to `check` and absent from `model`
+# TC-261: M-2's items are relocated to `check` and absent from `model`
 
 ## Description
 
