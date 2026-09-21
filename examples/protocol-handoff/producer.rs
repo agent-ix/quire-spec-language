@@ -5,8 +5,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
-    io::{self, Read},
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -42,9 +41,18 @@ const STANDARD: &str = "ix://agent-ix/quire-specification";
 const FORMAL_NAMESPACE: &str = "quire-contract-ir/source-revision";
 const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
-const BINARY_BYTES: usize = 16 * 1_048_576;
 const CONTRACT: &[u8] = include_bytes!("../../docs/compiled-protocol-v1.md");
 const CONTRACT_V2: &[u8] = include_bytes!("../../docs/compiled-protocol-v2.md");
+/// The producer's own source text. `Producer.binary` identifies this file by
+/// a digest over these bytes (see `producer_source_digest`), so its identity
+/// is exactly what anyone with this repository can independently recompute
+/// (`sha256sum examples/protocol-handoff/producer.rs`) -- unlike a compiled
+/// executable, which nobody retains and which moves with the toolchain. The
+/// digest covers `producer.rs` alone -- not this example's other files, and
+/// not the `quire_spec_language` library that actually performs compilation
+/// -- so "producer identity" means exactly this file, not the example
+/// binary or its dependency closure.
+const PRODUCER_SOURCE: &[u8] = include_bytes!("producer.rs");
 const EVENT_CLOCK: &[u8] =
     b"{ \"kind\": \"event_position\", \"sequence_authority\": \"workflow-events\" }\n";
 const SAMPLE_CLOCK: &[u8] = b"{ \"kind\": \"fixed_sample\", \"epoch\": { \"kind\": \"integer\", \"decimal\": \"0\" }, \"period\": { \"kind\": \"rational\", \"numerator\": \"1\", \"denominator\": \"2\" }, \"unit\": \"second\" }\n";
@@ -322,10 +330,6 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("the producer executable exceeds {maximum} bytes; build this example in release mode with debug information stripped")]
-    BinaryLimit { maximum: usize },
-    #[error("the producer executable is not an ELF version-1 binary")]
-    BinaryFormat,
     #[error("invalid authored formal identifier: {0:?}")]
     Identifier(ir::Diagnostic),
     #[error("{0}")]
@@ -474,13 +478,37 @@ fn reference(
     version: &str,
     bytes: &[u8],
 ) -> w::ArtifactRef {
+    digest_reference(
+        authority,
+        kind,
+        identity,
+        revision,
+        wire,
+        version,
+        ByteDigest::of(bytes),
+    )
+}
+
+/// Build an artifact reference from an already-computed digest, for the one
+/// case (the producer's own source) whose bytes are already tracked at a
+/// known repository path and are never re-materialized as a dependency (see
+/// `producer_source_digest`).
+fn digest_reference(
+    authority: &str,
+    kind: w::ArtifactKind,
+    identity: &str,
+    revision: w::Revision,
+    wire: &str,
+    version: &str,
+    digest: ByteDigest,
+) -> w::ArtifactRef {
     w::ArtifactRef {
         ref_version: "ix.artifact-ref/3-draft".into(),
         kind,
         authority: authority.into(),
         identity: identity.into(),
         revision,
-        digest: ByteDigest::of(bytes),
+        digest,
         wire: w::Wire {
             identity: wire.into(),
             version: version.into(),
@@ -488,27 +516,16 @@ fn reference(
     }
 }
 
-fn current_binary() -> Result<Vec<u8>, Error> {
-    let path = std::env::current_exe().map_err(|error| io_at(Path::new("current_exe"), error))?;
-    let file = File::open(&path).map_err(|error| io_at(&path, error))?;
-    if file.metadata().map_err(|error| io_at(&path, error))?.len() > BINARY_BYTES as u64 {
-        return Err(Error::BinaryLimit {
-            maximum: BINARY_BYTES,
-        });
-    }
-    let mut bytes = Vec::new();
-    file.take(BINARY_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| io_at(&path, error))?;
-    if bytes.len() > BINARY_BYTES {
-        return Err(Error::BinaryLimit {
-            maximum: BINARY_BYTES,
-        });
-    }
-    if !bytes.starts_with(b"\x7fELF") || bytes.get(6) != Some(&1) {
-        return Err(Error::BinaryFormat);
-    }
-    Ok(bytes)
+/// FR-042-AC-10: identify the producer by a digest over its own source text,
+/// checkable by anyone with this repository (`sha256sum
+/// examples/protocol-handoff/producer.rs`) rather than by hashing a compiled
+/// executable that nobody retains and that moves with the toolchain. This is
+/// `Producer.binary` -- not a dependency whose original bytes an independent
+/// reader must recover -- so `PRODUCER_SOURCE` is read only to compute the
+/// digest and is never written to a fixture file or supplied as a
+/// dependency's exact-byte content.
+fn producer_source_digest() -> ByteDigest {
+    ByteDigest::of(PRODUCER_SOURCE)
 }
 
 fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
@@ -894,7 +911,7 @@ struct SelectedInputs {
 }
 
 impl SelectedInputs {
-    fn new(inputs: &Inputs, binary: Vec<u8>) -> Result<Self, Error> {
+    fn new(inputs: &Inputs) -> Result<Self, Error> {
         let model = &inputs.model;
         let contract = reference(
             AUTHORITY,
@@ -905,19 +922,19 @@ impl SelectedInputs {
             "1",
             CONTRACT,
         );
-        let binary_ref = reference(
+        let binary_ref = digest_reference(
             AUTHORITY,
             w::ArtifactKind::GeneratedArtifact,
             "native_protocol_handoff",
             revision("crate-version", env!("CARGO_PKG_VERSION")),
-            "ELF",
+            "text/rust",
             "1",
-            &binary,
+            producer_source_digest(),
         );
         let producer = w::Producer {
             implementation: "quire-spec-language/native_protocol_handoff".into(),
             revision: revision("crate-version", env!("CARGO_PKG_VERSION")),
-            binary: binary_ref.clone(),
+            binary: binary_ref,
         };
         let model_ref = reference(
             AUTHORITY,
@@ -944,8 +961,7 @@ impl SelectedInputs {
             model.source().source().text().as_bytes(),
         );
 
-        let dependencies =
-            selected_dependencies(inputs, binary, &contract, binary_ref, &model_ref)?;
+        let dependencies = selected_dependencies(inputs, &contract, &model_ref)?;
         let baseline = dependency_reference(&dependencies, R::Edition.identity())?;
         Ok(Self {
             contract,
@@ -965,8 +981,8 @@ impl SelectedInputs {
         })
     }
 
-    fn new_v2(inputs: &Inputs, binary: Vec<u8>) -> Result<Self, Error> {
-        let mut selected = Self::new(inputs, binary)?;
+    fn new_v2(inputs: &Inputs) -> Result<Self, Error> {
+        let mut selected = Self::new(inputs)?;
         let contract = reference(
             AUTHORITY,
             w::ArtifactKind::Source,
@@ -988,16 +1004,10 @@ impl SelectedInputs {
         contract_dependency.bytes = Cow::Borrowed(CONTRACT_V2);
         selected.contract = contract;
 
-        let binary_dependency = selected
-            .dependencies
-            .iter_mut()
-            .find(|dependency| dependency.artifact == selected.producer.binary)
-            .ok_or_else(|| Error::Dependency {
-                identity: selected.producer.binary.identity.clone(),
-                matches: 0,
-            })?;
-        binary_dependency.artifact.identity = "native_protocol_v2_handoff".into();
-        selected.producer.binary = binary_dependency.artifact.clone();
+        // The producer's binary is Producer identity, not a byte-sealed
+        // dependency (see `producer_source_digest`), so there is no
+        // `dependencies` entry to find here -- only the reference itself.
+        selected.producer.binary.identity = "native_protocol_v2_handoff".into();
         selected.producer.implementation = "quire-spec-language/native_protocol_v2_handoff".into();
 
         selected
@@ -1037,9 +1047,7 @@ impl SelectedInputs {
 
 fn selected_dependencies(
     inputs: &Inputs,
-    binary: Vec<u8>,
     contract: &w::ArtifactRef,
-    binary_ref: w::ArtifactRef,
     model_ref: &w::ArtifactRef,
 ) -> Result<Vec<Dependency>, Error> {
     let selected = &inputs.definitions.selected;
@@ -1078,16 +1086,13 @@ fn selected_dependencies(
             file: String::new(),
         });
     }
+    // The producer's own binary is not one of these exact-byte dependencies
+    // (see `producer_source_digest`): its identity is Producer.binary, an
+    // artifact reference recording only a digest.
     dependencies.extend([
         Dependency {
             artifact: contract.clone(),
             bytes: Cow::Borrowed(CONTRACT),
-            requires: Vec::new(),
-            file: String::new(),
-        },
-        Dependency {
-            artifact: binary_ref,
-            bytes: Cow::Owned(binary),
             requires: Vec::new(),
             file: String::new(),
         },
@@ -1720,9 +1725,8 @@ impl<'a> ExpectedUnit<'a> {
 
 /// Compile the authored recipe and publish its exact selections in a fresh directory.
 pub fn write(directory: &Path) -> Result<(), Error> {
-    let binary = current_binary()?;
     let inputs = Inputs::new()?;
-    let selected = SelectedInputs::new(&inputs, binary)?;
+    let selected = SelectedInputs::new(&inputs)?;
     let output = compile(&inputs, &selected)?;
     write_files(
         directory,
@@ -1734,9 +1738,8 @@ pub fn write(directory: &Path) -> Result<(), Error> {
 
 /// Compile the authored temporal recipe as strict v2 and publish its complete handoff.
 pub fn write_v2(directory: &Path) -> Result<(), Error> {
-    let binary = current_binary()?;
     let inputs = Inputs::new_v2()?;
-    let selected = SelectedInputs::new_v2(&inputs, binary)?;
+    let selected = SelectedInputs::new_v2(&inputs)?;
     let output = compile_v2(&inputs, &selected)?;
     write_files_v2(
         directory,
@@ -1910,7 +1913,8 @@ fn write_files_v2(
         &directory.join(PUBLISHED_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)
+    write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)?;
+    write_checksum_inventory(directory)
 }
 
 fn mutation_fixtures(

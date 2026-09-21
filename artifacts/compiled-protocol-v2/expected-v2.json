@@ -9,7 +9,7 @@
         "namespace": "example-output",
         "value": "2"
       },
-      "digest": "sha256:4555945d0074f7a6d6592b7374761c9f33cedc2721a55de2cb3f51fc8224ed38",
+      "digest": "sha256:2951d7234c7b6512a22dfa3330edef2d300eeb40588dec265ced1fe874113347",
       "wire": {
         "identity": "quire.compiled-protocol",
         "version": "2"
@@ -24,7 +24,7 @@
         "namespace": "compiled-protocol-contract",
         "value": "2"
       },
-      "digest": "sha256:2cac7b32cdf982f493719133014cefc26c19d2ee00906af39594d3645b908d41",
+      "digest": "sha256:fead0c5ea52ee688334054157d89c0e3a53f008ec8033054bf511df523ad98fa",
       "wire": {
         "identity": "text/markdown",
         "version": "1"
@@ -49,7 +49,7 @@
       "implementation": "quire-spec-language/native_protocol_v2_handoff",
       "revision": {
         "namespace": "crate-version",
-        "value": "0.1.0"
+        "value": "0.2.0"
       },
       "binary": {
         "refVersion": "ix.artifact-ref/3-draft",
@@ -58,11 +58,11 @@
         "identity": "native_protocol_v2_handoff",
         "revision": {
           "namespace": "crate-version",
-          "value": "0.1.0"
+          "value": "0.2.0"
         },
-        "digest": "sha256:5b2225571ba8b6958c22734b8d6476f14eb63924a83e91ca4abcfeef43e1e015",
+        "digest": "sha256:e2f692af26f2677af866e8f096403e2ad96256483480f7743d48f469ebc31630",
         "wire": {
-          "identity": "ELF",
+          "identity": "text/rust",
           "version": "1"
         }
       }
@@ -403,25 +403,6 @@
       {
         "artifact": {
           "refVersion": "ix.artifact-ref/3-draft",
-          "kind": "generated-artifact",
-          "authority": "ix://agent-ix/quire-spec-language",
-          "identity": "native_protocol_v2_handoff",
-          "revision": {
-            "namespace": "crate-version",
-            "value": "0.1.0"
-          },
-          "digest": "sha256:5b2225571ba8b6958c22734b8d6476f14eb63924a83e91ca4abcfeef43e1e015",
-          "wire": {
-            "identity": "ELF",
-            "version": "1"
-          }
-        },
-        "file": "dependencies/0.bin",
-        "requires": []
-      },
-      {
-        "artifact": {
-          "refVersion": "ix.artifact-ref/3-draft",
           "kind": "model-package",
           "authority": "ix://agent-ix/quire-spec-language",
           "identity": "agent-ix/protocol-handoff",
@@ -435,7 +416,7 @@
             "version": "2"
           }
         },
-        "file": "dependencies/1.bin",
+        "file": "dependencies/0.bin",
         "requires": []
       },
       {
@@ -448,13 +429,13 @@
             "namespace": "compiled-protocol-contract",
             "value": "2"
           },
-          "digest": "sha256:2cac7b32cdf982f493719133014cefc26c19d2ee00906af39594d3645b908d41",
+          "digest": "sha256:fead0c5ea52ee688334054157d89c0e3a53f008ec8033054bf511df523ad98fa",
           "wire": {
             "identity": "text/markdown",
             "version": "1"
           }
         },
-        "file": "dependencies/2.bin",
+        "file": "dependencies/1.bin",
         "requires": []
       },
       {
@@ -473,7 +454,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/3.bin",
+        "file": "dependencies/2.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -673,7 +654,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/4.bin",
+        "file": "dependencies/3.bin",
         "requires": []
       },
       {
@@ -692,7 +673,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/5.bin",
+        "file": "dependencies/4.bin",
         "requires": []
       },
       {
@@ -711,7 +692,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/6.bin",
+        "file": "dependencies/5.bin",
         "requires": []
       },
       {
@@ -730,7 +711,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/7.bin",
+        "file": "dependencies/6.bin",
         "requires": []
       },
       {
@@ -749,7 +730,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/8.bin",
+        "file": "dependencies/7.bin",
         "requires": []
       },
       {
@@ -768,7 +749,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/9.bin",
+        "file": "dependencies/8.bin",
         "requires": []
       },
       {
@@ -787,7 +768,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/10.bin",
+        "file": "dependencies/9.bin",
         "requires": []
       },
       {
@@ -806,7 +787,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/11.bin",
+        "file": "dependencies/10.bin",
         "requires": []
       },
       {
@@ -825,7 +806,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/12.bin",
+        "file": "dependencies/11.bin",
         "requires": []
       },
       {
@@ -844,7 +825,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/13.bin",
+        "file": "dependencies/12.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -999,7 +980,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/14.bin",
+        "file": "dependencies/13.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1094,7 +1075,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/15.bin",
+        "file": "dependencies/14.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1144,7 +1125,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/16.bin",
+        "file": "dependencies/15.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1209,7 +1190,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/17.bin",
+        "file": "dependencies/16.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1514,7 +1495,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/18.bin",
+        "file": "dependencies/17.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1624,7 +1605,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/19.bin",
+        "file": "dependencies/18.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1674,7 +1655,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/20.bin",
+        "file": "dependencies/19.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1769,7 +1750,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/21.bin",
+        "file": "dependencies/20.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1939,7 +1920,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/22.bin",
+        "file": "dependencies/21.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -1974,7 +1955,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/23.bin",
+        "file": "dependencies/22.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -2009,7 +1990,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/24.bin",
+        "file": "dependencies/23.bin",
         "requires": [
           {
             "refVersion": "ix.artifact-ref/3-draft",
@@ -2044,7 +2025,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/25.bin",
+        "file": "dependencies/24.bin",
         "requires": []
       },
       {
@@ -2063,7 +2044,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/26.bin",
+        "file": "dependencies/25.bin",
         "requires": []
       },
       {
@@ -2082,7 +2063,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/27.bin",
+        "file": "dependencies/26.bin",
         "requires": []
       },
       {
@@ -2101,7 +2082,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/28.bin",
+        "file": "dependencies/27.bin",
         "requires": []
       },
       {
@@ -2120,7 +2101,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/29.bin",
+        "file": "dependencies/28.bin",
         "requires": []
       },
       {
@@ -2139,7 +2120,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/30.bin",
+        "file": "dependencies/29.bin",
         "requires": []
       },
       {
@@ -2158,7 +2139,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/31.bin",
+        "file": "dependencies/30.bin",
         "requires": []
       },
       {
@@ -2177,7 +2158,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/32.bin",
+        "file": "dependencies/31.bin",
         "requires": []
       },
       {
@@ -2196,7 +2177,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/33.bin",
+        "file": "dependencies/32.bin",
         "requires": []
       },
       {
@@ -2215,7 +2196,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/34.bin",
+        "file": "dependencies/33.bin",
         "requires": []
       },
       {
@@ -2234,7 +2215,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/35.bin",
+        "file": "dependencies/34.bin",
         "requires": []
       },
       {
@@ -2253,7 +2234,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/36.bin",
+        "file": "dependencies/35.bin",
         "requires": []
       },
       {
@@ -2272,7 +2253,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/37.bin",
+        "file": "dependencies/36.bin",
         "requires": []
       },
       {
@@ -2291,7 +2272,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/38.bin",
+        "file": "dependencies/37.bin",
         "requires": []
       },
       {
@@ -2310,7 +2291,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/39.bin",
+        "file": "dependencies/38.bin",
         "requires": []
       },
       {
@@ -2329,7 +2310,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/40.bin",
+        "file": "dependencies/39.bin",
         "requires": []
       },
       {
@@ -2348,7 +2329,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/41.bin",
+        "file": "dependencies/40.bin",
         "requires": []
       },
       {
@@ -2367,7 +2348,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/42.bin",
+        "file": "dependencies/41.bin",
         "requires": []
       },
       {
@@ -2386,7 +2367,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/43.bin",
+        "file": "dependencies/42.bin",
         "requires": []
       },
       {
@@ -2405,7 +2386,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/44.bin",
+        "file": "dependencies/43.bin",
         "requires": []
       },
       {
@@ -2424,7 +2405,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/45.bin",
+        "file": "dependencies/44.bin",
         "requires": []
       },
       {
@@ -2443,7 +2424,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/46.bin",
+        "file": "dependencies/45.bin",
         "requires": []
       },
       {
@@ -2462,7 +2443,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/47.bin",
+        "file": "dependencies/46.bin",
         "requires": []
       },
       {
@@ -2481,7 +2462,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/48.bin",
+        "file": "dependencies/47.bin",
         "requires": []
       },
       {
@@ -2500,7 +2481,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/49.bin",
+        "file": "dependencies/48.bin",
         "requires": []
       },
       {
@@ -2519,7 +2500,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/50.bin",
+        "file": "dependencies/49.bin",
         "requires": []
       },
       {
@@ -2538,7 +2519,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/51.bin",
+        "file": "dependencies/50.bin",
         "requires": []
       },
       {
@@ -2557,7 +2538,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/52.bin",
+        "file": "dependencies/51.bin",
         "requires": []
       },
       {
@@ -2576,7 +2557,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/53.bin",
+        "file": "dependencies/52.bin",
         "requires": []
       },
       {
@@ -2595,7 +2576,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/54.bin",
+        "file": "dependencies/53.bin",
         "requires": []
       },
       {
@@ -2614,7 +2595,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/55.bin",
+        "file": "dependencies/54.bin",
         "requires": []
       },
       {
@@ -2633,7 +2614,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/56.bin",
+        "file": "dependencies/55.bin",
         "requires": []
       },
       {
@@ -2652,7 +2633,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/57.bin",
+        "file": "dependencies/56.bin",
         "requires": []
       },
       {
@@ -2671,7 +2652,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/58.bin",
+        "file": "dependencies/57.bin",
         "requires": []
       },
       {
@@ -2690,7 +2671,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/59.bin",
+        "file": "dependencies/58.bin",
         "requires": []
       },
       {
@@ -2709,7 +2690,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/60.bin",
+        "file": "dependencies/59.bin",
         "requires": []
       },
       {
@@ -2728,7 +2709,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/61.bin",
+        "file": "dependencies/60.bin",
         "requires": []
       },
       {
@@ -2747,7 +2728,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/62.bin",
+        "file": "dependencies/61.bin",
         "requires": []
       },
       {
@@ -2766,7 +2747,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/63.bin",
+        "file": "dependencies/62.bin",
         "requires": []
       },
       {
@@ -2785,7 +2766,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/64.bin",
+        "file": "dependencies/63.bin",
         "requires": []
       },
       {
@@ -2804,7 +2785,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/65.bin",
+        "file": "dependencies/64.bin",
         "requires": []
       },
       {
@@ -2823,7 +2804,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/66.bin",
+        "file": "dependencies/65.bin",
         "requires": []
       },
       {
@@ -2842,7 +2823,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/67.bin",
+        "file": "dependencies/66.bin",
         "requires": []
       },
       {
@@ -2861,7 +2842,7 @@
             "version": "1"
           }
         },
-        "file": "dependencies/68.bin",
+        "file": "dependencies/67.bin",
         "requires": []
       }
     ],
