@@ -79,6 +79,19 @@ requires an already-admitted `Witness`).
   family (starting with #186's state `forall`) attaches its own typed
   payload as a distinct, family-owned type, without adding a variant,
   field, or special case to the common envelope's own type or constructors.
+  The common envelope type SHALL define that extension point as a trait a
+  family-owned payload type implements, or as a generic parameter the
+  common envelope carries, and SHALL NOT define it as a `String`-keyed or
+  otherwise untyped map that a family populates by convention.
+- This envelope carries no `contract_version` of its own: version ownership
+  is delegated to the FR-331 envelope (FR-069) within which a
+  `counterexamples` entry travels, and to the closed FR-201 digest-domain
+  set every `RawSourceRef` and `package_id` digest this envelope stores must
+  belong to. Envelope construction SHALL refuse a digest whose domain falls
+  outside that closed set.
+- Envelope construction SHALL refuse when the envelope's encoded size
+  exceeds the configured reader bound, and SHALL NOT return a truncated or
+  partially-populated envelope in that case.
 
 ## Constraints
 
@@ -94,7 +107,9 @@ requires an already-admitted `Witness`).
 | FR-070-AC-2 | A cover transcript, an untrimmed transcript, and a transcript with zero or two assertion blocks each refuse at envelope construction; none produces a partially-built envelope. | Test (TC-181) |
 | FR-070-AC-3 | A positive envelope's construct → serialize → read round trip preserves the transcript byte-for-byte and every O-25 member (obligation identity, occurrence key, package reference and digests, profile selections, bounds and domains, backend, trace position, `ReplaySource` variant) exactly, with no member re-derived, reordered or dropped. | Test (TC-182) |
 | FR-070-AC-4 | An O-25 packet missing any one required member (for example, no trace position on a family that carries one, or no `backend` member) refuses at reconstruction; no envelope is built with a defaulted or absent value in that member's place. | Test (TC-183) |
-| FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract. | Test (TC-184) |
+| FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
+| FR-070-AC-6 | This envelope defines no `contract_version` member of its own; a `RawSourceRef` or `package_id` digest it stores whose domain falls outside the closed FR-201 digest-domain set refuses at construction. | Test (TC-181) |
+| FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
 
 ## Dependencies
 
@@ -109,6 +124,12 @@ requires an already-admitted `Witness`).
   (separating-witness record; QSpec status **Draft** as of this writing —
   fully specified with acceptance criteria, cited here as the normative
   shape this envelope's `Input`-arm and #217/#186 consumers read).
+- **Shared types**: [#213](https://github.com/agent-ix/quire-spec-language/issues/213)
+  (ARCH-20) owns the O-04 `NodeKey`/occurrence-key shapes the obligation
+  identity and occurrence key members reuse, the O-18 digest record the
+  `RawSourceRef` and `package_id` digests reuse, and the O-11 `QualifiedName`
+  the selected function's identity reuses; this requirement defines no
+  parallel identity or digest type.
 - **Downstream**: [FR-071](FR-071-implement-typed-replay-request.md) carries
   this envelope's members into the replay request;
   [FR-072](FR-072-implement-typed-replay-result.md)'s per-item result embeds

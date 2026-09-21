@@ -20,7 +20,7 @@ state family needs (for example, requiring a `frame_id` field every
 function-application result would have to fake), forcing #217 to define a
 parallel, function-specific result type instead of reusing this one, which
 is exactly the "two authoritative producer paths" outcome ADR-011 §4
-forbids.
+forbids. Scope: FR-072-AC-4.
 
 ## Test Procedure
 
@@ -30,9 +30,13 @@ forbids.
    function call's counterexample, a replay request naming the function by
    `QualifiedName`, and a replay result comparing the proved and replayed
    verdicts.
-2. Confirm no new struct, enum, or trait was defined to represent any part
-   of this scenario beyond ordinary glue code (test setup, fixture
-   construction) that does not itself carry witness or replay identity.
+2. Diff the exemplar's own crate/module against its state before step 1
+   and list every new `struct`, `enum`, or `trait` item the diff adds;
+   confirm none of them has a field or variant typed to carry a proof
+   category, a transcript, a witness value, a replay verdict, or a
+   settlement — the identity-carrying content FR-069 through FR-072
+   already type — as distinct from ordinary test glue (fixture builders,
+   `#[test]` functions, assertion helpers) that hold no such field.
 3. Repeat step 1 for a second, structurally different function (different
    arity, different argument types) and confirm the same four types are
    reused unchanged.
@@ -41,6 +45,8 @@ forbids.
 
 - The scenario in step 1 is fully representable using only the FR-069
   through FR-072 types.
-- Step 2 finds no new witness or replay type introduced by the exemplar.
+- Step 2's diff lists zero new items carrying proof-category, transcript,
+  witness-value, replay-verdict, or settlement content; any new items
+  found are ordinary test glue and carry no such field.
 - Step 3's structurally different function reuses the identical four types
   with no modification.

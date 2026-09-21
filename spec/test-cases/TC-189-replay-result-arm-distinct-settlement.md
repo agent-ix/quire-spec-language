@@ -12,14 +12,22 @@ relationships:
 
 Verify that a `Witness`-arm agreement settles `reproduced-with-evaluated-witness`
 and an `Input`-arm agreement settles `reproduced-without-witness`, that
-these are distinct values, and that the `Input`-arm settlement is never
-reported or convertible to a value that counts as backend evidence. A wrong
-implementation this test would catch: a result type with one shared
+these are distinct values, and that the `Input`-arm and `Witness`-arm
+result types are distinct with no conversion between them — the property
+FR-072 actually builds, and the one CG's separately-owned sealed
+backend-evidence-verdict type (AD-016, owned by the CG parity comparator,
+not by this ticket) depends on. This test does not construct that CG-owned
+sealed type; it verifies the QSL-side type boundary CG's type relies on. A
+wrong implementation this test would catch: a result type with one shared
 `agreed: bool` flag instead of two distinct arm-settlement values; under
 that shape, a caller checking only `agreed` cannot tell a corpus-sourced
 "reproduced without a witness" result from real backend-witnessed evidence,
 which is exactly the AD-016 WP9 distinction this envelope exists to
-preserve. Scope: FR-072-AC-1.
+preserve; or a result type that implements `From<InputArmResult> for
+WitnessArmResult` (or the reverse), which would let CG's comparator be
+fed an `Input`-arm result through the conversion even though its own
+construction path is nominally restricted to the `Witness` arm. Scope:
+FR-072-AC-1.
 
 ## Test Procedure
 
@@ -28,14 +36,16 @@ preserve. Scope: FR-072-AC-1.
 2. Construct an `Input`-arm result (a corpus counterexample with no
    backend transcript) whose native replay agrees with the proved verdict.
 3. Read each result's settlement value.
-4. Attempt to construct or convert a backend-evidence verdict (the sealed
-   type AD-016 names, constructible only from an agreeing `Witness`-arm
-   result) from the `Input`-arm result of step 2.
+4. Inspect the `Witness`-arm and `Input`-arm result types for any `From`,
+   `TryFrom`, `Into` or other conversion between them, in either direction,
+   and attempt to compile a call site that passes the `Input`-arm result
+   from step 2 where the type system requires a `Witness`-arm result.
 
 ## Expected Results
 
 - The `Witness`-arm result's settlement is `reproduced-with-evaluated-witness`.
 - The `Input`-arm result's settlement is `reproduced-without-witness`, a
   distinct value from step 3's `Witness`-arm settlement.
-- Step 4 fails: there is no public path from an `Input`-arm result to a
-  backend-evidence verdict.
+- Step 4 finds no conversion between the two arm-result types in either
+  direction, and the call site passing the `Input`-arm result where a
+  `Witness`-arm result is required fails to compile.

@@ -62,7 +62,17 @@ exemplar.
   arms.
 - Agreement on the `Witness` arm SHALL settle `reproduced-with-evaluated-witness`.
 - Agreement on the `Input` arm SHALL settle `reproduced-without-witness`,
-  never reported or convertible into backend evidence.
+  never reported or convertible into backend evidence. AD-016's
+  Replay-ownership table gives the CG parity comparator's sealed
+  backend-evidence-verdict type — constructible only from an agreeing
+  `Witness`-arm result, with no public field and no `Deserialize`,
+  `Default`, `From` or `TryFrom` — as the type that actually enforces this
+  in CG; that sealed type belongs to CG, not this requirement. This
+  requirement's own obligation is narrower and is what CG's comparator
+  depends on: the `Witness`-arm and `Input`-arm result types SHALL be
+  distinct types with no `From`, `TryFrom`, `Into` or blanket conversion
+  between them in either direction, so that no call site typed to accept a
+  `Witness`-arm result can be satisfied by an `Input`-arm result.
 - A disagreement between the proved and replayed verdicts (each taken from
   the fixed O-16-category-to-verdict map) SHALL settle `inconclusive` with a
   typed cause, with no public API path on the result type that constructs
@@ -77,6 +87,9 @@ exemplar.
   replay result using the result type together with FR-070's witness
   envelope and FR-071's request type, with no new witness or replay type
   defined in #217's own scope.
+- The reader SHALL refuse a result whose encoded size exceeds the
+  configured reader bound, and SHALL NOT return a truncated or
+  partially-populated result in that case.
 
 ## Constraints
 
@@ -88,10 +101,11 @@ exemplar.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-072-AC-1 | Given a `Witness`-arm agreement and an `Input`-arm agreement, each settles its own distinct value (`reproduced-with-evaluated-witness` and `reproduced-without-witness` respectively), and the `Input`-arm settlement is never reported or convertible to a value that counts as backend evidence. | Test (TC-189) |
+| FR-072-AC-1 | Given a `Witness`-arm agreement and an `Input`-arm agreement, each settles its own distinct value (`reproduced-with-evaluated-witness` and `reproduced-without-witness` respectively); the `Witness`-arm and `Input`-arm result types are distinct with no `From`, `TryFrom`, `Into` or blanket conversion between them, so no `Input`-arm result can satisfy a call site typed for a `Witness`-arm result (the only input CG's sealed backend-evidence-verdict type, AD-016, admits). | Test (TC-189) |
 | FR-072-AC-2 | Given a proved verdict and a replayed verdict for the same item that differ under the fixed O-16-category-to-verdict map, the result settles `inconclusive` with a typed cause, and no public constructor, setter or `From`/`TryFrom` conversion on the result type can produce an agreement result from those disagreeing verdicts. | Test (TC-190) |
 | FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested FR-351 record's deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
 | FR-072-AC-4 | #217's function-application exemplar constructs and compares a replay result using only this type together with FR-070's witness envelope and FR-071's request type, with no new witness or replay type defined in #217's repository scope. | Test (TC-192) |
+| FR-072-AC-5 | A result whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated result is returned. | Test (TC-191) |
 
 ## Dependencies
 
@@ -104,7 +118,18 @@ exemplar.
   (`native-run-result/2` wire; both QSpec status **Draft** as of this
   writing — fully specified with acceptance criteria and cited here as the
   normative record shape this result type carries and the version-refusal
-  rule FR-072-CON-1 delegates to).
+  rule FR-072-CON-1 delegates to). QSpec AD-016's Replay-ownership table
+  (`spec/assurance/AD-016-semantic-family-extension-path.md`) assigns the
+  "Replay result" row to QSL (#231, this requirement) and the separate
+  "Backend-evidence verdict" row to the CG parity comparator; this
+  requirement builds only the former and defines no backend-evidence
+  verdict type itself.
+- **Shared types**: #213 (ARCH-20) owns the O-16 category-to-verdict map's
+  kernel `Outcome` type and the ADR-013 O-12 resolved-region type this
+  result's nested fields reuse; this requirement adds no parallel type for
+  either.
 - **Downstream**: [#217](https://github.com/agent-ix/quire-spec-language/issues/217)'s
   function-application exemplar; [#186](https://github.com/agent-ix/quire-spec-language/issues/186)'s
-  `native-run-result/2` serializer and state-specific payload.
+  `native-run-result/2` serializer and state-specific payload; the CG
+  parity comparator, which builds the sealed backend-evidence-verdict type
+  (AD-016) from this requirement's `Witness`-arm result.
