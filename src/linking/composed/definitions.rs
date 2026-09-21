@@ -67,6 +67,15 @@ pub enum Cause {
         /// Indices of the supplied entries claiming this selection.
         entries: Vec<usize>,
     },
+    /// No supplied artifact has this compiler-required identity and revision.
+    MissingDependency(RegisteredDefinition),
+    /// Multiple supplied entries claim one compiler-required identity/revision.
+    AmbiguousDependency {
+        /// The compiler-required definition matched by multiple entries.
+        required: RegisteredDefinition,
+        /// Indices of the supplied entries claiming this definition.
+        entries: Vec<usize>,
+    },
     /// Asserted digest does not match supplied content.
     DefinitionDigest {
         /// Index of the supplied entry whose digest does not match its bytes.
@@ -96,26 +105,26 @@ pub enum Cause {
         /// Indices of the supplied rule entries claiming this path.
         entries: Vec<usize>,
     },
-    /// Rule content or its declared digest differs from the supported baseline.
+    /// A supplied rule's declared digest does not match its own supplied bytes.
     RuleMismatch {
         /// Baseline path of the mismatched rule.
         path: &'static str,
-        /// Index of the supplied entry whose content or digest differs from the baseline.
+        /// Index of the supplied entry whose declared digest does not match its bytes.
         entry: usize,
     },
     /// Exact selection is known but is not the composed edition definition.
     WrongEdition(Selection),
     /// An inherited requirement selected two meanings for one identity.
     IncompatibleRequirement {
-        /// The first selection resolved for this identity.
-        first: Selection,
-        /// The later, incompatible selection resolved for the same identity.
-        second: Selection,
+        /// The first definition resolved for this identity.
+        first: RegisteredDefinition,
+        /// The later, incompatible definition resolved for the same identity.
+        second: RegisteredDefinition,
     },
     /// A semantic definition path repeats an active dependency.
     DefinitionCycle {
-        /// The selection whose dependency path repeats an active definition.
-        definition: Selection,
+        /// The definition whose dependency path repeats an active definition.
+        definition: RegisteredDefinition,
     },
     /// The authored profile alias is absent in this source unit.
     MissingAlias,
@@ -469,7 +478,6 @@ impl<'a> Catalog<'a> {
                 work.charge(Dimension::References, 1)?;
                 if candidate.identity() == artifact.selection.identity
                     && candidate.revision() == artifact.selection.revision
-                    && candidate.bytes() == artifact.bytes
                 {
                     registered = Some(*candidate);
                     break;
@@ -518,6 +526,38 @@ impl<'a> Catalog<'a> {
         Ok(self.registered[index].ok_or(Cause::UnsupportedDefinition { entry: index }))
     }
 
+    /// Resolve one compiler-required dependency by identity and revision.
+    ///
+    /// Unlike [`Self::select`], `required` is compiler-owned registry metadata,
+    /// never a caller-typed selection, so there is no caller digest to compare
+    /// against: recognition is by identity and revision alone.
+    fn select_dependency(
+        &self,
+        required: RegisteredDefinition,
+        work: &mut Work,
+    ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
+        work.charge(Dimension::References, 1)?;
+        let entries = self
+            .definitions
+            .get(&(required.identity(), required.revision()));
+        let index = match entries.map(Vec::as_slice) {
+            None | Some([]) => return Ok(Err(Cause::MissingDependency(required))),
+            Some([index]) => *index,
+            Some(entries) => {
+                return Ok(Err(Cause::AmbiguousDependency {
+                    required,
+                    entries: entries.to_vec(),
+                }))
+            }
+        };
+        if self.invalid_digest.contains(&index) {
+            return Ok(Err(Cause::DefinitionDigest { entry: index }));
+        }
+        // `self.registered[index]` was recognized by this same identity and
+        // revision in `Catalog::new`, so it is exactly `required` here.
+        Ok(Ok(required))
+    }
+
     fn closure(
         &self,
         selection: &Selection,
@@ -542,9 +582,7 @@ impl<'a> Catalog<'a> {
                 continue;
             }
             if active.contains(&definition) {
-                return Ok(Err(Cause::DefinitionCycle {
-                    definition: definition.selection(),
-                }));
+                return Ok(Err(Cause::DefinitionCycle { definition }));
             }
             if !seen.insert(definition) {
                 continue;
@@ -552,8 +590,8 @@ impl<'a> Catalog<'a> {
             if let Some(previous) = identities.insert(definition.identity(), definition) {
                 if previous != definition {
                     return Ok(Err(Cause::IncompatibleRequirement {
-                        first: previous.selection(),
-                        second: definition.selection(),
+                        first: previous,
+                        second: definition,
                     }));
                 }
             }
@@ -574,8 +612,7 @@ impl<'a> Catalog<'a> {
                     }
                 };
                 let supplied = &self.input.rules[index];
-                if supplied.bytes != rule.bytes || supplied.digest != ByteDigest::of(supplied.bytes)
-                {
+                if supplied.digest != ByteDigest::of(supplied.bytes) {
                     return Ok(Err(Cause::RuleMismatch {
                         path: rule.path,
                         entry: index,
@@ -584,9 +621,9 @@ impl<'a> Catalog<'a> {
             }
             for dependency in definition.requirements().iter().rev() {
                 work.charge(Dimension::Edges, 1)?;
-                // Exact dependency selections come from compiler-owned registry
-                // metadata, never arbitrary annotations supplied with a document.
-                match self.select(&dependency.selection(), work)? {
+                // Exact dependencies come from compiler-owned registry metadata,
+                // never arbitrary annotations supplied with a document.
+                match self.select_dependency(*dependency, work)? {
                     Ok(selected) => stack.push((selected, false)),
                     Err(cause) => return Ok(Err(cause)),
                 }

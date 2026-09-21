@@ -448,10 +448,6 @@ pub(super) fn definitions(
             if definition.identity == candidate.identity()
                 && definition.revision.value == candidate.revision()
             {
-                work.bytes(selected.bytes.len().saturating_add(candidate.bytes().len()))?;
-                if selected.bytes != candidate.bytes() {
-                    return Err(Error::Invalid(Invalid::Definition));
-                }
                 found = Some(*candidate);
                 break;
             }
@@ -489,11 +485,12 @@ pub(super) fn definitions(
             let mut found = false;
             for (position, rule) in selected.rules().iter().enumerate() {
                 work.visit()?;
-                if supplied.bytes.len() != rule.bytes.len() {
-                    continue;
-                }
-                work.bytes(rule.bytes.len().saturating_add(supplied.bytes.len()))?;
-                if supplied.bytes == rule.bytes {
+                work.bytes(
+                    rule.path
+                        .len()
+                        .saturating_add(supplied.artifact.identity.len()),
+                )?;
+                if supplied.artifact.identity == rule.path {
                     if std::mem::replace(&mut seen[position], true) {
                         return Err(Error::Invalid(Invalid::Duplicate));
                     }

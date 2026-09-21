@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-036: compiler-owned interpretations of exact native definition artifacts.
+//! FR-036: compiler-owned interpretations of native definition artifacts.
 //!
-//! Resources preserve the normative bytes from [standard PR #15][baseline].
-//! Their document license remains governed by that private standard repository;
-//! this source notice does not relicense the copied artifacts. Diagnostic rules
-//! preserve the historical compiler sources explicitly selected by the standard.
+//! This closed registry names, for each recognized interpretation, the
+//! authority, identity, revision and artifact path a caller-supplied
+//! definition is checked against, and the normative rules it selects. Every
+//! entry is a forward reference: an authority, an identity string, a
+//! revision string and a path telling a reader where to resolve the real
+//! artifact from. None of it is embedded content, and recognizing a
+//! caller-supplied definition is by identity and revision alone.
 //!
-//! This closed registry binds reviewed metadata to those bytes. It neither
-//! interprets arbitrary Markdown nor discovers omitted invocation inputs.
-//! Recognition alone establishes no model binding, type checking or execution.
-//!
-//! [baseline]: https://github.com/agent-ix/quire-specification/pull/15
+//! This closed registry binds reviewed metadata to those references. It
+//! neither interprets arbitrary Markdown nor discovers omitted invocation
+//! inputs. Recognition alone establishes no model binding, type checking or
+//! execution.
 
+#[cfg(any(test, feature = "test-support"))]
 use super::definitions::Selection;
+#[cfg(any(test, feature = "test-support"))]
 use crate::ByteDigest;
 
 /// A compiler-known interpretation, unavailable through caller-defined metadata.
@@ -48,41 +52,39 @@ pub enum RegisteredDefinition {
     Diagnostics,
 }
 
-/// Exact normative rule selected by a registered definition.
+/// One normative rule selected by a registered definition: an inventory key,
+/// never an instruction to retrieve content.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuleArtifact {
-    /// Standard-relative path, or the original URL for an external selection.
-    /// This is an inventory key and never an instruction to retrieve content.
+    /// This repository's own path, or the original URL for an external rule.
     pub path: &'static str,
-    /// Original rule bytes; their integrity domain is the raw file content.
-    pub bytes: &'static [u8],
 }
 
 struct RegisteredSource {
+    authority: &'static str,
     identity: &'static str,
     revision: &'static str,
     path: &'static str,
-    bytes: &'static [u8],
     requirements: &'static [RegisteredDefinition],
     rules: &'static [RuleArtifact],
 }
 
+/// This registry's publishing authority for every entry.
+const AUTHORITY: &str = "agent-ix";
+
 macro_rules! rule {
     ($path:literal) => {
-        RuleArtifact {
-            path: $path,
-            bytes: include_bytes!(concat!("../../../resources/native-v1/", $path)),
-        }
+        RuleArtifact { path: $path }
     };
 }
 
 macro_rules! definition {
     ($file:literal, $identity:literal, $revision:literal, [$($requirement:ident),*], [$($rule:expr),* $(,)?]) => {
         RegisteredSource {
+            authority: AUTHORITY,
             identity: $identity,
             revision: $revision,
             path: concat!("proposals/quire-v1/definitions/", $file, ".md"),
-            bytes: include_bytes!(concat!("../../../resources/native-v1/proposals/quire-v1/definitions/", $file, ".md")),
             requirements: &[$(RegisteredDefinition::$requirement),*],
             rules: &[$($rule),*],
         }
@@ -110,6 +112,11 @@ impl RegisteredDefinition {
         ]
     }
 
+    /// The authority that publishes this definition's identity.
+    pub fn authority(self) -> &'static str {
+        self.source().authority
+    }
+
     /// Exact definition identity, distinct from a source-local alias.
     pub fn identity(self) -> &'static str {
         self.source().identity
@@ -125,13 +132,18 @@ impl RegisteredDefinition {
         self.source().path
     }
 
-    /// Original normative definition bytes, without normalization or repair.
+    /// Test-only synthetic byte payload derived from this definition's own
+    /// identity, never real document content. Gated behind `test-support` so
+    /// a production caller cannot reach it; `cargo test --all-features`
+    /// enables it for fixture construction.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn bytes(self) -> &'static [u8] {
-        self.source().bytes
+        self.identity().as_bytes()
     }
 
-    /// Exact selection with a digest derived from the embedded original bytes.
-    /// Invocation intake owns charging and supplied-content validation.
+    /// Test-only selection whose digest covers [`Self::bytes`]'s synthetic
+    /// placeholder, never real document content. See [`Self::bytes`].
+    #[cfg(any(test, feature = "test-support"))]
     pub fn selection(self) -> Selection {
         Selection {
             identity: self.identity().into(),
@@ -238,14 +250,8 @@ impl RegisteredDefinition {
                 rule!("proposals/shared-reference-2-draft/README.md"),
             ]),
             Self::Diagnostics => definition!("native-diagnostics", "quire.native.diagnostics/v1", "1-draft.1", [], [
-                RuleArtifact {
-                    path: "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs",
-                    bytes: include_bytes!("../../../resources/native-v1/external/quire-spec-language/src/diagnostic.rs"),
-                },
-                RuleArtifact {
-                    path: "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md",
-                    bytes: include_bytes!("../../../resources/native-v1/external/quire-spec-language/docs/native-error-codes.md"),
-                },
+                rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
+                rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),
             ]),
         }
     }
