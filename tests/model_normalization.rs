@@ -19,7 +19,6 @@ use quire_spec_language::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome, Refusals,
 };
 
-
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,
     upper: Some(1),
@@ -655,7 +654,10 @@ fn find_type<'a>(
 
 /// `identity` is exactly a 64-character lowercase hex SHA-256 digest.
 fn is_sha256_hex(identity: &str) -> bool {
-    identity.len() == 64 && identity.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    identity.len() == 64
+        && identity
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[trace("TC-195", "FR-150-AC-1", "FR-150-AC-3")]
@@ -786,7 +788,8 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     assert!(is_sha256_hex(&universe.identity().to_string()));
     // Different from version 1's own view/universe: the model selection
     // changed.
-    let universe_v1 = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe_v1 =
+        quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
     assert_ne!(view.identity(), v1.identity());
     assert_ne!(universe.identity(), universe_v1.identity());
 }

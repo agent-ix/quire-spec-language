@@ -402,7 +402,10 @@ fn dimension_and_unit_semantic_mutations_refuse_by_their_named_cause() {
     );
 
     let mut duplicate_term = base.clone();
-    duplicate_term.dimension(derived_dimension("DupTerm", &[(length, "1"), (length, "2")]));
+    duplicate_term.dimension(derived_dimension(
+        "DupTerm",
+        &[(length, "1"), (length, "2")],
+    ));
     assert_eq!(
         duplicate_term.admit().unwrap_err().cause,
         SemanticGraphCause::DuplicateTerm
@@ -410,7 +413,11 @@ fn dimension_and_unit_semantic_mutations_refuse_by_their_named_cause() {
 
     // `derived_dimension` sorts its own terms, so an unsorted preimage is
     // built directly: the higher key must come first.
-    let (first, second) = if length < time { (time, length) } else { (length, time) };
+    let (first, second) = if length < time {
+        (time, length)
+    } else {
+        (length, time)
+    };
     let mut unsorted_terms = base.clone();
     unsorted_terms.dimension(json!({
         "version": "quire.dimension-node/v1",
