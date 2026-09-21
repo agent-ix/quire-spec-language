@@ -171,6 +171,17 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// adding a variant to `Expression`, `ValueType` or any nested enum this
 /// preimage reads is a compile error here, forcing this file to pick an
 /// explicit new tag, not a silent reinterpretation of the old bytes.
+///
+/// An exhaustive `match` only catches a *new* variant, though (PR #262
+/// review, round 2): it forces nothing about the order two existing writes
+/// happen in, or the spelling of an existing tag, and every test in this
+/// file until round 2 only ever compared two identities minted in the same
+/// process or round-tripped through `emit_v2`/`decode_v2`, so a reordered
+/// write or a renamed tag would have recompiled clean and passed every one
+/// of them while silently changing every minted identity. See
+/// `mint_declaration_identity_matches_a_checked_in_digest`
+/// (this file's `tests` module) for the golden-digest test that closes that
+/// gap.
 struct Preimage(Vec<u8>);
 
 impl Preimage {
@@ -286,6 +297,24 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
     }
 }
 
+// PR #262 review, round 2: this function and `encode_expression` write
+// several `quire_exact::Integer` leaves through `.to_string()`
+// (`Int`/`Rational`/`Decimal` bounds below; `Expression::Integer`/
+// `Rational` literals in `encode_expression`) -- `Display`, the same
+// mechanism `{:?}` (`Debug`) was rejected for elsewhere in this file. The
+// two are not equivalent here: `Integer`'s `Display` is not incidental
+// formatting `std` warns is unstable, it is `quire_exact::integer::
+// Integer`'s own documented "canonical wire spelling used by complete-V1
+// schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
+// `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
+// etc.) -- a real, enforced, round-tripping contract, not a Debug-style
+// dump of whatever fields happen to exist. `src/value/node.rs`'s own
+// `CanonicalRational` already relies on exactly this contract for this
+// codebase's other content-addressed digest (RFC 8785 JCS preimages).
+// Repointing these leaves at a bespoke byte encoding would introduce a
+// second, parallel integer serialization where one canonical, tested one
+// already exists and is already trusted for identity purposes -- so they
+// are left on `Integer::to_string()` deliberately, not as an oversight.
 fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
     match value_type {
         ValueType::Boolean => out.write_str("boolean"),
@@ -367,6 +396,9 @@ fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) 
     }
 }
 
+// `Expression::Integer`/`Rational`'s `.to_string()` below: same
+// `Integer::Display` canonical-wire-spelling contract, same reasoning --
+// see `encode_value_type`'s own doc comment above.
 fn encode_expression(out: &mut Preimage, expr: &Expression) {
     match expr {
         Expression::Boolean(value) => {
@@ -1233,6 +1265,7 @@ mod family_contract_tests {
 mod tests {
     use super::*;
     use crate::value::composite::ValueType;
+    use crate::value::{CardinalityBound, CollectionType, TextType};
     use ix_trace_rs::trace;
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
@@ -1357,5 +1390,75 @@ mod tests {
             r#"{{"version":"{FUNCTION_PACKAGE_V2_VERSION}","functions":[{{"name":"not an identifier","identity":"{identity}"}}]}}"#
         );
         assert_eq!(decode_v2(bytes.as_bytes()), Err(DecodeV2Error::Malformed));
+    }
+
+    /// PR #262 review, round 2: the eleven other tests in this module either
+    /// compare two identities minted in the same process, or round-trip
+    /// through `emit_v2`/`decode_v2` -- none of them can catch a change to
+    /// the preimage's own byte grammar. `encode_expression`/
+    /// `encode_value_type`'s exhaustive `match`es only force a compile error
+    /// for a *new* variant; reordering two `write_str` calls, or renaming a
+    /// tag (`"add"` to `"plus"`), recompiles clean and passes every other
+    /// test in this file while silently changing every identity this
+    /// preimage mints. This fixture exercises `Let`, `If`, `Binary`, `Call`,
+    /// `Collection` and `Convert` on the `Expression` side and `Int`,
+    /// `Text` and `Collection` (with a nested `Int` element) on the
+    /// `ValueType` side -- enough surface that a reordered write or a
+    /// renamed tag anywhere in either `match` moves the digest below. A
+    /// failure here means the wire preimage grammar changed; regenerate the
+    /// constant only when that change is the one actually intended (and say
+    /// so in the commit, per this repository's own digest-freshness rule in
+    /// `CLAUDE.md`), never to make a red test green.
+    #[test]
+    fn mint_declaration_identity_matches_a_checked_in_digest() {
+        let element_type = ValueType::Int(
+            quire_exact::IntegerInterval::new(
+                quire_exact::Integer::from(0_i64),
+                quire_exact::Integer::from(10_i64),
+            )
+            .unwrap(),
+        );
+        let parameters = vec![
+            ("n".to_owned(), element_type.clone()),
+            (
+                "label".to_owned(),
+                ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
+            ),
+        ];
+        let result = ValueType::Collection(Box::new(CollectionType::new(
+            CollectionKind::Sequence,
+            element_type,
+            CardinalityBound::new(0, 5).unwrap(),
+        )));
+        let body = Expression::Let {
+            name: "x".to_owned(),
+            value: Box::new(Expression::Integer(quire_exact::Integer::from(2_i64))),
+            body: Box::new(Expression::If {
+                condition: Box::new(Expression::Binary {
+                    operator: BinaryOperator::Greater,
+                    left: Box::new(Expression::Name("x".to_owned())),
+                    right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+                }),
+                then: Box::new(Expression::Call {
+                    name: "helper".to_owned(),
+                    arguments: vec![Expression::Name("x".to_owned())],
+                }),
+                otherwise: Box::new(Expression::Convert {
+                    target: ValueType::Integer,
+                    operand: Box::new(Expression::Collection {
+                        kind: CollectionKind::Sequence,
+                        elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
+                    }),
+                }),
+            }),
+        };
+        let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
+        let identity = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        assert_eq!(
+            identity.to_string(),
+            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
+            "the preimage byte grammar changed -- see this test's own doc \
+             before regenerating this constant"
+        );
     }
 }
