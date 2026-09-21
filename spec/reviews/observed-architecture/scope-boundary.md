@@ -23,7 +23,7 @@ Sources checked: the bodies of #205, #209, #210, #211 and #229; the ARCH-01
 comment on #207 (issuecomment-5743530928); the bodies of all 68 open QSL
 issues (`gh issue list --state open`), scanned for downstream issue
 references; and the code at the ADR's Context revisions (QSL de627b5, IR
-553b6d1, RT d97bc0b, QSpec 3a79dce).
+553b6d1, RT d97bc0b, QSpec dccddab).
 
 Coordinator constraint applied: each §9 item has one owner among #209, #210 and
 #211, and #229 may only be a secondary input.
@@ -71,7 +71,7 @@ resolved, 0 unresolved.
 
 | Round-1 ID | Severity | Status | Reason |
 | --- | --- | --- | --- |
-| FND-001 | high | resolved | §1.2 checks all seven #205 ownership statements against code (0 agree, 5 partial, 2 disagree). OBS-038 records that QSL and IR host execution and replay that #205 gives to RT (owner #209). OBS-039 records that AD-016 and #205 name different replay owners (owner #211, secondary #209). The evidence checks out at QSL de627b5, IR 553b6d1, RT d97bc0b and QSpec 3a79dce. |
+| FND-001 | high | resolved | §1.2 checks all seven #205 ownership statements against code (0 agree, 5 partial, 2 disagree). OBS-038 records that QSL and IR host execution and replay that #205 gives to RT (owner #209). OBS-039 records that AD-016 and #205 name different replay owners (owner #211, secondary #209). The evidence checks out at QSL de627b5, IR 553b6d1, RT d97bc0b and QSpec dccddab. |
 | FND-002 | high | resolved | §8 table notes and prose agree on #228 → #204 → #200, and cite ARCH-01 "Rulings applied" and §3. That matches issuecomment-5743530928. |
 | FND-003 | medium | resolved | Under the coordinator constraint: Context and Consequences name #229 as a Layer 1 ticket. Decision 3, §7.1, §9.2 OBS-012 and OBS-013, and §9.3 DA-11 make #229 the secondary input on its FR-290 scope. |
 | FND-004 | medium | resolved | OBS-031 is now owned by #209, with #211 secondary for the pin versus current-head rule, and it cites the ARCH-01 deferral of QI PR #2. |

@@ -35,7 +35,7 @@ left, and it is recorded at the same severity for the same reason.
 | --- | --- | --- |
 | FND-011 blanket restatement claim sheltering an unsourced rule | Resolved, verified row by row | FR-043 source table; "Open questions referred to agent E" naming the pointwise reading as a selection, its visible consequence, the reversed earlier revision and the #38 ruling |
 | FND-012 one-axis substitution in FR-045's table | Resolved | Rows keyed on complete/open surrounding execution as FR-095 does; decision-scope closure named as separate in the boundary section and Inputs; AC-1 asserts it is not consulted. New FND-016 records the residual axis ambiguity in the source itself |
-| FND-013 unpinned table, no TL target, "declaration alone" contradiction | Resolved | Baseline `4d6230eb8aa9766ff3017360962f2d6368d74cb3` cited; TL target column naming `mltl.closed-trace/v1` and `mltl.online-prefix/v1`; classification stated as a total function of exactly three named inputs, two from the declaration and one from the request; AC-5 |
+| FND-013 unpinned table, no TL target, "declaration alone" contradiction | Resolved | Baseline `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f` cited; TL target column naming `mltl.closed-trace/v1` and `mltl.online-prefix/v1`; classification stated as a total function of exactly three named inputs, two from the declaration and one from the request; AC-5 |
 | FND-014 clock parameters unverifiable | Resolved | FR-043 Behavior marks the rule "retention, not checking", states FR-090-AC-2 is only partly satisfiable here and that no criterion claims otherwise; Dependencies limitation extended to the definition digest |
 | FND-015 US-004 allocation asserted, not derived | Resolved | Reciprocal `exercises` edge in US-004 frontmatter and traceability list |
 
@@ -91,7 +91,7 @@ flowchart LR
   F["Agent F - observation transport, progress, provenance"] -->|assumed, caller-supplied trace| Eval
   D["Agent D - model and registered profile definitions"] -->|assumed| Link
   B["Agent B - protocol activation and result serialization"] -.->|excluded, consumes disposition| Act
-  Table["FR-095 table at baseline 4d6230e"] -->|assumed, revision pinned| Class
+  Table["FR-095 table at baseline 782c1ce"] -->|assumed, revision pinned| Class
   Bridge["IR and TL owners - emission half, contract-ir 63 and 64"] -.->|excluded and blocked| Class
 ```
 
@@ -130,7 +130,7 @@ to FR-036's delivered scope checking under TM-002 rather than duplicated.
 | Agent B protocol activation, participation and result serialization | Assumed, excluded in requirement text | FR-043 and FR-044 each state they produce no protocol result and no wire encoding of their own |
 | Agent D model and registered profile definitions | Guaranteed in-repo through the existing linker | src/linking/composed/definition_source.rs pins the three concrete profile identities and the shared bounded facet; the shared facet is not a selectable clause profile, so FR-045's table covers every admissible profile |
 | FR-042 emitted temporal body, clock binding index, activation record and closed operation graph | Guaranteed | Covered by TM-007. The body carries no declared clock parameters and no definition digest; both are recorded as remaining work on #38 |
-| FR-095 reviewed correspondence support table | Assumed, revision pinned | FR-045 cites baseline `4d6230eb8aa9766ff3017360962f2d6368d74cb3`, reports the TL target identity and that baseline on a supported classification, and consults no backend report, installed version, syntax match or historical result. The source table's own axis ambiguity is resolved unilaterally, which FND-016 records |
+| FR-095 reviewed correspondence support table | Assumed, revision pinned | FR-045 cites baseline `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`, reports the TL target identity and that baseline on a supported classification, and consults no backend report, installed version, syntax match or historical result. The source table's own axis ambiguity is resolved unilaterally, which FND-016 records |
 | quire-contract-ir #63 and #64, actual TL capability, FR-095 emission half | Absent, excluded and blocked | No TL formula, valuation request or correspondence record is produced. A supported classification is a statement about the table, not evidence of a mapping |
 | Caller-lowered ceilings and the accounting contract | Assumed for the values, published for the rules | Counters, units, traversal rules, the ceiling table and the clamp rule are published in docs/native-temporal-evaluation.md under `quire.native.temporal-work/1`; expected charges derive from there, not from reported usage |
 | Agent F observation storage, replay and lateness | Assumed, explicitly out | NFR-008 separates the evaluator's own retained-state table, which the retention ceiling bounds and whose eviction seam is named, from F's mechanisms |
