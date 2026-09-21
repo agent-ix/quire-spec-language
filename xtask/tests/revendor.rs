@@ -449,7 +449,7 @@ fn revendor_refuses_a_qspec_source_with_no_clone_given() {
         tree: "synthetic".into(),
         sources: vec![Source::Qspec {
             repo: "https://github.com/agent-ix/quire-specification".into(),
-            commit: "4d6230eb8aa9766ff3017360962f2d6368d74cb3".into(),
+            commit: "782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f".into(),
             dest_prefix: String::new(),
             files: vec![PinnedFile {
                 path: "proposals/quire-v1/shared-grammar.md".into(),

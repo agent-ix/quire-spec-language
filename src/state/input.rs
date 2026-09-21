@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::protocol_artifact::{wire, ProtocolNumber};
 
 /// Required observation contract semantic revision.
-pub const OBSERVATION_CONTRACT_REVISION: &str = "4d6230eb8aa9766ff3017360962f2d6368d74cb3";
+pub const OBSERVATION_CONTRACT_REVISION: &str = "782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f";
 
 /// Exact selection of one declaration-local value.
 #[derive(Clone, Debug, Eq, PartialEq)]

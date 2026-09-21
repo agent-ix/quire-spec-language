@@ -3,7 +3,7 @@ id: SR-391
 title: "Failure-domain review of the reconciled core language and compiler handoff"
 type: SpecReview
 analysis: failure-domain
-scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline 4d6230eb8aa9766ff3017360962f2d6368d74cb3; D Producer interface 1.2.0 revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603; L5 revision 72507f856457ba0922719bd5d9f5cadcce4058cd"
+scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f; D Producer interface 1.2.0 revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603; L5 revision 72507f856457ba0922719bd5d9f5cadcce4058cd"
 review_set: subset
 review_date: "2026-09-11"
 relationships:
@@ -58,7 +58,7 @@ resolved:
 | RCK-001 | high | resolved | An intermediate FR-046/049 reading allowed an invalid occurrence after a decisive value to be hidden by short-circuiting. FR-046 and TC-127 now require complete validation first and limit short-circuiting to admitted unavailable/unentered work. |
 | RCK-002 | high | resolved | The #40 `/2` obligation initially appeared only in choreography prose. FR-050, TC-138 and `docs/compiled-protocol-v2.md` now own the closed wire schema, canonical form, native admission and strict reader. |
 | RCK-003 | high | resolved | A `/2` admitted package initially had no type-correct path into L5's strict `/1` APIs. FR-050 now defines `evaluate_v2`, `evaluate_with_progress_v2` and `mapping_support_v2` over `v2::AdmittedPackage`, retains the existing `/1` signatures, and authenticates the exact trace clock parameter map before position evaluation. |
-| RCK-004 | medium | resolved | The F observation authority was briefly pinned to an earlier baseline. FR-049 and the packet now select the immutable native-v1 revision `4d6230eb8aa9766ff3017360962f2d6368d74cb3`. |
+| RCK-004 | medium | resolved | The F observation authority was briefly pinned to an earlier baseline. FR-049 and the packet now select the immutable native-v1 revision `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. |
 
 ## Final checklist disposition
 
