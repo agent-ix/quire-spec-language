@@ -442,7 +442,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-064](functional/FR-064-restrict-string-dispatch-to-marked-edges.md) | FR | Specified under #214; not yet implemented |
 | [FR-065](functional/FR-065-migrate-function-application-to-checked-family.md) | FR | Specified under #214; not yet implemented; the first family slice to implement FR-062's contract |
 | [FR-066](functional/FR-066-document-family-migration-recipe.md) | FR | Specified under #214; not yet implemented; waits on FR-065 for its worked-example citations |
-| [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; not yet implemented |
+| [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; implemented in #261 (`836dc12`) — TC-167/168/169 |
 | [FR-068](functional/FR-068-split-expression-checking-into-check-stage.md) | FR | Specified under QSL-139 (ADR-011 §7.3 M-5), split from #214 by owner ruling 2026-09-20; not yet implemented |
 | [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |
 | [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Specified under #231 (QSL-88); not yet implemented |

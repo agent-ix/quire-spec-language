@@ -16,15 +16,15 @@ cd "$repo_root"
 fail=0
 
 check_kind() {
-	local kind="$1" artifact_glob="$2" index_grep="$3"
+	local kind="$1" index_grep="$2"
 	local artifacts indexed missing
 
-	artifacts="$(find spec -iname "${kind}-*.md" -print0 |
+	artifacts="$(find spec -name "${kind}-*.md" -print0 |
 		xargs -0 -n1 basename |
 		sed -E "s/^(${kind}-[0-9]+)-.*/\1/" |
 		sort -u)"
 
-	indexed="$(eval "$index_grep" | sort -u)"
+	indexed="$(eval "$index_grep" | sort -u)" || true
 
 	missing="$(comm -23 <(printf '%s\n' "$artifacts") <(printf '%s\n' "$indexed"))"
 
@@ -33,18 +33,14 @@ check_kind() {
 		echo "$missing" | sed 's/^/  /' >&2
 		fail=1
 	fi
-	# artifact_glob is unused directly (find is inlined above); kept as a
-	# documented parameter so a caller reading the invocation sees what each
-	# check scans, without a second unused-variable lint pass.
-	: "$artifact_glob"
 }
 
 # FR: every `[FR-NNN](...)` link row in spec/spec.md's `## Requirements` table.
-check_kind "FR" "spec/**/FR-*.md" \
-	"grep -ohE '\\[FR-[0-9]+\\]' spec/spec.md | grep -ohE 'FR-[0-9]+'"
+check_kind "FR" \
+	"grep -ohE '^\\| \\[FR-[0-9]+\\]' spec/spec.md | grep -ohE 'FR-[0-9]+'"
 
 # TC: every `| TC-NNN | ...` row in any spec/**/tests.md Test Case Summary table.
-check_kind "TC" "spec/**/TC-*.md" \
+check_kind "TC" \
 	"grep -rohE '^\\| TC-[0-9]+' spec/tests.md spec/*/tests.md 2>/dev/null | grep -ohE 'TC-[0-9]+'"
 
 if [ "$fail" -ne 0 ]; then
