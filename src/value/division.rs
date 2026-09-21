@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-147 integer division: the three `div`/`rem` laws, independent Euclidean
 //! `mod`, atomic pair admission and the named integer-division and
-//! integer-modulus charges, and the I13 negotiation disposition of a finite
-//! consumer.
+//! integer-modulus charges.
 
 use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::definition::AdmittedIntegerDivision;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use quire_exact::{Integer, IntegerDomain, IntegerInterval};
+use quire_exact::{Integer, IntegerDomain};
 
 /// A selectable `div`/`rem` law.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -179,58 +178,4 @@ fn euclidean_remainder(
     }
     meter.charge(Charge::new(ChargePoint::IntegerModulusResultRetain).results(1))?;
     Ok(remainder)
-}
-
-/// The declared bounds a finite I13 consumer offers for one `div`/`rem` or
-/// `mod` item. An absent member is a missing bound.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct IntegerDivisionBounds {
-    /// Bound on both operands.
-    pub operand: Option<IntegerInterval>,
-    /// Bound on the exact intermediate quotient and remainder.
-    pub intermediate: Option<IntegerInterval>,
-    /// Bound on the exposed results.
-    pub result: Option<IntegerInterval>,
-}
-
-impl IntegerDivisionBounds {
-    fn complete(&self) -> bool {
-        self.operand.is_some() && self.intermediate.is_some() && self.result.is_some()
-    }
-}
-
-/// The consumer of one integer-division item at I13 negotiation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntegerDivisionConsumer {
-    /// Unbounded mathematical integers; no bound is needed.
-    Mathematical,
-    /// A finite backend with its declared bounds.
-    Finite(IntegerDivisionBounds),
-}
-
-/// The per-item I13 negotiation disposition. It is not an evaluator outcome:
-/// negotiation never evaluates and never narrows mathematical integers.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IntegerDivisionDisposition {
-    /// The consumer can execute the item.
-    Supported,
-    /// `requires-bound`: a finite consumer lacks an operand, intermediate or
-    /// result bound.
-    RequiresBound,
-}
-
-/// Negotiate each item independently, before and without evaluation.
-pub fn negotiate_integer_division(
-    items: &[IntegerDivisionConsumer],
-) -> Vec<IntegerDivisionDisposition> {
-    items
-        .iter()
-        .map(|consumer| match consumer {
-            IntegerDivisionConsumer::Mathematical => IntegerDivisionDisposition::Supported,
-            IntegerDivisionConsumer::Finite(bounds) if bounds.complete() => {
-                IntegerDivisionDisposition::Supported
-            }
-            IntegerDivisionConsumer::Finite(_) => IntegerDivisionDisposition::RequiresBound,
-        })
-        .collect()
 }

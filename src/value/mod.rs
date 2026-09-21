@@ -104,10 +104,7 @@ pub use definition::{
     DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
     SelectionRefusalCode, Trigger,
 };
-pub use division::{
-    divide, modulo, negotiate_integer_division, DivisionProfile, IntegerDivisionBounds,
-    IntegerDivisionConsumer, IntegerDivisionDisposition, QuotientRemainder,
-};
+pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
@@ -146,10 +143,9 @@ pub use crate::forms::{
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
-    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag,
-    IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance,
-    IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
+    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind,
+    IeeeProvenance, IeeeResult, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
 pub use library::{
     check_migration, resolve_libraries, ExportIdentity, ImportDeclaration, ImportPath,

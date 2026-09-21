@@ -18,14 +18,12 @@ use num_traits::{One, Signed, Zero};
 use quire_exact::{Integer, IntegerInterval};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
-    DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar,
-    IeeeBackendCapabilities, IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation,
-    IeeeOperationKind, IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, LimitKind, Meter, Outcome, PackageCause,
-    PackageRefusalCode, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined,
-    IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal, DecimalType,
+    DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison,
+    IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation,
+    IeeeResult, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain,
+    Refusal, RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -738,7 +736,7 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
     );
 }
 
-// ---- admission and negotiation -------------------------------------------------------
+// ---- admission --------------------------------------------------------------------
 
 #[trace("TC-193", "FR-148-AC-3", "FR-148-AC-10")]
 #[test]
@@ -810,116 +808,6 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
             "{identity}"
         );
     }
-}
-
-#[trace("TC-193", "FR-148-AC-3")]
-#[test]
-fn i13_negotiation_is_per_item_and_leaves_admission_unchanged() {
-    let lock = DefinitionLock::pinned();
-    let reference = ieee_reference(lock);
-    let before = lock.admit_ieee_profile(std::slice::from_ref(&reference), &[]);
-
-    let full = IeeeBackendCapabilities {
-        widths: IeeeWidth::ALL.into_iter().collect(),
-        operations: IeeeOperationKind::ALL.into_iter().collect(),
-        roundings: RoundingMode::ALL.into_iter().collect(),
-        exceptional_policy: true,
-        finite_proof: true,
-    };
-    let item = |width, operation, rounding, requires_finite_proof| IeeeItemRequirement {
-        width,
-        operation,
-        rounding,
-        requires_finite_proof,
-    };
-    let items = [
-        item(
-            IeeeWidth::Binary64,
-            IeeeOperationKind::Add,
-            RoundingMode::NearestEven,
-            true,
-        ),
-        item(
-            IeeeWidth::Binary32,
-            IeeeOperationKind::FusedMultiplyAdd,
-            RoundingMode::TowardNegative,
-            false,
-        ),
-        item(
-            IeeeWidth::Binary32,
-            IeeeOperationKind::TotalOrder,
-            RoundingMode::TowardNegative,
-            false,
-        ),
-    ];
-    assert_eq!(
-        negotiate_ieee(&items, &full),
-        [IeeeDisposition::Supported; 3]
-    );
-
-    let lacking_width = IeeeBackendCapabilities {
-        widths: BTreeSet::from([IeeeWidth::Binary32]),
-        ..full.clone()
-    };
-    let lacking_fma = IeeeBackendCapabilities {
-        operations: IeeeOperationKind::ALL
-            .into_iter()
-            .filter(|kind| *kind != IeeeOperationKind::FusedMultiplyAdd)
-            .collect(),
-        ..full.clone()
-    };
-    let lacking_direction = IeeeBackendCapabilities {
-        roundings: BTreeSet::from([RoundingMode::NearestEven, RoundingMode::Exact]),
-        ..full.clone()
-    };
-    let lacking_policy = IeeeBackendCapabilities {
-        exceptional_policy: false,
-        ..full.clone()
-    };
-    let lacking_proof = IeeeBackendCapabilities {
-        finite_proof: false,
-        ..full.clone()
-    };
-    use IeeeDisposition::{RequiresBound, Supported, Unsupported};
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_width),
-        [
-            Unsupported(IeeeUnsupportedCause::Width(IeeeWidth::Binary64)),
-            Supported,
-            Supported
-        ]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_fma),
-        [
-            Supported,
-            Unsupported(IeeeUnsupportedCause::Operation(
-                IeeeOperationKind::FusedMultiplyAdd
-            )),
-            Supported
-        ]
-    );
-    // A comparison applies no rounding direction, so only the FMA item lacks it.
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_direction),
-        [
-            Supported,
-            Unsupported(IeeeUnsupportedCause::Rounding(RoundingMode::TowardNegative)),
-            Supported
-        ]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_policy),
-        [Unsupported(IeeeUnsupportedCause::ExceptionalPolicy); 3]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_proof),
-        [RequiresBound, Supported, Supported]
-    );
-    assert_eq!(
-        lock.admit_ieee_profile(std::slice::from_ref(&reference), &[]),
-        before
-    );
 }
 
 // ---- explicit conversions ----------------------------------------------------------------
