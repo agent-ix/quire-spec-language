@@ -6,7 +6,9 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
+use quire_spec_language::linking::composed::definitions::{
+    Artifact, Inventory, RuleInput, Selection,
+};
 use quire_spec_language::linking::composed::models::ModelInput;
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
@@ -16,6 +18,21 @@ use quire_spec_language::native_model::{ModelLimits, NativeModel, NativeModelPro
 use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity,
+/// never by comparing its bytes to any particular snapshot (PLAT-887).
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+fn definition_selection(definition: R) -> Selection {
+    Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(definition_bytes(definition)),
+    }
+}
 
 #[allow(
     dead_code,
@@ -222,7 +239,7 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         ("W", R::TimestampedWindow),
         ("P", R::Protocol),
     ] {
-        let selection = profile.selection();
+        let selection = definition_selection(profile);
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selection.identity, selection.revision, selection.digest
@@ -312,21 +329,22 @@ pub fn with_binding_inputs_and_inventory<T>(
     assert!(admitted.exhaustion().is_none());
     let definitions: Vec<_> = R::all()
         .iter()
-        .map(|definition| Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
+        .map(|&definition| Artifact {
+            selection: definition_selection(definition),
+            bytes: definition_bytes(definition),
         })
         .collect();
     let rules: Vec<_> = R::all()
         .iter()
         .flat_map(|definition| definition.rules())
         .map(|rule| {
+            let bytes = rule.path.as_bytes();
             (
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(bytes),
+                    bytes,
                 },
             )
         })
@@ -334,7 +352,7 @@ pub fn with_binding_inputs_and_inventory<T>(
         .into_values()
         .collect();
     let definitions = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };

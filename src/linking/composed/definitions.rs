@@ -58,13 +58,24 @@ pub struct Inventory<'a> {
 /// A typed reason an exact definition closure cannot be used.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Cause {
-    /// No supplied artifact has this identity and revision.
+    /// No supplied artifact has this authored identity and revision.
     MissingDefinition(Selection),
-    /// Multiple supplied entries claim one immutable identity/revision.
+    /// Multiple supplied entries claim one authored identity/revision.
     AmbiguousDefinition {
         /// The identity/revision selection matched by multiple entries.
         selection: Selection,
         /// Indices of the supplied entries claiming this selection.
+        entries: Vec<usize>,
+    },
+    /// No supplied artifact has this inherited dependency's identity/revision.
+    /// Distinct from [`Self::MissingDefinition`]: an inherited dependency is
+    /// never author-declared, so there is no cited digest to report.
+    MissingDependency(RegisteredDefinition),
+    /// Multiple supplied entries claim one inherited dependency's identity/revision.
+    AmbiguousDependency {
+        /// The inherited dependency matched by multiple entries.
+        dependency: RegisteredDefinition,
+        /// Indices of the supplied entries claiming this dependency.
         entries: Vec<usize>,
     },
     /// Asserted digest does not match supplied content.
@@ -96,26 +107,26 @@ pub enum Cause {
         /// Indices of the supplied rule entries claiming this path.
         entries: Vec<usize>,
     },
-    /// Rule content or its declared digest differs from the supported baseline.
+    /// The supplied rule entry's declared digest does not match its own bytes.
     RuleMismatch {
         /// Baseline path of the mismatched rule.
         path: &'static str,
-        /// Index of the supplied entry whose content or digest differs from the baseline.
+        /// Index of the supplied entry whose declared digest differs from its bytes.
         entry: usize,
     },
     /// Exact selection is known but is not the composed edition definition.
     WrongEdition(Selection),
     /// An inherited requirement selected two meanings for one identity.
     IncompatibleRequirement {
-        /// The first selection resolved for this identity.
-        first: Selection,
-        /// The later, incompatible selection resolved for the same identity.
-        second: Selection,
+        /// The first registered definition resolved for this identity.
+        first: RegisteredDefinition,
+        /// The later, incompatible definition resolved for the same identity.
+        second: RegisteredDefinition,
     },
     /// A semantic definition path repeats an active dependency.
     DefinitionCycle {
-        /// The selection whose dependency path repeats an active definition.
-        definition: Selection,
+        /// The registered definition whose dependency path repeats an active one.
+        definition: RegisteredDefinition,
     },
     /// The authored profile alias is absent in this source unit.
     MissingAlias,
@@ -464,12 +475,14 @@ impl<'a> Catalog<'a> {
             if ByteDigest::of(artifact.bytes) != artifact.selection.digest {
                 catalog.invalid_digest.insert(index);
             }
+            // Recognition is by identity and revision alone: QSL resolves a
+            // definition by reference and does not require the supplied
+            // artifact to be byte-identical to any particular snapshot.
             let mut registered = None;
             for candidate in RegisteredDefinition::all() {
                 work.charge(Dimension::References, 1)?;
                 if candidate.identity() == artifact.selection.identity
                     && candidate.revision() == artifact.selection.revision
-                    && candidate.bytes() == artifact.bytes
                 {
                     registered = Some(*candidate);
                     break;
@@ -518,6 +531,38 @@ impl<'a> Catalog<'a> {
         Ok(self.registered[index].ok_or(Cause::UnsupportedDefinition { entry: index }))
     }
 
+    /// Resolve an inherited registry requirement by identity and revision alone.
+    ///
+    /// Unlike [`Self::select`], there is no author-declared [`Selection`] to
+    /// compare against: the compiler's own registry graph names this
+    /// dependency, never a document the caller wrote. Whatever digest the
+    /// caller's own supplied artifact declares for that identity/revision is
+    /// accepted; its self-consistency was already checked in [`Self::new`].
+    fn select_dependency(
+        &self,
+        dependency: RegisteredDefinition,
+        work: &mut Work,
+    ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
+        work.charge(Dimension::References, 1)?;
+        let entries = self
+            .definitions
+            .get(&(dependency.identity(), dependency.revision()));
+        let index = match entries.map(Vec::as_slice) {
+            None | Some([]) => return Ok(Err(Cause::MissingDependency(dependency))),
+            Some([index]) => *index,
+            Some(entries) => {
+                return Ok(Err(Cause::AmbiguousDependency {
+                    dependency,
+                    entries: entries.to_vec(),
+                }))
+            }
+        };
+        if self.invalid_digest.contains(&index) {
+            return Ok(Err(Cause::DefinitionDigest { entry: index }));
+        }
+        Ok(self.registered[index].ok_or(Cause::UnsupportedDefinition { entry: index }))
+    }
+
     fn closure(
         &self,
         selection: &Selection,
@@ -542,9 +587,7 @@ impl<'a> Catalog<'a> {
                 continue;
             }
             if active.contains(&definition) {
-                return Ok(Err(Cause::DefinitionCycle {
-                    definition: definition.selection(),
-                }));
+                return Ok(Err(Cause::DefinitionCycle { definition }));
             }
             if !seen.insert(definition) {
                 continue;
@@ -552,8 +595,8 @@ impl<'a> Catalog<'a> {
             if let Some(previous) = identities.insert(definition.identity(), definition) {
                 if previous != definition {
                     return Ok(Err(Cause::IncompatibleRequirement {
-                        first: previous.selection(),
-                        second: definition.selection(),
+                        first: previous,
+                        second: definition,
                     }));
                 }
             }
@@ -573,9 +616,12 @@ impl<'a> Catalog<'a> {
                         }))
                     }
                 };
+                // The rule identity is the compiler-known path; its content is
+                // whatever the caller supplied. Only the caller's own claimed
+                // digest against its own bytes is checked, never a comparison
+                // to a frozen snapshot.
                 let supplied = &self.input.rules[index];
-                if supplied.bytes != rule.bytes || supplied.digest != ByteDigest::of(supplied.bytes)
-                {
+                if supplied.digest != ByteDigest::of(supplied.bytes) {
                     return Ok(Err(Cause::RuleMismatch {
                         path: rule.path,
                         entry: index,
@@ -584,9 +630,10 @@ impl<'a> Catalog<'a> {
             }
             for dependency in definition.requirements().iter().rev() {
                 work.charge(Dimension::Edges, 1)?;
-                // Exact dependency selections come from compiler-owned registry
-                // metadata, never arbitrary annotations supplied with a document.
-                match self.select(&dependency.selection(), work)? {
+                // Inherited dependencies are compiler-owned registry metadata,
+                // never arbitrary annotations supplied with a document; they
+                // resolve by identity and revision alone (`select_dependency`).
+                match self.select_dependency(*dependency, work)? {
                     Ok(selected) => stack.push((selected, false)),
                     Err(cause) => return Ok(Err(cause)),
                 }

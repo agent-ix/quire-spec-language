@@ -60,7 +60,8 @@ Missing, duplicate, foreign or inconsistent bindings prevent dependent discharge
 already established native typing remains inspectable.
 
 The selected StateCore, StateQueries and StateGraph definitions and their
-[state contract](../../resources/native-v1/proposals/quire-v1/state-contract.md)
+state contract, from the standard's
+[PR #15](https://github.com/agent-ix/quire-specification/pull/15),
 own the value semantics. Shared values and explicitly bound predicate calls in
 temporal/protocol guards, captures and obligations use the same rules; their
 family-specific admission and execution remain separate stages.

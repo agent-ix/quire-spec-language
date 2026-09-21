@@ -43,7 +43,14 @@ The standard's document/reusable-artifact license remains deferred. This record
 does not license the separate specification repository, relicense bootstrap
 history, approve public release or close the ecosystem artifact review.
 
-The embedded native resources carry their own [provenance and licensing notice](resources/native-v1/README.md).
+PLAT-887 (2026-09-20) removed the compiled-in native-definition resource tree
+(`resources/native-v1/`) and its licensing notice: this repository no longer
+vendors or embeds the standard's document bytes. The closed registry
+(`src/linking/composed/definition_source.rs`) names definitions by exact
+identity and revision, fixed by
+[standard PR #15](https://github.com/agent-ix/quire-specification/pull/15);
+a caller supplies the actual artifact and rule bytes at invocation time, so
+no copied standard text ships in this repository or its build artifacts.
 
 LR02 adds serde 1.0.229 as a direct audit dependency, thiserror 2.0.20 for the
 audit error envelope, and tempfile 3.27.0 for isolated Rust test copies. These

@@ -539,6 +539,25 @@ fn model(bytes: &[u8]) -> Result<NativeModel, Error> {
     .admit(ModelLimits::default())?)
 }
 
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL is a graph of specs and resolves a
+/// definition by identity and revision alone (PLAT-887): it does not vendor
+/// the standard's document bytes, and this public example has no license to
+/// reproduce them either. The producer still needs *some* self-consistent
+/// bytes to write to `dependencies/`; these placeholders make the point
+/// explicit rather than silently standing in for real standard text.
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+fn definition_selection(definition: R) -> definitions::Selection {
+    definitions::Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(definition_bytes(definition)),
+    }
+}
+
 fn selected_definitions(temporal: &[R]) -> Vec<R> {
     let mut selected = BTreeSet::new();
     let mut pending = vec![
@@ -562,7 +581,7 @@ fn selected_definitions(temporal: &[R]) -> Vec<R> {
 fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in recipe.profiles {
-        let selected = definition.selection();
+        let selected = definition_selection(*definition);
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selected.identity, selected.revision, selected.digest
@@ -857,9 +876,9 @@ impl DefinitionInputs {
         let selected = selected_definitions(temporal);
         let definitions = selected
             .iter()
-            .map(|definition| definitions::Artifact {
-                selection: definition.selection(),
-                bytes: definition.bytes(),
+            .map(|&definition| definitions::Artifact {
+                selection: definition_selection(definition),
+                bytes: definition_bytes(definition),
             })
             .collect::<Vec<_>>();
         let rules = selected
@@ -869,10 +888,13 @@ impl DefinitionInputs {
             .collect::<BTreeMap<_, _>>();
         let rule_inputs = rules
             .values()
-            .map(|rule| definitions::RuleInput {
-                path: rule.path,
-                digest: ByteDigest::of(rule.bytes),
-                bytes: rule.bytes,
+            .map(|rule| {
+                let bytes = rule.path.as_bytes();
+                definitions::RuleInput {
+                    path: rule.path,
+                    digest: ByteDigest::of(bytes),
+                    bytes,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -1055,9 +1077,9 @@ fn selected_dependencies(
                 revision(DEFINITION_NAMESPACE, definition.revision()),
                 "text/markdown",
                 "1",
-                definition.bytes(),
+                definition_bytes(*definition),
             ),
-            bytes: Cow::Borrowed(definition.bytes()),
+            bytes: Cow::Borrowed(definition_bytes(*definition)),
             requires: Vec::new(),
             file: String::new(),
         })
@@ -1207,7 +1229,7 @@ fn compile_with<T>(
         .namespace()
         .ok_or_else(|| namespace_failure(&namespace))?;
     let definition_inputs = definitions::Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &inputs.definitions.artifacts,
         rules: &inputs.definitions.rules,
     };

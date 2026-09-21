@@ -14,7 +14,7 @@
 //! Build provenance is retained separately. A resource-only configuration change
 //! is visible in [`BuildProvenance`] and changes no static component.
 //!
-//! [contract]: ../../../../resources/native-v1/proposals/quire-v1/package-contract.md
+//! [contract]: https://github.com/agent-ix/quire-specification/pull/15
 
 use super::binding;
 use super::binding_work;
@@ -63,7 +63,7 @@ pub struct LanguageComponent {
     /// Exact supplied edition definition identity, revision and byte digest.
     pub definition: Selection,
     /// Checked edition closure, empty when the edition selection refused.
-    pub closure: Vec<Selection>,
+    pub closure: Vec<RegisteredDefinition>,
     /// Edition-level refusal, itself part of the subject's declared meaning.
     pub refusal: Option<Cause>,
 }
@@ -77,8 +77,8 @@ pub struct ProfileComponent {
     pub kind: UseKind,
     /// Unit-local alias, retained for diagnostics rather than as a lookup key.
     pub alias: String,
-    /// Root-first closure as exact identity/revision/digest selections.
-    pub closure: Vec<Selection>,
+    /// Root-first closure of exact registered interpretations.
+    pub closure: Vec<RegisteredDefinition>,
     /// First failed selection in this occurrence's closure, if any.
     pub refusal: Option<Cause>,
 }
@@ -229,7 +229,7 @@ impl StaticSubject {
             language: inventory.language.clone(),
             edition: inventory.edition.clone(),
             definition: definitions.inventory.edition.clone(),
-            closure: definitions.edition.iter().map(selection).collect(),
+            closure: definitions.edition.clone(),
             refusal: definitions.edition_refusal.clone(),
         };
 
@@ -257,7 +257,7 @@ impl StaticSubject {
                     declaration: name(entry.declaration)?,
                     kind: use_site.kind,
                     alias: use_site.alias.value.clone(),
-                    closure: use_site.closure.iter().map(selection).collect(),
+                    closure: use_site.closure.clone(),
                     refusal: use_site.refusal.clone(),
                 });
             }
@@ -394,10 +394,6 @@ impl BuildProvenance {
             binding_usage: report.usage(),
         }
     }
-}
-
-fn selection(definition: &RegisteredDefinition) -> Selection {
-    definition.selection()
 }
 
 fn model_selection(inputs: &[ModelInput<'_>], input: usize) -> Option<ModelSelection> {

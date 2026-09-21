@@ -13,7 +13,7 @@ use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Dimension, Error, Invalid, Limits, Unsupported,
 };
 use quire_spec_language::ByteDigest;
-use setup::{Inputs, Unit};
+use setup::{definition_bytes, Inputs, Unit};
 
 const SIMPLE: &str = "protocol Simple using P over (view: M::Node) on origin {\n role Service on M::Node;\n run sequence Main { check Ready using S { true }; }\n finish Closed as (closed: M::Node) { true };\n}";
 
@@ -379,7 +379,7 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
     let (source, bytes) = inputs
         .dependencies
         .iter_mut()
-        .find(|(_, bytes)| bytes.as_slice() == R::Protocol.bytes())
+        .find(|(_, bytes)| bytes.as_slice() == definition_bytes(R::Protocol))
         .expect("original registered protocol source");
     source.revision = w::Revision {
         namespace: "test:repository-object".into(),
@@ -424,40 +424,82 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
                 package
             );
 
-            let mut changed_bytes = R::Protocol.bytes().to_vec();
+            let mut changed_bytes = definition_bytes(R::Protocol).to_vec();
             changed_bytes.push(b'\n');
             let mut resealed = original.clone();
             resealed.digest = ByteDigest::of(&changed_bytes);
-            // Correct raw-byte sealing cannot grant the changed document the
-            // meaning of the registered definition with the same source label.
-            for (offered, expected) in [
-                (&original, Error::Invalid(Invalid::Seal)),
-                (&resealed, Error::Unsupported(Unsupported::Definition)),
-            ] {
-                let dependencies: Vec<_> = selected
-                    .dependencies
-                    .iter()
-                    .map(|dependency| {
-                        if dependency.artifact == &original {
-                            artifact::SuppliedDependency {
-                                artifact: offered,
-                                bytes: &changed_bytes,
-                                requires: dependency.requires,
-                            }
-                        } else {
-                            *dependency
+
+            // A digest the caller claims but that does not match the bytes
+            // the caller actually supplied is always refused, regardless of
+            // which definition it claims to be (the seal check is a
+            // self-consistency check, not a content-recognition gate).
+            let mismatched_dependencies: Vec<_> = selected
+                .dependencies
+                .iter()
+                .map(|dependency| {
+                    if dependency.artifact == &original {
+                        artifact::SuppliedDependency {
+                            artifact: &original,
+                            bytes: &changed_bytes,
+                            requires: dependency.requires,
                         }
-                    })
-                    .collect();
-                let changed = native::Selections {
-                    dependencies: &dependencies,
+                    } else {
+                        *dependency
+                    }
+                })
+                .collect();
+            failure(
+                &native::admit(
+                    proofs,
+                    &native::Selections {
+                        dependencies: &mismatched_dependencies,
+                        ..*selected
+                    },
+                    Limits::default(),
+                ),
+                Error::Invalid(Invalid::Seal),
+            );
+
+            // PLAT-887: QSL resolves a definition by identity, never by
+            // comparing its bytes to a frozen snapshot. A self-consistent
+            // artifact naming the registered identity, with a different
+            // opaque revision label and different bytes than the original
+            // registered source, still resolves to the Protocol definition.
+            let resealed_dependencies: Vec<_> = selected
+                .dependencies
+                .iter()
+                .map(|dependency| {
+                    if dependency.artifact == &original {
+                        artifact::SuppliedDependency {
+                            artifact: &resealed,
+                            bytes: &changed_bytes,
+                            requires: dependency.requires,
+                        }
+                    } else {
+                        *dependency
+                    }
+                })
+                .collect();
+            let resealed_admitted = native::admit(
+                proofs,
+                &native::Selections {
+                    dependencies: &resealed_dependencies,
                     ..*selected
-                };
-                failure(
-                    &native::admit(proofs, &changed, Limits::default()),
-                    expected,
-                );
-            }
+                },
+                Limits::default(),
+            )
+            .into_result()
+            .expect("identity alone recognizes a resealed, differently-labeled artifact");
+            let resealed_package = resealed_admitted.package();
+            let resealed_definition = resealed_package
+                .definitions
+                .iter()
+                .find(|definition| definition.identity == R::Protocol.identity())
+                .unwrap();
+            assert_eq!(
+                resealed_package.dependencies[resealed_definition.artifact as usize].artifact,
+                resealed
+            );
         },
     );
 }

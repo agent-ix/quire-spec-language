@@ -90,8 +90,8 @@ pub use decimal::{
 };
 pub use definition::{
     AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
-    DefinitionReference, DefinitionRevision, LockError, PackageCause, PackageRefusal,
-    PackageRefusalCode, SelectionRefusalCode, Trigger, PINNED_LOCK_BYTES,
+    DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
+    SelectionRefusalCode, Trigger,
 };
 pub use division::{
     divide, modulo, negotiate_integer_division, DivisionProfile, IntegerDivisionBounds,

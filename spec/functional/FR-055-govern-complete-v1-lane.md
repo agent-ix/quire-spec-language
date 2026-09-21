@@ -44,7 +44,7 @@ its exact implementation ticket, central TestCase and qualification owner.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-055-AC-1 | Plan-013 identifies the adopted complete-V1 baseline by the content digest `sha256:97cf9f886cfbc2fbabca298ce6743d36eb1b0c92cb100e135094bfb75d4ee5d4` over `resources/complete-value`, contains exactly the 83 accepted Agent-A capability identities and introduces no local semantic replacement. | Test (TC-144) |
+| FR-055-AC-1 | Plan-013 contains exactly the 83 accepted Agent-A capability identities and introduces no local semantic replacement. | Test (TC-144) |
 | FR-055-AC-2 | Every capability row has exactly one permitted primary ticket, one concrete central TestCase and QSL #123 as qualification owner. | Test (TC-144) |
 | FR-055-AC-3 | The plan records 18 complete, 36 partial and 29 missing implementation rows; 16 complete, 38 partial and 29 missing verification rows; and 83 missing qualification rows without promotion. | Test (TC-144) |
 | FR-055-AC-4 | Nine typed tasks preserve the serial QSL #116–123 and WASM #6 chain while naming the external model, temporal, protocol, IR and integration prerequisites. | Test (TC-144) |

@@ -435,6 +435,11 @@ pub(super) fn definitions(
         if selected.artifact.kind != ArtifactKind::Source {
             return Err(Error::Invalid(Invalid::Definition));
         }
+        // QSL resolves a registered definition by reference: recognition is by
+        // exact identity and revision alone, never by comparing the caller's
+        // supplied bytes to a frozen snapshot (PLAT-887). `selected`'s own
+        // digest was already checked against its own bytes above; the closed
+        // registry names no bytes of its own to compare against.
         let mut found = None;
         for candidate in Registered::all() {
             work.visit()?;
@@ -447,10 +452,6 @@ pub(super) fn definitions(
             if definition.identity == candidate.identity()
                 && definition.revision.value == candidate.revision()
             {
-                work.bytes(selected.bytes.len().saturating_add(candidate.bytes().len()))?;
-                if selected.bytes != candidate.bytes() {
-                    return Err(Error::Invalid(Invalid::Definition));
-                }
                 found = Some(*candidate);
                 break;
             }
@@ -485,14 +486,20 @@ pub(super) fn definitions(
             if supplied.artifact.kind != ArtifactKind::Source {
                 return Err(Error::Invalid(Invalid::Definition));
             }
+            // A rule's path is its identity in the inventory, matched against
+            // the supplied artifact's own declared identity, never against its
+            // content (PLAT-887): the registry names no rule bytes of its own.
             let mut found = false;
             for (position, rule) in selected.rules().iter().enumerate() {
                 work.visit()?;
-                if supplied.bytes.len() != rule.bytes.len() {
-                    continue;
-                }
-                work.bytes(rule.bytes.len().saturating_add(supplied.bytes.len()))?;
-                if supplied.bytes == rule.bytes {
+                work.bytes(
+                    supplied
+                        .artifact
+                        .identity
+                        .len()
+                        .saturating_add(rule.path.len()),
+                )?;
+                if supplied.artifact.identity == rule.path {
                     if std::mem::replace(&mut seen[position], true) {
                         return Err(Error::Invalid(Invalid::Duplicate));
                     }

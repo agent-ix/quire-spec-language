@@ -33,7 +33,7 @@ use quire_spec_language::state::{
 use quire_spec_language::temporal;
 use quire_spec_language::ByteDigest;
 use serde_json::Value;
-use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
+use setup::{definition_bytes, Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
 use sha2::{Digest as _, Sha256};
 
 const DECLARATIONS: [(&str, R); 3] = [
@@ -553,7 +553,7 @@ fn definition_artifact<'a>(
         .iter()
         .find(|dependency| {
             dependency.artifact.identity == definition.identity()
-                && dependency.bytes == definition.bytes()
+                && dependency.bytes == definition_bytes(definition)
         })
         .expect("selected original definition bytes")
         .artifact

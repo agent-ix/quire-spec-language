@@ -12,7 +12,9 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self, Disposition, Refusal};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
+use quire_spec_language::linking::composed::definitions::{
+    Artifact, Inventory, RuleInput, Selection,
+};
 use quire_spec_language::linking::composed::models::{ModelInput, ModelTarget};
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
@@ -22,24 +24,40 @@ use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
 use std::collections::BTreeMap;
 
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity,
+/// never by comparing its bytes to any particular snapshot (PLAT-887).
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+fn definition_selection(definition: R) -> Selection {
+    Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(definition_bytes(definition)),
+    }
+}
+
 fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
     let definitions = R::all()
         .iter()
-        .map(|definition| Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
+        .map(|&definition| Artifact {
+            selection: definition_selection(definition),
+            bytes: definition_bytes(definition),
         })
         .collect();
     let rules = R::all()
         .iter()
         .flat_map(|definition| definition.rules())
         .map(|rule| {
+            let bytes = rule.path.as_bytes();
             (
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(bytes),
+                    bytes,
                 },
             )
         })
@@ -52,7 +70,7 @@ fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
 fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> Source {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
-        let selection = profile.selection();
+        let selection = definition_selection(*profile);
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selection.identity, selection.revision, selection.digest
@@ -120,7 +138,7 @@ fn a_large_legal_unit_binds_without_rescanning_other_declarations() {
     assert_eq!(namespace.declarations().len(), 100);
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -202,7 +220,7 @@ fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
     assert_eq!(namespace.declarations().len(), 400);
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -273,7 +291,7 @@ fn definition_binding_visits_only_its_protocols_own_control_region() {
     assert_eq!(namespace.units()[0].controls().len(), 10_200);
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -320,7 +338,7 @@ fn one_binding_path_resolves_three_families_and_preserves_owned_anchors() {
     let namespace = namespace_report.namespace().unwrap();
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -390,7 +408,7 @@ fn failed_definition_invalidates_caller_while_independent_profile_survives() {
     let (mut definitions, rules) = artifacts();
     definitions.retain(|definition| definition.selection.identity != R::StateQueries.identity());
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -427,7 +445,7 @@ fn illegal_activation_scope_and_exhaustion_never_become_empty_success() {
     let namespace = namespace_report.namespace().unwrap();
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -470,7 +488,7 @@ fn unused_cross_kind_alias_conflicts_refuse_their_unit_and_dependents() {
     let namespace = namespace_report.namespace().unwrap();
     let (definitions, rules) = artifacts();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };

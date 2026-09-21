@@ -18,11 +18,12 @@ use quire_spec_language::value::{
     AdmittedIeeeProfile, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage, CheckingLimits,
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, Decimal, DecimalType, DefinitionLock, DimensionPreimage, EnumDeclaration,
-    EnumDeclarationPreimage, EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation,
-    Expression, FieldDeclaration, FieldExpression, FieldInitializer, FieldValue,
-    FunctionDeclaration, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, LimitKind, LocatedLoss, Meter, NodeKey, NodeOwner,
+    ConstructionRefusal, Decimal, DecimalType, DefinitionLock, DefinitionReference,
+    DefinitionRevision, DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage,
+    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, Expression,
+    FieldDeclaration, FieldExpression, FieldInitializer, FieldValue, FunctionDeclaration,
+    IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped, IllTypedCause,
+    Incomplete, InjectedDenial, LimitKind, LocatedLoss, Meter, NodeKey, NodeOwner,
     ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
     OptionValue, Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, Presence, Quantity,
     QuantityUnit, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Text, TextPayload,
@@ -892,12 +893,18 @@ fn e16_references_compare_identity_triple_only() {
 fn profile() -> &'static AdmittedIeeeProfile {
     static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
     PROFILE.get_or_init(|| {
-        let lock = DefinitionLock::pinned().unwrap();
-        let reference = lock
-            .entry(CatalogRole::IeeeProfile)
-            .unwrap()
-            .definition
-            .clone();
+        let lock = DefinitionLock::pinned();
+        let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+        let reference = DefinitionReference {
+            authority: entry.authority.to_owned(),
+            identity: entry.identity.to_owned(),
+            revision: DefinitionRevision {
+                namespace: entry.revision_namespace.to_owned(),
+                value: entry.revision_value.to_owned(),
+            },
+            digest_domain: "quire.definition.bytes/v1".to_owned(),
+            digest: "0".repeat(64),
+        };
         lock.admit_ieee_profile(&[reference], &[]).unwrap()
     })
 }

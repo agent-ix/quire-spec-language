@@ -9,19 +9,36 @@ use quire_spec_language::linking::composed::binding_work::{
 };
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{
-    self, Artifact, Cause, Inventory, RuleInput,
+    self, Artifact, Cause, Inventory, RuleInput, Selection,
 };
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
 use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity, Span};
 
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity and
+/// revision, never by comparing its bytes to any particular snapshot
+/// (PLAT-887), so any distinct, self-consistent content proves the point
+/// better than real standard text would.
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+fn definition_selection(definition: R) -> Selection {
+    Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(definition_bytes(definition)),
+    }
+}
+
 fn definitions() -> Vec<Artifact<'static>> {
     R::all()
         .iter()
-        .map(|definition| Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
+        .map(|&definition| Artifact {
+            selection: definition_selection(definition),
+            bytes: definition_bytes(definition),
         })
         .collect()
 }
@@ -31,12 +48,13 @@ fn rules() -> Vec<RuleInput<'static>> {
         .iter()
         .flat_map(|definition| definition.rules())
         .map(|rule| {
+            let bytes = rule.path.as_bytes();
             (
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(bytes),
+                    bytes,
                 },
             )
         })
@@ -46,7 +64,7 @@ fn rules() -> Vec<RuleInput<'static>> {
 }
 
 fn profile(alias: &str, definition: R) -> String {
-    let selected = definition.selection();
+    let selected = definition_selection(definition);
     format!(
         "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
         selected.identity, selected.revision, selected.digest
@@ -99,7 +117,7 @@ fn exact_multi_unit_roots_keep_local_aliases_and_callee_profiles() {
     let definitions = definitions();
     let rules = rules();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -141,7 +159,7 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
     definitions.retain(|artifact| artifact.selection.identity != R::StateCore.identity());
     let rules = rules();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -152,13 +170,13 @@ fn installed_definition_bytes_never_fill_an_omitted_dependency() {
     );
     assert!(report.complete && report.edition_refusal.is_none());
     assert!(
-        matches!(&report.declarations[0].uses[0].refusal, Some(Cause::MissingDefinition(selection)) if selection == &R::StateCore.selection())
+        matches!(&report.declarations[0].uses[0].refusal, Some(Cause::MissingDependency(dependency)) if *dependency == R::StateCore)
     );
 }
 
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
+fn stale_raw_bytes_refuse_but_a_resealed_identity_match_still_resolves() {
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
@@ -171,7 +189,7 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
         Limits::default(),
     );
     let rules = rules();
-    let mut altered = R::StateQueries.bytes().to_vec();
+    let mut altered = definition_bytes(R::StateQueries).to_vec();
     altered.extend_from_slice(b"\nChanged meaning.\n");
     for resealed in [false, true] {
         let mut definitions = definitions();
@@ -184,7 +202,7 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
             definitions[index].selection.digest = ByteDigest::of(&altered);
         }
         let selected = Inventory {
-            edition: R::Edition.selection(),
+            edition: definition_selection(R::Edition),
             definitions: &definitions,
             rules: &rules,
         };
@@ -200,7 +218,13 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
             assert!(matches!(cause, Cause::DefinitionDigest { .. }));
         }
     }
-    // Matching the source to the resealed bytes still cannot select new semantics.
+    // PLAT-887: QSL is a graph of specs and resolves definitions by reference.
+    // A source that cites the resealed digest for the registered
+    // identity/revision, matched by a self-consistent supplied artifact with
+    // the SAME resealed digest, still resolves to StateQueries: recognition
+    // never compares the supplied bytes to any particular frozen snapshot.
+    // Before PLAT-887 this refused with `UnsupportedDefinition` because the
+    // altered bytes did not equal the vendored copy's bytes.
     let changed = source("resealed", &format!("profile Q = \"{}\" version \"{}\" digest \"{}\"; predicate Check using Q (): Boolean {{ true }}", R::StateQueries.identity(), R::StateQueries.revision(), ByteDigest::of(&altered)));
     let changed = [changed];
     let selection = inventory(&changed);
@@ -218,7 +242,7 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
     definitions[index].bytes = &altered;
     definitions[index].selection.digest = ByteDigest::of(&altered);
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -227,15 +251,69 @@ fn stale_raw_bytes_and_resealed_unknown_interpretations_both_refuse() {
         &selected,
         &mut Work::new(BindingLimits::default()),
     );
-    assert!(matches!(
-        report.declarations[0].uses[0].refusal,
-        Some(Cause::UnsupportedDefinition { .. })
-    ));
+    assert!(report.edition_refusal.is_none());
+    let resolved = &report.declarations[0].uses[0];
+    assert_eq!(resolved.refusal, None);
+    assert!(resolved.closure.contains(&R::StateQueries));
 }
 
+/// PLAT-887: `StateCore` is `StateQueries`' inherited registry dependency,
+/// never an author-declared [`Selection`] the source cites directly. QSL
+/// resolves an inherited dependency by identity and revision alone; a
+/// supplied `StateCore` artifact with different, but self-consistent, bytes
+/// than any other invocation's copy still resolves the closure. Before
+/// PLAT-887, `Catalog::new` additionally required a supplied artifact's bytes
+/// to equal the registry's frozen vendored snapshot, so this exact scenario
+/// refused with `Cause::UnsupportedDefinition`.
 #[test]
 #[trace("TC-114", "FR-036-AC-3")]
-fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
+fn an_inherited_dependency_resolves_by_identity_despite_different_supplied_bytes() {
+    let sources = [source(
+        "queries",
+        &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
+    )];
+    let selection = inventory(&sources);
+    let namespace = admit_namespace(
+        &selection,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    let mut definitions = definitions();
+    let index = definitions
+        .iter()
+        .position(|entry| entry.selection.identity == R::StateCore.identity())
+        .unwrap();
+    let different = b"a different, self-consistent StateCore artifact, not any snapshot".to_vec();
+    definitions[index].bytes = &different;
+    definitions[index].selection.digest = ByteDigest::of(&different);
+    let rules = rules();
+    let selected = Inventory {
+        edition: definition_selection(R::Edition),
+        definitions: &definitions,
+        rules: &rules,
+    };
+    let report = definitions::resolve(
+        namespace.namespace().unwrap(),
+        &selected,
+        &mut Work::new(BindingLimits::default()),
+    );
+    assert!(report.edition_refusal.is_none());
+    let resolved = &report.declarations[0].uses[0];
+    assert_eq!(resolved.refusal, None);
+    assert!(resolved.closure.contains(&R::StateCore));
+}
+
+/// PLAT-887: a rule's digest is a self-consistency check only -- does the
+/// caller's own claimed digest match the caller's own supplied bytes -- never
+/// a comparison to a frozen snapshot. A missing rule still refuses with
+/// `MissingRule`; re-encoded-but-self-consistent bytes (a claimed digest that
+/// matches them) no longer refuse at all, since recognition is by path
+/// identity, not content. `RuleMismatch` fires only when the claimed digest
+/// disagrees with the caller's own supplied bytes.
+#[test]
+#[trace("TC-114", "FR-036-AC-3")]
+fn missing_or_self_inconsistent_selected_rules_refuse_only_their_closures() {
     let sources = [source(
         "queries",
         &(profile("Q", R::StateQueries) + "predicate Check using Q (): Boolean { true }"),
@@ -249,7 +327,7 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
     );
     let definitions = definitions();
     let target = R::StateQueries.rules()[0];
-    let mut changed = target.bytes.to_vec();
+    let mut changed = target.path.as_bytes().to_vec();
     changed.push(b'\n');
     for missing in [false, true] {
         let mut rules = rules();
@@ -260,11 +338,12 @@ fn missing_or_reencoded_selected_rules_refuse_only_their_closures() {
                 .iter_mut()
                 .find(|rule| rule.path == target.path)
                 .unwrap();
+            // Self-inconsistent: the bytes change but the claimed digest does
+            // not, so it no longer matches the caller's own supplied bytes.
             rule.bytes = &changed;
-            rule.digest = ByteDigest::of(&changed);
         }
         let selected = Inventory {
-            edition: R::Edition.selection(),
+            edition: definition_selection(R::Edition),
             definitions: &definitions,
             rules: &rules,
         };
@@ -301,12 +380,12 @@ fn duplicate_aliases_and_definition_entries_do_not_select_first_candidate() {
     );
     let mut definitions = definitions();
     definitions.push(Artifact {
-        selection: R::Edition.selection(),
-        bytes: R::Edition.bytes(),
+        selection: definition_selection(R::Edition),
+        bytes: definition_bytes(R::Edition),
     });
     let rules = rules();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -340,7 +419,7 @@ fn known_state_definition_cannot_substitute_for_the_edition() {
     let definitions = definitions();
     let rules = rules();
     let selected = Inventory {
-        edition: R::StateCore.selection(),
+        edition: definition_selection(R::StateCore),
         definitions: &definitions,
         rules: &rules,
     };
@@ -353,10 +432,10 @@ fn known_state_definition_cannot_substitute_for_the_edition() {
     assert_eq!(report.exhaustion, None);
     assert_eq!(
         report.edition_refusal,
-        Some(Cause::WrongEdition(R::StateCore.selection()))
+        Some(Cause::WrongEdition(definition_selection(R::StateCore)))
     );
     assert!(report.edition.is_empty());
-    assert_eq!(report.inventory.edition, R::StateCore.selection());
+    assert_eq!(report.inventory.edition, definition_selection(R::StateCore));
 }
 
 #[test]
@@ -383,7 +462,7 @@ fn duplicate_rule_entries_refuse_even_when_their_exact_bytes_agree() {
     let repeated = rules.len();
     rules.push(rules[first]);
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -438,7 +517,7 @@ fn absent_local_profile_alias_is_not_filled_from_another_unit() {
     let definitions = definitions();
     let rules = rules();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -498,7 +577,7 @@ fn profile_kind_does_not_follow_the_callers_preferred_spelling() {
         let definitions = definitions();
         let rules = rules();
         let selected = Inventory {
-            edition: R::Edition.selection(),
+            edition: definition_selection(R::Edition),
             definitions: &definitions,
             rules: &rules,
         };
@@ -532,9 +611,9 @@ fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
     let chain = [R::Edition, R::StateCore, R::StateQueries];
     let definitions: Vec<_> = chain
         .iter()
-        .map(|definition| Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
+        .map(|&definition| Artifact {
+            selection: definition_selection(definition),
+            bytes: definition_bytes(definition),
         })
         .collect();
     let rule_paths: Vec<_> = chain
@@ -546,7 +625,7 @@ fn zero_and_exact_limits_keep_immutable_partial_reports_and_fresh_retries() {
         .filter(|rule| rule_paths.contains(&rule.path))
         .collect();
     let selected = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };

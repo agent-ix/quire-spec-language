@@ -44,7 +44,12 @@ remains explicitly unsupported. General family admission and runtime validation
 remain open. Existing `parse`, format, CLI and checked-package APIs retain their
 historical profile; parsing alone grants no semantic admission or execution.
 
-Embedded normative resources retain their [original provenance and licensing](resources/native-v1/README.md).
+The closed native-definition registry
+([`src/linking/composed/definition_source.rs`](src/linking/composed/definition_source.rs))
+resolves definitions by exact identity and revision, fixed by
+[standard PR #15](https://github.com/agent-ix/quire-specification/pull/15); it
+does not vendor the standard's document bytes, and a caller supplies the
+actual artifact and rule bytes at invocation time.
 
 The `protocol_artifact` library module supplies typed wire records, a bounded
 canonical encoder and a parser-free reader under

@@ -1116,12 +1116,6 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
-    "name": "xtask",
-    "version": "0.1.0",
-    "license": "AGPL-3.0-or-later",
-    "source": null
-  },
-  {
     "name": "yaml_serde",
     "version": "0.10.7",
     "license": "MIT OR Apache-2.0",

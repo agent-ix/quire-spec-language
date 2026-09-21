@@ -7,12 +7,13 @@ use quire_exact::{CollectionKind, Integer, IntegerInterval};
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CardinalityBound, CatalogRole, ChargePoint, CheckCause,
     CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, Expression,
-    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth, IllTypedCause,
-    Incomplete, LimitKind, MeasureObligation, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome,
-    PackageDeclarations, Presence, ProvedInterval, Rational, RationalDomain, Refusal, ScalarLimits,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference,
+    DefinitionRevision, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
+    IeeeWidth, IllTypedCause, Incomplete, LimitKind, MeasureObligation, Meter, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Origin, Outcome, PackageDeclarations, Presence, ProvedInterval, Rational,
+    RationalDomain, Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -780,12 +781,18 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
 }
 
 fn ieee_profile() -> quire_spec_language::value::AdmittedIeeeProfile {
-    let lock = DefinitionLock::pinned().unwrap();
-    let reference = lock
-        .entry(CatalogRole::IeeeProfile)
-        .unwrap()
-        .definition
-        .clone();
+    let lock = DefinitionLock::pinned();
+    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+    let reference = DefinitionReference {
+        authority: entry.authority.to_owned(),
+        identity: entry.identity.to_owned(),
+        revision: DefinitionRevision {
+            namespace: entry.revision_namespace.to_owned(),
+            value: entry.revision_value.to_owned(),
+        },
+        digest_domain: "quire.definition.bytes/v1".to_owned(),
+        digest: "0".repeat(64),
+    };
     lock.admit_ieee_profile(&[reference], &[]).unwrap()
 }
 

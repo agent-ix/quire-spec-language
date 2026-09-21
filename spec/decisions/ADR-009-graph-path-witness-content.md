@@ -39,9 +39,10 @@ content must stay consistent with: deterministic first-found order (not
 shortest path), at-most-once expansion per storage identity, and
 charge-before-work accounting. FR-047 excludes a witness rather than defining
 one, and one constraint on witness content already exists upstream: the
-vendored language standard at the pinned baseline,
-`resources/native-v1/proposals/quire-v1/state-contract.md`, states that any
-returned path witness retains the actual typed edge and snapshot identities,
+language standard's state contract, at the pinned baseline
+([standard PR #15](https://github.com/agent-ix/quire-specification/pull/15)),
+states that any returned path witness retains the actual typed edge and
+snapshot identities,
 and that the Boolean reachability predicate adds no shortest-path or
 canonical-witness guarantee. Any answer has to sit inside that sentence, and
 the candidates below differ in how they do so.

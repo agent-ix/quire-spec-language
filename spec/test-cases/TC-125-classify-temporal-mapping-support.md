@@ -14,7 +14,8 @@ Public Rust API controls for
 [FR-045](../functional/FR-045-classify-temporal-mapping-support.md). Each case
 compiles a real native temporal declaration and asks the classifier for its
 mapping disposition. Expected dispositions come from the reviewed correspondence
-support table in `resources/native-v1/spec/functional/FR-095-preserve-native-tl-correspondence.md`,
+support table the `TemporalFacet` definition selects (FR-095, from the
+standard's [PR #15](https://github.com/agent-ix/quire-specification/pull/15)),
 never from an installed TL version, a backend report or the classifier's own
 output. Each numbered group corresponds to the matching acceptance criterion.
 

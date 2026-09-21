@@ -16,7 +16,9 @@ use ix_trace_rs::trace;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
+use quire_spec_language::linking::composed::definitions::{
+    Artifact, Inventory, RuleInput, Selection,
+};
 use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
 use quire_spec_language::linking::composed::requests::{
     self, Aggregate, Assessment, Backend, Capability, Disposition, Family, InventoryGap, Request,
@@ -42,24 +44,40 @@ use std::collections::BTreeMap;
 // Composed fixture, following the TC-114 controls in tests/composed_binding.rs.
 // ---------------------------------------------------------------------------
 
+/// Synthetic, deliberately-not-the-real-standard-text bytes for a registered
+/// definition's supplied artifact. QSL recognizes a definition by identity,
+/// never by comparing its bytes to any particular snapshot (PLAT-887).
+fn definition_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+fn definition_selection(definition: R) -> Selection {
+    Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(definition_bytes(definition)),
+    }
+}
+
 fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
     let definitions = R::all()
         .iter()
-        .map(|definition| Artifact {
-            selection: definition.selection(),
-            bytes: definition.bytes(),
+        .map(|&definition| Artifact {
+            selection: definition_selection(definition),
+            bytes: definition_bytes(definition),
         })
         .collect();
     let rules = R::all()
         .iter()
         .flat_map(|definition| definition.rules())
         .map(|rule| {
+            let bytes = rule.path.as_bytes();
             (
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(bytes),
+                    bytes,
                 },
             )
         })
@@ -72,7 +90,7 @@ fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
 fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> Source {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, profile) in profiles {
-        let selection = profile.selection();
+        let selection = definition_selection(*profile);
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selection.identity, selection.revision, selection.digest
@@ -156,7 +174,7 @@ fn with_reports<T>(
     let namespace = admitted.namespace().expect("closed source namespace");
     let (definitions, rules) = artifacts();
     let selected_definitions = Inventory {
-        edition: R::Edition.selection(),
+        edition: definition_selection(R::Edition),
         definitions: &definitions,
         rules: &rules,
     };
@@ -400,8 +418,8 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
     for (new, old) in changed {
         assert_eq!(new.declaration, old.declaration);
         assert_eq!(new.alias, old.alias);
-        assert_eq!(new.closure[0], R::StateQueries.selection());
-        assert_eq!(old.closure[0], R::StateGraph.selection());
+        assert_eq!(new.closure[0], R::StateQueries);
+        assert_eq!(old.closure[0], R::StateGraph);
     }
 }
 

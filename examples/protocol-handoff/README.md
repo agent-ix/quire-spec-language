@@ -75,8 +75,12 @@ The output directory contains:
   wire records and `Expected` fields, plus relative dependency/model filenames.
 - `predicates.native`, `state.native`, `temporal.native`, `workflow.native` and
   `model-source.json`: the complete original sources.
-- `dependencies/`: exact selected model, binary, contract, definition and rule
-  bytes; `expected.json` maps each reference to its file and direct prerequisites.
+- `dependencies/`: the model, binary and contract's exact bytes, plus one
+  synthetic, self-consistent placeholder artifact per selected registry
+  definition and rule identity. QSL resolves those by identity and revision
+  alone (PLAT-887): this repository does not vendor the standard's document
+  bytes, and this public example has no license to reproduce them either.
+  `expected.json` maps each reference to its file and direct prerequisites.
 - `SHA256SUMS`: a deterministic complete inventory of every other generated
   handoff member, using normalized handoff-relative paths.
 
@@ -120,6 +124,10 @@ General dynamic choice/progress proofs, first-class D relationship/related-insta
 exports and runtime recovery remain open as specified in FR-042/TC-121. Ordinary
 object/reference exports do not supply those relationship authorities.
 
-New example source uses AGPL-3.0-only. Embedded standard documents retain their
-[original provenance and deferred licensing](../../resources/native-v1/README.md);
-the compiler license does not relicense them or authorize public distribution.
+New example source uses AGPL-3.0-only. This example embeds no standard
+document bytes: the closed native-definition registry
+(`src/linking/composed/definition_source.rs`) resolves definitions by exact
+identity and revision, from the standard's
+[PR #15](https://github.com/agent-ix/quire-specification/pull/15), and the
+compiler license neither relicenses that standard nor authorizes its public
+distribution.

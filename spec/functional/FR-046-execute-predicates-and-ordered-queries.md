@@ -32,8 +32,8 @@ When an explicitly selected native query definition admits a predicate or sequen
 
 This scopes roadmap L3 under compiler
 [#36](https://github.com/agent-ix/quire-spec-language/issues/36). It restates the
-accepted [query definition](../../resources/native-v1/proposals/quire-v1/definitions/state-queries.md)
-and [state contract](../../resources/native-v1/proposals/quire-v1/state-contract.md)
+accepted `quire.state.queries/v1` query definition and state contract from the
+standard's [PR #15](https://github.com/agent-ix/quire-specification/pull/15)
 as a compiler-owned delivery obligation. It does not change those meanings or
 promote the historical no-call profile in place.
 

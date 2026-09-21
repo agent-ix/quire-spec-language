@@ -24,7 +24,7 @@ use quire_spec_language::state::{
 };
 use quire_spec_language::syntax::composed as c;
 use quire_spec_language::ByteDigest;
-use setup::{Inputs, TemporalDefinitionExpectation, Unit};
+use setup::{definition_bytes, Inputs, TemporalDefinitionExpectation, Unit};
 
 fn obligation(name: &str, recovery: &str, commit: &str) -> String {
     format!(
@@ -742,7 +742,7 @@ fn timed_compensation_is_admitted_and_reread_only_as_authenticated_v2() {
                 .iter()
                 .find(|dependency| {
                     dependency.artifact.identity == definition.identity()
-                        && dependency.bytes == definition.bytes()
+                        && dependency.bytes == definition_bytes(definition)
                 })
                 .expect("registered event-position definition")
                 .artifact;
@@ -782,7 +782,7 @@ fn timed_compensation_is_admitted_and_reread_only_as_authenticated_v2() {
                         .iter()
                         .find(|dependency| {
                             dependency.artifact.identity == R::EventPosition.identity()
-                                && dependency.bytes == R::EventPosition.bytes()
+                                && dependency.bytes == definition_bytes(R::EventPosition)
                         })
                         .expect("independently selected event-position definition")
                         .artifact

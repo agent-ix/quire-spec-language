@@ -421,13 +421,12 @@ over that same architecture fixture bundle rather than a hand-authored model
 fixture, so its emitted `Model` names a domain package FR-056 actually
 admitted, not one supplied only for the recipe.
 [US-008](../usecase/US-008-trust-domain-package-provenance.md) is the
-consumer story for FR-042-AC-11 and FR-042-AC-12. Vendoring the resources
-this recipe and TC-121 depend on against QSpec main is
-[NFR-011](../non-functional/NFR-011-vendor-resources-from-exact-pins.md)'s
-concern, not this requirement's; `NFR-011-AC-2` and `NFR-011-AC-4` already
-cover vendored bytes matching the pinned source and `revendor-check` drift
-detection, so no new artifact specifies that half of
-agent-ix/quire-spec-language#132.
+consumer story for FR-042-AC-11 and FR-042-AC-12. Neither this recipe nor
+TC-121 vendors anything against QSpec main: PLAT-887 removed the closed
+native-definition registry's vendored resource tree, and the registry
+([definition_source.rs](../../src/linking/composed/definition_source.rs))
+resolves a definition or rule by the caller-supplied artifact's own identity
+and revision, not by comparing its bytes to a copied snapshot.
 
 **Recorded consequence for FR-050, FR-054 and the wire contract docs (owner
 ruling, this ticket):** this requirement changes `Model` in place at the
