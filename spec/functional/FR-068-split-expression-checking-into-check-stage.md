@@ -68,22 +68,24 @@ Outputs' move surface, alongside the four files already named, and widens
 tier 2 to seven items across three modules (see Behavior, "The layer-3
 sibling imports `check.rs` keeps," and Acceptance Criteria, FR-068-AC-6).
 
-**Further amendment (PR #282 review, post-rebase re-verification): tier 2
-widens again, to eight items across the same three modules.** `family.rs`'s
-own pre-existing golden-digest identity test
-(`mint_declaration_identity_matches_a_checked_in_digest`), moved to `check`
-verbatim by the amendment above, constructs its fixture over
-`ValueType::Text(TextType::new(...))` — a real, pre-existing dependency on
-`TextType` from `value::text` that the previous amendment did not name
-because it examined `family.rs`'s production code only, not the test
-fixture that moves with it. Running the moved test through a resolved
-import-graph check (not a textual scan) against the seven-item allow-list
-surfaces this the same way F3's own five-item bound was surfaced: the test
-cannot pass as a conforming implementation without importing `TextType`,
-and no seven-item tier 2 admits it. This amendment adds `TextType` to tier
-2, widening it to eight items across the same three modules (see Behavior,
-"The layer-3 sibling imports `check.rs` keeps," and Acceptance Criteria,
-FR-068-AC-6).
+**Scope clarification (owner ruling, PR #282 review, post-rebase): tier 2
+bounds `check`'s shipped dependency graph, not every import in its source
+text, and does not widen for `TextType`.** `family.rs`'s own pre-existing
+golden-digest identity test (`mint_declaration_identity_matches_a_checked_in_digest`),
+moved to `check` verbatim by the amendment above, constructs its fixture
+over `ValueType::Text(TextType::new(...))` inside its own `#[cfg(test)] mod
+tests` block — a real, pre-existing dependency on `TextType` from
+`value::text`, but a `#[cfg(test)]`-only one. A first pass widened tier 2 to
+admit it and was reverted: FR-068-AC-6's bound exists to constrain the
+layering of the *shipped* crate, and a test-only import is not part of that
+graph; admitting it into the allow-list to make one test pass would have
+permanently licensed production code to import it too, with this
+criterion's own verification method unable to ever catch that widening back
+— the same shape as an unjustified raised size limit, not a genuine bound.
+Tier 2 stays seven items across three modules; FR-068-AC-6's verification
+excludes `#[cfg(test)]`-gated imports from its scan on this stated basis
+(see Behavior, "The layer-3 sibling imports `check.rs` keeps," and
+Acceptance Criteria, FR-068-AC-6).
 
 **The *inbound* direction was not checked by the ruling above, and it matters
 just as much: `model` imports symbols this requirement relocates.** The
@@ -343,17 +345,21 @@ requirement named alone:
    items across three modules: `EnumDeclaration`, `EnumValue` from
    `value::enumeration`; `check_comparable`, `result_unit`, `UnitOperation`,
    `QuantityUnit` from `value::quantity`; `TextProfile` from `value::text`.**
-   **Further amendment (PR #282 review, post-rebase re-verification):**
-   `family.rs`'s own moved golden-digest identity test
+   **Scope clarification (owner ruling, PR #282 review, post-rebase): this
+   tier bounds `check`'s shipped dependency graph, and `TextType` stays out
+   of it by design.** `family.rs`'s own moved golden-digest identity test
    (`mint_declaration_identity_matches_a_checked_in_digest`) builds its
-   fixture over `ValueType::Text(TextType::new(...))`, a further real,
-   pre-existing dependency on `TextType` from `value::text` the previous
-   amendment did not name because it examined only production code, not the
-   test fixture that moves with it. Tier 2 is corrected again, to eight items
-   across the same three modules: `EnumDeclaration`, `EnumValue` from
-   `value::enumeration`; `check_comparable`, `result_unit`, `UnitOperation`,
-   `QuantityUnit` from `value::quantity`; `TextProfile`, `TextType` from
-   `value::text`.
+   fixture, inside its own `#[cfg(test)] mod tests` block, over
+   `ValueType::Text(TextType::new(...))` — a real, pre-existing dependency on
+   `TextType` from `value::text`, but a `#[cfg(test)]`-only one. Widening
+   tier 2 to admit it was tried and reverted: this tier constrains `check`'s
+   dependency on `value` as a property of the *shipped* crate, and a
+   test-only import is not part of that graph; admitting it here would have
+   permanently licensed production code to import it too, with no remaining
+   way for this criterion's own verification to catch that widening back.
+   Tier 2 therefore stays exactly the seven items above, and FR-068-AC-6's
+   verification is scoped to exclude `#[cfg(test)]`-gated imports on this
+   stated basis.
    M-2 (QSL-7), which relabels `enumeration`, `quantity`, `text` and their
    siblings as layer-3 `semantic_value`, has not landed and is out of this
    requirement's scope (Order: M-5 before M-2). Owner ruling on QSL-139,
@@ -490,7 +496,7 @@ requirement's.
 | FR-068-AC-3 | The compiled crate's real `use` lines — not a table in the ADR or a prose claim — show that no module under `check` imports anything at all from `value::expression`, and that `check` and the pre-existing `checking` module (`src/checking.rs` and `src/checking/`) remain two distinct modules with no content moved between them. A source scan of every `use` statement in every file under `src/check/`, resolved at the post-macro-expansion level, fails this criterion if any import resolves into any part of `value::expression` — `Machine`, `Callable`, `Evaluation`, `InputRefusal`, `LocatedLoss` and `ValueLoss` are illustrative examples of such an import, not an exhaustive deny-list to match textually against — or if `src/checking.rs` or any file under `src/checking/` gained, lost, or changed content as part of this change. `CheckMode` is not one of these examples: this requirement's Outputs allocate it to `check` (see Outputs and FR-068-CON-3), so a `check` file defining `CheckMode` is the required shape, not a violation of this criterion; only an import of `CheckMode` from `value::expression` — meaning `check` failed to bring its own definition — would trip this criterion. | Test (TC-172) |
 | FR-068-AC-4 | After this requirement's implementation, `check` defines every check-cause type this requirement names (`CheckCause`, `CheckRefusal`, `Obligation`, `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`, `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`, `Origin`, `ProvedInterval`, `WrongSnapshotCause`) and does not define `InputRefusal`; `value::expression` defines `InputRefusal`, located beside `CheckedPackage::call`'s and `CheckedPackage::evaluate`'s admission code, and does not define any of the twelve check-cause types. A type-definition scan over both modules confirms the twelve-versus-one split exactly, failing if any check-cause type is left behind in `value::expression`, if `InputRefusal` is moved into `check`, or if any name is defined in both. | Test (TC-173) |
 | FR-068-AC-5 | Given a domain package with at least one pair of functions that differ from each other in parameter count, slot count and dispatch-table membership, whose functions and dispatch tables `PackageDeclarations::check` (now in `check`) admits without refusal, calling each function's `CheckedPackage::call` (still in `value::expression`) with valid arguments through an unchanged object environment and meter produces the same `Evaluation` result — including the correct function's own `slots` count reflected in the result — the pre-move code produced for the identical inputs; given a package `PackageDeclarations::check` refuses, the same `CheckRefusal` set is produced before and after the move. The discriminating fixture (two functions differing in shape, not one) is required because this criterion's own named wrong implementation — an accessor returning a different function's `slots` — is unobservable with only one function or with functions of identical shape; a before/after regression test run against such a fixture, comparing results field for field, fails on a split whose module-shape criteria (AC-1 through AC-4) pass but whose accessor plumbing silently swapped which function's `slots`, `body`, or dispatch table feeds `call`, `evaluate` or argument validation. | Test (TC-174) |
-| FR-068-AC-6 | Every file under `check` (`check.rs`, `facts.rs`, `family.rs`'s checking-only half, `ir.rs`, `termination.rs`, `refusal.rs`'s check-cause portion, and `check`'s own `mod.rs` — the file holding the relocated `CheckedPackage`, `CheckedExpression`, `CheckedFunction` and `CheckMode` type definitions and `PackageDeclarations::check`'s and the three `check_*_expression` methods' relocated bodies, per Outputs)'s cross-module imports into `value::` sort into exactly two permitted tiers and no third: (a) the nine K-designated siblings X-1 has not yet relocated (`collection`, `comparison`, `composite`, `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`), unbounded in which items they import since X-1, not this requirement, owns closing them; and (b) exactly `EnumDeclaration`, `EnumValue` from `value::enumeration`, `check_comparable`, `result_unit`, `UnitOperation`, `QuantityUnit` from `value::quantity`, and `TextProfile`, `TextType` from `value::text`, bounded to precisely these eight items across three modules (**amended, PR #282 review F3**: the original text bounded tier (b) to five items across two modules and did not admit `value::text` at all; `family.rs`'s pre-existing, unavoidable `QuantityUnit`/`TextProfile` dependencies, real under both the pre-move and post-move tree, are why this criterion could not pass as originally written against any conforming implementation; **further amended, PR #282 review, post-rebase re-verification**: `family.rs`'s own moved golden-digest test fixture additionally needs `TextType`, widening tier (b) from seven items to eight). Every import under tier (a) and (b) is written in crate-absolute, submodule-qualified form (`crate::value::<submodule>::Name`), never through `value`'s flat aggregate re-export, so the tier each import belongs to is legible directly from its own `use` line. No file under `check` imports from `definition`, `unit`, `key`, `reference`, `containment`, `library`, `model_query`, `package_identity`, `model` or `package`. A source scan of every `use` statement under `src/check/` against this two-tier allow-list fails if a tier-(b) import gains an item beyond the eight named, if any import resolves into any of the ten named forbidden modules, or if any tier-(a)/(b) import is written through `value`'s flat aggregate rather than its owning submodule. | Test (TC-175) |
+| FR-068-AC-6 | Every file under `check` (`check.rs`, `facts.rs`, `family.rs`'s checking-only half, `ir.rs`, `termination.rs`, `refusal.rs`'s check-cause portion, and `check`'s own `mod.rs` — the file holding the relocated `CheckedPackage`, `CheckedExpression`, `CheckedFunction` and `CheckMode` type definitions and `PackageDeclarations::check`'s and the three `check_*_expression` methods' relocated bodies, per Outputs)'s cross-module **shipped** (non-`#[cfg(test)]`) imports into `value::` sort into exactly two permitted tiers and no third: (a) the nine K-designated siblings X-1 has not yet relocated (`collection`, `comparison`, `composite`, `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`), unbounded in which items they import since X-1, not this requirement, owns closing them; and (b) exactly `EnumDeclaration`, `EnumValue` from `value::enumeration`, `check_comparable`, `result_unit`, `UnitOperation`, `QuantityUnit` from `value::quantity`, and `TextProfile` from `value::text`, bounded to precisely these seven items across three modules (**amended, PR #282 review F3**: the original text bounded tier (b) to five items across two modules and did not admit `value::text` at all; `family.rs`'s pre-existing, unavoidable `QuantityUnit`/`TextProfile` dependencies, real under both the pre-move and post-move tree, are why this criterion could not pass as originally written against any conforming implementation). This criterion governs `check`'s *shipped* dependency graph only (**scope clarification, owner ruling, PR #282 review, post-rebase**): `check::family.rs`'s own `#[cfg(test)]`-gated `TextType` import (`value::text`) is real but not part of that graph, and is excluded from this criterion's scan on that stated basis rather than admitted into tier (b) — admitting a test-only import into a bound on shipped code would permanently license production code to the same import with no way for this criterion to ever catch that widening back. Every import under tier (a) and (b) is written in crate-absolute, submodule-qualified form (`crate::value::<submodule>::Name`), never through `value`'s flat aggregate re-export, so the tier each import belongs to is legible directly from its own `use` line. No file under `check` imports from `definition`, `unit`, `key`, `reference`, `containment`, `library`, `model_query`, `package_identity`, `model` or `package`. A source scan of every shipped `use` statement under `src/check/` against this two-tier allow-list fails if a tier-(b) import gains an item beyond the seven named, if any import resolves into any of the ten named forbidden modules, or if any tier-(a)/(b) import is written through `value`'s flat aggregate rather than its owning submodule. | Test (TC-175) |
 | FR-068-AC-7 | After this requirement's implementation, `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` remain defined in `model`, unchanged, and are absent from `check`. A type/function-definition scan over `check` confirms neither symbol appears there; this criterion fails on an implementation that moves either one into `check` ahead of M-2, even if every other criterion in this requirement passes. | Test (TC-175) |
 | FR-068-AC-8 | `value::outcome.rs`'s import of `WrongSnapshotCause` resolves to `crate::check::WrongSnapshotCause` after this requirement's implementation, and the crate compiles with this one import path updated and no other change to `value::outcome.rs`. This criterion is satisfied by the path update alone; it does not require, and a correct implementation does not attempt, removing the K→3 direction of this edge (ADR-011 §6.1's X-1 obligation, QSL-131's scope). | Test (TC-173) |
 | FR-068-AC-9 | The resolved import graph shows `model` → `check` bounded to exactly two files and exactly thirteen names: `model/checked_dispatch.rs` importing `DispatchCandidate`, `DispatchOperation`, `DispatchTable`, `PackageDeclarations` directly from `crate::check`, and `model/conformance.rs` importing `established_field_fact`, `Connective`, `Established`, `Location`, `Node`, `NodeKind`, `OrderedKind`, `Origin`, `ProvedInterval` directly from `crate::check` — neither file routed through `crate::value`'s aggregate re-export for these thirteen names. This criterion fails if a third `model` file gains a `check` import, if either named file's import list grows beyond its own name count (`checked_dispatch.rs`: four; `conformance.rs`: nine), or if either file reaches these names indirectly through `crate::value` instead of directly, since the indirect form would satisfy a textual `use`-line scan of `model` while hiding the edge from it — this criterion requires the resolved-level check to also hold, not only the textual one. | Test (TC-176) |
@@ -549,14 +555,20 @@ aggregate, per F2 — required by this document as originally written
 (FR-068:280-283, "crate-absolute form") but not implemented that way in
 PR #282's first round.
 
-**Further amended, post-rebase re-verification (2026-09-20).** Running the
+**Scope clarified, post-rebase re-verification (2026-09-20).** Running the
 F2/F3 fixes through the resolved import-graph checker for real (not a
-textual scan) surfaced one further gap: `family.rs`'s own moved
-golden-digest test fixture depends on `TextType` from `value::text`, which
-the F3 amendment's seven-item tier 2 did not name because it examined only
-`family.rs`'s production code. Tier 2 is now eight items across the same
-three modules (Behavior, "The layer-3 sibling imports `check.rs` keeps";
-AC-6).
+textual scan) surfaced a further real dependency: `family.rs`'s own moved
+golden-digest test fixture, inside its own `#[cfg(test)] mod tests` block,
+depends on `TextType` from `value::text`. A first pass widened tier 2 to
+eight items to admit it; on review, this was reverted as the wrong fix
+(owner ruling): FR-068-AC-6 bounds `check`'s *shipped* dependency graph, and
+a `#[cfg(test)]`-only import is not part of it, so admitting it would have
+permanently licensed production code to the same import with no way for
+this criterion's own verification to ever catch that widening back. Tier 2
+stays seven items across three modules; FR-068-AC-6's verification method is
+now stated explicitly as scoped to shipped (non-`#[cfg(test)]`) imports, and
+`xtask::import_graph::value_import_edges` implements that scoping directly
+(Behavior, "The layer-3 sibling imports `check.rs` keeps"; AC-6).
 
 ## Open Questions
 
