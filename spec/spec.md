@@ -455,3 +455,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-083](functional/FR-083-resolve-unique-most-specific-dispatch.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-084](functional/FR-084-admit-closed-populations-and-resolve-lookup.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-085](functional/FR-085-resolve-relationship-end-references.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-086](functional/FR-086-bind-systems-model-references.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
