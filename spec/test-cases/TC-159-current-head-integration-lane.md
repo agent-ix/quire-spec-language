@@ -27,7 +27,7 @@ update procedure. Scope: FR-058-AC-1 through FR-058-AC-4.
    `Cargo.lock`.
 2. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
    revision-log --qsl . --manifest integration/current-head/Cargo.toml
-   --vendor-root integration/current-head/.vendor` against real network
+   --deps-root integration/current-head/.deps` against real network
    access to the three backend repositories' default branches.
 3. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
    check-incompatible-fixture --manifest

@@ -148,16 +148,16 @@ arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplica
 # a dependency's head should be picked up again.
 integration-current-head-prepare:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		prepare --vendor-root integration/current-head/.vendor \
+		prepare --deps-root integration/current-head/.deps \
 		--manifest integration/current-head/Cargo.toml
 
 # #249 review round 2 L-2: a test run must not silently execute against a
-# vendor tree that fell behind head -- previously only the separate
+# local checkout that fell behind head -- previously only the separate
 # `integration-current-head-revision-log` target caught that (HIGH-1's
 # `require_current_head` guard), so a plain `make integration-current-head`
 # could test a stale snapshot with no warning. `revision-log`'s freshness
 # check now gates every test run too, and fails loudly (non-zero exit) before
-# `cargo test` runs at all if any vendored clone or CG's resolved head is
+# `cargo test` runs at all if any local clone or CG's resolved head is
 # stale.
 integration-current-head: integration-current-head-revision-log
 	cargo test --manifest-path integration/current-head/Cargo.toml
@@ -165,7 +165,7 @@ integration-current-head: integration-current-head-revision-log
 integration-current-head-revision-log:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
 		revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-		--vendor-root integration/current-head/.vendor
+		--deps-root integration/current-head/.deps
 
 integration-current-head-incompatible-fixture:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
