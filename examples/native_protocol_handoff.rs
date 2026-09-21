@@ -43,8 +43,8 @@ mod tests {
     fn stripped_release_producer_keeps_original_owners_and_compensations() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("handoff");
-        // The recipe selects this actual test executable and independently reads
-        // the emitted bytes before writing. These assertions inspect its output.
+        // The recipe runs the real producer and independently reads the emitted
+        // bytes before writing. These assertions inspect its output.
         super::producer::write(&output).expect("real producer and independent reader");
         let package: w::Package =
             serde_json::from_slice(&std::fs::read(output.join("compiled-protocol.json")).unwrap())
