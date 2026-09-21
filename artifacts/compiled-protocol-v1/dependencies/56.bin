@@ -1,6 +1,6 @@
 ---
-id: FR-091
-title: "Evaluate bounded future temporal operators"
+id: FR-092
+title: "Evaluate bounded past temporal operators"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-008
@@ -10,81 +10,65 @@ relationships:
 ---
 ## Description
 
-The temporal evaluator shall apply the inclusive interval and boundary rules of
-the selected profile to every admitted bounded future operator without
-shortening the interval to the supplied file.
+When evaluating an admitted bounded past operator, the temporal evaluator shall
+distinguish positions before an authoritative execution origin from required
+history that was omitted or evicted.
 
 ## Inputs
 
-A temporal subject from [FR-090](./FR-090-select-temporal-profile-and-clock.md),
-an admitted evaluation anchor, total Boolean predicate valuations, and validated
-progress/closure information for the subject's required observations.
+A temporal subject and anchor, inclusive integer bounds `0 <= a <= b`, total
+Boolean predicate valuations, and either an authoritative execution origin or
+the complete required history identified by the observation binding.
 
 ## Outputs
 
-A true, false or pending temporal truth disposition with the exact decision
-scope, settlement basis and decision-support identities needed by the shared
-result contract, or a separate incomplete or refused disposition with the
-affected clause, interval and missing premise.
+A true or false past-time result, or a separate incomplete/refused disposition
+that identifies missing history, an unsupported profile/operator or a resource
+failure.
 
 ## Behavior
 
-For the two false-extension profiles, let the admitted positions be
-`D = {0, ..., n-1}`. At every integer position outside `D`, an atomic predicate
-is false while Boolean constants retain their values. At anchor `i`, for
-inclusive integers `0 <= a <= b`, the evaluator shall use:
+For an anchor whose history is complete back to an authoritative origin, the
+false-extension profiles shall treat atomic predicates before that origin as
+false and Boolean constants as unchanged. They shall use:
 
-| Operator | Exact false-extension meaning |
+| Operator | Exact past meaning |
 | --- | --- |
-| `eventually[a,b] p` | Some offset `d` in `[a,b]` makes `p` true at `i+d` |
-| `always[a,b] p` | Every offset `d` in `[a,b]` makes `p` true at `i+d` |
-| `p until[a,b] q` | Some `d` in `[a,b]` makes `q` true at `i+d`, and every `e` in `[a,d)` makes `p` true at `i+e` |
-| `p release[a,b] q` | The Boolean dual of `not p until[a,b] not q` under the same profile |
+| `once[a,b] p` | Some offset `d` in `[a,b]` makes `p` true at `i-d` |
+| `historically[a,b] p` | Every offset `d` in `[a,b]` makes `p` true at `i-d` |
+| `p since[a,b] q` | Some `d` in `[a,b]` makes `q` true at `i-d`, and every `e` in `[a,d)` makes `p` true at `i-e` |
+| `p triggered[a,b] q` | The Boolean dual of `not p since[a,b] not q` under the same profile |
 
-The lower-bound convention for `until` is deliberate: positions before `a` do
-not satisfy its left operand. It matches `mltl.closed-trace/v1` and shall not be
-replaced by a different unbounded-until convention under the same identity.
+A supplied history cutoff is not an execution origin. If the cutoff does not
+prove that every needed position is inside the available history, then the
+evaluator shall report missing history rather than apply false extension.
 
-For the timestamped finite-window profile, an eligible future instant has an
-admitted clock distance in `[a,b]`. Existential and universal operators quantify
-only eligible admitted instants; `until` uses the admitted order and requires
-its left operand at every eligible earlier instant from the lower bound to the
-witness. Empty existential windows are false and empty universal windows are
-true only after the observation authority establishes completeness through the
-upper endpoint; before then the result is pending or incomplete. `release`
-remains the Boolean dual.
+The timestamped finite-window profile shall quantify admitted past instants by
+inclusive clock distance.
 
-The evaluator shall return a Boolean for an open decision scope only when the
-selected profile proves that every admitted continuation preserves it. Such a
-result shall identify `decisive-witness` for true or
-`decisive-counterexample` for false and shall retain the exact valuation,
-capture, clock, progress and profile facts that form its decision-support set.
-Closure of that decision scope authorizes `closed-scope`; it does not imply
-closure of the surrounding execution. An undecided open scope shall remain
-pending with settlement basis `unsettled`.
+The timestamped finite-window evaluator shall require complete history over the
+window before applying empty-window duals.
 
-The evaluator shall represent missing required current valuations or an
-incomplete closed input as incomplete rather than pending future time or false.
-The evaluator shall make truth unavailable when a fact is missing inside the
-exact decision-support set. The evaluator shall retain a fact missing outside a
-completed decision-support set in completeness and any dependent
-adequacy/package result without changing an already settled temporal truth.
+The v1 profile shall define strong previous as `once[1,1]`.
 
-The v1 temporal profiles shall refuse unbounded intervals.
+If a later profile admits weak previous, then that profile shall define its
+boundary separately from strong previous.
+
+The v1 temporal profiles shall refuse unbounded past and implicit history
+reconstruction.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-091-AC-1 | Independent truth tables cover all four operators, every inclusive endpoint, zero-width intervals, nonzero lower bounds, nesting and short traces. | Test (TC-111) |
-| FR-091-AC-2 | On a one-position closed trace where atomic `p` is true, `always[0,1] p` is false under false-extension and true under a complete finite-window interpretation; the profiles cannot share one result identity. | Test (TC-112) |
-| FR-091-AC-3 | `p until[1,2] q` may be true with `p` false at the anchor when `q` is true at offset one, pinning the selected lower-bound convention. | Test (TC-111) |
-| FR-091-AC-4 | A decisive open decision scope may settle early only with the matching decisive basis, complete exact decision support and proof over every admitted continuation; every other unclosed future remains pending, while a closed incomplete input reports incomplete rather than applying false extension. | Test (TC-116) |
-| FR-091-AC-5 | Timestamped empty existential/universal window truth is emitted only after complete progress through the inclusive upper endpoint; an eligible event exactly at the deadline participates before settlement. | Test (TC-115) |
-| FR-091-AC-6 | Unbounded intervals, unavailable total valuations and exhausted semantic work return non-Boolean dispositions. | Test (TC-118) |
+| FR-092-AC-1 | Independent truth tables distinguish all four past operators, inclusive endpoints, zero-width intervals, nonzero lower bounds and each origin boundary. | Test (TC-112) |
+| FR-092-AC-2 | The same visible suffix yields a Boolean when its start is the authoritative execution origin and missing-history incomplete when it is merely a cutoff. | Test (TC-112) |
+| FR-092-AC-3 | `p since[1,2] q` uses `p` only between the lower bound and its witness, symmetrically with the selected future `until` convention. | Test (TC-112) |
+| FR-092-AC-4 | Missing, evicted, stale or binding-mismatched history never becomes false padding or a conclusive Boolean. | Test (TC-118) |
+| FR-092-AC-5 | Current TL future-only profiles are reported unsupported for every past operator until a separately reviewed past-time TL profile establishes exact correspondence. | Test (TC-117) |
 
 ## Dependencies
 
 - [FR-090](./FR-090-select-temporal-profile-and-clock.md).
-- Total Boolean predicate projection from
-  [contract-IR issue #63](https://github.com/agent-ix/quire-contract-ir/issues/63).
+- The future/past profile-evolution work remains separately owned in the TL
+  ecosystem; ticket existence is not implementation evidence.

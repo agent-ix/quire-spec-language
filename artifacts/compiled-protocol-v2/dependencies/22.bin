@@ -1,6 +1,6 @@
-# Native event-position temporal definition
+# Native fixed-sample temporal definition
 
-Profile identity: `quire.temporal.event-position.false-extension/v1`; revision: `1-draft.3`.
+Profile identity: `quire.temporal.fixed-sample.false-extension/v1`; revision: `1-draft.3`.
 Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
 
 ## Required definition
@@ -11,22 +11,26 @@ Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
 
 ## Selected interpretation
 
-One interval tick is one admitted semantic-event position in the authoritative
-sequence. The binding identifies sequence authority, event positions and origin.
-Neither elapsed wall time, a duplicate transport receipt nor silence advances
-this clock. A missing required position or valuation cannot be compressed out.
+One interval tick is one required sample of the declared positive rational
+period from the declared epoch, with exact unit and clock authority. Epoch,
+period and unit are runtime clock-binding inputs constrained by this profile;
+changing one changes that binding/assessment identity without selecting an
+event-position clock. There is no floating approximation or implicit resampling.
 
-For a closed-complete finite decision scope D = {0,...,n-1}, atomic predicates are false at
-integer positions outside D; temporal constants keep their values. An
-authoritative origin permits the corresponding past boundary. A history cutoff
-or incomplete closed file does not. For one complete position with p=true,
-`always[0,1] holds(p)` is false while `always[0,1] true` is true.
+Each required sample supplies a total valuation. A missing sample is a
+runtime incomplete disposition under a valid binding, never a false sample or
+removal of its position. A malformed, missing or incompatible clock definition
+or binding instead refuses before evaluation.
+Declared sample progress advances through ticks even without a business event.
+Only complete decision-scope closure authorizes false extension of atoms after
+the last sample; an authoritative origin controls the past boundary. Constants
+retain their values. An omitted history interval cannot be padded.
 
-The same exact lower-bound and dual rules apply to all bounded future/past
-operators. A valid witnessed `eventually[0,30] holds(p)` may settle true while
-the sequence is still open; that does not close the execution or prove other
-obligations. Current TL future mappings require all FR-095 premises; past
-requests remain unsupported by current future-only TL profiles.
+Future/past operators use inclusive sample offsets and the common exact
+lower-bound/dual rules. One complete sample with p=true distinguishes
+`always[0,1] holds(p)` (false) from `always[0,1] true` (true).
+Current TL future mappings additionally preserve epoch/period/unit and total
+sample correspondence; no past-time support is inferred.
 
 This selects exactly the corresponding FR-090 meaning in the required common
 definition. The other clock/boundary interpretations are different source

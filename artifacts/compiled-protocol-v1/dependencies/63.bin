@@ -1,56 +1,54 @@
 ---
-id: NFR-010
-title: "Bound composed processing without fabricating results"
+id: NFR-020
+title: "Bound protocol linking and assessment"
 type: NFR
-quality_attribute: reliability
+quality_attribute: performance_efficiency
 relationships:
-  - target: ix://agent-ix/quire-specification/FR-036
+  - target: ix://agent-ix/quire-specification/FR-052
     type: constrains
-  - target: ix://agent-ix/quire-specification/FR-041
+  - target: ix://agent-ix/quire-specification/FR-059
     type: constrains
-  - target: ix://agent-ix/quire-specification/FR-043
-    type: constrains
-  - target: ix://agent-ix/quire-specification/FR-044
+  - target: ix://agent-ix/quire-specification/FR-061
     type: constrains
 ---
 ## Statement
 
-When a composed processing request cannot perform its next required work within a declared resource limit, the
-implementation SHALL stop the affected work with an explicit incomplete outcome
-before publishing an unestablished result or silently dropping required input.
+The protocol implementation SHALL bound linking and assessment by authored protocol limits and caller-supplied execution limits, returning a resource-incomplete result before exceeding any limit.
 
 ## Scope
 
-Source/token/node admission, model and profile dependency expansion, numeric
-proof/normalization, query traversal/materialization and finite-graph traversal.
-F/E/B extend this policy to their owned monitor/protocol accounting contracts.
-Semantic domain limits and caller-lowered work controls are different inputs;
-zero does not disable a limit. Every selected processing boundary must declare
-its accounting version and effective limits before accepting work.
+Protocol definitions, causal nodes and edges, roles, messages, branches, iteration,
+active workflow instances, observations, retained result items and derived
+analysis artifacts in production or possible qualification Rust paths.
+
+## Rationale
+
+Protocol structure and supplied observations are untrusted. A finite source
+profile does not itself bound concurrent instances, observation volume or an
+optional analysis backend's resource use.
 
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Completed affected results after an insufficient limit | 0 | 0 | Test |
-| Required inputs or live work silently dropped to report success | 0 | 0 | Test |
-| Allocations/expansions beyond the declared admission/work charge | 0 | 0 | Test |
+| Unbounded caller-controlled collections or traversals | 0 | 0 | Inspection (TC-065) |
+| Limit-crossing cases returned as typed resource-incomplete results | 100% of declared limits | 100% | Test (TC-062) |
+| Business actions or compensations executed by assessment | 0 | 0 | Test |
 
 ## Verification
 
-[TC-048](../test-cases/TC-048-bound-composed-processing.md) plans zero, sufficient,
-exact-boundary and one-below-sufficient controls for every implemented boundary.
-Its budget, adverse-input and instrumented allocation controls respectively
-measure the three metrics above; the Method cells use the catalog's Test class.
-The domain includes nested sequences whose individual maxima are valid but
-aggregate work is large, acyclic predicate fan-out, reducible rational inputs,
-and long/cyclic graphs. A prior phase may fail first and must retain that actual
-cause. No unimplemented boundary is claimed covered by another phase's tests.
-Do not prescribe a universal memory ceiling from the historical compiler's
-current defaults or confuse the local Cargo job limit with language semantics.
+Retain a complete source-bound inventory of every caller-controlled collection,
+queue and traversal, its owning request or result field, limit authority, charge
+point, termination argument, resource-incomplete code and corresponding TC-062
+boundary case. Reconcile that inventory independently against every reviewed
+Rust interface and production path; TC-065 fails when an entry or source site is
+unmatched. Execute exact-boundary and one-over-boundary cases independently for
+every inventoried structural, instance, observation and result limit. Mutate
+each limit check so equality is rejected or excess is accepted; TC-062 must
+discriminate both changes.
 
 ## Dependencies
 
-- [State/query/graph contract](../../proposals/quire-v1/state-contract.md).
-- [Typed producer causes](../functional/FR-047-emit-typed-located-causes.md).
-- [Historical exhaustion distinction](NFR-002-classify-resource-incompleteness.md).
+- [FR-052](../functional/FR-052-represent-bounded-control.md).
+- [FR-059](../functional/FR-059-assess-finite-global-conformance.md).
+- [FR-061](../functional/FR-061-report-orthogonal-results.md).

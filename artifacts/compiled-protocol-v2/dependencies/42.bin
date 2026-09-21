@@ -1,42 +1,76 @@
 ---
-id: FR-047
-title: "Classify producer diagnostics from typed causes"
+id: FR-048
+title: "Bind native temporal syntax to typed value environments"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-005
     type: implements
+  - target: ix://agent-ix/quire-specification/FR-034
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-090
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-093
+    type: references
 ---
 ## Description
 
-When reporting a native producer failure, the producer SHALL derive its machine-readable classification from a typed cause in its versioned diagnostic catalog rather than diagnostic message text.
+When linking a native temporal declaration, the frontend SHALL retain its typed
+formula structure and explicit current-input, clock-role, activation and capture
+bindings under the selected temporal profile.
 
 ## Inputs
 
-A failure at source recognition, identity/linking, type/profile checking, input binding, capability selection or resource-limited execution, with its available source/subject context.
+The located native syntax tree, exact model/profile imports, shared checked
+predicates and the declaration's binding requirements.
 
 ## Outputs
 
-A stable catalogued classification, failure stage and structured cause details with exact available loci; human-readable wording is presentation.
+A source-bound temporal declaration with typed Boolean leaves and explicit
+environment requirements, or a located syntax, scope, type or profile refusal.
 
 ## Behavior
 
-Every emitted code belongs to the selected catalog; no ad-hoc literal or English-message match determines its kind. Cause details distinguish materially different refusals sharing a broader category, including missing versus conflicting definitions, wrong anchor versus missing observation, unknown syntax versus prohibited recognized construct, and unproved definedness versus runtime logical violation. Diagnostic formatting/localization cannot change classification. Wire extension/version behavior follows the existing shared interchange contract; this requirement creates no competing result envelope.
+The frontend SHALL parse each `holds` argument with the common value-expression
+grammar.
+
+The frontend SHALL keep temporal formula nodes distinct from ordinary Boolean
+values.
+
+The linker SHALL resolve current-input and trigger types to exact model exports.
+
+The linker SHALL restrict the trigger binder to activation/guard/capture scope.
+
+The evaluator SHALL initialize captures in source order at the activation anchor.
+
+The evaluator SHALL consume immutable capture values at later instants.
+
+The binder SHALL resolve the clock role to one exact compatible observation
+binding at execution.
+
+When a backend cannot preserve the declaration's meaning, the bridge SHALL
+report the unsupported mapping against the retained native subject.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-047-AC-1 | Changing/localizing human-readable messages leaves the same typed failure's stage, code and cause details unchanged. | Test (TC-047) |
-| FR-047-AC-2 | Every emitted machine code resolves to the selected versioned catalog; an uncatalogued code cannot be published as a stable producer outcome. | Test (TC-047) |
-| FR-047-AC-3 | Distinct anchor, observation, profile and definedness failures retain structured discriminating causes without requiring message parsing. | Test (TC-047) |
-| FR-047-AC-4 | Original source/model/clause loci and identities remain attached where available; diagnostics do not reconstruct a location by searching for a repeated name. | Test (TC-047) |
-| FR-047-AC-5 | Per-request resource/unsupported failures keep their actual stage and prerequisites rather than becoming another clause's Boolean result. | Test (TC-047) |
+| FR-048-AC-1 | Native future/past forms and explicit Boolean leaves parse with the declared precedence, original spans and common expression trees; unparenthesized binary temporal chains refuse. | Test (TC-049) |
+| FR-048-AC-2 | Negative, fractional and unbounded intervals refuse syntax; reversed integer bounds refuse admission; zero-width inclusive bounds remain distinct from an empty interval. | Test (TC-049) |
+| FR-048-AC-3 | The timed-refund declaration binds current and trigger inputs separately; activation-only names outside captures, self/result/pre ambient access, shadowing and forward capture reads refuse. | Test (TC-049) |
+| FR-048-AC-4 | Two semantic triggers with equal amounts retain separate capture environments; later input changes and duplicate receipts do not replace a capture or create another trigger identity. | Test (TC-049) |
+| FR-048-AC-5 | Missing, foreign or incompatible clock/subject/view bindings remain unavailable or refused without inserting a default clock, sample or empty population. | Test (TC-049) |
+| FR-048-AC-6 | On a complete one-position false-extension trace, always[0,1] true is true and always[0,1] holds(true) is false; native-to-TL lowering cannot fold away this distinction. | Test (TC-049) |
+| FR-048-AC-7 | A temporal expression in a shared Boolean argument and a non-Boolean holds root refuse, while the same admitted query/predicate expression retains its common type semantics inside holds. | Test (TC-049) |
+| FR-048-AC-8 | A source-valid timestamped or past-time declaration retains its native identity when the current TL mapping reports unsupported; no profile or clock substitution occurs. | Test (TC-049) |
 
 ## Dependencies
 
-- [Detailed draft contract](../../proposals/quire-v1/shared-foundation.md).
-- [Shared grammar](../../proposals/quire-v1/shared-grammar.md).
-- [Planned acceptance matrix](../composed-foundation/tests.md).
+- [Native temporal grammar and scope rules](../../proposals/quire-v1/shared-grammar.md).
+- [Temporal interpretation](FR-090-select-temporal-profile-and-clock.md).
+- [Activation and captures](FR-093-bind-temporal-activation-and-captures.md).
+- [Bridge correspondence](FR-095-preserve-native-tl-correspondence.md).
+- [Planned shared matrix](../composed-foundation/tests.md).
 
-Proposed composed-v1 obligation. Historical definitions and their acceptance
-remain separate; this artifact does not establish implementation coverage.
+This is A's source integration contribution. E owns temporal meaning; D/F own
+model/observation binding contracts. Exact definition artifacts and complete
+baseline review remain required before dependent implementation.

@@ -1,85 +1,130 @@
-# Composed linked-package reference definition
+# Native finite global protocol definition
 
-Artifact interpretation: `quire.package.composed/v1`; revision: `1-draft.2`.
+Profile identity: `quire.protocol.finite-global/v1`; revision: `1-draft.4`.
 Language: `ix:native` / `1-draft`. **Proposed, not adopted or implemented.**
-This defines a semantic reference to a fully linked package. It is not a source
-profile and cannot be selected by a clause's `using` alias.
 
-This is a working definition in one coherent draft. Required definitions and
-rule links resolve within this checkout; acceptance freezes their exact selections.
-Earlier draft text remains in Git history. Runtime references still require the
-selected immutable identities, revisions and digest domains.
+Working draft: local rule and dependency links select the current checkout.
+Git preserves drafting history; a coherent baseline is frozen at acceptance.
+This editing policy does not relax immutable runtime selections or digest checks.
 
-## Required definition
+## Required definitions and interfaces
 
-| Identity | Revision | Definition artifact |
-| --- | --- | --- |
-| `ix:native` / `1-draft` | `1-draft.2` | [Composed edition](edition.md) |
+| Identity | Revision | Definition artifact | Consumed interface |
+| --- | --- | --- | --- |
+| `quire.state.graph/v1` | `1-draft.3` | [State/query/graph](state-graph.md) | Checked shared values, guards, captures and predicate references |
+| `quire.temporal.bounded-facet/v1` | `1-draft.3` | [Temporal meaning](temporal-common.md) | Explicit activation, bounded clock/history/progress and temporal-reference contract |
 
-## Package and clause selections
+The source root admits protocol declarations. State and temporal declarations
+select their own profiles; an imported declaration retains that exact selection.
+Each authored timed obligation additionally selects its concrete temporal
+clock/boundary profile through its `using` alias or referenced temporal clause.
+The common temporal facet alone supplies no default clock interpretation.
 
-The package's outer `SemanticRef.semanticProfile` selects this definition's
-identity, revision and exact byte digest. Its artifact kind is `linked-package`;
-its language selects the composed edition. The inner package retains every
-declaration's exact state, predicate, temporal or protocol profile selection,
-typed dependency closure, source correspondence and required binding roles.
-The outer selection describes that container contract; it does not replace,
-merge or choose between the inner clause meanings.
+## Admitted forms and obligations
 
-A state/temporal/protocol profile cannot stand in for this outer package
-interpretation, even for a package containing only that family. Conversely,
-this outer interpretation cannot supply a missing clause profile or admit a
-construct disallowed by it. Changing one inner selection changes the static
-package subject; the outer definition identity alone cannot identify that subject.
-The exact artifact content binding and inner manifest remain required.
+Admit finite typed roles/relationships/channels; distinct send, receive,
+operation-attempt, effect and domain-event nodes; checks; explicit causal
+sequence; role-owned labeled choice with total visible exclusive/exhaustive
+guards; bounded parallel branches with explicit all-branch join; and bounded
+repetition with progress and an explicit exhausted path. No implicit race,
+cancellation, message order, reliable delivery or exactly-once business effect
+is assumed.
 
-For this definition, `requiredFeatures` is exactly the duplicate-free set below
-derived from the package's declarations, including unused checked predicates.
-It is not a claim about executed paths, backend support or release conformance.
+Admit exact related-instance annotations, finite snapshot/window inputs, awaited
+events with inclusive deadlines, compensation templates with separate forward
+registration and eligible activation captures, causal retries, achieved recovery
+relations, commit boundaries and explicit workflow closure. Definite value
+availability follows the native causal graph; a sibling or optional branch does
+not supply a value before its required join/path. Repeated delivery, invocation
+attempt and successful effect remain distinct identities.
 
-| Feature | Included exactly when |
+All value conditions use the shared expression rules and their supplied anchors;
+they cannot inspect pending monitor status, retag captures, infer population
+membership or perform business actions. Forward success creates a modeled
+compensation obligation, not an external compensator. A successful refund call
+alone cannot establish achieved recovery or complete global conformance.
+
+Global conformance checks the exact declared causal, channel, visibility,
+correlation, activation, recovery and closure premises. All permitted branch
+interleavings remain admissible. Open/incomplete histories cannot establish
+complete global success. Finite replay and settled incremental results must
+agree for equal admitted inputs/premises.
+
+Projection, realizability, refinement and composition remain separately requested
+claims with their own premises and backend dispositions; a finite passing trace
+does not prove them. No result grants testing adequacy or evidence sufficiency
+from observed conformance. C's assurance completion is not a semantic dependency.
+
+## Selected protocol rules
+
+The native surface fixes concrete syntax/binding details; B's requirements own
+protocol/conformance/result meaning. A disagreement is an integration defect,
+not permission to choose a favorable interpretation or overwrite either owner.
+
+| Rule | Current normative file |
 | --- | --- |
-| `declaration.predicate` | At least one named predicate is declared. |
-| `family.state` | At least one invariant, precondition or postcondition is declared. |
-| `family.temporal` | At least one temporal clause is declared. |
-| `family.protocol` | At least one protocol clause is declared. |
+| FR-049 | [Native choreography binding](../../../spec/functional/FR-049-bind-native-choreography-syntax.md) |
+| FR-050 | [Protocol instances](../../../spec/functional/FR-050-bind-protocol-instances.md) |
+| FR-051 | [Communication identities](../../../spec/functional/FR-051-preserve-communication-identities.md) |
+| FR-052 | [Bounded control](../../../spec/functional/FR-052-represent-bounded-control.md) |
+| FR-053 | [Choice visibility](../../../spec/functional/FR-053-enforce-choice-visibility.md) |
+| FR-054 | [Channel premises](../../../spec/functional/FR-054-bind-channel-premises.md) |
+| FR-055 | [Obligation activation](../../../spec/functional/FR-055-activate-protocol-obligations.md) |
+| FR-056 | [Compensation registration](../../../spec/functional/FR-056-register-compensation.md) |
+| FR-057 | [Commit and recovery](../../../spec/functional/FR-057-enforce-commit-recovery.md) |
+| FR-058 | [Retry and partial recovery](../../../spec/functional/FR-058-preserve-retry-and-partial-recovery.md) |
+| FR-059 | [Finite global conformance](../../../spec/functional/FR-059-assess-finite-global-conformance.md) |
+| FR-060 | [Independent claims](../../../spec/functional/FR-060-separate-protocol-claims.md) |
+| FR-061 | [Orthogonal results](../../../spec/functional/FR-061-report-orthogonal-results.md) |
+| NFR-020 | [Protocol resource bounds](../../../spec/non-functional/NFR-020-bound-protocol-processing.md) |
+| NFR-021 | [Protocol reproducibility](../../../spec/non-functional/NFR-021-reproduce-protocol-results.md) |
+| Native surface | [Choreography surface](../choreography-surface.md) |
+| Protocol meaning | [Protocol contract](../protocol-contract.md) |
 
-Missing, extra or unknown feature entries refuse this interpretation. Unique
-feature order is nonsemantic under the selected shared-reference rules. A reader
-still validates every inner definition and required feature; recognizing these
-four outer entries is not permission to ignore an unknown inner operator/profile.
-A later declaration family needs an explicitly revised definition and feature
-contract, not silent omission from this catalog.
+## Result settlement and compatibility
 
-Partial compilation and diagnostics cannot claim a fully linked package through
-this interpretation. Independently checked, dependency-closed declarations may
-still have their own scoped references and results under FR-030/031. Successful
-execution of one such declaration cannot certify the refused whole package.
+This draft consumes the current canonical result contract, the 1-draft.3
+temporal facet and the 1-draft.3 state dependency. It retains assessment execution,
+decision-scope progress, decision-scope closure, surrounding-execution progress,
+surrounding-execution closure, truth, settlement basis and exact decision support
+as independent facts. A completed
+assessment may settle an obligation from a decisive witness or counterexample
+while the decision scope and surrounding execution remain open, only when the
+selected temporal meaning preserves that truth under every admitted continuation.
+Missing support makes that decision unavailable; missing unrelated facts remain
+visible without erasing independently settled truth. A later contradiction
+creates a linked superseding or invalidating result with a corrected input
+identity and preserves the prior result bytes.
 
-## Wire and canonical identity
+This does not weaken FR-059's complete global conformance rule. A satisfied
+payment obligation cannot certify the still-open workflow, an unknown population
+or an unsupported independently requested claim.
 
-This candidate composes the existing `ix.shared-reference/2-draft` envelope and
-`ix.artifact-ref/3-draft` fields. It adds no field or artifact-kind discriminant.
-The referenced package payload still needs its own exact supported wire contract;
-this semantic definition neither supplies a serialization layout nor makes an
-unknown payload wire decodable. Acceptance of the envelope is insufficient.
+The complete-global-conformance closure record is a fifth independent fact:
+global claims retain `closed`, `open`, `incomplete` or `contradicted` plus the
+exact required execution, branch and workflow premises. Other claims retain
+`not-required` with no global premise set. Missing, duplicated, cross-wired or
+scope-mismatched required records/premises refuse; none of the other four
+progress/closure axes substitutes for this record.
 
-For this candidate's whole-package reference, `canonicalIdentity` is null: no
-whole-package semantic canonicalizer is selected. A raw artifact digest, an IR
-expression digest or the verification JCS domain cannot substitute for one.
-Build provenance, runtime inputs and static components retain the separations
-in the required edition's package contract. Historical references keep their
-original profiles and wire versions; no in-place migration is inferred.
+Runtime requests retain their exact selected definitions, identities, revisions
+and digest domains. Missing, stale, substituted or incompatible dependencies
+refuse their dependent request. A changed semantic selection changes the linked
+subject; an existing result cannot be relabelled under a different selection.
 
-## Selected reference rules
+The canonical result now carries exact assumptions, separate observation and
+protocol adequacy, and decision-support oracle dependence/lineage. Its enclosing
+artifact reference digests the complete canonical result, avoiding a digest
+inside its own preimage. The outgoing portable verification projection remains
+a separate requested adapter under
+[FR-062](../../../spec/functional/FR-062-project-results-to-portable-verification.md).
+It does not change source meaning or make E02 support a condition of native
+protocol admission. An outgoing projection must retain its canonical source
+result and preserve all independent target findings under the selected adapter.
 
-The following current reference rules supply the declared envelope contract.
-
-| Rule file |
-| --- |
-| [Reference schema](../../shared-reference-2-draft/schema.json) |
-| [Reference meanings](../../shared-reference-2-draft/README.md) |
-
-TC-030 and IT-010 plan the whole-package/inner-profile controls. Existing reference
-schema and canonicalizer tests do not qualify this new artifact interpretation
-or supply the pending strict linked-package reader.
+The [observation result contribution](../../../spec/functional/FR-115-report-activation-participation-and-adequacy.md)
+and [output mapping](../observation-output-mapping-contract.md) preserve these
+independent progress/closure axes, settlement, support and linked supersession.
+The current [observation contract](../observation-contract.md) supplies the
+producer selection and range correspondence. Draft normalization establishes no
+implementation, conformance or adoption claim.

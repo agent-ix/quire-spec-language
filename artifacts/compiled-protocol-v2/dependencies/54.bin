@@ -1,65 +1,51 @@
 ---
-id: FR-059
-title: "Assess finite global protocol conformance"
+id: FR-060
+title: "Separate conformance from projection and realizability claims"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-specification/US-006
     type: implements
-  - target: ix://agent-ix/quire-specification/FR-052
+  - target: ix://agent-ix/quire-specification/FR-031
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-053
-    type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-054
-    type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-058
+  - target: ix://agent-ix/quire-specification/FR-059
     type: depends_on
 ---
 ## Description
 
-When requested for an admitted finite protocol and bound observation history, the conformance evaluator SHALL determine global conformance only against the protocol's exact causal, channel, activation, compensation and closure premises.
+When multiple protocol-analysis capabilities are requested, the dispatcher SHALL produce one independent disposition for global conformance, monitorability, local projection, refinement, realizability and composition without transferring premises or success among them.
 
 ## Inputs
 
-A linked finite protocol, exact request, qualified observations, decision-scope
-and surrounding-execution progress/closure facts, the complete-global-conformance
-closure record, resource limits and selected evaluator capability.
+An admitted protocol, exact requested claims, selected backend capabilities and
+per-claim communication, visibility, environment and correspondence premises.
 
 ## Outputs
 
-Per-obligation and global conformance results with an independently retained
-complete-global-conformance closure state, exact violation or incompleteness
-causes and provenance.
+One result per requested claim, each with execution disposition, premises,
+derived-artifact identities and limitations.
 
 ## Behavior
 
-The evaluator SHALL accept any observation order consistent with the authored
-partial order and channel premises. It SHALL report unexpected, missing,
-misordered, duplicated and wrongly correlated events without repairing them.
-Open or incomplete histories SHALL NOT establish complete global success. Batch
-replay and settled incremental assessment over the same admitted facts SHALL
-produce the same semantic results.
-
-The complete-global-conformance closure record SHALL retain one state from
-`closed`, `open`, `incomplete` or `contradicted` plus the exact required
-execution, branch and workflow closure-premise identities. It is independent of
-decision-scope closure, surrounding-execution closure, assessment execution and
-completeness. Complete global success requires `closed` and every exact required
-premise; a closed decision scope, settled per-obligation truth, completed
-assessment or closed surrounding execution cannot substitute for a missing or
-non-closed global premise. A strict reader SHALL refuse an omitted, duplicated,
-cross-wired or scope-mismatched required premise.
+Global conformance MAY execute when projection is unavailable. A satisfiable
+finite trace SHALL NOT establish projectability or a causal strategy. Local
+contracts with mutually circular assumptions SHALL NOT establish realizability
+or composition. An unsupported advanced claim SHALL NOT erase a valid independent
+global result. If a selected analysis backend fails, then the dispatcher SHALL
+return a failed disposition for that requested claim without invoking an
+unreviewed fallback or changing independent results.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-059-AC-1 | Valid split-shipment and payment/refund observations conform under each permitted branch interleaving. | Test (TC-059) |
-| FR-059-AC-2 | Unexpected, missing, causally misordered, duplicate-effect and cross-workflow observations identify their exact violated obligation. | Test (TC-059) |
-| FR-059-AC-3 | An open or incomplete history remains pending/incomplete even when no violation has yet been observed. | Test (TC-059) |
-| FR-059-AC-4 | Settled incremental and batch replay results agree for the same protocol, inputs, progress and closure identities. | Test (TC-059) |
-| FR-059-AC-5 | Complete global success is available only with a `closed` complete-global-conformance closure record carrying every exact required execution, branch and workflow premise; independently omitting, duplicating, cross-wiring or changing each premise prevents complete success or refuses the record without changing an independently settled per-obligation result. | Test (TC-059) |
+| FR-060-AC-1 | A monitorable but unprojectable protocol returns global replay/conformance results and an explicit projection refusal. | Test (TC-060) |
+| FR-060-AC-2 | A satisfiable protocol with no causal implementation strategy does not report realizability. | Test (TC-060) |
+| FR-060-AC-3 | Circular local assumptions cannot establish composition success without an independently discharged premise. | Test (TC-060) |
+| FR-060-AC-4 | Every advanced result identifies its admitted fragment, backend, assumptions and source/derived-artifact correspondence. | Test (TC-060) |
+| FR-060-AC-5 | A backend failure yields a failed disposition for its exact claim and does not invoke a fallback or erase an independent result. | Test (TC-060) |
 
 ## Dependencies
 
-- [FR-052](./FR-052-represent-bounded-control.md) through [FR-058](./FR-058-preserve-retry-and-partial-recovery.md).
-- E/F temporal and observation contracts.
+- [Shared capability dispatcher](./FR-031-report-requested-capabilities.md).
+- [FR-059](./FR-059-assess-finite-global-conformance.md).
+- E03 library qualification for any adopted specialized implementation.

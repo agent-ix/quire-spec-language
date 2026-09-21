@@ -1,204 +1,241 @@
-# Linked packages and assessment bindings
+# Native protocol, compensation and result contract
 
-Proposed consumer contract for [FR-030](../../spec/functional/FR-030-bind-composed-definitions.md)
-and [FR-035](../../spec/functional/FR-035-bind-ecosystem-subjects.md), for the
-composed `1-draft` candidate. It does not register a wire format or canonicalizer,
-adopt a profile, or replace D's model/configuration, F's observation or B's
-request/result contracts.
+Draft PT01/PT02 contribution to the composed Quire v1 baseline. It defines
+semantic representation and consumer contracts. Agent A owns the single native
+grammar and integrates the eventual protocol surface; this document does not
+create another authored language, parser or evidence system.
 
-## Static package subject
+## Selected v1 boundary
 
-An explicit compiler input inventory supplies the complete native source-unit
-set and exact locally supplied dependencies. It identifies the language/edition
-definition, which must agree with every source header. Directory contents,
-installed tools and retrieval locations cannot add units or select dependencies.
-All units use one edition. Aliases are unit-local; native declaration names share
-the closed package namespace. A missing source unit prevents establishing that
-namespace. A missing model/profile refuses its dependents without erasing
-independent declarations whose names and dependencies are established.
+The v1 protocol profile represents a finite global protocol over explicitly
+identified workflow instances. Its admitted structure consists of finite named
+roles and role instances, typed messages, explicit channels, distinct send and
+receive events, authored causal order, role-owned labeled choice, bounded
+parallel branches and join, bounded iteration and declared termination. A
+protocol package also states delivery and duplication premises and the facts
+visible to the role that owns each choice.
 
-| Static component | Information retained and checked |
+The evaluator checks supplied observations. It never sends a message, invokes a
+business operation, registers a real compensator or performs recovery. Global
+finite replay and conformance are selected v1 capabilities. Projection,
+realizability, refinement and assume-guarantee composition remain independent
+requested capabilities with their own premises and may be unavailable while
+global conformance remains useful.
+
+All choice guards, obligation triggers and recovery relations are total,
+read-only typed predicates over immutable supplied values and captures. They
+perform no I/O, callbacks, mutation, reflection or user-code execution. An
+evaluation failure is a typed failed or unavailable result; it never selects a
+branch or falls back to truthiness.
+
+The representation consumes A-owned source/profile/predicate identities,
+D-owned component, relationship and population identities, E-owned clock and
+closure semantics, and F-owned observation/correlation/completeness bindings.
+It preserves those authorities rather than copying their models.
+
+## Identity model
+
+These identities remain distinct and typed:
+
+| Subject | Meaning |
 | --- | --- |
-| Sources | Exact authority, identity, revision and byte digest per unit; original source regions and clause/declaration identities. Two editable authorities for one clause refuse. |
-| Language | Exact language/edition and supplied definition artifact; no implementation-version default. |
-| Profiles | Each declaration's selected root definition name/revision/byte digest, exact required definition closure and the meaning owned by each dependency. |
-| Models | Compiled model document, permitted exports, authoritative declaration handles and exact manifest/lock/dependency closure under the selected producer contract. |
-| Native dependencies | Resolved predicate, operation-contract and temporal-obligation references with their defining source, model and profile selections; typed anchors and capture requirements. |
-| Binding requirements | Typed roles, selected model/observation contracts and clock/scope premises described below. Concrete runtime instances are not inserted here. |
+| Protocol definition | Static authored global behavior under an exact language edition and profile definition. |
+| Workflow instance | One assessed occurrence of a protocol; related instances remain separate occurrences. |
+| Role / role instance | An authored responsibility / its configuration-bound participant in one workflow instance. |
+| Message | The authored typed communication obligation. |
+| Send / receive | Distinct protocol events; neither one implies the other. |
+| Delivery | A transport observation carrying a message attempt; repeated delivery need not be a new effect. |
+| Attempt | One invocation try under an authored operation and retry relation. |
+| Effect | A declared successful business-state transition, identified separately from attempts and receipts. |
+| Compensation registration | An obligation created only after its paired effect succeeds. |
+| Compensation attempt / effect | A recovery try / its successful business effect. Success does not imply restoration unless the recovery relation establishes it. |
+| Commit | An authored boundary after which specified compensations are no longer permitted. |
+| Result | Facts about one exact request and subject, with assessment execution, decision-scope progress/closure, surrounding-execution progress/closure, complete-global-conformance closure, truth, settlement basis, activation, participation, assumptions, completeness, observation adequacy and protocol adequacy separated. |
 
-The native `model` import digest continues to mean SHA-256 of the selected
-compiled model document's exact bytes. Manifest/lock digests, the producer's
-package fingerprint and source digests remain separate. Package identity/version
-and exports must match that document and its validated closure. A transitively
-reachable type is not thereby a directly imported export. D controls model
-closure, presence, units, relationships and configuration; A consumes its exact
-admitted view or refuses unsupported meaning. The old minimum-only ConfigVersion
-domain and parent relationship remain admission controls, not implicit finite
-bounds or fields.
+Identity substitution refuses. A telemetry trace identifier, endpoint, queue,
+timestamp or equal display name cannot stand in for a workflow, role, message,
+attempt or effect identity. Related order, shipment, payment-attempt, payment-
+effect and refund instances use explicit typed relationships. Population
+obligations retain their declared snapshot or event-time window plus membership,
+progress and completeness dependencies; unknown required membership cannot
+establish success.
 
-Each profile definition names its exact required definitions and the forms,
-value rules and interpretation it supplies. Transitive selections are validated
-before dependent declarations are published as checked. Definition cycles,
-conflicting content for one immutable definition identity, missing requirements
-and incompatible requirements within one selected closure refuse. Installing a
-profile cannot grant operators. Declarations can select different compatible
-interfaces; a referenced predicate retains its own checked definition rather
-than acquiring caller permissions. This definition-dependency rule does not
-prohibit identity-bearing model graphs or redefine D's package dependency policy.
+## Control and observability
 
-Partial compilation retains every requested declaration's disposition and
-dependency cause. Only dependency-closed checked declarations reach a consumer;
-partial output cannot claim whole-package admission. An unrelated backend's lack
-of support is a request disposition, not a static source failure.
+Sequence contributes explicit causal edges. Parallel branches admit every
+interleaving consistent with their branch edges and join condition; input order
+or wall-clock sorting does not add causality. An iteration has an authored finite
+maximum and a progress edge. Termination names the required branch/workflow
+closure condition.
 
-## Typed binding requirements
+Every choice has one owning role, labels, branch guards and a visibility set.
+The owner must be able to distinguish the branch from information available at
+the decision point. A choice whose branches are distinguishable only by a hidden
+fact is valid source syntax but refused by the selected protocol profile. This
+is an admission/conformance premise; it does not claim a general projection
+theorem.
 
-A required role is identified by its owning native declaration, original source
-region and role kind. Its local name is retained for diagnostics, not used as a
-global lookup key. Two `"refund-clock"` roles in different clauses remain distinct
-even when an explicitly supplied clock satisfies both.
+Channel premises state participating roles, message types, ordering policy,
+delivery cardinality and whether duplication can occur. V1 does not silently
+assume exactly-once delivery, FIFO across channels, reliable delivery or globally
+synchronized clocks. A trace is conformant only relative to the exact premises
+selected by the request.
 
-| Role information | Required interpretation |
+## Compensation semantics
+
+A compensation definition binds a forward effect, a compensating operation,
+the role that owes it, eligible failure/abort conditions, a retry relation, a
+commit boundary and an authored recovery relation. Registration occurs after the
+forward effect is established. An untriggered registered compensation is
+inactive; an eligible but unobserved compensation is incomplete or pending under
+the supplied progress/closure authority; an attempted compensation can succeed,
+violate, fail or time out.
+
+The recovery relation compares the declared post-recovery state with its
+authored target. A partial refund can satisfy a partial recovery obligation while
+failing full restoration. Two refund attempts, two transport receipts and two
+refund effects are three different cardinalities. Retrying under the same effect
+identity cannot manufacture another successful business effect. Commit before a
+required registration, compensation before its forward effect, and compensation
+after a forbidding commit are protocol violations.
+
+## Shared assessment result
+
+Each requested subject/capability pair produces one retained result even when it
+cannot execute. The minimum orthogonal dimensions are:
+
+| Dimension | Closed meanings |
 | --- | --- |
-| Type and authority | Exact model declaration or selected producer interface; kind distinguishes value input, invocation, workflow/participant, relationship, population and clock/progress. Equal field shapes do not substitute for identity. |
-| Anchor | Current observation, exact invocation pre/post, temporal origin/activation, protocol occurrence, compensation registration or activation, as authored. |
-| Scope premises | Workflow/role/relationship endpoints, snapshot or window/membership contract, clock kind/unit/history and completeness authority where applicable. |
-| Dependencies | Prerequisite roles, supplied record correspondence and immutable captures. A clock, population and its progress record must describe the same declared scope. |
+| Assessment execution | completed, refused, unsupported, resource-incomplete, failed |
+| Decision-scope progress | exact progress for the claim's decision scope with its authority and boundary identities |
+| Decision-scope closure | open, closed, incomplete or contradicted for the exact decision scope and closure authority |
+| Surrounding-execution progress | exact progress for the whole surrounding execution with its distinct authority and boundary identities |
+| Surrounding-execution closure | open, closed, incomplete or contradicted for the exact surrounding execution and closure authority |
+| Complete-global-conformance closure | closed, open, incomplete or contradicted plus exact required execution, branch and workflow closure-premise identities for a global-conformance claim; `not-required` with no premise set for another claim |
+| Truth | satisfied, violated, pending, unavailable |
+| Settlement basis | closed-scope, decisive-witness, decisive-counterexample, unsettled, unavailable, with the exact decision-support set |
+| Activation | triggered, inactive, activation-unknown |
+| Participation | exact participating and required role-instance sets, or unknown with reasons |
+| Assumptions | exact assumption identities, each met, not-met, unknown or not-assessed |
+| Completeness | complete, open, incomplete, with the exact facts required by each returned claim, missing inputs and authority/progress identities; it does not encode any closure axis |
+| Observation adequacy | adequate, inadequate, unknown or not-assessed for the exact observations required to interpret the result |
+| Protocol adequacy | demonstrated, not-demonstrated, inapplicable, unknown, with the exact obligations and cases considered |
+| Claim | global-conformance, monitorability, local-projection, realizability, refinement or composition |
+| Provenance | source/profile/model/protocol/request/binding/observation/progress/backend identities and derived artifact digests |
 
-Roles derive from checked native declarations and imported authoritative
-contracts. They introduce no field grammar, event schema or model store. The
-linker retains their contract selections; it does not infer an adapter from a
-binder's spelling. A semantic change to an imported binding contract requires a
-new static selection. Switching between admitted concrete bindings satisfying
-the same contract is an assessment input change.
+The combination is constrained by the normative table in
+[FR-061](../../spec/functional/FR-061-report-orthogonal-results.md). Missing
+observations, required roles, population members or adverse cases cannot change
+truth, adequacy or package-level status from unsuccessful or unknown to
+successful. Independent supported results remain available when another request
+is unsupported.
 
-The runtime request maps each required role to one binding under D/F/B's selected
-contracts. Repeated entries for the same role refuse, even when equal; one
-explicit concrete binding may serve several compatible roles. Missing or
-incompatible mappings refuse the affected request. Missing observations under a
-valid mapping remain incomplete when the obligation requires them. An absent
-observation is not a model's optional-none value.
+Complete global conformance is a separate claim whose closure record retains
+every required execution, branch and workflow premise. Neither a settled
+per-obligation truth, a closed decision scope, a closed surrounding execution,
+completed assessment execution nor completeness can substitute for that exact
+record or one of its premises. Mutating the global closure record cannot erase
+or change an independently settled per-obligation truth.
 
-Binding a template does not require inventing future events. A recovery role can
-be mapped before compensation registration or activation. Absence of a recovery
-record cannot fail a prerequisite of an unactivated recovery obligation.
-Activation, valid open-prefix pending, missing required evidence and inactivity
-at closure remain distinct under B/E/F's rules. Captures bind once at the
-authored anchor; mapping another role cannot retag them or supply another
-workflow's values.
+A completed assessment may settle satisfied from a decisive witness or violated
+from a decisive counterexample while the assessed subject remains open. The
+result retains that open subject progress, the exact settlement basis and every
+supporting fact; it never relabels the subject as closed. The selected profile
+must prove the result is preserved by all admitted continuations. Otherwise an
+open subject remains pending, or unavailable when a required current fact is
+missing.
 
-## Configuration and assessment identity
+A later contradiction to retained support, progress or closure creates a new
+source-bound superseding or invalidating result. The prior bytes and identity
+remain unchanged, and the contradiction is not treated as an admitted
+continuation under the old input identity.
 
-### Prerequisites by processing stage
+The result is a portable semantic contract for A/E/F and future Engineering
+Assurance consumers. Quoin retains evidence ownership. The protocol evaluator
+does not introduce a second evidence store, execution runner, report registry or
+verification-method catalog.
 
-The linker SHALL derive concrete-input requirements without requiring their
-future observations to exist. The assessment binder SHALL check the inputs
-required by the selected claim when that claim consumes them. These obligations
-apply equally to state, temporal and choreography declarations.
+The projection into `quire-verification/e02-draft-2` is a derived compatibility
+result, not the canonical protocol result. FR-062 owns the total mapping, source
+artifact retention, distinct derived identity, adequacy separation and refusal
+rules. Consumers that need subject closure, settlement support, protocol
+adequacy or claim meaning read the canonical result; they do not recover those
+facts from the narrower E02 assessment view.
 
-| Stage | Required selections and checks | Inputs not required at this stage |
+## Distinguishing corpus
+
+The planned corpus uses orders O1 and O2, shared external payment provider P,
+inventory, split shipments S1/S2, payment attempts A1/A2, payment effect E1 and
+refunds R1/R2.
+
+Accepted cases:
+
+1. Payment success registers one refund obligation; concurrent S1/S2 branches
+   join before order completion.
+2. A failed shipment activates a refund; one retry shares the refund obligation
+   but retains a distinct attempt; a single full refund effect satisfies the
+   recovery relation.
+3. Two related partial refunds sum exactly to the authored amount under a closed
+   declared population and satisfy partial recovery.
+4. O1 and O2 share provider P while retaining distinct workflow/effect subjects.
+5. Global replay completes while local projection is explicitly unavailable.
+6. `eventually[0,30] paid` settles satisfied at its admitted payment witness
+   while the workflow remains open, and `always[0,30] no_duplicate_effect`
+   settles violated at its first admitted counterexample while the workflow
+   remains open; both retain exact decision support and open subject progress.
+
+Refused, violating or incomplete controls:
+
+1. A choice owned by fulfillment depends only on a payment-provider fact hidden
+   from fulfillment: refused as unobservable.
+2. The same transport delivery is relabeled as a second payment effect: refused
+   identity binding or duplicate-effect violation.
+3. Compensation appears before its forward effect, registration occurs after a
+   forbidding commit, or refund occurs after that commit: violation.
+4. A triggered refund fails, times out, or lacks closure/progress needed to
+   decide: failed, pending or incomplete remain distinct.
+5. A refund belongs to O2 while its compensation obligation belongs to O1:
+   correlation refusal; equal trace/provider identifiers do not repair it.
+6. One expected partial-refund population member is missing or membership is
+   unknown: no aggregate success.
+7. Mutual local assumptions admit a circular story without a causal global
+   strategy: no realizability or composition success.
+8. A satisfiable but unprojectable global trace remains eligible for global
+   replay while the projection request is unavailable or refused.
+9. An open prefix without a decisive basis is relabelled satisfied or violated,
+   a decisive result omits one supporting fact, or open subject progress is
+   restamped as closed: refused as an impossible result combination.
+10. A late contradiction silently rewrites or reseals the earlier settled
+    result instead of emitting a linked superseding or invalidating result:
+    refused as result-history corruption.
+
+Every case pins finite branch, iteration, message, active-instance and observation
+bounds in its fixture. Example cardinalities do not become semantic maxima.
+
+## Reuse and claim limits
+
+No external protocol, solver or monitor library is adopted by this specification
+slice. The mapping at this revision is explicit:
+
+| Capability | Selected ownership | External candidate disposition |
 | --- | --- | --- |
-| Source recognition | Explicit source inventory, original bytes, edition and lexical/parser limits | Model instances, runtime populations, snapshots, windows, observations and progress |
-| Resolution and type/profile admission | Exact model exports and definition closure; selected binding contracts; typed anchor, scope and clock roles; static configuration selections and producer/native correspondence consumed here | Concrete workflow instances, runtime membership, a future snapshot/window, progress/closure records or compensation observations |
-| Assessment binding | An admitted subject; exact consumed runtime configuration; matching concrete role bindings and producer/native correspondence; the finite population/snapshot/window and authority required by the selected assessment | Unrelated scope inputs and observations needed only by an unactivated obligation |
-| Evaluation and result publication | The admitted inputs and exact decision support required by the selected B/E result rule, with relevant availability, progress and completeness retained separately | Complete surrounding execution or unrelated observations when the selected rule admits decisive truth without them |
+| Protocol representation, compensation and shared result meaning | Owned Quire semantics in this specification | No external semantic authority. |
+| Finite global conformance | Required future first-party Rust implementation or qualified Rust library | Candidate selection open under E03; no version or license accepted yet. |
+| Projection, realizability, refinement and composition | Separately requested later analysis capabilities | Research only; no theorem, algorithm, version or dependency adopted. |
+| Temporal monitoring used by protocol predicates | E-owned native/TL bridge and qualified Rust consumers | R2U2/C2PO and other foreign-runtime candidates are not production or qualification dependencies. |
+| Execution and evidence retention | Engineering Assurance and Quoin contracts | Consumed interfaces; the protocol implementation owns neither runner nor evidence store. |
 
-Absence of a required static definition/export refuses the dependent linking.
-An unknown, conflicting or incompatible runtime selection refuses the dependent
-binding; unavailable observations under a valid selected binding remain explicit
-incomplete inputs. Static success does not waive those later prerequisites.
-Missing support cannot become a value. Conversely, a producer's incomplete-input
-classification cannot erase a truth already justified by the evaluator's complete
-exact support; it remains visible on the affected coverage/completeness dimension.
+PT01/PT02 may adopt a Rust library only after E03 records exact version, source,
+license, runtime boundary, admitted algorithm/profile and discriminating adverse
+cases. Similar terminology does not transfer a theorem. General projection,
+realizability and composition are not prerequisites for the selected global
+replay/conformance slice.
 
-Which runtime scope is required follows the exact profile and role. A timestamped
-window and its authority do not substitute for event-position or fixed-sample
-inputs. The D/F/E observation-range contract supplies any permitted correspondence;
-this stage table does not invent one, require UTC for every clock, or infer a
-window from current time. Evaluators still require their own closure premises
-before publishing complete global success.
-
-### Producer and native identity correspondence
-
-When a selected producer interface identifies a model or profile by canonical
-object content, the consumer SHALL retain an explicit immutable correspondence
-to the native selection it supplies. It cannot use that producer digest in the
-native raw-byte digest position. The selected interface declares this logical
-correspondence; this contract does not invent its payload wire or canonicalizer.
-
-| Correspondence component | Required information and validation |
-| --- | --- |
-| Producer selection | Authoritative producer/interface selection, object kind and identity/revision, canonical digest, and the exact definition of that canonical content domain |
-| Native selection | Exact compiled-model artifact or native definition identity/revision and raw-byte SHA-256; permitted export/declaration handles and required definition closure where applicable |
-| Binding relation | The producer-declared relation supplying that native model/profile selection for the particular typed role; retain its exact source/configuration provenance and selected interpretation |
-
-The consumer checks both selections under their own digest contracts and checks
-the required object/declaration kind and relation against the selected producer's
-exports. An unsupported canonical domain refuses the dependent correspondence;
-ordinary JSON serialization, equal hash spelling or similar fields cannot fill
-it. The relation is an explicit producer contract, not a proof of semantic
-equivalence inferred from two hashes. Multiple declared relations may share an
-artifact or producer object, but each required role must resolve unambiguously.
-
-Removing a required relation, changing either selection while retaining the old
-relation, cross-binding a foreign export, or substituting one digest domain for
-another refuses the dependent binding. Presentation-only re-encoding may change
-raw bytes while preserving a canonical producer object: the raw native selection
-must then be changed explicitly and validated again. Correspondence consumed by
-static linking is retained with those selections; a runtime request must agree
-with it rather than silently replacing it. Full configuration provenance remains
-separate as described below.
-
-### Retained configuration
-
-Retain the complete, exact configuration artifact consumed at each stage. Its
-semantic selections must agree with source and linked requirements. A runtime
-configuration cannot change a linked model, profile or binding-contract meaning:
-such a request refuses and requires an explicitly newly linked subject. Concrete
-adapters, populations, traces, clocks, progress, implementations, requested claims
-and resource controls remain identified assessment inputs.
-
-The static subject is compared through the components above. Build provenance
-retains the full compile configuration and implementation; assessment provenance
-retains the full runtime configuration and inputs. Changing only a resource limit
-changes configuration and assessment input identity while preserving static
-meaning, consistent with D's proposed configuration requirements. Changing a
-selected model/profile or required binding meaning changes the static subject
-as well. A projected configuration cannot stand in for the original input.
-
-Exact serialized bytes, static language subject and assessment inputs have
-distinct identities. Reordering a set in a permitted encoding may preserve its
-subject while changing raw bytes. Source-byte changes alter source correspondence
-even if a typed-expression canonicalizer establishes equal expression meaning.
-Canonical identity is optional until its exact domain/version/algorithm is
-selected and qualified; structural comparison or ordinary JSON hashing cannot
-claim it. Existing ArtifactRef/SemanticRef, producer fingerprint and IR/JCS domains
-retain their selected contracts. Definition digests cover exact supplied bytes;
-an artifact need not contain its own byte digest.
-
-## Admission examples and producer agreement
-
-Use a three-family order package with two typed per-observation inputs and a
-refund-clock role. Bind O1 and O2 through distinct workflow/relationship instances
-even when they share a provider and clock authority. Swapping O2's progress into
-O1's population must fail the scope check. Raising the run budget preserves the
-static subject; changing the temporal boundary profile requires a new linked
-subject. Unactivated compensation needs no fabricated refund record.
-[IT-010](../../spec/integration/IT-010-bind-linked-package-assessments.md) specifies
-the producer/consumer controls; none has executed yet.
-
-The producer contract selected in the [observation contract](observation-contract.md)
-supplies presence, relationship, population and configuration meaning. Its
-static/runtime split, producer/native correspondence and exact decimal canonical
-domain agree with the consumer requirements above. The integrated observation
-range correspondence covers event-position, fixed-sample and timestamp inputs,
-distinct record/member identities and half-open coverage versus inclusive
-deadlines. Decisive truth retains its exact support independently of unrelated
-incompleteness.
-
-These rules are part of the [current shared draft](definitions/README.md).
-The affected package contract and D's producer contract and plan in
-[FCD PR #97](https://github.com/agent-ix/filament-core-data/pull/97) still need
-acceptance before #93 resumes. Further draft successor definitions or checksum
-publication are not prerequisites. Historical accepted selections retain their
-original meaning.
+The maintained architecture and its library list are research inputs. Earlier
+FRETish-source and foreign-runtime recommendations are superseded by the owner
+ruling: native Quire is the sole editable formal-clause language, external forms
+are export-only, and production or possible qualification integrations are Rust.
+Until a required producer interface is reviewed and available, the affected
+request is refused or reported unsupported with the missing dependency. No
+hardcoded fixture, inferred default, source-text adapter or local stub substitutes
+for A/D/E/F/Engineering Assurance producer contracts.
