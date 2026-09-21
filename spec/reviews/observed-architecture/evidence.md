@@ -79,7 +79,7 @@ and `git grep -n`. Nothing was checked out, built or committed. Clones and shas:
 - IR 553b6d1 and a5154d3
 - CG a4b2a73 and 5e2a6a9
 - RT d97bc0b
-- QSpec 3a79dce
+- QSpec dccddab
 - QI 40cff46
 
 A citation held when the file exists at the sha, the symbol is within 5 lines

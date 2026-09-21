@@ -12,7 +12,7 @@
 //! the `node_id` of the `identity_projection` node whose `declaration
 //! .qualified_name` spells the exported name; on a nominal node that name must
 //! equal its nominal `qualified_declaration`, else the package is refused as
-//! `declaration-nominal-mismatch`. QSpec d227270 gives no other node an
+//! `declaration-nominal-mismatch`. QSpec 82f84d3 gives no other node an
 //! explicit declared name, so an export no node's `declaration` spells is
 //! `missing_declaration` with cause `undeclared-export`, never a guessed node.
 //! A package's local declarations are exactly its exports.

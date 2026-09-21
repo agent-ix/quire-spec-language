@@ -2,7 +2,7 @@
 
 The files below `quire-specification/` are unmodified bytes of
 [agent-ix/quire-specification](https://github.com/agent-ix/quire-specification)
-at merged revision `d227270fbeb28289df6abba7e94173118345c028` (TC-196 R01's
+at merged revision `82f84d336a4cbfdfad999cef9145e333c4213333` (TC-196 R01's
 cycle listing names name types rather than generalization records, and R07
 carries a second contending-redefiner shape),
 copied with `git show <revision>:<path>` at their repository-relative paths so
@@ -47,7 +47,7 @@ requires re-vendoring from a newer merged revision, never editing these bytes.
 ## Re-vendoring
 
 [`VENDOR.json`](VENDOR.json) is the pin for this directory: the `quire-specification`
-files above and their commit (currently `d227270fbeb28289df6abba7e94173118345c028`),
+files above and their commit (currently `82f84d336a4cbfdfad999cef9145e333c4213333`),
 and the six `unicode-17.0.0/` files, each pinned by origin URL and digest since
 they have no git revision to read from. `cargo xtask revendor --tree
 complete-value --qspec-clone <path to a local quire-specification checkout>`
@@ -68,14 +68,14 @@ file.
 ### Split pin: `native-diagnostics.md` at a later commit (QSL#213 S-5a)
 
 `VENDOR.json` currently carries **two** `quire-specification` sources: the
-main one above, still at `d227270fbeb28289df6abba7e94173118345c028`, and a
+main one above, still at `82f84d336a4cbfdfad999cef9145e333c4213333`, and a
 second one holding only `proposals/quire-v1/definitions/native-diagnostics.md`,
-pinned separately at `e8a81b569d0efe8d0cf72f3cecb2d21889cc258a` (merged
+pinned separately at `e3ccd72bb9686b867e7be406060d789515e346b9` (merged
 agent-ix/quire-specification#144, revision `1-draft.6` -- QC-11's
 `stage_limit_exceeded` and `runtime_invariant` catalog codes, ADR-013
 §7 S-5, tracked on QSL-26).
 
-This is deliberate, not an oversight: bumping the whole source to `e8a81b56`
+This is deliberate, not an oversight: bumping the whole source to `e3ccd72b`
 also pulls in 15 other upstream PRs across 35 other files, including QC-18's
 `ModelOwner.version` node-identity preimage change, which is QSL#213 **S-2's**
 row, not S-5's -- landing it here would be doing S-2's work silently, and it

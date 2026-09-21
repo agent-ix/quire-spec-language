@@ -469,7 +469,7 @@ fn a_supported_classification_names_its_target_baseline_and_premises() {
             };
             assert_eq!(target.identity(), "mltl.closed-trace/v1");
             assert!(
-                table.contains("4d6230eb8aa9766ff3017360962f2d6368d74cb3"),
+                table.contains("782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f"),
                 "the source table's baseline revision is recorded: {table}",
             );
             assert!(
