@@ -428,36 +428,61 @@ fn semantic_definition_revision_is_independent_of_exact_source_artifact_revision
             changed_bytes.push(b'\n');
             let mut resealed = original.clone();
             resealed.digest = ByteDigest::of(&changed_bytes);
-            // Correct raw-byte sealing cannot grant the changed document the
-            // meaning of the registered definition with the same source label.
-            for (offered, expected) in [
-                (&original, Error::Invalid(Invalid::Seal)),
-                (&resealed, Error::Unsupported(Unsupported::Definition)),
-            ] {
-                let dependencies: Vec<_> = selected
-                    .dependencies
-                    .iter()
-                    .map(|dependency| {
-                        if dependency.artifact == &original {
-                            artifact::SuppliedDependency {
-                                artifact: offered,
-                                bytes: &changed_bytes,
-                                requires: dependency.requires,
-                            }
-                        } else {
-                            *dependency
+            // Wrong raw-byte sealing refuses before recognition is ever reached.
+            let unsealed: Vec<_> = selected
+                .dependencies
+                .iter()
+                .map(|dependency| {
+                    if dependency.artifact == &original {
+                        artifact::SuppliedDependency {
+                            artifact: &original,
+                            bytes: &changed_bytes,
+                            requires: dependency.requires,
                         }
-                    })
-                    .collect();
-                let changed = native::Selections {
-                    dependencies: &dependencies,
+                    } else {
+                        *dependency
+                    }
+                })
+                .collect();
+            failure(
+                &native::admit(
+                    proofs,
+                    &native::Selections {
+                        dependencies: &unsealed,
+                        ..*selected
+                    },
+                    Limits::default(),
+                ),
+                Error::Invalid(Invalid::Seal),
+            );
+            // Recognition is by identity alone: a resealed artifact — self-consistent
+            // but carrying altered content under the same source-object identity —
+            // still grants the compiler's Protocol interpretation.
+            let resealed_dependencies: Vec<_> = selected
+                .dependencies
+                .iter()
+                .map(|dependency| {
+                    if dependency.artifact == &original {
+                        artifact::SuppliedDependency {
+                            artifact: &resealed,
+                            bytes: &changed_bytes,
+                            requires: dependency.requires,
+                        }
+                    } else {
+                        *dependency
+                    }
+                })
+                .collect();
+            assert!(native::admit(
+                proofs,
+                &native::Selections {
+                    dependencies: &resealed_dependencies,
                     ..*selected
-                };
-                failure(
-                    &native::admit(proofs, &changed, Limits::default()),
-                    expected,
-                );
-            }
+                },
+                Limits::default(),
+            )
+            .into_result()
+            .is_ok());
         },
     );
 }

@@ -325,8 +325,8 @@ pub fn with_binding_inputs_and_inventory<T>(
                 rule.path,
                 RuleInput {
                     path: rule.path,
-                    digest: ByteDigest::of(rule.bytes),
-                    bytes: rule.bytes,
+                    digest: ByteDigest::of(rule.path.as_bytes()),
+                    bytes: rule.path.as_bytes(),
                 },
             )
         })

@@ -576,10 +576,28 @@ fn selected_definitions(temporal: &[R]) -> Vec<R> {
     selected.into_iter().collect()
 }
 
+/// A placeholder byte payload for `definition`, derived from its own registry
+/// identity rather than any real document content. The registry's job is
+/// recognition (identity and revision), not content distribution: a real
+/// producer supplies its own authoritatively obtained artifact bytes for each
+/// definition it selects, which this illustrative example does not have.
+fn placeholder_bytes(definition: R) -> &'static [u8] {
+    definition.identity().as_bytes()
+}
+
+/// [`placeholder_bytes`]'s selection, for the same illustrative reason.
+fn placeholder_selection(definition: R) -> definitions::Selection {
+    definitions::Selection {
+        identity: definition.identity().into(),
+        revision: definition.revision().into(),
+        digest: ByteDigest::of(placeholder_bytes(definition)),
+    }
+}
+
 fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in recipe.profiles {
-        let selected = definition.selection();
+        let selected = placeholder_selection(*definition);
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selected.identity, selected.revision, selected.digest
@@ -874,9 +892,9 @@ impl DefinitionInputs {
         let selected = selected_definitions(temporal);
         let definitions = selected
             .iter()
-            .map(|definition| definitions::Artifact {
-                selection: definition.selection(),
-                bytes: definition.bytes(),
+            .map(|&definition| definitions::Artifact {
+                selection: placeholder_selection(definition),
+                bytes: placeholder_bytes(definition),
             })
             .collect::<Vec<_>>();
         let rules = selected
@@ -888,8 +906,8 @@ impl DefinitionInputs {
             .values()
             .map(|rule| definitions::RuleInput {
                 path: rule.path,
-                digest: ByteDigest::of(rule.bytes),
-                bytes: rule.bytes,
+                digest: ByteDigest::of(rule.path.as_bytes()),
+                bytes: rule.path.as_bytes(),
             })
             .collect::<Vec<_>>();
 
@@ -1055,7 +1073,7 @@ fn selected_dependencies(
     let model = &inputs.model;
     let mut dependencies = selected
         .iter()
-        .map(|definition| Dependency {
+        .map(|&definition| Dependency {
             artifact: reference(
                 STANDARD,
                 w::ArtifactKind::Source,
@@ -1063,9 +1081,9 @@ fn selected_dependencies(
                 revision(DEFINITION_NAMESPACE, definition.revision()),
                 "text/markdown",
                 "1",
-                definition.bytes(),
+                placeholder_bytes(definition),
             ),
-            bytes: Cow::Borrowed(definition.bytes()),
+            bytes: Cow::Borrowed(placeholder_bytes(definition)),
             requires: Vec::new(),
             file: String::new(),
         })
@@ -1212,7 +1230,7 @@ fn compile_with<T>(
         .namespace()
         .ok_or_else(|| namespace_failure(&namespace))?;
     let definition_inputs = definitions::Inventory {
-        edition: R::Edition.selection(),
+        edition: placeholder_selection(R::Edition),
         definitions: &inputs.definitions.artifacts,
         rules: &inputs.definitions.rules,
     };
