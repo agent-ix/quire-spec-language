@@ -16,7 +16,7 @@ evaluation, shared wire and external producer qualification are outside this pla
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-001 | FR-001-AC-1 | TC-011 | ✅ Passed locally |
 | FR-001 | FR-001-AC-2 | TC-011 | ✅ Passed locally |

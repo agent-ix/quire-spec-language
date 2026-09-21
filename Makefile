@@ -18,10 +18,15 @@ TREE ?= all
 QSPEC_CLONE ?=
 FCD_CLONE ?=
 
-.PHONY: revendor revendor-check ci ci-default-features ci-all-features ci-clean-build ci-docs
+.PHONY: revendor revendor-check check-index-completeness ci ci-default-features ci-all-features ci-clean-build ci-docs
 
 revendor:
 	cargo xtask revendor --tree $(TREE) $(if $(QSPEC_CLONE),--qspec-clone $(QSPEC_CLONE)) $(if $(FCD_CLONE),--fcd-clone $(FCD_CLONE))
+
+# QSL-168: fail when an FR or TC artifact under spec/ has no row in the
+# master index (spec/spec.md, spec/**/tests.md). Offline, no build required.
+check-index-completeness:
+	tools/check-index-completeness.sh
 
 revendor-check:
 	cargo xtask revendor-check --tree $(TREE)
@@ -57,7 +62,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: revendor-check ci-default-features ci-all-features ci-clean-build ci-docs
+ci: revendor-check check-index-completeness ci-default-features ci-all-features ci-clean-build ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
