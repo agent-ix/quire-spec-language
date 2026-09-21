@@ -125,6 +125,6 @@ implementation reviews, then QUOIN gap-analysis with optional semantic pass off.
 A package milestone preserves full original acceptance: independent A/B/C
 native-domain/interchange adoption, actual executable lowering and qualified
 existing backend with compiled ConfigVersion, then Quire integration. These
-are LC02/FS05, LC04 and LC05's own separately tracked work. An unlowered
+are separately tracked work outside this plan. An unlowered
 disposition is retained evidence of remaining work, not a replacement for the
 backend.

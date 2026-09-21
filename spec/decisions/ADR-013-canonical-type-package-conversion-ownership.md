@@ -985,7 +985,7 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
 | #85 | SEAM-3 deletion (ADR-011 M-6d) and O-22 readers. |
 | agent-ix/quire-contract-ir#137 | O-25: the witness test. FR-031-AC-3 gets its own coverage row, discharged by the QSL replay crossing test (TK-04). |
 | Timed-refund worktree | Proceeds against O-02 and O-23. |
-| QSpec PR #76 | Revised against O-06 and O-09; feeds #217. |
+| Checked-package V2 application operation identity | Revised against O-06 and O-09; feeds #217. |
 
 ## Consequences
 

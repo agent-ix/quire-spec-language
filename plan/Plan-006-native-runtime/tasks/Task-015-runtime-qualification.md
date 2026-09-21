@@ -51,7 +51,7 @@ Task-014 is qualified at 48f53ae by SR-098. TC-077/IT-006 is qualified at
 compile-fail doctest, three private audits and documented local gates pass.
 The initial SR-100 audit found only this task's unfinished reconciliation and
 handoff. The private PR and owning LC03 handoff are now published, as are
-scope notes recording LC02, FS03, LC04 and LC05 as separately tracked work. This reconciles the completed
+scope notes recording the interchange, rule and integration work as separately tracked. This reconciles the completed
 qualification/handoff deliverables; SR-100 is rerun against this state before
 the conditional ready-PR merge. No merge or full issue/assignment closure is
 asserted by this status update.
