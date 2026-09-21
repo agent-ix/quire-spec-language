@@ -3,7 +3,7 @@ id: SR-390
 title: "Base review of the reconciled core language and producer handoff"
 type: SpecReview
 analysis: base
-scope: "Issues #36/#37/#39/#40/#66: FR-046–050, NFR-009, TC-126–138, IT-009, docs/compiled-protocol-v2.md, spec/spec.md and TM-003; D Producer interface 1.2.0 at 6259d3a5b99088740df9bcc8e8d60f3720aaa603; merged L5 baseline 72507f856457ba0922719bd5d9f5cadcce4058cd; immutable native-v1 baseline 4d6230eb8aa9766ff3017360962f2d6368d74cb3"
+scope: "Issues #36/#37/#39/#40/#66: FR-046–050, NFR-009, TC-126–138, IT-009, docs/compiled-protocol-v2.md, spec/spec.md and TM-003; D Producer interface 1.2.0 at 6259d3a5b99088740df9bcc8e8d60f3720aaa603; merged L5 baseline 72507f856457ba0922719bd5d9f5cadcce4058cd; immutable native-v1 baseline 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f"
 review_set: subset
 review_date: "2026-09-11"
 relationships:
