@@ -158,8 +158,9 @@ impl CheckedPackage {
     /// S4-links each identity first (`family::link_function_identity`),
     /// then emits directly through `family::emit_v2`. Reads no CST, no
     /// source text, only each function's already-checked identity, through
-    /// `check`'s [`crate::check::CheckedPackage::function_identities`]
-    /// accessor -- this method itself, not `check`, is what builds
+    /// `check`'s `CheckedPackage::function_identities` (`pub(crate)`, not
+    /// part of this crate's public doc surface) accessor -- this method
+    /// itself, not `check`, is what builds
     /// `QualifiedName` and calls the v2 codec, both `value::expression`
     /// types/functions `check` must not import (FR-068-AC-3).
     ///
