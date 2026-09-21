@@ -25,12 +25,24 @@ use proc_macro::TokenStream;
 /// F18): an earlier version silently dropped `attribute` instead, so a
 /// typo'd or misremembered argument compiled cleanly and did nothing,
 /// contradicting this doc's own claim that none are admitted.
+///
+/// The `compile_error!` is emitted **alongside** the unchanged item, not in
+/// place of it (PR #262 review, nit): an earlier version of this arm
+/// returned only the `compile_error!` token stream, dropping the annotated
+/// item from the output entirely. That reported the real error, but then
+/// cascaded a second, unrelated wave of "cannot find function/type" errors
+/// at every call site that referenced the now-missing item -- noise that
+/// buries the one real diagnostic. Keeping the item means a misspelled
+/// `#[string_edge(anything)]` reports exactly one error, not a stack trace
+/// of names that no longer resolve.
 #[proc_macro_attribute]
 pub fn string_edge(attribute: TokenStream, item: TokenStream) -> TokenStream {
     if !attribute.is_empty() {
-        return "compile_error!(\"#[string_edge] takes no arguments\");"
+        let mut output: TokenStream = "compile_error!(\"#[string_edge] takes no arguments\");"
             .parse()
             .expect("static compile_error! literal always parses");
+        output.extend(item);
+        return output;
     }
     item
 }

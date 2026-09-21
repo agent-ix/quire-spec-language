@@ -243,6 +243,22 @@ earlier draft of this requirement, QSL-25's body and ADR-011 T-1: this
 requirement supplies #240's precondition (the checked-package producer) and
 does not perform the cutover itself.
 
+**This deferral is a citation, not a #214-local ruling (PR #262 review,
+finding F1).** `src/cli.rs`'s `lower` command and `src/package.rs`'s
+`NativePackageRef` are still present after this ticket lands; that is
+correct, not an oversight this Status section is excusing. ADR-011
+§7.3's M-6a row (`spec/decisions/ADR-011-stage-dag-and-dependency-
+architecture.md`, the "M-6a checked-package producer" line) names the
+scope those two artifacts belong to -- native `run`/`compile`, `lower`,
+`package::NativePackage` and `native-linked-package/1` -- and states its
+owner verbatim: "QSL-8 (this repo's #240) with M-4, before #216". #214's
+own ticket body says the same. Deleting `lower`/`NativePackageRef` inside
+#214 would contradict that row, not satisfy it; #240 deletes them in the
+same change that rewires `run`/`compile` onto this requirement's spine
+(the T-3 same-change rule the Description section above already states),
+which cannot happen before this requirement's own producer, and #242's S4
+emitter, both exist.
+
 **Scope of what #214 delivers, and what stays unbacked (PR #262 review
 headline finding; rescoping decision recorded against #262, not an
 amendment to this requirement's own target design above -- see the

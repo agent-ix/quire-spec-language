@@ -46,3 +46,28 @@ by inspecting reachability. Scope: FR-065-AC-5.
   the `_ => refuse(...)` arm is itself a catch-all arm, which this
   requirement's own rule forbids on this `match`; the fixture is a
   demonstration of the forbidden shape, not a passing case.
+
+## Status
+
+**Unbacked (PR #262 review, finding F1).** This test case has zero tests
+in the delivered code. `Typer`'s declaration-typing pass and
+`ValueFunctionFamily::call` remain the only checker either function form
+has -- the composed checker's pre-migration entry points this test case
+verifies are absent were not removed by #214, so steps 1-4 above have no
+implementation to run against yet. This is a rescoping decision recorded
+against #262 (see [FR-065](../functional/FR-065-migrate-function-application-to-checked-family.md)'s
+own Status section, AC-5 row), not an oversight: FR-065-AC-5's target
+design (move the checking into `ValueFunctionFamily::check` and delete it
+from `Typer`) is filed as its own ticket, QSL-148, rather than attempted
+inside #214.
+
+This is a distinct deferral from #214's *other* still-present legacy
+surface, `src/cli.rs`'s `lower` command and `src/package.rs`'s
+`NativePackageRef` (the SEAM-1 native-v1 CLI producer path). That surface
+is owned by ADR-011 §7.3's M-6a row, not by this test case: its stated
+owner is "QSL-8 (this repo's #240) with M-4, before #216", and it is
+[#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s
+requirement, not QSL-148's. TC-164 (M-6e, the composed checker) and the
+M-6a CLI producer cutover are two separate rows of the same ADR-011 §7.3
+table, deferred to two separate tickets (QSL-148 and #240
+respectively) -- neither is satisfied by, or blocks, the other.

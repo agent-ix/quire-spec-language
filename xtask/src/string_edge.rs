@@ -6,16 +6,22 @@
 //!
 //! **Scope of what this scan can detect.** This is a syntax-only scan (no
 //! type inference): it reports an equality/ordering comparison where at
-//! least one operand is a string *literal* (`x == "foo"`), and a `match`
-//! whose scrutinee has at least one string-literal arm pattern
-//! (`"foo" => ...`). It does not detect a comparison between two `&str`
-//! bindings with no literal on either side (`x == y`, both variables) --
-//! that needs a real type checker, not an AST walk, to know either operand
-//! is a string at all. ADR-012 §9's own named violation sites (ADR-010
-//! §4.3's five production dispatch strings) are all literal-based, so this
-//! scope covers the real violations this ticket's own ACs exercise; it is
-//! not a claim of completeness against every possible `&str` comparison in
-//! the crate.
+//! least one operand is a string *literal* (`x == "foo"`), a `match` whose
+//! scrutinee has at least one string-literal arm pattern (`"foo" => ...`),
+//! and (PR #262 review, finding F5) a `starts_with`/`contains`/
+//! `eq_ignore_ascii_case` method call with a string-literal argument --
+//! method calls a `syn::ExprBinary` walk cannot see, and this PR's own new
+//! `xtask::seam_probe::offline_registry_unavailable` (`stderr.contains(
+//! "--offline")`) was exactly this blind spot, invisible until this scan
+//! grew a method-call form to find it. It does not detect a comparison
+//! between two `&str` bindings with no literal on either side (`x == y`,
+//! both variables), or a comparison against a named `const` rather than a
+//! literal -- both need a real type checker, not an AST walk, to know
+//! either side is a string at all. ADR-012 §9's own named violation sites
+//! (ADR-010 §4.3's five production dispatch strings) are all literal-based,
+//! so this scope covers the real violations this ticket's own ACs exercise;
+//! it is not a claim of completeness against every possible `&str`
+//! comparison in the crate.
 //!
 //! **Branch-gating detection.** A comparison found while walking an
 //! `if`/`while` condition or a `match` scrutinee/guard is marked
@@ -40,8 +46,15 @@ pub struct Occurrence {
     /// The source file the occurrence was found in, relative to the
     /// workspace root.
     pub file: String,
-    /// The 1-based line the occurrence starts on.
+    /// The 1-based line the occurrence starts on, kept for the human-facing
+    /// report only -- the allow-list itself keys on `item`, not this
+    /// (F8; see [`AllowListEntry::item`]'s own doc).
     pub line: u32,
+    /// The enclosing item's name -- `Type::method` inside an `impl`, or a
+    /// bare function name at module scope; `"<module scope>"` for a string
+    /// comparison found outside any function (e.g. a `const` initializer).
+    /// The same `syn`-resolved shape `xtask::seam_probe::SeamLocation` uses.
+    pub item: String,
     /// Whether the comparison feeds an `if`/`while` condition or a `match`
     /// scrutinee/guard -- the allow-list refuses any entry at such a
     /// location (FR-064-AC-5).
@@ -57,8 +70,19 @@ pub struct AllowListEntry {
     /// The source file the allow-listed occurrence is in, relative to the
     /// workspace root.
     pub file: String,
-    /// The 1-based line the allow-listed occurrence starts on.
-    pub line: u32,
+    /// The enclosing item's name (PR #262 review, finding F8). An earlier
+    /// version of this struct keyed on `(file, line)`, the exact brittleness
+    /// `xtask::seam_probe::SeamLocation`'s own doc already fixed one file
+    /// over: a line number moves whenever anything *above* the comparison
+    /// in the same file changes -- a new doc comment, an added item, a
+    /// `cargo fmt` reflow -- none of which touch the comparison itself.
+    /// Keying on the enclosing item's name (stable against all of that)
+    /// matches `SeamLocation` exactly. The trade-off is coarser than a line
+    /// number: an allow-list entry admits every occurrence in the same
+    /// item, not one specific comparison -- the same trade-off
+    /// `SeamLocation` already accepted, and still empty here today (see
+    /// [`allow_list`]'s own doc), so nothing exercises it for real yet.
+    pub item: String,
     /// Why this occurrence is not a dispatch decision (a debug-only
     /// consistency check, a logged message, a diagnostic payload or a test
     /// assertion -- never a branch-gating comparison).
@@ -124,6 +148,26 @@ fn is_comparison_op(op: syn::BinOp) -> bool {
     )
 }
 
+/// The literal-taking string methods this scan additionally covers
+/// (PR #262 review, finding F5): `starts_with`, `contains` and
+/// `eq_ignore_ascii_case` are method calls, not `syn::ExprBinary`, so the
+/// original `visit_expr_binary`-only scan could not see them -- this PR's
+/// own `xtask::seam_probe::offline_registry_unavailable` (`stderr.contains(
+/// "--offline")`) was exactly this blind spot.
+///
+/// Named here as data, not as a literal at the comparison site itself (the
+/// same `has_attr_named`/`has_cfg_test` shape already used above in this
+/// file): `is_string_edge_method` below compares `method.to_string()`
+/// against this array through `<[&str]>::contains`, not `method == "…"`
+/// directly, so the scanner's own AST walk over this file does not see a
+/// literal operand at a `==`/`match` site here and flag this detector's own
+/// implementation.
+const STRING_EDGE_METHODS: [&str; 3] = ["starts_with", "contains", "eq_ignore_ascii_case"];
+
+fn is_string_edge_method(method: &syn::Ident) -> bool {
+    STRING_EDGE_METHODS.contains(&method.to_string().as_str())
+}
+
 fn pattern_has_string_literal(pat: &syn::Pat) -> bool {
     match pat {
         syn::Pat::Lit(syn::PatLit {
@@ -139,15 +183,38 @@ struct Scanner {
     file: String,
     string_edge_depth: usize,
     condition_depth: usize,
+    /// The innermost enclosing `impl` block's `Self` type name, if any --
+    /// same tracking `xtask::seam_probe::EnclosingItem` does, kept live
+    /// during the walk instead of resolved after the fact from a bare line
+    /// number (F8).
+    current_impl_self: Option<String>,
+    /// The enclosing-item name stack: `Type::method` (pushed by
+    /// `visit_impl_item_fn`) or a bare function name (pushed by
+    /// `visit_item_fn`), innermost last. [`Self::current_item`] reads its
+    /// top.
+    item_stack: Vec<String>,
     occurrences: Vec<Occurrence>,
 }
 
 impl Scanner {
+    /// The name an occurrence found right now should be keyed on (F8): the
+    /// innermost enclosing function/method, or `"<module scope>"` for a
+    /// string comparison found outside any function (e.g. a `const`
+    /// initializer) -- rare, but not `unreachable!`, since a bare `==`
+    /// against a string literal at module scope is syntactically valid.
+    fn current_item(&self) -> String {
+        self.item_stack
+            .last()
+            .cloned()
+            .unwrap_or_else(|| "<module scope>".to_owned())
+    }
+
     fn record(&mut self, line: u32) {
         if self.string_edge_depth == 0 {
             self.occurrences.push(Occurrence {
                 file: self.file.clone(),
                 line,
+                item: self.current_item(),
                 branch_gating: self.condition_depth > 0,
             });
         }
@@ -158,6 +225,7 @@ impl Scanner {
             self.occurrences.push(Occurrence {
                 file: self.file.clone(),
                 line,
+                item: self.current_item(),
                 branch_gating: true,
             });
         }
@@ -165,6 +233,14 @@ impl Scanner {
 }
 
 impl<'ast> Visit<'ast> for Scanner {
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        let previous = self
+            .current_impl_self
+            .replace(crate::impl_self_name(&node.self_ty));
+        syn::visit::visit_item_impl(self, node);
+        self.current_impl_self = previous;
+    }
+
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
         let marked = has_attr_named(&node.attrs, "string_edge");
         if has_cfg_test(&node.attrs) {
@@ -173,7 +249,9 @@ impl<'ast> Visit<'ast> for Scanner {
         if marked {
             self.string_edge_depth += 1;
         }
+        self.item_stack.push(node.sig.ident.to_string());
         syn::visit::visit_item_fn(self, node);
+        self.item_stack.pop();
         if marked {
             self.string_edge_depth -= 1;
         }
@@ -187,7 +265,13 @@ impl<'ast> Visit<'ast> for Scanner {
         if marked {
             self.string_edge_depth += 1;
         }
+        let name = match &self.current_impl_self {
+            Some(self_ty) => format!("{self_ty}::{}", node.sig.ident),
+            None => node.sig.ident.to_string(),
+        };
+        self.item_stack.push(name);
         syn::visit::visit_impl_item_fn(self, node);
+        self.item_stack.pop();
         if marked {
             self.string_edge_depth -= 1;
         }
@@ -198,6 +282,15 @@ impl<'ast> Visit<'ast> for Scanner {
             return;
         }
         syn::visit::visit_item_mod(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if is_string_edge_method(&node.method)
+            && (is_string_lit(&node.receiver) || node.args.iter().any(is_string_lit))
+        {
+            self.record(line_of(node));
+        }
+        syn::visit::visit_expr_method_call(self, node);
     }
 
     fn visit_expr_if(&mut self, node: &'ast syn::ExprIf) {
@@ -289,6 +382,8 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
         file: relative.to_string_lossy().replace('\\', "/"),
         string_edge_depth: 0,
         condition_depth: 0,
+        current_impl_self: None,
+        item_stack: Vec::new(),
         occurrences: Vec::new(),
     };
     scanner.visit_file(&parsed);
@@ -315,9 +410,9 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
 /// [`Error::StringEdgeFound`], not `Ok`, so the caller's exit code reflects
 /// the finding.
 pub fn run(workspace_root: &Path) -> Result<String> {
-    let allow_list: BTreeSet<(String, u32)> = allow_list()
+    let allow_list: BTreeSet<(String, String)> = allow_list()
         .into_iter()
-        .map(|entry| (entry.file, entry.line))
+        .map(|entry| (entry.file, entry.item))
         .collect();
     if let Some(entry) = allow_list_branch_gating_check(workspace_root)?
         .into_iter()
@@ -325,7 +420,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     {
         return Err(Error::StringEdgeAllowListGatesABranch {
             file: entry.file,
-            line: entry.line,
+            item: entry.item,
         });
     }
     let mut reported = Vec::new();
@@ -335,7 +430,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         }
         for relative in source_files(&root, workspace_root)? {
             for occurrence in scan_file(workspace_root, &relative)? {
-                if !allow_list.contains(&(occurrence.file.clone(), occurrence.line)) {
+                if !allow_list.contains(&(occurrence.file.clone(), occurrence.item.clone())) {
                     reported.push(occurrence);
                 }
             }
@@ -386,7 +481,7 @@ fn branch_gating_entries<'a>(
         .filter(|entry| {
             occurrences.iter().any(|occurrence| {
                 occurrence.file == entry.file
-                    && occurrence.line == entry.line
+                    && occurrence.item == entry.item
                     && occurrence.branch_gating
             })
         })
@@ -421,6 +516,8 @@ mod tests {
             file: "fixture.rs".to_owned(),
             string_edge_depth: 0,
             condition_depth: 0,
+            current_impl_self: None,
+            item_stack: Vec::new(),
             occurrences: Vec::new(),
         };
         scanner.visit_file(&parsed);
@@ -511,14 +608,21 @@ mod tests {
     }
 
     /// FR-064-AC-5's rejection mechanism (PR #262 review, finding F11): a
-    /// candidate allow-list entry at a branch-gating occurrence's location
-    /// is rejected; one at a non-branching occurrence's location is not.
+    /// candidate allow-list entry at a branch-gating occurrence's item is
+    /// rejected; one at a non-branching occurrence's item is not.
     /// Constructs its own `AllowListEntry` fixtures rather than going
     /// through the real (permanently empty) [`allow_list`], so this
     /// rejection is actually exercised, not only claimed -- real, but (same
     /// reason as the two tests above, PR #262 review, coordinator round 3,
     /// finding 7) not the five named ADR-010 §4.3 sites AC-5 also
     /// requires, so untagged alongside them.
+    ///
+    /// The branch-gating and non-branching comparisons live in two
+    /// *different* functions (PR #262 review, finding F8): keying on the
+    /// enclosing item, not the line, means two occurrences in the *same*
+    /// item are no longer distinguishable from each other -- a real,
+    /// accepted coarsening (`AllowListEntry::item`'s own doc) this fixture
+    /// must respect to still name one occurrence at a time.
     #[test]
     fn allow_list_entry_at_a_branch_gating_occurrence_is_rejected() {
         let occurrences = scan_source(
@@ -527,36 +631,101 @@ mod tests {
                 if kind == "allocation" {
                     do_something();
                 }
+            }
+            fn log_kind(kind: &str) {
                 let flag = kind == "other";
                 log(flag);
             }
             "#,
         );
-        let branch_gating_line = occurrences
+        let branch_gating_item = occurrences
             .iter()
             .find(|occurrence| occurrence.branch_gating)
             .expect("fixture has one branch-gating occurrence")
-            .line;
-        let non_branching_line = occurrences
+            .item
+            .clone();
+        let non_branching_item = occurrences
             .iter()
             .find(|occurrence| !occurrence.branch_gating)
             .expect("fixture has one non-branching occurrence")
-            .line;
+            .item
+            .clone();
+        assert_ne!(branch_gating_item, non_branching_item);
         let candidates = [
             AllowListEntry {
                 file: "fixture.rs".to_owned(),
-                line: branch_gating_line,
+                item: branch_gating_item.clone(),
                 reason: "test: claims a branch-gating comparison is safe",
             },
             AllowListEntry {
                 file: "fixture.rs".to_owned(),
-                line: non_branching_line,
+                item: non_branching_item,
                 reason: "test: a genuine display-only comparison",
             },
         ];
         let rejected = branch_gating_entries(&occurrences, &candidates);
         assert_eq!(rejected.len(), 1);
-        assert_eq!(rejected[0].line, branch_gating_line);
+        assert_eq!(rejected[0].item, branch_gating_item);
+    }
+
+    /// F8: the allow-list key survives a line shift that touches nothing
+    /// about the comparison itself -- the exact brittleness line-keying had.
+    /// A doc comment inserted above the function moves the comparison's
+    /// line number, but `item` (the enclosing function's name) is unchanged.
+    #[test]
+    fn item_key_is_stable_across_an_unrelated_line_shift() {
+        let before = scan_source(
+            r#"
+            fn dispatch(kind: &str) -> bool { kind == "value" }
+            "#,
+        );
+        let after = scan_source(
+            r#"
+            /// A new doc comment that pushes the comparison below down by
+            /// several lines, touching nothing about the comparison itself.
+            fn dispatch(kind: &str) -> bool { kind == "value" }
+            "#,
+        );
+        assert_ne!(before[0].line, after[0].line, "fixture must actually shift");
+        assert_eq!(before[0].item, after[0].item);
+    }
+
+    /// F5: `starts_with`/`contains`/`eq_ignore_ascii_case` are method calls,
+    /// not `syn::ExprBinary`, so they need their own detection path. Covers
+    /// a literal receiver, a literal argument, and the one production
+    /// method call this PR's own review found invisible
+    /// (`xtask::seam_probe::offline_registry_unavailable`'s
+    /// `stderr.contains("--offline")`).
+    #[test]
+    fn literal_taking_string_methods_are_reported() {
+        let occurrences = scan_source(
+            r#"
+            fn a(value: &str) -> bool { value.starts_with("prefix") }
+            fn b(value: &str) -> bool { "literal".eq_ignore_ascii_case(value) }
+            fn c(stderr: &str) -> bool { stderr.contains("--offline") }
+            fn d(value: &str) -> bool { value.starts_with(other()) }
+            "#,
+        );
+        // `a`, `b` and `c` each report exactly one occurrence; `d`'s
+        // argument is not a literal, so it reports none.
+        assert_eq!(occurrences.len(), 3);
+        assert!(occurrences.iter().any(|o| o.item == "a"));
+        assert!(occurrences.iter().any(|o| o.item == "b"));
+        assert!(occurrences.iter().any(|o| o.item == "c"));
+        assert!(!occurrences.iter().any(|o| o.item == "d"));
+    }
+
+    /// F5: a method call inside a `#[string_edge]`-marked function is
+    /// silent, matching the existing `ExprBinary` behaviour.
+    #[test]
+    fn marked_function_silences_a_literal_taking_method_call_too() {
+        let occurrences = scan_source(
+            r#"
+            #[string_edge]
+            fn edge(value: &str) -> bool { value.starts_with("prefix") }
+            "#,
+        );
+        assert!(occurrences.is_empty());
     }
 
     /// **Untagged (PR #262 review, coordinator round 3, finding 7).**
@@ -564,7 +733,7 @@ mod tests {
     /// ADR-010 §4.3's five named production dispatch sites (a string
     /// comparison selecting between two branches) and asserts
     /// `branch_gating_entries` rejects an allow-list entry naming it -- but
-    /// `branch_gating_entries` filters only on `(file, line,
+    /// `branch_gating_entries` filters only on `(file, item,
     /// branch_gating)`, never on the literal string compared
     /// (`branch_gating_entries`'s own doc/body above), so this test passes
     /// identically for five arbitrary branch-gating strings; it never reads
@@ -609,7 +778,7 @@ mod tests {
             );
             let candidate = AllowListEntry {
                 file: occurrence.file.clone(),
-                line: occurrence.line,
+                item: occurrence.item.clone(),
                 reason: "test: an ADR-010 §4.3 production dispatch site",
             };
             let rejected = branch_gating_entries(&occurrences, [&candidate]);
