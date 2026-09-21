@@ -11,8 +11,8 @@ use quire_spec_language::value::{
     FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth, IllTypedCause,
     Incomplete, LimitKind, MeasureObligation, Meter, NodeKey, ObjectEnvironment, ObjectIdentity,
     ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome,
-    PackageDeclarations, Presence, ProvedInterval, Rational, RationalDomain, Refusal, ScalarLimits,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    PackageDeclarations, Presence, ProvedInterval, QualifiedName, Rational, RationalDomain,
+    Refusal, ScalarLimits, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -506,7 +506,7 @@ fn p06_each_call_charges_function_call() {
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
         .call(
-            "last",
+            &QualifiedName::unqualified("last").unwrap(),
             vec![chain(&types, &[1, 2, 3])],
             &objects,
             &mut meter,
@@ -521,7 +521,7 @@ fn p06_each_call_charges_function_call() {
     let mut meter = Meter::new(work_limit(2));
     let evaluation = package
         .call(
-            "last",
+            &QualifiedName::unqualified("last").unwrap(),
             vec![chain(&types, &[1, 2, 3])],
             &objects,
             &mut meter,
@@ -982,7 +982,12 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     let invoke = |function: &str, arguments: Vec<Value>, limits| {
         let mut meter = Meter::new(limits);
         let evaluation = package
-            .call(function, arguments, &objects, &mut meter)
+            .call(
+                &QualifiedName::unqualified(function).unwrap(),
+                arguments,
+                &objects,
+                &mut meter,
+            )
             .unwrap();
         (
             format!("{:?}", evaluation.outcome),
@@ -1021,7 +1026,12 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     // operands (2) and normalize (2) stay below it.
     let mut meter = Meter::new(UNLIMITED);
     package
-        .call("q", vec![int(3), int(2)], &objects, &mut meter)
+        .call(
+            &QualifiedName::unqualified("q").unwrap(),
+            vec![int(3), int(2)],
+            &objects,
+            &mut meter,
+        )
         .unwrap();
     assert_eq!(meter.consumed(LimitKind::IntegerBits), 3);
     let mut narrow = Meter::new(ScalarLimits {
@@ -1032,7 +1042,12 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         format!(
             "{:?}",
             package
-                .call("q", vec![int(3), int(2)], &objects, &mut narrow)
+                .call(
+                    &QualifiedName::unqualified("q").unwrap(),
+                    vec![int(3), int(2)],
+                    &objects,
+                    &mut narrow,
+                )
                 .unwrap()
                 .outcome
         ),

@@ -16,7 +16,7 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-019 | FR-019-AC-1 | TC-078, TC-089 | ✅ Qualified |
 | FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |

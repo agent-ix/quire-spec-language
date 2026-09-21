@@ -10,6 +10,7 @@
 mod check;
 mod evaluate;
 mod facts;
+mod family;
 mod ir;
 mod refusal;
 mod termination;
@@ -17,6 +18,7 @@ mod termination;
 use super::accounting::Meter;
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
+use crate::family::{FamilyContract, ReferenceEvaluation};
 use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use check::{bind_parameters, Scope, Signature, Typer};
 use evaluate::{Callable, Machine};
@@ -36,6 +38,7 @@ pub use check::{
     MAX_CHECKING_DEPTH,
 };
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
+pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
@@ -56,6 +59,11 @@ pub enum CheckMode {
 /// A checked function.
 #[derive(Debug)]
 struct CheckedFunction {
+    /// FR-062/FR-065: content-addressed identity, minted once at check from
+    /// the declaration's own parsed structure (`family::
+    /// mint_declaration_identity`), independent of this function's position
+    /// in the package's function list.
+    identity: quire_exact::NodeKey,
     signature: Signature,
     body: Node,
     measure: Option<Node>,
@@ -68,6 +76,11 @@ pub struct CheckedPackage {
     scope: Scope,
     functions: Vec<CheckedFunction>,
     dispatch_tables: Vec<DispatchTable>,
+    /// FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map (identity,
+    /// role, ordinal) -> source [`Location`], for every function
+    /// declaration and function-application occurrence this package
+    /// checked.
+    occurrences: family::OccurrenceMap<Location>,
 }
 
 /// A checked standalone expression over named parameters.
@@ -340,8 +353,84 @@ impl PackageDeclarations {
             .collect();
         let mut nodes = 0_u64;
         let mut functions = Vec::with_capacity(self.functions.len());
+        // FR-062/FR-065, corrected per PR #262 review (the headline
+        // question): identity is minted, and one diagnostic logged, through
+        // the checked-family contract's own `check` hook
+        // (`family::ValueFunctionFamily::check`) -- that part is real and
+        // exclusive to the contract. It is NOT what decides whether this
+        // declaration is admitted: `check` only ever refuses on the
+        // nesting-depth limit below, and admits unconditionally otherwise.
+        // The typing, definedness and termination verdict is still made
+        // entirely by the unchanged `Typer`, invoked immediately below, for
+        // every function, unconditionally -- FR-065's own claim that this
+        // migration makes the form "check... exclusively through" the
+        // contract is accurate only for identity/provenance minting, not
+        // for the checking decision itself. Both the contract's `check` and
+        // the `Typer` run for every declaration; see FR-065's own amended
+        // Status section for why this is recorded as a real limitation
+        // rather than resolved by this round's fixes, and why it is not the
+        // ADR-011 §7.3 M-6e side-by-side hazard in the narrow sense that
+        // rule targets (there is no separate, deprecated *old* admission
+        // path for declarations this ticket left running by oversight --
+        // the `Typer` is not "old" in that sense, it is the only checker
+        // that has ever existed for this form, and the contract's `check`
+        // was never built to replace it).
+        let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
+        // PR #262 review, finding F4: this used to hardcode
+        // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
+        // method's own caller-supplied `CheckingLimits`) declared, and a
+        // fresh `CheckContext` is built inside the per-declaration loop
+        // below (`depth` starts at 0 every time) -- so `enter_nesting`'s
+        // `0 >= nesting_depth` never held for any real caller, and the
+        // `StageFailure::Limit` arm below was dead through this, the only
+        // production entry point. Reading `limits.depth()` here (the same
+        // `CheckingLimits` the unchanged `Typer` below already honors)
+        // makes the contract's own resource bound live: a caller declaring
+        // `CheckingLimits::new(_, 0)` now genuinely refuses every
+        // declaration with `ResourceExhausted`, reachable through
+        // `PackageDeclarations::check` -- see
+        // `contract_nesting_limit_reflects_the_callers_own_checking_limits`
+        // below (`tests/dispatch_calls.rs`) for a test that fails if this
+        // line reverts to the hardcoded constant.
+        let contract_limits = crate::family::StageLimits {
+            nesting_depth: limits.depth(),
+        };
+        let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let mut contract_diagnostics = crate::family::DiagnosticSink::default();
+        let mut contract_scopes = crate::family::ScopeStack::default();
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
+            let mut contract_cx = crate::family::CheckContext::new(
+                &package_identity,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let identity = match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
+                Ok(staged) => staged.value,
+                Err(crate::family::StageFailure::Limit(limit)) => {
+                    // PR #262 review (coordinator round 3, finding 4):
+                    // `limit.kind` is matched, not read past into a
+                    // hardcoded `CheckingLimitKind::Depth` -- `StageLimitKind`
+                    // has exactly one variant today, but this exhaustive
+                    // match (not a `_` catch-all) is what forces a real
+                    // decision here, not a guess, the day a second
+                    // `StageLimitKind` variant is added.
+                    let kind = match limit.kind {
+                        crate::family::StageLimitKind::NestingDepth => CheckingLimitKind::Depth,
+                    };
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::ResourceExhausted {
+                            stage: CheckingStage::Typing,
+                            kind,
+                            limit: limit.configured_bound,
+                        },
+                    });
+                    continue;
+                }
+            };
             let typed = (|| {
                 let mut typer = Typer::new(
                     &scope,
@@ -379,6 +468,7 @@ impl PackageDeclarations {
             })();
             match typed {
                 Ok((body, measure, slots)) => functions.push(CheckedFunction {
+                    identity,
                     signature: Signature {
                         name: function.name,
                         parameters: function.parameters,
@@ -398,6 +488,16 @@ impl PackageDeclarations {
                 }
             }
         }
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function asserted `contract_diagnostics.entries().len() ==
+        // contract_checked` here. `contract_checked` is incremented exactly
+        // once per successful `ValueFunctionFamily::check` call above, and
+        // `check` itself records exactly one diagnostic on every successful
+        // path (its own doc) -- the two counts are equal by construction,
+        // not because anything downstream was checked. `contract_checked`
+        // is deleted along with it; FR-062-AC-3's real coverage is the
+        // `#[cfg(test)]` assertions in `value/expression/family.rs` that
+        // exercise `check` directly and inspect its diagnostic sink.
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -437,10 +537,41 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        // FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map, built
+        // from each function's own minted declaration identity and every
+        // `NodeKind::Call` identity its checked body (and measure, if any)
+        // already carries -- reads locations `Typer` already recorded, mints
+        // no new identity or span here.
+        let mut occurrences = family::OccurrenceMap::default();
+        for (index, function) in functions.iter().enumerate() {
+            occurrences.record(
+                function.identity,
+                "declaration",
+                body_location(index, &function.signature.name),
+            );
+            for (identity, location) in function.body.call_occurrences() {
+                occurrences.record(identity, "reference", location);
+            }
+            if let Some(measure) = &function.measure {
+                for (identity, location) in measure.call_occurrences() {
+                    occurrences.record(identity, "reference", location);
+                }
+            }
+        }
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function asserted `occurrences.entries().len() >=
+        // functions.len()` here. The loop above unconditionally calls
+        // `occurrences.record(function.identity, "declaration", ...)` once
+        // per function in `functions`, before any "reference" entry --
+        // `entries().len()` is at least `functions.len()` by construction,
+        // not because anything downstream was checked. `OccurrenceMap::
+        // entries`, that assertion's only reader anywhere in this crate, is
+        // deleted with it.
         Ok(CheckedPackage {
             scope,
             functions,
             dispatch_tables,
+            occurrences,
         })
     }
 }
@@ -575,6 +706,76 @@ impl CheckedPackage {
             .find(|(_, function)| function.signature.name == name)
     }
 
+    /// The checked function whose minted identity is `identity`, if this
+    /// package admitted one (the identity-keyed lookup [`Self::call`]'s
+    /// `QualifiedName`-keyed lookup cannot serve, and evaluation-by-identity
+    /// needs).
+    fn function_by_identity(&self, identity: quire_exact::NodeKey) -> Option<&CheckedFunction> {
+        self.functions
+            .iter()
+            .find(|function| function.identity == identity)
+    }
+
+    /// FR-065-AC-2: `name`'s checked identity, minted once at `check` and
+    /// unchanged by anything else in the package. `None` for an undeclared
+    /// name.
+    pub fn function_identity(&self, name: &str) -> Option<quire_exact::NodeKey> {
+        self.function(name).map(|(_, function)| function.identity)
+    }
+
+    /// FR-062-AC-2/FR-065-AC-3: the source location recorded for one
+    /// occurrence (identity, role, ordinal) of a checked function
+    /// declaration or function-application call, if `check` recorded one.
+    pub fn occurrence(
+        &self,
+        identity: quire_exact::NodeKey,
+        origin: &quire_exact::Origin,
+    ) -> Option<&Location> {
+        self.occurrences.resolve(identity, origin)
+    }
+
+    /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
+    /// bytes -- the checked-package producer's own public entry point.
+    /// S4-links each identity first (`family::link_function_identity`),
+    /// then emits directly through `family::emit_v2` (PR #262 review,
+    /// findings F1/F2: an earlier version routed this through
+    /// `FamilyContract::package` into a scratch buffer that was never read
+    /// back, which that trait method has since been deleted for -- see its
+    /// own doc). Reads no CST, no source text, only each function's
+    /// already-checked identity.
+    ///
+    /// `Result<_, InvalidQualifiedName>` (PR #262 review, finding F6): the
+    /// v2 wire format is now typed on `QualifiedName`, matching `call`'s own
+    /// `&QualifiedName` parameter, not a bare `String` a decode caller has
+    /// to re-parse and re-validate one function over. A declared function
+    /// name that is not identifier-shaped (`FunctionDeclaration::new` does
+    /// not itself validate that -- see `crate::family`'s module doc on why
+    /// this API-constructed family has no text-parser intake to validate it
+    /// at) refuses here rather than either panicking or silently emitting
+    /// v2 bytes that could never decode back into a `QualifiedName` anyway.
+    pub fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
+        let entries = self
+            .functions
+            .iter()
+            .map(|function| {
+                let linked = family::link_function_identity(function.identity);
+                QualifiedName::unqualified(function.signature.name.clone())
+                    .map(|name| (name, linked))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(family::emit_v2(&entries))
+    }
+
+    /// Decode `quire.checked-function-package/v2` bytes emitted by
+    /// [`Self::emit_function_package_v2`] back into (qualified name,
+    /// identity) pairs, for a caller verifying identity survived the round
+    /// trip (FR-065-AC-2).
+    pub fn decode_function_package_v2(
+        bytes: &[u8],
+    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error> {
+        family::decode_v2(bytes)
+    }
+
     fn callables(&self) -> Vec<Callable<'_>> {
         self.functions
             .iter()
@@ -643,27 +844,102 @@ impl CheckedPackage {
     /// ordinary checked `Expression::Call` can (`check.rs`'s own
     /// `callable_by_name` gate, TC-196 D07's bypass this closes at the other
     /// entry point).
+    ///
+    /// FR-065-AC-6/ADR-013 O-11: `function` is a typed [`QualifiedName`],
+    /// never a bare `&str` — this is the layer-6 `replay` facade's executor
+    /// entry for `Value`'s function family (the `mod.rs:635` bare-`&str`
+    /// lookup this requirement replaces). A name this package's
+    /// declarations do not resolve refuses with `UnknownFunction`, naming
+    /// it; it never falls back to a display-name string comparison.
     pub fn call(
         &self,
-        function: &str,
+        function: &QualifiedName,
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, InputRefusal> {
+        let name = function
+            .as_unqualified()
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         let (_, checked) = self
-            .function(function)
+            .function(name)
             .filter(|(_, checked)| checked.signature.callable_by_name)
-            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_owned()))?;
+            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         Self::validate(&checked.signature.parameters, &arguments, objects)?;
-        let callables = self.callables();
-        Ok(Machine::new(
-            &self.scope,
-            &callables,
+        // FR-062/FR-065: this family's own `evaluate` hook
+        // (`crate::family::ReferenceEvaluation`) is the one path that runs
+        // checked function-application code, not a second, parallel
+        // `Machine` call beside it.
+        let identity = checked.identity;
+        // `ReferenceEvaluation::evaluate`'s `meter` parameter is
+        // `ValueFunctionFamily`'s own `_meter: &mut quire_exact::Meter`
+        // (`family.rs`), unused in its body today (PR #262 review, nit):
+        // ADR-012 §2/FR-062-AC-5 reserve this hook alone for a future
+        // meter-budget `Incomplete` outcome, which `EvaluateRefusal`'s own
+        // doc states this ticket does not add yet. `contract_meter` is
+        // therefore built unlimited (`SCALAR_LIMITS_UNLIMITED`) and passed
+        // to satisfy the trait's signature, not to bound anything here --
+        // this call site charges nothing against it and nothing should
+        // observe that as a limit today. `meter` (this method's own
+        // parameter, `EvaluationEnv::local_meter` below) is the accounting
+        // path that is actually charged.
+        let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let mut env = family::EvaluationEnv {
+            package: self,
             objects,
-            meter,
-            &self.dispatch_tables,
+            arguments: Some(arguments),
+            local_meter: meter,
+        };
+        family::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter).map_err(
+            |refusal| match refusal {
+                // PR #262 review, finding F3: `EvaluateRefusal` used to be
+                // one `Refused(String)` variant standing for both
+                // conditions below, collapsed here into `UnknownFunction`
+                // regardless of which one actually happened -- so a caller
+                // matching `UnknownFunction` to report "no such function"
+                // could have printed `EnvironmentAlreadyConsumed`'s internal
+                // invariant text as a user-facing name error. The two are
+                // now distinct variants, handled distinctly.
+                // PR #262 review, nit: `call` already resolved `identity`
+                // from a successful, `callable_by_name`-filtered
+                // `self.function(name)` lookup above, so `evaluate`'s own
+                // `function_by_identity` re-lookup (same package, same
+                // identity) cannot fail through this call site either --
+                // both lookups search the same `self.functions`. This arm
+                // is not folded into `unreachable!()` the way
+                // `EnvironmentAlreadyConsumed` is, though: that arm's
+                // unreachability is a fact about `call`'s own five lines
+                // above it; this one depends on `function` and
+                // `function_by_identity` staying in agreement across two
+                // separate methods, a fact this call site cannot see or
+                // enforce. `ReferenceEvaluation::evaluate` is also generic
+                // over every family (`FamilyContract`'s shared, GAT-based
+                // dispatch shape), so it takes an identity rather than a
+                // borrowed `&CheckedFunction` and re-resolves through `env`
+                // by design, not as an accidental duplicate of `call`'s own
+                // lookup -- a future family, or a future caller of
+                // `evaluate` other than `call`, can make this reachable.
+                // Kept a typed, non-panicking refusal for that reason.
+                crate::family::EvaluateRefusal::UnknownIdentity { .. } => {
+                    InputRefusal::UnknownFunction(function.to_string())
+                }
+                crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed => {
+                    // This function always builds a fresh `EvaluationEnv`
+                    // with `Some(arguments)` (above) and calls `evaluate`
+                    // exactly once, so this arm cannot be produced by any
+                    // call through `call()` -- only by a future bug in this
+                    // function's own wiring reusing one `EvaluationEnv`
+                    // across two calls. It is not folded into
+                    // `UnknownFunction`: that would report a purely
+                    // internal invariant violation as a public "no such
+                    // function" input error to a caller who supplied
+                    // nothing wrong.
+                    unreachable!(
+                        "CheckedPackage::call built a fresh EvaluationEnv and must not reuse it"
+                    )
+                }
+            },
         )
-        .run(&checked.body, checked.slots, arguments, true))
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.

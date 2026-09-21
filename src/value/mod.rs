@@ -106,11 +106,11 @@ pub use equality::{
 };
 pub use expression::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
-    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
-    Evaluation, InputRefusal, InvalidDispatchDeclaration, LocatedLoss, Location, MeasureObligation,
-    Obligation, Origin, PackageDeclarations, ProvedInterval, ValueLoss, WrongSnapshotCause,
-    MAX_CHECKING_DEPTH,
+    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DecodeV2Error,
+    DepthAboveMaximum, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    EnumBinding, Evaluation, InputRefusal, InvalidDispatchDeclaration, InvalidQualifiedName,
+    LocatedLoss, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
+    ProvedInterval, QualifiedName, ValueLoss, WrongSnapshotCause, MAX_CHECKING_DEPTH,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
