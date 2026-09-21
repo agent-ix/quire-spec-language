@@ -4,11 +4,10 @@ QSL #118 directly selects num-bigint 0.4.8, num-integer 0.1.47, num-traits
 0.2.19 and unicode-normalization 0.1.25 (Unicode 17.0.0 tables, with its
 existing `tinyvec` dependency) for the exact `value` layer. All were already
 resolved in the lock and retain their declared `MIT OR Apache-2.0` grants; no
-package is added to the lock. `resources/complete-value/` holds unmodified QSpec
-`82f84d336a4cbfdfad999cef9145e333c4213333` definition, rule, vector and TestCase
-bytes, plus the Unicode 17.0.0 artifacts named by
-`quire.value.text.unicode-17.0.0/v1` under their Unicode license; provenance
-and the deferred QSpec document licence are recorded in its README.
+package is added to the lock. QSpec definitions and rules the `value` layer
+qualifies against (`quire.value.text.unicode-17.0.0/v1` and the rest of
+`src/value/definition.rs`'s catalog) are resolved from `agent-ix/quire-specification`
+by identity and revision, not held as local content.
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the
 cycle-free `quire-contract-model` package at
