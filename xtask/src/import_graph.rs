@@ -47,10 +47,7 @@ use crate::error::{Error, Result};
 fn parse_file(workspace_root: &Path, relative: &str) -> Result<syn::File> {
     let path = workspace_root.join(relative);
     let source = fs::read_to_string(&path).map_err(|source| Error::io(&path, source))?;
-    syn::parse_file(&source).map_err(|source| Error::ImportGraphParse {
-        path,
-        source,
-    })
+    syn::parse_file(&source).map_err(|source| Error::ImportGraphParse { path, source })
 }
 
 /// One resolved `use` edge found in a source file: the crate-absolute path
@@ -333,7 +330,8 @@ pub fn model_check_edges(workspace_root: &Path) -> Result<Vec<ModelCheckEdge>> {
                 continue;
             }
             if resolves_into_check(&edge.path, &edge.leaf, &reexports) {
-                let direct = strip_leading_crate(&edge.path).first().map(String::as_str) == Some("check");
+                let direct =
+                    strip_leading_crate(&edge.path).first().map(String::as_str) == Some("check");
                 edges_found.push(ModelCheckEdge {
                     file: edge.file.clone(),
                     leaf: edge.leaf.clone(),
@@ -359,12 +357,18 @@ const K_DESIGNATED_MODULES: [&str; 9] = [
     "rational",
 ];
 
-/// FR-068-AC-6's tier-2 allow-list, as amended by the PR #282 review (F3):
-/// seven items across three modules, not five across two -- `family.rs`'s
-/// pre-existing `encode_value_type` needs `QuantityUnit`/`TextProfile`, and
-/// AC-6 could not pass as originally written against any conforming
-/// implementation without this widening.
-const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
+/// FR-068-AC-6's tier-2 allow-list, amended twice by the PR #282 review
+/// findings: F3 widened it from five items/two modules to seven/three
+/// (`family.rs`'s pre-existing `encode_value_type` needs
+/// `QuantityUnit`/`TextProfile`); a second pass (discovered while verifying
+/// F1/F4's moved golden-digest test, `check::family::tests::
+/// mint_declaration_identity_matches_a_checked_in_digest`) found that test's
+/// own pre-existing fixture also needs `TextType` from `value::text` to
+/// construct its `ValueType::Text` coverage case -- widening to eight items
+/// across three modules. AC-6 could not pass as written at either of the
+/// first two bounds against any conforming implementation that actually
+/// carries this test.
+const DECLARED_INTERIM_ITEMS: [(&str, &str); 8] = [
     ("enumeration", "EnumDeclaration"),
     ("enumeration", "EnumValue"),
     ("quantity", "check_comparable"),
@@ -372,6 +376,7 @@ const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
     ("quantity", "UnitOperation"),
     ("quantity", "QuantityUnit"),
     ("text", "TextProfile"),
+    ("text", "TextType"),
 ];
 
 /// Which of FR-068-AC-6's tiers one `check` -> `value::<submodule>` edge
@@ -380,7 +385,7 @@ const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
 pub enum ValueImportTier {
     /// Tier 1: unbounded imports from the nine K-designated siblings.
     KDesignated,
-    /// Tier 2: exactly the seven named items (see [`DECLARED_INTERIM_ITEMS`]).
+    /// Tier 2: exactly the eight named items (see [`DECLARED_INTERIM_ITEMS`]).
     DeclaredInterim,
     /// Tier 3: forbidden -- anything else.
     Forbidden,
@@ -411,7 +416,9 @@ pub struct ValueImportEdge {
 /// have a two-segment path (`crate::X`) and are excluded by construction,
 /// since TC-175 cares which `value::` submodule an item belongs to, not
 /// `check`'s or `forms`'s own re-exports.
-fn value_submodule_reexports(workspace_root: &Path) -> Result<std::collections::BTreeMap<String, String>> {
+fn value_submodule_reexports(
+    workspace_root: &Path,
+) -> Result<std::collections::BTreeMap<String, String>> {
     let parsed = parse_file(workspace_root, "src/value/mod.rs")?;
     let edges = use_edges_in_file(&parsed, "src/value/mod.rs");
     let mut map = std::collections::BTreeMap::new();
@@ -500,7 +507,11 @@ mod tests {
             check: BTreeSet::new(),
         };
         let path = vec!["crate".to_owned(), "value".to_owned()];
-        assert!(resolves_into_value_expression(&path, "Evaluation", &reexports));
+        assert!(resolves_into_value_expression(
+            &path,
+            "Evaluation",
+            &reexports
+        ));
     }
 
     /// The same flat-import shape for an *unrelated* name (one `value`
@@ -534,7 +545,9 @@ mod tests {
             "value".to_owned(),
             "expression".to_owned(),
         ];
-        assert!(resolves_into_value_expression(&path, "Anything", &reexports));
+        assert!(resolves_into_value_expression(
+            &path, "Anything", &reexports
+        ));
     }
 
     /// TC-172 step 4: an edge into the pre-existing `checking` module is
@@ -563,12 +576,12 @@ mod tests {
         };
         let path = vec!["crate".to_owned(), "value".to_owned()];
         assert!(resolves_into_check(&path, "DispatchTable", &reexports));
-        let edges = vec![ModelCheckEdge {
+        let edge = ModelCheckEdge {
             file: "src/model/checked_dispatch.rs".to_owned(),
             leaf: "DispatchTable".to_owned(),
             direct: strip_leading_crate(&path).first().map(String::as_str) == Some("check"),
-        }];
-        assert!(!edges[0].direct, "a flat value import must record as indirect");
+        };
+        assert!(!edge.direct, "a flat value import must record as indirect");
     }
 
     /// A direct `use crate::check::DispatchTable;` is recorded `direct:
@@ -577,7 +590,11 @@ mod tests {
     #[trace("TC-176", "FR-068-AC-9")]
     #[test]
     fn direct_check_import_is_recorded_as_direct() {
-        let path = vec!["crate".to_owned(), "check".to_owned(), "DispatchTable".to_owned()];
+        let path = vec![
+            "crate".to_owned(),
+            "check".to_owned(),
+            "DispatchTable".to_owned(),
+        ];
         let reexports = ValueReexports::default();
         assert!(resolves_into_check(&path, "DispatchTable", &reexports));
         let direct = strip_leading_crate(&path).first().map(String::as_str) == Some("check");
@@ -669,7 +686,7 @@ mod tests {
     }
 
     /// TC-175 steps 1-2 (Expected Results): a fixture item resolving into a
-    /// K-designated module is tier 1, one of the seven named items is tier
+    /// K-designated module is tier 1, one of the eight named items is tier
     /// 2, and anything else -- including a *different* item from
     /// `enumeration`/`quantity`/`text` -- is tier 3 (forbidden). Written
     /// against the classifier directly (not the real tree) so this test
@@ -681,7 +698,8 @@ mod tests {
         assert!(K_DESIGNATED_MODULES.contains(&"numeric"));
         assert!(DECLARED_INTERIM_ITEMS.contains(&("quantity", "QuantityUnit")));
         assert!(DECLARED_INTERIM_ITEMS.contains(&("text", "TextProfile")));
-        // An item from a tier-2 *module* that is not one of the seven named
+        assert!(DECLARED_INTERIM_ITEMS.contains(&("text", "TextType")));
+        // An item from a tier-2 *module* that is not one of the eight named
         // items (e.g. `quantity::Quantity`, which `check` does not import)
         // must not be silently admitted just because its module is tier 2.
         assert!(!DECLARED_INTERIM_ITEMS.contains(&("quantity", "Quantity")));

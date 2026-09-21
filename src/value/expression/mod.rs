@@ -441,7 +441,10 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 format!("{:?}", one.outcome),
-                format!("{:?}", crate::value::Outcome::Completed(Value::Integer(Integer::from(5_i64))))
+                format!(
+                    "{:?}",
+                    crate::value::Outcome::Completed(Value::Integer(Integer::from(5_i64)))
+                )
             );
             let mut meter = Meter::new(UNLIMITED);
             let two = package
@@ -457,7 +460,10 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 format!("{:?}", two.outcome),
-                format!("{:?}", crate::value::Outcome::Completed(Value::Integer(Integer::from(7_i64))))
+                format!(
+                    "{:?}",
+                    crate::value::Outcome::Completed(Value::Integer(Integer::from(7_i64)))
+                )
             );
         }
     }

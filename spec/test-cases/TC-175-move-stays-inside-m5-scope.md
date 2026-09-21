@@ -17,20 +17,25 @@ submodules are FR-068-AC-6's two permitted tiers — unbounded imports from
 the nine K-designated siblings X-1 has not yet relocated, and exactly the
 ruling's declared interim edge (`EnumDeclaration`, `EnumValue` from
 `value::enumeration`; `check_comparable`, `result_unit`, `UnitOperation`,
-`QuantityUnit` from `value::quantity`; `TextProfile` from `value::text` —
+`QuantityUnit` from `value::quantity`; `TextProfile`, `TextType` from
+`value::text` —
 **amended, PR #282 review F3: seven items across three modules, not five
 across two; `family.rs`'s pre-existing `encode_value_type` needs
 `QuantityUnit`/`TextProfile` and this criterion could not pass as originally
-written against any conforming implementation**) — and no other `value::`
-submodule (`model`, `library`, `package`, `definition`, `unit`, `key`,
-`reference`, `containment`, `model_query`, `package_identity`, or any
-sibling M-2 has not yet relabeled) gains a new consumer in `check`; and (2)
-`model::checked_dispatch` and
+written against any conforming implementation; further amended, PR #282
+review, post-rebase re-verification: eight items across the same three
+modules — `family.rs`'s own moved golden-digest test fixture additionally
+needs `TextType`, which the F3 amendment did not name because it examined
+only production code, not the test fixture that moves with it**) — and no
+other `value::` submodule (`model`, `library`, `package`, `definition`,
+`unit`, `key`, `reference`, `containment`, `model_query`,
+`package_identity`, or any sibling M-2 has not yet relabeled) gains a new
+consumer in `check`; and (2) `model::checked_dispatch` and
 `model::conformance::check_field_refinement_obligation` — M-2's items — stay
 in `model`, not moved into `check` ahead of the corrected order (M-5 before
 M-2). An implementation that folds in either piece of M-2's work early, or
 that widens the interim edge by importing a whole `value::` prelude instead
-of the seven named items, would pass every other criterion in this
+of the eight named items, would pass every other criterion in this
 requirement while doing work QSL-7 (M-2) is supposed to do, sequenced ahead
 of when the ADR's own layering argument for it (§6.1's intra-layer-3 order)
 was decided. Scope: FR-068-AC-6, FR-068-AC-7.
@@ -45,10 +50,11 @@ was decided. Scope: FR-068-AC-6, FR-068-AC-7.
    `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`) —
    unbounded in which items they import, since X-1, not this requirement,
    owns closing them; (b) imports resolving into `value::enumeration`,
-   `value::quantity` or `value::text`, filtered to the seven named items
+   `value::quantity` or `value::text`, filtered to the eight named items
    (`EnumDeclaration`, `EnumValue`, `check_comparable`, `result_unit`,
-   `UnitOperation`, `QuantityUnit`, `TextProfile`); and (c) everything else.
-   Confirm group (b) contains no item beyond the seven named, and confirm
+   `UnitOperation`, `QuantityUnit`, `TextProfile`, `TextType`); and (c)
+   everything else.
+   Confirm group (b) contains no item beyond the eight named, and confirm
    group (c) is empty. Also confirm every group-(a)/(b) import is written in
    crate-absolute, submodule-qualified form (`crate::value::<submodule>::
    Name`), never through `value`'s flat aggregate re-export.
@@ -73,7 +79,7 @@ was decided. Scope: FR-068-AC-6, FR-068-AC-7.
 ## Expected Results
 
 - Step 2: group (a) may hold any number of items from the nine K-designated
-  siblings; group (b) holds only the seven named items — any additional item
+  siblings; group (b) holds only the eight named items — any additional item
   resolving from `enumeration`, `quantity` or `text` fails this step; group
   (c) is empty — any import into `model`, `library`, `package`, `definition`,
   `unit`, `key`, `reference`, `containment`, `model_query`,
