@@ -21,6 +21,15 @@ undetectable by any test that violates only one condition at a time, since a
 stop-at-first implementation and an exhaustive one report the same single
 failure in that case.
 
+Known gap: every existing `check_connection` test (`tests/model_systems.rs::y03a`–`y03e`,
+`::y04`, `::y05`) violates exactly one of the three conditions and asserts
+`failures.len() == 1`; none constructs the combined port-direction-and-
+multiplicity failure this test case's steps 1–3 describe. `check_connection`
+itself is already exhaustive (it accumulates into one `failures` vector and
+never returns early on a condition failure, only on the earlier structural
+checks), so this test case names real behavior, but no test currently
+exercises the combined-failure fixture. Remaining work: #120.
+
 ## Test Procedure
 
 1. Declare two Port-classified endpoints whose declared directions are

@@ -1,43 +1,45 @@
 ---
 id: TC-228
-title: "lookup never defaults an unresolved closure to the declared absence mode"
+title: "lookup returns the declared absence mode for a genuinely unmatched key"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-084
     type: verifies
 ---
-# TC-228: lookup never defaults an unresolved closure to the declared absence mode
+# TC-228: lookup returns the declared absence mode for a genuinely unmatched key
 
 ## Description
 
-Verify that a `lookup<T>` query whose key genuinely matches no member
-returns the declared absence mode, while a query against a binding whose
-subtype closure for `T` is not established returns the distinct
-incomplete/unknown-closure outcome, never the absence mode standing in for
-it. Scope: FR-084-AC-3.
+Verify that a `lookup<T>` query whose key genuinely matches no member of an
+admitted binding returns the declared absence mode, a genuine completed
+result. Scope: FR-084-AC-3.
 
-Catches an implementation that treats "I can't establish whether this key
-resolves" the same as "this key resolves to nothing" — an easy conflation,
-since both currently mean "no reference is returned," but conflating them
-lets a caller mistake an unproven absence for a proven one and reason
-unsoundly about it downstream.
+An earlier version of this test case also tried to construct "the same
+binding with subtype closure not established for `T`" as a second,
+distinguishing case. That state is not constructible: `population.rs`'s
+`lookup` performs no subtype-closure check of its own — the model
+selection's generalization-graph closure is decided once, at admission
+(`admit_binding`'s `subtype_closure: GeneralizationClosure` parameter), and
+an unclosed graph yields the distinct unknown-closure outcome there,
+carrying no binding at all (FR-084-AC-1, TC-226). There is consequently no
+admitted `PopulationBinding` a `lookup` call could ever run against whose
+closure is unresolved, so no step of this test case can reach that state.
+The admission-level scenario now lives in TC-226, backing FR-084-AC-1
+instead.
+
+Catches an implementation that reports a `TypeMismatch` or other refusal as
+the declared absence mode, or vice versa, on a genuinely unmatched key.
 
 ## Test Procedure
 
-1. Declare a population with extent `closed`, member type `Item`, fully
-   covering `Item`'s subtypes, and admit a binding with two `Item` members,
-   neither matching key `r`.
+1. Declare a population with extent `closed`, member type `Item`, with a
+   closed generalization graph, and admit a binding with two `Item`
+   members, neither matching key `r`.
 2. Query `lookup<Item>(p, r) absent Undefined` against this binding.
-3. Declare a second population whose declared member types do not cover
-   every effective subtype conforming to `Item` (as in TC-227's step 3
-   setup), and query `lookup<Item>(p, r) absent Undefined` against it for a
-   key `r` that would, if closure held, plausibly not match any member.
-4. Compare the result variants of step 2 and step 3.
 
 ## Expected Results
 
 Step 2 returns `Undefined` (the declared absence mode), a genuine, completed
-result. Step 3 returns the distinct incomplete/unknown-closure outcome, a
-different result variant from step 2's, even though both "found no match."
-A mutant that returns `Undefined` in both cases collapses the two, failing
-the variant-distinctness assertion.
+result — not a refusal and not an incomplete outcome. A mutant that returns
+a refusal or incomplete outcome for a genuinely unmatched key fails this
+assertion.

@@ -25,6 +25,19 @@ charged phase; and the endpoint loop never checks whether an endpoint's
 declared interface-type reference classifies as `Interface`. This test case
 fails against current code; see FR-086's Dependencies note.
 
+Known gap (instrumentation): step 2's "instrumented to record each record's
+classification order" also names an observability hook that does not exist
+today. `Meter::admitted_charges()` records admission order, but every
+`classify` charge uses the single `ChargePoint::SystemsKind` variant
+regardless of which construct (interface, part, port, connection,
+allocation) is being classified, so the recorded sequence is an
+undifferentiated run of `SystemsKind` entries — it cannot distinguish "an
+Interface was charged" from "a Part was charged." Asserting step 2 requires
+either a per-kind charge point or a separate classification-order recorder,
+neither of which exists yet. This test case's assertion is kept as written,
+not weakened to a charge count (a count cannot detect an ordering defect at
+all); the hook itself is owed by the implementation. Remaining work: #120.
+
 Catches an implementation that (a) charges components before interfaces
 (the common, natural iteration order, since parts read more like the
 "primary" construct), reversing FR-152's required order in a way invisible

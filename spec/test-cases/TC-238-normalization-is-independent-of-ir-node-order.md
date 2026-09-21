@@ -27,6 +27,19 @@ phase while an earlier phase's output already carries presentation order)
 — a defect invisible to any test that always presents nodes in one fixed
 order.
 
+Backed by the existing test
+`tests/model_normalization.rs::n07_record_order_does_not_affect_identity_or_view`,
+which normalizes `fixture_f2()` with its `records` reversed and asserts the
+resulting view's own identity digest is byte-identical to the un-reversed
+run's recorded vector. This directly exercises steps 1-4 and confirms the
+combined set of original keys and effective identities is unchanged by
+record order — a divergent key, identity or membership would change the
+digest. It is a narrower guarantee than "correspondence ordering":
+`n07` asserts one digest over the whole view, which pins the identity set
+byte-for-byte, but does not separately assert that some per-entry iteration
+sequence (as opposed to the view's own canonical, order-independent digest)
+is unchanged. No existing test inspects a per-entry sequence directly.
+
 ## Test Procedure
 
 1. Admit a domain package with at least four independent object-type

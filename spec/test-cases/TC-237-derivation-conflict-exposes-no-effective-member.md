@@ -23,6 +23,17 @@ its internal map happened to visit last) instead of refusing the whole
 member — a defect invisible to a test that only exercises the
 proper-descendant case, where a real winner always exists.
 
+Backed by the existing test
+`tests/model_normalization.rs::n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`,
+whose fixture is exactly this diamond (`A` declares `x`; `B` and `C` each
+independently redefine it; `D` inherits both with neither a descendant of
+the other) and whose assertion matches step 3 exactly: a `Refused` outcome
+carrying one `DerivationConflict` naming type `D`, member `A.x` and both
+redefiners' own keys (`model.B.x2`, `model.C.x3`). `NormalizeOutcome::Refused`
+carries no view at all for the whole normalization run, which is step 4:
+there is no effective member for `x` under `D`, or for anything else, since
+the run produced no correspondence.
+
 ## Test Procedure
 
 1. Admit a domain package with a diamond shape: object type `A` declares

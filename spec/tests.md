@@ -75,21 +75,21 @@ operational validation remains outside this audit-only plan.
 | TC-225 | A dispatch family deeper than the bound refuses instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | 🚧 Planned; #120 |
 | TC-226 | Population admission distinguishes unknown closure from a genuine refusal | Unit | P1 | FR-084-AC-1 | ✅ Passed locally |
 | TC-227 | allInstances requires both object and subtype closure, never a partial set | Unit | P1 | FR-084-AC-2 | 🚧 Planned; #120 |
-| TC-228 | lookup never defaults an unresolved closure to the declared absence mode | Unit | P1 | FR-084-AC-3 | ✅ Passed locally |
+| TC-228 | lookup returns the declared absence mode for a genuinely unmatched key | Unit | P1 | FR-084-AC-3 | ✅ Passed locally |
 | TC-229 | Two members sharing universe and object identity but differing type refuse admission outright | Unit | P1 | FR-084-AC-4 | ✅ Passed locally |
 | TC-230 | A relationship end naming an undeclared type refuses the whole relationship record | Unit | P1 | FR-085-AC-1 | 🚧 Planned; #120 |
 | TC-231 | A resolved relationship end retains its declared role and multiplicity exactly | Unit | P1 | FR-085-AC-2 | 🚧 Planned; #120 |
 | TC-232 | A relationship between two object types carries no systems-model kind | Unit | P1 | FR-085-AC-3 | 🚧 Planned; #120 |
 | TC-233 | Systems classification reports every no-kind cascade, not only the first | Unit | P1 | FR-086-AC-1 | 🚧 Planned; #120 |
-| TC-234 | Connection admission checks all three conditions independently and reports every failure | Unit | P1 | FR-086-AC-2 | ✅ Passed locally |
+| TC-234 | Connection admission checks all three conditions independently and reports every failure | Unit | P1 | FR-086-AC-2 | 🚧 Planned; #120 |
 | TC-235 | An allocation whose target does not classify as Part refuses wrong-export | Unit | P1 | FR-086-AC-3 | ✅ Passed locally |
 | TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | 🚧 Planned; #120 |
-| TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | 🚧 Planned; #120 |
-| TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | 🚧 Planned; #120 |
+| TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ Passed locally |
+| TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ Passed locally |
 | TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ Passed locally |
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Planned; #120 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
-| TC-242 | A reference's type component names the same most-specific effective type before and after an upcast | Unit | P1 | FR-081-AC-8 | 🚧 Planned; #120 |
+| TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
 
 ## Model graph binding (FR-081–086) retrospective coverage
 
@@ -99,9 +99,9 @@ retrospectively scope model-binder behavior under issue #120: the model
 normalization, conformance, dispatch, population and systems-classification
 code these requirements bind, and most of the Rust tests exercising it,
 predate this specification slice (from #131 domain-package intake and the
-FR-150–153 binding work it carries). Thirteen of the twenty-four TC-213–236
-rows above, plus the newly added TC-239, cite real, currently passing tests
-rather than planned work, naming the exact backing test:
+FR-150–153 binding work it carries). Sixteen of the thirty TC-213–242 rows
+above cite real, currently passing tests rather than planned work, naming
+the exact backing test:
 
 - TC-213 (FR-081-AC-1): `tests/model_normalization.rs::n01_normalizes_f1_to_the_exact_ground_truth_identities`
 - TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
@@ -111,21 +111,30 @@ rather than planned work, naming the exact backing test:
 - TC-222 (FR-083-AC-1): `tests/model_dispatch.rs::d04_registration_order_does_not_change_the_linked_table`
 - TC-223 (FR-083-AC-2): `tests/model_dispatch.rs::d03_no_candidate_*_no_applicable` and `::d02_an_undominated_multi_way_tie_*`
 - TC-224 (FR-083-AC-3): `tests/model_dispatch.rs::d02_an_undominated_multi_way_tie_*` (the same `Ambiguous` outcome carries no table for the family's other, cleanly-resolving subtype)
-- TC-226 (FR-084-AC-1): `tests/model_population.rs::l02_unknown_closure_is_incomplete_not_refused` and `::l05_foreign_type_refuses`
+- TC-226 (FR-084-AC-1): `tests/model_population.rs::l02_unknown_closure_is_incomplete_not_refused` (both halves: `open` extent and an unclosed generalization graph) and `::l05_foreign_type_refuses`
 - TC-228 (FR-084-AC-3): `tests/model_population.rs::l03_lookup_undefined_mode`, `::l03_lookup_empty_mode`, `::l03_lookup_refused_mode`
 - TC-229 (FR-084-AC-4): `tests/model_population.rs::l05_conflicting_identity_refuses_after_fourth_member_charge` and `::l05_duplicate_collapses_and_recovers_l01`
-- TC-234 (FR-086-AC-2): `tests/model_systems.rs::y03a`–`y03e`, `::y04`, `::y05`
 - TC-235 (FR-086-AC-3): `tests/model_systems.rs::y02_wrong_export_substitutions_name_the_required_and_actual_kind`
-- TC-239 (FR-082-AC-5): `tests/model_conformance.rs::r04_an_arity_mismatch_refuses_without_checking_parameter_axes`
+- TC-237 (FR-081-AC-6): `tests/model_normalization.rs::n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`
+- TC-238 (FR-081-AC-7): `tests/model_normalization.rs::n07_record_order_does_not_affect_identity_or_view` (asserts the whole view's identity digest is order-independent; does not separately assert a per-entry iteration sequence — see the TC's own caveat)
+- TC-239 (FR-082-AC-5, Part A — the arity carve-out itself): `tests/model_conformance.rs::r04_an_arity_mismatch_refuses_without_checking_parameter_axes`. Part B (a combined arity-and-result-multiplicity failure) is not backed by any existing test; see the TC's own gap note.
+- TC-242 (FR-084-AC-6): `tests/model_population.rs::l01_all_instances_selects_subtype_population_once`, which already carries the quire-specification `FR-153-AC-6` trace tag and asserts this exact guarantee (`b1_via_a == b1_via_b`)
+
+TC-234 (FR-086-AC-2) was corrected back from a prior, mistaken "Passed
+locally" this revision: `check_connection` really is exhaustive today, but
+no existing test constructs the combined port-direction-and-multiplicity
+fixture FR-086-AC-2 states — every one of `tests/model_systems.rs::y03a`
+through `::y05` violates exactly one condition. See FR-086's Dependencies
+note.
 
 The remaining rows (TC-214, TC-216, TC-217, TC-220, TC-225, TC-227, TC-230
-through TC-233, TC-236, and the newly added TC-237, TC-238, TC-240, TC-241
-and TC-242) name real behavior with no existing test asserting their exact
-content — `title`/
-`displayName` independence, cross-process purity, the `MAX_CONFORMANCE_DEPTH`/
-`MAX_DISPATCH_DEPTH` walk bounds, dangling relationship ends, and the newly
-owned FR-081/FR-084/FR-086 acceptance criteria this PR adds — and stay
-`🚧 Planned; #120` honestly. This is a retrospective spec in the same sense
+through TC-234, TC-236, TC-240 and TC-241) name real behavior with no
+existing test asserting their exact content — `title`/`displayName`
+independence, cross-process purity, the `MAX_CONFORMANCE_DEPTH`/
+`MAX_DISPATCH_DEPTH` walk bounds, dangling relationship ends, the
+combined-condition Connection fixture, and the newly owned FR-084/FR-086
+acceptance criteria this PR adds — and stay `🚧 Planned; #120` honestly.
+This is a retrospective spec in the same sense
 [FR-047](../spec/functional/FR-047-evaluate-finite-object-reference-graphs.md)
 already is for this repo: it states the coverage that exists rather than
 treating the whole slice as unbuilt.

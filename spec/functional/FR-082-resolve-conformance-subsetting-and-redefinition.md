@@ -107,8 +107,8 @@ on the strength of its declared shape alone.
 
 The model checker SHALL bound every ancestor-chain and conformance walk it
 performs, at a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1`
-charge counter — the QSL implementation's `MAX_CONFORMANCE_DEPTH`
-(`src/model/conformance.rs:99`), currently 128. If a walk would exceed the
+charge counter — the QSL implementation's `MAX_CONFORMANCE_DEPTH` constant
+in `src/model/conformance.rs`, currently 128. If a walk would exceed the
 bound, the model checker SHALL refuse with a resource-exhaustion cause naming
 the bound and SHALL NOT report a conformance or non-conformance verdict for
 that walk. Exceeding this depth ceiling is a `Refused` outcome (a real

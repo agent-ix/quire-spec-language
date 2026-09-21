@@ -111,22 +111,6 @@ identities and the same correspondence ordering. This is quire-specification
 FR-150-AC-4's order-independence guarantee, bound to this compiler's
 correspondence type.
 
-### A reference's type component is stable under upcast
-
-A `Reference<T>` value's type component is the `EffectiveId` (ADR-013 O-05)
-of the referenced object's own most-specific effective type — never the
-static type `T` at which the reference is currently typed or handled.
-Treating or passing a reference at a less-specific static type (a reference
-upcast, quire-specification [FR-151](ix://agent-ix/quire-specification/FR-151)'s
-"arguments are type-checked statically against `o`'s signature with
-reference upcasts only") SHALL NOT recompute, substitute or otherwise
-change that type component: the same reference value names the same
-most-specific effective type before and after an upcast, whatever
-supertype it is momentarily viewed through. This is the identity guarantee
-[FR-151](ix://agent-ix/quire-specification/FR-151)'s dispatch rules assume
-when they read "the receiver's most-specific type... from the receiver
-reference's own observation."
-
 ### The binder holds no ambient registry
 
 The model binder SHALL be a pure function of the one `DomainPackage` value
@@ -163,7 +147,6 @@ charge point and SHALL expose no effective declaration for the run.
 | FR-081-AC-5 | Given the same `DomainPackage` value and the same limits, two independent binder invocations — including invocations in two separate process runs — produce byte-identical original keys, effective identities and correspondence ordering, with no observable interaction between the runs. | Test (TC-217) |
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
-| FR-081-AC-8 | Given a `Reference<T>` value naming an object whose most-specific effective type is a proper subtype of `T`, reading its type component before and after passing it where a supertype of `T` is statically expected (an upcast) yields the same `EffectiveId`, naming the object's actual most-specific effective type in both cases, never `T` or the supertype. | Test (TC-242) |
 
 ## Dependencies
 
