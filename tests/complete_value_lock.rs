@@ -16,7 +16,7 @@ const DEFINITIONS: &str =
     "resources/complete-value/quire-specification/proposals/quire-v1/definitions";
 
 /// SHA-256 of the non-catalog inputs, read from QSpec
-/// `d227270fbeb28289df6abba7e94173118345c028` with `git show`.
+/// `82f84d336a4cbfdfad999cef9145e333c4213333` with `git show`.
 const PINNED_NON_CATALOG: [(&str, &str); 21] = [
     (
         "spec/functional/expressions/FR-146-check-total-pure-functions.md",

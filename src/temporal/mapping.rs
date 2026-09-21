@@ -25,7 +25,7 @@ use super::trace::Closure;
 
 /// Reviewed correspondence source this table restates.
 pub const SUPPORT_TABLE: &str =
-    "quire-specification/FR-095 @ 4d6230eb8aa9766ff3017360962f2d6368d74cb3";
+    "quire-specification/FR-095 @ 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f";
 
 /// A TL target named by the reviewed support table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
