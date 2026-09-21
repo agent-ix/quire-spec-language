@@ -147,7 +147,7 @@ impl Witness {
     /// if a name in `order` has no binding in the transcript at all, or
     /// [`DecodeRefusal::Malformed`] if it has a binding whose text does not
     /// parse as an integer -- the two are distinguished by reading
-    /// [`Self::raw_bindings`] directly rather than through
+    /// `raw_bindings` directly rather than through
     /// [`Self::concrete_values`]'s already-filtered, already-parsed list.
     pub fn decode(&self, order: &[String]) -> Result<Vec<i64>, DecodeRefusal> {
         let bindings = self.raw_bindings();
