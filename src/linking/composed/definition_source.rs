@@ -14,9 +14,7 @@
 //! inputs. Recognition alone establishes no model binding, type checking or
 //! execution.
 
-#[cfg(any(test, feature = "test-support"))]
 use super::definitions::Selection;
-#[cfg(any(test, feature = "test-support"))]
 use crate::ByteDigest;
 
 /// A compiler-known interpretation, unavailable through caller-defined metadata.
@@ -132,18 +130,16 @@ impl RegisteredDefinition {
         self.source().path
     }
 
-    /// Test-only synthetic byte payload derived from this definition's own
-    /// identity, never real document content. Gated behind `test-support` so
-    /// a production caller cannot reach it; `cargo test --all-features`
-    /// enables it for fixture construction.
-    #[cfg(any(test, feature = "test-support"))]
+    /// A synthetic byte payload derived from this definition's own identity
+    /// string, never real document content. Not gated: it derives nothing
+    /// but the identity already public via [`Self::identity`], so there is
+    /// no production-caller boundary to enforce here.
     pub fn bytes(self) -> &'static [u8] {
         self.identity().as_bytes()
     }
 
-    /// Test-only selection whose digest covers [`Self::bytes`]'s synthetic
+    /// A selection whose digest covers [`Self::bytes`]'s synthetic
     /// placeholder, never real document content. See [`Self::bytes`].
-    #[cfg(any(test, feature = "test-support"))]
     pub fn selection(self) -> Selection {
         Selection {
             identity: self.identity().into(),

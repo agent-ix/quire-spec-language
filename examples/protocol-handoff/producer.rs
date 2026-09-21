@@ -576,28 +576,10 @@ fn selected_definitions(temporal: &[R]) -> Vec<R> {
     selected.into_iter().collect()
 }
 
-/// A placeholder byte payload for `definition`, derived from its own registry
-/// identity rather than any real document content. The registry's job is
-/// recognition (identity and revision), not content distribution: a real
-/// producer supplies its own authoritatively obtained artifact bytes for each
-/// definition it selects, which this illustrative example does not have.
-fn placeholder_bytes(definition: R) -> &'static [u8] {
-    definition.identity().as_bytes()
-}
-
-/// [`placeholder_bytes`]'s selection, for the same illustrative reason.
-fn placeholder_selection(definition: R) -> definitions::Selection {
-    definitions::Selection {
-        identity: definition.identity().into(),
-        revision: definition.revision().into(),
-        digest: ByteDigest::of(placeholder_bytes(definition)),
-    }
-}
-
 fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     let mut text = "language \"ix:native\" edition \"1-draft\";\n".to_owned();
     for (alias, definition) in recipe.profiles {
-        let selected = placeholder_selection(*definition);
+        let selected = definition.selection();
         text.push_str(&format!(
             "profile {alias} = \"{}\" version \"{}\" digest \"{}\";\n",
             selected.identity, selected.revision, selected.digest
@@ -893,8 +875,8 @@ impl DefinitionInputs {
         let definitions = selected
             .iter()
             .map(|&definition| definitions::Artifact {
-                selection: placeholder_selection(definition),
-                bytes: placeholder_bytes(definition),
+                selection: definition.selection(),
+                bytes: definition.bytes(),
             })
             .collect::<Vec<_>>();
         let rules = selected
@@ -1081,9 +1063,9 @@ fn selected_dependencies(
                 revision(DEFINITION_NAMESPACE, definition.revision()),
                 "text/markdown",
                 "1",
-                placeholder_bytes(definition),
+                definition.bytes(),
             ),
-            bytes: Cow::Borrowed(placeholder_bytes(definition)),
+            bytes: Cow::Borrowed(definition.bytes()),
             requires: Vec::new(),
             file: String::new(),
         })
@@ -1230,7 +1212,7 @@ fn compile_with<T>(
         .namespace()
         .ok_or_else(|| namespace_failure(&namespace))?;
     let definition_inputs = definitions::Inventory {
-        edition: placeholder_selection(R::Edition),
+        edition: R::Edition.selection(),
         definitions: &inputs.definitions.artifacts,
         rules: &inputs.definitions.rules,
     };
