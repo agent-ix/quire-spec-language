@@ -34,6 +34,35 @@ use quire_spec_language::ByteDigest;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+/// `Self`'s type name for an `impl` block, for the common case `seam_probe`
+/// and `string_edge` both need (`impl PlainType { ... }`) -- shared here
+/// (PR #262 review, F8: the same one-fact-one-place instinct that keyed
+/// `seam_probe`'s own checked-in locations on the enclosing item's name
+/// instead of a line number) rather than kept as two near-identical private
+/// copies.
+///
+/// **Known limitation (rust-review pre-handoff pass, carried over
+/// unchanged).** A `Self` type neither tool uses for a real seam --
+/// `impl<T> Foo<T>`, `impl Foo<Bar>`, `impl &Foo`, a tuple or reference type
+/// -- falls into the `"<impl>"` catch-all below, which would silently
+/// collapse two *different* impl blocks' methods of the same name into one
+/// indistinguishable key if two such impls ever both held a checked seam or
+/// string-edge occurrence in the same file. Widening this to handle every
+/// `syn::Type` shape distinctly is speculative against today's real call
+/// sites; broaden it if a future one actually needs a generic or otherwise
+/// non-`Type::Path` `Self`.
+pub(crate) fn impl_self_name(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_else(|| "<impl>".to_owned()),
+        _ => "<impl>".to_owned(),
+    }
+}
+
 /// Where `revendor`/`revendor_check` read pinned bytes from.
 pub struct Sources<'a> {
     /// This repository's own working copy, used for `Source::SelfRepo`.
@@ -215,9 +244,11 @@ pub fn revendor(
 /// A new pin replaces the tree wholesale: any entry under `tree_root` that
 /// `manifest` no longer lists (other than `VENDOR.json` and `README.md`) is
 /// removed rather than left behind as a stray file.
-/// Excludes the two fixed manifest-adjacent filenames from wholesale
-/// removal; a bounded literal-comparison edge, not a family dispatch, but
-/// real string comparison a syntax-only scan cannot distinguish from one.
+///
+/// `#[string_edge]` (PR #262 review, nit): excludes the two fixed
+/// manifest-adjacent filenames from wholesale removal -- a bounded
+/// literal-comparison edge, not a family dispatch, but real string
+/// comparison a syntax-only scan cannot distinguish from one.
 #[string_edge]
 fn remove_files_the_manifest_no_longer_lists(
     manifest: &Manifest,

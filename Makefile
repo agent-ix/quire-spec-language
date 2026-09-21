@@ -39,16 +39,21 @@ seam-probe:
 # real, unmarked crate today has 60 pre-existing occurrences outside every
 # file #214 touches (src/cli.rs, src/complete/, src/model/,
 # src/protocol_artifact/, src/state/evaluation.rs, src/value/definition.rs,
-# src/linking.rs, src/mapped.rs) -- none of them reachable from
-# src/family/* or src/value/expression/*, the only files this ticket
-# changes. FR-064's allow-list mechanism cannot paper over them (it refuses
-# any branch-gating entry, which is what almost all of them are), so making
-# them clean is real conversion work belonging to the family this string
-# selects, not to #214. `xtask string-edge` itself is complete and its own
-# footprint (xtask/*) is clean under it (verified: 0 findings), so this
-# target runs it standalone -- like `arch-lint` below, it is not part of
-# `ci:` until the crate-wide marking sweep this same comment's Linear
-# ticket tracks lands. Remaining work: see the ticket filed alongside #214.
+# src/linking.rs, src/mapped.rs). PR #262 review, finding F5: that "none of
+# the 60 are reachable from src/family/*/src/value/expression/*" claim rested
+# on the scanner's own known limits (literal-operand `ExprBinary` comparisons
+# only -- no method-call forms like `starts_with`/`contains`, and no
+# const-named operand), not on those two directories actually being clean;
+# the same PR's own new code had two unmarked comparisons the scanner missed
+# for exactly that reason, now fixed and (where genuine) marked
+# `#[string_edge]`. FR-064's allow-list mechanism cannot paper over the
+# remaining 60 (it refuses any branch-gating entry, which is what almost all
+# of them are), so making them clean is real conversion work belonging to the
+# family this string selects, not to #214. `xtask string-edge` itself is
+# complete and its own footprint (xtask/*) is clean under it (verified: 0
+# findings), so this target runs it standalone -- like `arch-lint` below, it
+# is not part of `ci:` until the crate-wide marking sweep QSL-145 tracks
+# lands. Remaining work: QSL-145.
 string-edge:
 	cargo xtask string-edge
 

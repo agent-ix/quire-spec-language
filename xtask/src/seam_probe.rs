@@ -38,6 +38,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use qsl_attrs::string_edge;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -112,37 +113,11 @@ impl EnclosingItem {
     }
 }
 
-/// `Self`'s type name for an `impl` block, for the common case every S1-S4
-/// seam this tool checks in today actually has (`impl PlainType { ... }`).
-///
-/// **Known limitation (rust-review pre-handoff pass).** A `Self` type this
-/// crate never uses for a real seam -- `impl<T> Foo<T>`, `impl Foo<Bar>`,
-/// `impl &Foo`, a tuple or reference type -- falls into the `"<impl>"`
-/// catch-all below, which would silently collapse two *different* impl
-/// blocks' methods of the same name into one indistinguishable checked-in
-/// key if two such impls ever both held a checked S1-S4 seam in the same
-/// file. Widening this to handle every `syn::Type` shape distinctly is
-/// speculative for a resolver with exactly one real call site
-/// (`FamilyKind`'s plain `impl` block); if a future seam actually needs a
-/// generic or otherwise non-`Type::Path` `Self`, broaden this match then,
-/// against that real case, rather than guessing every shape now.
-fn impl_self_name(ty: &syn::Type) -> String {
-    match ty {
-        syn::Type::Path(type_path) => type_path
-            .path
-            .segments
-            .last()
-            .map(|segment| segment.ident.to_string())
-            .unwrap_or_else(|| "<impl>".to_owned()),
-        _ => "<impl>".to_owned(),
-    }
-}
-
 impl<'ast> Visit<'ast> for EnclosingItem {
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let previous = self
             .current_impl_self
-            .replace(impl_self_name(&node.self_ty));
+            .replace(crate::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.current_impl_self = previous;
     }
@@ -182,6 +157,18 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// plus whether the build itself succeeded and its raw stderr (F15: needed
 /// to tell a genuine compile failure apart from `--offline` dependency
 /// resolution failing before rustc ever runs).
+///
+/// **Its own `--target-dir` (PR #262 review, finding F7).** This function
+/// runs `cargo build` twice with different `RUSTFLAGS` (plain, then `--cfg
+/// seam_probe`); without a target dir of its own, it inherited whatever
+/// `CARGO_TARGET_DIR` the caller had set -- the same directory `cargo
+/// test`/`cargo clippy` use elsewhere in the same `make ci` run. Each
+/// RUSTFLAGS flip invalidates that whole dependency graph's incremental
+/// cache, and the next unrelated build in the same directory pays to
+/// rebuild it again. `target/seam-probe` (the same relative-to-workspace-
+/// root idiom `ci-clean-build`'s own `--target-dir target/clean` already
+/// uses in the Makefile) keeps this probe's own RUSTFLAGS churn out of the
+/// shared one.
 fn build_and_collect_e0004(
     workspace_root: &Path,
     rustflags: &str,
@@ -194,6 +181,8 @@ fn build_and_collect_e0004(
         "quire-spec-language",
         "--lib",
         "--message-format=json",
+        "--target-dir",
+        "target/seam-probe",
     ]);
     if !rustflags.is_empty() {
         command.env("RUSTFLAGS", rustflags);
@@ -259,6 +248,11 @@ fn build_and_collect_e0004(
 /// names the flag it could not honor; this checks for that literal
 /// substring rather than guessing at cargo's exact wording, which changes
 /// across versions.
+///
+/// `#[string_edge]` (PR #262 review, nit): this is exactly the class of
+/// unmarked literal-substring branch gate `xtask string-edge` exists to
+/// find -- including, previously, inside this tool itself.
+#[string_edge]
 fn offline_registry_unavailable(stderr: &str) -> bool {
     stderr.contains("--offline")
 }

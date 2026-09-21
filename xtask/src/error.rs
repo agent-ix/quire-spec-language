@@ -284,15 +284,16 @@ pub enum Error {
     /// guard). FR-064-AC-5 refuses to admit such an entry to the
     /// allow-list; the call site must be marked `#[string_edge]` instead.
     #[error(
-        "string-edge: allow-list entry {file}:{line} gates a branch (feeds an if/while \
+        "string-edge: allow-list entry {file}:{item} gates a branch (feeds an if/while \
          condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
          from the allow-list and mark the call site #[string_edge] instead"
     )]
     StringEdgeAllowListGatesABranch {
         /// The file containing the offending allow-list entry.
         file: String,
-        /// The line the offending allow-list entry names.
-        line: u32,
+        /// The enclosing item the offending allow-list entry names
+        /// (PR #262 review, finding F8: item-keyed, not line-keyed).
+        item: String,
     },
     /// The `string-edge` scan found one or more un-marked, un-allow-listed
     /// string comparisons or matches; `summary` lists them.

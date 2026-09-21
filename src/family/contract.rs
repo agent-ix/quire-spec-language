@@ -249,12 +249,28 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// `evaluate`'s own refusal shape: constructed only from checked input --
 /// never by reading a CST, a token or a display string (FR-062-AC-6 is
 /// about what `evaluate` reads, not what a refusal's own message renders
-/// as; `Refused`'s `String` payload is a rendered failure message, not
-/// something read back in as input).
+/// as; each variant's payload is a rendered failure message, not something
+/// read back in as input).
 ///
-/// **`Refused`'s one call site is not reachable today (PR #262 review,
-/// finding F8).** `ValueFunctionFamily::evaluate` constructs `Refused` only
-/// when `env.package.function_by_identity(*checked)` finds nothing, but
+/// **Two distinct variants, not one `Refused(String)` (PR #262 review,
+/// finding F3, this round).** An earlier version had exactly one
+/// `Refused(String)` variant standing for two different conditions --
+/// `UnknownIdentity` below (a public "this identity is not in this
+/// package" input error) and `EnvironmentAlreadyConsumed` (a purely
+/// internal invariant: this crate's own code called `evaluate` twice on one
+/// `EvaluationEnv`). The one caller mapping this into a public
+/// `InputRefusal` (`value::expression::mod.rs`'s `CheckedPackage::call`)
+/// matched `Refused` once and turned *both* into `InputRefusal::
+/// UnknownFunction`, so the internal-invariant message ("evaluate called
+/// more than once...") could have surfaced to a caller asking a perfectly
+/// ordinary "does this function exist" question. The variant set is the
+/// API; splitting it lets that one call site treat the two conditions
+/// differently, which it now does.
+///
+/// **`UnknownIdentity`'s one call site is not reachable today (PR #262
+/// review, an earlier round's finding F8, carried over unchanged by the
+/// split above).** `ValueFunctionFamily::evaluate` constructs it only when
+/// `env.package.function_by_identity(*checked)` finds nothing, but
 /// `CheckedPackage::call` -- `EvaluationEnv`'s one real (non-test)
 /// constructor -- always passes an identity it just read out of the same
 /// `self.functions` list `function_by_identity` searches, so that lookup
@@ -264,12 +280,24 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// constant), and removing the `Result` would force `evaluate` to panic on
 /// a lookup miss instead -- worse than an unreached refusal path, not
 /// better, given #262's own ruling that a structured outcome undone by a
-/// panic at its one call site is the wrong trade. `Refused` therefore
-/// stays, kept honest about being unreached by any caller today rather
-/// than presented as exercised: #243 (the layer-6 `replay` facade
+/// panic at its one call site is the wrong trade. `UnknownIdentity`
+/// therefore stays, kept honest about being unreached by any caller today
+/// rather than presented as exercised: #243 (the layer-6 `replay` facade
 /// widening) resolves `checked` from a bare identity with no prior name
 /// lookup, and is the named, tracked owner of the change that would
 /// genuinely trigger this path -- not a guess at whoever comes first.
+///
+/// **`EnvironmentAlreadyConsumed` is also unreached through `call()`**, for
+/// the opposite reason: `call()` always builds a *fresh* `EvaluationEnv`
+/// with `Some(arguments)` and calls `evaluate` exactly once, so its own
+/// construction rules this condition out. It stays a typed `Result` variant
+/// rather than an `unwrap`/`expect` inside `evaluate` itself, because
+/// `evaluate` is reachable from test code that deliberately reuses one
+/// `EvaluationEnv` across two calls (`value::expression::family`'s
+/// `evaluate_refuses_a_second_call_on_the_same_env`) -- panicking there
+/// would just move the "surfaces as a typed refusal, not a wrong silent
+/// answer" property this variant exists for out of `evaluate` and into a
+/// panic the test would have to catch instead.
 ///
 /// **No `Incomplete` variant.** ADR-012 §2 reserves `evaluate` as the one
 /// hook allowed to return the kernel meter's `Incomplete` outcome, and that
@@ -283,6 +311,17 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// variant back together with public charge access.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EvaluateRefusal {
-    #[error("evaluation refused: {0}")]
-    Refused(String),
+    /// No checked function is admitted for `identity`.
+    #[error("no checked function for identity {identity}")]
+    UnknownIdentity {
+        /// The identity `evaluate` could not resolve.
+        identity: quire_exact::NodeKey,
+    },
+    /// `evaluate` was called a second time on an `EvaluationEnv` whose
+    /// `arguments` an earlier call already consumed via `Option::take`.
+    #[error(
+        "evaluate called more than once on the same EvaluationEnv \
+         (arguments already consumed by an earlier call)"
+    )]
+    EnvironmentAlreadyConsumed,
 }

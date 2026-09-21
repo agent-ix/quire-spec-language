@@ -12,11 +12,16 @@
 //! identity-bearing and is what the checked-package producer
 //! ([`super::CheckedPackage::emit_function_package_v2`]) is built from.
 
+use qsl_attrs::string_edge;
 use sha2::{Digest, Sha256};
 
-use quire_exact::{Location, NodeKey, Origin, Role};
+use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
 
-use crate::forms::{Expression, FunctionDeclaration};
+use crate::absence::AbsenceMode;
+use crate::forms::{
+    Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, FunctionDeclaration,
+};
+use crate::value::{IeeeWidth, QuantityUnit, RoundingMode, TextProfile, ValueType};
 
 /// ADR-013 O-11: a non-empty sequence of identifiers, `::`-separated on
 /// display -- the layer-6 `replay` facade's (and, for this ticket,
@@ -24,7 +29,18 @@ use crate::forms::{Expression, FunctionDeclaration};
 /// bare `&str`; the one allowed name lookup (R-06) resolves this against a
 /// checked package's declarations, and nothing compares it as a display
 /// string (FR-065-AC-6).
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+///
+/// `Serialize`/`Deserialize` (PR #262 review, finding F6) round-trip through
+/// the same `::`-joined spelling [`std::fmt::Display`] and [`FromStr`]
+/// already use, via `#[serde(try_from = "String", into = "String")]` --
+/// `emit_v2`/`decode_v2`'s wire `name` field is typed on `QualifiedName`
+/// itself now, not a bare `String` a caller has to re-parse and re-validate
+/// (the same hole `call`'s own `&QualifiedName` parameter closes one
+/// function over).
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+#[serde(try_from = "String", into = "String")]
 pub struct QualifiedName(Box<[String]>);
 
 /// A `QualifiedName` must be one or more identifiers; this segment sequence
@@ -79,6 +95,29 @@ impl std::fmt::Display for QualifiedName {
     }
 }
 
+impl std::str::FromStr for QualifiedName {
+    type Err = InvalidQualifiedName;
+
+    /// Parse `Display`'s own `::`-joined spelling back into segments.
+    fn from_str(spelling: &str) -> Result<Self, Self::Err> {
+        Self::new(spelling.split("::").map(str::to_owned).collect())
+    }
+}
+
+impl TryFrom<String> for QualifiedName {
+    type Error = InvalidQualifiedName;
+
+    fn try_from(spelling: String) -> Result<Self, Self::Error> {
+        spelling.parse()
+    }
+}
+
+impl From<QualifiedName> for String {
+    fn from(name: QualifiedName) -> Self {
+        name.to_string()
+    }
+}
+
 /// The declaring package's `name@version` a checked node's identity
 /// preimage includes (ADR-013 O-04). Complete-V1's `PackageDeclarations` has
 /// no package name/version of its own (unlike the outer domain-package
@@ -87,8 +126,452 @@ impl std::fmt::Display for QualifiedName {
 /// `check` entry point and gets this default.
 pub(crate) const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
 
+/// The contract-level `quire_exact::Meter`'s limits, for every call site in
+/// this module and [`super`] that builds one just to satisfy
+/// [`crate::family::CheckContext::new`]'s signature without itself wanting
+/// to bound anything (`Self::check`/`Self::evaluate` are not metered against
+/// this limit today -- see [`crate::family::contract`]'s own doc on
+/// `_meter`). One `u64::MAX`-in-every-field literal, not six (PR #262
+/// review, nit): each copy was a fact -- "this call site does not want a
+/// scalar limit" -- restated by hand in ten fields, with nothing checking
+/// the six copies stayed identical.
+pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
+
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
+}
+
+/// A length-prefixed byte writer used only to mint identity preimages
+/// (`mint_declaration_identity`/`mint_call_identity`, PR #262 review,
+/// finding F2). `{:?}` (`Debug`) was rejected: `Debug` is documented by
+/// `std` as not a stable serialization contract, so a field rename, an
+/// added `#[derive(Debug)]` field, or a dependency changing its own `Debug`
+/// impl would silently change every minted identity -- no compile error, no
+/// failing test. Every write below goes through [`Self::write_bytes`],
+/// which prepends the byte count before the bytes themselves, so two
+/// distinct sequences of writes can never collide into the same combined
+/// bytes -- the injectivity gap the same finding raised about
+/// `declaration.name` interpolated next to `\0` separators (a name
+/// containing `\0` used to blend into its neighbour; a length prefix makes
+/// that impossible regardless of what the string contains). Every tag
+/// written is an explicit `&'static str` literal chosen at its `match` arm,
+/// never a derived discriminant, and every `match` below (`encode_expression`,
+/// `encode_value_type`, and their small closed-enum helpers) is exhaustive:
+/// adding a variant to `Expression`, `ValueType` or any nested enum this
+/// preimage reads is a compile error here, forcing this file to pick an
+/// explicit new tag, not a silent reinterpretation of the old bytes.
+struct Preimage(Vec<u8>);
+
+impl Preimage {
+    fn write_bytes(&mut self, bytes: &[u8]) {
+        self.0
+            .extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+        self.0.extend_from_slice(bytes);
+    }
+
+    fn write_str(&mut self, text: &str) {
+        self.write_bytes(text.as_bytes());
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_bool(&mut self, value: bool) {
+        self.0.push(u8::from(value));
+    }
+}
+
+fn binary_operator_tag(operator: BinaryOperator) -> &'static str {
+    match operator {
+        BinaryOperator::Add => "add",
+        BinaryOperator::Subtract => "subtract",
+        BinaryOperator::Multiply => "multiply",
+        BinaryOperator::Divide => "divide",
+        BinaryOperator::Equal => "equal",
+        BinaryOperator::NotEqual => "not-equal",
+        BinaryOperator::Less => "less",
+        BinaryOperator::LessOrEqual => "less-or-equal",
+        BinaryOperator::Greater => "greater",
+        BinaryOperator::GreaterOrEqual => "greater-or-equal",
+        BinaryOperator::And => "and",
+        BinaryOperator::Or => "or",
+        BinaryOperator::Implies => "implies",
+    }
+}
+
+fn binder_query_tag(query: BinderQuery) -> &'static str {
+    match query {
+        BinderQuery::Map => "map",
+        BinderQuery::Filter => "filter",
+        BinderQuery::FlatMap => "flat-map",
+        BinderQuery::Forall => "forall",
+        BinderQuery::Exists => "exists",
+    }
+}
+
+fn accumulation_tag(form: Accumulation) -> &'static str {
+    match form {
+        Accumulation::Fold => "fold",
+        Accumulation::Reduce => "reduce",
+    }
+}
+
+fn absence_mode_tag(mode: AbsenceMode) -> &'static str {
+    match mode {
+        AbsenceMode::Undefined => "undefined",
+        AbsenceMode::Empty => "empty",
+        AbsenceMode::Refused => "refused",
+    }
+}
+
+fn collection_kind_tag(kind: CollectionKind) -> &'static str {
+    match kind {
+        CollectionKind::Sequence => "sequence",
+        CollectionKind::Set => "set",
+        CollectionKind::Bag => "bag",
+        CollectionKind::OrderedSet => "ordered-set",
+    }
+}
+
+fn rounding_mode_tag(mode: RoundingMode) -> &'static str {
+    match mode {
+        RoundingMode::Exact => "exact",
+        RoundingMode::TowardZero => "toward-zero",
+        RoundingMode::TowardPositive => "toward-positive",
+        RoundingMode::TowardNegative => "toward-negative",
+        RoundingMode::NearestEven => "nearest-even",
+        RoundingMode::NearestAway => "nearest-away",
+    }
+}
+
+fn text_profile_tag(profile: TextProfile) -> &'static str {
+    match profile {
+        TextProfile::UnicodeScalars => "unicode-scalars",
+        TextProfile::Nfc => "nfc",
+        TextProfile::Nfd => "nfd",
+        TextProfile::Nfkc => "nfkc",
+        TextProfile::Nfkd => "nfkd",
+        TextProfile::BinaryUtf8 => "binary-utf8",
+    }
+}
+
+fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
+    match unit {
+        // Both arms read the unit's own already-content-addressed identity
+        // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
+        // than re-deriving one from the unit's internal dimension/edge
+        // graph: those identities are this codebase's own established
+        // stable-identity mechanism (RFC 8785 JCS preimages, `value::node`),
+        // not `Debug`.
+        QuantityUnit::Declared(unit) => {
+            out.write_str("declared");
+            out.write_str(&unit.key().to_string());
+        }
+        QuantityUnit::Compound(unit) => {
+            out.write_str("compound");
+            out.write_str(&unit.identity().to_string());
+        }
+    }
+}
+
+fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
+    match value_type {
+        ValueType::Boolean => out.write_str("boolean"),
+        ValueType::Integer => out.write_str("integer"),
+        ValueType::Int(interval) => {
+            out.write_str("int");
+            out.write_str(&interval.lower().to_string());
+            out.write_str(&interval.upper().to_string());
+        }
+        ValueType::Rational(domain) => {
+            out.write_str("rational");
+            out.write_str(&domain.numerator().lower().to_string());
+            out.write_str(&domain.numerator().upper().to_string());
+            out.write_str(&domain.denominator().lower().to_string());
+            out.write_str(&domain.denominator().upper().to_string());
+        }
+        ValueType::Decimal(decimal) => {
+            out.write_str("decimal");
+            out.write_str(&decimal.lower().to_string());
+            out.write_str(&decimal.upper().to_string());
+            out.write_u64(u64::from(decimal.min_scale()));
+            out.write_u64(u64::from(decimal.max_scale()));
+            out.write_str(rounding_mode_tag(decimal.rounding()));
+        }
+        ValueType::Float(width) => {
+            out.write_str("float");
+            out.write_str(match width {
+                IeeeWidth::Binary32 => "binary32",
+                IeeeWidth::Binary64 => "binary64",
+            });
+        }
+        ValueType::Quantity(unit) => {
+            out.write_str("quantity");
+            encode_quantity_unit(out, unit);
+        }
+        ValueType::Text(text_type) => {
+            out.write_str("text");
+            out.write_u64(text_type.min());
+            out.write_u64(text_type.max());
+            out.write_str(text_profile_tag(text_type.profile()));
+        }
+        ValueType::Enum(key) => {
+            out.write_str("enum");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Option(payload) => {
+            out.write_str("option");
+            encode_value_type(out, payload);
+        }
+        ValueType::Composite(key) => {
+            out.write_str("composite");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Collection(collection_type) => {
+            out.write_str("collection");
+            out.write_str(collection_kind_tag(collection_type.kind()));
+            encode_value_type(out, collection_type.element());
+            out.write_u64(collection_type.bound().minimum());
+            out.write_u64(collection_type.bound().maximum());
+        }
+        ValueType::Reference(key) => {
+            out.write_str("reference");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Population(maximum) => {
+            out.write_str("population");
+            out.write_u64(*maximum);
+        }
+    }
+}
+
+fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) {
+    match initializer {
+        FieldInitializer::Value(expression) => {
+            out.write_str("value");
+            encode_expression(out, expression);
+        }
+        FieldInitializer::Null => out.write_str("null"),
+    }
+}
+
+fn encode_expression(out: &mut Preimage, expr: &Expression) {
+    match expr {
+        Expression::Boolean(value) => {
+            out.write_str("boolean");
+            out.write_bool(*value);
+        }
+        Expression::Integer(value) => {
+            out.write_str("integer");
+            out.write_str(&value.to_string());
+        }
+        Expression::Rational(numerator, denominator) => {
+            out.write_str("rational");
+            out.write_str(&numerator.to_string());
+            out.write_str(&denominator.to_string());
+        }
+        Expression::Name(name) => {
+            out.write_str("name");
+            out.write_str(name);
+        }
+        Expression::Let { name, value, body } => {
+            out.write_str("let");
+            out.write_str(name);
+            encode_expression(out, value);
+            encode_expression(out, body);
+        }
+        Expression::If {
+            condition,
+            then,
+            otherwise,
+        } => {
+            out.write_str("if");
+            encode_expression(out, condition);
+            encode_expression(out, then);
+            encode_expression(out, otherwise);
+        }
+        Expression::Binary {
+            operator,
+            left,
+            right,
+        } => {
+            out.write_str("binary");
+            out.write_str(binary_operator_tag(*operator));
+            encode_expression(out, left);
+            encode_expression(out, right);
+        }
+        Expression::Negate(operand) => {
+            out.write_str("negate");
+            encode_expression(out, operand);
+        }
+        Expression::Not(operand) => {
+            out.write_str("not");
+            encode_expression(out, operand);
+        }
+        Expression::Field { operand, field } => {
+            out.write_str("field");
+            encode_expression(out, operand);
+            out.write_str(field);
+        }
+        Expression::Present(operand) => {
+            out.write_str("present");
+            encode_expression(out, operand);
+        }
+        Expression::Value(operand) => {
+            out.write_str("value");
+            encode_expression(out, operand);
+        }
+        Expression::Deref(operand) => {
+            out.write_str("deref");
+            encode_expression(out, operand);
+        }
+        Expression::Call { name, arguments } => {
+            out.write_str("call");
+            out.write_str(name);
+            out.write_u64(arguments.len() as u64);
+            for argument in arguments {
+                encode_expression(out, argument);
+            }
+        }
+        Expression::Record { name, fields } => {
+            out.write_str("record");
+            out.write_str(name);
+            out.write_u64(fields.len() as u64);
+            for (field_name, initializer) in fields {
+                out.write_str(field_name);
+                encode_field_initializer(out, initializer);
+            }
+        }
+        Expression::Collection { kind, elements } => {
+            out.write_str("collection");
+            out.write_str(collection_kind_tag(*kind));
+            out.write_u64(elements.len() as u64);
+            for element in elements {
+                encode_expression(out, element);
+            }
+        }
+        Expression::Convert { target, operand } => {
+            out.write_str("convert");
+            encode_value_type(out, target);
+            encode_expression(out, operand);
+        }
+        Expression::Query {
+            query,
+            binder,
+            source,
+            body,
+        } => {
+            out.write_str("query");
+            out.write_str(binder_query_tag(*query));
+            out.write_str(binder);
+            encode_expression(out, source);
+            encode_expression(out, body);
+        }
+        Expression::Flatten(operand) => {
+            out.write_str("flatten");
+            encode_expression(out, operand);
+        }
+        Expression::Accumulate {
+            form,
+            accumulator_type,
+            accumulator,
+            binder,
+            source,
+            step,
+            identity,
+        } => {
+            out.write_str("accumulate");
+            out.write_str(accumulation_tag(*form));
+            out.write_str(accumulator_type);
+            out.write_str(accumulator);
+            out.write_str(binder);
+            encode_expression(out, source);
+            encode_expression(out, step);
+            out.write_bool(identity.is_some());
+            if let Some(identity) = identity {
+                encode_expression(out, identity);
+            }
+        }
+        Expression::Count {
+            result_type,
+            binder,
+            source,
+            predicate,
+        } => {
+            out.write_str("count");
+            out.write_str(result_type);
+            out.write_str(binder);
+            encode_expression(out, source);
+            encode_expression(out, predicate);
+        }
+        Expression::Sum {
+            result_type,
+            binder,
+            source,
+            summand,
+        } => {
+            out.write_str("sum");
+            out.write_str(result_type);
+            out.write_str(binder);
+            encode_expression(out, source);
+            encode_expression(out, summand);
+        }
+        Expression::Size(operand) => {
+            out.write_str("size");
+            encode_expression(out, operand);
+        }
+        Expression::Contains { collection, item } => {
+            out.write_str("contains");
+            encode_expression(out, collection);
+            encode_expression(out, item);
+        }
+        Expression::AllInstances { target, population } => {
+            out.write_str("all-instances");
+            encode_value_type(out, target);
+            encode_expression(out, population);
+        }
+        Expression::Lookup {
+            target,
+            population,
+            reference,
+            absence,
+        } => {
+            out.write_str("lookup");
+            encode_value_type(out, target);
+            encode_expression(out, population);
+            encode_expression(out, reference);
+            out.write_str(absence_mode_tag(*absence));
+        }
+        Expression::Dispatch {
+            receiver,
+            member,
+            arguments,
+        } => {
+            out.write_str("dispatch");
+            encode_expression(out, receiver);
+            out.write_str(member);
+            out.write_u64(arguments.len() as u64);
+            for argument in arguments {
+                encode_expression(out, argument);
+            }
+        }
+        Expression::Pre(operand) => {
+            out.write_str("pre");
+            encode_expression(out, operand);
+        }
+    }
 }
 
 /// Mint a function declaration's identity (FR-062: "content-addressed...
@@ -114,37 +597,51 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// migration's scope (`crate::family`'s module doc). Structural identity
 /// within one check run -- what FR-062-AC-2 and FR-065-AC-2 actually test --
 /// holds regardless.
+///
+/// The preimage is [`Preimage`]'s explicit, length-prefixed byte encoding
+/// (PR #262 review, finding F2), not `{:?}` (`Debug`) formatting -- see
+/// [`Preimage`]'s own doc for why.
 pub(crate) fn mint_declaration_identity(
     package_identity: &str,
     declaration: &FunctionDeclaration,
 ) -> NodeKey {
-    let preimage = format!(
-        "value.function-declaration\0{}\0{}\0{:?}\0{:?}\0{:?}\0{:?}",
-        package_identity,
-        declaration.name,
-        declaration.parameters,
-        declaration.result,
-        declaration.measure,
-        declaration.body,
-    );
-    NodeKey::from_digest(sha256(preimage.as_bytes()))
+    let mut preimage = Preimage(Vec::new());
+    preimage.write_str("value.function-declaration");
+    preimage.write_str(package_identity);
+    preimage.write_str(&declaration.name);
+    preimage.write_u64(declaration.parameters.len() as u64);
+    for (name, value_type) in &declaration.parameters {
+        preimage.write_str(name);
+        encode_value_type(&mut preimage, value_type);
+    }
+    encode_value_type(&mut preimage, &declaration.result);
+    preimage.write_bool(declaration.measure.is_some());
+    if let Some(measure) = &declaration.measure {
+        encode_expression(&mut preimage, measure);
+    }
+    encode_expression(&mut preimage, &declaration.body);
+    NodeKey::from_digest(sha256(&preimage.0))
 }
 
 /// Mint a function-application occurrence's identity, from the call's own
 /// parsed structure -- the callee's syntactic name and its arguments' parsed
 /// form -- never from a resolved `Vec` index. See
 /// [`mint_declaration_identity`]'s doc for why an index would be unsafe
-/// here.
+/// here, and [`Preimage`]'s doc for why this is not `{:?}` formatting.
 pub(crate) fn mint_call_identity(
     package_identity: &str,
     callee_name: &str,
     arguments: &[Expression],
 ) -> NodeKey {
-    let preimage = format!(
-        "value.function-application\0{}\0{}\0{:?}",
-        package_identity, callee_name, arguments,
-    );
-    NodeKey::from_digest(sha256(preimage.as_bytes()))
+    let mut preimage = Preimage(Vec::new());
+    preimage.write_str("value.function-application");
+    preimage.write_str(package_identity);
+    preimage.write_str(callee_name);
+    preimage.write_u64(arguments.len() as u64);
+    for argument in arguments {
+        encode_expression(&mut preimage, argument);
+    }
+    NodeKey::from_digest(sha256(&preimage.0))
 }
 
 /// One source occurrence of a migrated form, keyed by (identity, role,
@@ -190,15 +687,22 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
     /// node") -- reordering *other* nodes' occurrences never changes this
     /// one's ordinal, only its own role's own repeat count does.
     pub(crate) fn record(&mut self, identity: NodeKey, role: &str, span: S) -> Origin {
+        // PR #262 review, finding F5: `role().as_str() == role` compared the
+        // newtype's lexical spelling as a bare string; `Role` derives
+        // `PartialEq` itself, so build it once and compare the newtype
+        // directly -- an occurrence-role key, not a `string_edge` (ADR-012
+        // §9's target is a string selecting semantics; this compares one
+        // already-typed value to another).
+        let role = Role::new(role);
         let ordinal = self
             .entries
             .iter()
             .filter(|occurrence| {
                 occurrence.location.node() == identity
-                    && occurrence.location.occurrence().role().as_str() == role
+                    && occurrence.location.occurrence().role() == &role
             })
             .count() as u64;
-        let origin = Origin::new(Role::new(role), ordinal);
+        let origin = Origin::new(role, ordinal);
         self.entries.push(Occurrence {
             location: Location::new(identity, origin.clone()),
             span,
@@ -227,7 +731,13 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FunctionEntryV2 {
-    name: String,
+    /// Typed on `QualifiedName` (PR #262 review, finding F6), not a bare
+    /// `String`: an entry whose wire spelling is not a valid qualified name
+    /// fails `serde_json::from_slice` itself (via `QualifiedName`'s own
+    /// `#[serde(try_from = "String")]`), which `decode_v2` already maps to
+    /// `DecodeV2Error::Malformed` -- no separate malformed-name variant
+    /// needed.
+    name: QualifiedName,
     identity: String,
 }
 
@@ -260,7 +770,7 @@ pub(crate) fn link_function_identity(identity: NodeKey) -> NodeKey {
 }
 
 /// Emit v2 bytes for a linked set of (qualified name, identity) pairs.
-pub(crate) fn emit_v2(functions: &[(String, NodeKey)]) -> Vec<u8> {
+pub(crate) fn emit_v2(functions: &[(QualifiedName, NodeKey)]) -> Vec<u8> {
     let package = FunctionPackageV2 {
         version: FUNCTION_PACKAGE_V2_VERSION.to_owned(),
         functions: functions
@@ -300,7 +810,17 @@ pub enum DecodeV2Error {
 
 /// Decode v2 bytes back into (qualified name, identity) pairs, refusing an
 /// unrecognised version or a malformed identity rather than guessing.
-pub(crate) fn decode_v2(bytes: &[u8]) -> Result<Vec<(String, NodeKey)>, DecodeV2Error> {
+///
+/// `#[string_edge]` (PR #262 review, finding F5): the `package.version !=
+/// FUNCTION_PACKAGE_V2_VERSION` wire-version gate below is one of ADR-012
+/// §9's own listed edges ("the typed v2 reader"), but compares against a
+/// named `const`, not a literal, so `xtask string-edge`'s literal-operand
+/// scan cannot see it -- it was unmarked and undetected until this pass.
+/// Marking it declares this reader as the sanctioned edge ADR-012 §9
+/// already lists it as, independent of whatever the scanner's own
+/// const-operand blind spot does or does not catch.
+#[string_edge]
+pub(crate) fn decode_v2(bytes: &[u8]) -> Result<Vec<(QualifiedName, NodeKey)>, DecodeV2Error> {
     let package: FunctionPackageV2 =
         serde_json::from_slice(bytes).map_err(|_| DecodeV2Error::Malformed)?;
     if package.version != FUNCTION_PACKAGE_V2_VERSION {
@@ -431,11 +951,10 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         env: &mut EvaluationEnv<'a>,
         _meter: &mut quire_exact::Meter,
     ) -> Result<super::Evaluation, crate::family::EvaluateRefusal> {
-        let function = env.package.function_by_identity(*checked).ok_or_else(|| {
-            crate::family::EvaluateRefusal::Refused(format!(
-                "no checked function for identity {checked}"
-            ))
-        })?;
+        let function = env
+            .package
+            .function_by_identity(*checked)
+            .ok_or(crate::family::EvaluateRefusal::UnknownIdentity { identity: *checked })?;
         // PR #262 review (F17): `.take().unwrap_or_default()` used to
         // silently evaluate with zero arguments if `arguments` were ever
         // `None` -- which, since `take()` itself leaves it `None`, is
@@ -446,14 +965,15 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         // always builds a fresh env with `Some(arguments)` and calls
         // `evaluate` exactly once, so this refusal is unreached today; it
         // exists so a future second call surfaces as a typed refusal
-        // instead of a wrong, silent answer.
-        let arguments = env.arguments.take().ok_or_else(|| {
-            crate::family::EvaluateRefusal::Refused(
-                "evaluate called more than once on the same EvaluationEnv \
-                 (arguments already consumed by an earlier call)"
-                    .to_owned(),
-            )
-        })?;
+        // instead of a wrong, silent answer. Its own distinct variant, not
+        // `UnknownIdentity`'s (PR #262 review, finding F3, this round): the
+        // two are different conditions, and the one caller mapping this
+        // into a public `InputRefusal` (`value::expression::mod.rs`'s
+        // `CheckedPackage::call`) must be able to tell them apart.
+        let arguments = env
+            .arguments
+            .take()
+            .ok_or(crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed)?;
         let callables = env.package.callables();
         Ok(super::evaluate::Machine::new(
             &env.package.scope,
@@ -520,19 +1040,6 @@ mod family_contract_tests {
         result_units: u64::MAX,
     };
 
-    const SCALAR_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
-        integer_bits: u64::MAX,
-        decimal_digits: u64::MAX,
-        scale_expansion: u64::MAX,
-        text_input_bytes: u64::MAX,
-        text_scalars: u64::MAX,
-        normalized_scalars: u64::MAX,
-        unit_edges: u64::MAX,
-        value_occurrences: u64::MAX,
-        work_units: u64::MAX,
-        result_units: u64::MAX,
-    };
-
     fn limits() -> StageLimits {
         StageLimits { nesting_depth: 128 }
     }
@@ -555,18 +1062,7 @@ mod family_contract_tests {
     #[test]
     fn value_function_family_checks_through_the_contract() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let mut meter = Meter::new(quire_exact::ScalarLimits {
-            integer_bits: u64::MAX,
-            decimal_digits: u64::MAX,
-            scale_expansion: u64::MAX,
-            text_input_bytes: u64::MAX,
-            text_scalars: u64::MAX,
-            normalized_scalars: u64::MAX,
-            unit_edges: u64::MAX,
-            value_occurrences: u64::MAX,
-            work_units: u64::MAX,
-            result_units: u64::MAX,
-        });
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
         let mut cx = CheckContext::new(
@@ -581,11 +1077,9 @@ mod family_contract_tests {
         let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(staged.value, expected);
         assert_eq!(diagnostics.entries().len(), 1);
-        let v2 = emit_v2(&[("declaration".to_owned(), staged.value)]);
-        assert_eq!(
-            decode_v2(&v2).unwrap(),
-            vec![("declaration".to_owned(), expected)]
-        );
+        let declaration_name = QualifiedName::unqualified("declaration").unwrap();
+        let v2 = emit_v2(&[(declaration_name.clone(), staged.value)]);
+        assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
     }
 
     /// PR #262 review, finding F17 (round 3, item 8): a second `evaluate`
@@ -618,19 +1112,12 @@ mod family_contract_tests {
             arguments: Some(Vec::new()),
             local_meter: &mut local_meter,
         };
-        let mut contract_meter = Meter::new(SCALAR_UNLIMITED);
+        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
             .expect("first call, with real arguments still present, evaluates cleanly");
         let refusal = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
             .expect_err("second call on the same env, arguments already consumed, must refuse");
-        assert_eq!(
-            refusal,
-            EvaluateRefusal::Refused(
-                "evaluate called more than once on the same EvaluationEnv \
-                 (arguments already consumed by an earlier call)"
-                    .to_owned()
-            )
-        );
+        assert_eq!(refusal, EvaluateRefusal::EnvironmentAlreadyConsumed);
     }
 
     /// Two independently constructed contexts each observe exactly one
@@ -658,18 +1145,7 @@ mod family_contract_tests {
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scalar_limits = quire_exact::ScalarLimits {
-            integer_bits: u64::MAX,
-            decimal_digits: u64::MAX,
-            scale_expansion: u64::MAX,
-            text_input_bytes: u64::MAX,
-            text_scalars: u64::MAX,
-            normalized_scalars: u64::MAX,
-            unit_edges: u64::MAX,
-            value_occurrences: u64::MAX,
-            work_units: u64::MAX,
-            result_units: u64::MAX,
-        };
+        let scalar_limits = SCALAR_LIMITS_UNLIMITED;
         let form = declaration("f", Expression::Boolean(true));
 
         let mut meter_a = Meter::new(scalar_limits);
@@ -722,18 +1198,7 @@ mod family_contract_tests {
     #[test]
     fn nesting_depth_limit_is_the_proximate_cause() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let mut meter = Meter::new(quire_exact::ScalarLimits {
-            integer_bits: u64::MAX,
-            decimal_digits: u64::MAX,
-            scale_expansion: u64::MAX,
-            text_input_bytes: u64::MAX,
-            text_scalars: u64::MAX,
-            normalized_scalars: u64::MAX,
-            unit_edges: u64::MAX,
-            value_occurrences: u64::MAX,
-            work_units: u64::MAX,
-            result_units: u64::MAX,
-        });
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
         let mut tight = StageLimits { nesting_depth: 0 };
@@ -842,9 +1307,10 @@ mod tests {
     fn identity_survives_v2_round_trip() {
         let declaration = declaration("f", Expression::Boolean(true));
         let after_check = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
-        let bytes = emit_v2(&[("f".to_owned(), after_check)]);
+        let name = QualifiedName::unqualified("f").unwrap();
+        let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
-        assert_eq!(decoded, vec![("f".to_owned(), after_check)]);
+        assert_eq!(decoded, vec![(name, after_check)]);
     }
 
     /// F16 (rust-review, pre-handoff pass): `#[serde(deny_unknown_fields)]`
@@ -876,5 +1342,20 @@ mod tests {
 
         let bad_identity = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"not-hex"}]}"#;
         assert_eq!(decode_v2(bad_identity), Err(DecodeV2Error::InvalidIdentity));
+    }
+
+    /// F6 (rust-review, PR #262 review): `FunctionEntryV2.name` is typed on
+    /// `QualifiedName` (`#[serde(try_from = "String")]`), so a wire `name`
+    /// that is not a valid qualified name fails to deserialize at all --
+    /// `serde_json::from_slice` itself returns `Err`, which `decode_v2`
+    /// already maps to `Malformed`. A bare `String` field would have
+    /// accepted this silently.
+    #[test]
+    fn decode_v2_refuses_a_non_identifier_name() {
+        let identity = NodeKey::from_digest([7; 32]);
+        let bytes = format!(
+            r#"{{"version":"{FUNCTION_PACKAGE_V2_VERSION}","functions":[{{"name":"not an identifier","identity":"{identity}"}}]}}"#
+        );
+        assert_eq!(decode_v2(bytes.as_bytes()), Err(DecodeV2Error::Malformed));
     }
 }
