@@ -2,7 +2,7 @@
 
 These original bytes come from the native definitions and selected rules in
 [quire-specification PR #15](https://github.com/agent-ix/quire-specification/pull/15),
-at its merge commit `4d6230eb8aa9766ff3017360962f2d6368d74cb3`. Standard-relative
+at its merge commit `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. Standard-relative
 paths and document IDs retain that repository's meaning; compiler requirement
 tooling scans the local `spec/` tree separately.
 [FR-036](../../spec/functional/FR-036-link-composed-native-packages.md) owns their

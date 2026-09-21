@@ -84,7 +84,7 @@ medium and should be fixed before the #208 gate).
   lowering 9. Fan-in: diagnostic 20, source 18, syntax 12. All match §3.1.
 - **Evidence spot-checks.** About 120 cited `path:line` cells were read with
   `git show <sha>:<path>` at QSL de627b5, IR 553b6d1, CG a4b2a73 and QSpec
-  3a79dce. All resolved to the named item except those in FND-001 and FND-011.
+  dccddab. All resolved to the named item except those in FND-001 and FND-011.
   Enum variant counts were rechecked for QSL `Value` 13, `ValueType` 14,
   `value::Refusal` 15, `Capability` 4, `Family` 4 and `KaniOutcomeKind` 10; all
   hold except the `Code` count in FND-010.

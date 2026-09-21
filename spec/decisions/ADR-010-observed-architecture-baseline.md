@@ -43,7 +43,7 @@ All revisions are `origin/main` on 2026-09-19.
 | agent-ix/quire-contract-ir | IR | 553b6d1527bf3158b0147b21a5061f2b71db2f66 |
 | agent-ix/quire-contract-runtime | RT | d97bc0b0186450ad3b7ca885ffe94248d3dca633 |
 | agent-ix/quire-contract-codegen | CG | a4b2a733fd341fc108cdb2ea926fdde6225ea4c1 |
-| agent-ix/quire-specification | QSpec | 3a79dcedaffb423cfee6b74e4d6b5456ed2f90c7 |
+| agent-ix/quire-specification | QSpec | dccddab356ecf6a679b66f913ac25bc48dac7dc5 |
 | agent-ix/filament-core-data | FCD | 7dcb2f2c7466a770b2362561e70ed10a8f941c1f |
 | agent-ix/quire-integration | QI | 40cff46e81026ffd9236f406f1b5677042ce83c0 |
 
@@ -64,7 +64,7 @@ Every positive evidence cell is `<prefix>:<path>:<line>` at the revision above.
 | Prefix | Expands to |
 |---|---|
 | `QSL:` | `quire-spec-language@de627b5:src/` (paths starting `tests/`, `examples/`, `resources/`, `.github/` or `Cargo.*` are repo-root relative) |
-| `QSpec:` | `quire-specification@3a79dce:` |
+| `QSpec:` | `quire-specification@dccddab:` |
 | `IR:` | `quire-contract-ir@553b6d1:` |
 | `RT:` | `quire-contract-runtime@d97bc0b:` |
 | `CG:` | `quire-contract-codegen@a4b2a73:` |
@@ -521,10 +521,10 @@ protocol_artifact (5).
 
 Vendored QSpec resources:
 
-| Tree | QSpec commit | Files | Behind QSpec 3a79dce | Drift from QSpec 3a79dce |
+| Tree | QSpec commit | Files | Behind QSpec dccddab | Drift from QSpec dccddab |
 |---|---|---|---|---|
-| `QSL:resources/native-v1/VENDOR.json` | 4d6230e (+ "self" bf9960e) | 69 | 144 commits | not measured |
-| `QSL:resources/complete-value/VENDOR.json` | d227270 | 58 | 10 commits | 5 files differ: checked-package-v2 vectors and schema, complete-model-lock, complete-value-lock, native-diagnostics.md |
+| `QSL:resources/native-v1/VENDOR.json` | 782c1ce (+ "self" bf9960e) | 69 | 144 commits | not measured |
+| `QSL:resources/complete-value/VENDOR.json` | 82f84d3 | 58 | 10 commits | 5 files differ: checked-package-v2 vectors and schema, complete-model-lock, complete-value-lock, native-diagnostics.md |
 
 `native-diagnostics.md` is vendored twice at different sha256
 (`QSL:resources/native-v1/VENDOR.json:20` d3a5d54… and
@@ -548,8 +548,8 @@ graph LR
   QRS[quire-rs rev 8b8020e optional]
   QX[quire-exact ABSENT]
   Kani[cargo kani]
-  QSpec -. vendored native-v1 at 4d6230e .-> QSL
-  QSpec -. vendored complete-value at d227270 .-> QSL
+  QSpec -. vendored native-v1 at 782c1ce .-> QSL
+  QSpec -. vendored complete-value at 82f84d3 .-> QSL
   QSL -->|normal dep| IRCM
   QSL -->|feature quire-extraction| QRS
   QSL -.->|dev dep IT-010| IRH
@@ -1006,7 +1006,7 @@ Each item has one owner. The owner ticket decides it; this record decides none.
 | OBS-021 | `SourceMap` maps body↔document bytes and is not keyed by checked node id (AD-016 claim). The value-lane `Location` has no byte spans. | `QSL:source_map.rs:30` · `QSL:value/expression/refusal.rs:32` | #211 |
 | OBS-022 | The package view hard-codes two revision literals, `ir_revision "690bde7f…"` and `STANDARD "e897f810…"`, while Cargo pins IR at 53cc03c, which is 26 commits behind IR 553b6d1. | `QSL:package/view.rs:39,46` · `QSL:Cargo.toml:36` | #211 |
 | OBS-023 | The diagnostic catalog is vendored twice at different sha256, and the code claims two catalog revisions (1-draft.1 and 1-draft.3). | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` · `QSL:linking/composed/definition_source.rs:240` · `QSL:complete/diagnostic.rs:13` | #211 |
-| OBS-024 | The vendored QSpec trees trail QSpec 3a79dce: native-v1 by 144 commits and complete-value by 10, with 5 differing files including the checked-package-v2 schema and vectors. | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` | #211 |
+| OBS-024 | The vendored QSpec trees trail QSpec dccddab: native-v1 by 144 commits and complete-value by 10, with 5 differing files including the checked-package-v2 schema and vectors. | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` | #211 |
 | OBS-025 | Two accounting systems: `value::accounting` and `model::accounting` have the same shape with independent counters, and four other budget formats exist. | `QSL:value/accounting.rs:143,392,465` · `QSL:model/accounting.rs:127,201,244` | #211 |
 | OBS-026 | native-run-result/2 (AD-014 / FR-352) is absent; QSL emits /1 only. | `QSL:wire_format.rs:31` · absent: `native-run-result/2` in `src/` | #211 |
 | OBS-027 | IR `CounterexamplePacket.witness` is `String`, not AD-016's `Option<Witness>`, and replay reads it only to check that it is non-empty. `src/kani/witness.rs` is absent on IR main and present only in open IR PR #139@64982f1. PR-sensitive. | `IR:src/kani/replay.rs:13-20,41` | #211 |

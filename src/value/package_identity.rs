@@ -325,7 +325,7 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
 /// ascending UTF-8 byte order, no insignificant whitespace and one string and
 /// number spelling per value. That is RFC 8785 JCS for every preimage whose
 /// member names are ASCII, which is every name this schema defines and every
-/// name QSpec d227270 gives a projection node. It is stricter than JCS, never
+/// name QSpec 82f84d3 gives a projection node. It is stricter than JCS, never
 /// weaker: a preimage that JCS would order differently (member names outside
 /// ASCII, whose UTF-16 code-unit order differs from their UTF-8 byte order) is
 /// refused as [`PreimageDefect::NonCanonical`] rather than admitted under a
