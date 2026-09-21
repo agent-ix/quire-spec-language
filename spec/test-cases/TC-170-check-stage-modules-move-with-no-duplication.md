@@ -28,7 +28,7 @@ symbol FR-068-CON-3 names (`CheckCause`, `CheckRefusal`, `Obligation`,
 `ProvedInterval`, `WrongSnapshotCause`, `CheckedPackage`, `CheckedExpression`,
 `CheckedFunction`, `PackageDeclarations`, `CheckingLimits`,
 `DepthAboveMaximum`, `DispatchOperation`, `EnumBinding`,
-`MAX_CHECKING_DEPTH`) — not only the four checking methods — because a
+`MAX_CHECKING_DEPTH` and `CheckMode`) — not only the four checking methods — because a
 renamed leftover (for example a stray `src/value/expression/typing.rs` still
 defining a second `Typer`-adjacent type under a different file name) is not
 by itself a build error, and the four-method-only scan this test originally
@@ -57,7 +57,7 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
    `Origin`, `ProvedInterval`, `WrongSnapshotCause`, `CheckedPackage`,
    `CheckedExpression`, `CheckedFunction`, `PackageDeclarations`,
    `CheckingLimits`, `DepthAboveMaximum`, `DispatchOperation`,
-   `EnumBinding`, `MAX_CHECKING_DEPTH`): search the whole compiled crate for
+   `EnumBinding`, `MAX_CHECKING_DEPTH`, `CheckMode`): search the whole compiled crate for
    every location defining each name, and for every pair of same-named
    definitions found (there should be none), compare their shape
    (variants/fields/signature) as FR-068-CON-3 requires.
@@ -89,7 +89,7 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
 - Step 4: each of the four checking methods has exactly one defining
   location, under `check`; a method found defined a second time, anywhere,
   fails this step and names both locations.
-- Step 5: each of the twenty CON-3-named symbols has exactly one defining
+- Step 5: each of the twenty-one CON-3-named symbols has exactly one defining
   location, under `check`, matching CON-3's required shape; a symbol found
   defined a second time, anywhere, or whose second definition's shape
   differs, fails this step and names both locations.

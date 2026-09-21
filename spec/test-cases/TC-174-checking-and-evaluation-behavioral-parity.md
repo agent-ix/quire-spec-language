@@ -52,18 +52,25 @@ code. Scope: FR-068-AC-5.
 2. Run each fixture against the pre-move code (the commit immediately
    before this requirement's implementation) and record its full result:
    the `CheckedPackage` construction outcome (success, or the exact
-   `CheckRefusal` set) and, for a successfully checked package, the
+   `CheckRefusal` set); for a successfully checked package, each called
+   function's own `slots` count as `check`'s accessor reports it,
+   recorded directly and separately from the `Evaluation` result (not
+   inferred from whether `Evaluation` happens to expose it); and the
    `CheckedPackage::call`/`evaluate` result (the exact `Evaluation` or the
    exact `InputRefusal`).
 3. Run the identical fixtures against the post-move code and record the
-   same fields.
+   same fields, including each called function's `slots` count recorded
+   directly in the same way.
 4. Compare the pre-move and post-move results field for field for every
    fixture.
 
 ## Expected Results
 
 - Step 4: every fixture's pre-move and post-move results are identical,
-  field for field — the same checked/refused outcome from checking, and the
-  same evaluated/refused outcome from evaluation; any fixture whose
-  post-move result differs from its pre-move result, in any field, fails
-  this test and names the fixture and the differing field.
+  field for field — the same checked/refused outcome from checking, each
+  called function's own `slots` count recorded directly, and the same
+  evaluated/refused outcome from evaluation; any fixture whose post-move
+  result differs from its pre-move result, in any field (including a
+  `slots` count that matches the wrong function even if `Evaluation`
+  itself is otherwise unaffected), fails this test and names the fixture
+  and the differing field.
