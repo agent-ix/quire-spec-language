@@ -31,7 +31,6 @@ mod tests {
     use quire_spec_language::syntax::{composed as c, ExprKind};
 
     #[test]
-    #[ignore = "requires a stripped release ELF test executable within the producer's 16 MiB binary limit"]
     #[trace(
         "TC-121",
         "FR-042-AC-1",

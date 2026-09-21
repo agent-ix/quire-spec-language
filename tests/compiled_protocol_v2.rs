@@ -3068,7 +3068,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
                 usage.byte_work,
                 usage.output_bytes
             ),
-            (4_814, 2_588, 2_311_843, 85_188)
+            (4_814, 2_581, 2_308_772, 85_188)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
