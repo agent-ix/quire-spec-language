@@ -43,13 +43,13 @@ All revisions are `origin/main` on 2026-09-19.
 | agent-ix/quire-contract-ir | IR | 553b6d1527bf3158b0147b21a5061f2b71db2f66 |
 | agent-ix/quire-contract-runtime | RT | d97bc0b0186450ad3b7ca885ffe94248d3dca633 |
 | agent-ix/quire-contract-codegen | CG | a4b2a733fd341fc108cdb2ea926fdde6225ea4c1 |
-| agent-ix/quire-specification | QSpec | dccddab356ecf6a679b66f913ac25bc48dac7dc5 |
+| agent-ix/quire-specification | QSpec | the revision vendored under `resources/` |
 | agent-ix/filament-core-data | FCD | 7dcb2f2c7466a770b2362561e70ed10a8f941c1f |
-| agent-ix/quire-integration | QI | 40cff46e81026ffd9236f406f1b5677042ce83c0 |
+| agent-ix/quire-integration | QI | its `main` on that date |
 
 Pull requests cited, at the heads the evidence was read at on 2026-09-19: QSL #200 `13b6687`,
 QSL #204 `6eee1f3`, QSL #228 `a43e951`, IR #139 `64982f1`, IR #138 `100208c`,
-FCD #200 `049d8c2`, QSpec #59 `0ced0f4`, QSpec #76 `bad22a9`, QI #2 `5a03aa4`. QSL #204 advanced to `2b02528` and IR #139 to
+FCD #200 `049d8c2`. QSL #204 advanced to `2b02528` and IR #139 to
 `417ec86` before 17:02Z; the cited claims hold at both heads. QSL #204 merged at
 2026-09-19T17:04:35Z as `ba9e33b`, after the Context revision de627b5; the
 PR-sensitive items (§8) name what it changes.
@@ -64,7 +64,7 @@ Every positive evidence cell is `<prefix>:<path>:<line>` at the revision above.
 | Prefix | Expands to |
 |---|---|
 | `QSL:` | `quire-spec-language@de627b5:src/` (paths starting `tests/`, `examples/`, `resources/`, `.github/` or `Cargo.*` are repo-root relative) |
-| `QSpec:` | `quire-specification@dccddab:` |
+| `QSpec:` | the vendored `quire-specification` tree under `resources/` |
 | `IR:` | `quire-contract-ir@553b6d1:` |
 | `RT:` | `quire-contract-runtime@d97bc0b:` |
 | `CG:` | `quire-contract-codegen@a4b2a73:` |
@@ -521,7 +521,7 @@ protocol_artifact (5).
 
 Vendored QSpec resources:
 
-| Tree | QSpec commit | Files | Behind QSpec dccddab | Drift from QSpec dccddab |
+| Tree | QSpec commit | Files | Behind the Context QSpec revision | Drift from it |
 |---|---|---|---|---|
 | `QSL:resources/native-v1/VENDOR.json` | 782c1ce (+ "self" bf9960e) | 69 | 144 commits | not measured |
 | `QSL:resources/complete-value/VENDOR.json` | 82f84d3 | 58 | 10 commits | 5 files differ: checked-package-v2 vectors and schema, complete-model-lock, complete-value-lock, native-diagnostics.md |
@@ -790,17 +790,17 @@ evidence over accepted interfaces), feature, fix, unrelated.
 | #209 | 1 | design | owns §9 items owned by #209 | ARCH-G0 |
 | #210 | 1 | design | owns §9 items owned by #210, including L1-D1 | ARCH-G0; coordinates with ARCH-10, ARCH-12 |
 | #211 | 1 | design | owns §9 items owned by #211 | ARCH-G0; coordinates with ARCH-10, ARCH-11 |
-| #229 | 1 | design | secondary input on OBS-012, OBS-013, DA-11 | QSpec #116; coordinates with #210, #211 |
+| #229 | 1 | design | secondary input on OBS-012, OBS-013, DA-11 | a shared-specification question; coordinates with #210, #211 |
 | #212 | 1 gate | gate | every §9 decision | ARCH-10, ARCH-11, ARCH-12, #229 |
-| #222 | early design | design | #210 (temporal, trace and unbounded families); #211 (DA-12) | #212, QSpec #112, QSpec #113 |
+| #222 | early design | design | #210 (temporal, trace and unbounded families); #211 (DA-12) | #212, and two shared-specification questions |
 | #213 | 2 | enablement | #211 (DA-01…DA-04, DA-09, DA-10, DA-12, DA-13); #210 (DA-11) | #212, #222; consumes #229 |
 | #214 | 2 | enablement | #210 (lane C4/C5 family interface) | #210, #211, #212, #213 |
 | #215 | 2 | enablement | #209 (OBS-031); #211 (OBS-034) | #209, #211, #212 |
 | #231 | 2 | enablement | #211 (OBS-027, X6); #209 (OBS-002, OBS-028) | #211, #212, #213 |
-| #185 | 2 (in the #1 ladder as A08) | enablement | #210 (DA-11, OBS-003, OBS-004, OBS-012); L1-D1 | #213, #229, #212, QSpec #116 |
+| #185 | 2 (in the #1 ladder as A08) | enablement | #210 (DA-11, OBS-003, OBS-004, OBS-012); L1-D1 | #213, #229, #212, and a shared-specification question |
 | #216 | 2 gate | gate | OBS-001 | ARCH-20, ARCH-21, ARCH-22, #231, #229, #213, #185, #131, #132, #164 |
 | #217 | 3 | enablement | #209 (OBS-002, OBS-028, OBS-030, OBS-036); #211 (OBS-027) | #216, #185 |
-| #218 | 3 | enablement | #209 (frames through the proof spine) | ARCH-30, QSpec #101, QSpec #106 |
+| #218 | 3 | enablement | #209 (frames through the proof spine) | ARCH-30, and two shared-specification questions |
 | #219 | 3 gate | gate | #217, #218 | ARCH-30, ARCH-31 |
 | #220 | 4 | conformance | #210 (state and finite execution; lanes B10 and D) | #216, #219 |
 | #221 | 4 | conformance | #210 (sum and case) | #216 |
@@ -820,7 +820,7 @@ the graph implies only transitively counts as not drawn.
 |---|---|
 | #186 depends on #231 | no #231 → #186 edge |
 | #222's boundedness decisions are a prerequisite for #188 and #189 | no #222 → #188 or #189 edge |
-| #218 depends on QSpec #101 and #106 | not drawn |
+| #218 depends on two shared-specification questions | not drawn |
 | #232 depends on #216 | draws only #225 → #232 |
 | #231 depends on #211 | draws only #213 → #231 |
 
@@ -897,14 +897,6 @@ they consume.
 
 | Ticket | Cited by | Boundary | Class | Layer 1 owner |
 |---|---|---|---|---|
-| QSpec #81 | #132 | compiled-protocol `Model` contract | feature | #211 |
-| QSpec #101, QSpec #106 | #218 | frame normative resolutions | design | #209 |
-| QSpec #112 | #205, #222, #188, #190 | infinite-trace / unbounded operator | design | #210 |
-| QSpec #113 | #205, #222, #189 | optional bound / unbounded declarations | design | #210 |
-| QSpec #114 | #186 | separating witness, native-run-result/2 | design | #211 |
-| QSpec #115 | #187 | sum types | design | #210 |
-| QSpec #116 | #185, #229, #191, #192 | solver-absence policy and capability vocabulary | design | #210 (secondary #229) |
-| QSpec #124 | #198 | model-to-implementation relation | design | #210 |
 | IR #109 | #218 | frames | enablement | #209 |
 | IR #110 | #217 | ContractPackage construction | enablement | #209 |
 | IR #136 | #223 | SMT/runtime backend | feature | #210 |
@@ -920,14 +912,12 @@ they consume.
 | FCD #172, FCD #173 | #131 | Semantic IR producer shapes | enablement | #211 |
 | FCD #199 | §8 (FCD PR #200) | intake shapes for QSL #200 | enablement | #211 |
 | tl-mltl #68 (as written in #188) | #188 | temporal solver | feature | #210 |
-| QSpec #104 | #155 | TC-235 unbacked FR-208 criteria | fix | #210 |
-| QSpec #63 (closed) | #1 | complete V1 inventory plan | record | unrelated |
-| QSpec #13 (closed) | #42 | composed native grammar and predicate declarations | design | #209 |
-| quire-research #28 | #1 | ecosystem repository epic | unrelated | unrelated |
 | spec-objects-business PR #8 (merged) | #133 | object-type model tables and mapping tokens | enablement | #211 |
 | quire-wasm #6 (closed) | #207 | bounded WASM lifecycle parity | feature | unrelated |
 
-Count: 34 downstream issues and pull requests.
+Count: 21 downstream issues and pull requests. Shared-specification questions
+this repository consumes are held on their own repository's issues and are not
+itemised here.
 
 ## 8. Work-in-progress dispositions
 
@@ -940,11 +930,6 @@ dispositions and for the merge order.
 | QSL PR #228@a43e951 `task/120-normalize-order` | `src/model/normalize.rs` charge and refusal order | keep | merges second (after #204) |
 | QSL PR #204@6eee1f3 `task/176-173-174-dispatch` | dispatch through inherited operations, redefinition conflicts, query-only | keep | round 1 implements #176(b); merged first as ba9e33b; changes `src/model/checked_dispatch.rs` (OBS-007 site) |
 | QSL PR #200@13b6687 `task/131-intake-wiring` | Semantic IR 2.0.0 domain-package intake (`model::intake`) | keep | waits on FCD PR #200; merges third; OBS-006, OBS-014, OBS-041 |
-| timed-refund spec worktree (uncommitted, tip d2f4345) | FR-050 timed-refund handoff constants | defer | waits on #211 |
-| QSpec PR #59@0ced0f4 | FR-300 control-to-temporal mapping | defer | waits on #210 |
-| QI PR #2@5a03aa4 | composed-integration spec and plan | defer | waits on #209, which decides whether QI owns the current-head lane (OBS-031) |
-| QSpec PR #76@bad22a9 | checked-package V2 application operation identity | revise | feeds #211 and #217 |
-| QSpec PR #16@199adc3 `agent-d/capability-ledger` | functional capability ledger | revise | capability vocabulary aligns with #185 / FR-290; feeds #229 and DA-11 (#210) |
 | IR PR #139@64982f1 | typed `Witness` replacing `witness: String` | keep | changes the OBS-027 fact when merged |
 | IR PR #138@100208c | FR-031-AC-3 states replay is planned | keep | changes FR-031 text cited by OBS-036 when merged |
 | FCD PR #200@049d8c2 | no-slot identities and node-identity frame entries | keep | prerequisite of QSL PR #200 |
@@ -977,7 +962,7 @@ Each item has one owner. The owner ticket decides it; this record decides none.
 
 | ID | Decision item | Evidence | Owner |
 |---|---|---|---|
-| L1-D1 | Whether each of #186, #187, #188, #189, #191, #192 and #198 waits on #185 (lowering target registry and routing over the canonical `Capability` type): which existing sequencing edges from #185 are capability-dispatch prerequisites and which may be relaxed. Observed at 2026-09-19T17:02Z. **#185** depends on #213, #229, #212 and QSpec #116; it consumes #213's `Capability` and owns registration and routing; it states it is "an architectural prerequisite for proof/backend work that requires capability dispatch". **Sequencing edges** ("Woven in after"): #186 after V1-A08 (#185); #187 after A09; #188 after A10; #189 after A11; #191 after A12; #192 after the spec-versioning gate; #198 after A14. Every ladder rung is therefore ordered after #185, directly or transitively. **Declared technical prerequisites**: #186 on #231 and QSpec #114; #187 on #121, QSpec #115 and PR #172 (merged 2026-09-19T01:33Z); #188 on QSpec #112; #189 on QSpec #113; #191 and #192 on QSpec #116 (which #185 also depends on); #198 on QSpec #124 and PR #168 (merged 2026-09-18T22:57Z). None names #185 as a technical prerequisite. #188 and #189 state that a claim no registered backend can discharge settles `unsupported`, which is #185 registry behaviour. #1's execution order lists #185 ahead of proof and backend work (#1 "Architecture re-baseline 2026-09-19"). **Outside the ladder**: #217 depends on #185; #223 names CG Verus #84 and IR SMT/runtime #136 as implementation owners of backend breadth that #205 places after #185. No GitHub blocked-by link records any of these edges. | #185 (updated 16:49:12Z), #186 (16:49:25Z), #187 (01:21:34Z), #188 (01:21:36Z), #189 (05:09:26Z), #191 (01:21:43Z), #192 (01:21:44Z), #198 (05:07:42Z), #1, #213 (16:49:06Z), #217 (16:40:29Z), #223 (16:50:28Z) bodies · #205 "Existing consumers" · ARCH-01 comment on #207 §4 | #210 |
+| L1-D1 | Whether each of #186, #187, #188, #189, #191, #192 and #198 waits on #185 (lowering target registry and routing over the canonical `Capability` type): which existing sequencing edges from #185 are capability-dispatch prerequisites and which may be relaxed. Observed at 2026-09-19T17:02Z. **#185** depends on #213, #229, #212 and one shared-specification question; it consumes #213's `Capability` and owns registration and routing; it states it is "an architectural prerequisite for proof/backend work that requires capability dispatch". **Sequencing edges** ("Woven in after"): #186 after V1-A08 (#185); #187 after A09; #188 after A10; #189 after A11; #191 after A12; #192 after the spec-versioning gate; #198 after A14. Every ladder rung is therefore ordered after #185, directly or transitively. **Declared technical prerequisites**: each rung declares its own, and several declare a shared-specification question held on that repository's issues. None names #185 as a technical prerequisite. #188 and #189 state that a claim no registered backend can discharge settles `unsupported`, which is #185 registry behaviour. #1's execution order lists #185 ahead of proof and backend work (#1 "Architecture re-baseline 2026-09-19"). **Outside the ladder**: #217 depends on #185; #223 names CG Verus #84 and IR SMT/runtime #136 as implementation owners of backend breadth that #205 places after #185. No GitHub blocked-by link records any of these edges. | #185 (updated 16:49:12Z), #186 (16:49:25Z), #187 (01:21:34Z), #188 (01:21:36Z), #189 (05:09:26Z), #191 (01:21:43Z), #192 (01:21:44Z), #198 (05:07:42Z), #1, #213 (16:49:06Z), #217 (16:40:29Z), #223 (16:50:28Z) bodies · #205 "Existing consumers" · ARCH-01 comment on #207 §4 | #210 |
 
 ### 9.2 Findings
 
@@ -1006,7 +991,7 @@ Each item has one owner. The owner ticket decides it; this record decides none.
 | OBS-021 | `SourceMap` maps body↔document bytes and is not keyed by checked node id (AD-016 claim). The value-lane `Location` has no byte spans. | `QSL:source_map.rs:30` · `QSL:value/expression/refusal.rs:32` | #211 |
 | OBS-022 | The package view hard-codes two revision literals, `ir_revision "690bde7f…"` and `STANDARD "e897f810…"`, while Cargo pins IR at 53cc03c, which is 26 commits behind IR 553b6d1. | `QSL:package/view.rs:39,46` · `QSL:Cargo.toml:36` | #211 |
 | OBS-023 | The diagnostic catalog is vendored twice at different sha256, and the code claims two catalog revisions (1-draft.1 and 1-draft.3). | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` · `QSL:linking/composed/definition_source.rs:240` · `QSL:complete/diagnostic.rs:13` | #211 |
-| OBS-024 | The vendored QSpec trees trail QSpec dccddab: native-v1 by 144 commits and complete-value by 10, with 5 differing files including the checked-package-v2 schema and vectors. | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` | #211 |
+| OBS-024 | The vendored QSpec trees trail the Context QSpec revision: native-v1 by 144 commits and complete-value by 10, with 5 differing files including the checked-package-v2 schema and vectors. | `QSL:resources/native-v1/VENDOR.json:20` · `QSL:resources/complete-value/VENDOR.json:64` | #211 |
 | OBS-025 | Two accounting systems: `value::accounting` and `model::accounting` have the same shape with independent counters, and four other budget formats exist. | `QSL:value/accounting.rs:143,392,465` · `QSL:model/accounting.rs:127,201,244` | #211 |
 | OBS-026 | native-run-result/2 (AD-014 / FR-352) is absent; QSL emits /1 only. | `QSL:wire_format.rs:31` · absent: `native-run-result/2` in `src/` | #211 |
 | OBS-027 | IR `CounterexamplePacket.witness` is `String`, not AD-016's `Option<Witness>`, and replay reads it only to check that it is non-empty. `src/kani/witness.rs` is absent on IR main and present only in open IR PR #139@64982f1. PR-sensitive. | `IR:src/kani/replay.rs:13-20,41` | #211 |

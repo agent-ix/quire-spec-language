@@ -61,4 +61,4 @@ These are new repositories. Missing formal plans, TC records, suites, and matric
 
 ## Disposition order
 
-First reconcile current syntax contracts and boundary failures in the language repository, and specify TC identities, evidence methods and applicable suites. Then resolve findings and repeat the affected reviews. Use the dependency report for LC02–LC05 ordering after the shared FS02/FS03/FS05 and B/C contract gates are satisfied. Public release and standard-artifact terms remain separate owner decisions. No runtime implementation was changed by this review.
+First reconcile current syntax contracts and boundary failures in the language repository, and specify TC identities, evidence methods and applicable suites. Then resolve findings and repeat the affected reviews. Public release and standard-artifact terms remain separate owner decisions. No runtime implementation was changed by this review.
