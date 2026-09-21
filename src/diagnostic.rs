@@ -475,8 +475,8 @@ impl std::fmt::Display for Category {
 }
 
 /// ADR-013 O-17: one `quire.native.diagnostics/v1` code and cause, exactly as
-/// the vendored catalog (`resources/complete-value/.../native-diagnostics.md`)
-/// spells them. Every `catalog_code()` across every stage returns this same
+/// the `quire.native.diagnostics/v1` catalog spells them. Every
+/// `catalog_code()` across every stage returns this same
 /// type (C-15); there is no conversion back to a typed cause, and no
 /// consumer reads the catalog's message -- only the code, the cause and the
 /// structured fields the catalog defines for that pair. Equality is lexical
@@ -489,7 +489,7 @@ pub struct CatalogCode {
 
 impl CatalogCode {
     /// Construct a code/cause pair. Callers name codes and causes exactly as
-    /// the vendored catalog spells them (ADR-013 R-07: a typed-cause-to-code
+    /// the catalog spells them (ADR-013 R-07: a typed-cause-to-code
     /// conversion never invents a code the catalog does not define).
     pub const fn new(code: &'static str, cause: &'static str) -> Self {
         Self { code, cause }
@@ -522,7 +522,7 @@ impl std::fmt::Display for CatalogCode {
 /// raise a fault is expected to grow as later slices add stages, without
 /// widening this type. `InternalFault` maps to exactly one catalog code
 /// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
-/// vendored catalog's revision `1-draft.6` note) and exactly one category
+/// catalog's revision `1-draft.6` note) and exactly one category
 /// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct InternalFault {
@@ -563,17 +563,6 @@ impl InternalFault {
 #[cfg(test)]
 mod foundation_tests {
     use super::{CatalogCode, Category, InternalFault};
-
-    /// The vendored `quire.native.diagnostics/v1` catalog, read fresh from
-    /// disk rather than compiled in with `include_str!`, so a re-vendor that
-    /// drops or renames a code this module depends on fails this test
-    /// instead of silently going stale.
-    fn vendored_catalog() -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "resources/complete-value/quire-specification/proposals/quire-v1/definitions/native-diagnostics.md",
-        );
-        std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-    }
 
     #[test]
     fn category_has_exactly_the_adr_013_o16_eight_values() {
@@ -635,59 +624,5 @@ mod foundation_tests {
             CatalogCode::new("runtime_invariant", "established-invariant-broken")
         );
         assert_eq!(fault.category(), Category::InternalFailure);
-    }
-
-    /// The catalog table row whose first cell is exactly `` `code` ``, or
-    /// `None` if no such row exists. Scoping a cause search to this one
-    /// line (rather than the whole file) means a note that a cause was
-    /// *removed* cannot make the search pass.
-    fn catalog_row<'a>(catalog: &'a str, code: &str) -> Option<&'a str> {
-        let cell = format!("| `{code}` |");
-        catalog.lines().find(|line| line.starts_with(&cell))
-    }
-
-    #[test]
-    fn internal_fault_catalog_code_is_in_the_vendored_catalog() {
-        let catalog = vendored_catalog();
-        // Derived from `catalog_code()`, not retyped: a transposed
-        // `stage`/`invariant` argument at the call site, or a code/cause
-        // that no longer matches this impl, fails here instead of passing
-        // against a copy of the same literal.
-        let code = InternalFault::new("S3", "x").catalog_code();
-        let row = catalog_row(&catalog, code.code()).unwrap_or_else(|| {
-            panic!(
-                "vendored catalog no longer lists `{}`; InternalFault::catalog_code() is now stale",
-                code.code()
-            )
-        });
-        assert!(
-            row.contains(&format!("`{}`", code.cause())),
-            "vendored catalog's `{}` row no longer lists `{}`; \
-             InternalFault::catalog_code() is now stale: {row:?}",
-            code.code(),
-            code.cause()
-        );
-    }
-
-    #[test]
-    fn vendored_catalog_names_the_t4_stage_limit_kinds() {
-        // Not built yet (LimitExceeded/LimitKind are S-5b, blocked on the
-        // foundation `Locus`, ADR-013 T-5). This only confirms the QC-11
-        // codes S-5b will need are already vendored, so the revendor this
-        // commit performs is not wasted.
-        let catalog = vendored_catalog();
-        let row = catalog_row(&catalog, "stage_limit_exceeded")
-            .expect("vendored catalog no longer lists `stage_limit_exceeded`");
-        for cause in [
-            "input-bytes-exceeded",
-            "nesting-depth-exceeded",
-            "node-count-exceeded",
-            "work-budget-exceeded",
-        ] {
-            assert!(
-                row.contains(&format!("`{cause}`")),
-                "vendored catalog's `stage_limit_exceeded` row is missing cause `{cause}`: {row:?}"
-            );
-        }
     }
 }

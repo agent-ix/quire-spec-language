@@ -37,17 +37,11 @@ cd "$repo_root"
 # family. 1 MiB (1,048,576 bytes) is ~4.7x that measured largest file -- real
 # headroom for that fixture family to grow, while sitting more than 23x below
 # the two ELF executables (5.2 MB, 5.8 MB) this gate exists to catch. It's a
-# multiple of a measured artifact, not a round guess, and it does not size
-# around the resources/ Unicode files (1.3-2.8 MB), which are vendored
-# content on a separate removal ticket (PLAT-887).
+# multiple of a measured artifact, not a round guess.
 #
-# Not wired into `ci`/CI yet (see Makefile): PLAT-887 has not landed, and the
-# three files above already exceed this ceiling today -- wiring this in
-# before PLAT-887 removes them would turn `main` red on unrelated,
-# already-tracked, legitimate content. Raising the ceiling or adding a path
-# carve-out to get around that would recreate exactly the trap this script
-# exists to close. Tracked as agent-ix/quire-spec-language#283, blocked on
-# PLAT-887.
+# Wired into `make ci` and the CI workflow (Makefile, .github/workflows/ci.yml).
+# Raising the ceiling or adding a path carve-out to let a tracked file through
+# would recreate exactly the trap this script exists to close.
 max_bytes=1048576
 
 fail=0

@@ -21,8 +21,7 @@ use crate::replay::proof_result::{ProofCategory, ToolPin};
 /// comes from "the QSpec outcome-to-verdict map fixed per O-16 category",
 /// so [`Self::from_category`] is the one place that map lands, rather than
 /// every `settle` call site treating plain category equality as agreement
-/// by construction. The map itself is not vendored in this repo (see this
-/// module's own doc note); until it lands, `from_category` is the identity
+/// by construction. Until that map lands, `from_category` is the identity
 /// map, and this module needs only that two verdicts either agree or do
 /// not, which the category's own equality already gives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]

@@ -207,8 +207,8 @@ source = "git+https://github.com/agent-ix/quire-contract-ir?rev=53cc03c#53cc03c"
 
     /// tc_arch_lint_duplicate_revisions_004: a crate name outside the
     /// `quire-` ecosystem is never reported, even with two distinct sources
-    /// (for example two vendored copies of an unrelated crate at different
-    /// versions is ordinary and out of this check's scope).
+    /// (for example an unrelated crate resolved at two different versions
+    /// is ordinary and out of this check's scope).
     #[trace("TC-158", "FR-061-AC-2")]
     #[test]
     fn tc_arch_lint_duplicate_revisions_004_non_ecosystem_crate_is_ignored() {
