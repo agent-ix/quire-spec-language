@@ -15,7 +15,7 @@ operational validation remains outside this audit-only plan.
 
 ### Functional Requirement Coverage
 
-| Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
+| Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
 | FR-012 | FR-012-AC-1 | TC-001 | ✅ Passed locally |
 | FR-012 | FR-012-AC-2 | TC-002 | ✅ Passed locally |
@@ -44,6 +44,27 @@ operational validation remains outside this audit-only plan.
 | TC-150 | Vendor exact pinned bytes and verify external digests | Integration | P1 | NFR-011-AC-2 | ✅ Passed locally |
 | TC-151 | Idempotent re-vendoring at an unchanged pin | Integration | P1 | NFR-011-AC-3 | ✅ Passed locally |
 | TC-152 | Detect drift, missing/stray files offline, and replace a dropped pin wholesale | Integration | P1 | NFR-011-AC-4, NFR-011-AC-5 | ✅ Passed locally |
+| TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
+| TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally |
+| TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
+| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 | ✅ Passed locally |
+| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214 |
+| TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | 🚧 Planned; #214 |
+| TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | 🚧 Planned; #214 |
+| TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-4 | 🚧 Planned; #214 |
+| TC-164 | The composed function checker is deleted in the same change as the S3 function checker | Unit | P1 | FR-065-AC-5 | 🚧 Planned; #214 |
+| TC-165 | The migration recipe names every required test, conversion, removal condition and remaining family | Manual | P1 | FR-066-AC-1..FR-066-AC-4 | 🚧 Planned; #214 |
+| TC-166 | The replay executor selects a function by typed QualifiedName, never by string | Unit | P1 | FR-062-AC-10, FR-065-AC-6 | 🚧 Planned; #214 |
+| TC-167 | The S2 forms stage refuses on a recovering CST and mints no identity | Unit | P1 | FR-067-AC-1, FR-067-AC-2, FR-067-AC-3, FR-067-AC-7, FR-067-AC-8 | ✅ Passed locally |
+| TC-168 | SEAM-5 (LoweredSourceGraph) is deleted in the same change as the S2 forms core | Integration | P1 | FR-067-AC-5, FR-067-AC-6 | ✅ Passed locally |
+| TC-169 | value::expression::syntax moves to forms with no duplicate definition | Unit | P1 | FR-067-AC-9, FR-067-CON-3 | ✅ Passed locally |
+| TC-170 | check-stage modules move to check with no duplication | Unit | P1 | FR-068-AC-1, FR-068-CON-1, FR-068-CON-3 | 🚧 Planned; QSL-139 |
+| TC-171 | CheckedPackage/CheckedExpression/CheckedFunction constructors are private to check | Unit | P1 | FR-068-AC-2 | 🚧 Planned; QSL-139 |
+| TC-172 | check's real import graph has no edge into value::expression or into checking, and its re-export back is bounded | Integration | P1 | FR-068-AC-3, FR-068-AC-10 | 🚧 Planned; QSL-139 |
+| TC-173 | Refusal split: check causes in check, InputRefusal in value::expression | Unit | P1 | FR-068-AC-4, FR-068-AC-8 | 🚧 Planned; QSL-139 |
+| TC-174 | Checking and evaluation produce identical results before and after the split | Integration | P1 | FR-068-AC-5 | 🚧 Planned; QSL-139 |
+| TC-175 | The move stays inside M-5: no early M-2 work, no edge widening | Integration | P1 | FR-068-AC-6, FR-068-AC-7 | 🚧 Planned; QSL-139 |
+| TC-176 | The interim `model` -> `check` edge stays bounded to two files and thirteen names, imported directly | Unit | P1 | FR-068-AC-9, FR-068-CON-5 | 🚧 Planned; QSL-139 |
 | TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | 🚧 Planned; #185 |
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-080-AC-1 | 🚧 Planned; #185 |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | 🚧 Planned; #185 |
@@ -79,6 +100,84 @@ operational validation remains outside this audit-only plan.
 | TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | 🚧 Planned; #231 |
 | TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | 🚧 Planned; #231 |
 | TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | 🚧 Planned; #231 |
+| TC-213 | Original declaration keys survive normalization unchanged | Unit | P1 | FR-081-AC-1 | ✅ Passed locally |
+| TC-214 | Structurally identical declarations from distinct originals never collapse to one effective identity | Unit | P1 | FR-081-AC-2 | 🚧 Planned; #120 |
+| TC-215 | A dominated redefinition is retained for provenance, not deleted | Unit | P1 | FR-081-AC-3 | ✅ Passed locally |
+| TC-216 | Changing only a display name leaves every key, identity and ordering unchanged | Property | P1 | FR-081-AC-4 | 🚧 Planned; #120 |
+| TC-217 | The model binder is a pure function with no cross-run ambient state | Unit | P1 | FR-081-AC-5 | 🚧 Planned; #120 |
+| TC-218 | Redefinition variance checking reports every failing axis, not only the first | Unit | P1 | FR-082-AC-1 | ✅ Passed locally |
+| TC-219 | A missing redefinition target and a supertype cycle each refuse with a named cause | Unit | P1 | FR-082-AC-2 | ✅ Passed locally |
+| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3 | 🚧 Planned; #120 |
+| TC-221 | A narrowing field redefinition requires an established postcondition | Unit | P1 | FR-082-AC-4 | ✅ Passed locally |
+| TC-222 | Dispatch selects the descendant candidate independent of declaration order | Property | P1 | FR-083-AC-1 | ✅ Passed locally |
+| TC-223 | No-applicable-candidate and multiple-undominated-candidates are named separately | Unit | P1 | FR-083-AC-2 | ✅ Passed locally |
+| TC-224 | An ambiguous family produces no dispatch table, not even for subtypes that resolved cleanly | Unit | P1 | FR-083-AC-3 | ✅ Passed locally |
+| TC-225 | A dispatch family deeper than the bound refuses instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | 🚧 Planned; #120 |
+| TC-226 | Population admission distinguishes unknown closure from a genuine refusal | Unit | P1 | FR-084-AC-1 | ✅ Passed locally |
+| TC-227 | allInstances requires both object and subtype closure, never a partial set | Unit | P1 | FR-084-AC-2 | 🚧 Planned; #120 |
+| TC-228 | lookup returns the declared absence mode for a genuinely unmatched key | Unit | P1 | FR-084-AC-3 | ✅ Passed locally |
+| TC-229 | Two members sharing universe and object identity but differing type refuse admission outright | Unit | P1 | FR-084-AC-4 | ✅ Passed locally |
+| TC-230 | A relationship end naming an undeclared type refuses the whole relationship record | Unit | P1 | FR-085-AC-1 | 🚧 Planned; #120 |
+| TC-231 | A resolved relationship end retains its declared role and multiplicity exactly | Unit | P1 | FR-085-AC-2 | 🚧 Planned; #120 |
+| TC-232 | A relationship between two object types carries no systems-model kind | Unit | P1 | FR-085-AC-3 | 🚧 Planned; #120 |
+| TC-233 | Systems classification reports every no-kind cascade, not only the first | Unit | P1 | FR-086-AC-1 | 🚧 Planned; #120 |
+| TC-234 | Connection admission checks all three conditions independently and reports every failure | Unit | P1 | FR-086-AC-2 | 🚧 Planned; #120 |
+| TC-235 | An allocation whose target does not classify as Part refuses wrong-export | Unit | P1 | FR-086-AC-3 | ✅ Passed locally |
+| TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | 🚧 Planned; #120 |
+| TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ Passed locally |
+| TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ Passed locally |
+| TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ Passed locally |
+| TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Planned; #120 |
+| TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
+| TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
+
+## Model graph binding (FR-081–086) retrospective coverage
+
+[FR-081](../spec/functional/FR-081-preserve-model-correspondence-and-declaration-identity.md)
+through [FR-086](../spec/functional/FR-086-bind-systems-model-references.md)
+retrospectively scope model-binder behavior under issue #120: the model
+normalization, conformance, dispatch, population and systems-classification
+code these requirements bind, and most of the Rust tests exercising it,
+predate this specification slice (from #131 domain-package intake and the
+FR-150–153 binding work it carries). Sixteen of the thirty TC-213–242 rows
+above cite real, currently passing tests rather than planned work, naming
+the exact backing test:
+
+- TC-213 (FR-081-AC-1): `tests/model_normalization.rs::n01_normalizes_f1_to_the_exact_ground_truth_identities`
+- TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
+- TC-218 (FR-082-AC-1): `tests/model_conformance.rs::r03_an_incompatible_operation_redefinition_reports_every_failing_axis`
+- TC-219 (FR-082-AC-2): `tests/model_conformance.rs::r07_zero_inherited_targets_refuses_redefinition_target` and `tests/model_normalization.rs::r01_a_closing_generalization_cycle_names_the_full_rotated_chain`
+- TC-221 (FR-082-AC-4): `tests/model_conformance.rs::r08a_*_refuses` and `::r08b_*_discharges_the_obligation`
+- TC-222 (FR-083-AC-1): `tests/model_dispatch.rs::d04_registration_order_does_not_change_the_linked_table`
+- TC-223 (FR-083-AC-2): `tests/model_dispatch.rs::d03_no_candidate_*_no_applicable` and `::d02_an_undominated_multi_way_tie_*`
+- TC-224 (FR-083-AC-3): `tests/model_dispatch.rs::d02_an_undominated_multi_way_tie_*` (the same `Ambiguous` outcome carries no table for the family's other, cleanly-resolving subtype)
+- TC-226 (FR-084-AC-1): `tests/model_population.rs::l02_unknown_closure_is_incomplete_not_refused` (both halves: `open` extent and an unclosed generalization graph) and `::l05_foreign_type_refuses`
+- TC-228 (FR-084-AC-3): `tests/model_population.rs::l03_lookup_undefined_mode`, `::l03_lookup_empty_mode`, `::l03_lookup_refused_mode`
+- TC-229 (FR-084-AC-4): `tests/model_population.rs::l05_conflicting_identity_refuses_after_fourth_member_charge` and `::l05_duplicate_collapses_and_recovers_l01`
+- TC-235 (FR-086-AC-3): `tests/model_systems.rs::y02_wrong_export_substitutions_name_the_required_and_actual_kind`
+- TC-237 (FR-081-AC-6): `tests/model_normalization.rs::n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`
+- TC-238 (FR-081-AC-7): `tests/model_normalization.rs::n07_record_order_does_not_affect_identity_or_view` (asserts the whole view's identity digest is order-independent; does not separately assert a per-entry iteration sequence — see the TC's own caveat)
+- TC-239 (FR-082-AC-5, Part A — the arity carve-out itself): `tests/model_conformance.rs::r04_an_arity_mismatch_refuses_without_checking_parameter_axes`. Part B (a combined arity-and-result-multiplicity failure) is not backed by any existing test; see the TC's own gap note.
+- TC-242 (FR-084-AC-6): `tests/model_population.rs::l01_all_instances_selects_subtype_population_once`, which already carries the quire-specification `FR-153-AC-6` trace tag and asserts this exact guarantee (`b1_via_a == b1_via_b`)
+
+TC-234 (FR-086-AC-2) was corrected back from a prior, mistaken "Passed
+locally" this revision: `check_connection` really is exhaustive today, but
+no existing test constructs the combined port-direction-and-multiplicity
+fixture FR-086-AC-2 states — every one of `tests/model_systems.rs::y03a`
+through `::y05` violates exactly one condition. See FR-086's Dependencies
+note.
+
+The remaining rows (TC-214, TC-216, TC-217, TC-220, TC-225, TC-227, TC-230
+through TC-234, TC-236, TC-240 and TC-241) name real behavior with no
+existing test asserting their exact content — `title`/`displayName`
+independence, cross-process purity, the `MAX_CONFORMANCE_DEPTH`/
+`MAX_DISPATCH_DEPTH` walk bounds, dangling relationship ends, the
+combined-condition Connection fixture, and the newly owned FR-084/FR-086
+acceptance criteria this PR adds — and stay `🚧 Planned; #120` honestly.
+This is a retrospective spec in the same sense
+[FR-047](../spec/functional/FR-047-evaluate-finite-object-reference-graphs.md)
+already is for this repo: it states the coverage that exists rather than
+treating the whole slice as unbuilt.
 
 ## Six coverage rules
 

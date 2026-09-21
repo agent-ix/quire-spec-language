@@ -1,7 +1,9 @@
 /target-codex-backends/
 /target-fr151/
+/.cargo-target-214/
 
 target/
 *-target/
 target-*/
+.fixtarget/
 .worktrees/

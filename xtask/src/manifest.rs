@@ -6,6 +6,7 @@
 //! The manifest is the only source that may add a vendored path. `revendor`
 //! never globs or scans a source tree for files to add.
 use crate::error::{Error, Result};
+use qsl_attrs::string_edge;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -121,6 +122,9 @@ fn is_full_commit_sha(commit: &str) -> bool {
 /// non-empty `dest_prefix` must satisfy this before it is ever joined onto a
 /// resource tree root, so a manifest can only ever name a destination inside
 /// that tree.
+/// A typed-wire-reader edge (FR-064's own list): converts a `VENDOR.json`
+/// path string into a safe/unsafe judgment.
+#[string_edge]
 fn is_safe_relative_path(text: &str) -> bool {
     if text.is_empty() || text.starts_with('/') || text.contains('\\') {
         return false;

@@ -10,6 +10,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Spec index completeness (FR/TC master index)
+        run: tools/check-index-completeness.sh
       - name: Install pinned toolchain
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
       - name: Install pinned coverage reporter

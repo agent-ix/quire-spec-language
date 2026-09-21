@@ -20,8 +20,8 @@ use quire_spec_language::value::{
     IllTypedCause, ImportDeclaration, Incomplete, InvalidDeclaration, LibraryName, LibraryPackage,
     LimitKind, Meter, NameReference, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
     ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
-    Outcome, PackageId, Presence, RecursionEdges, ScalarLimits, TypeEnvironment, UniverseIdentity,
-    Value, ValueGraph, ValueType,
+    Outcome, PackageId, Presence, QualifiedName, RecursionEdges, ScalarLimits, TypeEnvironment,
+    UniverseIdentity, Value, ValueGraph, ValueType,
 };
 use quire_spec_language::{Limits, SourceIdentity};
 use serde_json::json;
@@ -888,7 +888,7 @@ mod checked {
         let mut meter = Meter::new(UNLIMITED);
         let refused = p
             .call(
-                "id",
+                &QualifiedName::unqualified("id").unwrap(),
                 vec![foreign],
                 &ObjectEnvironment::default(),
                 &mut meter,

@@ -107,6 +107,25 @@ span before and after the checked-package boundary: the occurrence-keyed
 source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
+**Correction: the identity preimage is a pragmatic stopgap, not the
+external schema (PR #262 review, finding F10).** This requirement's
+implementation mints each identity as a SHA-256 over the package identity
+and the declaration's or call's own **parsed** structure, rendered through
+Rust's `Debug` formatting (`{:?}`) -- name, parameters, result, measure and
+body for a declaration; callee name and parsed arguments for a call -- not
+the checked/typed tree, so the hash is independent of unrelated
+declarations' reordering (AC-2). This is a pragmatic content-address for
+this ticket's own scope, not a claim of interop with the external
+`quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema
+(`resources/complete-value/.../node-identity-preimage.schema.json`): that
+schema's `Operation` identity for an arbitrary applied operator has no
+landed implementation this ticket could follow for a user-declared
+function, and a `Debug`-rendered preimage is not that schema's own
+preimage format. Structural identity within one check run -- reordering
+independence and survival across S4 linking and v2 emission, what AC-2 and
+AC-3 actually test -- holds regardless of this gap. Building the real
+`PreimageTerm`-conformant preimage is separate work; QSL-156 owns it.
+
 ### The composed function checker is deleted in this change
 
 The composed linker's (SEAM-2) checking code for function declaration and
@@ -211,15 +230,101 @@ for the function family.
 ## Status
 
 Specified under
-[#214](https://github.com/agent-ix/quire-spec-language/issues/214). Not yet
-implemented. State/model, sum/case, temporal/trace, protocol/frame and
-refinement migrations, and the remaining `Value` forms, are out of scope and
-are tracked by their own tickets (#120, #121, #164, #170, #175, #187, #188,
-#189, #191, #192, #198, #218 via #220-#223), per ADR-012 §14.1. The M-6a CLI
-producer cutover (native `run`/`compile` deletion, `lower`,
-`package::NativePackage`, `native-linked-package/1`, and the `format`
-retarget) is [#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s
-own requirement, owner-ruled against this ticket's contradiction between an
+[#214](https://github.com/agent-ix/quire-spec-language/issues/214). State/model,
+sum/case, temporal/trace, protocol/frame and refinement migrations, and the
+remaining `Value` forms, are out of scope and are tracked by their own
+tickets (#120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198,
+#218 via #220-#223), per ADR-012 §14.1. The M-6a CLI producer cutover
+(native `run`/`compile` deletion, `lower`, `package::NativePackage`,
+`native-linked-package/1`, and the `format` retarget) is
+[#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s own
+requirement, owner-ruled against this ticket's contradiction between an
 earlier draft of this requirement, QSL-25's body and ADR-011 T-1: this
 requirement supplies #240's precondition (the checked-package producer) and
 does not perform the cutover itself.
+
+**This deferral is a citation, not a #214-local ruling (PR #262 review,
+finding F1).** `src/cli.rs`'s `lower` command and `src/package.rs`'s
+`NativePackageRef` are still present after this ticket lands; that is
+correct, not an oversight this Status section is excusing. ADR-011
+§7.3's M-6a row (`spec/decisions/ADR-011-stage-dag-and-dependency-
+architecture.md`, the "M-6a checked-package producer" line) names the
+scope those two artifacts belong to -- native `run`/`compile`, `lower`,
+`package::NativePackage` and `native-linked-package/1` -- and states its
+owner verbatim: "QSL-8 (this repo's #240) with M-4, before #216". #214's
+own ticket body says the same. Deleting `lower`/`NativePackageRef` inside
+#214 would contradict that row, not satisfy it; #240 deletes them in the
+same change that rewires `run`/`compile` onto this requirement's spine
+(the T-3 same-change rule the Description section above already states),
+which cannot happen before this requirement's own producer, and #242's S4
+emitter, both exist.
+
+**Scope of what #214 delivers, and what stays unbacked (PR #262 review
+headline finding; rescoping decision recorded against #262, not an
+amendment to this requirement's own target design above -- see the
+correction notes under "Identity and provenance survive checking and
+package conversion" and on `infer_form`'s/`Self::call`'s doc in
+`check.rs`).** This requirement's own text -- "check... exclusively through
+that contract" -- is the correct target design and is not narrowed here.
+What #214 actually delivers against it: identity and provenance for both
+forms mint exclusively through the checked-family contract
+(`mint_declaration_identity`/`mint_call_identity`, reached only from
+`ValueFunctionFamily::check` for declarations and from `Self::call` for
+applications) and nowhere else -- that part is real. The checking decision
+itself -- typing, definedness and termination -- does not: it is made
+entirely by the unchanged `Typer`, unconditionally, for every declaration
+and every call, exactly as before this ticket. `ValueFunctionFamily::check`
+only ever refuses on the nesting-depth limit; `Expression::Call` never
+calls any `FamilyContract` method at all.
+
+By Acceptance Criterion, with real trace tags as they exist in the
+delivered code today:
+- FR-065-AC-1: unbacked. No `#[trace(..., "FR-065-AC-1")]` tag exists.
+  Owner: QSL-154.
+- FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
+  (`src/value/expression/family.rs`) and
+  `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
+  (`tests/dispatch_calls.rs`). Identity/provenance minting is the part this
+  ticket actually delivers. **Rebuilt (PR #262 review, coordinator round
+  3, finding 2).** The reordering half was previously backed by
+  `identity_ignores_unrelated_declarations`
+  (`src/value/expression/family.rs`), which minted the same identity twice
+  from the same declaration and compared it to itself -- no second
+  declaration was ever constructed, so the criterion's "does not depend on
+  any other declaration's existence or position" clause had nothing to be
+  independent of. It is deleted; the reordering clause is now backed by a
+  real fixture at the `PackageDeclarations::check` level (two functions,
+  checked in both orders, `CheckedPackage::function_identity` compared
+  across both) in `tests/dispatch_calls.rs`, which also gives real test
+  callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
+  `decode_function_package_v2` (PR #262 review, coordinator round 3,
+  finding 3).
+- FR-065-AC-3: unbacked. No `#[trace(..., "FR-065-AC-3")]` tag exists
+  anywhere in the crate (the one test that exercised it,
+  `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
+  deleted as self-corrupting in the PR #262 review round, finding F6, and
+  not replaced). Owner: QSL-154.
+- FR-065-AC-4: unbacked. Untagged, and unmeetable as worded while the
+  checking decision stays in `Typer`: the arm's one call reaches
+  `Self::call`, not "family check code" (see `check.rs`'s corrected doc).
+  Owner: QSL-148 (named explicitly, not only implied by AC-5's row).
+- FR-065-AC-5: unbacked, by the rescoping decision on #262. The composed
+  checker's pre-migration entry points for both forms are not absent --
+  `Typer`'s declaration-typing pass and `Self::call` are exactly those
+  entry points, unchanged and still the only checker either form has. This
+  criterion is intentionally not narrowed to match; it names the real
+  target (move the checking into `ValueFunctionFamily::check` and delete it
+  from `Typer`), which is filed as its own, separate ticket rather than
+  attempted as part of #214. Owner: QSL-148.
+- FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
+  though `CheckedPackage::call`'s typed-`QualifiedName` lookup
+  (`src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
+  in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
+  QSL-5 / #243 -- a real owner that existed before this round but was not
+  written against this criterion; recorded here now.
+
+One of this requirement's six Acceptance Criteria is backed (AC-2,
+identity/provenance); the other five are unbacked, for the reasons above.
+`TC-164`, `TC-165` and `TC-166` -- the test cases FR-065-AC-5, the
+migration-recipe completeness check, and FR-065-AC-6 verify against -- have
+zero tests each in the delivered code.
