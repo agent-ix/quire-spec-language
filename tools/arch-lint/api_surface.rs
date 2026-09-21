@@ -143,9 +143,18 @@ pub(crate) const RULES: &[Rule] = &[
         // five-site finding is new information for whoever owns
         // ADR-013/#211/#213, reported here, not resolved by widening this
         // list further.
+        //
+        // `model::checked_dispatch` -> `check::checked_dispatch` (FR-074,
+        // ADR-011 §7.3 M-2, QSL-7, 2026-09-21): the module moved to `check`,
+        // realising ADR-011:694-697's end state ("only `check` calls the
+        // kernel `NodeKey` constructor") for this one caller. Neither file
+        // this move touched calls `NodeKey::of`/`NodeKey::from_bytes`/
+        // `node_key_of` today, so this rename has no effect on this rule's
+        // live findings; it is a path update only, matching FR-060's own
+        // amendment.
         allowed_caller_prefixes: &[
             "value::expression::check",
-            "model::checked_dispatch",
+            "check::checked_dispatch",
             "value::library",
             "value::node",
         ],

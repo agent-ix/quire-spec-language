@@ -694,62 +694,21 @@ mod tests {
         );
     }
 
-    /// Against the real, current tree: `model_check_edges` is bounded to
-    /// exactly the thirteen names FR-068-AC-9/FR-068-CON-5 declare, split
-    /// four/nine across `checked_dispatch.rs`/`conformance.rs`, all
-    /// `direct: true`, and no third `model` file appears at all -- TC-176
-    /// steps 1-5 run against the real crate, not a fixture.
-    #[trace("TC-176", "FR-068-AC-9")]
+    /// Against the real, current tree: `model_check_edges` is empty -- M-2
+    /// (this ticket, QSL-7) moved `model::checked_dispatch` and
+    /// `model::conformance::check_field_refinement_obligation`, the only
+    /// code that made `model` depend on `check`, into `check` itself, so
+    /// the interim edge FR-068-AC-9/FR-068-CON-5 bounded to two files and
+    /// thirteen names is now bounded to zero files and zero names -- TC-254
+    /// steps 1-2 run against the real crate, not a fixture. Inverted from
+    /// FR-068-AC-9's pre-M-2 bounded-but-nonempty assertion.
+    #[trace("TC-254", "FR-074-AC-3")]
     #[test]
-    fn real_model_check_edge_is_bounded_to_two_files_and_thirteen_names_all_direct() {
+    fn real_model_check_edge_is_empty() {
         let edges = model_check_edges(&workspace_root()).expect("scan runs");
-        let checked_dispatch: BTreeSet<&str> = edges
-            .iter()
-            .filter(|edge| edge.file == "src/model/checked_dispatch.rs")
-            .map(|edge| edge.leaf.as_str())
-            .collect();
-        let conformance: BTreeSet<&str> = edges
-            .iter()
-            .filter(|edge| edge.file == "src/model/conformance.rs")
-            .map(|edge| edge.leaf.as_str())
-            .collect();
-        let expected_checked_dispatch: BTreeSet<&str> = [
-            "DispatchCandidate",
-            "DispatchOperation",
-            "DispatchTable",
-            "PackageDeclarations",
-        ]
-        .into_iter()
-        .collect();
-        let expected_conformance: BTreeSet<&str> = [
-            "established_field_fact",
-            "Connective",
-            "Established",
-            "Location",
-            "Node",
-            "NodeKind",
-            "OrderedKind",
-            "Origin",
-            "ProvedInterval",
-        ]
-        .into_iter()
-        .collect();
-        assert_eq!(checked_dispatch, expected_checked_dispatch);
-        assert_eq!(conformance, expected_conformance);
         assert!(
-            edges.iter().all(|edge| edge.direct),
-            "every model -> check edge must be direct, not through value's aggregate: {edges:?}"
-        );
-        let other_files: BTreeSet<&str> = edges
-            .iter()
-            .map(|edge| edge.file.as_str())
-            .filter(|file| {
-                *file != "src/model/checked_dispatch.rs" && *file != "src/model/conformance.rs"
-            })
-            .collect();
-        assert!(
-            other_files.is_empty(),
-            "a third model file has a check edge: {other_files:?}"
+            edges.is_empty(),
+            "model -> check edge must be fully closed after M-2: {edges:?}"
         );
     }
 

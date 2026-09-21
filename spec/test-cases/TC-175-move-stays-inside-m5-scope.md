@@ -8,6 +8,22 @@ relationships:
 ---
 # TC-175: The move stays inside M-5: no early M-2 work, no edge widening
 
+**Retired in part by TC-253 (FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21).**
+This test case's Scope named two acceptance criteria: FR-068-AC-6 (the
+two-tier `value::` import bound, live) and FR-068-AC-7 (M-2's items stay in
+`model`, ahead of M-2 landing). FR-074 is M-2: it moved
+`model::checked_dispatch` and `model::conformance::check_field_refinement_obligation`
+into `check`, the exact inverse of what FR-068-AC-7 (now retired, see FR-068)
+required. Steps 3-5 below and their Expected Results, which verified the
+pre-M-2 "stays in `model`" shape, are retired along with FR-068-AC-7;
+TC-253 verifies the post-M-2 inverse (both items now in `check`, absent from
+`model`) in the corresponding xtask test
+(`m2_items_moved_to_check_and_are_absent_from_model`, `#[trace("TC-253", ...)]`).
+Steps 1-2 (FR-068-AC-6) remain live and unaffected — this document's Test
+Procedure and Expected Results below are otherwise unchanged from the
+pre-M-2 baseline, and are not renumbered, so the retired steps stay visible
+as what they were rather than disappearing from the file's history.
+
 ## Description
 
 Verify two scope boundaries at once, both easy for an otherwise-correct
