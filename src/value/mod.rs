@@ -39,29 +39,40 @@
 //! conversion is used by any semantic path.
 
 mod accounting;
-mod collection;
-mod comparison;
-mod composite;
+// PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
+// `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
+// layer-3 sibling imports `check.rs` keeps") can name them by their real,
+// submodule-qualified crate-absolute path (`crate::value::numeric::
+// ArithmeticOperator`, not the flat `crate::value::ArithmeticOperator`
+// aggregate) -- FR-068:280-283 prescribes this form explicitly, and only
+// this form keeps AC-6's two-tier allow-list legible to a textual scan of
+// `check`'s own `use` lines (a flat import carries no tier information: it
+// reads identically whether the item is tier 1, tier 2, or the forbidden
+// tier 3). Every other `value::` submodule stays private; `check` imports
+// nothing from them.
+pub(crate) mod collection;
+pub(crate) mod comparison;
+pub(crate) mod composite;
 mod containment;
-mod decimal;
+pub(crate) mod decimal;
 mod definition;
 mod division;
-mod enumeration;
-mod equality;
+pub(crate) mod enumeration;
+pub(crate) mod equality;
 mod expression;
-mod ieee;
+pub(crate) mod ieee;
 mod key;
 mod library;
 mod member;
 mod model_query;
-mod node;
-mod numeric;
+pub(crate) mod node;
+pub(crate) mod numeric;
 mod outcome;
 mod package_identity;
-mod quantity;
-mod rational;
+pub(crate) mod quantity;
+pub(crate) mod rational;
 mod reference;
-mod text;
+pub(crate) mod text;
 mod unit;
 
 pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
@@ -104,13 +115,23 @@ pub use equality::{
     admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
     EqualityPlan, EqualitySchedule,
 };
-pub use expression::{
+// ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
+// `value::expression` to the layer-3 `check` module; `value`'s own
+// aggregation path continues, only its source module changes
+// (FR-068-CON-4, the same "re-export naming a new source module is not a
+// second definition" pattern FR-067-AC-9 already established for the
+// `forms` move) -- `check` is these types' one remaining defining module.
+pub use crate::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
-    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DecodeV2Error,
-    DepthAboveMaximum, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    EnumBinding, Evaluation, InputRefusal, InvalidDispatchDeclaration, InvalidQualifiedName,
-    LocatedLoss, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
-    ProvedInterval, QualifiedName, ValueLoss, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
+    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
+    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin,
+    PackageDeclarations, ProvedInterval, WrongSnapshotCause, MAX_CHECKING_DEPTH,
+};
+// The evaluation half stays at layer 5, in `value::expression` itself.
+pub use expression::{
+    DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
+    ValueLoss,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
@@ -122,14 +143,6 @@ pub use expression::{
 pub use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
     FieldInitializer, FunctionDeclaration,
-};
-// `crate::model::conformance`'s FR-151 refinement obligation reuses this
-// crate's own FR-146 fact-derivation primitive (see
-// `expression::established_field_fact`'s own doc) rather than a second
-// implementation; exposed crate-internal-only, the same pattern as
-// `length_amount`/`Charge` above.
-pub(crate) use expression::{
-    established_field_fact, Connective, Established, Node, NodeKind, OrderedKind,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

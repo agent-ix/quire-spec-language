@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
-use super::super::comparison::{IllTyped, IllTypedCause};
-use super::super::node::NodeKey;
 use crate::diagnostic::Code;
+use crate::value::comparison::{IllTyped, IllTypedCause};
+use crate::value::node::NodeKey;
 use quire_exact::Integer;
 
 /// The declaration a location belongs to.
