@@ -45,8 +45,8 @@ scope, reported here rather than silently left implicit or claimed complete.
 
 FR-150 phases 1 (decode), 2 (qualify), 3 (inherit) and 5 (canonicalize) are
 implemented in `src/model/{key,bundle,accounting,normalize}.rs` and traced by
-`tests/model_normalization.rs` to TC-195. Verified against real vendored
-QSpec ground-truth vectors (`model-effective-declaration-vectors.json`) for
+`tests/model_normalization.rs` to TC-195. Verified against real QSpec
+ground-truth vectors held in this repo (`model-effective-declaration-vectors.json`) for
 N01 (simple inheritance, exact charge-boundary `Incomplete` cases), N02
 (diamond inheritance retaining both paths), N07 (record-order independence).
 Two additional TC-195 vectors this delta could reach cheaply within FR-150's
@@ -123,7 +123,7 @@ Native `quoin validate --repo . --strict` reports no repository finding.
 | Two producer keys sharing a display identity but differing in revision/digest both survive as distinguishable declarations | FR-150-AC-2 | `f2_producer_keys_sharing_an_identity_but_differing_in_revision_both_survive`, `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive` |
 | Unsorted derivation / duplicate retained input path / unsorted view refuse by the semantic check (TC-195 N10, 3 of 6 mutations) | FR-150 | `n10_unsorted_derivation_refuses_by_the_semantic_check`, `n10_duplicate_path_refuses_by_the_semantic_check`, `n10_unsorted_view_refuses_by_the_semantic_check` |
 | Dangling owner/specific/general references refuse rather than drop or panic | task exit condition 4 (no partial substitute) | three `a_*_refuses_instead_of_*` tests |
-| Exact N01/N02 charge order and per-declaration JCS lengths against the vendored ground-truth vector | FR-150-AC-1, FR-150-AC-8 | `n01_charges_the_exact_ground_truth_sequence_in_order`, `n02_charges_fifteen_facts_and_six_cycle_checks` |
+| Exact N01/N02 charge order and per-declaration JCS lengths against the ground-truth vector | FR-150-AC-1, FR-150-AC-8 | `n01_charges_the_exact_ground_truth_sequence_in_order`, `n02_charges_fifteen_facts_and_six_cycle_checks` |
 | Phase 4 (subsetting/redefinition) | FR-150 (TC-195 N06) | **not implemented** — no `BundleRecord` variant, no charge points |
 | N10's `stale-digest`/`cross-domain-producer-digest`/`owner-as-producer-key` mutations | FR-150 (TC-195 N10, 3 of 6 mutations) | **not implemented** — "refused by schema" against a wire schema this rung does not decode from |
 | Conformance, redefinition resolution, closed most-specific dispatch | FR-151 | **not implemented** — no test, no `src/model/` module |

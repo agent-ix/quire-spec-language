@@ -102,7 +102,7 @@ What was checked:
   - `Cargo.toml:17,26` and the absence cells · `Cargo.lock` (resolves CG's IR to 04eb6f8)
   - `tests/fixtures/native-lowering/Cargo.toml:14` · `tests/native_backend.rs:281` · `package/view.rs:39,46` (STANDARD e897f81 is a QSpec commit)
   - `model/key.rs:23,26,157` · `value/model_query.rs:108,123` (the only production `from_bytes` caller) · `value/node.rs:18,22,49` · `model/checked_dispatch.rs:657` · `model/population.rs:376`
-  - `checking/types.rs:12` · `runtime/input.rs:94,101-104` · `complete/diagnostic.rs:13` · `value/accounting.rs:2,143` · `model/accounting.rs:127` · `source.rs:94` · `resources/native-v1/VENDOR.json:20`
+  - `checking/types.rs:12` · `runtime/input.rs:94,101-104` · `complete/diagnostic.rs:13` · `value/accounting.rs:2,143` · `model/accounting.rs:127` · `source.rs:94`
 - **Negative evidence** (all 12 empty):
   - QSL `src/`: `CheckedPackageV2` · `kani` (also case-insensitive) · `native-run-result/2`
   - QSL `src/model`: `mod intake`
