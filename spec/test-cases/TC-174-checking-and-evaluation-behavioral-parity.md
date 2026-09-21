@@ -74,3 +74,27 @@ code. Scope: FR-068-AC-5.
   `slots` count that matches the wrong function even if `Evaluation`
   itself is otherwise unaffected), fails this test and names the fixture
   and the differing field.
+
+**Amendment (implementation, PR #282 review F1): steps 2-3, as landed.**
+`src/value/expression/mod.rs`'s own `#[cfg(test)] mod tests` (not an
+external `tests/` file: `check`'s `slots` accessor is `pub(crate)`, and
+`check` itself must import nothing from `value::expression` even in test
+code per FR-068-AC-3/TC-172, so `value::expression` — the legitimate
+consumer direction — is this test's one correct home) runs the fixture
+against the current tree only, not literally against a checked-out pre-move
+commit's binary: this crate's test harness has no mechanism to run two
+different commits' code from within one `cargo test` invocation. In its
+place, `function_slots_are_stable_across_declaration_order` asserts the
+exact invariant a working accessor must hold — each function's own `slots`
+count, read directly, is unaffected by the other function's presence or by
+declaration order — against a fixture built specifically to discriminate
+the named bug class (two functions differing in parameter count and body
+shape); `call_resolves_by_name_regardless_of_declaration_order` does the
+same for `CheckedPackage::call`'s result. Both would fail on exactly the
+accessor-mixup bug this test case's Description names. What this does not
+do is establish that today's values match some independently-recorded
+pre-move baseline byte for byte — there is no such recorded baseline for
+this fixture — so a regression that shifted *both* functions' slot counts
+identically, in a way that happened to preserve their relative difference,
+is not something this amendment's tests could catch; only a per-function
+mismatch (the bug class actually named) is.

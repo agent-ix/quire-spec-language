@@ -28,17 +28,6 @@
 //! forms") to rework under this ticket. The denial is pointed at the one
 //! seam the review actually flagged.
 
-use super::super::collection::{CardinalityBound, CollectionType};
-use super::super::comparison::IllTypedCause;
-use super::super::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
-use super::super::decimal::DecimalType;
-use super::super::enumeration::{EnumDeclaration, EnumValue};
-use super::super::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
-use super::super::ieee::AdmittedIeeeProfile;
-use super::super::node::NodeKey;
-use super::super::numeric::{ArithmeticOperator, OrderingOperator};
-use super::super::quantity::{check_comparable, result_unit, UnitOperation};
-use super::super::rational::Rational;
 use super::ir::{
     Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
 };
@@ -51,6 +40,17 @@ use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
+use crate::value::collection::{CardinalityBound, CollectionType};
+use crate::value::comparison::IllTypedCause;
+use crate::value::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
+use crate::value::decimal::DecimalType;
+use crate::value::enumeration::{EnumDeclaration, EnumValue};
+use crate::value::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
+use crate::value::ieee::AdmittedIeeeProfile;
+use crate::value::node::NodeKey;
+use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
+use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
+use crate::value::rational::Rational;
 use quire_exact::{CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every
@@ -1509,7 +1509,7 @@ impl<'a> Typer<'a> {
                         .find(|attribute| attribute.name() == field)
                 })
                 .ok_or_else(|| mismatch(location))?;
-            let optional = attribute.presence() == super::super::composite::Presence::Optional;
+            let optional = attribute.presence() == crate::value::Presence::Optional;
             let value_type = if optional {
                 ValueType::option(attribute.value_type().clone())
             } else {
@@ -1542,7 +1542,7 @@ impl<'a> Typer<'a> {
             .enumerate()
             .find(|(_, declared)| declared.name() == field)
             .ok_or_else(|| mismatch(location))?;
-        let optional = declared.presence() == super::super::composite::Presence::Optional;
+        let optional = declared.presence() == crate::value::Presence::Optional;
         let value_type = if optional {
             ValueType::option(declared.value_type().clone())
         } else {
@@ -1837,7 +1837,7 @@ impl<'a> Typer<'a> {
             if slot.is_some() {
                 return Err(mismatch(&field_location));
             }
-            let optional = declaration.presence() == super::super::composite::Presence::Optional;
+            let optional = declaration.presence() == crate::value::Presence::Optional;
             *slot = Some(match initializer {
                 FieldInitializer::Null if optional => RecordSlot::Null,
                 FieldInitializer::Null => return Err(mismatch(&field_location)),
@@ -1850,7 +1850,7 @@ impl<'a> Typer<'a> {
         for (declaration, slot) in declared.iter().zip(supplied) {
             slots.push(match slot {
                 Some(slot) => slot,
-                None if declaration.presence() == super::super::composite::Presence::Optional => {
+                None if declaration.presence() == crate::value::Presence::Optional => {
                     RecordSlot::Absent
                 }
                 None => return Err(mismatch(location)),
@@ -2009,7 +2009,7 @@ impl<'a> Typer<'a> {
     /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
     /// refusal is deferred to evaluation, inside
     /// `crate::model::population::lookup`'s own `type_conforms` call
-    /// (`crate::value::model_query::evaluate_lookup`).
+    /// (`crate::value::evaluate_lookup`).
     fn lookup(
         &mut self,
         target: &ValueType,

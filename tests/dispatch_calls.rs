@@ -545,8 +545,9 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 /// package.
 ///
 /// **Rebuilt (PR #262 review, coordinator round 3).** The previous version
-/// (`identity_ignores_unrelated_declarations`, `src/value/expression/
-/// family.rs`, `TC-163`) minted the same identity twice from the same
+/// (`identity_ignores_unrelated_declarations`, `src/check/family.rs`
+/// post-QSL-139, formerly `src/value/expression/family.rs`, `TC-163`) minted
+/// the same identity twice from the same
 /// `FunctionDeclaration` and compared it to itself; no second declaration
 /// was ever constructed, so there was nothing for the property to be
 /// independent *of*. This version checks two packages whose two functions

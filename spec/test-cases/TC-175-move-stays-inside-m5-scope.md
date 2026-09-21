@@ -12,39 +12,57 @@ relationships:
 
 Verify two scope boundaries at once, both easy for an otherwise-correct
 module move to cross without anyone noticing at review time, because neither
-shows up as a missing feature: (1) `check`'s only new edges into `value::`
-submodules are FR-068-AC-6's two permitted tiers — unbounded imports from
-the nine K-designated siblings X-1 has not yet relocated, and exactly the
-ruling's declared interim edge (`EnumDeclaration`, `EnumValue` from
-`value::enumeration` and `check_comparable`, `result_unit`, `UnitOperation`
-from `value::quantity`) — and no other `value::` submodule (`model`,
-`library`, `package`, `definition`, `unit`, `key`, `reference`,
-`containment`, `model_query`, `package_identity`, or any sibling M-2 has not
-yet relabeled) gains a new consumer in `check`; and (2)
-`model::checked_dispatch` and
+shows up as a missing feature: (1) `check`'s only new *shipped* (non-
+`#[cfg(test)]`) edges into `value::` submodules are FR-068-AC-6's two
+permitted tiers — unbounded imports from the nine K-designated siblings X-1
+has not yet relocated, and exactly the ruling's declared interim edge
+(`EnumDeclaration`, `EnumValue` from `value::enumeration`;
+`check_comparable`, `result_unit`, `UnitOperation`, `QuantityUnit` from
+`value::quantity`; `TextProfile` from `value::text` —
+**amended, PR #282 review F3: seven items across three modules, not five
+across two; `family.rs`'s pre-existing `encode_value_type` needs
+`QuantityUnit`/`TextProfile` and this criterion could not pass as originally
+written against any conforming implementation. Scope clarified, owner
+ruling, PR #282 review, post-rebase: this tier bounds `check`'s *shipped*
+dependency graph. `family.rs`'s own moved golden-digest test fixture, inside
+its own `#[cfg(test)] mod tests` block, needs `TextType` from `value::text`;
+widening tier 2 to admit it was tried and reverted, since a test-only import
+is not part of the shipped graph this criterion bounds, and admitting it
+would have permanently licensed production code to the same import with no
+way for this criterion's own verification to catch that back. Tier 2 stays
+seven items; this criterion's scan now excludes `#[cfg(test)]`-gated
+imports on that stated basis**) — and no
+other `value::` submodule (`model`, `library`, `package`, `definition`,
+`unit`, `key`, `reference`, `containment`, `model_query`,
+`package_identity`, or any sibling M-2 has not yet relabeled) gains a new
+shipped consumer in `check`; and (2) `model::checked_dispatch` and
 `model::conformance::check_field_refinement_obligation` — M-2's items — stay
 in `model`, not moved into `check` ahead of the corrected order (M-5 before
 M-2). An implementation that folds in either piece of M-2's work early, or
 that widens the interim edge by importing a whole `value::` prelude instead
-of the five named items, would pass every other criterion in this
+of the seven named items, would pass every other criterion in this
 requirement while doing work QSL-7 (M-2) is supposed to do, sequenced ahead
 of when the ADR's own layering argument for it (§6.1's intra-layer-3 order)
 was decided. Scope: FR-068-AC-6, FR-068-AC-7.
 
 ## Test Procedure
 
-1. Enumerate every `use` statement under `src/check/` that resolves into any
-   `value::` submodule.
+1. Enumerate every *shipped* (non-`#[cfg(test)]`) `use` statement under
+   `src/check/` that resolves into any `value::` submodule.
 2. Partition step 1's imports into three groups, matching FR-068-AC-6's
    two permitted tiers plus everything else: (a) imports resolving into the
    nine K-designated siblings (`collection`, `comparison`, `composite`,
    `decimal`, `equality`, `ieee`, `node`, `numeric`, `rational`) —
    unbounded in which items they import, since X-1, not this requirement,
-   owns closing them; (b) imports resolving into `value::enumeration` or
-   `value::quantity`, filtered to the five named items (`EnumDeclaration`,
-   `EnumValue`, `check_comparable`, `result_unit`, `UnitOperation`); and (c)
-   everything else. Confirm group (b) contains no item beyond the five
-   named, and confirm group (c) is empty.
+   owns closing them; (b) imports resolving into `value::enumeration`,
+   `value::quantity` or `value::text`, filtered to the seven named items
+   (`EnumDeclaration`, `EnumValue`, `check_comparable`, `result_unit`,
+   `UnitOperation`, `QuantityUnit`, `TextProfile`); and (c)
+   everything else.
+   Confirm group (b) contains no item beyond the seven named, and confirm
+   group (c) is empty. Also confirm every group-(a)/(b) import is written in
+   crate-absolute, submodule-qualified form (`crate::value::<submodule>::
+   Name`), never through `value`'s flat aggregate re-export.
 3. Search `check` for any definition or re-export of
    `model::checked_dispatch` or
    `model::conformance::check_field_refinement_obligation`.
@@ -66,12 +84,14 @@ was decided. Scope: FR-068-AC-6, FR-068-AC-7.
 ## Expected Results
 
 - Step 2: group (a) may hold any number of items from the nine K-designated
-  siblings; group (b) holds only the five named items — any additional item
-  resolving from `enumeration` or `quantity` fails this step; group (c) is
-  empty — any import into `model`, `library`, `package`, `definition`,
+  siblings; group (b) holds only the seven named items — any additional item
+  resolving from `enumeration`, `quantity` or `text` fails this step; group
+  (c) is empty — any import into `model`, `library`, `package`, `definition`,
   `unit`, `key`, `reference`, `containment`, `model_query`,
   `package_identity`, or any other `value::` submodule outside groups (a)/(b)
-  fails this step, naming the file and the unexpected import.
+  fails this step, naming the file and the unexpected import. Any group-(a)/
+  (b) import written through `value`'s flat aggregate rather than its owning
+  submodule also fails this step.
 - Step 3: neither `model::checked_dispatch` nor
   `model::conformance::check_field_refinement_obligation` appears anywhere
   under `check`; either one appearing fails this step.
