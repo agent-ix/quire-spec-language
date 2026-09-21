@@ -1,53 +1,59 @@
 ---
 id: TC-242
-title: "A reference's type component names the same most-specific effective type before and after an upcast"
+title: "A selected object's reference key names the same most-specific type through every conforming query"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-081
+  - target: ix://agent-ix/quire-spec-language/FR-084
     type: verifies
 ---
-# TC-242: A reference's type component names the same most-specific effective type before and after an upcast
+# TC-242: A selected object's reference key names the same most-specific type through every conforming query
 
 ## Description
 
-Verify that an object's effective declaration identity, read through a
-conforming supertype's viewpoint (the model-binder-level analogue of a
-reference upcast: querying the same object via a wider static type), is
-the same `EffectiveId` as read through the object's own most-specific type
-directly — never recomputed, widened or narrowed by which conforming type
-the query names. Scope: FR-081-AC-8.
+Verify that the same underlying object, selected via `allInstances<A>` and
+separately via `allInstances<C>` (where the object's own most-specific
+effective type `C` is a proper subtype of `A`), yields the identical
+`ReferenceKey` in both results — never a key recomputed from the queried
+static type. Scope: FR-084-AC-6, quire-specification FR-153-AC-6.
 
-This exercises the identity guarantee at the declaration-identity level
-`crate::model` actually owns and can construct directly, rather than at the
-runtime `Reference<T>` value level, which is built by the evaluator
-(FR-047's territory) from the `EffectiveId` this binder produces — the
-guarantee this test checks is the one that value-level construction relies
-on.
+Backed by the existing test
+`tests/model_population.rs::l01_all_instances_selects_subtype_population_once`,
+which already carries the `FR-153-AC-6` trace tag and asserts this exact
+guarantee: querying a fixture population's `b1` member (most-specific type
+`model.B`) through `allInstances<model.A>` and through
+`allInstances<model.B>` returns the same `ReferenceKey` in both cases
+(`b1_via_a == b1_via_b`), and each `ReferenceKey.type_identity` is
+`model.B`'s effective identity, never `model.A`'s.
 
-Catches an implementation that derives a different identity, or a
-truncated/lossy one, depending on which conforming ancestor type a caller
-names when resolving an object's effective type — for example, computing
-`EffectiveId` from the queried static type's own declaration key instead of
-from the object's actual most-specific effective declaration.
+This moved here from an earlier, FR-081-scoped draft that tried to state
+the guarantee at the runtime `Reference<T>`/static-upcast level, citing
+quire-specification FR-151's "reference upcasts only" as its dispatch-time
+type-checking rule. That citation supports type-checking dispatch
+arguments, not a reference-identity guarantee, and the draft's test
+procedure re-read one map lookup twice with no mechanism for a static type
+to enter — nothing could make it fail. FR-153-AC-6 is the requirement that
+actually states this identity guarantee, at the population-query level
+`crate::model` owns and can construct directly.
+
+Catches an implementation that derives a `ReferenceKey.type_identity` from
+the queried static type `T` instead of from the object's own most-specific
+effective type — for example, stamping the query's own `T` onto the
+returned key rather than reading it from the admitted member's own
+original type.
 
 ## Test Procedure
 
-1. Admit a domain package with a three-level chain: object type `A`
-   (abstract base), object type `B` (`supertypes: [A]`), object type `C`
-   (`supertypes: [B]`, concrete, most-specific).
-2. Run normalization and read `C`'s own effective declaration identity
-   directly from the correspondence.
-3. Confirm `C` conforms to `B` and to `A` under FR-082's conformance
-   relation (the upcast-eligible paths).
-4. Resolve the same underlying object's effective identity as it would be
-   observed through the `B`-typed and `A`-typed viewpoints (for example,
-   any lookup keyed by the object's most-specific type, regardless of the
-   static type of the request).
+1. Admit a domain package with object type `A` (base), object type `B`
+   (`supertypes: [A]`), where a population member `b1`'s most-specific
+   effective type is `B`.
+2. Admit a closed population binding covering both `A` and `B`.
+3. Call `allInstances<A>(p)` and locate `b1`'s `ReferenceKey` in the result.
+4. Call `allInstances<B>(p)` and read `b1`'s `ReferenceKey` in the result.
 
 ## Expected Results
 
-Step 4's identity, observed through either viewpoint, is byte-identical to
-step 2's identity read directly from `C`. A mutant that computes an
-identity from the queried static type (`B` or `A`) rather than from the
-object's own most-specific effective type produces a different `EffectiveId`
-in step 4, failing the byte-identical assertion.
+The `ReferenceKey` found in step 3 and the one found in step 4 are
+byte-identical, and both carry `type_identity` equal to `B`'s effective
+identity, never `A`'s. A mutant that stamps the queried type `T` onto the
+returned key produces a different `type_identity` between step 3 and step
+4 (`A` vs. `B`), failing the byte-identical assertion.

@@ -102,8 +102,8 @@ as a Connection is
   [FR-056](FR-056-admit-domain-package-model-declarations.md) builds the
   relationship export and its declared ends from the domain package.
   AD-006's model-view decision keeps relationships in the checked model
-  view. `src/model/systems.rs`'s relationship-classification loop (lines
-  275-317) is the only place a plain object-to-object relationship's ends
+  view. `src/model/systems.rs::classify`'s relationship-classification loop
+  is the only place a plain object-to-object relationship's ends
   are resolved today, and it does not yet implement this requirement's
   `missing_declaration`/`missing-name` cause: for a relationship where one
   end resolves to a declared object type and the other end resolves to

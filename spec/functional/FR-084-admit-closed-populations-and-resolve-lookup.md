@@ -73,6 +73,22 @@ abstract-instance member, or a conflicting identity) and from a resource
 incomplete outcome (an admission-limit charge denied). None of the three
 SHALL be reported as, or converted into, either of the others.
 
+### The model selection's own generalization-graph closure is decided at admission
+
+Distinct from allInstances's own per-`T` subtype-closure check below: whether
+the admitted domain package's generalization graph is closed at all — so
+that the population's declared member types could even be checked for
+coverage — is decided once, as part of admission, from the
+`GeneralizationClosure` the caller supplies. When that graph-level closure
+does not hold, admission SHALL report the unknown-closure outcome above
+(naming the type whose subtypes are unresolved) and SHALL admit no binding
+at all. Consequently, no admitted `PopulationBinding` can itself carry an
+unresolved generalization-graph closure: by the time a binding exists for
+`lookup` or `allInstances` to query, that graph-level closure already
+holds. `lookup` and `allInstances` SHALL NOT re-check it, and SHALL NOT
+report it as a distinct outcome of a query against an already-admitted
+binding — only admission observes and reports it.
+
 ### allInstances requires both object and subtype closure
 
 `allInstances<T>` SHALL return a complete result only when the population's
@@ -85,14 +101,19 @@ SHALL contain each qualifying member exactly once, keyed by its reference
 identity, in canonical reference-key order, independent of the input member
 order.
 
-### lookup distinguishes absence, refusal and incompleteness
+### lookup distinguishes a genuine absence from a genuine refusal or incompleteness
 
 `lookup<T>(p, r)` SHALL resolve `r` against the population binding's members
 only. It SHALL report the query's declared absence mode (for example,
-`Undefined`) when no member matches the key, and SHALL NOT default an
-unresolved closure to that same absence outcome: an unestablished closure is
-always the distinct incomplete or unknown-closure outcome, never a resolved
-absence.
+`Undefined`) when no member matches the key. Because the "The model
+selection's own generalization-graph closure is decided at admission"
+clause above excludes an unresolved generalization-graph closure from ever
+reaching a `lookup` call — no admitted `PopulationBinding` can carry one —
+`lookup` itself SHALL NOT report an unknown-closure outcome at all; it
+reports only a genuine absence, a genuine refusal (a foreign-universe key,
+a type mismatch or an unresolvable identity) or a resource-exhaustion
+incompleteness, and SHALL NOT default any of these to the declared absence
+mode.
 
 ### Typed results and their refusals
 
@@ -115,6 +136,20 @@ typed-result and refusal contract (`Set<Reference<T>>[0,N]`,
 `foreign-universe`, `ill_typed`/`operator-ineligible`), bound to this
 compiler's own types.
 
+### A reference key's type component is stable regardless of which conforming type queries it
+
+When the same underlying object is selected under two different queried
+types `T1` and `T2` that it conforms to (for example, `allInstances<A>` and
+`allInstances<C>` where the object's own most-specific effective type is
+`C`, a subtype of `A`), the returned `ReferenceKey`'s type component SHALL
+be the object's own most-specific effective type in both cases — never `T1`
+or `T2` — and the two returned keys for that object SHALL be
+byte-identical. This is quire-specification
+[FR-153](ix://agent-ix/quire-specification/FR-153)-AC-6's "a subtype object
+seen through supertype and subtype queries has one reference key whose type
+component is its most-specific type," bound to this compiler's own
+`ReferenceKey` type.
+
 ### Conflicting identity refuses admission outright
 
 If two runtime member records name the same universe and object identity but
@@ -133,11 +168,12 @@ their content digest are equal.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same population declared `closed` with every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
+| FR-084-AC-1 | Given a population declared with an `open` extent, admission reports the distinct unknown-closure outcome, carrying no binding; given the same closed-extent population whose generalization graph is not itself closed (`GeneralizationClosure::Open`), admission likewise reports the distinct unknown-closure outcome, naming the unresolved type, and carries no binding; given the same population declared `closed`, with a closed generalization graph and every member covered, admission succeeds; given a member of a type the population does not declare, admission is refused (not unknown-closure). | Test (TC-226) |
 | FR-084-AC-2 | Given a closed population whose object closure holds but whose declared member types do not cover every effective subtype of the queried type, `allInstances<T>` returns a typed incomplete result naming the missing subtype closure and no collection; given both closures established, it returns the complete deduplicated set in canonical reference-key order regardless of input member order. | Test (TC-227) |
-| FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode; given the same binding with subtype closure not established for `T`, the result is a typed incomplete or unknown-closure outcome, never the absence mode standing in for it. | Test (TC-228) |
+| FR-084-AC-3 | Given a `lookup<T>` query whose key matches no member, the result is the declared absence mode, a genuine completed result. | Test (TC-228) |
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
+| FR-084-AC-6 | Given an object whose most-specific effective type `C` is a proper subtype of `A`, selecting it through `allInstances<A>` and separately through `allInstances<C>` against the same binding yields the same `ReferenceKey` in both results, whose type component names `C` in both cases, never `A`. | Test (TC-242) |
 
 ## Dependencies
 
