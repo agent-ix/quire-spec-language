@@ -56,20 +56,6 @@ dependency selections and interchange contracts; those are product semantics.
 Remove this prototype-only bookkeeping restriction when the repository reaches
 a stable release.
 
-**Vendored upstream commit ids are provenance, not a contract.** A `commit` in
-a `VENDOR.json`, and every prose mention of one, is informational. Nothing
-resolves it: `xtask` checks only that it is 40 hex characters, and `make ci`
-never fetches the upstream repository. What this repo guarantees about a
-vendored tree is its per-file `sha256`, verified offline by `make
-revendor-check`, which `ci` runs.
-
-So a vendored commit id that no longer exists upstream -- after a history
-rewrite, say -- **breaks nothing, blocks no PR, and is not a merge blocker**.
-Move it when you next re-vendor. Do not stop work to repoint it, do not resync
-prose that cites it, and do not hold a review over it. If you want a stronger
-guarantee about a baseline, assert a content digest over the vendored bytes;
-that is checkable here and survives any upstream rewrite.
-
 Owner update (2026-09-09): prioritize engineering toward the first proof of
 concept. Track incomplete assurance separately from implementation dependencies;
 it need not block engineering delivery. Keep routine local checks and PR reviews,
