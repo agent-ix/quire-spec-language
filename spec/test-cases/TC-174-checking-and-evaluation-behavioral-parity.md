@@ -22,14 +22,29 @@ or `CheckedPackage::call`'s admission step validating against the wrong
 parameter list after the type's fields became accessor calls instead of
 direct field reads. A shape-only review of the split would not catch this;
 running the same fixture through both the pre-move and post-move code is
-what does. Scope: FR-068-AC-5.
+what does. Critically, this class of bug is unobservable with a
+single-function package, or with functions of identical shape: an accessor
+that returns function B's `slots` for function A produces no visible
+difference unless the two functions actually differ in parameter count,
+slot count or dispatch-table membership, per FR-068-AC-5's own named
+discriminating-fixture requirement. The successful-package fixture this
+test selects MUST therefore include at least one pair of functions
+differing from each other in shape, not merely one function repeated;
+a fixture drawn only from a single-function or identically-shaped-functions
+case is green on the exact bug this test exists to catch and does not
+satisfy this test's intent even if it otherwise runs both pre- and post-move
+code. Scope: FR-068-AC-5.
 
 ## Test Procedure
 
 1. Select the existing checking and evaluation fixtures already used by
    `value::expression`'s own tests (the function-application and dispatch
    fixtures FR-065/FR-062's tests exercise), covering: a package that
-   checks and evaluates successfully; a package `PackageDeclarations::check`
+   checks and evaluates successfully, chosen or constructed to contain at
+   least one pair of functions differing from each other in parameter
+   count, slot count and dispatch-table membership (a single-function
+   fixture, or one whose functions are all the same shape, does not satisfy
+   this step — see Description); a package `PackageDeclarations::check`
    refuses (at least one case per `CheckCause` variant already covered by an
    existing test); a `CheckedPackage::call`/`evaluate` invocation refused by
    `InputRefusal` (unknown function, arity mismatch, wrong value kind,

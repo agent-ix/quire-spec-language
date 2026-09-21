@@ -11,12 +11,13 @@ relationships:
 ## Description
 
 Verify, against the compiled crate's actual `use` lines — not an ADR table or
-a prose claim — that no file under `check` imports anything from
-`value::expression`'s evaluation-only surface (`evaluate`, `Machine`,
-`Callable`, `Evaluation`, `InputRefusal`, `LocatedLoss`, `ValueLoss`), and
-that `check` and the pre-existing `checking` module (the SEAM-1/SEAM-2
-module, untouched by this move) remain two distinct modules with no content
-crossing between them. This test catches a reverse edge that would make the
+a prose claim — that no file under `check` imports anything at all from
+`value::expression`, the whole module (not only the illustrative
+evaluation-only names `evaluate`, `Machine`, `Callable`, `Evaluation`,
+`InputRefusal`, `LocatedLoss`, `ValueLoss` and `CheckMode` FR-068-AC-3 names
+as examples), and that `check` and the pre-existing `checking` module (the
+SEAM-1/SEAM-2 module, untouched by this move) remain two distinct modules
+with no content crossing between them. This test catches a reverse edge that would make the
 "split" a repackaging rather than a real dependency cut — for example,
 `check` calling back into `evaluate::Machine` for a shortcut, or a careless
 implementation writing the new checking content into the existing `checking`
@@ -27,9 +28,15 @@ module by name confusion, or merging the two. Scope: FR-068-AC-3.
 1. Enumerate every `.rs` file under `src/check/`.
 2. Parse or grep each file's `use` statements (including glob imports) and
    resolve each import path against the crate's module tree.
-3. Flag any import that resolves into `value::expression::evaluate`, or
-   names `Machine`, `Callable`, `Evaluation`, `InputRefusal`, `LocatedLoss`
-   or `ValueLoss` from any path.
+3. Flag any import that resolves into `value::expression` at all — the
+   whole module, not a fixed name list: `Machine`, `Callable`, `Evaluation`,
+   `InputRefusal`, `LocatedLoss`, `ValueLoss` and `CheckMode`
+   (`value/expression/mod.rs:48`) are illustrative examples of symbols that
+   would trip this step, matching FR-068-AC-3's own wording that these names
+   are examples, not an exhaustive deny-list; a name not on this list (for
+   example a new symbol `evaluate.rs` adds later) fails this step exactly
+   the same way if it resolves into `value::expression`, because the
+   criterion is the module boundary, not membership in this name list.
 4. Flag any import that resolves into `checking` (the pre-existing SEAM-1/
    SEAM-2 module), and separately confirm `src/checking/`'s file list is
    byte-for-byte unchanged from the pre-move baseline (no file added,
@@ -40,8 +47,9 @@ module by name confusion, or merging the two. Scope: FR-068-AC-3.
 
 ## Expected Results
 
-- Step 3: zero flagged imports; any import resolving to the named
-  evaluation-only symbols fails this step, naming the file and the import.
+- Step 3: zero flagged imports; any import resolving into `value::expression`
+  — whether or not it names one of the illustrative examples — fails this
+  step, naming the file and the import.
 - Step 4: zero flagged imports into `checking`, and `src/checking/`'s file
   list and contents are unchanged from the pre-move baseline; any diff
   fails this step.
