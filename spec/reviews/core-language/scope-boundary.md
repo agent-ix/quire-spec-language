@@ -3,7 +3,7 @@ id: SR-393
 title: "Scope-boundary review of the reconciled core language and ecosystem handoff"
 type: SpecReview
 analysis: scope-boundary
-scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline 4d6230eb8aa9766ff3017360962f2d6368d74cb3; D Producer interface 1.2.0 revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603; L5 revision 72507f856457ba0922719bd5d9f5cadcce4058cd"
+scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f; D Producer interface 1.2.0 revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603; L5 revision 72507f856457ba0922719bd5d9f5cadcce4058cd"
 review_set: subset
 review_date: "2026-09-11"
 relationships:
@@ -60,14 +60,14 @@ resolved before this verdict:
 | RCK-001 | high | resolved | The #40 `/2` requirement initially lacked a formal wire owner. FR-050, TC-138 and `docs/compiled-protocol-v2.md` now allocate canonical schema, production, admission and strict version separation to A. |
 | RCK-002 | high | resolved | The first `/2` draft terminated at `v2::AdmittedPackage` while L5 accepted only `/1`. FR-050 now allocates three v2-specific temporal entry points to the L5 interface and leaves existing `/1` signatures intact. |
 | RCK-003 | high | resolved | TC-135 initially had no aggregate owner after splitting A/B/F evidence. D-owned `quire-research` #39/#49 now owns the manifest, driver and record until transfer. The absence of accepted B/F pins is recorded as an external readiness gate, not hidden by a branch snapshot. |
-| RCK-004 | medium | resolved | The F authority pin was reconciled to immutable native-v1 revision `4d6230eb8aa9766ff3017360962f2d6368d74cb3`. |
+| RCK-004 | medium | resolved | The F authority pin was reconciled to immutable native-v1 revision `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. |
 
 ## System context
 
 ```mermaid
 flowchart LR
   Author[Native source author] --> A["A: Quire compiler\nFR-046–050, NFR-009"]
-  Standard["Immutable native-v1 baseline\n4d6230e"] --> A
+  Standard["Immutable native-v1 baseline\n782c1ce"] --> A
   D["D: model/config producer\nexports and static correspondence"] --> A
   A --> Artifact["quire.compiled-protocol/1 or /2\ncanonical subject"]
   A --> State["A state evaluator\nqueries and finite graph"]
@@ -106,9 +106,9 @@ flowchart LR
 | Dependency or actor | Assumed or Guaranteed | Named contract and boundary |
 | --- | --- | --- |
 | Native author and explicit source/definition inventory | Guaranteed by A | FR-036/040/042/046–050 and TC-126–138 preserve exact selected inputs and refuse unresolved, ambiguous or foreign authorities. |
-| Shared language standard | Assumed semantic authority; exact selection guaranteed by A | Immutable native-v1 baseline `4d6230eb8aa9766ff3017360962f2d6368d74cb3`, especially state-contract, state-queries, state-graph, choreography-surface and protocol-contract. A does not silently widen an installed profile. |
+| Shared language standard | Assumed semantic authority; exact selection guaranteed by A | Immutable native-v1 baseline `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`, especially state-contract, state-queries, state-graph, choreography-surface and protocol-contract. A does not silently widen an installed profile. |
 | D model/configuration producer | Assumed model/config meaning; handoff guaranteed by contract | Producer interface 1.2.0 at `6259d3a5b99088740df9bcc8e8d60f3720aaa603`; IT-009 and TC-132/134/135 require its real typed exports and correspondence. |
-| F observation producer/consumer | Assumed observation/completeness meaning; campaign handoff pending | Native-v1 `4d6230eb8aa9766ff3017360962f2d6368d74cb3`, FR-049 admission, standard observation-binding/output-mapping contracts and B #12. F owns concrete facts; no accepted campaign revision is yet pinned. |
+| F observation producer/consumer | Assumed observation/completeness meaning; campaign handoff pending | Native-v1 `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`, FR-049 admission, standard observation-binding/output-mapping contracts and B #12. F owns concrete facts; no accepted campaign revision is yet pinned. |
 | E/L5 temporal subsystem | Assumed temporal meaning; static selection guaranteed | Merged revision `72507f856457ba0922719bd5d9f5cadcce4058cd`, local FR-043/044/045, FR-050 v2 entry points and B #12. E retains clock progression, settlement and late-evidence meaning. |
 | B protocol subsystem | Assumed PT02/result meaning; artifact intake guaranteed | B #11 admits A's artifact; B #6 owns conformance; B #12 consumes temporal/observation facts. A must not interpret B result semantics. |
 | Campaign integration owner | Guaranteed composed run, not yet executable | D owns TC-135's manifest, Rust driver and aggregate record under `quire-research` #39/#49 pending approved transfer. No accepted B #6/#11/#12 plus F revision set exists yet. |
