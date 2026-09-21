@@ -772,12 +772,12 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     let mut v1_ids: Vec<_> = v1
         .declarations()
         .iter()
-        .map(|entry| entry.effective_id.clone())
+        .map(|entry| entry.effective_id)
         .collect();
     let mut v2_ids: Vec<_> = view
         .declarations()
         .iter()
-        .map(|entry| entry.effective_id.clone())
+        .map(|entry| entry.effective_id)
         .collect();
     v1_ids.sort();
     v2_ids.sort();
