@@ -232,13 +232,16 @@ observations belong only to the later consumer fixture.
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001) through the public
     Rust interfaces, preserving exact selectors and finite graph/source links.
     In B's Rust integration harness, independently select the supplied original
-    sources, admitted domain packages, registry/contract and compiler binary bytes to construct
-    the reader's accepted inventory. Compare the offered package against that
-    inventory; neither the payload nor the fixture's `expected.json` authorizes
-    its own selections.
-    Retain all four original source files and the actual executing compiler binary
-    from the recipe. Reconstruct its admitted model declarations through the same
-    intake path; do not replace the model or binary with invented metadata.
+    sources, admitted domain packages, registry/contract and compiler source
+    identity (a digest on `Producer.binary` over the producer's own source
+    text, not a dependency's retained bytes) to construct the reader's
+    accepted inventory. Compare the offered package against that inventory;
+    neither the payload nor the fixture's `expected.json` authorizes its own
+    selections.
+    Retain all four original source files and the recipe's own source
+    identity. Reconstruct its admitted model declarations through the same
+    intake path; do not replace the model or the producer's identity with
+    invented metadata.
     A's local emission/reader round trip alone leaves this B acceptance incomplete.
     Perform its one-axis adverse controls and numeric boundary handoff. A
     missing family, model intake or consumer implementation records the
