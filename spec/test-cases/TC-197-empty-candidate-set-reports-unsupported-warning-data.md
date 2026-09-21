@@ -36,6 +36,8 @@ elsewhere (or silently warn with the wrong name).
 
 Both steps 2 and 3 complete without panicking and without returning a
 `Result::Err` or refusal-shaped value; both return an empty candidate set.
-The returned value (or the call's surrounding context available to the
-caller) exposes the requested capability kind (`temporal-satisfaction`) in
-both cases, and exposes "Backend A" in step 3 only.
+The registry's own returned output — not data the caller already held
+before the call — exposes the requested capability kind
+(`temporal-satisfaction`) in both cases, and exposes "Backend A" in step 3
+only; a test that inspects only the input the caller passed in, rather than
+the value the registry returned, does not satisfy this check.

@@ -20,6 +20,14 @@ with the second (losing the original advertisement set), and an
 implementation that merges the two registrations' advertised-kind sets
 instead of refusing the second outright.
 
+[TC-155](TC-155-keep-admission-backend-independent.md) (FR-057-AC-8, on
+`main`) step 3 also registers a backend that repeats an already-registered
+identity, as one case inside a broader admission-and-routing fixture scan.
+This test case isolates the duplicate-identity rule at the registry
+(FR-075) itself and additionally asserts the specific post-refusal
+candidate-set contents (steps 4-5 below), which TC-155's scan does not
+check.
+
 ## Test Procedure
 
 1. Register Backend A advertising `value-validity` only.
