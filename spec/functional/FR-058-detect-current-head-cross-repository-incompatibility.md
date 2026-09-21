@@ -75,11 +75,6 @@ The current-head lane SHALL resolve quire-contract-ir, quire-contract-runtime
 and quire-contract-codegen at each repository's current default-branch head
 rather than a pinned `rev`.
 
-QSpec artifacts (the vendored trees `revendor`/`revendor-check` manage under
-`QSPEC_CLONE`) are consumed unchanged, at whatever revision QSL's root
-manifest already vendors. Sourcing QSpec artifacts at head is an open
-question this requirement does not settle (see Status).
-
 ### Failure modes the lane SHALL detect
 
 A current-head lane run SHALL fail, rather than silently pass or silently
@@ -153,16 +148,15 @@ current-head lane failed), and how to re-run it locally.
   checks (FR-059, FR-060, FR-061) as its enforcement mechanisms.
 - [IT-013](../integration/IT-013-current-head-integration-lane.md) exercises
   this requirement end to end.
-- Repository Makefile `revendor`/`revendor-check` targets and the `QSPEC_CLONE`
-  convention, unchanged by this requirement.
 
 ## Status
 
 Specified and implemented under
-[#215](https://github.com/agent-ix/quire-spec-language/issues/215). Two design
-questions this requirement does not settle: where hosted CI runs the lane, and
-how QSpec artifacts would be sourced at head rather than at their currently
-vendored revision. Both are reported to the issue rather than decided here.
+[#215](https://github.com/agent-ix/quire-spec-language/issues/215). One design
+question this requirement does not settle: where hosted CI runs the lane. It
+is reported to the issue rather than decided here. QSpec artifacts are
+resolved from `agent-ix/quire-specification` by identity and revision; this
+lane does not additionally resolve them at head.
 
 A real run of `revision-log` against the three repositories' real current
 heads (#249 review) resolved QSL at `087fb4e5...`, quire-contract-ir at

@@ -327,8 +327,8 @@ checker's definition permissions. Their ownership is decided in #211.
   the single negotiation point, the four dispositions and the FR-331 accounting
   join. FR-331 carries the per-item `candidates`.
 - quire-specification FR-271 and FR-272 at catalog revision `1-draft.5` own
-  `invalid_capability` and the `unsupported_projection` causes. QSL re-vendors
-  that revision before #213 lands.
+  `invalid_capability` and the `unsupported_projection` causes. QSL's
+  reference moves to that revision before #213 lands.
 - [FR-036](FR-036-link-composed-native-packages.md) consumes the admitted pairs.
 - #213 implements the canonical `Capability` value type, the admission rules
   and the removal of backend reading from `requests::report`. #185 implements
