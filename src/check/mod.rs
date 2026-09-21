@@ -7,7 +7,8 @@
 //! public-accessor mechanism). The evaluation half -- `evaluate.rs`,
 //! `CheckedPackage::call`, `CheckedPackage::evaluate` and the
 //! argument-admission logic -- stays at layer 5 in
-//! [`crate::value::expression`] (S6a), reaching this module's state only
+//! `crate::value::expression` (a private module, not resolvable as an
+//! intra-doc link) (S6a), reaching this module's state only
 //! through the accessor methods below, never through a private field: the
 //! two modules no longer share private state (US-009).
 //!

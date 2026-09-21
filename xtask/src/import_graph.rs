@@ -446,7 +446,8 @@ const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
 pub enum ValueImportTier {
     /// Tier 1: unbounded imports from the nine K-designated siblings.
     KDesignated,
-    /// Tier 2: exactly the seven named items (see [`DECLARED_INTERIM_ITEMS`]).
+    /// Tier 2: exactly the seven named items (see this module's own
+    /// `DECLARED_INTERIM_ITEMS` constant).
     DeclaredInterim,
     /// Tier 3: forbidden -- anything else.
     Forbidden,
@@ -507,9 +508,9 @@ fn value_submodule_reexports(
 /// Unlike [`check_module_violations`] (TC-172/AC-3, deliberately stricter:
 /// `check` must import nothing from `value::expression` at all, in test code
 /// or not, so a `check`-side test can never quietly reopen that edge) and
-/// [`model_check_edges`] (TC-176), this scan uses
-/// [`shipped_use_edges_in_file`], not [`use_edges_in_file`], and so excludes
-/// `#[cfg(test)]`-gated imports. FR-068-AC-6's tier bound constrains `check`'s
+/// [`model_check_edges`] (TC-176), this scan uses this module's own
+/// `shipped_use_edges_in_file` helper, not `use_edges_in_file`, and so
+/// excludes `#[cfg(test)]`-gated imports. FR-068-AC-6's tier bound constrains `check`'s
 /// dependency on `value` as a layering property of the *shipped* crate; a
 /// test-only import is not part of that dependency graph, and admitting one
 /// into the tier-2 allow-list to make a test pass would permanently license

@@ -241,8 +241,8 @@ pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
 /// requirement names explicitly (see this module's own doc, "Scope of what
 /// this catches"). A `#[cfg(test)] mod tests { ... }` block is test
 /// scaffolding, not a compiled-in production module the requirement is
-/// concerned with, so it is excluded the same way [`DefScanner`] excludes
-/// `#[cfg(test)]` items elsewhere in this file.
+/// concerned with, so it is excluded the same way this module's own
+/// `DefScanner` excludes `#[cfg(test)]` items elsewhere in this file.
 pub fn mod_declarations(workspace_root: &Path, relative: &str) -> Result<Vec<String>> {
     let parsed = parse_file(workspace_root, relative)?;
     Ok(parsed
