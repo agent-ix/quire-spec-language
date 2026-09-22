@@ -10,13 +10,32 @@ qualifies against (`quire.value.text.unicode-17.0.0/v1` and the rest of
 by identity and revision, not held as local content.
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the
-cycle-free `quire-contract-model` package at
+cycle-free `quire-contract-model` package, initially at
 `53cc03c639e2e26528132d34d96dc56449df78e8`, retaining its declared
 `MIT OR Apache-2.0` grant. The compatibility `quire-contract-ir` package at
 `04eb6f849c03be23177d373549c6c272551f957d` is now explicitly named
 `quire-contract-ir-historical` and is development-only for the already retained
 code-generation fixtures. No source is copied, and the production graph does
 not contain that compatibility package.
+
+QSL-6 (M-4) bumps the same key to `dbb2e22d577b56fed5c27e81e584370acdf02512`
+(origin/main at the time of the bump), the first revision to carry
+`checked_package::v2` (`read_checked_package`, `CheckedPackageV2`,
+`CheckedPackageIdentityPreimageV2`, `CheckedPackageRefusalCode`). Unlike the
+prior pin, this revision is `AGPL-3.0-or-later` (relicensed in IR #94, not
+`MIT OR Apache-2.0`), and it newly pulls `quire-verification-contracts` at
+`2e06cf5b959bc325a0231329a0e3a223ea2c2606` (also `AGPL-3.0-or-later`) plus
+typify, schemars, jsonschema 0.55 and chrono into the lock. QSL's own I2
+reader (`src/package/checked_v2.rs`) delegates envelope parsing and
+`package_id` recompute to IR's typed structs rather than re-declaring
+FR-322's `quire.checked-package/v2` vocabulary; QSL-6's emitter slice does the
+same for emitting (agent-ix/quire-spec-language#297). This bump locks 38 new
+packages in total (jsonschema 0.55's own dependency tree -- `referencing`,
+`jsonschema-regex`, `jsonschema-value`, `regress`, `fancy-regex` 0.19.2 and
+the rest -- plus typify/schemars codegen support and IR's own
+`quire-verification-contracts`), all now recorded below, including two grant
+kinds new to this inventory: `MIT-0` (`borrow-or-share` 0.2.4) and `Zlib`
+(`foldhash` 0.2.0). None introduces a copyleft term.
 
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
@@ -34,7 +53,7 @@ for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
 the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
 for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
-The lock now selects 198 packages including this crate, optional and target-specific
+The lock now selects 248 packages including this crate, optional and target-specific
 dependencies. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
 FR-030 adds optional quire-rs 0.46.0, pinned at
@@ -106,39 +125,51 @@ Python, JavaScript or shell qualification helper is introduced.
 | --- | --- | --- |
 | ahash | 0.8.12 | `MIT OR Apache-2.0` |
 | aho-corasick | 1.1.5 | `Unlicense OR MIT` |
+| allocator-api2 | 0.2.21 | `MIT OR Apache-2.0` |
 | anyhow | 1.0.104 | `MIT OR Apache-2.0` |
 | ar_archive_writer | 0.5.3 | `Apache-2.0 WITH LLVM-exception` |
 | autocfg | 1.5.1 | `Apache-2.0 OR MIT` |
 | base64 | 0.21.7 | `MIT OR Apache-2.0` |
 | base64 | 0.22.1 | `MIT OR Apache-2.0` |
 | bit-set | 0.5.3 | `MIT/Apache-2.0` |
+| bit-set | 0.8.0 | `Apache-2.0 OR MIT` |
 | bit-vec | 0.6.3 | `MIT/Apache-2.0` |
+| bit-vec | 0.8.0 | `Apache-2.0 OR MIT` |
 | bitflags | 2.13.1 | `MIT OR Apache-2.0` |
 | block-buffer | 0.10.4 | `MIT OR Apache-2.0` |
+| borrow-or-share | 0.2.4 | `MIT-0` |
 | bstr | 1.13.1 | `MIT OR Apache-2.0` |
 | bumpalo | 3.20.3 | `MIT OR Apache-2.0` |
 | bytecount | 0.6.9 | `Apache-2.0/MIT` |
 | cc | 1.4.5 | `MIT OR Apache-2.0` |
 | cfg-if | 1.0.4 | `MIT OR Apache-2.0` |
+| chrono | 0.4.45 | `MIT OR Apache-2.0` |
 | cpufeatures | 0.2.17 | `MIT OR Apache-2.0` |
 | crossbeam-deque | 0.8.8 | `MIT OR Apache-2.0` |
 | crossbeam-epoch | 0.9.21 | `MIT OR Apache-2.0` |
 | crossbeam-utils | 0.8.23 | `MIT OR Apache-2.0` |
 | crypto-common | 0.1.7 | `MIT OR Apache-2.0` |
+| data-encoding | 2.11.1 | `MIT` |
 | deranged | 0.5.8 | `MIT OR Apache-2.0` |
 | digest | 0.10.7 | `MIT OR Apache-2.0` |
 | displaydoc | 0.2.7 | `MIT OR Apache-2.0` |
+| dyn-clone | 1.0.20 | `MIT OR Apache-2.0` |
 | either | 1.18.0 | `MIT OR Apache-2.0` |
+| email_address | 0.2.9 | `MIT` |
 | equivalent | 1.0.2 | `Apache-2.0 OR MIT` |
 | errno | 0.3.14 | `MIT OR Apache-2.0` |
 | fancy-regex | 0.11.0 | `MIT` |
 | fancy-regex | 0.13.0 | `MIT` |
+| fancy-regex | 0.19.2 | `MIT` |
 | fastrand | 2.5.0 | `Apache-2.0 OR MIT` |
 | find-msvc-tools | 0.1.12 | `MIT OR Apache-2.0` |
+| fluent-uri | 0.4.1 | `MIT` |
 | fnv | 1.0.7 | `Apache-2.0 / MIT` |
+| foldhash | 0.2.0 | `Zlib` |
 | form_urlencoded | 1.2.2 | `MIT OR Apache-2.0` |
 | fraction | 0.13.1 | `MIT/Apache-2.0` |
 | fraction | 0.15.4 | `MIT OR Apache-2.0` |
+| fraction | 0.17.0 | `MIT OR Apache-2.0` |
 | futures-core | 0.3.34 | `MIT OR Apache-2.0` |
 | futures-task | 0.3.34 | `MIT OR Apache-2.0` |
 | futures-util | 0.3.34 | `MIT OR Apache-2.0` |
@@ -148,6 +179,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | getrandom | 0.3.4 | `MIT OR Apache-2.0` |
 | getrandom | 0.4.3 | `MIT OR Apache-2.0` |
 | globset | 0.4.20 | `Unlicense OR MIT` |
+| hashbrown | 0.16.1 | `MIT OR Apache-2.0` |
 | hashbrown | 0.17.1 | `MIT OR Apache-2.0` |
 | icu_collections | 2.3.0 | `Unicode-3.0` |
 | icu_locale_core | 2.3.0 | `Unicode-3.0` |
@@ -166,6 +198,9 @@ Python, JavaScript or shell qualification helper is introduced.
 | js-sys | 0.3.105 | `MIT OR Apache-2.0` |
 | jsonschema | 0.17.1 | `MIT` |
 | jsonschema | 0.18.3 | `MIT` |
+| jsonschema | 0.55.1 | `MIT` |
+| jsonschema-regex | 0.55.1 | `MIT` |
+| jsonschema-value | 0.55.1 | `MIT` |
 | lazy_static | 1.5.0 | `MIT OR Apache-2.0` |
 | libc | 0.2.189 | `MIT OR Apache-2.0` |
 | linux-raw-sys | 0.12.1 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
@@ -178,6 +213,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | loom | 0.7.2 | `MIT` |
 | matchers | 0.2.0 | `MIT` |
 | memchr | 2.8.3 | `Unlicense OR MIT` |
+| micromap | 0.3.0 | `MIT` |
 | nom | 8.0.0 | `MIT` |
 | nu-ansi-term | 0.50.3 | `MIT` |
 | num | 0.4.3 | `MIT OR Apache-2.0` |
@@ -191,6 +227,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | num-traits | 0.2.19 | `MIT OR Apache-2.0` |
 | object | 0.39.1 | `Apache-2.0 OR MIT` |
 | once_cell | 1.21.4 | `MIT OR Apache-2.0` |
+| outref | 0.5.2 | `MIT` |
 | parking_lot | 0.12.5 | `MIT OR Apache-2.0` |
 | parking_lot_core | 0.9.12 | `MIT OR Apache-2.0` |
 | percent-encoding | 2.3.2 | `MIT OR Apache-2.0` |
@@ -200,30 +237,42 @@ Python, JavaScript or shell qualification helper is introduced.
 | proc-macro2 | 1.0.107 | `MIT OR Apache-2.0` |
 | psm | 0.1.32 | `MIT OR Apache-2.0` |
 | quire-contract-codegen | 0.1.0 | `MIT OR Apache-2.0` |
-| quire-contract-model | 0.1.0 | `MIT OR Apache-2.0` |
+| quire-contract-model | 0.1.0 | `AGPL-3.0-or-later` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-rs | 0.46.0 | `AGPL-3.0-or-later` |
 | quire-spec-language | 0.2.0 | `AGPL-3.0-or-later` |
+| quire-verification-contracts | 0.1.0 | `AGPL-3.0-or-later` |
 | quote | 1.0.47 | `MIT OR Apache-2.0` |
 | r-efi | 5.3.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | r-efi | 6.0.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | rayon | 1.12.0 | `MIT OR Apache-2.0` |
 | rayon-core | 1.13.0 | `MIT OR Apache-2.0` |
 | redox_syscall | 0.5.18 | `MIT` |
+| ref-cast | 1.0.27 | `MIT OR Apache-2.0` |
+| ref-cast-impl | 1.0.27 | `MIT OR Apache-2.0` |
+| referencing | 0.55.1 | `MIT` |
 | regex | 1.13.1 | `MIT OR Apache-2.0` |
 | regex-automata | 0.4.18 | `MIT OR Apache-2.0` |
 | regex-syntax | 0.8.11 | `MIT OR Apache-2.0` |
+| regress | 0.11.1 | `MIT OR Apache-2.0` |
 | rustix | 1.1.4 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
 | rustversion | 1.0.23 | `MIT OR Apache-2.0` |
 | ryu | 1.0.23 | `Apache-2.0 OR BSL-1.0` |
+| ryu-js | 1.0.3 | `Apache-2.0 OR BSL-1.0` |
 | same-file | 1.0.6 | `Unlicense/MIT` |
+| schemars | 0.8.22 | `MIT` |
+| schemars_derive | 0.8.22 | `MIT` |
 | scoped-tls | 1.0.1 | `MIT/Apache-2.0` |
 | scopeguard | 1.2.0 | `MIT OR Apache-2.0` |
+| semver | 1.0.28 | `MIT OR Apache-2.0` |
 | serde | 1.0.228 | `MIT OR Apache-2.0` |
 | serde_core | 1.0.228 | `MIT OR Apache-2.0` |
 | serde_derive | 1.0.228 | `MIT OR Apache-2.0` |
+| serde_derive_internals | 0.29.1 | `MIT OR Apache-2.0` |
 | serde_json | 1.0.151 | `MIT OR Apache-2.0` |
+| serde_json_canonicalizer | 0.3.2 | `MIT` |
 | serde_stacker | 0.1.11 | `MIT OR Apache-2.0` |
+| serde_tokenstream | 0.2.3 | `Apache-2.0` |
 | serde_yaml | 0.9.34+deprecated | `MIT OR Apache-2.0` |
 | sha2 | 0.10.9 | `MIT OR Apache-2.0` |
 | sharded-slab | 0.1.7 | `MIT` |
@@ -232,6 +281,8 @@ Python, JavaScript or shell qualification helper is introduced.
 | smallvec | 1.16.0 | `MIT OR Apache-2.0` |
 | stable_deref_trait | 1.2.1 | `MIT OR Apache-2.0` |
 | stacker | 0.1.15 | `MIT OR Apache-2.0` |
+| strum | 0.28.0 | `MIT` |
+| strum_macros | 0.28.0 | `MIT` |
 | syn | 2.0.119 | `MIT OR Apache-2.0` |
 | syn | 3.0.5 | `MIT OR Apache-2.0` |
 | synstructure | 0.13.2 | `MIT` |
@@ -250,14 +301,20 @@ Python, JavaScript or shell qualification helper is introduced.
 | tracing-log | 0.2.0 | `MIT` |
 | tracing-subscriber | 0.3.23 | `MIT` |
 | typenum | 1.20.1 | `MIT OR Apache-2.0` |
+| typify | 0.7.0 | `Apache-2.0` |
+| typify-impl | 0.7.0 | `Apache-2.0` |
+| typify-macro | 0.7.0 | `Apache-2.0` |
+| unicode-general-category | 1.1.0 | `Apache-2.0` |
 | unicode-ident | 1.0.24 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
 | unicode-normalization | 0.1.25 | `MIT OR Apache-2.0` |
 | unsafe-libyaml | 0.2.11 | `MIT` |
 | url | 2.5.8 | `MIT OR Apache-2.0` |
 | utf8_iter | 1.0.4 | `Apache-2.0 OR MIT` |
 | uuid | 1.26.0 | `Apache-2.0 OR MIT` |
+| uuid-simd | 0.8.0 | `MIT` |
 | valuable | 0.1.1 | `MIT` |
 | version_check | 0.9.5 | `MIT/Apache-2.0` |
+| vsimd | 0.8.0 | `MIT` |
 | walkdir | 2.5.0 | `Unlicense/MIT` |
 | wasi | 0.11.1+wasi-snapshot-preview1 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
 | wasip2 | 1.0.4+wasi-0.2.12 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
