@@ -70,7 +70,7 @@ use std::convert::Infallible;
 use quire_contract_ir::{CheckedPackageIdentityPreimageV2, CheckedSelection};
 
 use crate::check::CheckedGraph;
-use crate::Code;
+use qsl_foundation::Code;
 
 use super::CheckedPackage;
 
