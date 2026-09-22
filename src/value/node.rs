@@ -26,8 +26,8 @@ pub use quire_exact::NODE_KEY_DOMAIN;
 /// states it retires hex parsing and hashing from the kernel by design
 /// (`from_digest` is its one public constructor, wrapping an
 /// already-computed digest; QSL's own hex parsing and SHA-256 hashing stay
-/// here). This type's [`Self::from_hex`], [`Self::from_bytes`] and
-/// [`Self::of`] are exactly the retired capability, still load-bearing here
+/// here). This type's `from_hex`, `from_bytes` and `of` are exactly the
+/// retired capability, still load-bearing here
 /// (production callers in `value::model_query`/`value::member`, and every
 /// `it` fixture that builds a `NodeKey` from a literal digest), so widening
 /// `quire_exact::node::NodeKey` back out to cover them would undo that
