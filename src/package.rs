@@ -3,8 +3,8 @@
 //! identity (SEAM-1, ADR-011 §6.2, retired at M-6). The layer-4 canonical
 //! [`crate::checked_package::CheckedPackage`]/
 //! [`crate::checked_package::EmittedPackage`] typestate (ADR-013 T-1,
-//! FR-087, QSL-158 S-3a) was split out into the sibling `checked_package`
-//! module by QSL-182 prep and no longer lives here: this file's own
+//! FR-087, QSL-158 S-3a) lives in the sibling `checked_package` module
+//! until X-7 extracts it into `qsl-package` (Linear QSL-182): this file's own
 //! top-level `NativePackage` wraps the lane-private
 //! `checking::CheckedPackage<'a>` (ADR-013 §6), an unrelated type
 //! referenced here by its full path so it is never confused with
