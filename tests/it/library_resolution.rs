@@ -12,8 +12,8 @@ use quire_spec_language::diagnostic::Code;
 use quire_spec_language::digest::WireNodeId;
 use quire_spec_language::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
-    LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect, Selection,
-    StaleCause,
+    LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
+    RefusalClass, Selection, StaleCause,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -192,10 +192,37 @@ fn assert_library_refusal(
     assert_eq!((refusal.code(), refusal.cause()), (code, cause));
 }
 
+/// Assert a library refusal's complete record, code, cause and TC-282
+/// classification (FR-087-AC-12): unlike `assert_library_refusal`, this also
+/// asserts `LibraryRefusal::class()` itself, not only the function name
+/// each TC-282 fixture is written under.
+fn assert_library_refusal_classified(
+    outcome: Result<impl std::fmt::Debug, LibraryRefusal>,
+    expected: &LibraryRefusal,
+    code: Code,
+    cause: LibraryCause,
+    class: RefusalClass,
+) {
+    let refusal = outcome.unwrap_err();
+    assert_eq!(&refusal, expected);
+    assert_eq!((refusal.code(), refusal.cause()), (code, cause));
+    assert_eq!(refusal.class(), class);
+}
+
 #[trace("TC-227", "FR-307-AC-1")]
 #[test]
 fn l01_an_import_binds_the_library_package_id() {
-    resolve_libraries(&over_l("P", "1", id("L@1")), &[library_l()]).unwrap();
+    let lock = resolve_libraries(&over_l("P", "1", id("L@1")), &[library_l()]).unwrap();
+    assert_eq!(
+        lock.selections(),
+        [(
+            name("L"),
+            Selection {
+                version: "1".to_owned(),
+                package_id: id("L@1"),
+            }
+        )]
+    );
 
     let raw_source = PackageId::of_preimage(b"library L version 1 { R }");
     let by_bytes = over_l("P", "1", raw_source);
@@ -253,6 +280,7 @@ fn diamond_root() -> LibraryPackage {
 
 #[trace("TC-227", "FR-307-AC-1")]
 #[trace("TC-227", "FR-307-AC-2")]
+#[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l04_a_diamond_unifies_only_one_version_and_package_id() {
     let root = diamond_root();
@@ -276,7 +304,9 @@ fn l04_a_diamond_unifies_only_one_version_and_package_id() {
             library_l(),
             package("L", version, label, Vec::new()),
         ];
-        assert_library_refusal(
+        // TC-282 (FR-087-AC-12): `ConflictingDefinition` classifies to
+        // ADR-011 I2's second rule.
+        assert_library_refusal_classified(
             resolve_libraries(&root, &supplied),
             &LibraryRefusal::ConflictingDefinition {
                 library: name("L"),
@@ -284,12 +314,13 @@ fn l04_a_diamond_unifies_only_one_version_and_package_id() {
             },
             Code::InvalidPackage,
             LibraryCause::ConflictingDefinition,
+            RefusalClass::I2Rule(2),
         );
     }
 }
 
 #[trace("TC-227", "FR-307-AC-2")]
-#[trace("TC-227", "FR-307-AC-4")]
+#[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
     let a = package(
@@ -304,13 +335,16 @@ fn l05_an_import_cycle_lists_its_dependency_edges() {
         "B@1",
         vec![import("A", "1", id("A@1"), Some("a"))],
     );
-    assert_library_refusal(
+    // TC-282 (FR-087-AC-12): `ImportCycle` classifies to ADR-011 I2's third
+    // rule.
+    assert_library_refusal_classified(
         resolve_libraries(&a, &[a.clone(), b]),
         &LibraryRefusal::ImportCycle {
             cycle: path(&["A", "B", "A"]),
         },
         Code::InvalidPackage,
         LibraryCause::DefinitionCycle,
+        RefusalClass::I2Rule(3),
     );
 }
 
@@ -1010,14 +1044,22 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
 // binding's condition 2 or 3, or E3 name resolution -- with
 // `DuplicatePackageId` the one named exception. One fixture per row of the
 // classification table (Description, item 3, owner ruling (e)); ten rows,
-// `StaleDependency`'s two causes counted separately.
+// `StaleDependency`'s two causes counted separately. `ConflictingDefinition`
+// (I2 rule 2) and `ImportCycle` (I2 rule 3) reuse l04's and l05's own
+// fixtures above (their own `assert_library_refusal_classified` calls)
+// rather than a second, duplicate fixture here for a scenario already
+// built.
+//
+// Every assertion below calls `assert_library_refusal_classified`, which
+// asserts `LibraryRefusal::class()` itself (FR-087-AC-12's actual claim),
+// not only the function name each fixture is written under.
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn package_id_mismatch_classifies_to_4_condition_2() {
     let mut reused = package("L", "1", "L'@1", Vec::new());
     reused.package_id = id("L@1");
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&over_l("P", "1", id("L@1")), std::slice::from_ref(&reused)),
         &LibraryRefusal::PackageIdMismatch {
             library: name("L"),
@@ -1026,6 +1068,7 @@ fn package_id_mismatch_classifies_to_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
+        RefusalClass::BindingCondition(2),
     );
 }
 
@@ -1035,7 +1078,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
     let mut wrong_version = preimage_value(projection("L@1"));
     wrong_version["version"] = json!("quire.checked-package-id/v1");
     let malformed = with_preimage(jcs(&wrong_version), &["R"]);
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(
             &over_l("P", "1", malformed.package_id),
             std::slice::from_ref(&malformed),
@@ -1046,6 +1089,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
+        RefusalClass::BindingCondition(2),
     );
 }
 
@@ -1053,7 +1097,7 @@ fn invalid_preimage_classifies_alongside_4_condition_2() {
 #[test]
 fn undeclared_export_classifies_alongside_4_condition_2() {
     let malformed = with_preimage(preimage("L@1"), &["Missing"]);
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(
             &over_l("P", "1", malformed.package_id),
             std::slice::from_ref(&malformed),
@@ -1064,6 +1108,7 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
         },
         Code::MissingDeclaration,
         LibraryCause::UndeclaredExport,
+        RefusalClass::BindingCondition(2),
     );
 }
 
@@ -1076,66 +1121,21 @@ fn invalid_qualifier_classifies_to_e3_name_resolution() {
         "P@1",
         vec![import("L", "1", id("L@1"), Some("1l"))],
     );
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&root, &[library_l()]),
         &LibraryRefusal::InvalidQualifier {
             path: path(&["P", "L"]),
         },
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
-    );
-}
-
-#[trace("TC-282", "FR-087-AC-12")]
-#[test]
-fn conflicting_definition_classifies_to_i2_rule_2() {
-    let root = diamond_root();
-    let supplied = [
-        over_l("A", "1", id("L@1")),
-        over_l("B", "2", id("L@2")),
-        library_l(),
-        package("L", "2", "L@2", Vec::new()),
-    ];
-    assert_library_refusal(
-        resolve_libraries(&root, &supplied),
-        &LibraryRefusal::ConflictingDefinition {
-            library: name("L"),
-            paths: [path(&["P", "A", "L"]), path(&["P", "B", "L"])],
-        },
-        Code::InvalidPackage,
-        LibraryCause::ConflictingDefinition,
-    );
-}
-
-#[trace("TC-282", "FR-087-AC-12")]
-#[test]
-fn import_cycle_classifies_to_i2_rule_3() {
-    let a = package(
-        "A",
-        "1",
-        "A@1",
-        vec![import("B", "1", id("B@1"), Some("b"))],
-    );
-    let b = package(
-        "B",
-        "1",
-        "B@1",
-        vec![import("A", "1", id("A@1"), Some("a"))],
-    );
-    assert_library_refusal(
-        resolve_libraries(&a, &[a.clone(), b]),
-        &LibraryRefusal::ImportCycle {
-            cycle: path(&["A", "B", "A"]),
-        },
-        Code::InvalidPackage,
-        LibraryCause::DefinitionCycle,
+        RefusalClass::E3NameResolution,
     );
 }
 
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
@@ -1144,6 +1144,7 @@ fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
         },
         Code::StaleDependency,
         LibraryCause::RevisionMismatch,
+        RefusalClass::BindingCondition(3),
     );
 }
 
@@ -1151,7 +1152,7 @@ fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
 #[test]
 fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
     let raw_source = PackageId::of_preimage(b"library L version 1 { R }");
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&over_l("P", "1", raw_source), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
@@ -1160,6 +1161,7 @@ fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
         },
         Code::StaleDependency,
         LibraryCause::ByteDigestMismatch,
+        RefusalClass::I2Rule(1),
     );
 }
 
@@ -1172,13 +1174,14 @@ fn missing_import_classifies_to_i2_rule_1() {
         "P@1",
         vec![import("Z", "1", id("Z@1"), Some("z"))],
     );
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&root, &[]),
         &LibraryRefusal::MissingImport {
             path: path(&["P", "Z"]),
         },
         Code::MissingImport,
         LibraryCause::MissingSelection,
+        RefusalClass::I2Rule(1),
     );
 }
 
@@ -1191,10 +1194,11 @@ fn duplicate_package_id_is_the_named_exception_outside_all_four() {
     let root = package("P", "1", "P@1", Vec::new());
     let first = package("L", "1", "L@1", Vec::new());
     let second = package("L", "2", "L@1", Vec::new());
-    assert_library_refusal(
+    assert_library_refusal_classified(
         resolve_libraries(&root, &[first, second]),
         &LibraryRefusal::DuplicatePackageId(id("L@1")),
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
+        RefusalClass::SuppliedPoolPrecondition,
     );
 }
