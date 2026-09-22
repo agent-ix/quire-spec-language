@@ -82,15 +82,12 @@ pub struct CheckedPackage {
 impl CheckedPackage {
     /// The S4 link step (ADR-013 T-1): the sole conversion from
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked
-    /// typestate -- a `CheckedGraph` -- never by an unchecked or
-    /// wire-admitted value (R-10). The dependency closure starts empty:
-    /// no #213 slice before S-3a gives the checker an import syntax to
-    /// populate it from. M-4 adds the dependency-bearing step
-    /// (`pub(crate)`, with verification) when it lands.
-    pub fn link(graph: CheckedGraph) -> Self {
+    /// typestate -- a `CheckedGraph` and other `CheckedPackage`s -- never by
+    /// an unchecked or wire-admitted value (R-10).
+    pub fn link(graph: CheckedGraph, dependencies: BTreeMap<PackageId, CheckedPackage>) -> Self {
         Self {
             graph,
-            dependencies: BTreeMap::new(),
+            dependencies,
         }
     }
 

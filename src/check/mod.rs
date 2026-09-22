@@ -136,8 +136,8 @@ pub use checked_dispatch::{
 pub use field_refinement::check_field_refinement_obligation;
 pub use identity::{
     mint_type_declaration_identity, mint_variant_id, to_kernel_value_type, CheckedClauseKind,
-    CheckedTypeNode, EmptyQualifiedName, Frame, FrameSubjects, ModelCorrespondence, QualifiedName,
-    ResolvedFrameSubjects, ScalarShape, SumVariant,
+    CheckedTypeNode, Frame, FrameSubjects, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape,
+    SumVariant,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{

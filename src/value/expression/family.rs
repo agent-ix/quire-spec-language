@@ -536,7 +536,8 @@ mod family_contract_tests {
             .expect("f is declared in this package");
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
-        let package = crate::package::CheckedPackage::link(graph);
+        let package =
+            crate::package::CheckedPackage::link(graph, std::collections::BTreeMap::new());
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {
@@ -1140,6 +1141,34 @@ mod tests {
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
         assert_eq!(decoded, vec![(name, after_check)]);
+    }
+
+    /// ADR-013 O-11/FR-088-AC-6: a [`QualifiedName`] is a declared preimage
+    /// component, never an identity in its own right. Two entries that
+    /// share an equal qualified name but were minted for different
+    /// declarations carry different node ids, and a v2 round trip keeps
+    /// both pairs distinct rather than collapsing them onto their shared
+    /// name.
+    #[trace("TC-258", "FR-088-AC-6")]
+    #[test]
+    fn equal_qualified_names_do_not_collapse_distinct_declarations() {
+        let name = QualifiedName::unqualified("f").unwrap();
+        let first = mint_declaration_identity(
+            DEFAULT_PACKAGE_IDENTITY,
+            &declaration("f", Expression::Boolean(true)),
+        );
+        let second = mint_declaration_identity(
+            "other-package@1.0.0",
+            &declaration("f", Expression::Boolean(true)),
+        );
+        assert_ne!(
+            first, second,
+            "distinct declarations must not share a node id"
+        );
+
+        let bytes = emit_v2(&[(name.clone(), first), (name.clone(), second)]);
+        let decoded = decode_v2(&bytes).unwrap();
+        assert_eq!(decoded, vec![(name.clone(), first), (name, second)]);
     }
 
     /// F16 (rust-review, pre-handoff pass): `#[serde(deny_unknown_fields)]`

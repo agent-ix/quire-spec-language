@@ -25,13 +25,11 @@
 //! This module (`identity`) is a private submodule of `check` (declared
 //! `mod identity;`, not `pub mod`), so no path outside `crate::check` can
 //! name anything in it directly. [`check::mod`](super) re-exports the
-//! public shapes below at `crate::check`'s own surface, but deliberately
-//! never re-exports [`resolve_qualified_name`]: that function is reachable
-//! only from inside `crate::check` and its descendants, matching R-06's "no
-//! name -> identity lookup exists after the check stage" (FR-088-AC-5).
-//! `CheckedGraph` itself (`super::CheckedGraph`) exposes only a
-//! node-id-keyed accessor for the model correspondence
-//! ([`CheckedGraph::resolve_declaration`]), never a name-keyed one.
+//! public shapes below at `crate::check`'s own surface. `CheckedGraph`
+//! itself (`super::CheckedGraph`) exposes only a node-id-keyed accessor for
+//! the model correspondence ([`CheckedGraph::resolve_declaration`]), never a
+//! name-keyed one, matching R-06's "no name -> identity lookup exists after
+//! the check stage" (FR-088-AC-5).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -238,55 +236,18 @@ impl Frame {
 // ---------------------------------------------------------------------
 // O-11: qualified names
 // ---------------------------------------------------------------------
-
-/// ADR-013 O-11: a non-empty sequence of identifiers. A declared component
-/// of an identity preimage (see [`mint_type_declaration_identity`]), never
-/// an identity in its own right (FR-088-AC-6): two declarations with equal
-/// qualified names but different node ids are different declarations,
-/// compared by node id, never by this type alone.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct QualifiedName(Vec<Identifier>);
-
-/// A [`QualifiedName`] built from zero identifiers, which O-11 forbids ("a
-/// non-empty sequence of identifiers").
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("a qualified name must name at least one identifier")]
-pub struct EmptyQualifiedName;
-
-impl QualifiedName {
-    /// `segments`, most significant first, as a qualified name; refuses an
-    /// empty sequence.
-    pub fn new(segments: Vec<Identifier>) -> Result<Self, EmptyQualifiedName> {
-        if segments.is_empty() {
-            Err(EmptyQualifiedName)
-        } else {
-            Ok(Self(segments))
-        }
-    }
-
-    /// This name's own identifier sequence.
-    pub fn segments(&self) -> &[Identifier] {
-        &self.0
-    }
-}
-
-/// ADR-013 R-06/O-11: the checker's own name -> node id resolution.
-/// Confined to the check stage by construction, not by a runtime check:
-/// this module is private (see the module doc's "Confinement" section), so
-/// no path outside `crate::check` can name this function, and it is never
-/// re-exported from `crate::check`'s own public surface (FR-088-AC-5).
-/// `#[cfg(test)]`: no #213 slice before S-3b gives the checker a real
-/// `QualifiedName`-keyed scope to resolve against yet (Complete-V1's own
-/// function names are flat, not qualified), so this function's only caller
-/// today is this module's own test below -- honestly scoped the same way
-/// `check::family::mint_declaration_identity` is (see that item's own doc).
-#[cfg(test)]
-pub fn resolve_qualified_name(
-    scope: &BTreeMap<QualifiedName, NodeKey>,
-    name: &QualifiedName,
-) -> Option<NodeKey> {
-    scope.get(name).copied()
-}
+//
+// ADR-013 O-11 already has one canonical implementation in this crate:
+// `crate::value::expression::family::QualifiedName` (layer 5, ADR-011),
+// which predates FR-088 (it is the layer-6 `replay`/`CheckedPackage::call`
+// function-selection key, FR-062/FR-065). This module does not define a
+// second `QualifiedName` type: FR-068-AC-3 forbids `check` (layer 3) from
+// importing `value::expression` (layer 5) at all, so a `check`-owned type
+// could never be the same type as that one, and a same-named but distinct
+// type here would only invite the two to be confused. `check` code that
+// needs a declared name sequence (`mint_type_declaration_identity` below)
+// takes a plain `&[Identifier]` instead -- the sequence itself, not a
+// wrapper claiming the O-11 name.
 
 // ---------------------------------------------------------------------
 // O-14/C-26: checked type descriptors and the kernel `ValueType` conversion
@@ -412,21 +373,21 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
 
 /// ADR-013 O-04/QC-18's package-scoped preimage, applied to a package type
 /// declaration (O-14): the declaring package's `name@version`, this
-/// declaration's own [`QualifiedName`] (a declared preimage component,
-/// O-11 -- never an identity by itself, FR-088-AC-6) and its declared
-/// shape tag. Two declarations differing in any of the three mint different
-/// node ids; the same three facts always mint the same node id
+/// declaration's own qualified name segments (a declared preimage
+/// component, O-11 -- never an identity by itself, FR-088-AC-6) and its
+/// declared shape tag. Two declarations differing in any of the three mint
+/// different node ids; the same three facts always mint the same node id
 /// (deterministic, content-addressed, FR-088-AC-7).
 pub fn mint_type_declaration_identity(
     package_identity: &str,
-    name: &QualifiedName,
+    name: &[Identifier],
     shape_tag: &str,
 ) -> NodeKey {
     let mut preimage = Preimage::new();
     preimage.write_str("checked-type-declaration");
     preimage.write_str(package_identity);
     preimage.write_str(shape_tag);
-    for segment in name.segments() {
+    for segment in name {
         preimage.write_str(segment.as_str());
     }
     NodeKey::from_digest(sha256(&preimage.0))
@@ -488,7 +449,11 @@ mod tests {
         let mut sorted = forward.clone();
         sorted.sort_unstable();
         sorted.dedup();
-        assert_eq!(sorted.len(), forward.len(), "forward collision: {forward:?}");
+        assert_eq!(
+            sorted.len(),
+            forward.len(),
+            "forward collision: {forward:?}"
+        );
         assert_eq!(
             CheckedClauseKind::from_wire_operation_identity("not-a-real-wire-string"),
             None
@@ -673,21 +638,16 @@ mod tests {
     #[trace("TC-258", "FR-088-AC-6")]
     #[test]
     fn equal_qualified_names_do_not_make_two_declarations_the_same_identity() {
-        let name = QualifiedName::new(vec![
+        let name = [
             Identifier::new("Order").unwrap(),
             Identifier::new("status").unwrap(),
-        ])
-        .unwrap();
+        ];
         let first = mint_type_declaration_identity("test/orders@1.0.0", &name, "composite_type");
         let second = mint_type_declaration_identity("test/billing@1.0.0", &name, "composite_type");
         assert_ne!(
             first, second,
             "equal qualified names must not collapse distinct declarations"
         );
-
-        let mut scope = BTreeMap::new();
-        scope.insert(name.clone(), first);
-        assert_eq!(resolve_qualified_name(&scope, &name), Some(first));
     }
 
     // -- O-14/C-26: type descriptors and the kernel conversion -------------
@@ -700,7 +660,7 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn package_type_identity_is_scoped_to_its_declaring_package() {
-        let name = QualifiedName::new(vec![Identifier::new("Order").unwrap()]).unwrap();
+        let name = [Identifier::new("Order").unwrap()];
         let a = mint_type_declaration_identity("test/orders@1.0.0", &name, "composite_type");
         let b = mint_type_declaration_identity("test/billing@1.0.0", &name, "composite_type");
         assert_ne!(a, b);
