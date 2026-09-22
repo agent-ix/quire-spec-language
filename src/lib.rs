@@ -23,6 +23,7 @@ pub mod format;
 pub mod forms;
 mod json_number;
 mod lexer;
+pub mod library;
 pub mod linking;
 pub mod located_json;
 pub mod lowering;

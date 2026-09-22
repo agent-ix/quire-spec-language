@@ -128,7 +128,7 @@ operational validation remains outside this audit-only plan.
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
 | TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Planned; QSL-158 |
 | TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | 🚧 Planned; QSL-158 |
-| TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | 🚧 Planned; QSL-158 |
+| TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | ✅ Passed locally |
 | TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158 |
 | TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Planned; QSL-158 |
 | TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | 🚧 Planned; QSL-158 |
@@ -147,7 +147,7 @@ operational validation remains outside this audit-only plan.
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
-| TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | 🚧 Planned; QSL-158 |
+| TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
 | TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
 | TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
 | TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | 🚧 Planned; QSL-131 |
@@ -163,8 +163,10 @@ operational validation remains outside this audit-only plan.
 [FR-088](../spec/functional/FR-088-clause-name-and-type-identity.md)
 (S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified under
 QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
-split. Neither is implemented yet; TC-243–260, TC-281 and TC-282 above are
-the corresponding test cases, all `🚧 Planned`. FR-087 also resolves, by owner
+split. TC-243–260 and TC-281 above are the corresponding test cases, all
+`🚧 Planned`, except TC-245 (`✅ Passed locally`, the `PackageNodeKey`
+equality test) and TC-282 (`✅ Passed locally`, `LibraryRefusal::class()`
+and its per-variant tests). FR-087 also resolves, by owner
 ruling on QSL-158 (2026-09-21), the `CheckedPackage`-placement half of
 QSL-167 (an
 ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4

@@ -15,15 +15,17 @@ use quire_exact::{
     ScalarLimits,
 };
 use quire_spec_language::complete::{self, CompleteCause, CompleteCode, Limits};
+use quire_spec_language::library::{
+    resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
+};
 use quire_spec_language::value::{
-    resolve_libraries, CollectionType, Component, CompositeDeclaration, CompositeShape,
-    ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator,
-    ExportIdentity, FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode,
-    GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, ImportDeclaration,
-    InvalidDeclaration, LibraryName, LibraryPackage, NameReference, NodeKey, ObjectEnvironment,
+    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration,
+    FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
+    IllTyped, IllTypedCause, InvalidDeclaration, NodeKey, ObjectEnvironment,
     ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, QualifiedName,
-    RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
+    ObjectTypeDeclaration, OptionValue, Outcome, Presence, QualifiedName, RecursionEdges,
+    TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
 };
 use quire_spec_language::SourceIdentity;
 use serde_json::json;
@@ -1165,7 +1167,19 @@ mod library_import {
         }
     }
 
-    #[trace("TC-188", "FR-143-AC-6")]
+    // FR-143-AC-6's own claim -- one library export reached by two import
+    // paths (A and B, both over L) evaluates as one declaration at the
+    // composite-value level -- is not backed here. FR-087 (#213 S-3a)
+    // relocated `resolve_name`/`ExportIdentity` out of `library` (name
+    // resolution is E3's own, over an `ImportView`, per ADR-013 R-06), and
+    // no E3 resolution exists yet to derive each path's own export node id
+    // for a real, independent comparison: the previous version of this test
+    // built both "paths'" `NodeKey`s from the same `declaration_key`
+    // variable, so its composite-value equality check compared a key with
+    // itself and could not have failed for any resolution defect. Left
+    // untraced (FR-143-AC-6 unbacked by this vector) until E3 exists to
+    // derive two real, independently-resolved node ids to compare.
+    #[trace("TC-227", "FR-307-AC-2")]
     #[test]
     fn r03_one_library_export_reached_by_two_paths_is_one_declaration() {
         let root = package("P", &["A", "B"], false);
@@ -1174,57 +1188,19 @@ mod library_import {
             package("B", &["L"], false),
             package("L", &[], true),
         ];
+        // `resolve_libraries` unifies the diamond into a single selection
+        // for `L` (TC-227 l04's own claim, re-demonstrated here over the
+        // real `value::library`... boundary this test module exercises).
         let lock = resolve_libraries(&root, &supplied).unwrap();
-        let reference = NameReference::Qualified {
-            qualifier: "l".to_owned(),
-            name: "R".to_owned(),
-        };
-        let [through_a, through_b]: [ExportIdentity; 2] =
-            ["A", "B"].map(|user| lock.resolve_name(&name(user), &reference).unwrap());
-        assert_eq!(through_a, through_b);
-        assert_eq!(through_a.node, NodeKey::from_hex(&hex("L")).unwrap());
-
-        let types = |declaration: NodeKey| {
-            TypeEnvironment::new(
-                [CompositeDeclaration::new(
-                    declaration,
-                    "R",
-                    CompositeShape::Record(vec![FieldDeclaration::new(
-                        "x",
-                        ValueType::Integer,
-                        Presence::Required,
-                    )]),
-                )],
-                [],
-            )
-            .unwrap()
-        };
-        let env = types(through_a.node);
-        let value = |env: &TypeEnvironment, declaration: NodeKey| {
-            env.record(
-                declaration,
-                vec![(
-                    "x",
-                    FieldValue::Present(Value::Integer(Integer::from(1_i64))),
-                )],
-            )
-            .unwrap()
-        };
-        let r_type = ValueType::Composite(through_b.node);
-        let checked = env
-            .check_equality(
-                EqualityOperator::Equal,
-                EqualityOperand::typed(ValueType::Composite(through_a.node)),
-                EqualityOperand::typed(r_type),
-            )
-            .unwrap();
+        let l_selections: Vec<_> = lock
+            .selections()
+            .into_iter()
+            .filter(|(library, _)| *library == name("L"))
+            .collect();
         assert_eq!(
-            checked.evaluate(
-                &value(&env, through_a.node),
-                &value(&types(through_b.node), through_b.node),
-                &mut Meter::new(UNLIMITED)
-            ),
-            Outcome::Completed(true)
+            l_selections.len(),
+            1,
+            "L is selected once despite two import paths"
         );
     }
 }

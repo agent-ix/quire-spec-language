@@ -17,7 +17,6 @@ mod checked;
 mod encoding;
 mod features;
 mod intake;
-mod node_key;
 mod reading;
 #[cfg(test)]
 mod tests;
@@ -25,7 +24,6 @@ mod view;
 mod wire;
 
 pub use checked::{CheckedPackage, EmittedPackage};
-pub use node_key::PackageNodeKey;
 pub use reading::{PackageReadLimits, PackageSupport};
 
 use std::fmt;
