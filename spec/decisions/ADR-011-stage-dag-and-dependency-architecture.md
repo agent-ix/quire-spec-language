@@ -129,9 +129,10 @@ Terms used below:
    between an unchecked and a checked object.
 5. CLI commands orchestrate stage APIs and return structured outcomes (§5).
 6. The module DAG in §6 and the crate DAG in §7 are the target dependency
-   architecture. Crate extraction follows the criteria in §7.2. The only crate
-   extraction this record approves is `quire-exact`, which AD-016 Owner
-   decision 2 already accepted.
+   architecture. Each §6.1 layer named in the §6.1 crate map is its own
+   workspace crate (§7.2). The crate extractions this record approves are `quire-exact`, which
+   AD-016 Owner decision 2 already accepted, and the §6.1 layer crates
+   (X-2 to X-10, QSL-177 to QSL-185).
 7. The four observed lanes converge or retire as §8 states. Every producer
    path other than the spine is deleted in the PR that lands its spine
    replacement; the checked-package producer lane goes before gate #216 (M-6).
@@ -597,7 +598,28 @@ enforces it; before #226, §3's interim rule applies.
 | tool | `complete::editor`, `complete::edit`, `format` | tooling over S1 | 1, F |
 | 6 | `replay` | the CG-facing replay facade: S1 to S4 recompile, then S6a. Its public API includes the #231 envelopes. | layers 1 to 5, F, K; I3 under feature `quire-extraction` |
 | 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `quire_source`; never CG |
-| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design) | orchestration across repositories | the QSL library and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
+| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design) | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
+
+Crate map. Layers F, 1, I3, 2, 3, 4, 5, R and the layer-6 `replay` facade are
+each their own workspace crate (§7.2). K is `quire-exact` (X-1). A layer
+crate's `[dependencies]` name only the layer crates and the external crates in
+its "Depends on" cell above.
+
+| Crate | Layer |
+|---|---|
+| `qsl-foundation` | F |
+| `qsl-cst` | 1 |
+| `qsl-source` | I3 |
+| `qsl-forms` | 2 |
+| `qsl-semantics` | 3 |
+| `qsl-package` | 4 |
+| `qsl-eval` | 5 |
+| `qsl-route` | R |
+| `qsl-replay` | 6 (`replay`) |
+
+The root crate, `quire-spec-language`, keeps `command`, `cli` and `main`, the
+tool modules, and every seam module (§6.2). A seam module stays in the root
+crate until its owning change deletes it there.
 
 Rules that close the ADR-010 OBS-016 cycles:
 
@@ -677,10 +699,11 @@ Rules that close the ADR-010 OBS-016 cycles:
   `route` reads the S4 capability report and computes candidate sets. It
   negotiates nothing per item. CG's per-item negotiation at E7 stays in CG.
 - **Families are modules, not crates.** Every family (ADR-012 §1) is a set of
-  modules inside the QSL library crate: a form builder under `forms`, a
-  checker under `check`, an emission arm under `package` and an evaluator
-  under `value::expression`. No family meets §7.2: none has a second consumer
-  or a build profile the QSL crate cannot give it.
+  modules inside its layers' crates: a form builder under `forms` in
+  `qsl-forms`, a checker under `check` in `qsl-semantics`, an emission arm
+  under `package` in `qsl-package` and an evaluator under `value::expression`
+  in `qsl-eval`. A crate holds one §6.1 layer, and a family spans layers
+  (§7.2).
 - **Family modules never depend on each other.** Inside each layer the order
   is core, then families. `CheckContext` (contents in ADR-012 §2) lives in the
   `check` core, beside the family checker trait. Each family checker module
@@ -766,28 +789,41 @@ Module table:
 ### 7.1 Target crate graph
 
 This extends the AD-016 crate graph. An arrow means "depends on". Only normal
-dependencies are drawn. Dev and test-time edges obey FB-11.
+dependencies are drawn. Dev and test-time edges obey FB-11. The QSL workspace
+box holds the root crate and the §6.1 layer crates; the edges between them are
+the §6.1 allow-list and are not drawn.
 
 ```mermaid
 flowchart BT
   QX[quire-exact in QSL repo]
-  QSL[quire-spec-language]
+  subgraph QSLW[QSL workspace]
+    QSL[quire-spec-language root]
+    QFO[qsl-foundation]
+    QCS[qsl-cst]
+    QSO[qsl-source]
+    QFM[qsl-forms]
+    QSE[qsl-semantics]
+    QPK[qsl-package]
+    QEV[qsl-eval]
+    QRO[qsl-route]
+    QRP[qsl-replay]
+  end
   CM[quire-contract-model in IR repo]
   IR[quire-contract-ir root]
   RT[quire-contract-runtime]
   CG[quire-contract-codegen]
   FCD[FCD semantic IR and extraction-frontend]
   QRS[quire-rs optional]
-  QSL --> QX
-  QSL --> CM
-  QSL --> FCD
-  QSL -.->|feature quire-extraction| QRS
+  QFO & QSO & QSE & QPK & QEV & QRO & QRP & QSL --> QX
+  QPK --> CM
+  QSE -->|model::intake only| FCD
+  QSO -.->|feature quire-extraction| QRS
   RT --> QX
   CG --> QX
   CG --> CM
   CG --> IR
   CG --> RT
-  CG -->|replay facade only| QSL
+  CG -->|replay facade only| QRP
   IR --> CM
 ```
 
@@ -799,7 +835,8 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6b with #217 |
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
-| CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5) | #217 (AD-016 WP9) |
+| CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
+| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map) | X-2 to X-10 (QSL-177 to QSL-185) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 
@@ -823,8 +860,9 @@ Rules:
 
 ### 7.2 Extraction criteria
 
-A module becomes its own crate only when all four of these hold. Size alone
-never justifies a crate.
+Each §6.1 layer named in the §6.1 crate map is its own workspace crate. A
+crate is extracted only when all three of these hold. Size alone never
+justifies a crate.
 
 1. **Stable responsibility.** It owns one stage or one foundation concern, with
    an accepted contract (this record, AD-016, or a #210 or #211 decision).
@@ -832,8 +870,14 @@ never justifies a crate.
    and output types, their refusals, and the operations over them.
 3. **Acyclic direction.** Its dependencies are strictly lower layers (§6.1),
    and none of its consumers is imported back.
-4. **Consumer need.** A second crate consumes it, or it needs a build profile
-   the host crate cannot give it (`no_std`, Kani, a footprint build).
+
+Each layer-crate extraction (X-2 to X-10, §7.3):
+
+- moves the layer's modules out of the root crate. No seam module moves.
+- repoints every caller, tests included, at the layer crate. The root crate
+  re-exports no moved item.
+- moves the tests that exercise only that layer into the layer crate's own
+  `tests/` directory.
 
 ### 7.3 Proposed extractions and module moves
 
@@ -904,6 +948,15 @@ is unstaffed**, blocking QSL-165.
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
 | M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
+| X-2 | Extract crate `qsl-foundation` (QSL-177) | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
+| X-3 | Extract crate `qsl-cst` (QSL-178) | 1 | the layer-1 modules' public items | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
+| X-4 | Extract crate `qsl-source` (QSL-179) | I3 | `quire_source`, with feature `quire-extraction` | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
+| X-5 | Extract crate `qsl-forms` (QSL-180) | 2 | the layer-2 modules' public items | after X-3, on the same condition | none: no root-crate re-export (§7.2) |
+| X-6 | Extract crate `qsl-semantics` (QSL-181) | 3 | the layer-3 modules' public items | after X-5, on the same condition | none: no root-crate re-export (§7.2) |
+| X-7 | Extract crate `qsl-package` (QSL-182) | 4 | the layer-4 modules' public items | after X-6, on the same condition | none: no root-crate re-export (§7.2) |
+| X-8 | Extract crate `qsl-eval` (QSL-183) | 5 | the layer-5 modules' public items | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
+| X-9 | Extract crate `qsl-route` (QSL-184) | R | `route` | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
+| X-10 | Extract crate `qsl-replay` (QSL-185) | 6 | the `replay` facade, including the #231 envelopes | after X-4 and X-8, on the same condition | none: no root-crate re-export (§7.2) |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
 a working path is removed before its replacement, and no window in which an
@@ -930,7 +983,7 @@ replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
 #216 is an owner ruling (2026-09-19); the coordinator amends the text of #216,
 #219 and #224 at the #212 consolidation (T-4).
 
-No other crate extraction is approved.
+The approved crate extractions are X-1 to X-10.
 
 ## 8. Lane convergence
 
@@ -990,8 +1043,8 @@ against the combined Layer 1 architecture.
 
 ## Answers to ADR-012 (#210) §13.1
 
-1. **Where the #185 candidate and routing steps run.** In the QSL library
-   crate, module `route` (layer R). The candidate step runs after S4 and before
+1. **Where the #185 candidate and routing steps run.** In crate `qsl-route`,
+   module `route` (layer R). The candidate step runs after S4 and before
    E7. The routing step runs after E7: it reads the FR-331 dispositions as wire
    and returns a `BackendId` per `supported` item. The orchestrating driver
    (T-13) builds the registry value and passes it in. CG `negotiate_*` settles
@@ -1002,8 +1055,9 @@ against the combined Layer 1 architecture.
    Owner decision 5), the driver is a separate crate downstream of CG; it
    cannot be the QSL package's own `main`. QSL #248 implements it, and #225
    accepts its design.
-3. **Families map to modules in one crate.** Every family is a set of modules
-   inside the QSL library crate. No family meets the §7.2 extraction criteria.
+3. **Families map to modules in their layers' crates.** Every family is a set
+   of modules inside the §6.1 layer crates. A crate holds one layer, and a
+   family spans layers (§6.1, §7.2).
 4. **`CheckContext` lives in the `check` core** (layer 3), beside the family
    checker trait. Family checker modules depend on the `check` core, never on
    each other (§6.1).
@@ -1101,6 +1155,7 @@ The owner delegated these to the #205 coordinator.
 | T-11 | Proof-stage acceptance (§2.3) as a proposed QSpec NFR binding RT and CG proof gates | QSpec |
 | T-12 | Proposed #215 scope amendment: backend direction check (FB-05, FB-11); the single API-surface check, which fails any caller outside these rules: (a) CG calls only the layer-6 `replay` facade (FB-05), (b) only QSL `check` calls the kernel `NodeKey` constructor (ADR-013 O-04), (c) only QSL `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05), (d) only QSL `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21); and duplicate-revision check on QSL's lock (§7.1). The API-surface check scans every crate that depends on `quire-exact`, and a `NodeKey`, `EffectiveId` or `PopulationId` constructor call outside QSL `check` and `model` fails it. #215 ships it as one reusable tool; RT runs it in its lint gate under agent-ix/quire-contract-runtime#56, and CG under agent-ix/quire-contract-codegen#89. Until then #216 and #219 check all four by inspection. | QSL #215 (issue text); agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89 run it |
 | T-13 | The orchestrating driver crate (§6.1 driver row; ADR-012 §7): S1 to S4 compile, E4 emit, the `route` candidate step, the pre-negotiation `BackendId` conversion (ADR-012 §7.2), E7 CG `negotiate_*`, the `route` routing step after E7, and CG generation with the returned `BackendId`s. #225 accepts its design. | QSL #248 |
+| T-14 | Repoint CG's normal dependency on QSL from the root crate `quire-spec-language` to `qsl-replay` (§7.1), after X-10 | agent-ix/quire-contract-codegen |
 
 ## Consequences
 

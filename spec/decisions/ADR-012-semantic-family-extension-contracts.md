@@ -128,7 +128,7 @@ and the stage hooks it implements.
 
 The "Reads checked types of" column is a semantic ordering, and it is a DAG.
 It is carried by types in the layer-3 `check` core, not by module imports.
-Families are modules in the one QSL crate, and each family module depends only
+Families are modules in the ADR-011 §6.1 layer crates, and each family module depends only
 on its layer's core and lower layers (ADR-011 §6.1). A checked type that one
 family produces and another family reads is defined in the `check` core. The
 producing family constructs it; the reading family matches on it. Everything
@@ -540,8 +540,9 @@ the table, independent of registration order.
   each affected crate with the feature and asserts that the set of rustc E0004
   locations equals a checked-in list of seam functions, no more and no fewer. It
   runs in the full gate. #214 builds it for S1–S4. Every S1–S4 enum and every
-  match site over it is in the one QSL crate (§1), so one probe build reports
-  them all. The seams that cross repositories are probed where their enums are
+  match site over it is in an ADR-011 §6.1 layer crate (§1). The probe builds
+  each crate that defines or matches an S1–S4 enum, and the union of their
+  E0004 locations is compared with the list. The seams that cross repositories are probed where their enums are
   defined: S5 in QSL, IR, RT and CG with #218; S6 by
   agent-ix/quire-contract-ir#141; S7 by #185 for the registry arm and by
   agent-ix/quire-contract-codegen#86 for the CG arm; S8 in IR with each backend
@@ -937,9 +938,9 @@ no preference order as the rule. #212 scenario 7 records this effect.
 
 | Question | ADR-011 answer, adopted here |
 |---|---|
-| Stage and crate of the #185 candidate and routing steps (§7.2) | the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7; CG `negotiate_*` settles |
+| Stage and crate of the #185 candidate and routing steps (§7.2) | crate `qsl-route`, module `route` (layer R), after ADR-011 S4 and before ADR-011 E7; CG `negotiate_*` settles |
 | No QSL library crate calls CG (§7.1) | confirmed; the orchestrating driver is a separate crate downstream of CG (ADR-011 T-13, #248) |
-| Family DAG placement (§1) | families are modules in the one QSL crate |
+| Family DAG placement (§1) | families are modules in their layers' crates (ADR-011 §6.1 crate map) |
 | `CheckContext` placement (§2) | the `check` core |
 
 ### 13.2 For #211 (answered by ADR-013, QSL PR #236)
