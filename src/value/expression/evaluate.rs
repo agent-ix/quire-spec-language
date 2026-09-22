@@ -11,12 +11,10 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
-use super::super::composite::{
-    retain_composite, CompositeShape, FieldValue, OptionValue, Value, ValueType,
-};
+use super::super::composite::{retain_composite, FieldValue, OptionValue, Value, ValueType};
 use super::super::decimal::{evaluate_decimal, DecimalLoss, DecimalType};
+use super::super::declaration::{operand_value, CompositeShape};
 use super::super::enumeration::compare_enum;
-use super::super::equality::operand_value;
 use super::super::ieee::{evaluate_ieee, ieee_to_exact, IeeeExactTarget};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup};
@@ -1488,9 +1486,9 @@ mod tests {
             .map(|entry| entry.effective_id)
             .expect("model.A has a type-level effective declaration");
         let node_a = crate::value::node::NodeKey::from_digest(*a.as_bytes());
-        let types = crate::value::composite::TypeEnvironment::new(
+        let types = crate::value::declaration::TypeEnvironment::new(
             [],
-            [crate::value::composite::ObjectTypeDeclaration::new(
+            [crate::value::declaration::ObjectTypeDeclaration::new(
                 node_a,
                 "M::A",
                 Vec::new(),

@@ -17,7 +17,7 @@ use super::refusal::{
 };
 use crate::value::collection::CollectionType;
 use crate::value::composite::{Value, ValueType};
-use crate::value::equality::EqualityOperator;
+use crate::value::declaration::EqualityOperator;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{Integer, IntegerInterval};
 

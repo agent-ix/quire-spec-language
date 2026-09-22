@@ -107,6 +107,7 @@ pub(crate) mod collection;
 pub(crate) mod composite;
 mod containment;
 pub(crate) mod decimal;
+pub(crate) mod declaration;
 pub(crate) mod definition;
 pub(crate) mod enumeration;
 pub(crate) mod equality;
@@ -139,13 +140,20 @@ mod unit;
 // `quire_exact` directly.
 pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
 pub use composite::{
-    Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, Deferred, FieldDeclaration, FieldExpression, FieldValue,
-    InvalidDeclaration, ObjectTypeDeclaration, OptionValue, RecursionEdges, TypeEnvironment, Value,
-    ValueType,
+    Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, FieldDeclaration,
+    FieldExpression, FieldValue, OptionValue, Value, ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
+// QSL-131 K3: the declaration registry (`TypeEnvironment`,
+// `ObjectTypeDeclaration` and friends, ADR-011 §6.1's "not kernel types")
+// and the FR-149 check-level equality layer built on it moved out of the
+// K-designated `composite`/`equality` into this one `semantic_value` file.
+pub use declaration::{
+    admits_equality_conversion, CheckedEquality, CompositeDeclaration, CompositeShape,
+    DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule, InvalidDeclaration,
+    ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+};
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
@@ -154,10 +162,7 @@ pub use definition::{
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
-pub use equality::{
-    admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
-    EqualityPlan, EqualitySchedule,
-};
+pub use equality::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
