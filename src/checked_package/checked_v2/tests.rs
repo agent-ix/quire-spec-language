@@ -19,8 +19,11 @@ use sha2::{Digest, Sha256};
 use super::{
     read_checked_package_v2, V2ReadIncomplete, V2ReadLimits, V2ReadOutcome, V2ReadRefusal,
 };
-use crate::library::{LibraryName, LibraryRefusal, PreimageDefect};
+use crate::library::{
+    LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PreimageDefect, Selection,
+};
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";
@@ -208,29 +211,123 @@ fn identity(label: &str) -> LibraryName {
     LibraryName::new(vec![label.to_owned()]).unwrap()
 }
 
-fn read(bytes: &[u8]) -> V2ReadOutcome {
+/// ADR-011 §4 condition 3's own input: `pkg`/`"1"` pinned at the `package_id`
+/// `preimage`'s own JCS bytes recompute to -- exactly what a consumer's
+/// library lock (or a directly pinned request built the same shape,
+/// `crate::library::verify_binding`'s own doc) would already record for a
+/// dependency it expects these bytes to satisfy.
+fn pinned_for(preimage: &Value) -> Vec<(LibraryName, Selection)> {
+    vec![(
+        identity("pkg"),
+        Selection {
+            version: "1".to_owned(),
+            package_id: PackageId::of_preimage(&jcs(preimage)),
+        },
+    )]
+}
+
+fn read(bytes: &[u8], pinned: &[(LibraryName, Selection)]) -> V2ReadOutcome {
     read_checked_package_v2(
         bytes,
         identity("pkg"),
         "1".to_owned(),
         V2ReadLimits::default(),
         &evidence(None),
+        pinned,
     )
 }
 
+#[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn accepts_valid_bytes() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
-    match read(&bytes) {
-        V2ReadOutcome::Candidate(package) => {
-            assert_eq!(package.library, identity("pkg"));
-            assert_eq!(package.version, "1");
-            assert_eq!(package.exports, vec!["R".to_owned()]);
-            assert!(package.imports.is_empty());
+    match read(&bytes, &pinned_for(&preimage)) {
+        V2ReadOutcome::Verified(package) => {
+            assert_eq!(package.library(), &identity("pkg"));
+            assert_eq!(package.version(), "1");
+            assert_eq!(
+                package.package_id(),
+                PackageId::of_preimage(&jcs(&preimage))
+            );
         }
-        other => panic!("expected Candidate, got {other:?}"),
+        other => panic!("expected Verified, got {other:?}"),
     }
+}
+
+/// FR-087-AC-4, TC-254: `VerifiedPackage::into_import_view` exposes the
+/// verified package's exported declarations as data, each already paired
+/// into a `PackageNodeKey` -- without `library` itself performing any name
+/// -> node-id lookup (there is no function taking `"R"` and handing back a
+/// key; the importing checker would read this iterator itself).
+#[trace("TC-254", "FR-087-AC-4")]
+#[test]
+fn import_view_exposes_exports_as_package_node_key_data() {
+    let preimage = identity_preimage(vec![]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    let verified = match read(&bytes, &pinned_for(&preimage)) {
+        V2ReadOutcome::Verified(package) => package,
+        other => panic!("expected Verified, got {other:?}"),
+    };
+    let package_id = verified.package_id();
+    let view = verified.into_import_view();
+    assert_eq!(view.package(), package_id);
+
+    let expected_node = WireNodeId::from_hex(&hex("pkg::R")).unwrap();
+    let exports: Vec<_> = view.exports().collect();
+    assert_eq!(
+        exports,
+        vec![("R", PackageNodeKey::new(package_id, expected_node))]
+    );
+}
+
+/// FR-087-AC-3, condition 3: an otherwise-admissible package refuses when
+/// its identity is absent from the caller's pinned library lock or pinned
+/// request -- I2's first rule, "an import is missing" (`MissingImport`).
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn refuses_when_identity_is_absent_from_the_pinned_lock() {
+    let preimage = identity_preimage(vec![]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    let outcome = read(&bytes, &[]);
+    assert!(
+        matches!(
+            &outcome,
+            V2ReadOutcome::Refused(V2ReadRefusal::Structural(
+                LibraryRefusal::MissingImport { .. }
+            ))
+        ),
+        "expected Refused(Structural(MissingImport)), got {outcome:?}"
+    );
+}
+
+/// FR-087-AC-3, condition 3: an otherwise-admissible package refuses when
+/// the caller's pinned entry for this identity names a different
+/// `package_id` -- a stale, mismatched digest pin, distinct from the
+/// digest the bytes themselves recompute to and already passed under
+/// condition 2.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn refuses_when_the_pinned_package_id_disagrees() {
+    let preimage = identity_preimage(vec![]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    let stale_pinned = vec![(
+        identity("pkg"),
+        Selection {
+            version: "1".to_owned(),
+            package_id: PackageId::of_preimage(b"not-this-preimage"),
+        },
+    )];
+    let outcome = read(&bytes, &stale_pinned);
+    assert!(
+        matches!(
+            &outcome,
+            V2ReadOutcome::Refused(V2ReadRefusal::Structural(
+                LibraryRefusal::StaleDependency { .. }
+            ))
+        ),
+        "expected Refused(Structural(StaleDependency)), got {outcome:?}"
+    );
 }
 
 /// The refusal's stable `Code`; asserted rather than IR's own `path` text
@@ -249,7 +346,7 @@ fn refuses_unknown_contract_version() {
     let mut envelope = valid_envelope(&preimage);
     envelope["contract_version"] = json!("quire.checked-package/v1");
     let bytes = jcs(&envelope);
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -267,7 +364,7 @@ fn refuses_missing_member_as_malformed_wire() {
     let mut envelope = valid_envelope(&preimage).as_object().unwrap().clone();
     envelope.remove("diagnostics");
     let bytes = jcs(&Value::Object(envelope));
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -281,7 +378,7 @@ fn refuses_missing_member_as_malformed_wire() {
 #[test]
 fn refuses_non_object_wire_as_malformed_wire() {
     let bytes = jcs(&json!(["not", "an", "object"]));
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &[]);
     assert!(
         matches!(
             &outcome,
@@ -317,7 +414,7 @@ fn refuses_duplicate_top_level_member() {
     // IR's own duplicate-member path is `serde_json`'s error text (the
     // member name plus its line/column), not a bare member name, so only
     // the code is asserted -- not IR's `path` text (N3).
-    let outcome = read(&mutated);
+    let outcome = read(&mutated, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -334,7 +431,7 @@ fn refuses_unrecognized_top_level_member() {
     let mut envelope = valid_envelope(&preimage);
     envelope["extra_member"] = json!(null);
     let bytes = jcs(&envelope);
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -351,7 +448,7 @@ fn refuses_digest_domain_mismatch() {
     let mut envelope = valid_envelope(&preimage);
     envelope["package_id"]["domain"] = json!("quire.definition.bytes/v1");
     let bytes = jcs(&envelope);
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -379,7 +476,7 @@ fn refuses_package_id_that_does_not_recompute() {
     // this mismatch as `StaleDependency`, which is the wrong code for a
     // condition-2 recompute failure (filed with IR as a ticket); this test
     // asserts IR's actual current behavior, not the code IR should emit.
-    let outcome = read(&bytes);
+    let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
             &outcome,
@@ -420,7 +517,7 @@ fn refuses_malformed_identity_preimage_structurally() {
         },
     ]);
     let bytes = jcs(&envelope);
-    match read(&bytes) {
+    match read(&bytes, &pinned_for(&preimage)) {
         V2ReadOutcome::Refused(V2ReadRefusal::Structural(LibraryRefusal::InvalidPreimage {
             library,
             defect: PreimageDefect::AmbiguousDeclaration { name, .. },
@@ -443,6 +540,7 @@ fn refuses_dependency_selections_present() {
         "1".to_owned(),
         V2ReadLimits::default(),
         &evidence(Some("dep-def")),
+        &pinned_for(&preimage),
     );
     assert_eq!(
         outcome,
@@ -464,6 +562,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         "1".to_owned(),
         limits,
         &evidence(None),
+        &pinned_for(&preimage),
     );
     assert_eq!(
         outcome,
@@ -488,6 +587,7 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
         "1".to_owned(),
         limits,
         &evidence(None),
+        &pinned_for(&preimage),
     ) {
         V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
             kind: CheckedPackageLimit::Depth,
@@ -511,8 +611,9 @@ fn exact_selected_limits_admit_the_boundary() {
         "1".to_owned(),
         limits,
         &evidence(None),
+        &pinned_for(&preimage),
     );
-    assert!(matches!(outcome, V2ReadOutcome::Candidate(_)));
+    assert!(matches!(outcome, V2ReadOutcome::Verified(_)));
 }
 
 #[test]
@@ -533,6 +634,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
             ..V2ReadLimits::default()
         },
         &evidence(None),
+        &pinned_for(&preimage),
     ) {
         V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
             kind: CheckedPackageLimit::Depth,
@@ -552,10 +654,11 @@ fn exact_depth_ceiling_admits_the_boundary() {
         "1".to_owned(),
         admits,
         &evidence(None),
+        &pinned_for(&preimage),
     );
     assert!(
-        matches!(outcome, V2ReadOutcome::Candidate(_)),
-        "expected Candidate at the exact depth boundary, got {outcome:?}"
+        matches!(outcome, V2ReadOutcome::Verified(_)),
+        "expected Verified at the exact depth boundary, got {outcome:?}"
     );
 
     let refuses = V2ReadLimits {
@@ -568,6 +671,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         "1".to_owned(),
         refuses,
         &evidence(None),
+        &pinned_for(&preimage),
     ) {
         V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
             kind: CheckedPackageLimit::Depth,
@@ -604,6 +708,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
         "1".to_owned(),
         V2ReadLimits::default(),
         &evidence(None),
+        &[],
     );
     assert!(
         matches!(
@@ -636,7 +741,8 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
                 identity("pkg"),
                 "1".to_owned(),
                 limits,
-                &evidence(None)
+                &evidence(None),
+                &[]
             ),
             V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
                 kind: CheckedPackageLimit::Depth,

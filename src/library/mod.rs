@@ -23,19 +23,27 @@
 //! FR-307 public surface: identities (`PackageId`, `LibraryName`),
 //! declarations (`ImportDeclaration`, `LibraryPackage`), the resolved lock
 //! (`Selection`, `LibraryLock`) and refusal reporting (`LibraryCause`,
-//! `LibraryRefusal`).
+//! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
+//! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
+//! layer-4 `package` reader (`checked_package::checked_v2`) reads
+//! `quire.checked-package/v2` bytes and calls [`verify_binding`] here to
+//! apply the ADR-011 §4 verified binding's condition 3 and construct
+//! `VerifiedPackage`; [`VerifiedPackage::into_import_view`] is the only
+//! `ImportView` constructor.
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
 //! type, `qsl_foundation::digest::WireNodeId`, is the `F` foundation layer's own
-//! type (ADR-011 `:588`), not this module's. `ImportView` (ADR-013 T-1) is
-//! a different module's type; this module does not define it.
+//! type (ADR-011 `:588`), not this module's.
 //!
 //! Name resolution against an imported dependency's exports -- binding a
 //! qualified reference's `a::Name` qualifier, and reporting a missing or
 //! ambiguous name -- is E3's own resolution over an `ImportView`, performed
 //! by the importing package's own check stage (FR-087-AC-4), never by
-//! `library` calling back into itself. This module names none of
+//! `library` calling back into itself. `ImportView` exposes its exported
+//! declarations only as data (`ImportView::exports`, an iterator of
+//! `(name, PackageNodeKey)` pairs); no function here takes a name and
+//! returns a declaration or node id (FR-087-AC-4). This module names none of
 //! `resolve_name`, `ExportIdentity`, `NameReference` or `NameRefusal`.
 
 use std::collections::BTreeMap;
@@ -492,7 +500,8 @@ pub enum RefusalClass {
 /// preimage itself is well-formed. Check 3 -- the identity is listed in the
 /// consumer's library lock or pinned request -- is the caller's:
 /// [`resolve_libraries`] applies it when the package is offered as a
-/// candidate import.
+/// candidate import, and [`verify_binding`] applies it for the ADR-011 §4
+/// verified binding a `VerifiedPackage` is built from.
 pub(crate) fn verify_package(
     package: &LibraryPackage,
 ) -> Result<ProjectedDeclarations, LibraryRefusal> {
@@ -514,6 +523,148 @@ pub(crate) fn verify_package(
             library: package.library.clone(),
             export: export.to_owned(),
         })
+}
+
+/// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
+/// T-2): a [`LibraryPackage`] for which conditions 1 (supported schema
+/// version, the layer-4 reader's and IR's own job) and 2 (the FR-322
+/// `package_id` recompute, `verify_package`) already held before
+/// [`verify_binding`] additionally required condition 3 (this identity
+/// listed in the consumer's library lock or pinned request). Not checked
+/// typestate (R-10): a `VerifiedPackage` is never accepted as, or converted
+/// into, a `CheckedGraph` or `CheckedPackage` -- only
+/// [`Self::into_import_view`] converts it, into an `ImportView`.
+///
+/// Both fields are private to this module; [`verify_binding`] is the sole
+/// constructor (FR-087-AC-1). Naming them directly from outside `library`
+/// does not compile:
+/// ```compile_fail,E0451
+/// use quire_spec_language::library::VerifiedPackage;
+/// let forged = VerifiedPackage {
+///     package: todo!(),
+///     exports: todo!(),
+/// };
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedPackage {
+    package: LibraryPackage,
+    exports: ProjectedDeclarations,
+}
+
+impl VerifiedPackage {
+    /// The verified package's own library identity.
+    pub fn library(&self) -> &LibraryName {
+        &self.package.library
+    }
+
+    /// Its version string.
+    pub fn version(&self) -> &str {
+        &self.package.version
+    }
+
+    /// Its content-addressed identity (condition 2's recomputed digest).
+    pub fn package_id(&self) -> PackageId {
+        self.package.package_id
+    }
+
+    /// Convert into an [`ImportView`] (ADR-013 T-1), this module's only
+    /// conversion from `VerifiedPackage`: the verified package's exported
+    /// declarations exposed as opaque data, keyed for an importing
+    /// package's own check stage to resolve by [`PackageNodeKey`] (T-3),
+    /// without `library` performing any name resolution itself
+    /// (FR-087-AC-4; ADR-013 R-06).
+    pub fn into_import_view(self) -> ImportView {
+        ImportView {
+            package: self.package.package_id,
+            exports: self.exports.into_map(),
+        }
+    }
+}
+
+/// ADR-011 §4's verified binding: `library`'s own entry point, called by
+/// the layer-4 `package` reader after it has admitted the wire (condition 1)
+/// and cross-checked the recomputed `package_id` against IR's own
+/// already-verified digest (condition 2, QSL-6 L2). This function re-applies
+/// condition 2 through `verify_package` (owner ruling item 3(f): reused
+/// unchanged, not a second digest implementation) and additionally applies
+/// condition 3: `candidate`'s identity must appear in `pinned` -- the
+/// consumer's already-resolved [`LibraryLock::selections`], or a directly
+/// pinned request assembled in that same `(LibraryName, Selection)` shape
+/// (no second lock type exists, FR-087 Description item 3 owner ruling
+/// (a)). Refuses with a named cause and yields nothing on either failure
+/// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
+/// of the file bytes, a lock file or the source.
+pub fn verify_binding(
+    candidate: LibraryPackage,
+    pinned: &[(LibraryName, Selection)],
+) -> Result<VerifiedPackage, LibraryRefusal> {
+    let exports = verify_package(&candidate)?;
+    match pinned
+        .iter()
+        .find(|(library, _)| *library == candidate.library)
+    {
+        Some((_, selection)) if selection.package_id == candidate.package_id => {
+            Ok(VerifiedPackage {
+                package: candidate,
+                exports,
+            })
+        }
+        Some((library, selection)) => Err(LibraryRefusal::StaleDependency {
+            path: vec![library.clone()],
+            import: ImportDeclaration {
+                library: library.clone(),
+                version: selection.version.clone(),
+                package_id: selection.package_id,
+                qualifier: None,
+            },
+            cause: StaleCause::ByteDigestMismatch,
+        }),
+        None => Err(LibraryRefusal::MissingImport {
+            path: vec![candidate.library.clone()],
+        }),
+    }
+}
+
+/// The verified package's exported declarations, exposed as opaque data
+/// (ADR-013 T-1; FR-087-AC-4): keyed by their qualified name, each pairable
+/// with [`Self::package`] into a [`PackageNodeKey`] (T-3) for lookup by an
+/// importing package's own check stage. `library` performs no name
+/// resolution over this data, before or after conversion (ADR-013 R-06):
+/// there is no function here that takes a name and returns a declaration or
+/// node id.
+///
+/// The only field-carrying constructor is
+/// [`VerifiedPackage::into_import_view`] (private fields, private to this
+/// module). Naming them directly from outside `library` does not compile:
+/// ```compile_fail,E0451
+/// use quire_spec_language::library::ImportView;
+/// let forged = ImportView {
+///     package: todo!(),
+///     exports: todo!(),
+/// };
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportView {
+    package: PackageId,
+    exports: BTreeMap<String, WireNodeId>,
+}
+
+impl ImportView {
+    /// The exporting package's own verified identity (T-3's `package`
+    /// component for every [`PackageNodeKey`] this view yields).
+    pub fn package(&self) -> PackageId {
+        self.package
+    }
+
+    /// The exported declarations, each already paired with [`Self::package`]
+    /// into a [`PackageNodeKey`]. The importing package's own checker
+    /// performs the name lookup itself, over this data (E3; FR-087-AC-4).
+    pub fn exports(&self) -> impl Iterator<Item = (&str, PackageNodeKey)> + '_ {
+        let package = self.package;
+        self.exports
+            .iter()
+            .map(move |(name, node)| (name.as_str(), PackageNodeKey::new(package, *node)))
+    }
 }
 
 /// Every name `identity_preimage` declares, in ascending order (FR-307: "a

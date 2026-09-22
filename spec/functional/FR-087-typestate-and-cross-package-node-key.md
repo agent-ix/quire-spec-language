@@ -587,12 +587,21 @@ Landed: PR #304 added `CheckedGraph` (`check`), which
 `EmittedPackage` (layer-4 `package`). PR #299 relocated `value::library` and
 `value::package_identity` into the top-level `library` module, where
 `PackageNodeKey{package, node: WireNodeId}` is defined and wire-fed node
-references are `WireNodeId`s, and added `LibraryRefusal::class()`. Backed:
-FR-087-AC-5 (TC-245) and FR-087-AC-12 (TC-282). Still to land:
-`VerifiedPackage` and the §4 verified binding (AC-3), `ImportView` (AC-4),
-the retirement of `ResolvedSourcePackage` (AC-7), and E3 imported-name
-resolution (AC-13, TC-379, Planned). The remaining criteria have no traced
-test yet.
+references are `WireNodeId`s, and added `LibraryRefusal::class()`. QSL-6
+slice A1 added `VerifiedPackage` and the §4 verified binding's `library::
+verify_binding` (conditions 2 and 3; condition 1 stays the layer-4 reader's
+and IR's own job) and `ImportView` (`VerifiedPackage::into_import_view`,
+its only constructor), and wired the I2 reader (`checked_package::
+checked_v2::read_checked_package_v2`) to return `VerifiedPackage` instead
+of a bare `LibraryPackage` candidate. Backed: FR-087-AC-3 (TC-253),
+FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245) and FR-087-AC-12 (TC-282). Still
+to land: the retirement of `ResolvedSourcePackage` (AC-7) and E3
+imported-name resolution (AC-13, TC-379, Planned). AC-1 (constructor/field
+privacy across all five stage-output types) now holds for `VerifiedPackage`
+and `ImportView` too (each has a `compile_fail,E0451` doctest), but AC-1
+itself stays an Inspection criterion across all five types together and is
+not separately flipped here. AC-2, AC-6, AC-8, AC-9, AC-10 and AC-11 have no
+traced test yet.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is

@@ -168,6 +168,14 @@ impl ProjectedDeclarations {
             .collect::<Result<_, _>>()
             .map(Self)
     }
+
+    /// Consume `self` into its underlying name -> wire node id map, for
+    /// [`super::ImportView`]'s own exported-declaration data (FR-087-AC-4):
+    /// the verified binding's already-`select`ed exports, carried forward
+    /// without re-deriving them from the preimage a second time.
+    pub(crate) fn into_map(self) -> BTreeMap<String, WireNodeId> {
+        self.0
+    }
 }
 
 fn members<'a>(
