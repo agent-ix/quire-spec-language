@@ -28,10 +28,11 @@
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
-//! QSL-6/#242, slice S1a): [`crate::package::emit`], a sibling module of
-//! this one, so it stays within `package`'s own `pub(super)` reach without
-//! being reachable from outside `package` (ADR-013 O-02: `package_id` is
-//! computed from the package, never accepted from a caller).
+//! QSL-6/#242, slice S1a): [`crate::checked_package::emit`], a sibling
+//! module of this one, so it stays within `checked_package`'s own
+//! `pub(super)` reach without being reachable from outside
+//! `checked_package` (ADR-013 O-02: `package_id` is computed from the
+//! package, never accepted from a caller).
 
 use std::collections::BTreeMap;
 
@@ -46,9 +47,9 @@ use crate::library::PackageId;
 /// TC-244 row 2 (FR-087-AC-2): a `CheckedGraph` never becomes a
 /// `CheckedPackage` by any path other than [`CheckedPackage::link`] -- in
 /// particular, not by naming this struct's private fields directly from
-/// outside `package`:
+/// outside `checked_package`:
 /// ```compile_fail,E0451
-/// use quire_spec_language::package::CheckedPackage;
+/// use quire_spec_language::checked_package::CheckedPackage;
 /// let forged = CheckedPackage {
 ///     graph: todo!(),
 ///     dependencies: Default::default(),
@@ -97,7 +98,7 @@ impl CheckedPackage {
     /// This package's own checked declarations (S3's stage output) -- the
     /// delegation point FR-087-AC-9/TC-256 names: every check-owned-type
     /// accessor a consumer needs is reached through this method, not by
-    /// `package` re-declaring or re-importing `check`'s types itself.
+    /// `checked_package` re-declaring or re-importing `check`'s types itself.
     pub fn graph(&self) -> &CheckedGraph {
         &self.graph
     }
@@ -119,10 +120,10 @@ impl CheckedPackage {
 /// A caller cannot supply a `package_id`: both fields are private, and this
 /// type's own (`pub(super)`, so not documented on this public page)
 /// constructor takes no `package_id` parameter to forge one through --
-/// naming this struct's private fields directly from outside `package`
+/// naming this struct's private fields directly from outside `checked_package`
 /// (ADR-013 O-02) does not compile:
 /// ```compile_fail,E0451
-/// use quire_spec_language::package::EmittedPackage;
+/// use quire_spec_language::checked_package::EmittedPackage;
 /// let forged = EmittedPackage {
 ///     bytes: Vec::new(),
 ///     package_id: todo!(),
@@ -142,11 +143,11 @@ impl EmittedPackage {
     /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
     /// through which a caller could instead supply arbitrary preimage
     /// bytes, let alone an arbitrary `package_id` directly. `pub(super)`:
-    /// reachable from anywhere in `package` (in particular,
-    /// `package::emit`), never from outside it.
+    /// reachable from anywhere in `checked_package` (in particular,
+    /// `checked_package::emit`), never from outside it.
     #[allow(
         dead_code,
-        reason = "no caller yet: package::emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
+        reason = "no caller yet: checked_package::emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
     )]
     pub(super) fn new(
         identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,

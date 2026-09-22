@@ -574,9 +574,13 @@ pub fn value_import_edges(workspace_root: &Path) -> Result<Vec<ValueImportEdge>>
 }
 
 /// Whether `path` (a `use` edge's segments, `crate`-rooted or not) resolves
-/// into `crate::package`.
+/// into `crate::package` or `crate::checked_package`. Both are layer-4
+/// (ADR-011 §6.1): QSL-182 prep split the former's moving half out into the
+/// latter, a sibling module, so a `check` (layer 3) import of either is the
+/// same forbidden layer-3-depends-on-layer-4 edge FR-068-AC-6 already named
+/// for `package` alone before the split.
 fn resolves_into_package(path: &[String]) -> bool {
-    matches!(strip_leading_crate(path), [first, ..] if first == "package")
+    matches!(strip_leading_crate(path), [first, ..] if first == "package" || first == "checked_package")
 }
 
 /// FR-068-AC-6's last sentence ("No file under `check` imports from ...
@@ -588,7 +592,9 @@ fn resolves_into_package(path: &[String]) -> bool {
 /// gap directly, over `check`'s *shipped* dependency graph only, matching
 /// AC-6's own scope for the rest of its bound (see this module's header
 /// doc, "`#[cfg(test)]` handling differs by which criterion is being
-/// checked").
+/// checked"). Widened by QSL-182 prep to also flag `checked_package`, the
+/// sibling module the same layer-4 content partly moved into (see
+/// [`resolves_into_package`]'s own doc).
 pub fn check_package_import_edges(workspace_root: &Path) -> Result<Vec<UseEdge>> {
     let mut edges_found = Vec::new();
     for file in files_in(workspace_root, "src/check")? {
@@ -872,7 +878,7 @@ mod tests {
         let edges = check_package_import_edges(&workspace_root()).expect("scan runs");
         assert!(
             edges.is_empty(),
-            "check must never import from package (FR-068-AC-6): {edges:?}"
+            "check must never import from package or checked_package (FR-068-AC-6): {edges:?}"
         );
     }
 
@@ -896,6 +902,29 @@ mod tests {
             assert!(
                 resolves_into_package(&edge.path),
                 "expected a package-resolving edge: {edge:?}"
+            );
+        }
+    }
+
+    /// QSL-182 prep: `checked_package` is the sibling module the moving
+    /// half of layer-4 `package` split into, so a `check` import of it is
+    /// the same forbidden layer-3-depends-on-layer-4 edge as a `package`
+    /// import, and must be caught the same way, including a glob. Pins
+    /// [`resolves_into_package`]'s widened match arm permanently.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn checked_package_import_is_classified_as_a_violation_including_glob() {
+        let source = r#"
+            use crate::checked_package::CheckedPackage;
+            use crate::checked_package::*;
+        "#;
+        let parsed = syn::parse_file(source).expect("fixture parses");
+        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
+        assert_eq!(edges.len(), 2);
+        for edge in &edges {
+            assert!(
+                resolves_into_package(&edge.path),
+                "expected a checked_package-resolving edge: {edge:?}"
             );
         }
     }

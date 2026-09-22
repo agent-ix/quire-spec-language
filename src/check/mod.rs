@@ -19,13 +19,13 @@
 //! checker's stage output, produced by [`PackageDeclarations::check`].
 //! `CheckedPackage` (the S4 in-process link step's output, `CheckedGraph`
 //! plus the checked dependency closure) is a *different*, canonical type,
-//! defined in layer-4 `crate::package`, not here -- `check` defines no
-//! `CheckedPackage` type, method or field, and imports nothing from
-//! `package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
+//! defined in layer-4 `crate::checked_package`, not here -- `check` defines
+//! no `CheckedPackage` type, method or field, and imports nothing from
+//! `checked_package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
 //! `CheckedPackage::evaluate` references in this module's own doc comments
-//! name `value::expression`'s re-export of `package::CheckedPackage`,
-//! reached only through `package`'s own `CheckedGraph`-typed field and its
-//! `graph()` accessor.
+//! name `value::expression`'s re-export of `checked_package::CheckedPackage`,
+//! reached only through `checked_package`'s own `CheckedGraph`-typed field
+//! and its `graph()` accessor.
 //!
 //! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2, QSL-7)
 //!
@@ -1070,13 +1070,15 @@ mod tests {
     /// test is the "the checker really records it" half.
     ///
     /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
-    /// `crate::package::CheckedPackage::link(graph).graph().resolve_declaration`,
+    /// `crate::checked_package::CheckedPackage::link(graph).graph().resolve_declaration`,
     /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
     /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
-    /// directly, which the prior version of this test read from. `package`
-    /// is `pub` at the crate root and this test module is `#[cfg(test)]`
-    /// (excluded from the FR-068-AC-6 `value_import_edges` scan, whose own
-    /// doc says so), so this is not a `check` -> `package` production edge.
+    /// directly, which the prior version of this test read from.
+    /// `checked_package` is `pub` at the crate root and this test module is
+    /// `#[cfg(test)]` (excluded from the FR-068-AC-6 `check_package_import_edges`
+    /// scan, whose own doc says so), so this is not a `check` ->
+    /// `checked_package` production edge (QSL-182 prep: relocated out of
+    /// `package` into its own sibling module, same non-edge either way).
     #[trace("TC-248", "FR-088-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
@@ -1091,7 +1093,7 @@ mod tests {
         }
         .check(CheckingLimits::default())
         .expect("an empty package with a correspondence seed checks cleanly");
-        let package = crate::package::CheckedPackage::link(graph);
+        let package = crate::checked_package::CheckedPackage::link(graph);
 
         assert_eq!(
             package.graph().resolve_declaration(node),

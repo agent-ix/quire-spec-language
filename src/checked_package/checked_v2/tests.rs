@@ -17,8 +17,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::{read_checked_package_v2, V2ReadIncomplete, V2ReadOutcome, V2ReadRefusal};
+use crate::checked_package::PackageLimits;
 use crate::library::{LibraryName, LibraryRefusal, PreimageDefect};
-use crate::package::PackageLimits;
 use qsl_foundation::diagnostic::Code;
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";

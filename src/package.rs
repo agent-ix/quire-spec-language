@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: immutable native checked artifacts and source-bound static
-//! identity, plus ADR-013 T-1 (FR-087, QSL-158 S-3a)'s canonical, layer-4
-//! [`CheckedPackage`]/[`EmittedPackage`] typestate (defined in this module's
-//! private `checked` submodule and re-exported below). The two are unrelated:
-//! this file's own top-level `NativePackage` wraps the lane-private
-//! `checking::CheckedPackage<'a>` (ADR-013 §6), referenced here by its full
-//! path rather than a bare `use` import, precisely so that name stays
-//! distinct from [`CheckedPackage`] in this module's own item namespace (both
-//! are reachable as
-//! `crate::package::*` items once `checked`'s canonical type is re-exported
-//! below) -- `src/package/features.rs` and `src/package/view.rs` keep their
-//! own pre-existing, unrelated `use crate::checking::CheckedPackage;`
-//! imports unchanged (FR-087-AC-10/TC-247).
+//! identity (SEAM-1, ADR-011 §6.2, retired at M-6). The layer-4 canonical
+//! [`crate::checked_package::CheckedPackage`]/
+//! [`crate::checked_package::EmittedPackage`] typestate (ADR-013 T-1,
+//! FR-087, QSL-158 S-3a) was split out into the sibling `checked_package`
+//! module by QSL-182 prep and no longer lives here: this file's own
+//! top-level `NativePackage` wraps the lane-private
+//! `checking::CheckedPackage<'a>` (ADR-013 §6), an unrelated type
+//! referenced here by its full path so it is never confused with
+//! `checked_package`'s own `CheckedPackage` -- `src/package/features.rs`
+//! and `src/package/view.rs` keep their own pre-existing, unrelated
+//! `use crate::checking::CheckedPackage;` imports unchanged
+//! (FR-087-AC-10/TC-247).
 
-mod checked;
-mod checked_v2;
-mod emit;
 mod encoding;
 mod features;
 mod intake;
@@ -25,17 +22,7 @@ mod tests;
 mod view;
 mod wire;
 
-pub use checked::{CheckedPackage, EmittedPackage};
 pub use reading::{PackageReadLimits, PackageSupport};
-
-// ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
-// (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
-// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
-// review) and not re-exported here: its candidate is not yet a
-// checked-package-crossing type any caller outside this crate should see
-// (`resolve_libraries` check 3 has not run, and FR-087's `VerifiedPackage`
-// does not exist yet), and this module has no caller yet (S3, ADR-011 §4's
-// round trip, has not landed) beyond `checked_v2`'s own tests.
 
 use std::fmt;
 
@@ -44,48 +31,17 @@ use sha2::{Digest, Sha256};
 
 use qsl_foundation::{ByteDigest, Code, Diagnostic};
 
-/// Inclusive per-pass ceilings; elevated options clamp to the defaults.
-///
-/// Not every reader in this module enforces every field. The
-/// `quire.checked-package/v2` byte reader (`checked_v2`, ADR-011 §4 I2)
-/// honors only `artifact_bytes` and `depth`: IR's own I04 reader has no
-/// decode-time meter for `string_bytes` or aggregate `entries` at all
-/// (IR-238 item 2), so a caller of that reader who sets either of those two
-/// fields gets no enforcement of them.
-#[derive(Clone, Copy, Debug)]
-pub struct PackageLimits {
-    /// Offered or emitted bytes, at most 16 MiB.
-    pub artifact_bytes: usize,
-    /// Inspected decoded strings, including member names, at most 16 MiB.
-    pub string_bytes: usize,
-    /// Aggregate object members and array elements, at most 100,000.
-    pub entries: usize,
-    /// Entered JSON containers, at most 128.
-    pub depth: usize,
-}
-
-impl Default for PackageLimits {
-    fn default() -> Self {
-        Self {
-            artifact_bytes: 16_777_216,
-            string_bytes: 16_777_216,
-            entries: 100_000,
-            depth: 128,
-        }
-    }
-}
-
-impl PackageLimits {
-    fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            artifact_bytes: self.artifact_bytes.min(hard.artifact_bytes),
-            string_bytes: self.string_bytes.min(hard.string_bytes),
-            entries: self.entries.min(hard.entries),
-            depth: self.depth.min(hard.depth),
-        }
-    }
-}
+// QSL-182 prep: `PackageLimits` now lives in the sibling `checked_package`
+// module (needed there by the I2 `checked_v2` byte reader) and is
+// re-exported here at its pre-existing public path, since this module's own
+// native v1 encode path (`encoding`, `intake`) and every existing SEAM-1
+// caller (`NativePackage::new` below, `mapped`, `command::compilation`, and
+// this crate's own tests) still construct it as `package::PackageLimits`.
+// This is not a compatibility shim for anything QSL-182 moved out of this
+// file's own public surface: `PackageLimits` was never named among the
+// items this ticket moves, it is a real, ongoing dependency in both
+// directions, and it has exactly one definition.
+pub use crate::checked_package::PackageLimits;
 
 /// Actual admitted work in one package pass; inapplicable fields are zero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
