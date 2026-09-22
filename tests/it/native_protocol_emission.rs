@@ -6,12 +6,12 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Dimension, Error, Invalid, Limits, Unsupported,
 };
-use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
 
 const SIMPLE: &str = "protocol Simple using P over (view: M::Node) on origin {\n role Service on M::Node;\n run sequence Main { check Ready using S { true }; }\n finish Closed as (closed: M::Node) { true };\n}";
@@ -358,7 +358,7 @@ fn multi_unit_invalid_role_type_reports_the_role_in_its_own_source() {
                 .sources
                 .get(usize::try_from(locus.source).expect("u32 source index fits usize"))
                 .expect("reported source exists");
-            let span = quire_spec_language::Span {
+            let span = qsl_foundation::Span {
                 start: usize::try_from(locus.span.start).expect("u32 span start fits usize"),
                 end: usize::try_from(locus.span.end).expect("u32 span end fits usize"),
             };

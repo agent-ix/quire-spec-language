@@ -14,8 +14,8 @@ use super::{ObservationSelection, QualifiedName, ValidatedContext};
 use crate::checking::{Catalog, NativeType};
 use crate::linking::{DeclarationKey, ResolutionTarget};
 use crate::syntax::{ClauseKind, Expr, ExprId};
-use crate::{Code, Diagnostic, Span};
 use budget::Budget;
+use qsl_foundation::{Code, Diagnostic, Span};
 use value::{Arena, Value};
 
 pub use api::{

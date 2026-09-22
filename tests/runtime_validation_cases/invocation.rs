@@ -348,7 +348,7 @@ fn field_and_population_permissions_do_not_extend_to_other_supplied_models() {
     let mut data: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
     data["package"] = serde_json::json!("example/other-model");
     let text = serde_json::to_string_pretty(&data).unwrap();
-    let source = quire_spec_language::Source::read(
+    let source = qsl_foundation::Source::read(
         SourceIdentity {
             identity: "test:other-model".into(),
             revision: "1".into(),

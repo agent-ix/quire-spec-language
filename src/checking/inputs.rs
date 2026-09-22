@@ -8,7 +8,7 @@ use quire_contract_ir as ir;
 use super::types::Catalog;
 use super::{failure, CheckingError, Result, UniverseRequirement};
 use crate::native_model::{NativeModel, ObjectRole};
-use crate::{Code, Source, Span};
+use qsl_foundation::{Code, Source, Span};
 
 type Identity<'a> = (&'a ir::RequirementRef, &'a ir::SymbolName);
 

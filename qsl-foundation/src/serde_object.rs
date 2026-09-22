@@ -4,9 +4,9 @@
 use serde::{de, Deserialize, Deserializer};
 use std::fmt;
 
-// Records stay objects even when Serde buffers them inside a tagged variant.
-// Its default struct decoder also accepts positional arrays.
-pub(crate) fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+/// Records stay objects even when Serde buffers them inside a tagged variant.
+/// Its default struct decoder also accepts positional arrays.
+pub fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     decoder: D,
 ) -> Result<T, D::Error> {
     struct Object<T>(std::marker::PhantomData<T>);
@@ -23,7 +23,10 @@ pub(crate) fn from_object<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
 }
 
 /// Require object syntax when decoding a record nested in a collection or envelope.
-pub(crate) struct Object<T>(pub(crate) T);
+pub struct Object<T>(
+    /// The decoded value, once object syntax has been confirmed.
+    pub T,
+);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -32,7 +35,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
 }
 
 /// Preserve vector order and duplicates while requiring each record to be an object.
-pub(crate) fn deserialize_objects<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+pub fn deserialize_objects<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
@@ -41,7 +44,8 @@ where
         .map(|values| values.into_iter().map(|Object(value)| value).collect())
 }
 
-pub(crate) fn deserialize_empty_object<'de, D: Deserializer<'de>>(
+/// Refuse any field on an object expected to carry none.
+pub fn deserialize_empty_object<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<(), D::Error> {
     // Serde's internally tagged unit variants otherwise ignore extra fields.

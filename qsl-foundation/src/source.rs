@@ -67,9 +67,11 @@ struct Document {
 #[derive(Clone, Debug)]
 pub struct Source(Arc<Document>);
 
-/// Why [`Source::read`] refused its input.
+/// Why [`Source::read`] refused its input. `pub`: the root crate's
+/// `complete::diagnostic::read_source` (layer 1) maps this cause onto its own
+/// `CompleteCode`, a real cross-crate call site.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SourceReadCause {
+pub enum SourceReadCause {
     /// The identity, revision or path is empty.
     UnnamedSource,
     /// The bytes exceed the byte budget.
@@ -82,19 +84,27 @@ pub(crate) enum SourceReadCause {
 
 /// Cause-specific location and message for a [`Source::read`] refusal, before
 /// `diagnostic` (later in this layer's order) maps it onto a stable `Code`.
-/// `source` does not construct a `Diagnostic` (ADR-011 §6.1).
+/// `source` does not construct a `Diagnostic` (ADR-011 §6.1). `pub`: see
+/// [`SourceReadCause`]'s own doc for the cross-crate call site.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SourceReadError {
-    pub(crate) source: SourceIdentity,
-    pub(crate) path: String,
-    pub(crate) span: LocatedSpan,
-    pub(crate) message: String,
+pub struct SourceReadError {
+    /// The source identity and revision the refusal occurred against.
+    pub source: SourceIdentity,
+    /// The display path the refusal occurred against.
+    pub path: String,
+    /// The located region the refusal occurred at.
+    pub span: LocatedSpan,
+    /// Human-readable detail.
+    pub message: String,
 }
 
-/// A typed [`Source::read`] refusal.
-pub(crate) struct SourceReadRefusal {
-    pub(crate) cause: SourceReadCause,
-    pub(crate) error: SourceReadError,
+/// A typed [`Source::read`] refusal. `pub`: see [`SourceReadCause`]'s own
+/// doc for the cross-crate call site.
+pub struct SourceReadRefusal {
+    /// Why the read refused.
+    pub cause: SourceReadCause,
+    /// The refusal's location and message.
+    pub error: SourceReadError,
 }
 
 /// Hard source-content ceiling; callers may select a lower value.
@@ -103,8 +113,10 @@ pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 impl Source {
     /// [`Source::read`] with the refusal's typed cause retained, before
     /// `diagnostic` maps it onto a stable code (`Source::read` itself is
-    /// implemented there; see `diagnostic.rs`).
-    pub(crate) fn read_typed(
+    /// implemented there; see `diagnostic.rs`). `pub`: the root crate's
+    /// `complete::diagnostic::read_source` (layer 1) is a real cross-crate
+    /// call site.
+    pub fn read_typed(
         identity: SourceIdentity,
         path: impl Into<String>,
         bytes: &[u8],
@@ -244,9 +256,13 @@ impl Source {
     pub fn text(&self) -> &str {
         &self.0.text
     }
-    // Quire line loci reuse this source's existing byte index.
-    #[cfg(feature = "quire-extraction")]
-    pub(crate) fn line_start(&self, line: usize) -> Option<usize> {
+    /// The byte offset of the start of a one-based line, or `None` past the
+    /// last line. `pub`: the root crate's `quire_source` module (I3, feature
+    /// `quire-extraction`) reuses this source's existing byte index for
+    /// Quire line loci, a real cross-crate call site. Always compiled here
+    /// (this crate has no `quire-extraction` feature of its own); the root
+    /// crate's own feature gate decides whether its caller is compiled.
+    pub fn line_start(&self, line: usize) -> Option<usize> {
         self.0.line_starts.get(line.checked_sub(1)?).copied()
     }
     fn excess(&self, byte: usize) -> usize {

@@ -6,6 +6,7 @@ use crate::support::config_version as config;
 use std::{cell::Cell, env, fmt::Write as _, fs, path::Path, path::PathBuf, process::Command};
 
 use ix_trace_rs::trace;
+use qsl_foundation::SourceIdentity;
 use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
 use quire_contract_ir_historical as backend_ir;
@@ -22,7 +23,7 @@ use quire_spec_language::{
         InvocationDraft, ModelBinding, ObjectEntry, ObjectIdentity, ObservationSelection,
         Population, QualifiedName, RuntimeInput, Snapshot, SnapshotDraft, ValueId, ValueNode,
     },
-    Limits, LinkLimits, SourceIdentity,
+    Limits, LinkLimits,
 };
 use serde_json::Value;
 use sha2::Digest as _;
@@ -262,7 +263,7 @@ fn native_verdict(
             panic!("out-of-domain input reached native evaluation")
         };
         assert!(failure.diagnostics.iter().any(|diagnostic| {
-            diagnostic.diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
+            diagnostic.diagnostic.code == qsl_foundation::Code::InvalidRuntimeInput
                 && diagnostic.diagnostic.message == "integer is outside its nominal bounds"
         }));
     }

@@ -10,7 +10,7 @@ use serde::{
 use sha2::{Digest as _, Sha256};
 
 use super::{v2, wire as w};
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 pub const MAX_INPUT_BYTES: usize = 8 * 1_048_576;
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1_048_576;

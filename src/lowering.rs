@@ -21,7 +21,7 @@ use crate::checking::{CheckedClause, ClauseBinding, NativeType, Observation};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget};
 use crate::package::NativePackage;
 use crate::syntax::{BinaryOp, Builtin, ClauseKind, ExprId, ExprKind, UnaryOp};
-use crate::{ByteDigest, Span};
+use qsl_foundation::{ByteDigest, Span};
 
 /// The existing backend's Boolean expression domain; not a proof attestation.
 pub const PROFILE: &str = ProjectionTarget::BooleanOracleV1.name();
@@ -125,12 +125,12 @@ pub enum LoweringCode {
 
 impl LoweringCode {
     /// Stable native command code for each lowering refusal category.
-    pub fn code(self) -> crate::Code {
+    pub fn code(self) -> qsl_foundation::Code {
         match self {
-            Self::Unsupported => crate::Code::UnsupportedProjection,
-            Self::ResourceExhausted => crate::Code::ResourceExhausted,
-            Self::Binding => crate::Code::ProjectionBinding,
-            Self::InvalidCorrespondence => crate::Code::InvalidProjectionCorrespondence,
+            Self::Unsupported => qsl_foundation::Code::UnsupportedProjection,
+            Self::ResourceExhausted => qsl_foundation::Code::ResourceExhausted,
+            Self::Binding => qsl_foundation::Code::ProjectionBinding,
+            Self::InvalidCorrespondence => qsl_foundation::Code::InvalidProjectionCorrespondence,
         }
     }
 }

@@ -17,7 +17,7 @@
 //! version-1 package retains none, so the two are never mistaken for each other.
 
 use crate::protocol_artifact::wire as w;
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 use super::profile::Profile;
 use super::result::Subject;

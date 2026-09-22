@@ -19,7 +19,8 @@ mod work;
 use std::collections::BTreeMap;
 
 use crate::syntax::composed::{ComposedUnit, Declaration, NativeUnit};
-use crate::{ByteDigest, Diagnostic, Limits, Source, SourceIdentity, Spanned};
+use crate::Limits;
+use qsl_foundation::{ByteDigest, Diagnostic, Source, SourceIdentity, Spanned};
 
 pub use dependencies::{DependencyKind, DependencyReference, DependencyRefusal, DependencySite};
 pub use work::{

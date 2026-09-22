@@ -3,12 +3,13 @@
 //! Model/profile admission and the real producer boundary remain separate work.
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Source, SourceIdentity};
 use quire_spec_language::linking::composed::{
     admit_namespace, DeclarationDisposition, DeclarationEntry, DeclarationId, DeclarationRefusal,
     DependencyKind, DependencyRefusal, DependencySite, Dimension, ExpectedSource, SourceInventory,
     SyntaxNamespace, WorkLimits,
 };
-use quire_spec_language::{Code, Limits, Source, SourceIdentity};
+use quire_spec_language::Limits;
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "test:state-definition" version "1" digest "not-admitted";

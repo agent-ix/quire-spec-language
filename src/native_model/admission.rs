@@ -11,7 +11,7 @@ use super::{
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation};
-use crate::Code;
+use qsl_foundation::Code;
 
 type Result<T> = std::result::Result<T, Box<NativeModelError>>;
 

@@ -7,7 +7,7 @@ use super::values::{locus, require_population};
 use super::{PopulationIndexes, PopulationKey, RuntimePathSegment, Validator};
 use crate::checking::FrameIndex;
 use crate::linking::{DeclarationKey, DeclarationLocation};
-use crate::Code;
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -368,8 +368,8 @@ mod tests {
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
                 "rev-1".to_owned(),
-                crate::digest::DigestRecord::mint(
-                    crate::digest::DigestDomain::SourceBytesV1,
+                qsl_foundation::digest::DigestRecord::mint(
+                    qsl_foundation::digest::DigestDomain::SourceBytesV1,
                     [3; 32],
                 ),
             ),
@@ -598,7 +598,6 @@ mod tests {
     /// `spec/tests.md` attributes that row to #217, not to #231's debt.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
-        use crate::digest::WireNodeId;
         use crate::replay::identity::{OccurrenceKey, QualifiedName};
         use crate::replay::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
@@ -607,14 +606,15 @@ mod tests {
             origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
         };
         use crate::value::Identifier;
+        use qsl_foundation::digest::WireNodeId;
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
             contract_version: "quire.backend-provider/v1".to_owned(),
             capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
-            manifest_digest: crate::digest::DigestRecord::mint(
-                crate::digest::DigestDomain::ToolManifestJcsV1,
+            manifest_digest: qsl_foundation::digest::DigestRecord::mint(
+                qsl_foundation::digest::DigestDomain::ToolManifestJcsV1,
                 [1; 32],
             ),
             tool_pin: "kani-0.67.0".to_owned(),
@@ -646,12 +646,12 @@ mod tests {
                     ),
                     package_id: Some((
                         Some(
-                            crate::digest::DigestDomain::PackageSemanticV2
+                            qsl_foundation::digest::DigestDomain::PackageSemanticV2
                                 .as_str()
                                 .to_owned(),
                         ),
-                        crate::digest::DigestRecord::mint(
-                            crate::digest::DigestDomain::PackageSemanticV2,
+                        qsl_foundation::digest::DigestRecord::mint(
+                            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
                             [5; 32],
                         )
                         .hex(),
@@ -664,12 +664,12 @@ mod tests {
                     backend: Some((
                         "kani-backend-1".to_owned(),
                         Some(
-                            crate::digest::DigestDomain::ToolManifestJcsV1
+                            qsl_foundation::digest::DigestDomain::ToolManifestJcsV1
                                 .as_str()
                                 .to_owned(),
                         ),
-                        crate::digest::DigestRecord::mint(
-                            crate::digest::DigestDomain::ToolManifestJcsV1,
+                        qsl_foundation::digest::DigestRecord::mint(
+                            qsl_foundation::digest::DigestDomain::ToolManifestJcsV1,
                             [6; 32],
                         )
                         .hex(),

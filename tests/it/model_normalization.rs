@@ -446,7 +446,7 @@ fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_
             assert_eq!(
                 refusal,
                 vec![ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::DerivationConflict {
                         type_: DeclarationKey::fixture("model.D"),
                         member: DeclarationKey::fixture("model.Root.x"),
@@ -583,7 +583,7 @@ fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_th
             assert_eq!(
                 refusal,
                 vec![ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::RedefinitionTarget {
                         redefiners: vec![
                             DeclarationKey {
@@ -923,7 +923,7 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::DanglingReference
+                qsl_foundation::diagnostic::Code::DanglingReference
             );
             assert_eq!(
                 refusal.cause,
@@ -963,7 +963,7 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::DanglingReference
+                qsl_foundation::diagnostic::Code::DanglingReference
             );
             assert_eq!(
                 refusal.cause,
@@ -1006,7 +1006,7 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
             assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::MissingDeclaration,
+                    code: qsl_foundation::diagnostic::Code::MissingDeclaration,
                     cause: ModelRefusalCause::UnknownPopulationMemberType {
                         population: DeclarationKey::fixture("model.pop.p1"),
                         type_name: DeclarationKey::fixture("model.no-such-type"),
@@ -1043,7 +1043,7 @@ fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_droppi
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        code: qsl_foundation::diagnostic::Code::DanglingReference,
         cause: ModelRefusalCause::UnknownMember {
             record: DeclarationKey::fixture("model.A.y"),
             member: DeclarationKey::fixture("model.A.no-such-member"),
@@ -1075,7 +1075,7 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::DanglingReference,
+        code: qsl_foundation::diagnostic::Code::DanglingReference,
         cause: ModelRefusalCause::UnknownMember {
             record: DeclarationKey::fixture("model.A.op"),
             member: DeclarationKey::fixture("model.A.no-such-member"),
@@ -1110,7 +1110,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -1204,7 +1204,7 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -1246,7 +1246,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             // The typed `redefiners` list is exactly B's two edges -- C's
             // already-dominated `C.w` edge, checked equal here, takes no
@@ -1410,7 +1410,7 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::DanglingReference
+                qsl_foundation::diagnostic::Code::DanglingReference
             );
             assert_eq!(
                 refusal.cause,
@@ -1452,7 +1452,7 @@ fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -1493,7 +1493,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -1530,7 +1530,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            code: qsl_foundation::diagnostic::Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOwner {
                 member: DeclarationKey::fixture("model.A.y"),
                 owner: DeclarationKey::fixture("model.no-such-owner"),
@@ -1540,7 +1540,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
                 .to_owned(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
             },
@@ -1571,7 +1571,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            code: qsl_foundation::diagnostic::Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOwner {
                 member: DeclarationKey::fixture("model.A.y"),
                 owner: DeclarationKey::fixture("model.no-such-owner"),
@@ -1581,7 +1581,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
                 .to_owned(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
             },
@@ -1605,14 +1605,14 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
 fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.A"),
             },
             detail: "model.A is declared by more than one record in this domain package".to_owned(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            code: qsl_foundation::diagnostic::Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOwner {
                 member: DeclarationKey::fixture("model.Z.y"),
                 owner: DeclarationKey::fixture("model.no-such-owner"),
@@ -1676,7 +1676,7 @@ fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
         }
@@ -1703,7 +1703,7 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
         }
@@ -1724,7 +1724,7 @@ fn n04_empty_model_selection_version_refuses_malformed_declaration() {
         vec![object_type("model.A", vec![])],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
         cause: ModelRefusalCause::MalformedDeclaration,
         detail: format!(
             "domain package selection has an empty identity or version: {model_selection:?}"
@@ -1754,7 +1754,7 @@ fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
         })],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
         cause: ModelRefusalCause::MalformedDeclaration,
         detail: format!("declaration key has an empty package or node: {key:?}"),
     }]));
@@ -1795,7 +1795,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            code: qsl_foundation::diagnostic::Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOwner {
                 member: DeclarationKey::fixture("model.A.y"),
                 owner: DeclarationKey::fixture("model.no-such-owner"),
@@ -1805,7 +1805,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
                 .to_owned(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!("declaration key has an empty package or node: {malformed_key:?}"),
         },
@@ -1868,7 +1868,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                 refusal,
                 vec![
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::DanglingReference,
+                        code: qsl_foundation::diagnostic::Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownOwner {
                             member: DeclarationKey::fixture("model.A.y"),
                             owner: DeclarationKey::fixture("model.no-such-owner"),
@@ -1878,7 +1878,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                             .to_owned(),
                     },
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::DanglingReference,
+                        code: qsl_foundation::diagnostic::Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownGeneral {
                             supertype: DeclarationKey::fixture("model.B"),
                             general: DeclarationKey::fixture("model.no-such-type"),
@@ -2215,7 +2215,7 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -2265,7 +2265,7 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -2939,7 +2939,7 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -3051,7 +3051,7 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
                 let refusal = refusal[0].clone();
                 assert_eq!(
                     refusal.code,
-                    quire_spec_language::diagnostic::Code::InvalidModelBinding
+                    qsl_foundation::diagnostic::Code::InvalidModelBinding
                 );
                 assert_eq!(
                     refusal.cause,
@@ -3234,7 +3234,7 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -3371,7 +3371,7 @@ fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
                 refusal,
                 vec![
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://zzz/O9"),
                             member: DeclarationKey::fixture("ix://zzz/R/w"),
@@ -3386,7 +3386,7 @@ fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
                             .to_string(),
                     },
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://aaa/O9"),
                             member: DeclarationKey::fixture("ix://aaa/R/w"),
@@ -3537,7 +3537,7 @@ fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
             assert_eq!(
                 refusal,
                 vec![ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::SpecializationCycle {
                         ancestor: DeclarationKey::fixture("model.Y"),
                         via: DeclarationKey::fixture("model.Z"),
@@ -3568,7 +3568,7 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
             let refusal = refusal[0].clone();
             assert_eq!(
                 refusal.code,
-                quire_spec_language::diagnostic::Code::InvalidModelBinding
+                qsl_foundation::diagnostic::Code::InvalidModelBinding
             );
             assert_eq!(
                 refusal.cause,
@@ -3731,7 +3731,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
             assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::DerivationConflict {
                         type_: DeclarationKey::fixture("ix://test/orders/D"),
                         member: DeclarationKey::fixture("ix://test/orders/A/x"),
@@ -3861,7 +3861,7 @@ fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
 fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
     vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::RedefinitionTarget {
                 redefiners: vec![DeclarationKey::fixture("model.E.y")],
                 target: DeclarationKey::fixture("ix://test/orders/A/x"),
@@ -3871,7 +3871,7 @@ fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
                     .to_string(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::DerivationConflict {
                 type_: DeclarationKey::fixture("ix://test/orders/D"),
                 member: DeclarationKey::fixture("ix://test/orders/A/x"),
@@ -3908,7 +3908,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
                 refusal,
                 vec![
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::RedefinitionTarget {
                             redefiners: vec![DeclarationKey::fixture("model.K.k")],
                             target: DeclarationKey::fixture("model.G.g"),
@@ -3918,7 +3918,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
                                 .to_string(),
                     },
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("model.J"),
                             member: DeclarationKey::fixture("model.G.g"),
@@ -3961,7 +3961,7 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                 refusal,
                 vec![
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://n06/B9"),
                             member: DeclarationKey::fixture("ix://n06/M/w"),
@@ -3976,7 +3976,7 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                             .to_string(),
                     },
                     ModelRefusal {
-                        code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://test/orders/D"),
                             member: DeclarationKey::fixture("ix://test/orders/A/x"),
@@ -4019,7 +4019,7 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
             assert_eq!(
                 refusal,
                 ModelRefusal {
-                    code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                     cause: ModelRefusalCause::RedefinitionTarget {
                         redefiners: vec![DeclarationKey::fixture("model.E.y")],
                         target: DeclarationKey::fixture("model.A.x"),
@@ -4065,7 +4065,7 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::DanglingReference,
+                code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownOwner {
                     member: DeclarationKey::fixture("model.A.y"),
                     owner: DeclarationKey::fixture("model.nope"),
@@ -4073,7 +4073,7 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
                 detail: "field member model.A.y names owner model.nope, which is not a declared object type".to_string(),
             },
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::DanglingReference,
+                code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownMember {
                     record: DeclarationKey::fixture("model.A.y"),
                     member: DeclarationKey::fixture("model.nope2"),
@@ -4102,7 +4102,7 @@ fn an_object_type_with_two_undeclared_supertypes_reports_both() {
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::DanglingReference,
+                code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownGeneral {
                     supertype: DeclarationKey::fixture("model.Orphan"),
                     general: DeclarationKey::fixture("model.nope1"),
@@ -4110,7 +4110,7 @@ fn an_object_type_with_two_undeclared_supertypes_reports_both() {
                 detail: "object type model.Orphan names supertype model.nope1, which is not a declared object type".to_string(),
             },
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::DanglingReference,
+                code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownGeneral {
                     supertype: DeclarationKey::fixture("model.Orphan"),
                     general: DeclarationKey::fixture("model.nope2"),
@@ -4144,7 +4144,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
 
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::DanglingReference,
+            code: qsl_foundation::diagnostic::Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOwner {
                 member: DeclarationKey::fixture("model.Dup.f"),
                 owner: DeclarationKey::fixture("model.nope"),
@@ -4152,7 +4152,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
             detail: "field member model.Dup.f names owner model.nope, which is not a declared object type".to_string(),
         },
         ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.Dup.f"),
             },
@@ -4237,7 +4237,7 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
         normalize(&domain_package, limits),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.A"),
                     via: DeclarationKey::fixture("model.Z"),
@@ -4245,7 +4245,7 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
                 detail: "model.A generalizes back to itself via model.Z, through the cycle [model.A, model.Z]".to_string(),
             },
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.Z"),
                     via: DeclarationKey::fixture("model.B"),
@@ -4322,7 +4322,7 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::RedefinitionTarget {
                     redefiners: vec![
                         DeclarationKey::fixture("model.zzz_o.a"),
@@ -4335,7 +4335,7 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
                     .to_string(),
             },
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::DerivationConflict {
                     type_: DeclarationKey::fixture("model.aaa_j"),
                     member: DeclarationKey::fixture("model.aaa_g.g"),
@@ -4379,7 +4379,7 @@ fn m2_two_redefiners_of_an_unreachable_target_are_named_in_one_refusal() {
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::RedefinitionTarget {
                 redefiners: vec![
                     DeclarationKey::fixture("model.E.y"),
@@ -4450,7 +4450,7 @@ fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_ea
             ],
         );
         let b_refusal = ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::RedefinitionTarget {
                 redefiners: vec![DeclarationKey::fixture("model.B.z")],
                 target: DeclarationKey::fixture("model.A.x"),
@@ -4459,7 +4459,7 @@ fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_ea
                 .to_string(),
         };
         let descendant_refusal = ModelRefusal {
-            code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::RedefinitionTarget {
                 redefiners: vec![DeclarationKey::fixture(&redefiner)],
                 target: DeclarationKey::fixture("model.A.x"),
@@ -4559,7 +4559,7 @@ fn two_distinct_cycles_are_both_reported_in_charge_order() {
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.A"),
                     via: DeclarationKey::fixture("model.B"),
@@ -4567,7 +4567,7 @@ fn two_distinct_cycles_are_both_reported_in_charge_order() {
                 detail: "model.A generalizes back to itself via model.B, through the cycle [model.A, model.B]".to_string(),
             },
             ModelRefusal {
-                code: quire_spec_language::diagnostic::Code::InvalidModelBinding,
+                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                 cause: ModelRefusalCause::SpecializationCycle {
                     ancestor: DeclarationKey::fixture("model.Y"),
                     via: DeclarationKey::fixture("model.Z"),

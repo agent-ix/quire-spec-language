@@ -9,7 +9,7 @@ use super::models::ModelBindings;
 use super::{DeclarationId, SyntaxNamespace, UnitId};
 use crate::syntax::composed::{self as c, ComposedUnit, ParameterType, QualifiedName};
 use crate::syntax::{ClauseKind, ExprId};
-use crate::{Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 use std::collections::BTreeMap;
 
 /// A binder identity local to its owning declaration report.

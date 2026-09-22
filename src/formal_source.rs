@@ -4,13 +4,13 @@
 
 use quire_contract_ir::{SourceIdentity as IrIdentity, SourceLocation, SourceSpan};
 
-use crate::{Code, Diagnostic, Phase, Position, Source, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Position, Source, Span};
 
 /// Explicit caller-selected native and formal identities, before source bytes are read.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceIdentities {
     /// Opaque native source identity and revision labels.
-    pub native: crate::SourceIdentity,
+    pub native: qsl_foundation::SourceIdentity,
     /// Validated formal document identity and revision.
     pub formal: IrIdentity,
 }
@@ -90,7 +90,7 @@ impl FormalSource {
 
     fn failure(&self, message: &str) -> Box<FormalSourceError> {
         Box::new(FormalSourceError {
-            diagnostic: crate::diagnostic::error(
+            diagnostic: qsl_foundation::diagnostic::error(
                 &self.source,
                 Code::InvalidSourceMap,
                 Phase::SourceMap,

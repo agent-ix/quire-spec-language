@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real public compiler setup for the independently frozen package vectors.
 
+use qsl_foundation::SourceIdentity;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
 };
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::{link_native, parse, Limits, LinkLimits, SourceIdentity};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 
 pub(crate) struct Vector {
     pub name: &'static str,

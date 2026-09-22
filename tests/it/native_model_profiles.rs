@@ -2,6 +2,7 @@
 //! TC-120: explicit rational producer profiles through the public source/model APIs.
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span, Spanned};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -20,9 +21,7 @@ use quire_spec_language::native_model::{
     ModelLimits, NativeModel, NativeModelProfile, ScalarKind, ScalarSite, Unit,
 };
 use quire_spec_language::syntax::composed::{DeclarationKind, ParameterType, QualifiedName};
-use quire_spec_language::{
-    link_native, parse, ByteDigest, Code, Limits, LinkLimits, Source, SourceIdentity, Span, Spanned,
-};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 use serde_json::{json, Value};
 
 const RATIONAL: &str = r#"{"kind":"rational","name":"Ratio","numerator_minimum":-1,"numerator_maximum":1,"maximum_denominator":2}"#;

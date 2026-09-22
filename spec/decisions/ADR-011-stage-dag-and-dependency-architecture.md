@@ -837,7 +837,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
-| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map) | X-2 to X-10 (QSL-177 to QSL-185) |
+| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 
@@ -949,7 +949,7 @@ is unstaffed**, blocking QSL-165.
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
 | M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | QSL-139, after M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
-| X-2 | Extract crate `qsl-foundation` (QSL-177) | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
+| X-2 | Extract crate `qsl-foundation` (QSL-177). **Extracted** (QSL-177 PR2): `absence`, `json_number`, `serde_object`, `digest`, `wire_format`, `source` (with `source_map`) and `diagnostic` moved. `located_json` stays in the root crate -- it still imports `formal_source` (SEAM-2), which M-6e retires; it moves to `qsl-foundation` in a follow-up once that import is gone. | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
 | X-3 | Extract crate `qsl-cst` (QSL-178) | 1 | the layer-1 modules' public items | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
 | X-4 | Extract crate `qsl-source` (QSL-179) | I3 | `quire_source`, with feature `quire-extraction` | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
 | X-5 | Extract crate `qsl-forms` (QSL-180) | 2 | the layer-2 modules' public items | after X-3, on the same condition | none: no root-crate re-export (§7.2) |

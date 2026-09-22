@@ -3,7 +3,7 @@
 use crate::lexer::{self, Kind, Token};
 use crate::syntax::*;
 use crate::token::Kind as K;
-use crate::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
 
 mod composed;
 use crate::syntax::composed as c;
@@ -25,7 +25,7 @@ pub fn parse(
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(crate::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::error(
             &source,
             Code::ResourceExhausted,
             Phase::Source,
@@ -71,7 +71,7 @@ pub fn parse_native_source(
 ) -> Result<c::NativeUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(crate::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::error(
             &source,
             Code::ResourceExhausted,
             Phase::Source,

@@ -4,6 +4,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     native, wire as w, ExactInteger, Limits as ArtifactLimits, ProtocolNumber,
@@ -16,7 +17,6 @@ use quire_spec_language::state::{
     PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
     OBSERVATION_CONTRACT_REVISION,
 };
-use quire_spec_language::ByteDigest;
 use setup::{Inputs, Unit};
 
 fn admitted(test: impl FnOnce(&quire_spec_language::protocol_artifact::AdmittedPackage)) {

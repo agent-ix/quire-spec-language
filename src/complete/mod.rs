@@ -37,7 +37,7 @@ pub use package::{
 pub use package::{CapabilityId, PackageError, ProfileCatalog, SourceDigest};
 
 pub use crate::lexer::Limits;
-use crate::{Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 
 /// A version-bound source artifact and its lossless parse evidence.
 #[derive(Clone, Debug)]
@@ -170,7 +170,7 @@ pub fn parse_with_catalog(
                 &source,
                 code,
                 cause,
-                crate::Phase::Profile,
+                qsl_foundation::Phase::Profile,
                 identity_span.start,
                 identity_span.end,
                 message,

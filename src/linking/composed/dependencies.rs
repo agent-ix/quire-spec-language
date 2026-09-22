@@ -7,7 +7,7 @@ use crate::syntax::composed::{
     ValueKind,
 };
 use crate::syntax::{ClauseKind, ExprId};
-use crate::{Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 use std::collections::VecDeque;
 
 /// The native declaration kind required by one authored reference.

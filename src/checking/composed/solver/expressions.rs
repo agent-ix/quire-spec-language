@@ -415,7 +415,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
     pub(super) fn field_inner(
         &mut self,
         receiver: &NativeType<'a>,
-        name: &crate::Spanned<String>,
+        name: &qsl_foundation::Spanned<String>,
         at: ExprId,
     ) -> Result<Option<NativeType<'a>>> {
         let (model, record) = match receiver {

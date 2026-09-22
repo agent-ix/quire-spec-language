@@ -5,6 +5,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -18,7 +19,7 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
-use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity};
+use quire_spec_language::Limits;
 use std::collections::BTreeMap;
 
 fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {

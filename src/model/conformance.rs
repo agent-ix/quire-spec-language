@@ -84,7 +84,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 
-use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, OperationMemberRecord,
@@ -93,6 +92,7 @@ use crate::model::domain_package::{
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::redefinition_reaches;
+use qsl_foundation::diagnostic::Code;
 
 /// Bounds the proper-descendant walk `type_conforms` performs: an explicit
 /// task stack over caller-supplied generalization records, never native

@@ -8,8 +8,8 @@
 //! bytes. Export node keys are derived from the projection nodes.
 
 use ix_trace_rs::trace;
-use quire_spec_language::diagnostic::Code;
-use quire_spec_language::digest::WireNodeId;
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
 use quire_spec_language::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,

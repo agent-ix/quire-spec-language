@@ -14,7 +14,8 @@ use quire_contract_ir::{
 
 use crate::native_model::{NativeModel, NativeModelProfile, ObjectRole, OperationRole};
 use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
-use crate::{ByteDigest, Code, Diagnostic, ParsedUnit, Phase, Span};
+use crate::ParsedUnit;
+use qsl_foundation::{ByteDigest, Code, Diagnostic, Phase, Span};
 
 /// Caller-lowered ceilings for native formal linkage.
 #[derive(Clone, Copy, Debug)]
@@ -260,7 +261,7 @@ fn failure(
     message: impl Into<String>,
 ) -> Box<LinkingError> {
     Box::new(LinkingError {
-        diagnostic: crate::diagnostic::error(
+        diagnostic: qsl_foundation::diagnostic::error(
             unit.source(),
             code,
             Phase::Link,
@@ -784,7 +785,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
     fn field(
         &mut self,
         id: ExprId,
-        name: &crate::Spanned<String>,
+        name: &qsl_foundation::Spanned<String>,
         shape: Shape<'a>,
     ) -> Result<Shape<'a>, Box<LinkingError>> {
         let (environment, record_name) = match shape {
@@ -1034,8 +1035,9 @@ mod profile_tests {
     use crate::formal_source::FormalSource;
     use crate::native_model::ModelLimits;
     use crate::runtime_test_setup::native_rule_model;
-    use crate::{parse, Limits, SourceIdentity};
+    use crate::{parse, Limits};
     use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
     use quire_contract_ir as ir;
 
     #[test]

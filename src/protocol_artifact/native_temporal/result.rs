@@ -10,7 +10,8 @@ use super::{
     },
     request::ValidatedRequest,
 };
-use crate::{temporal, ByteDigest};
+use crate::temporal;
+use qsl_foundation::ByteDigest;
 
 /// Canonical immutable JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] =

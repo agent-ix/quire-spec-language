@@ -43,7 +43,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
 use crate::model::domain_package::{
@@ -52,6 +51,7 @@ use crate::model::domain_package::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use qsl_foundation::diagnostic::Code;
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
 /// that resolved to no kind at all (missing a capability, cascaded from a

@@ -6,8 +6,8 @@ pub mod refusal;
 pub mod wire;
 
 use crate::protocol_artifact::{v2, wire::Handle};
-use crate::ByteDigest;
 pub use intake::{encode_candidate, read};
+use qsl_foundation::ByteDigest;
 pub use refusal::{InventorySide, MappingCause, MappingField, Refusal};
 
 /// Exact version-3 payload selection.

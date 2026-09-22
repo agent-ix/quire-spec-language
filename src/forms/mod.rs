@@ -34,7 +34,7 @@
 //! `forms` is layer 2 (ADR-011 §6.1), whose allow-list is layer 1 (`cst`)
 //! and F only. This module does not conform. QSL-146 resolved three of the
 //! four carrier types named when this violation was first declared:
-//! `syntax`'s `AbsenceMode` field now imports `crate::absence::AbsenceMode`
+//! `syntax`'s `AbsenceMode` field now imports `qsl_foundation::absence::AbsenceMode`
 //! (F, allow-listed — QSL-146 moved it out of `model::population`, layer 3),
 //! and its `CollectionKind` and `Integer` fields now import
 //! `quire_exact::{CollectionKind, Integer}` (layer K, allow-listed — a

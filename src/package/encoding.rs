@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::ser::{CharEscape, CompactFormatter, Formatter};
 
 use super::{PackageLimits, PackagePassUsage, PackagePathSegment};
-use crate::Code;
+use qsl_foundation::Code;
 
 #[cfg(test)]
 mod tests;

@@ -9,7 +9,7 @@ use super::cst::{
     DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, InvalidModelComponent,
     ModelDigest, ModelRef,
 };
-use crate::{ByteDigest, Code, SourceIdentity, Span};
+use qsl_foundation::{ByteDigest, Code, SourceIdentity, Span};
 
 /// Unforgeable crate-issued proof that typed definition/model parts came from
 /// the owning reader boundary.
@@ -70,7 +70,7 @@ impl ModelArtifact {
         version: impl Into<String>,
         exact_bytes: &[u8],
     ) -> Result<Self, PackageError> {
-        if exact_bytes.is_empty() || exact_bytes.len() > crate::source::MAX_SOURCE_BYTES {
+        if exact_bytes.is_empty() || exact_bytes.len() > qsl_foundation::source::MAX_SOURCE_BYTES {
             return Err(PackageError::InvalidModelArtifactBytes);
         }
         let exact = ModelRef::new(
@@ -183,7 +183,7 @@ impl Default for PackageLimits {
             definitions: 4_096,
             dependency_edges: 16_384,
             depth: 256,
-            artifact_bytes: 16 * crate::source::MAX_SOURCE_BYTES,
+            artifact_bytes: 16 * qsl_foundation::source::MAX_SOURCE_BYTES,
         }
     }
 }
@@ -214,7 +214,7 @@ impl Definition {
     ) -> Result<Self, PackageError> {
         let identity = identity.into();
         let version = version.into();
-        if exact_bytes.is_empty() || exact_bytes.len() > crate::source::MAX_SOURCE_BYTES {
+        if exact_bytes.is_empty() || exact_bytes.len() > qsl_foundation::source::MAX_SOURCE_BYTES {
             return Err(PackageError::InvalidDefinitionArtifactBytes);
         }
         let exact = DefinitionRef::new(
@@ -1163,7 +1163,7 @@ fn field(output: &mut Vec<u8>, name: &str, value: &[u8]) -> Result<(), PackageEr
     if output
         .len()
         .checked_add(added)
-        .is_none_or(|size| size > crate::source::MAX_SOURCE_BYTES)
+        .is_none_or(|size| size > qsl_foundation::source::MAX_SOURCE_BYTES)
     {
         return Err(PackageError::ResourceLimit);
     }

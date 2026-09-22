@@ -256,6 +256,6 @@ fn distinct_declared_universes_cannot_enter_equality_through_matching_keys() {
         quire_spec_language::syntax::ClauseKind::Invariant,
     )
     .unwrap_err();
-    assert_eq!(refused.phase, quire_spec_language::Phase::Check);
+    assert_eq!(refused.phase, qsl_foundation::Phase::Check);
     assert_eq!(refused.code, Code::IllTyped);
 }

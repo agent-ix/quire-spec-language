@@ -6,6 +6,7 @@
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use quire_rs::semantic::{
     extract_clauses, read_semantic_block, AvailabilityState, BundleIndex, SemanticContext,
@@ -16,7 +17,6 @@ use quire_spec_language::quire_source::{compile, Cause, Limits, PreflightFailure
 use quire_spec_language::runtime::{
     execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode,
 };
-use quire_spec_language::{ByteDigest, Code, Source, SourceIdentity, Span};
 use serde_json::json;
 
 fn identity() -> SourceIdentity {

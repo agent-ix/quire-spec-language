@@ -84,10 +84,10 @@ use quire_contract_ir::{
 };
 
 use super::PackageLimits;
-use crate::diagnostic::Code;
 use crate::library::{
     declared_exports, verify_package, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
 };
+use qsl_foundation::diagnostic::Code;
 
 #[cfg(test)]
 mod tests;

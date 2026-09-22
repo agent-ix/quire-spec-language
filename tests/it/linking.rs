@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
-use quire_spec_language::{
-    link, parse, ByteDigest, Code, Limits, LinkLimits, ParsedUnit, Phase, SourceIdentity,
-};
+use quire_spec_language::{link, parse, Limits, LinkLimits, ParsedUnit};
 
 fn symbol(name: &str) -> ir::SymbolName {
     ir::SymbolName::new(name).unwrap()

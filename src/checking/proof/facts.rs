@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::{Meter, ValueKey};
 use crate::checking::CheckingError;
 use crate::syntax::ExprId;
-use crate::Span;
+use qsl_foundation::Span;
 
 #[derive(Clone, Copy, Debug)]
 pub(in crate::checking) struct Fact {

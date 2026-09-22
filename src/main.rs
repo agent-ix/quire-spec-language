@@ -3,7 +3,8 @@
 mod cli;
 
 use cli::{Command, SyntaxCommand};
-use quire_spec_language::{format::format, parse, Diagnostic, Limits, SourceIdentity};
+use qsl_foundation::{Diagnostic, SourceIdentity};
+use quire_spec_language::{format::format, parse, Limits};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::Path;

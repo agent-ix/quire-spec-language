@@ -19,10 +19,10 @@
 use std::sync::Arc;
 
 use ix_trace_rs::trace;
+use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits,
 };
-use quire_spec_language::absence::AbsenceMode;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{

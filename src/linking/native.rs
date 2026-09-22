@@ -13,7 +13,8 @@ use super::{
 };
 use crate::native_model::{NativeModel, NativeModelProfile, OperationRole};
 use crate::syntax::{Clause, ExprId};
-use crate::{Code, ParsedUnit, Span, Spanned};
+use crate::ParsedUnit;
+use qsl_foundation::{Code, Span, Spanned};
 
 type Result<T> = std::result::Result<T, Box<LinkingError>>;
 
@@ -118,10 +119,10 @@ pub(super) fn catalog<'a>(
 
 fn conflict(model: &NativeModel, previous: &NativeModel, message: &str) -> Box<LinkingError> {
     let mut error = Box::new(LinkingError {
-        diagnostic: crate::diagnostic::error(
+        diagnostic: qsl_foundation::diagnostic::error(
             model.source().source(),
             Code::InvalidModelBinding,
-            crate::Phase::Link,
+            qsl_foundation::Phase::Link,
             0,
             0,
             message,

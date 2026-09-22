@@ -2,7 +2,7 @@
 //! FR-040-AC-5: query-body totality and bounded prefix witnesses, never execution.
 
 use super::*;
-use crate::Spanned;
+use qsl_foundation::Spanned;
 
 /// A source-owned proof template, instantiated afresh for each consuming binder.
 /// Distinct traversals never identify their arbitrary occurrences with each other.

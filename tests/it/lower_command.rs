@@ -4,6 +4,7 @@
 use crate::support::standalone_setup as fixtures;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
 use quire_contract_ir_historical as backend_ir;
@@ -11,7 +12,6 @@ use quire_spec_language::{
     lowering::{lower, LoweringLimits},
     package::{NativePackage, PackageLimits},
     syntax::ClauseKind,
-    ByteDigest,
 };
 use serde_json::{json, Value};
 use std::{
@@ -325,7 +325,7 @@ fn projection_export_reuses_source_request_refusals_and_intake_limits() {
         assert!(output.stdout.is_empty());
         let error: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(error["code"], code);
-        assert!(quire_spec_language::Code::from_code(code).is_some());
+        assert!(qsl_foundation::Code::from_code(code).is_some());
         assert_eq!(
             error["request_digest"],
             ByteDigest::of(&std::fs::read(directory.path().join("compile.json")).unwrap())

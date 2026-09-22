@@ -49,7 +49,6 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
-use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -65,6 +64,7 @@ use crate::value::node::NodeKey;
 use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
 use crate::value::rational::Rational;
+use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{CardinalityBound, CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every

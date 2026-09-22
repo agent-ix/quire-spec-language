@@ -9,7 +9,7 @@ use super::{PackageError, PackageStage, PackageUsage};
 use crate::checking::{CheckedPackage, NativeType};
 use crate::native_model::{NativeModel, ScalarKind};
 use crate::syntax::{BinaryOp, Builtin, ClauseKind, ExprKind, UnaryOp};
-use crate::Code;
+use qsl_foundation::Code;
 
 pub(super) type Features = BTreeSet<&'static str>;
 

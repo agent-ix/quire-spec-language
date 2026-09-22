@@ -6,7 +6,7 @@
 /// Full JSON grammar remains the owning decoder's responsibility. Malformed
 /// number-like tokens are deliberately left for that decoder so this scan does
 /// not reclassify syntax failures.
-pub(crate) fn all(bytes: &[u8], mut accepts: impl FnMut(&str) -> bool) -> bool {
+pub fn all(bytes: &[u8], mut accepts: impl FnMut(&str) -> bool) -> bool {
     let mut position = 0;
     let mut quoted = false;
     while position < bytes.len() {

@@ -11,7 +11,7 @@ use super::input::{
     InvocationDraft, ModelBinding, ObjectIdentity, QualifiedName, SnapshotDraft, ValueBinding,
     ValueId, ValueNode,
 };
-use crate::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 
 type Result<T> = std::result::Result<T, Failure>;
 

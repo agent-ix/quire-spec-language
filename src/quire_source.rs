@@ -24,8 +24,8 @@ use crate::checking::ClauseBinding;
 use crate::formal_source::SourceIdentities;
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
 use crate::native_model::NativeModel;
-use crate::source_map::{Layout, Segment, SourceMap};
-use crate::{Code, Diagnostic, Phase, Source, Span};
+use qsl_foundation::source_map::{Layout, Segment, SourceMap};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 /// Explicit authored selection and independently assigned native/formal body identities.
 #[derive(Clone, Debug)]
@@ -130,7 +130,7 @@ impl<'model> ExtractedPackage<'model> {
 }
 
 fn failure(source: &Source, code: Code, message: &str) -> Box<Diagnostic> {
-    crate::diagnostic::error(source, code, Phase::SourceMap, 0, 0, message)
+    qsl_foundation::diagnostic::error(source, code, Phase::SourceMap, 0, 0, message)
 }
 
 fn selected_clause<'a>(

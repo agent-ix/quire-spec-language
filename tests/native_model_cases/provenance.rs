@@ -3,7 +3,8 @@
 
 use super::*;
 use ix_trace_rs::trace;
-use quire_spec_language::{formal_source::FormalSource, Source};
+use qsl_foundation::Source;
+use quire_spec_language::formal_source::FormalSource;
 
 #[derive(Clone, Copy, Debug)]
 enum Target {

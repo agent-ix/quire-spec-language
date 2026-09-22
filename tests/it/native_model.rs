@@ -5,9 +5,9 @@ use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use native_rule_model::{parts, symbol};
+use qsl_foundation::{ByteDigest, Code, Phase};
 use quire_contract_ir as ir;
 use quire_spec_language::native_model::{ModelLimits, NativeModel, ScalarKind, ScalarSite, Unit};
-use quire_spec_language::{ByteDigest, Code, Phase};
 
 #[test]
 #[trace("TC-040", "FR-015-AC-1")]

@@ -72,8 +72,8 @@ pub enum InputRefusal {
 
 impl InputRefusal {
     /// The refusal code.
-    pub fn code(&self) -> crate::diagnostic::Code {
-        use crate::diagnostic::Code;
+    pub fn code(&self) -> qsl_foundation::diagnostic::Code {
+        use qsl_foundation::diagnostic::Code;
         match self {
             Self::UnknownFunction(_) => Code::MissingDeclaration,
             Self::Arity { .. } | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,

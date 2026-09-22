@@ -21,7 +21,7 @@ use crate::linking::composed::{
     scopes::{self, Anchor, DeclarationScope},
 };
 use crate::syntax::{composed as c, BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
-use crate::Span;
+use qsl_foundation::Span;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 

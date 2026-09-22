@@ -14,11 +14,11 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
-use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{

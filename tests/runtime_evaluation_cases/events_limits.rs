@@ -2,8 +2,8 @@
 //! TC-073–076: original event lineage, exact stops, immutable retries and refusals.
 
 use super::*;
+use qsl_foundation::Phase;
 use quire_spec_language::syntax::{ClauseKind, ExprKind};
-use quire_spec_language::Phase;
 
 #[test]
 #[trace("TC-073", "FR-008-AC-7", "FR-008-AC-8", "FR-008-AC-9")]

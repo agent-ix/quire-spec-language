@@ -592,7 +592,7 @@ fn received_object_boolean_field_uses_its_admitted_record_owner() {
         .unwrap()
         .push(serde_json::json!({"name":"ready", "type":{"kind":"boolean"}}));
     let bytes = serde_json::to_vec(&document).unwrap();
-    let source = quire_spec_language::Source::read(
+    let source = qsl_foundation::Source::read(
         model_source.source().identity().clone(),
         model_source.source().path(),
         &bytes,

@@ -15,7 +15,7 @@ use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationLocation, LinkedPackage};
 use crate::native_model::{NativeModel, ObjectRole, OperationRole};
 use crate::syntax::ExprId;
-use crate::{Code, Diagnostic, Phase, Source, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 pub use types::NativeType;
 pub(crate) use types::{Catalog, FrameIndex};
@@ -338,7 +338,7 @@ fn failure(
     message: impl Into<String>,
 ) -> Box<CheckingError> {
     Box::new(CheckingError {
-        diagnostic: crate::diagnostic::error(
+        diagnostic: qsl_foundation::diagnostic::error(
             source,
             code,
             Phase::Check,

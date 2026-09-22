@@ -100,8 +100,8 @@ pub struct Exhaustion {
 
 impl Exhaustion {
     /// Incomplete processing is distinct from a semantic refusal.
-    pub fn code(self) -> crate::Code {
-        crate::Code::ResourceExhausted
+    pub fn code(self) -> qsl_foundation::Code {
+        qsl_foundation::Code::ResourceExhausted
     }
 }
 

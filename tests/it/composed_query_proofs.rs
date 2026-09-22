@@ -5,6 +5,7 @@
 use crate::support::composed_types as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::proofs::{
     CauseKind, DeclarationProof, ProofDisposition, ProofLimits, ProofReport,
@@ -21,7 +22,7 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
-use quire_spec_language::{Limits, Source, SourceIdentity};
+use quire_spec_language::Limits;
 use serde_json::{json, Value};
 
 fn owner() -> ir::RequirementRef {
@@ -589,7 +590,7 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
     let excess = setup::try_model_with_maximum("ExcessQueryMaximum", 10_001).unwrap_err();
     assert_eq!(
         excess.code(),
-        quire_spec_language::Code::UnrepresentableConstraint
+        qsl_foundation::Code::UnrepresentableConstraint
     );
     assert!(!excess.is_incomplete());
     let model_source::ModelSourceCause::Admission(cause) = &excess.cause else {
@@ -597,9 +598,9 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
     };
     assert_eq!(
         cause.diagnostic.code,
-        quire_spec_language::Code::UnrepresentableConstraint
+        qsl_foundation::Code::UnrepresentableConstraint
     );
-    assert_eq!(cause.diagnostic.phase, quire_spec_language::Phase::Link);
+    assert_eq!(cause.diagnostic.phase, qsl_foundation::Phase::Link);
     assert_eq!(cause.diagnostic.source.identity, "model:ExcessQueryMaximum");
     assert_eq!(cause.diagnostic.source.revision, "authored");
     assert_eq!(cause.diagnostic.path, "ExcessQueryMaximum.json");
@@ -612,7 +613,7 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
         excess
             .source()
             .source()
-            .locate(quire_spec_language::Span { start: 0, end: 0 })
+            .locate(qsl_foundation::Span { start: 0, end: 0 })
             .unwrap()
     );
 

@@ -330,7 +330,7 @@ mod tests {
         PUBLISHED_V1_SELECTION_FILE,
     };
     use crate::protocol_artifact::{Limits, ACCOUNTING_VERSION};
-    use crate::ByteDigest;
+    use qsl_foundation::ByteDigest;
 
     fn handoff_files(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) {
         for entry in fs::read_dir(directory).expect("read published handoff directory") {

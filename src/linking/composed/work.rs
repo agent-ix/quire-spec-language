@@ -100,8 +100,8 @@ pub struct Exhaustion {
 
 impl Exhaustion {
     /// Native incomplete-work code, distinct from semantic refusal.
-    pub fn code(self) -> crate::Code {
-        crate::Code::ResourceExhausted
+    pub fn code(self) -> qsl_foundation::Code {
+        qsl_foundation::Code::ResourceExhausted
     }
 }
 

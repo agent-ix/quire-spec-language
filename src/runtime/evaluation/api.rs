@@ -3,7 +3,7 @@
 
 use super::super::ValidatedContext;
 use crate::syntax::ExprId;
-use crate::{Diagnostic, Span};
+use qsl_foundation::{Diagnostic, Span};
 
 /// Inclusive caller-lowered ceilings, clamped separately to their defaults.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

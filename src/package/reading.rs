@@ -7,7 +7,8 @@ use super::{
 };
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::native_model::NativeModel;
-use crate::{link_native, parse, ByteDigest, Code, Diagnostic, Limits, LinkLimits};
+use crate::{link_native, parse, Limits, LinkLimits};
+use qsl_foundation::{ByteDigest, Code, Diagnostic};
 use std::collections::{BTreeMap, BTreeSet};
 
 const KNOWN_FEATURES: [&str; 19] = [

@@ -1226,6 +1226,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-foundation"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "quire-contract-codegen"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-contract-codegen?rev=5e2a6a994d2107f36294078ad202467a4c66bb75#5e2a6a994d2107f36294078ad202467a4c66bb75"
@@ -1310,6 +1319,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "qsl-attrs",
+ "qsl-foundation",
  "quire-contract-codegen",
  "quire-contract-ir",
  "quire-contract-model",

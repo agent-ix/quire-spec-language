@@ -3,13 +3,13 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
-use quire_spec_language::{ByteDigest, Source, SourceIdentity};
 use serde_json::json;
 
 pub struct Fixture {
@@ -71,7 +71,7 @@ impl Fixture {
             },
             "native-rule-model.json",
             include_bytes!("../../fixtures/native-rule-model.json"),
-            quire_spec_language::source::MAX_SOURCE_BYTES,
+            qsl_foundation::source::MAX_SOURCE_BYTES,
         )
         .unwrap();
         let model_source = FormalSource::new(

@@ -39,7 +39,6 @@
 use super::facts::{established_field_fact, Established};
 use super::ir::{Connective, Node, NodeKind, OrderedKind};
 use super::refusal::{Location, Origin, ProvedInterval};
-use crate::diagnostic::Code;
 use crate::model::conformance::{
     missing_member, AxisFailure, ConformanceIndex, ConformanceOutcome,
 };
@@ -48,6 +47,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::value::composite::{Value, ValueType};
 use crate::value::numeric::OrderingOperator;
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{Integer, IntegerInterval};
 
 /// `self`, bound as local slot 0, for every synthetic guard tree

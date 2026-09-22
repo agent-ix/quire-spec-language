@@ -8,7 +8,7 @@
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
-use crate::diagnostic::Code;
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.

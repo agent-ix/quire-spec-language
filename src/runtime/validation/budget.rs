@@ -5,7 +5,7 @@ use super::{
     RuntimeLocation, ValidationDiagnostic, ValidationLimits, ValidationReport, ValidationStatus,
     ValidationUsage,
 };
-use crate::{Code, Phase, Source, Span};
+use qsl_foundation::{Code, Phase, Source, Span};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Stage {
@@ -57,7 +57,7 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
     }
 
     pub fn diagnostic(&self, code: Code, message: &'static str) -> Box<ValidationDiagnostic> {
-        let diagnostic = crate::diagnostic::error(
+        let diagnostic = qsl_foundation::diagnostic::error(
             self.source,
             code,
             Phase::Validate,

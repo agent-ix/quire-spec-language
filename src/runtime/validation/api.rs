@@ -9,7 +9,7 @@ use super::super::{
 };
 use crate::checking::{CheckedClause, CheckedPackage};
 use crate::linking::DeclarationLocation;
-use crate::{ByteDigest, Diagnostic, SourceIdentity};
+use qsl_foundation::{ByteDigest, Diagnostic, SourceIdentity};
 
 #[cfg(test)]
 #[path = "../../../tests/support/runtime_evaluation_invariants.rs"]

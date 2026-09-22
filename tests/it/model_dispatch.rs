@@ -12,7 +12,7 @@
 //! the exact ground-truth digests; this file only needs G's structure).
 
 use ix_trace_rs::trace;
-use quire_spec_language::diagnostic::Code;
+use qsl_foundation::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
 use quire_spec_language::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,

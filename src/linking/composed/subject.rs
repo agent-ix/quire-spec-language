@@ -22,7 +22,8 @@ use super::definitions::{Cause, Selection, UseKind};
 use super::models::{ImportRefusal, ModelInput};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
-use crate::{ByteDigest, Limits, SourceIdentity};
+use crate::Limits;
+use qsl_foundation::{ByteDigest, SourceIdentity};
 
 /// Which declared static component of two subjects differs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

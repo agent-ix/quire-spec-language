@@ -9,9 +9,9 @@
 //! select it. A future arm attempting to map some FR-331 value to
 //! `undefined` is a compile error here, not merely untested dead code.
 
-use crate::digest::DigestRecord;
 use crate::replay::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 use crate::replay::identity::Backend;
+use qsl_foundation::digest::DigestRecord;
 
 /// One of the seven ADR-013 O-16 categories an FR-331 proof column can
 /// produce (ADR-013 O-16 category table; FR-069). `Category` in
@@ -366,8 +366,8 @@ impl ProofResultEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digest::DigestDomain;
     use ix_trace_rs::trace;
+    use qsl_foundation::digest::DigestDomain;
 
     fn manifest_digest() -> DigestRecord {
         DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [0x11; 32])

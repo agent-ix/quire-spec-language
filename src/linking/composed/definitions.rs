@@ -11,7 +11,7 @@ use super::binding_work::{Dimension, Exhaustion, Work};
 use super::definition_source::RegisteredDefinition;
 use super::{DeclarationId, SyntaxNamespace, UnitId};
 use crate::syntax::composed::{ControlKind, DeclarationKind, ProtocolRequirement};
-use crate::{ByteDigest, Span, Spanned};
+use qsl_foundation::{ByteDigest, Span, Spanned};
 
 /// Immutable definition selection. This digest covers original bytes only.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2,7 +2,7 @@
 use super::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
 };
-use crate::{Phase, SourceIdentity, Span};
+use qsl_foundation::{Phase, SourceIdentity, Span};
 
 /// One UTF-8-boundary-preserving source replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]

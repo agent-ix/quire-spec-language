@@ -13,7 +13,7 @@ pub use refusal::{
 
 use super::wire::ArtifactRef;
 use super::ExpectedDeclaration;
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 /// Exact version-2 payload selection.
 pub const WIRE: &str = "quire.compiled-protocol/2";

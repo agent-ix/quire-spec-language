@@ -13,6 +13,7 @@ use setup::*;
 mod value_cases;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::DeclarationKey;
@@ -23,7 +24,6 @@ use quire_spec_language::runtime::{
     ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{ByteDigest, Code, Phase, SourceIdentity};
 
 #[test]
 #[trace("TC-058", "TC-059", "FR-007-AC-6", "FR-007-AC-8")]

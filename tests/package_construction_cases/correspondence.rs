@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-079: explicit lexical, capture and transitive-obligation inventories.
 
+use qsl_foundation::Span;
 use quire_spec_language::linking::{
     DeclarationIdentity, DeclarationKey, DeclarationLocation, ResolutionTarget,
 };
-use quire_spec_language::Span;
 use serde_json::{json, Value};
 
 use super::*;

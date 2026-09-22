@@ -5,7 +5,7 @@ use super::work::{Dimension, Exhaustion, Work};
 use super::Site;
 use crate::formal_source::FormalSource;
 use crate::linking::composed::{binding, UnitId};
-use crate::Source;
+use qsl_foundation::Source;
 
 pub(super) struct Correspondence<'s> {
     offered: &'s [FormalSource],

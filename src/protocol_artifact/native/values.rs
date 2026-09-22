@@ -389,7 +389,7 @@ impl<'m> Context<'_, 'm> {
 
     fn local_binder(
         &self,
-        span: crate::Span,
+        span: qsl_foundation::Span,
         kind: scopes::BinderKind,
         work: &mut Work,
     ) -> Result<w::Handle, Error> {

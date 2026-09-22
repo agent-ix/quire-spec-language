@@ -9,6 +9,7 @@ use crate::support::runtime_setup as setup;
 use crate::support::package_vector_setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity};
 use quire_spec_language::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
@@ -31,7 +32,7 @@ use quire_spec_language::package::{
 use quire_spec_language::runtime::{
     ArtifactLimits, InputReadCause, InputReadStage, Snapshot, SnapshotRef,
 };
-use quire_spec_language::{ByteDigest, Code, Limits, Source, SourceIdentity};
+use quire_spec_language::Limits;
 use serde_json::Value;
 use std::collections::BTreeMap;
 

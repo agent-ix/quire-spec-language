@@ -17,7 +17,7 @@ use crate::linking::composed::{
 };
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed as c;
-use crate::Spanned;
+use qsl_foundation::Spanned;
 pub(super) fn controls(
     context: &Declaration<'_, '_>,
     roles: &[w::Role],
@@ -686,7 +686,7 @@ fn channel_handle(
 }
 pub(super) fn operation_context(
     context: &Declaration<'_, '_>,
-    span: crate::Span,
+    span: qsl_foundation::Span,
     builder: &ValueBuilder<'_>,
     work: &mut Work,
 ) -> Result<w::ExportRef, Error> {

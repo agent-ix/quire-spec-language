@@ -21,7 +21,7 @@
 use serde_json::{json, Value};
 
 use super::node::{is_identifier, NodeKey};
-use crate::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the

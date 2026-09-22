@@ -23,6 +23,7 @@ mod static_changes;
 mod vectors;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
@@ -30,9 +31,7 @@ use quire_spec_language::checking::{
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
-use quire_spec_language::{
-    link_native, parse, ByteDigest, Code, Limits, LinkLimits, SourceIdentity,
-};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 
 const HEADER: &str = include_str!("../fixtures/native-package/header.native");
 

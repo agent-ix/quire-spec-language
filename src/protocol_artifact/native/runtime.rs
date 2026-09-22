@@ -15,7 +15,7 @@ use crate::linking::composed::{
 };
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::{composed as c, ClauseKind};
-use crate::{Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 
 pub(super) fn binders(
     typed: &DeclarationTypes<'_>,

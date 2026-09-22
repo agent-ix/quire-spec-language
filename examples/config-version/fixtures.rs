@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: newly authored ConfigVersion fixtures through public native APIs.
 
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::{
     formal_source::FormalSource,
@@ -11,7 +12,6 @@ use quire_spec_language::{
         ObjectIdentity, Population, QualifiedName, Snapshot, SnapshotDraft, ValueBinding, ValueId,
         ValueNode,
     },
-    ByteDigest, Source, SourceIdentity,
 };
 use serde_json::{json, Value};
 use std::{io, path::Path};

@@ -15,7 +15,8 @@ use super::{
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
 use crate::native_model::{NativeModel, ObjectRole, OperationRole, ScalarKind, ScalarSite};
 use crate::syntax::{BinaryOp, Builtin, ClauseKind, ExprId, ExprKind, UnaryOp};
-use crate::{Code, ParsedUnit, Span};
+use crate::ParsedUnit;
+use qsl_foundation::{Code, Span};
 
 #[derive(Debug)]
 pub(super) struct NodeType<'a> {

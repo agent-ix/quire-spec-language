@@ -10,6 +10,7 @@
 use std::cmp::Ordering;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, SourceIdentity};
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
 };
@@ -21,7 +22,6 @@ use quire_spec_language::value::{
     Refusal, SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType,
     NODE_KEY_DOMAIN, UNICODE_TEXT_DEFINITION,
 };
-use quire_spec_language::{Code, SourceIdentity};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;

@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use crate::digest::WireNodeId;
 use crate::value::node::{is_qualified_name, NODE_KEY_DOMAIN};
+use qsl_foundation::digest::WireNodeId;
 
 /// The identity preimage version constant.
 pub(crate) const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";

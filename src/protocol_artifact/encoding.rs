@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::ser::{CompactFormatter, Formatter};
 
 use super::{report, wire, work::Work, Candidate, Dimension, Error, Invalid, Limits, Report};
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 struct Meter<'a> {
     work: &'a mut Work,

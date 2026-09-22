@@ -3,12 +3,12 @@
 
 use super::super::wire;
 use crate::runtime::{EvaluationUsage, InvocationRef, QualifiedName, SnapshotRef, ValidationUsage};
-use crate::{LocatedSpan, SourceIdentity, Span};
+use qsl_foundation::{LocatedSpan, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use serde::Serialize;
 use std::borrow::Cow;
 
-pub(super) use crate::wire_format::WireFormat as Format;
+pub(super) use qsl_foundation::wire_format::WireFormat as Format;
 
 pub(super) enum Stage {
     #[cfg(feature = "quire-extraction")]
@@ -18,7 +18,7 @@ pub(super) enum Stage {
     Output,
     Envelope,
     Intake,
-    Native(crate::Phase),
+    Native(qsl_foundation::Phase),
     Model,
     Package,
     SelectedPackage,

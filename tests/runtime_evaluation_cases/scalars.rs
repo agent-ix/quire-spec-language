@@ -2,8 +2,8 @@
 //! TC-069/072/075: exact scalar operations and separate comparison/text budgets.
 
 use super::*;
+use qsl_foundation::Phase;
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::Phase;
 use serde_json::json;
 
 #[test]

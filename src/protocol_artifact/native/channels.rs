@@ -9,7 +9,7 @@ use crate::linking::composed::{
 };
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid};
 use crate::syntax::composed as c;
-use crate::{Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 
 use super::{
     context::Declaration,

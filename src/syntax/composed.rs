@@ -3,7 +3,7 @@
 pub(crate) mod arena;
 
 use super::{ClauseKind, ExprId, ExprKind, ModelImport, ParsedUnit};
-use crate::{Source, Span, Spanned};
+use qsl_foundation::{Source, Span, Spanned};
 
 /// Source-selected syntax, separated from the historical checked-package path.
 #[derive(Clone, Debug)]

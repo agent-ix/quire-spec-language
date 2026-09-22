@@ -42,7 +42,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::diagnostic::Code;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
     Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
@@ -51,7 +50,8 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::source::{LocatedSpan, Position};
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::source::{LocatedSpan, Position};
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
 /// construct or type definition IS. Kind names and modules are never
@@ -450,7 +450,7 @@ fn node_identity_label(value: &Value, at: &str) -> String {
 }
 
 /// The node's `origin.source.sourceIdentity`/`startLine`/`startColumn`,
-/// mapped onto [`crate::source::LocatedSpan`]'s own `{start, end}` shape.
+/// mapped onto [`qsl_foundation::source::LocatedSpan`]'s own `{start, end}` shape.
 /// FCD's wire (matching its `extraction-frontend::diagnostics::Locus`)
 /// carries a start position only -- no byte offset and no end position --
 /// so both ends of the mapped span are that same point and its byte offset

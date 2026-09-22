@@ -11,13 +11,13 @@ mod wire;
 mod schema;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
     execute, ArtifactLimits, ExecutionLimits, ExecutionOutcome, InputReadCause, InputReadStage,
     Invocation, RuntimeInput, Snapshot, SnapshotRef, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{ByteDigest, Code, SourceIdentity};
 use serde_json::{json, Value};
 
 fn selected(bytes: &[u8]) -> SnapshotRef {

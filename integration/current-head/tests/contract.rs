@@ -22,7 +22,8 @@ use ix_trace_rs::trace;
 use quire_contract_codegen::BOUND_COVERAGE_SCHEMA;
 use quire_contract_ir::AnchorName;
 use quire_contract_runtime::{ContractIdentity, RequirementId, RevisionId};
-use quire_spec_language::{parse, Limits, SourceIdentity};
+use qsl_foundation::SourceIdentity;
+use quire_spec_language::{parse, Limits};
 
 const NATIVE_SOURCE: &str = r#"language "ix:native" edition "0-draft";
 profile "state-finite/0-draft";

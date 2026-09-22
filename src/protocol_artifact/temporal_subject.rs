@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use super::{checked_handoff as handoff, v2, wire as w};
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 pub use handoff::{Error, ErrorCode, Limits, Report, Usage};
 

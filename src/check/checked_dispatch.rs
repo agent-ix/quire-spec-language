@@ -100,7 +100,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::check::{DispatchOperation, PackageDeclarations};
 use super::ir::{DispatchCandidate, DispatchTable};
-use crate::diagnostic::Code;
 use crate::forms::{
     BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
 };
@@ -113,6 +112,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::composite::ValueType;
 use crate::value::node::NodeKey;
+use qsl_foundation::diagnostic::Code;
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
 /// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared

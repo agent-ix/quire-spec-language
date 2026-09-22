@@ -14,7 +14,7 @@ use crate::linking::composed::scopes::{BinderKind, BinderType, DeclarationScope}
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed::{self as c, ComposedUnit};
 use crate::syntax::{BinaryOp, ExprId, ExprKind, UnaryOp};
-use crate::Span;
+use qsl_foundation::Span;
 
 use super::layout::DeclLayout;
 use super::types::{index, integer};
