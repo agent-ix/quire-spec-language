@@ -35,8 +35,8 @@ model-query refusal with a kernel collection-bound refusal.
 
 1. Admit a closed population `p: Population<A>[1]` whose binding has two
    members of type `A`.
-2. Evaluate `allInstances<A>(p)` through the public S6a entry point, with
-   an unlimited meter.
+2. Evaluate the checked expression `allInstances<A>(p)` through
+   `CheckedPackage::evaluate`, with an unlimited meter.
 3. Match the result as
    `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` and
    take `cause.catalog_code()`.

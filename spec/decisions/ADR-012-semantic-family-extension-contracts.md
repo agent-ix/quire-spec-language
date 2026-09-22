@@ -233,10 +233,11 @@ trait FamilyContract {
 
 trait ReferenceEvaluation: FamilyContract {
     type Observed;          // kernel value, state observation or trace verdict
-    fn evaluate(checked: &Self::Checked, env: &mut EvalEnv)
-        -> Result<Outcome<Self::Observed>, FamilyResult>;
-        // Err: a family-owned evaluation-time refusal or undefined result
-        // (ADR-013 O-16)
+    fn evaluate(checked: &Self::Checked, env: &mut EvalEnv, meter: &mut Meter)
+        -> Result<EvalOutcome<Self::Observed>, InternalFault>;
+        // EvalOutcome<T> { Kernel(Outcome<T>), Family(FamilyResult) }:
+        // Family is a family-owned evaluation-time refusal or undefined
+        // result; Err is an S6a invariant break (ADR-013 O-16, T-4)
 }
 ```
 
@@ -254,8 +255,10 @@ starting with `FamilyNotNativelyEvaluable`. `FamilyResult { Refused,
 Undefined }` carries a family-owned evaluation-time cause that the `evaluate`
 hook returns: the family owns the cause type and implements F `diagnostic`'s
 `CatalogCoded` or `UndefinedCoded` for it, so a new family cause needs no
-`check`-core edit (ADR-013 O-16, O-17). The seam passes a hook's
-`FamilyResult` through as `FamilyOutcome::FamilyEvaluated` unchanged.
+`check`-core edit (ADR-013 O-16, O-17). The seam passes each hook result
+through unchanged: `EvalOutcome::Kernel(o)` as `FamilyOutcome::Evaluated(o)`,
+`EvalOutcome::Family(r)` as `FamilyOutcome::FamilyEvaluated(r)`, and
+`Err(fault)` as `Err(fault)`. `EvalOutcome` is a `check`-core type.
 `FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the
 code to category `refusal` (ADR-013 O-16); F `diagnostic` does not name
 `FamilyRefusal`. The `Relation` arm returns

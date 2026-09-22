@@ -165,11 +165,11 @@ operational validation remains outside this audit-only plan.
 | TC-383 | The S6a Relation arm refuses FamilyNotNativelyEvaluable without calling an evaluate hook | Unit | P1 | FR-090-AC-2 | 🚧 Planned; QSL-174 |
 | TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | 🚧 Planned; QSL-174 |
 | TC-385 | FamilyRefusal::catalog_code is exhaustive and returns only catalogued codes | Unit | P1 | FR-090-AC-4 | 🚧 Planned; QSL-174; blocked for `FamilyNotNativelyEvaluable` by FR-090-OQ-2 |
-| TC-386 | F diagnostic maps every family-refusal and snapshot-cause catalog code to category refusal | Unit | P1 | FR-090-AC-5 | 🚧 Planned; QSL-174 |
+| TC-386 | F diagnostic maps every family-refusal, snapshot-cause and model-refusal catalog code to category refusal | Unit | P1 | FR-090-AC-5 | 🚧 Planned; QSL-174 |
 | TC-387 | The value::expression snapshot family cause maps each WrongSnapshotCause to wrong_snapshot | Unit | P1 | FR-090-AC-6 | 🚧 Planned; QSL-174 |
 | TC-388 | An evaluation-time wrong-anchor snapshot reaches the caller as a coded QSL refusal, not a kernel refusal | Integration | P1 | FR-090-AC-7 | 🚧 Planned; QSL-174 |
 | TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | 🚧 Planned; QSL-174 |
-| TC-390 | FamilyOutcome and FamilyRefusal live once in the check core and no lower layer names them | Unit | P1 | FR-090-AC-9 | 🚧 Planned; QSL-174 |
+| TC-390 | FamilyOutcome, FamilyRefusal, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause | Unit | P1 | FR-090-AC-9 | 🚧 Planned; QSL-174 |
 | TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | 🚧 Planned; QSL-174 |
 | TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
 | TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |

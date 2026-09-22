@@ -595,7 +595,7 @@ enforces it; before #226, §3's interim rule applies.
 | 1 | `token` < `lexer` < `cst` | S1 | F |
 | 2 | `forms` core < family form builders | S2 | 1, F |
 | I3 | `quire_source` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
-| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome`, `FamilyRefusal` and `FamilyResult`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
+| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and `EvalOutcome`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
 | 4 | `package` | S4, I2 byte reader (verification calls `library`) | 3, F, K; `quire-contract-model` for v2 wire constants and round-trip tests only |
 | 5 | `value::expression` core (S6a) < family evaluators under `value::expression`, including the state and temporal evaluators < `simulation` | S6a | 4, 3, F, K |
 | R | `route` (#185 registry and router) | candidate sets over S4 before E7; after E7, the `BackendId` of each item settled `supported`, read from the FR-331 dispositions as wire. The backend is chosen only by the `BackendId` argument. | 4, 3, F, K |

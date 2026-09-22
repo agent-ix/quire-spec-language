@@ -32,7 +32,7 @@ on QSL's kernel copy, which is the shape T-6 removes.
    `pre(allInstances<A>(p))`.
 2. Admit the population argument through `admit_binding` directly. This
    attaches no pre anchor.
-3. Evaluate the postcondition through the public S6a entry point.
+3. Evaluate the checked postcondition through `CheckedPackage::evaluate`.
 4. Match the result as
    `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` and
    take `cause.catalog_code()`.
