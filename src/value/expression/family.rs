@@ -325,14 +325,15 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
             .take()
             .ok_or(crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed)?;
         let callables = env.package.callables();
-        Ok(super::evaluate::Machine::new(
+        super::evaluate::Machine::new(
             env.package.graph().scope(),
             &callables,
             env.objects,
             env.local_meter,
             env.package.graph().dispatch_tables(),
         )
-        .run(function.body, function.slots, arguments))
+        .run(function.body, function.slots, arguments)
+        .map_err(crate::family::EvaluateFailure::Fault)
     }
 }
 

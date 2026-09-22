@@ -56,4 +56,13 @@ Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
+`src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
+`FamilyOutcome`/`FamilyRefusal` are not yet built (FR-090-OQ-1 to OQ-3), so
+the test asserts today's real equivalent types rather than the literal
+`FamilyOutcome::Evaluated(Outcome::Completed(3))`/`Err(fault)` spelling
+above: `Ok(Evaluation { outcome: Outcome::Completed(Value::Integer(3)),
+.. })` for step 3, and `Err(CallFailure::Fault(fault))` for steps 4 and 5,
+with `fault.stage()`, `fault.category()` and `fault.invariant()` checked
+exactly as specified and the two steps' invariant identifiers asserted
+distinct.

@@ -40,6 +40,7 @@ use crate::check::{
     Scope, Slot, Visit, WrongSnapshotCause,
 };
 use crate::model::population::PopulationBinding;
+use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
 };
@@ -218,6 +219,15 @@ pub(crate) struct Machine<'a, 'm> {
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
     /// it for its operand and `Task::RestoreAnchor` restores it after.
     anchor: Anchor,
+    /// FR-090-AC-10 (ADR-013 T-4): set by [`Self::resolve_population`] when a
+    /// `Value::Population` argument reaches this machine unresolved, or with
+    /// a mismatched declared maximum -- a condition `CheckedPackage::call`'s
+    /// own `validate` already admits against before S6a runs, so meeting it
+    /// here means this checked program was driven straight into the S6a
+    /// seam, bypassing admission. [`Self::run`] checks this before ever
+    /// converting the [`Stop`] that carried it into an [`Outcome`]: an
+    /// internal fault is never reported as a kernel `Refused` outcome.
+    fault: Option<InternalFault>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -239,6 +249,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
+            fault: None,
         }
     }
 
@@ -258,7 +269,22 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// method's own task loop reaches still charges `function.call` against
     /// `self.meter` (`charge_call`, called directly at those sites) --
     /// those are genuinely separate calls, not a restatement of this one.
-    pub(crate) fn run(mut self, root: &'a Node, slots: usize, arguments: Vec<Value>) -> Evaluation {
+    ///
+    /// **`Err(InternalFault)` (FR-090-AC-10).** [`Self::resolve_population`]
+    /// sets `self.fault` rather than returning a `Refusal` when a
+    /// `Value::Population` argument reaches it unresolved or with a
+    /// mismatched declared maximum -- a condition admission already rules
+    /// out for any checked program reached through `CheckedPackage::call` or
+    /// `CheckedPackage::evaluate`. This loop checks `self.fault` the moment a
+    /// task fails, before `Self::stopped` ever converts the carried `Stop`
+    /// into an `Outcome`, so that broken invariant surfaces as `Err`, never
+    /// as `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
+    pub(crate) fn run(
+        mut self,
+        root: &'a Node,
+        slots: usize,
+        arguments: Vec<Value>,
+    ) -> Result<Evaluation, InternalFault> {
         let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
         frame.resize(slots.max(frame.len()), None);
         self.frames.push(frame);
@@ -278,16 +304,19 @@ impl<'a, 'm> Machine<'a, 'm> {
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
             if let Err(stop) = self.step(task) {
-                return Self::stopped(stop, &location);
+                if let Some(fault) = self.fault {
+                    return Err(fault);
+                }
+                return Ok(Self::stopped(stop, &location));
             }
         }
         match (self.values.pop(), self.values.is_empty()) {
-            (Some(value), true) => Evaluation {
+            (Some(value), true) => Ok(Evaluation {
                 outcome: Outcome::Completed(value),
                 location: None,
                 losses: self.losses,
-            },
-            _ => Self::stopped(invariant(), &root.location),
+            }),
+            _ => Ok(Self::stopped(invariant(), &root.location)),
         }
     }
 
@@ -404,49 +433,57 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    /// FR-089-AC-3/AC-4/AC-5: resolves `population_id` (an
+    /// FR-089-AC-3/AC-4/AC-5, FR-090-AC-10: resolves `population_id` (an
     /// `allInstances`/`lookup` population operand's own identity) to the
     /// admitted `PopulationBinding` this evaluation's own recorded
     /// correspondence (`self.objects`, `model`'s
-    /// `admit_binding`/`admit_invocation` mint into) recorded it against,
-    /// by lookup alone -- never by decoding `population_id`'s own bytes.
-    /// Refuses `population_id` when it names no recorded binding at all
-    /// (AC-4, [`Refusal::UnresolvedPopulation`]), or when its resolved
-    /// binding's own declared maximum differs from `maximum`, the checked
-    /// `Population<T>[maximum]` parameter type this operand's own node
-    /// declared (AC-5, [`Refusal::PopulationMaximumMismatch`]) -- the
-    /// pairing `ValueType::admits` performed directly when
-    /// `Value::Population` still carried the binding itself
+    /// `admit_binding`/`admit_invocation` mint into) recorded it against, by
+    /// lookup alone -- never by decoding `population_id`'s own bytes. The
+    /// pairing this checks is the one `ValueType::admits` performed directly
+    /// when `Value::Population` still carried the binding itself
     /// (`value::composite`'s own doc, before this identity replaced it).
     ///
-    /// `CheckedPackage::call`/`evaluate`'s own `validate` (`expression/
-    /// mod.rs`) now performs this identical check at argument-admission
-    /// time, over every top-level `Population<T>[N]` parameter -- the only
-    /// context FR-153 lets one appear in (`check::check::bind_parameters`'s
-    /// own doc), and the same recorded correspondence this method reads --
-    /// so for a checked program reached through either public entry point,
-    /// this method's own refusal branches are unreachable defence in
-    /// depth: nested-call argument types are structurally checked equal to
-    /// their callee's own declared parameter types (never bypassed the way
+    /// **FR-090-AC-10: an invariant break, not a `Refusal` (ADR-013 T-4).**
+    /// `CheckedPackage::call`'s own `validate` (`expression/mod.rs`) admits
+    /// this identical pairing at argument-admission time, over every
+    /// top-level `Population<T>[N]` parameter -- the only context FR-153
+    /// lets one appear in (`check::check::bind_parameters`'s own doc), and
+    /// the same recorded correspondence this method reads. Nested-call
+    /// argument types are structurally checked equal to their callee's own
+    /// declared parameter types (never bypassed the way
     /// `Typer::check_declared_type` is for a *declaration*), so a
     /// `Value::Population` that admitted at the outer boundary keeps
     /// resolving, with the same declared maximum, at every nested
-    /// consumption site. Kept, rather than reduced to
-    /// [`Refusal::CheckedInvariant`], because nothing in this module
-    /// enforces that every caller of [`Machine`] necessarily routes through
-    /// `validate` first -- exactly like [`Refusal::WrongSnapshot`]'s own
-    /// precedent.
+    /// consumption site -- meeting an unresolved identity or a mismatched
+    /// maximum here means this checked program reached S6a without going
+    /// through admission at all, an internal fault rather than caller
+    /// input. Sets `self.fault` (read back by [`Self::run`]) and returns the
+    /// pre-existing [`invariant`] stop to unwind this evaluation the same
+    /// way any other broken evaluator invariant does -- it no longer
+    /// constructs [`Refusal::UnresolvedPopulation`]/
+    /// [`Refusal::PopulationMaximumMismatch`] (QSL-131 owns removing those
+    /// two variants; this was their one production call site).
     fn resolve_population(
-        &self,
+        &mut self,
         population_id: PopulationId,
         maximum: u64,
     ) -> Result<&'a PopulationBinding, Stop> {
         match self.objects.resolve_population(population_id) {
             Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
-            Some(_) => Err(Stop::Refused(Refusal::PopulationMaximumMismatch(
-                population_id,
-            ))),
-            None => Err(Stop::Refused(Refusal::UnresolvedPopulation(population_id))),
+            Some(_) => {
+                self.fault = Some(InternalFault::new(
+                    "S6a",
+                    "population-argument-maximum-mismatch-past-admission",
+                ));
+                Err(invariant())
+            }
+            None => {
+                self.fault = Some(InternalFault::new(
+                    "S6a",
+                    "population-argument-unresolved-past-admission",
+                ));
+                Err(invariant())
+            }
         }
     }
 
@@ -1317,5 +1354,173 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.values.push(value);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::accounting::ModelNormalizationLimits;
+    use crate::model::dispatch::GeneralizationClosure;
+    use crate::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
+        PopulationRecord,
+    };
+    use crate::model::key::DeclarationKey;
+    use crate::model::normalize::{normalize, NormalizeOutcome};
+    use crate::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::Category;
+
+    /// One admitted binding over a minimal one-type, one-population domain
+    /// package, for [`Machine::resolve_population`]'s own fault tests below
+    /// -- deliberately not `tests/it/model_reference_queries.rs`'s richer
+    /// `fixture_f1` (generalization, two object types), which that file's
+    /// own `allInstances`/`lookup` source-form coverage needs and this
+    /// evaluator-internal test does not.
+    fn population_binding(declared_maximum: Option<u64>) -> PopulationBinding {
+        let domain_package = DomainPackage::new(
+            DomainPackageRef::fixture("bundle.qsl174-ac10"),
+            vec![
+                DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                    key: DeclarationKey::fixture("model.A"),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.pop.p1"),
+                    member_types: vec![DeclarationKey::fixture("model.A")],
+                    extent: Extent::Closed,
+                }),
+            ],
+        );
+        let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let document = PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members: vec![PopulationMember {
+                object: "a1".to_owned(),
+                type_identity: DeclarationKey::fixture("model.A"),
+                field_values: Vec::new(),
+            }],
+        };
+        let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        match admit_binding(
+            &domain_package,
+            &view,
+            &document,
+            &DeclarationKey::fixture("model.pop.p1"),
+            GeneralizationClosure::Closed,
+            declared_maximum,
+            &mut meter,
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected an admitted binding, got {other:?}"),
+        }
+    }
+
+    fn machine<'a, 'm>(
+        scope: &'a Scope,
+        objects: &'a ObjectEnvironment,
+        meter: &'m mut Meter,
+    ) -> Machine<'a, 'm> {
+        Machine::new(scope, &[], objects, meter, &[])
+    }
+
+    /// TC-391 (FR-090-AC-10): a `Value::Population` identity
+    /// [`Machine::resolve_population`] cannot resolve at all -- the
+    /// condition `CheckedPackage::call`'s own `validate` already refuses at
+    /// admission (`InputRefusal::WrongValueKind`, TC-294/FR-089-AC-4) --
+    /// raises an `InternalFault` naming stage S6a when met here directly,
+    /// bypassing admission; it does not panic, and `resolve_population`'s
+    /// own `Result` is `Err`, never a value a caller could mistake for a
+    /// kernel `Refused` outcome.
+    #[trace("FR-090-AC-10", "TC-391")]
+    #[test]
+    fn resolve_population_bypassing_admission_with_an_unresolved_id_is_an_internal_fault() {
+        let scope = crate::check::empty_scope();
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = machine(&scope, &objects, &mut meter);
+        let unresolved_id = PopulationId::from_digest([7; 32]);
+
+        assert!(
+            machine.resolve_population(unresolved_id, 3).is_err(),
+            "an id no binding was ever recorded under must not resolve"
+        );
+        let fault = machine
+            .fault
+            .expect("resolve_population must record an InternalFault for an unresolved id");
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.category(), Category::InternalFailure);
+        assert_eq!(
+            fault.invariant(),
+            "population-argument-unresolved-past-admission"
+        );
+    }
+
+    /// TC-391 (FR-090-AC-10): a `Value::Population` identity that resolves,
+    /// but whose binding's declared maximum differs from the checked
+    /// parameter's -- the condition `validate` already refuses at admission
+    /// (`InputRefusal::WrongValueKind`, TC-295/FR-089-AC-5) -- is the same
+    /// kind of invariant break when met directly, with its own distinct
+    /// invariant identifier (never the unresolved-id case's).
+    #[trace("FR-090-AC-10", "TC-391")]
+    #[test]
+    fn resolve_population_bypassing_admission_with_a_mismatched_maximum_is_an_internal_fault() {
+        let scope = crate::check::empty_scope();
+        let binding = population_binding(Some(5));
+        let id = binding.population_id();
+        let objects = ObjectEnvironment::default()
+            .with_population(binding)
+            .unwrap();
+        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut machine = machine(&scope, &objects, &mut meter);
+
+        assert!(
+            machine.resolve_population(id, 6).is_err(),
+            "a binding declared with maximum 5 must not resolve under a checked maximum of 6"
+        );
+        let fault = machine
+            .fault
+            .expect("resolve_population must record an InternalFault for a mismatched maximum");
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.category(), Category::InternalFailure);
+        assert_eq!(
+            fault.invariant(),
+            "population-argument-maximum-mismatch-past-admission"
+        );
+    }
+
+    /// The two invariant identifiers above are distinct (mirrors TC-384's
+    /// own "the two steps' invariant identifiers differ" requirement for
+    /// FR-090-AC-3's pair).
+    #[test]
+    fn the_two_population_invariant_identifiers_differ() {
+        let scope = crate::check::empty_scope();
+
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut unresolved_machine = machine(&scope, &objects, &mut meter);
+        let _ = unresolved_machine.resolve_population(PopulationId::from_digest([9; 32]), 3);
+        let unresolved_invariant = unresolved_machine.fault.unwrap().invariant();
+
+        let binding = population_binding(Some(2));
+        let id = binding.population_id();
+        let objects = ObjectEnvironment::default()
+            .with_population(binding)
+            .unwrap();
+        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut mismatched_machine = machine(&scope, &objects, &mut meter);
+        let _ = mismatched_machine.resolve_population(id, 3);
+        let mismatched_invariant = mismatched_machine.fault.unwrap().invariant();
+
+        assert_ne!(unresolved_invariant, mismatched_invariant);
     }
 }

@@ -444,16 +444,29 @@ undefined cause type.
 
 ## Status
 
-Specified under QSL-174 (ADR-013 O-16, O-17, T-4, T-6). Not yet implemented.
-Today `FamilyOutcome`, `FamilyRefusal` and `FamilyNotNativelyEvaluable`
-appear under `src/` only in doc comments, and the provisional stand-in is
-`family::EvaluateRefusal`. `CheckedPackage::call` returns
-`Result<Evaluation, InputRefusal>` and ends its consumed-environment arm in
-`unreachable!`. F `diagnostic` has no catalog-code-to-category map yet.
-`model::normalize::ModelRefusal` has no `catalog_code()` yet, though O-17
-requires one; it carries the native-v1 `Code` instead.
-`quire_exact::Meter::charge` is public (QSL-153 and QSL-166 are Done), so
-FR-090-AC-1's `Incomplete` case is constructible.
+Specified under QSL-174 (ADR-013 O-16, O-17, T-4, T-6). `FamilyOutcome`,
+`FamilyRefusal` and `FamilyNotNativelyEvaluable` still appear under `src/`
+only in doc comments, and the provisional stand-in is still
+`family::EvaluateRefusal`; F `diagnostic` still has no catalog-code-to-
+category map, and `model::normalize::ModelRefusal` still has no
+`catalog_code()` (it carries the native-v1 `Code` instead), though O-17
+requires one. `quire_exact::Meter::charge` is public (QSL-153 and QSL-166
+are Done), so FR-090-AC-1's `Incomplete` case is constructible.
+
+FR-090-AC-3 and FR-090-AC-10 implement (TC-384, TC-391; both
+`✅ Passed locally`): `CheckedPackage::call` now returns `Result<Evaluation,
+CallFailure>`, with `CallFailure { Input(InputRefusal), Fault(qsl_foundation
+::diagnostic::InternalFault) }` (`src/value/expression/mod.rs`).
+`EvaluateRefusal::UnknownIdentity`/`EnvironmentAlreadyConsumed` reaching
+`call` and `Machine::resolve_population` (`src/value/expression/
+evaluate.rs`) meeting an unresolved or mismatched-maximum population
+argument past admission both raise `InternalFault` naming stage `"S6a"`
+and their own stable invariant identifier, never a panic and never a
+`FamilyRefusal`/kernel `Refused` outcome; `CheckedPackage::call`'s
+consumed-environment arm no longer ends in `unreachable!`.
+`Refusal::UnresolvedPopulation`/`Refusal::PopulationMaximumMismatch`
+(`src/value/outcome.rs`) have no remaining production constructor after
+this change -- QSL-131 owns their removal, not this ticket.
 
 FR-090-AC-4 and FR-090-AC-5 for `FamilyNotNativelyEvaluable` wait on
 FR-090-OQ-2. `FamilyResult`, `EvalOutcome`, `CatalogCoded`, `UndefinedCoded`,

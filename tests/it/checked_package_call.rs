@@ -21,7 +21,7 @@
 use ix_trace_rs::trace;
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
     CheckingLimits, Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome,
     PackageDeclarations, QualifiedName, Value, ValueType,
 };
@@ -249,5 +249,8 @@ fn call_to_an_unknown_function_is_refused() {
         &objects,
         &mut meter,
     );
-    assert!(matches!(result, Err(InputRefusal::UnknownFunction(name)) if name == "missing"));
+    assert!(matches!(
+        result,
+        Err(CallFailure::Input(InputRefusal::UnknownFunction(name))) if name == "missing"
+    ));
 }

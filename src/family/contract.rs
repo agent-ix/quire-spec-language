@@ -4,6 +4,7 @@
 //! `check` receives.
 
 use super::outcome::CheckOutcome;
+use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Meter;
 
 /// A diagnostic a family's `check` records against the scope it was raised
@@ -451,4 +452,14 @@ pub(crate) enum EvaluateFailure {
     /// `Incomplete` half).
     #[error("evaluate exhausted the kernel meter budget: {0:?}")]
     Incomplete(quire_exact::Incomplete),
+    /// FR-090-AC-3/AC-10 (ADR-013 T-4): a broken S6a invariant -- never a
+    /// `Refused`/`Incomplete`. `Value`'s own `evaluate` hook
+    /// (`value::expression::family::ValueFunctionFamily::evaluate`) raises
+    /// this from `Machine::run` (`value::expression::evaluate.rs`), which
+    /// sets it when a checked program's own `Value::Population` argument
+    /// cannot be resolved past the point `CheckedPackage::call`'s own
+    /// `validate` already admitted it -- an internal-only condition, never a
+    /// caller-input refusal.
+    #[error("S6a invariant broke: {0:?}")]
+    Fault(InternalFault),
 }

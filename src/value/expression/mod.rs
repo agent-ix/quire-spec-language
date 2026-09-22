@@ -91,6 +91,25 @@ impl InputRefusal {
     }
 }
 
+/// FR-090 "Bad arguments are refused at admission; a broken invariant is an
+/// internal fault" (ADR-013 T-4; ADR-011 §2.3 E6 row): [`CheckedPackage::
+/// call`]'s and [`CheckedPackage::evaluate`]'s error, split between an
+/// ordinary caller-input refusal admission catches and a broken S6a
+/// invariant admission cannot have let through -- never conflated into one
+/// shape, since a caller that asks "was my input rejected" needs a different
+/// answer than "did the runtime break".
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum CallFailure {
+    /// An argument refused at admission, before any S6a evaluation runs.
+    #[error(transparent)]
+    Input(#[from] InputRefusal),
+    /// An S6a invariant broke (ADR-013 T-4): never a caller-input refusal,
+    /// and never surfaced as `Ok(FamilyOutcome::Refused(_))`/
+    /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
+    #[error("S6a invariant broke: {0:?}")]
+    Fault(qsl_foundation::diagnostic::InternalFault),
+}
+
 /// Argument admission for [`CheckedPackage::call`] and
 /// [`CheckedPackage::evaluate`]: neither touches `CheckedPackage`'s or
 /// `CheckedExpression`'s private state, so it needs no `check` accessor.
@@ -256,7 +275,7 @@ impl CheckedPackage {
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
-    ) -> Result<Evaluation, InputRefusal> {
+    ) -> Result<Evaluation, CallFailure> {
         let name = function
             .as_unqualified()
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
@@ -301,36 +320,7 @@ impl CheckedPackage {
         match crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
         {
             Ok(evaluation) => Ok(evaluation),
-            // `EnvironmentAlreadyConsumed` cannot be produced by any call
-            // through `call()`: this function always builds a fresh
-            // `EvaluationEnv` with `Some(arguments)` and calls `evaluate`
-            // exactly once. It is not folded into `UnknownFunction`: that
-            // would report a purely internal invariant violation as a
-            // public "no such function" input error to a caller who
-            // supplied nothing wrong.
-            Err(crate::family::EvaluateFailure::Refused(
-                crate::family::EvaluateRefusal::UnknownIdentity { .. },
-            )) => Err(InputRefusal::UnknownFunction(function.to_string())),
-            Err(crate::family::EvaluateFailure::Refused(
-                crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed,
-            )) => {
-                unreachable!(
-                    "CheckedPackage::call built a fresh EvaluationEnv and must not reuse it"
-                )
-            }
-            // PR #302 review finding 2: no `unreachable!()` here. Denying
-            // this call's own admission charge is a real, reachable outcome
-            // now that `contract_meter` carries the caller's own configured
-            // limits -- and it is a budget outcome, not an invalid-input
-            // one, so it surfaces the same way a denied `env.local_meter`
-            // charge already does: a kernel `Outcome::Incomplete`, inside a
-            // successful `Evaluation`, never `InputRefusal` (whose own doc
-            // scopes it to refusals made *before* any charge).
-            Err(crate::family::EvaluateFailure::Incomplete(record)) => Ok(Evaluation {
-                outcome: crate::value::Outcome::Incomplete(record),
-                location: None,
-                losses: Vec::new(),
-            }),
+            Err(failure) => map_evaluate_failure(failure),
         }
     }
 
@@ -341,16 +331,196 @@ impl CheckedPackage {
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
-    ) -> Result<Evaluation, InputRefusal> {
+    ) -> Result<Evaluation, CallFailure> {
         validate(expression.parameters(), &arguments, objects)?;
         let callables = self.callables();
-        Ok(Machine::new(
+        Machine::new(
             self.graph().scope(),
             &callables,
             objects,
             meter,
             self.graph().dispatch_tables(),
         )
-        .run(expression.root(), expression.slots(), arguments))
+        .run(expression.root(), expression.slots(), arguments)
+        .map_err(CallFailure::Fault)
+    }
+}
+
+/// FR-090-AC-3 (ADR-013 T-4): maps `ValueFunctionFamily::evaluate`'s
+/// failure onto [`CheckedPackage::call`]'s own public error shape. `call`
+/// has already resolved `function` against this package's declarations and
+/// built a fresh `family::EvaluationEnv` before calling `evaluate`
+/// (`CheckedPackage::call`'s own body), so both `EvaluateRefusal`
+/// variants name a broken S6a invariant here, never a caller-input
+/// refusal:
+///
+/// - `UnknownIdentity` means the identity `call` just resolved from this
+///   same package's declarations is not one `evaluate` can find -- the two
+///   lookups disagreed;
+/// - `EnvironmentAlreadyConsumed` means the fresh environment `call` built
+///   for this one invocation was somehow read twice.
+///
+/// Folding either into `InputRefusal::UnknownFunction` (the previous
+/// behaviour) reported a purely internal invariant violation as an ordinary
+/// "no such function" input error to a caller who supplied nothing wrong;
+/// treating `EnvironmentAlreadyConsumed` as `unreachable!()` turned that
+/// same broken invariant into a panic instead of a typed result. Neither
+/// survives FR-090-AC-3: both are `Err(CallFailure::Fault(_))`, naming
+/// stage `"S6a"` and their own stable invariant identifier.
+fn map_evaluate_failure(
+    failure: crate::family::EvaluateFailure,
+) -> Result<Evaluation, CallFailure> {
+    use qsl_foundation::diagnostic::InternalFault;
+    match failure {
+        crate::family::EvaluateFailure::Refused(
+            crate::family::EvaluateRefusal::UnknownIdentity { .. },
+        ) => Err(CallFailure::Fault(InternalFault::new(
+            "S6a",
+            "checked-identity-not-resolved-by-package",
+        ))),
+        crate::family::EvaluateFailure::Refused(
+            crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed,
+        ) => Err(CallFailure::Fault(InternalFault::new(
+            "S6a",
+            "evaluation-environment-arguments-already-consumed",
+        ))),
+        // FR-090-AC-10: `Machine::run` (`evaluate.rs`) raises this the same
+        // way, for the population-argument invariant break; propagated here
+        // unchanged rather than re-wrapped with a second identifier.
+        crate::family::EvaluateFailure::Fault(fault) => Err(CallFailure::Fault(fault)),
+        // PR #302 review finding 2: no `unreachable!()` here. Denying this
+        // call's own admission charge is a real, reachable outcome now that
+        // `contract_meter` carries the caller's own configured limits -- and
+        // it is a budget outcome, not an invalid-input one, so it surfaces
+        // the same way a denied `env.local_meter` charge already does: a
+        // kernel `Outcome::Incomplete`, inside a successful `Evaluation`,
+        // never `InputRefusal` (whose own doc scopes it to refusals made
+        // *before* any charge).
+        crate::family::EvaluateFailure::Incomplete(record) => Ok(Evaluation {
+            outcome: crate::value::Outcome::Incomplete(record),
+            location: None,
+            losses: Vec::new(),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+    use crate::forms::{Expression, FunctionDeclaration};
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::Category;
+    use quire_exact::{Integer, NodeKey};
+
+    fn identity_function() -> FunctionDeclaration {
+        FunctionDeclaration::new(
+            "id",
+            vec![("x".to_owned(), ValueType::Integer)],
+            ValueType::Integer,
+            None,
+            Expression::Name("x".to_owned()),
+        )
+    }
+
+    /// TC-384 (FR-090-AC-3): the two S6a invariant breaks
+    /// `map_evaluate_failure` maps -- a consumed evaluation environment,
+    /// and a checked identity the package does not resolve -- return
+    /// `Err(CallFailure::Fault(_))`, name stage `"S6a"`, carry category
+    /// `Category::InternalFailure`, and never share one invariant
+    /// identifier. Exercises the real production mapping
+    /// (`ValueFunctionFamily::evaluate` -> `map_evaluate_failure`), not a
+    /// stub: `EvaluationEnv`'s one real (non-test) constructor is
+    /// `CheckedPackage::call`, which always builds a fresh one and calls
+    /// `evaluate` exactly once, so reaching the consumed-environment and
+    /// unknown-identity conditions here bypasses `call` the same way
+    /// `family.rs`'s own `evaluate_refuses_a_second_call_on_the_same_env`
+    /// does.
+    ///
+    /// Previously: the consumed-environment case ended `CheckedPackage::
+    /// call` in `unreachable!()`, and the unknown-identity case was folded
+    /// into `InputRefusal::UnknownFunction` -- a purely internal invariant
+    /// reported as an ordinary "no such function" input refusal to a caller
+    /// who supplied nothing wrong. Neither survives this change.
+    #[trace("FR-090-AC-3", "TC-384")]
+    #[test]
+    fn s6a_invariant_breaks_are_internal_faults_not_panics() {
+        let graph = PackageDeclarations {
+            functions: vec![identity_function()],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("id(x: Integer): Integer = x checks cleanly");
+        let identity = graph
+            .function_identity("id")
+            .expect("id is declared in this package");
+        let package = crate::checked_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::default();
+
+        // Steps 2-3: one evaluation environment, carrying the arguments
+        // [3], consumed by a first, real S6a call.
+        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut env = family::EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(vec![Value::Integer(Integer::from(3_i64))]),
+            local_meter: &mut local_meter,
+        };
+        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let first =
+            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+                .expect("the first call, with real arguments still present, evaluates cleanly");
+        assert!(
+            matches!(
+                &first.outcome,
+                crate::value::Outcome::Completed(Value::Integer(value))
+                    if *value == Integer::from(3_i64)
+            ),
+            "expected Completed(Integer(3)), got {:?}",
+            first.outcome
+        );
+
+        // Step 4: a second S6a call on that same, now-consumed environment.
+        let second =
+            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+                .expect_err(
+                    "a second call on the same env, arguments already consumed, must refuse",
+                );
+        let consumed_fault = match map_evaluate_failure(second) {
+            Err(CallFailure::Fault(fault)) => fault,
+            other => panic!("expected Err(CallFailure::Fault(_)), got {other:?}"),
+        };
+        assert_eq!(consumed_fault.stage(), "S6a");
+        assert_eq!(consumed_fault.category(), Category::InternalFailure);
+
+        // Step 5: a fresh environment, called with a NodeKey naming no
+        // function in this package.
+        let unknown_identity = NodeKey::from_digest([0xAB; 32]);
+        let mut fresh_local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut fresh_env = family::EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(Vec::new()),
+            local_meter: &mut fresh_local_meter,
+        };
+        let mut fresh_contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let unknown = crate::check::ValueFunctionFamily::evaluate(
+            &unknown_identity,
+            &mut fresh_env,
+            &mut fresh_contract_meter,
+        )
+        .expect_err("an identity this package never declared must refuse");
+        let unknown_fault = match map_evaluate_failure(unknown) {
+            Err(CallFailure::Fault(fault)) => fault,
+            other => panic!("expected Err(CallFailure::Fault(_)), got {other:?}"),
+        };
+        assert_eq!(unknown_fault.stage(), "S6a");
+        assert_eq!(unknown_fault.category(), Category::InternalFailure);
+
+        assert_ne!(
+            consumed_fault.invariant(),
+            unknown_fault.invariant(),
+            "the two invariant identifiers must differ"
+        );
     }
 }

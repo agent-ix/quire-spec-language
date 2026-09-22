@@ -163,14 +163,14 @@ operational validation remains outside this audit-only plan.
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally (PR #303 review round 3, finding F1) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | 🚧 Planned; QSL-174 |
 | TC-383 | The S6a Relation arm refuses FamilyNotNativelyEvaluable without calling an evaluate hook | Unit | P1 | FR-090-AC-2 | 🚧 Planned; QSL-174 |
-| TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | 🚧 Planned; QSL-174 |
+| TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | ✅ Passed locally |
 | TC-385 | FamilyRefusal::catalog_code is exhaustive and returns only catalogued codes | Unit | P1 | FR-090-AC-4 | 🚧 Planned; QSL-174; blocked for `FamilyNotNativelyEvaluable` by FR-090-OQ-2 |
 | TC-386 | F diagnostic maps every family-refusal, snapshot-cause and model-refusal catalog code to category refusal | Unit | P1 | FR-090-AC-5 | 🚧 Planned; QSL-174 |
 | TC-387 | The ProtocolClause snapshot cause maps each WrongSnapshotCause to wrong_snapshot | Unit | P1 | FR-090-AC-6 | 🚧 Planned; QSL-174 |
 | TC-388 | An evaluation-time wrong-anchor snapshot reaches the caller as a coded QSL refusal, not a kernel refusal | Integration | P1 | FR-090-AC-7 | 🚧 Planned; QSL-174 |
 | TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | 🚧 Planned; QSL-174 |
 | TC-390 | FamilyOutcome, FamilyRefusal, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause | Unit | P1 | FR-090-AC-9 | 🚧 Planned; QSL-174 |
-| TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | 🚧 Planned; QSL-174 |
+| TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | ✅ Passed locally |
 | TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
 | TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |
 | TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | 🚧 Planned; QSL-141 |
@@ -443,7 +443,8 @@ to category `refusal`, the evaluation-time `wrong_snapshot` and model-query
 refusals and the `precondition-false` and `absent-key` undefined results
 carried in `FamilyOutcome::FamilyEvaluated` instead of the kernel types, and
 unresolved population arguments refused at admission (`CallFailure::Input`)
-and faulted inside S6a. TC-382 to TC-391, TC-407 and TC-408 are
+and faulted inside S6a. TC-384 and TC-391 (FR-090-AC-3, AC-10) are
+`✅ Passed locally`; the rest of TC-382 to TC-391, TC-407 and TC-408 are
 `🚧 Planned` under QSL-174, one per criterion. TC-390 uses the resolved-import and definition-scan approach of
 TC-256, TC-170 and TC-176. TC-385 waits on FR-090-OQ-2 for
 `FamilyNotNativelyEvaluable`. TC-388, TC-389, TC-407 and TC-408 match the
