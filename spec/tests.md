@@ -69,8 +69,8 @@ operational validation remains outside this audit-only plan.
 | TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | 🚧 Planned; #185 |
 | TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | 🚧 Planned; #185 |
 | TC-200 | Requests are still recorded as data after negotiation removal | Unit | P1 | FR-077-AC-3 | 🚧 Planned; #185 |
-| TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | 🚧 Planned; #213 S-1 |
-| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | 🚧 Planned; #213 S-1 |
+| TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | ✅ Passed locally; QSL-131, `cargo test --doc -p quire-spec-language` |
+| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | ✅ Passed locally; QSL-131, `tests/ieee_profiles.rs` + `tests/integer_division.rs` |
 | TC-203 | Existing Kani lowering corpus output is byte-identical before and after the registry swap | Integration | P1 | FR-079-AC-1 | 🚧 Planned; #185 |
 | TC-204 | The three legacy lowering target names resolve identically through the registry | Unit | P1 | FR-079-AC-2 | 🚧 Planned; #185 |
 | TC-205 | cargo-deny denies inventory, linkme and ctor | Integration | P1 | FR-080-AC-2 | 🚧 Planned; #185 |

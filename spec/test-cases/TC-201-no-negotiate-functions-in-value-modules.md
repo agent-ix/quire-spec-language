@@ -21,6 +21,16 @@ satisfies only half the requirement — and an implementation that renames
 negotiation-shaped logic and call sites intact, which would not appear in a
 scan restricted to the literal string `negotiate_`.
 
+Verified by nine `compile_fail,E0432` doctests in `src/value/mod.rs` (module
+doc comment, QSL-131), one per removed public name — `negotiate_ieee`,
+`negotiate_integer_division`, `IeeeBackendCapabilities`,
+`IeeeItemRequirement`, `IeeeUnsupportedCause`, `IeeeDisposition`,
+`IntegerDivisionBounds`, `IntegerDivisionConsumer` and
+`IntegerDivisionDisposition` — each pinning the unresolved-import diagnostic
+rather than an untagged or type-error `compile_fail`, plus a positive-control
+doctest confirming a surviving name (`AdmittedIeeeProfile`) still resolves
+from the same path. `cargo test --doc -p quire-spec-language` runs them.
+
 ## Test Procedure
 
 1. After the removal change, run a source scan over `value::ieee` and

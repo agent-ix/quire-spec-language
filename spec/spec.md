@@ -452,7 +452,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185 (QSL-185); not yet implemented; waits on #213 for the canonical `Capability` type |
 | [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185 (QSL-185); not yet implemented; exit waits on quire-contract-codegen#86 |
 | [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185 (QSL-185); not yet implemented |
-| [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Implemented under QSL-131 (PR #290) — see TC-201, TC-202 |
 | [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |

@@ -72,20 +72,19 @@ requirement is required to keep in sync.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §10
   (ADR-010 OBS-004): "`negotiate_integer_division`, `negotiate_ieee` and
   `IeeeBackendCapabilities` are RT capability predicates... they are not
-  settlement points and settle no disposition... QSL has no copy of them;
-  #213 S-1 removes the QSL copies when X-1 moves `division` and `ieee` into
-  `quire-exact`... QSL value semantics keep their evaluation functions,
-  which are not negotiation."
-- ADR-012 §14.1 assigns this removal to
-  [quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)
-  S-1, triggered when X-1 moves `division` and `ieee` into `quire-exact`
-  (ADR-011 §6.2); this requirement specifies the removal's observable
-  behavior for `#185`'s scope regardless of which ticket lands the commit.
+  settlement points and settle no disposition... QSL has no copy of them:
+  X-1 (#213 S-1) moved `division` and `ieee` into `quire-exact` without
+  cutting these (its own summary said so), so QSL carried both until
+  QSL-131 removed them (ADR-011 §6.1's K-leaf bullet). QSL value semantics
+  keep their evaluation functions, which are not negotiation."
+- ADR-012 §14.1's ownership row assigns "Removal of the QSL `negotiate_*`
+  copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s
+  own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them" to
+  QSL-131, which implements this requirement.
 
 ## Status
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Not yet implemented; `value::ieee` and `value::division` still define
-`negotiate_ieee`, `negotiate_integer_division` and
-`IeeeBackendCapabilities` on `main`.
+Implemented by QSL-131 (PR #290): `value::ieee` and `value::division` define
+no `negotiate_*` function and no `IeeeBackendCapabilities` type.
