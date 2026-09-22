@@ -42,19 +42,28 @@ impl<T> Staged<T> {
 /// `quire_exact::accounting::LimitKind`, which bounds value-kernel
 /// materialization sizes, not a checking stage's own entry limits.
 ///
-/// **`NestingDepth` only.** ADR-013 T-4 names four limit kinds ("input
-/// bytes, nesting depth, node count, work budget"), but `Value`'s
-/// function-declaration `check` -- #214's one migrated stage entry --
-/// charges and checks only nesting depth (FR-062-AC-7); nothing in this
-/// ticket's real scope ever reaches an input-bytes, node-count or
-/// work-budget limit, so those three variants would be exactly the same
-/// unconstructed shape `Requirements`'s substructure was. FR-062-AC-5 names
-/// all four limit kinds and is unbacked for exactly this narrowing; QSL-153
-/// owns adding the other three variants back, together with a real
-/// producer for each (`FR-062`'s own Status section).
+/// **All four ADR-013 T-4 kinds, restored (QSL-153).** `InputBytes`,
+/// `NodeCount` and `WorkBudget` were deleted by PR #262 review for having
+/// no real producer. `InputBytes`/`NodeCount`'s real producer and consumer
+/// are named in `crate::family::contract::StageLimits`'s own doc;
+/// `WorkBudget`'s is named there too, but through a denied
+/// `crate::family::CheckContext::meter` charge rather than a `StageLimits`
+/// field (PR #302 review finding 3). `crate::check::mod::
+/// PackageDeclarations::check`'s exhaustive match on this enum (mapping
+/// each variant to a `CheckingLimitKind`) is the one production consumer
+/// that forces every variant here to be handled, not silently ignored.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum StageLimitKind {
     NestingDepth,
+    /// A declaration's own preimage byte length exceeded its configured
+    /// limit.
+    InputBytes,
+    /// A declaration's own visited `Expression` node count exceeded its
+    /// configured limit.
+    NodeCount,
+    /// A declaration's own preimage field-write count exceeded its
+    /// configured limit.
+    WorkBudget,
 }
 
 /// A reached stage limit (ADR-013 T-4), distinct in type from a refusal, a

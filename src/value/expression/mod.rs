@@ -227,41 +227,67 @@ impl CheckedPackage {
         // `Machine` call beside it.
         let identity = callable.identity;
         // `ReferenceEvaluation::evaluate`'s `meter` parameter is
-        // `ValueFunctionFamily`'s own `_meter: &mut quire_exact::Meter`
-        // (`family.rs`), unused in its body today: ADR-012 §2/FR-062-AC-5
-        // reserve this hook alone for a future meter-budget `Incomplete`
-        // outcome, which `EvaluateRefusal`'s own doc states this ticket does
-        // not add yet. `contract_meter` is therefore built unlimited and
-        // passed to satisfy the trait's signature, not to bound anything
-        // here -- this call site charges nothing against it and nothing
-        // should observe that as a limit today. `meter` (this method's own
-        // parameter, `EvaluationEnv::local_meter` below) is the accounting
-        // path that is actually charged.
-        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        // `ValueFunctionFamily`'s own `meter: &mut quire_exact::Meter`
+        // (`family.rs`), genuinely charged now (QSL-153: `Meter::charge` is
+        // exported and `evaluate` charges `ChargePoint::FunctionCall` once,
+        // per call -- see `ValueFunctionFamily::evaluate`'s own doc for why
+        // that is the top-level call's *only* `function.call` charge, PR
+        // #302 review finding 2).
+        //
+        // `contract_meter` is a second, structurally required `Meter`
+        // instance -- `meter` (this method's own parameter) is already
+        // mutably borrowed by `env.local_meter` below for the whole call,
+        // so `evaluate`'s own `meter` parameter cannot alias it -- but it is
+        // configured with `meter`'s own limits (`*meter.limits()`), not an
+        // unconditionally unlimited stand-in: a caller who configures
+        // `meter` with, say, `work_units: 0` genuinely cannot afford even
+        // this call's own admission charge, and `EvaluateFailure::
+        // Incomplete` is how that surfaces (mapped to a kernel
+        // `Outcome::Incomplete` below, the same shape a denied
+        // `env.local_meter` charge inside the call's own body already
+        // takes -- one uniform way for a caller to observe "this call ran
+        // out of budget," regardless of which internal meter denied it).
+        let mut contract_meter = Meter::new(*meter.limits());
         let mut env = family::EvaluationEnv {
             package: self,
             objects,
             arguments: Some(arguments),
             local_meter: meter,
         };
-        crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-            .map_err(|refusal| match refusal {
-                // `EnvironmentAlreadyConsumed` cannot be produced by any call
-                // through `call()`: this function always builds a fresh
-                // `EvaluationEnv` with `Some(arguments)` and calls `evaluate`
-                // exactly once. It is not folded into `UnknownFunction`: that
-                // would report a purely internal invariant violation as a
-                // public "no such function" input error to a caller who
-                // supplied nothing wrong.
-                crate::family::EvaluateRefusal::UnknownIdentity { .. } => {
-                    InputRefusal::UnknownFunction(function.to_string())
-                }
-                crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed => {
-                    unreachable!(
-                        "CheckedPackage::call built a fresh EvaluationEnv and must not reuse it"
-                    )
-                }
-            })
+        match crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+        {
+            Ok(evaluation) => Ok(evaluation),
+            // `EnvironmentAlreadyConsumed` cannot be produced by any call
+            // through `call()`: this function always builds a fresh
+            // `EvaluationEnv` with `Some(arguments)` and calls `evaluate`
+            // exactly once. It is not folded into `UnknownFunction`: that
+            // would report a purely internal invariant violation as a
+            // public "no such function" input error to a caller who
+            // supplied nothing wrong.
+            Err(crate::family::EvaluateFailure::Refused(
+                crate::family::EvaluateRefusal::UnknownIdentity { .. },
+            )) => Err(InputRefusal::UnknownFunction(function.to_string())),
+            Err(crate::family::EvaluateFailure::Refused(
+                crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed,
+            )) => {
+                unreachable!(
+                    "CheckedPackage::call built a fresh EvaluationEnv and must not reuse it"
+                )
+            }
+            // PR #302 review finding 2: no `unreachable!()` here. Denying
+            // this call's own admission charge is a real, reachable outcome
+            // now that `contract_meter` carries the caller's own configured
+            // limits -- and it is a budget outcome, not an invalid-input
+            // one, so it surfaces the same way a denied `env.local_meter`
+            // charge already does: a kernel `Outcome::Incomplete`, inside a
+            // successful `Evaluation`, never `InputRefusal` (whose own doc
+            // scopes it to refusals made *before* any charge).
+            Err(crate::family::EvaluateFailure::Incomplete(record)) => Ok(Evaluation {
+                outcome: crate::value::Outcome::Incomplete(record),
+                location: None,
+                losses: Vec::new(),
+            }),
+        }
     }
 
     /// Evaluate a checked expression with `arguments` for its parameters.
@@ -281,7 +307,7 @@ impl CheckedPackage {
             meter,
             self.dispatch_tables(),
         )
-        .run(expression.root(), expression.slots(), arguments, false))
+        .run(expression.root(), expression.slots(), arguments))
     }
 }
 

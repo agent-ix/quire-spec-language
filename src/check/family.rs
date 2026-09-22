@@ -116,13 +116,71 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// `mint_declaration_identity_matches_a_checked_in_digest`
 /// (`value::expression::family`'s `tests` module) for the golden-digest test
 /// that closes that gap.
-struct Preimage(Vec<u8>);
+///
+/// **`nodes`/`writes`/`input_bytes` (QSL-153).** Running counters alongside
+/// the byte buffer, read back only by [`mint_declaration_identity`] as
+/// [`IdentityPreimageMetrics`] -- never written into the buffer itself, so
+/// they cannot change a minted digest. `nodes` counts each
+/// [`encode_expression`] call (one per visited `Expression` node); `writes`
+/// counts each base write (`write_bytes`/`write_u64`/`write_bool` --
+/// `write_str` is `write_bytes`, not counted twice), a finer-grained count
+/// than `nodes` because encoding one node writes several fields (a tag plus
+/// its operands/labels); `input_bytes` is the buffer's own logical length.
+///
+/// **`input_bytes`/`input_bytes_limit` short-circuit `bytes`' own growth
+/// (PR #302 review finding 4).** An earlier version measured the minted
+/// buffer's size only after the whole pass finished
+/// (`preimage.bytes.len()`), so an oversize declaration paid for its full,
+/// unbounded allocation before `check` ever compared anything against a
+/// limit. `input_bytes` is instead accumulated -- via
+/// [`quire_exact::length_amount`], never a bare `as` cast -- on every
+/// write, before `bytes` itself grows; once it passes `input_bytes_limit`,
+/// every write becomes a no-op against `bytes` (still counted, so
+/// `input_bytes` stays the true, uncapped total `check` refuses on) rather
+/// than extending an already-over-budget buffer further. `bytes` is safe to
+/// leave capped at that point because a capped preimage's identity is never
+/// used: `check` refuses before hashing it (`ValueFunctionFamily::check`'s
+/// own doc).
+struct Preimage {
+    bytes: Vec<u8>,
+    nodes: u64,
+    writes: u64,
+    input_bytes: u64,
+    input_bytes_limit: u64,
+}
 
 impl Preimage {
+    fn new(input_bytes_limit: u64) -> Self {
+        Self {
+            bytes: Vec::new(),
+            nodes: 0,
+            writes: 0,
+            input_bytes: 0,
+            input_bytes_limit,
+        }
+    }
+
+    /// Whether `bytes`' own growth is still within `input_bytes_limit` --
+    /// `false` once a write has already pushed `input_bytes` past it, so
+    /// every later write short-circuits rather than growing an
+    /// already-over-budget buffer.
+    fn within_bytes_limit(&self) -> bool {
+        self.input_bytes <= self.input_bytes_limit
+    }
+
     fn write_bytes(&mut self, bytes: &[u8]) {
-        self.0
-            .extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        self.0.extend_from_slice(bytes);
+        self.writes += 1;
+        // A `u64` length prefix, plus the bytes themselves.
+        self.input_bytes = self
+            .input_bytes
+            .saturating_add(quire_exact::length_amount(std::mem::size_of::<u64>()))
+            .saturating_add(quire_exact::length_amount(bytes.len()));
+        if !self.within_bytes_limit() {
+            return;
+        }
+        self.bytes
+            .extend_from_slice(&quire_exact::length_amount(bytes.len()).to_le_bytes());
+        self.bytes.extend_from_slice(bytes);
     }
 
     fn write_str(&mut self, text: &str) {
@@ -130,11 +188,28 @@ impl Preimage {
     }
 
     fn write_u64(&mut self, value: u64) {
-        self.0.extend_from_slice(&value.to_le_bytes());
+        self.writes += 1;
+        self.input_bytes = self
+            .input_bytes
+            .saturating_add(quire_exact::length_amount(std::mem::size_of::<u64>()));
+        if !self.within_bytes_limit() {
+            return;
+        }
+        self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
     fn write_bool(&mut self, value: bool) {
-        self.0.push(u8::from(value));
+        self.writes += 1;
+        self.input_bytes = self.input_bytes.saturating_add(1);
+        if !self.within_bytes_limit() {
+            return;
+        }
+        self.bytes.push(u8::from(value));
+    }
+
+    /// One [`encode_expression`] visit of an `Expression` node.
+    fn enter_node(&mut self) {
+        self.nodes += 1;
     }
 }
 
@@ -334,6 +409,7 @@ fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) 
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
 fn encode_expression(out: &mut Preimage, expr: &Expression) {
+    out.enter_node();
     match expr {
         Expression::Boolean(value) => {
             out.write_str("boolean");
@@ -567,11 +643,16 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
 /// The preimage is [`Preimage`]'s explicit, length-prefixed byte encoding
 /// (PR #262 review, finding F2), not `{:?}` (`Debug`) formatting -- see
 /// [`Preimage`]'s own doc for why.
+///
+/// `input_bytes_limit` bounds `Preimage`'s own buffer growth (PR #302
+/// review finding 4): pass `u64::MAX` for the pre-QSL-153, unbounded
+/// behavior every caller but `ValueFunctionFamily::check` keeps.
 pub(crate) fn mint_declaration_identity(
     package_identity: &str,
     declaration: &FunctionDeclaration,
-) -> NodeKey {
-    let mut preimage = Preimage(Vec::new());
+    input_bytes_limit: u64,
+) -> (NodeKey, IdentityPreimageMetrics) {
+    let mut preimage = Preimage::new(input_bytes_limit);
     preimage.write_str("value.function-declaration");
     preimage.write_str(package_identity);
     preimage.write_str(&declaration.name);
@@ -586,7 +667,31 @@ pub(crate) fn mint_declaration_identity(
         encode_expression(&mut preimage, measure);
     }
     encode_expression(&mut preimage, &declaration.body);
-    NodeKey::from_digest(sha256(&preimage.0))
+    let metrics = IdentityPreimageMetrics {
+        input_bytes: preimage.input_bytes,
+        node_count: preimage.nodes,
+        work_budget: preimage.writes,
+    };
+    let identity = NodeKey::from_digest(sha256(&preimage.bytes));
+    (identity, metrics)
+}
+
+/// [`StageLimits`](crate::family::StageLimits)'s restored real producer
+/// values (QSL-153), read back from one real [`mint_declaration_identity`]
+/// pass rather than a second, parallel traversal. `input_bytes` and
+/// `node_count` are `StageLimits` fields, compared by
+/// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
+/// `work_budget` is charged against the shared kernel meter instead (PR
+/// #302 review finding 3) -- see `StageLimits`'s own doc.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IdentityPreimageMetrics {
+    /// The minted preimage's own logical byte length (`Preimage::
+    /// input_bytes`, not `bytes.len()` -- see `Preimage`'s own doc).
+    pub(crate) input_bytes: u64,
+    /// The number of `Expression` nodes [`encode_expression`] visited.
+    pub(crate) node_count: u64,
+    /// The number of base preimage writes performed.
+    pub(crate) work_budget: u64,
 }
 
 /// Mint a function-application occurrence's identity, from the call's own
@@ -599,7 +704,10 @@ pub(crate) fn mint_call_identity(
     callee_name: &str,
     arguments: &[Expression],
 ) -> NodeKey {
-    let mut preimage = Preimage(Vec::new());
+    // Not `StageLimits`-bound (that mechanism is `check`'s own,
+    // per-declaration bound, not this call-occurrence identity mint), so
+    // `Preimage`'s own short-circuit never engages here.
+    let mut preimage = Preimage::new(u64::MAX);
     preimage.write_str("value.function-application");
     preimage.write_str(package_identity);
     preimage.write_str(callee_name);
@@ -607,7 +715,7 @@ pub(crate) fn mint_call_identity(
     for argument in arguments {
         encode_expression(&mut preimage, argument);
     }
-    NodeKey::from_digest(sha256(&preimage.0))
+    NodeKey::from_digest(sha256(&preimage.bytes))
 }
 
 /// One source occurrence of a migrated form, keyed by (identity, role,
@@ -726,7 +834,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // read.
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
-        let identity = mint_declaration_identity(cx.declarations(), form);
+        let (identity, metrics) =
+            mint_declaration_identity(cx.declarations(), form, cx.limits().input_bytes);
         // PR #262 review (F7): an earlier version of this function
         // recomputed `mint_declaration_identity` a second time here and
         // returned `StageFailure::Fault` on a mismatch, framed as a
@@ -736,6 +845,44 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // equal, not equal because anything was verified. Deleted along
         // with `StageFailure::Fault`/`InternalFault` themselves (see
         // `crate::family::outcome::StageFailure`'s own doc).
+        //
+        // QSL-153: the same preimage pass's own byte length and node count
+        // are checked against `cx`'s restored `StageLimits` fields before
+        // this declaration is admitted -- the first one exceeded refuses
+        // with a `Limit` outcome naming it, matching `enter_nesting`'s own
+        // `NestingDepth` case above.
+        if let Err(exceeded) = cx
+            .check_input_bytes(metrics.input_bytes)
+            .and_then(|()| cx.check_node_count(metrics.node_count))
+        {
+            cx.scopes.leave();
+            cx.leave_nesting();
+            return Err(crate::family::StageFailure::Limit(exceeded));
+        }
+        // PR #302 review finding 3: `WorkBudget` is a `Limit` outcome
+        // produced by a denied charge against `cx.meter` -- the *shared
+        // kernel* budget every family's `check` already receives -- not by
+        // comparing the preimage's own write count against a `StageLimits`
+        // field (that field's meaning was "how many times the encoder
+        // wrote," never a caller-configured budget). One
+        // `ChargePoint::DeclarationCheck` per checked declaration, sized by
+        // the same preimage pass's field-write count, charged cumulatively
+        // against `cx.meter`'s own `work_units` bound (`StageLimits`'s own
+        // doc: this is the checking stage's total spend, not one
+        // declaration's own shape).
+        if let Err(incomplete) = cx.meter.charge(
+            quire_exact::Charge::new(quire_exact::ChargePoint::DeclarationCheck)
+                .work(quire_exact::Integer::from(metrics.work_budget)),
+        ) {
+            cx.scopes.leave();
+            cx.leave_nesting();
+            return Err(crate::family::StageFailure::Limit(
+                crate::family::LimitExceeded::new(
+                    crate::family::StageLimitKind::WorkBudget,
+                    incomplete.limit,
+                ),
+            ));
+        }
         cx.diagnostics.record(
             cx.scopes,
             format!(
@@ -842,7 +989,8 @@ mod tests {
             }),
         };
         let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
-        let identity = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        let (identity, _) =
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
         assert_eq!(
             identity.to_string(),
             "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",

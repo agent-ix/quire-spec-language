@@ -128,6 +128,12 @@ pub enum CheckingLimitKind {
     Nodes,
     /// Expression nesting depth.
     Depth,
+    /// A checked-family declaration's own preimage byte length (QSL-153,
+    /// `crate::family::StageLimitKind::InputBytes`).
+    InputBytes,
+    /// A checked-family declaration's own preimage field-write count
+    /// (QSL-153, `crate::family::StageLimitKind::WorkBudget`).
+    WorkBudget,
 }
 
 /// FR-272's closed `wrong_snapshot` cause list this crate decides for

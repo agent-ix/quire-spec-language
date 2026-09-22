@@ -72,26 +72,67 @@ impl ScopeStack {
 /// (ADR-011 §2.3) and bounds its own recursion by `nesting_depth`, checked
 /// before each recursive step -- never by the native call stack.
 ///
-/// **`input_bytes`/`node_count` are deleted (PR #262 review, coordinator
-/// round 3, finding 4).** ADR-013 T-4 names four stage-entry limit kinds
-/// ("input bytes, nesting depth, node count, work budget"); an earlier
-/// version of this struct carried fields for all four already-named limits,
-/// but `Value`'s function-declaration `check` -- #214's one migrated stage
-/// entry -- only ever charges and checks `nesting_depth`
-/// ([`CheckContext::enter_nesting`]); nothing constructed one of these two
-/// fields anywhere but the fixed-value fixtures that built a `StageLimits`,
-/// and nothing anywhere read either back. Two write-only fields are the
-/// same fabricated-surface shape [`StageLimitKind`](super::outcome::
-/// StageLimitKind)'s own doc already narrows to `NestingDepth` alone for
-/// this same reason; keeping them here while `StageLimitKind` has no
-/// `InputBytes`/`NodeCount` variant to report a limit hit through would
-/// only restore the mismatch this round's review is correcting. QSL-153
-/// owns adding both fields back together with the matching
-/// `StageLimitKind` variants, not separately (FR-062-AC-5's own Status
-/// section).
+/// **`input_bytes` and `node_count` restored (QSL-153).** PR #262 review
+/// deleted these, along with `work_budget`: nothing in #214's one migrated
+/// stage entry produced or read them. QSL-153 restores them with a real
+/// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
+/// row for this ticket), matching the shape [`CheckContext::enter_nesting`]
+/// already established for `nesting_depth`:
+///
+/// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
+///   preimage pass already builds a length-prefixed byte buffer
+///   over the declaration's structure and walks every [`crate::forms::
+///   Expression`] node in it to do so -- real work this contract already
+///   does, not a synthetic counter added only to satisfy this struct.
+///   `input_bytes` is that buffer's own logical byte length (accumulated as
+///   the pass writes, not read back from the buffer afterward -- see
+///   `Preimage`'s own doc for why); `node_count` is the number of
+///   `Expression` nodes the same pass visits.
+/// - **Consumer**: [`CheckContext::check_input_bytes`] and
+///   [`CheckContext::check_node_count`] each compare their metric against
+///   this struct's matching field and return
+///   [`StageLimitKind`](super::outcome::StageLimitKind)'s matching variant
+///   on the first one exceeded, exactly like `enter_nesting`'s own
+///   `NestingDepth` case -- `ValueFunctionFamily::check`
+///   (`crate::check::family`) calls both before minting succeeds, so a
+///   declaration whose preimage is too large or has too many nodes is
+///   refused with a `Limit` outcome naming the exhausted kind, not admitted
+///   silently.
+///
+/// **`work_budget` is not a field here (PR #302 review finding 3).** An
+/// earlier version of this struct also carried `work_budget: u64`, compared
+/// against the same preimage pass's own field-write count -- but "how many
+/// times the encoder wrote" is not a caller-configured budget in any
+/// meaningful sense; two declarations of equal real complexity could differ
+/// in write count for reasons internal to the encoding, not to any resource
+/// a caller actually wants to bound. `StageLimitKind::WorkBudget` is
+/// restored instead through [`CheckContext::meter`] -- the *shared kernel*
+/// budget every family's `check` already receives (FR-062 "checked input"):
+/// `ValueFunctionFamily::check` charges it one `ChargePoint::
+/// DeclarationCheck`, sized by the same preimage pass's field-write count,
+/// and maps a denied charge to `Limit{WorkBudget}` naming the meter's own
+/// configured `work_units` bound. This is a real, cumulative budget across
+/// every declaration `check` runs against one `meter` instance, not a
+/// per-declaration high-water field re-read from scratch each time --
+/// `nesting_depth`/`input_bytes`/`node_count` bound one declaration's own
+/// shape; `work_budget` bounds the checking stage's total spend.
+///
+/// `input_bytes`/`node_count`'s one production call site
+/// (`crate::check::mod::PackageDeclarations::check`) configures both as
+/// unlimited (`u64::MAX`) by default, the same real-default shape
+/// `nesting_depth` itself carried before a caller-configurable knob existed
+/// for it (`CheckingLimits::default()`, `crate::check::check`) --
+/// `input_bytes` now has one (`CheckingLimits::with_input_bytes`); the
+/// mechanism is real and exercised directly against tight fixtures
+/// (`src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct StageLimits {
     pub(crate) nesting_depth: u64,
+    /// Maximum length-prefixed preimage byte count for one checked
+    /// declaration.
+    pub(crate) input_bytes: u64,
+    /// Maximum `Expression` node count for one checked declaration.
+    pub(crate) node_count: u64,
 }
 
 /// The mutable typing context every family's `check` receives (ADR-012 §2,
@@ -158,6 +199,38 @@ impl<'a, D> CheckContext<'a, D> {
 
     pub(crate) fn leave_nesting(&mut self) {
         self.depth = self.depth.saturating_sub(1);
+    }
+
+    /// Refuse `amount` (a declaration's own preimage byte length,
+    /// `StageLimits`'s own doc) once it exceeds `limits.input_bytes`
+    /// (QSL-153, restoring the deleted `input_bytes` field with a real
+    /// consumer).
+    pub(crate) fn check_input_bytes(
+        &self,
+        amount: u64,
+    ) -> Result<(), super::outcome::LimitExceeded> {
+        if amount > self.limits.input_bytes {
+            return Err(super::outcome::LimitExceeded::new(
+                super::outcome::StageLimitKind::InputBytes,
+                self.limits.input_bytes,
+            ));
+        }
+        Ok(())
+    }
+
+    /// Refuse `amount` (a declaration's own visited `Expression` node
+    /// count) once it exceeds `limits.node_count` (QSL-153).
+    pub(crate) fn check_node_count(
+        &self,
+        amount: u64,
+    ) -> Result<(), super::outcome::LimitExceeded> {
+        if amount > self.limits.node_count {
+            return Err(super::outcome::LimitExceeded::new(
+                super::outcome::StageLimitKind::NodeCount,
+                self.limits.node_count,
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -237,13 +310,14 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 
     /// Evaluate `checked` under `env` and `meter`. ADR-012 §2 reserves this
     /// hook alone for returning a meter-budget `Incomplete` outcome (`check`
-    /// never does, FR-062-AC-5); `EvaluateRefusal`'s own doc explains why
-    /// #214 does not add that variant yet.
+    /// never does, FR-062-AC-5); [`EvaluateFailure::Incomplete`] is that
+    /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported --
+    /// `EvaluateRefusal`'s own doc explains why #214 could not add it).
     fn evaluate<'a>(
         checked: &Self::Checked,
         env: &mut Self::Env<'a>,
         meter: &mut Meter,
-    ) -> Result<Self::Observed, EvaluateRefusal>;
+    ) -> Result<Self::Observed, EvaluateFailure>;
 }
 
 /// `evaluate`'s own refusal shape: constructed only from checked input --
@@ -299,13 +373,14 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// answer" property this variant exists for out of `evaluate` and into a
 /// panic the test would have to catch instead.
 ///
-/// **No `Incomplete` variant.** ADR-012 §2 reserves `evaluate` as the one
-/// hook allowed to return the kernel meter's `Incomplete` outcome, and that
-/// part of the design is real. `quire_exact::Meter::charge`/`charge_plan`
-/// are `pub` (QSL-166), so public charge access exists, but
-/// `ValueFunctionFamily::evaluate` does not charge its `_meter`, so nothing
-/// here produces an `Incomplete` yet. Adding this variant is QSL-153's
-/// decision.
+/// **No `Incomplete` variant here (QSL-153).** ADR-012 §2 reserves
+/// `evaluate` as the one hook allowed to return the kernel meter's
+/// `Incomplete` outcome; `EvaluateFailure` (below), not this type, carries
+/// it -- `EvaluateRefusal` stays exactly the two checked-input-only
+/// refusals it always was, both constructed from `checked`/`env` alone,
+/// never from a meter's charge result. `quire_exact::Meter::charge`/
+/// `charge_plan` are `pub` (QSL-166), which is what makes
+/// `EvaluateFailure::Incomplete` constructible for real.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EvaluateRefusal {
     /// No checked function is admitted for `identity`.
@@ -321,4 +396,33 @@ pub(crate) enum EvaluateRefusal {
          (arguments already consumed by an earlier call)"
     )]
     EnvironmentAlreadyConsumed,
+}
+
+/// `evaluate`'s full failure shape (QSL-153): a typed refusal built only
+/// from checked input, or the shared kernel meter's own `Incomplete` --
+/// distinct types, per ADR-012 §2's own split ("a refusal... or `Incomplete`,
+/// a meter-budget outcome", FR-062-AC-5), not two constructors folded into
+/// one `Refused`/`String` shape.
+///
+/// **Real producer, not always reachable through today's one production
+/// caller.** `ValueFunctionFamily::evaluate` (`crate::check::family`'s
+/// evaluation half, `src/value/expression/family.rs`) charges
+/// `ChargePoint::FunctionCall` against its own `meter` parameter on every
+/// call -- genuine production code, not a test-only hook. `CheckedPackage::
+/// call` (`src/value/expression/mod.rs`), the one real (non-test) caller of
+/// `evaluate`, builds that meter with unlimited scalar limits today, so an
+/// `Incomplete` can never actually surface through `call()` -- the same
+/// real-mechanism-behind-an-unlimited-default shape `nesting_depth` itself
+/// had before a caller-configurable knob existed for it. The mechanism is
+/// exercised directly, against a deliberately tight meter, by
+/// `src/value/expression/family.rs`'s `family_contract_tests` (FR-062-AC-5).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum EvaluateFailure {
+    /// A typed refusal built only from checked input.
+    #[error(transparent)]
+    Refused(#[from] EvaluateRefusal),
+    /// The shared kernel meter's budget is exhausted (FR-062-AC-5's
+    /// `Incomplete` half).
+    #[error("evaluate exhausted the kernel meter budget: {0:?}")]
+    Incomplete(quire_exact::Incomplete),
 }
