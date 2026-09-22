@@ -18,14 +18,12 @@ use num_traits::{One, Signed, Zero};
 use quire_exact::{Integer, IntegerInterval};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal,
-    DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar,
-    IeeeBackendCapabilities, IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation,
-    IeeeOperationKind, IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, LimitKind, Meter, Outcome, PackageCause,
-    PackageRefusalCode, Rational, RationalDomain, Refusal, RoundingMode, ScalarLimits, Undefined,
-    IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal, DecimalType,
+    DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison,
+    IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation,
+    IeeeResult, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
+    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain, Refusal,
+    RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -227,7 +225,7 @@ fn assert_denied<T: std::fmt::Debug>(outcome: Outcome<T>, point: ChargePoint, co
 
 // ---- comparison vectors ------------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-1", "FR-148-AC-5")]
+#[trace("TC-193", "FR-148-AC-1", "FR-148-AC-5", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f01_f02_f02b_zeros_and_nans_separate_equality_order_and_identity() {
     use IeeeComparison::{BitIdentical, NumericEqual, TotalOrder};
@@ -253,7 +251,7 @@ fn f01_f02_f02b_zeros_and_nans_separate_equality_order_and_identity() {
     assert!(!compare(TotalOrder, quiet, signaling));
 }
 
-#[trace("TC-193", "FR-148-AC-1", "FR-148-AC-5")]
+#[trace("TC-193", "FR-148-AC-1", "FR-148-AC-5", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f05_infinities_and_finite_extrema_follow_value_order() {
     use IeeeComparison::{BitIdentical, NumericEqual, TotalOrder};
@@ -286,7 +284,7 @@ fn f05_infinities_and_finite_extrema_follow_value_order() {
     ));
 }
 
-#[trace("TC-193", "FR-148-AC-1")]
+#[trace("TC-193", "FR-148-AC-1", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
     let (narrow, wide) = (f32v(0x3f80_0000), f64v(0x3ff0_0000_0000_0000));
@@ -336,7 +334,7 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
 
 // ---- NaN propagation ------------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f03_f04_f04b_leftmost_nan_is_retained_and_signaling_raises_invalid() {
     let even = RoundingMode::NearestEven;
@@ -416,7 +414,7 @@ fn operation_width(operation: IeeeOperation) -> IeeeWidth {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-2")]
+#[trace("TC-193", "FR-148-AC-2", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f07_f08_f10_each_direction_rounds_once_and_changes_provenance() {
     use RoundingMode::{NearestAway, TowardNegative, TowardPositive};
@@ -443,7 +441,7 @@ fn f07_f08_f10_each_direction_rounds_once_and_changes_provenance() {
     assert_eq!(distinct_bits.len(), 2);
 }
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f09_f14_strict_exact_refuses_with_would_be_flags_and_no_bits() {
     assert_eq!(
@@ -479,7 +477,7 @@ fn f09_f14_strict_exact_refuses_with_would_be_flags_and_no_bits() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-4")]
+#[trace("TC-193", "FR-148-AC-4", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f11_fused_multiply_add_rounds_once_unlike_multiply_then_add() {
     let (a, b, c) = (f32v(0x3f80_0001), f32v(0x3f7f_fffe), f32v(0xbf80_0000));
@@ -497,7 +495,7 @@ fn f11_fused_multiply_add_rounds_once_unlike_multiply_then_add() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f12_f13_invalid_and_divide_by_zero_under_every_policy_are_operation_local() {
     let invalid = flags(&[IeeeFlag::Invalid]);
@@ -543,7 +541,7 @@ fn f12_f13_invalid_and_divide_by_zero_under_every_policy_are_operation_local() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f15_f16_exact_subnormals_raise_nothing_and_tiny_inexact_underflows() {
     let even = RoundingMode::NearestEven;
@@ -575,7 +573,7 @@ fn f15_f16_exact_subnormals_raise_nothing_and_tiny_inexact_underflows() {
 
 // ---- accounting -------------------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-7")]
+#[trace("TC-193", "FR-148-AC-7", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     let nan_equal = |meter: &mut Meter| {
@@ -649,7 +647,7 @@ fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-7")]
+#[trace("TC-193", "FR-148-AC-7", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f19_irrational_square_root_charges_the_fixed_width_allowance() {
     let root = IeeeOperation::SquareRoot(f32v(0x4000_0000));
@@ -675,7 +673,7 @@ fn f19_irrational_square_root_charges_the_fixed_width_allowance() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-7")]
+#[trace("TC-193", "FR-148-AC-7", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete() {
     let f10 = IeeeOperation::Add(f64v(0x3ff0_0000_0000_0000), f64v(0x3ca0_0000_0000_0000));
@@ -738,9 +736,9 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
     );
 }
 
-// ---- admission and negotiation -------------------------------------------------------
+// ---- admission --------------------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-3", "FR-148-AC-10")]
+#[trace("TC-193", "FR-148-AC-10")]
 #[test]
 fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings() {
     let lock = DefinitionLock::pinned();
@@ -812,119 +810,9 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
     }
 }
 
-#[trace("TC-193", "FR-148-AC-3")]
-#[test]
-fn i13_negotiation_is_per_item_and_leaves_admission_unchanged() {
-    let lock = DefinitionLock::pinned();
-    let reference = ieee_reference(lock);
-    let before = lock.admit_ieee_profile(std::slice::from_ref(&reference), &[]);
-
-    let full = IeeeBackendCapabilities {
-        widths: IeeeWidth::ALL.into_iter().collect(),
-        operations: IeeeOperationKind::ALL.into_iter().collect(),
-        roundings: RoundingMode::ALL.into_iter().collect(),
-        exceptional_policy: true,
-        finite_proof: true,
-    };
-    let item = |width, operation, rounding, requires_finite_proof| IeeeItemRequirement {
-        width,
-        operation,
-        rounding,
-        requires_finite_proof,
-    };
-    let items = [
-        item(
-            IeeeWidth::Binary64,
-            IeeeOperationKind::Add,
-            RoundingMode::NearestEven,
-            true,
-        ),
-        item(
-            IeeeWidth::Binary32,
-            IeeeOperationKind::FusedMultiplyAdd,
-            RoundingMode::TowardNegative,
-            false,
-        ),
-        item(
-            IeeeWidth::Binary32,
-            IeeeOperationKind::TotalOrder,
-            RoundingMode::TowardNegative,
-            false,
-        ),
-    ];
-    assert_eq!(
-        negotiate_ieee(&items, &full),
-        [IeeeDisposition::Supported; 3]
-    );
-
-    let lacking_width = IeeeBackendCapabilities {
-        widths: BTreeSet::from([IeeeWidth::Binary32]),
-        ..full.clone()
-    };
-    let lacking_fma = IeeeBackendCapabilities {
-        operations: IeeeOperationKind::ALL
-            .into_iter()
-            .filter(|kind| *kind != IeeeOperationKind::FusedMultiplyAdd)
-            .collect(),
-        ..full.clone()
-    };
-    let lacking_direction = IeeeBackendCapabilities {
-        roundings: BTreeSet::from([RoundingMode::NearestEven, RoundingMode::Exact]),
-        ..full.clone()
-    };
-    let lacking_policy = IeeeBackendCapabilities {
-        exceptional_policy: false,
-        ..full.clone()
-    };
-    let lacking_proof = IeeeBackendCapabilities {
-        finite_proof: false,
-        ..full.clone()
-    };
-    use IeeeDisposition::{RequiresBound, Supported, Unsupported};
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_width),
-        [
-            Unsupported(IeeeUnsupportedCause::Width(IeeeWidth::Binary64)),
-            Supported,
-            Supported
-        ]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_fma),
-        [
-            Supported,
-            Unsupported(IeeeUnsupportedCause::Operation(
-                IeeeOperationKind::FusedMultiplyAdd
-            )),
-            Supported
-        ]
-    );
-    // A comparison applies no rounding direction, so only the FMA item lacks it.
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_direction),
-        [
-            Supported,
-            Unsupported(IeeeUnsupportedCause::Rounding(RoundingMode::TowardNegative)),
-            Supported
-        ]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_policy),
-        [Unsupported(IeeeUnsupportedCause::ExceptionalPolicy); 3]
-    );
-    assert_eq!(
-        negotiate_ieee(&items, &lacking_proof),
-        [RequiresBound, Supported, Supported]
-    );
-    assert_eq!(
-        lock.admit_ieee_profile(std::slice::from_ref(&reference), &[]),
-        before
-    );
-}
-
 // ---- explicit conversions ----------------------------------------------------------------
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
     let convert = |value, target, mode| {
@@ -1675,7 +1563,9 @@ fn check_vector(spec: Spec, operation: OOp, operands: &[u64], mode: RoundingMode
     "FR-148-AC-2",
     "FR-148-AC-4",
     "FR-148-AC-6",
-    "FR-148-AC-7"
+    "FR-148-AC-7",
+    "TC-202",
+    "FR-078-AC-3"
 )]
 #[test]
 fn generated_class_matrix_matches_the_exact_real_oracle_with_every_denial() {
@@ -1704,7 +1594,7 @@ fn generated_class_matrix_matches_the_exact_real_oracle_with_every_denial() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn generated_signed_zero_and_directed_overflow_rules_hold_for_every_direction() {
     for width in IeeeWidth::ALL {
@@ -1809,7 +1699,7 @@ fn incomplete(
     }
 }
 
-#[trace("TC-193", "FR-148-AC-7")]
+#[trace("TC-193", "FR-148-AC-7", "TC-202", "FR-078-AC-3")]
 #[test]
 fn a_largest_scale_decimal_source_is_sized_without_materializing_its_power() {
     // bits(10^4294967295) = floor(4294967295 × log2(10)) + 1.
@@ -1834,7 +1724,7 @@ fn a_largest_scale_decimal_source_is_sized_without_materializing_its_power() {
     assert!(meter.admitted_charges().is_empty());
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
     for comparison in IeeeComparison::ALL {
@@ -1936,7 +1826,7 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f21_zero_operands_take_all_four_finite_charges() {
     let even = RoundingMode::NearestEven;
@@ -1969,7 +1859,7 @@ fn f21_zero_operands_take_all_four_finite_charges() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f22_strict_exact_refuses_after_round_and_before_retention() {
     let f09 = IeeeOperation::Add(f32v(0x3f80_0000), f32v(0x3380_0000));
@@ -2011,7 +1901,7 @@ fn f22_strict_exact_refuses_after_round_and_before_retention() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f23_strict_exact_would_be_flags_follow_nearest_even() {
     let f23 = IeeeOperation::Add(f32v(0x7f7f_ffff), f32v(0x7300_0000));
@@ -2031,7 +1921,7 @@ fn f23_strict_exact_would_be_flags_follow_nearest_even() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     let even = RoundingMode::NearestEven;
@@ -2127,7 +2017,7 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
 }
 
-#[trace("TC-193", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
     let even = RoundingMode::NearestEven;
@@ -2217,7 +2107,7 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
 }
 
-#[trace("TC-193", "FR-148-AC-8", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-8", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
     let even = RoundingMode::NearestEven;
@@ -2283,7 +2173,7 @@ fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn fused_multiply_add_exact_zero_takes_the_sum_sign_rule() {
     // FR-148: `fma(x, y, z)` applies the sum rule to `x × y`, signed by the
@@ -2315,7 +2205,7 @@ fn fused_multiply_add_exact_zero_takes_the_sum_sign_rule() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() {
     let int = BigInt::from;
@@ -2417,7 +2307,7 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
     );
 }
 
-#[trace("TC-193", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f28_decimal_source_is_sized_by_its_retained_representation() {
     let decimal = Decimal::new(Integer::from(100_i64), 2);
@@ -2452,7 +2342,7 @@ fn f28_decimal_source_is_sized_by_its_retained_representation() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f29_strict_exact_near_extremes_reports_only_inexact() {
     let inexact = flags(&[IeeeFlag::Inexact]);
@@ -2479,7 +2369,7 @@ fn f29_strict_exact_near_extremes_reports_only_inexact() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
+#[trace("TC-193", "FR-148-AC-8", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f30_square_root_of_negative_zero_is_negative_zero() {
     let root = IeeeOperation::SquareRoot(f32v(0x8000_0000));
@@ -2502,7 +2392,7 @@ fn f30_square_root_of_negative_zero_is_negative_zero() {
     );
 }
 
-#[trace("TC-193", "FR-148-AC-9")]
+#[trace("TC-193", "FR-148-AC-9", "TC-202", "FR-078-AC-3")]
 #[test]
 fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
     let narrow = |bits, mode, meter: &mut Meter| {

@@ -37,6 +37,52 @@
 //! Profile selection and misuse are refused at semantic admission by
 //! [`DefinitionLock`]. No host floating-point arithmetic or narrowing integer
 //! conversion is used by any semantic path.
+//!
+//! ## FR-078: no `negotiate_*` copies (TC-201)
+//!
+//! QSL-131 removed the RT capability-negotiation copies `negotiate_ieee`,
+//! `negotiate_integer_division` and their supporting types from `ieee` and
+//! `division` (FR-078-AC-1, FR-078-AC-2); only the evaluation functions
+//! listed above remain. Each removed name is gone from this crate, not
+//! renamed or gated: importing it from `value` is `E0432`, an unresolved
+//! import, not a type or borrow error.
+//!
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::negotiate_ieee;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::negotiate_integer_division;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IeeeBackendCapabilities;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IeeeItemRequirement;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IeeeUnsupportedCause;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IeeeDisposition;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IntegerDivisionBounds;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IntegerDivisionConsumer;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::value::IntegerDivisionDisposition;
+//! ```
+//!
+//! A positive control: the module path itself still resolves, and a
+//! surviving name imports cleanly, so the failures above are each the named
+//! removed item, not a broken crate path.
+//!
+//! ```
+//! use quire_spec_language::value::AdmittedIeeeProfile;
+//! fn _use(_: AdmittedIeeeProfile) {}
+//! ```
 
 mod accounting;
 // PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
@@ -104,10 +150,7 @@ pub use definition::{
     DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
     SelectionRefusalCode, Trigger,
 };
-pub use division::{
-    divide, modulo, negotiate_integer_division, DivisionProfile, IntegerDivisionBounds,
-    IntegerDivisionConsumer, IntegerDivisionDisposition, QuotientRemainder,
-};
+pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
@@ -146,10 +189,9 @@ pub use crate::forms::{
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, negotiate_ieee, AdmittedIeeeProfile, ExactScalar, IeeeBackendCapabilities,
-    IeeeComparison, IeeeDisposition, IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag,
-    IeeeFlags, IeeeItemRequirement, IeeeOperand, IeeeOperation, IeeeOperationKind, IeeeProvenance,
-    IeeeResult, IeeeUnsupportedCause, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
+    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind,
+    IeeeProvenance, IeeeResult, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
 pub use library::{
     check_migration, resolve_libraries, ExportIdentity, ImportDeclaration, ImportPath,
