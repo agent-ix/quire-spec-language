@@ -374,7 +374,7 @@ pub struct ModelCheckEdge {
 /// TC-262: every `use` edge under `src/model/` that resolves, directly or
 /// through `value`'s flat aggregate, into `crate::check` -- including a
 /// glob (`use crate::check::*;`) whose own path resolves into `check`.
-/// [`resolves_into_check`] doesn't need `leaf` for that branch (it only
+/// `resolves_into_check` doesn't need `leaf` for that branch (it only
 /// consults `leaf` for a flat `crate::value::Name` import), so a glob's
 /// empty leaf resolves correctly without special-casing; only the *skip*
 /// used to be the bug (PR #291 review finding 1: an earlier revision
