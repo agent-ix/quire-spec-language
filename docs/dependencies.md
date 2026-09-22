@@ -28,14 +28,16 @@ prior pin, this revision is `AGPL-3.0-or-later` (relicensed in IR #94, not
 typify, schemars, jsonschema 0.55 and chrono into the lock. QSL's own I2
 reader (`src/package/checked_v2.rs`) delegates envelope parsing and
 `package_id` recompute to IR's typed structs rather than re-declaring
-FR-322's `quire.checked-package/v2` vocabulary; QSL-6's emitter slice does the
-same for emitting (agent-ix/quire-spec-language#297). This bump locks 38 new
-packages in total (jsonschema 0.55's own dependency tree -- `referencing`,
-`jsonschema-regex`, `jsonschema-value`, `regress`, `fancy-regex` 0.19.2 and
-the rest -- plus typify/schemars codegen support and IR's own
-`quire-verification-contracts`), all now recorded below, including two grant
-kinds new to this inventory: `MIT-0` (`borrow-or-share` 0.2.4) and `Zlib`
-(`foldhash` 0.2.0). None introduces a copyleft term.
+FR-322's `quire.checked-package/v2` vocabulary; QSL-6's emitter slice
+(`src/package/emit.rs`, agent-ix/quire-spec-language#297) builds and
+serializes IR's typed structs the same way for emitting. This bump locks 38
+new packages in total (jsonschema 0.55's own dependency tree --
+`referencing`, `jsonschema-regex`, `jsonschema-value`, `regress`,
+`fancy-regex` 0.19.2 and the rest -- plus typify/schemars codegen support
+and IR's own `quire-verification-contracts`), all now recorded below,
+including two grant kinds new to this inventory: `MIT-0`
+(`borrow-or-share` 0.2.4) and `Zlib` (`foldhash` 0.2.0). None introduces a
+copyleft term.
 
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.

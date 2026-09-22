@@ -48,6 +48,7 @@ use crate::value::node::is_qualified_name;
 
 mod package_identity;
 
+pub(crate) use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
 
