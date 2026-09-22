@@ -7,18 +7,19 @@
 //!
 //! [`DecimalRepresentation`], [`Decimal`], [`RoundingMode`],
 //! [`DecimalOperation`], [`DecimalRepresentation::to_rational`],
-//! `compare_shifted`, `sbits`, `sdigits` and `power_of_ten_bits` are
-//! `quire_exact`'s own canonical items, re-exported below rather than
-//! duplicated: every method and function these carry is reachable straight
-//! off the re-exported type or name; none of it is duplicated here.
+//! `compare_shifted`, `sbits` and `sdigits` are `quire_exact`'s own
+//! canonical items, imported directly rather than duplicated: every method
+//! and function these carry is reachable straight off the imported type or
+//! name; none of it is duplicated here. [`DecimalRepresentation`] is
+//! re-exported (`value::mod`'s own aggregate still names it); the others
+//! are imported for this module's own use only.
 //!
 //! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
 //! evaluation engine and `Placement`/`DecimalType::placement`/
 //! `round_at_target` for `super::quantity`'s unit-graph decimal targets)
 //! stay local. `DecimalType::new` returns `quire_exact`'s own canonical
-//! `IllTyped` directly (QSL-131 K1: `value::comparison`, the former QSL-side
-//! duplicate, is deleted). `evaluate_decimal` returns this crate's own
+//! `IllTyped` directly. `evaluate_decimal` returns this crate's own
 //! `Outcome`/`Refusal` (`value::outcome`), a strict superset of
 //! `quire_exact`'s kernel `Outcome`/`Refusal` -- out of scope here, blocked
 //! on QSL-166 and QSL-174 -- and `DecimalResult`/`DecimalLoss` are
@@ -31,11 +32,9 @@
 use std::cmp::Ordering;
 
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
+pub use quire_exact::DecimalRepresentation;
 use quire_exact::Rational;
-pub use quire_exact::{
-    compare_shifted, power_of_ten_bits, sbits, sdigits, Decimal, DecimalOperation,
-    DecimalRepresentation, RoundingMode,
-};
+use quire_exact::{compare_shifted, sbits, sdigits, Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
 use quire_exact::{IllTyped, IllTypedCause};
 

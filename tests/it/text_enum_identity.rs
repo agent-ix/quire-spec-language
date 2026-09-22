@@ -23,7 +23,6 @@ use quire_spec_language::value::{
     admit_text, compare_enum, compare_text, EnumDeclaration, EnumDeclarationPreimage,
     EnumMemberPreimage, EnumValue, InvalidSemanticGraph, NodeKey, NodeOwner, Outcome,
     OwnerSelection, OwnerSubject, Refusal, SemanticGraphCause, Text, TextPayload,
-    UNICODE_TEXT_DEFINITION,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -95,7 +94,6 @@ fn t02_t03_normalizing_profiles_equate_equivalents_and_retain_normal_forms() {
         assert!(compared(Equal, &left, &right), "{profile:?}");
         assert_eq!((left.retained(), right.retained()), (retained, retained));
         assert_eq!(left.payload().as_str(), E_ACUTE);
-        assert_eq!(profile.table_definition(), Some(UNICODE_TEXT_DEFINITION));
     }
     for profile in [Nfkc, Nfkd] {
         assert!(

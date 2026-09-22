@@ -22,14 +22,17 @@
 //!
 //! QSL-131 K1 widened four items from `fn`-private/`pub(crate)` to `pub`:
 //! [`TextProfile::length`], [`TextProfile::order`], [`TextType::admits`] and
-//! [`NormalizationForm::apply`] (with its return type [`Normalized`]).
-//! `quire_spec_language::value::text`'s own `admit`/`compare`/`prepare`/
-//! `check_length` engine stays local -- it returns that crate's own
-//! `Outcome`, a strict superset not yet unified with this crate's -- and
-//! calls these four directly rather than porting a second copy. Each is a
-//! pure predicate or streaming decode over an already-retained/admitted
-//! sequence; none charges or materializes anything unmetered, so widening
-//! exposes no new unmetered-arithmetic risk (the #330 precedent).
+//! [`NormalizationForm::apply`]. `quire_spec_language::value::text`'s own
+//! `admit`/`compare`/`prepare`/`check_length` engine stays local -- it
+//! returns that crate's own `Outcome`, a strict superset not yet unified
+//! with this crate's -- and calls these four directly rather than porting a
+//! second copy. Each is a pure predicate or streaming decode over an
+//! already-retained/admitted sequence; none charges or materializes
+//! anything unmetered, so widening exposes no new unmetered-arithmetic risk
+//! (the #330 precedent). `apply` returns `impl Iterator<Item = char>`, not
+//! its concrete `Normalized` enum: that enum stays private to this module,
+//! so `unicode_normalization`'s own `Recompositions`/`Decompositions` types
+//! never appear in this crate's public API.
 
 use std::cmp::Ordering;
 use std::str::Chars;
@@ -166,7 +169,7 @@ impl NormalizationForm {
     /// Unicode normalization dispatch. This streams already-decoded scalars
     /// and charges nothing itself, so widening it exposes no unmetered
     /// materialization.
-    pub fn apply(self, text: &str) -> Normalized<'_> {
+    pub fn apply(self, text: &str) -> impl Iterator<Item = char> + '_ {
         match self {
             Self::Nfc => Normalized::Composed(text.nfc()),
             Self::Nfd => Normalized::Decomposed(text.nfd()),
@@ -176,11 +179,11 @@ impl NormalizationForm {
     }
 }
 
-/// A streaming normalization of one scalar sequence.
-///
-/// `pub`, not `pub(crate)` (QSL-131 K1): the return type of the now-`pub`
-/// [`NormalizationForm::apply`].
-pub enum Normalized<'a> {
+/// A streaming normalization of one scalar sequence: the concrete type
+/// behind [`NormalizationForm::apply`]'s `impl Iterator` return, kept
+/// private so `unicode_normalization`'s own iterator types never appear in
+/// this crate's public API.
+enum Normalized<'a> {
     /// A composing normalization form (NFC or NFKC).
     Composed(Recompositions<Chars<'a>>),
     /// A decomposing normalization form (NFD or NFKD).

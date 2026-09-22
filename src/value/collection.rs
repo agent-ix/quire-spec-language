@@ -31,10 +31,9 @@ use quire_exact::{
 // kernel types (QSL-131 S-1b). `bound_and_retain` below recomputes the
 // three-way bound comparison from their public `minimum()`/`maximum()`
 // accessors rather than calling `quire_exact`'s own `violation` fn: that fn
-// is `pub(crate)` there. `BoundViolation` itself (QSL-131 K1) is this same
-// `quire_exact::BoundViolation` -- QSL's own former duplicate at
-// `value::outcome::BoundViolation` is deleted -- so no `From` conversion is
-// needed for the type; only the private `violation` fn stays unreachable.
+// is `pub(crate)` there. `BoundViolation` is this same `quire_exact::
+// BoundViolation`, so no `From` conversion is needed for the type; only the
+// private `violation` fn stays unreachable.
 //
 // `CollectionType` and `CollectionValue` are not cut over (QSL-131,
 // remaining work): `quire_exact::collection` has same-named types, but they

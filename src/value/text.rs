@@ -8,21 +8,16 @@
 //! or grapheme segmentation is applied.
 
 use super::outcome::{Outcome, Refusal, Stop};
+// `UNICODE_TEXT_DEFINITION`/`UNICODE_VERSION` and the Unicode-17 table-version
+// assertion are `quire_exact`'s own canonical items (QSL-131 K1): this crate
+// no longer keeps a second copy of the constants its own normalizing
+// profiles are checked against, since `TextProfile::table_definition()`
+// already returns `quire_exact`'s constant.
 use quire_exact::{
     length_amount, Charge, ChargePoint, ComparisonOperator, IllTyped, IllTypedCause, InvalidUtf8,
     LimitKind, Meter, TextProfile, TextProvenance, TextType,
 };
-
-/// Definition identity of the normalization tables.
-pub const UNICODE_TEXT_DEFINITION: &str = "quire.value.text.unicode-17.0.0/v1";
-
-/// Unicode version the normalization tables implement.
-pub const UNICODE_VERSION: (u8, u8, u8) = (17, 0, 0);
-
-const _: () = assert!(
-    matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
-    "quire.value.text.unicode-17.0.0/v1 requires Unicode 17.0.0 normalization tables"
-);
+pub use quire_exact::{UNICODE_TEXT_DEFINITION, UNICODE_VERSION};
 
 /// A source text literal is not one complete JSON-compatible quoted string
 /// denoting Unicode scalars.

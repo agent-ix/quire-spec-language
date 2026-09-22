@@ -4,11 +4,10 @@
 //! [`Rational`](quire_exact::Rational), [`ZeroDenominator`], [`RationalDomain`]
 //! and [`NonPositiveDenominatorBound`] are `quire_exact`'s own canonical
 //! items. `ZeroDenominator`, `RationalDomain` and `NonPositiveDenominatorBound`
-//! are re-exported below rather than duplicated; `Rational` itself (QSL-131
-//! K1) is no longer re-exported here either -- every caller in this crate
-//! imports it straight from `quire_exact` now, the same repoint
-//! `value::numeric` gave `ArithmeticOperator`. Every method these types
-//! carry -- `new`, `from_integer`, `numerator`, `denominator`, `is_integer`,
+//! are re-exported below rather than duplicated; `Rational` itself is not
+//! re-exported here -- every caller in this crate imports it straight from
+//! `quire_exact`. Every method these types carry -- `new`, `from_integer`,
+//! `numerator`, `denominator`, `is_integer`,
 //! `is_zero`, `max_part_bits`, `add`, `sub`, `neg`, `mul`, `div`, `pow`,
 //! `divided_by_power_of_ten`, `divided_by_power_of_two`,
 //! `Ord`/`PartialOrd`/`Display`, `RationalDomain::new`/`numerator`/

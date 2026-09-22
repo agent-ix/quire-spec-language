@@ -31,19 +31,16 @@
 //! Each returns this crate's own `Outcome`/`Refusal`/`Undefined`
 //! (`value::outcome`) -- a strict superset of `quire_exact`'s kernel
 //! `Outcome`/`Refusal`, not yet unified -- or is parameterized over this
-//! crate's own `DecimalType`/`RationalDomain` (which carry declaration-bound
-//! state `quire_exact` deliberately excludes) or, for `AdmittedIeeeProfile`,
-//! this crate's own package-catalog module (`value::definition`).
-//! `RoundingMode`, `Decimal`, `Rational`, `IllTyped` and `IllTypedCause`
-//! themselves are already `quire_exact`'s own canonical items here (QSL-131
-//! K1: `value::comparison` is deleted, and `value::decimal`/`value::rational`
-//! stopped duplicating these specific items even earlier) -- imported
-//! directly above, not through `value::decimal`/`value::rational`/
-//! `value::comparison`. Linear QSL-131 owns the remaining cut, unifying
-//! `value::outcome` with `quire_exact::outcome`; once that lands, these five
-//! entry points reduce to thin `&AdmittedIeeeProfile` wrappers around
-//! `quire_exact`'s own `evaluate_ieee`/`compare_ieee`/etc., and the private
-//! engine and the six helpers above go away.
+//! crate's own `DecimalType` (which carries declaration-bound state
+//! `quire_exact` deliberately excludes) or, for `AdmittedIeeeProfile`, this
+//! crate's own package-catalog module (`value::definition`). `RationalDomain`,
+//! `RoundingMode`, `Decimal`, `Rational`, `IllTyped` and `IllTypedCause` are
+//! `quire_exact`'s own canonical items, imported directly. Linear QSL-131 owns
+//! the remaining cut, unifying `value::outcome` with `quire_exact::outcome`;
+//! once that lands, these five entry points reduce to thin
+//! `&AdmittedIeeeProfile` wrappers around `quire_exact`'s own
+//! `evaluate_ieee`/`compare_ieee`/etc., and the private engine and the six
+//! helpers above go away.
 
 use std::cmp::Ordering;
 
@@ -57,13 +54,15 @@ use super::definition::{
     PackageRefusalCode, DIGEST_DOMAIN,
 };
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::RationalDomain;
 use quire_exact::Rational;
 pub use quire_exact::{
-    ieee_intrinsic_identities, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeFlags, IeeeOperation,
-    IeeeOperationKind, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+    ieee_intrinsic_identities, IeeeComparison, IeeeFlag, IeeeOperationKind, IeeeValue,
+    IEEE_DEFINITION,
 };
-use quire_exact::{Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter};
+use quire_exact::{
+    Charge, ChargePoint, IeeeExactLoss, IeeeFlags, IeeeOperation, IeeeWidth, Integer,
+    IntegerInterval, LimitKind, Meter, RationalDomain,
+};
 use quire_exact::{Decimal, RoundingMode};
 use quire_exact::{IllTyped, IllTypedCause};
 
