@@ -32,8 +32,7 @@ admitted with its minted identity. Scope: FR-065-AC-7.
 
 ## Status
 
-Covered in behavior, not yet traced.
-`value_function_family_check_refuses_an_ill_typed_body` (step 1) and
-`value_function_family_checks_through_the_contract` (step 2), both in
-`src/value/expression/family.rs`, perform exactly these steps and pass.
-Neither carries a `#[trace("TC-380", "FR-065-AC-7")]` tag yet.
+Backed: `value_function_family_check_refuses_an_ill_typed_body` (step 1)
+and `value_function_family_checks_through_the_contract` (step 2), both in
+`src/value/expression/family.rs`, tagged
+`#[trace("TC-380", "FR-065-AC-7")]`.

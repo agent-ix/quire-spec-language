@@ -571,9 +571,21 @@ change: every caller of `ResolvedSourcePackage` SHALL be migrated to
 ## Status
 
 Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
-2026-09-21 comment on that ticket). Not yet implemented. Gate (ADR-013 §7:
+2026-09-21 comment on that ticket). Partly implemented. Gate (ADR-013 §7:
 "S-2, QC-10") is clear: S-2 landed as PR #260 (`97ec26e3`); QC-10 landed
 under STD-2 (Done).
+
+Landed: PR #304 added `CheckedGraph` (`check`), which
+`PackageDeclarations::check` returns, and `CheckedPackage` and
+`EmittedPackage` (layer-4 `package`). PR #299 relocated `value::library` and
+`value::package_identity` into the top-level `library` module, where
+`PackageNodeKey{package, node: WireNodeId}` is defined and wire-fed node
+references are `WireNodeId`s, and added `LibraryRefusal::class()`. Backed:
+FR-087-AC-5 (TC-245) and FR-087-AC-12 (TC-282). Still to land:
+`VerifiedPackage` and the §4 verified binding (AC-3), `ImportView` (AC-4),
+the retirement of `ResolvedSourcePackage` (AC-7), and E3 imported-name
+resolution (AC-13, TC-379, Planned). The remaining criteria have no traced
+test yet.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is

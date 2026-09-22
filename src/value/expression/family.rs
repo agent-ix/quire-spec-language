@@ -417,6 +417,7 @@ mod family_contract_tests {
     /// obligations, and this trait now has only `check` -- see FR-062's own
     /// amended Acceptance Criteria for why AC-1 is recorded unbacked rather
     /// than retagged onto a narrower claim.
+    #[trace("TC-380", "FR-065-AC-7")]
     #[test]
     fn value_function_family_checks_through_the_contract() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
@@ -461,6 +462,7 @@ mod family_contract_tests {
     /// separately, after already calling `check` and discarding nothing --
     /// so this exact fixture, checked through the contract alone, returned
     /// `Ok`. It does not any more.
+    #[trace("TC-380", "FR-065-AC-7")]
     #[test]
     fn value_function_family_check_refuses_an_ill_typed_body() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();

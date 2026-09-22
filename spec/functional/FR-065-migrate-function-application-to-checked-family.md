@@ -373,17 +373,17 @@ delivered code today:
   in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
   QSL-5 / #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
-- FR-065-AC-7: covered in behavior, not yet traced. Since QSL-148 (PR #303)
-  the contract's `check` hook type-checks the body.
+- FR-065-AC-7: backed (`TC-380`). Since QSL-148 (PR #303) the contract's
+  `check` hook type-checks the body.
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half)
   and `value_function_family_checks_through_the_contract` (admission half),
-  both in `src/value/expression/family.rs`, assert what AC-7 states, but
-  neither carries a `TC-380` / `FR-065-AC-7` trace tag yet.
+  both in `src/value/expression/family.rs`, are tagged
+  `#[trace("TC-380", "FR-065-AC-7")]`.
 
-One of this requirement's seven Acceptance Criteria is backed (AC-2,
-identity/provenance); AC-4 is true by inspection but not backed by a test
-that could catch its own regression; AC-7 is covered by untagged tests; the
-other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
+Two of this requirement's seven Acceptance Criteria are backed (AC-2,
+identity/provenance; AC-7, the contract `check` hook's typing verdict); AC-4
+is true by inspection but not backed by a test that could catch its own
+regression; the other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
 migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
 in the delivered code. `TC-164` keeps its own zero-test procedure (see its
 Status section); the criterion it targets, AC-5, stays unbacked (see the
