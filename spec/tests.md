@@ -40,6 +40,7 @@ operational validation remains outside this audit-only plan.
 | TC-008 | Audit resource ceilings | Property | P1 | FR-012-AC-9 | ✅ Passed locally |
 | TC-009 | CLI encoding and Rust-only execution | E2E | P1 | FR-012-AC-10, NFR-005-M-2 | ✅ Passed locally |
 | TC-010 | Owned verification language inventory | Manual | P1 | NFR-005-M-1 | ✅ Inspected locally |
+| TC-153 | The canonical `Capability` value round-trips every FR-290 label and refuses a label outside the vocabulary | Unit | P1 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4 | ✅ Passed locally (AC-1, AC-2, AC-4); AC-7 and AC-10 stay 🚧 Planned; #213 — see note below |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
@@ -304,6 +305,38 @@ This is a retrospective spec in the same sense
 [FR-047](../spec/functional/FR-047-evaluate-finite-object-reference-graphs.md)
 already is for this repo: it states the coverage that exists rather than
 treating the whole slice as unbuilt.
+
+## Canonical `Capability` value type (FR-057 item 1, QSL-173) coverage
+
+ADR-013 O-19's canonical `Capability` value type and its C-24 total wire
+conversion are implemented in `src/capability.rs`, backing three of the five
+[FR-057](../spec/functional/FR-057-admit-shared-capability-kinds.md) ACs
+that TC-153 traces to:
+
+- TC-153 (FR-057-AC-1): `src/capability.rs::tests::every_fr_290_label_round_trips_to_a_byte_identical_string`
+  — walks all ten FR-290 labels (restated independently of the
+  implementation, as the test's own doc comment states) and asserts
+  `from_wire` then `to_wire` reproduces the original string, and that the
+  admitted set is exactly those ten, no more and no fewer.
+- TC-153 (FR-057-AC-2): `src/capability.rs::tests::a_label_outside_the_vocabulary_refuses_and_names_the_received_bytes`
+  — asserts refusal, naming the exact received bytes, for the empty string,
+  a case variant, a separator variant, a display form, a padded label, a
+  Rust variant name, and each of the four OBS-003 request-vocabulary labels
+  (`FamilyCheck`, `StateOperation`, `FiniteReplay`, `TemporalProjection`).
+- TC-153 (FR-057-AC-4): `src/capability.rs::tests::equality_is_label_equality_and_the_ten_values_are_pairwise_distinct`
+  — asserts the ten values are pairwise distinct and each equals only
+  itself.
+
+FR-057-AC-7 ("the QSL source tree defines one type carrying capability-kind
+labels") and FR-057-AC-10 (claim-form-to-kind assignment at the composed
+linker) are not covered by these tests. AC-7's literal claim will not hold
+until #213's admission work and #185's routing work land and #229/FR-077
+remove `linking::composed::requests::Capability`'s unrelated four-member
+vocabulary; until then, a second type exists in the tree, carrying a
+different vocabulary, not an FR-290 one. AC-10 needs the composed linker to
+actually record a kind for an admitted clause, which is #213's admission
+work, not this type. Both stay `🚧 Planned; #213` honestly, the same
+retrospective-spec convention the sections above use.
 
 ## Six coverage rules
 

@@ -346,10 +346,17 @@ checker's definition permissions. Their ownership is decided in #211.
 ## Status
 
 Specified under
-[#229](https://github.com/agent-ix/quire-spec-language/issues/229). Not yet
-implemented. `linking::composed::requests::Capability` declares a different
-four-member request vocabulary, `requests::report` reads a caller-declared
-backend's support, and `admitted_bodies` selects bodies by a family-check
-request. Remaining work: #213 lands the canonical `Capability`, admission and
-family-body handoff first; #185 builds registration, candidate sets and routing
-on it. TC-153, TC-154 and TC-155 are planned under those tickets.
+[#229](https://github.com/agent-ix/quire-spec-language/issues/229). The
+canonical `Capability` value type and its total FR-290 wire conversion
+(ADR-013 C-24) are implemented (QSL-173, `src/capability.rs`), backing
+FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 under TC-153. `linking::composed::
+requests::Capability` still declares its own, different four-member request
+vocabulary (`src/linking/composed/requests.rs:36`; OBS-003/FR-077 removes
+it), `requests::report` still reads a caller-declared backend's support, and
+`admitted_bodies` still selects bodies by a family-check request, so
+FR-057-AC-5 through FR-057-AC-10 (the composed-linker admission rules,
+family-body handoff, registration and routing) and FR-057-AC-7's full
+single-type claim remain not yet implemented. Remaining work: #213 lands
+admission and the family-body handoff; #185 builds registration, candidate
+sets and routing on the now-implemented type. TC-154 and TC-155, and the
+AC-7/AC-10 portion of TC-153, are planned under those tickets.
