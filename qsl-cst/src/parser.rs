@@ -188,13 +188,13 @@ pub(super) fn parse(
     };
     let selections = extract_selections(&source, &significant, selection_nodes, &mut diagnostics);
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
-    Ok(ParsedSource {
+    Ok(ParsedSource::from_parts(
         source,
         cst,
         diagnostics,
         selections,
-        incremental: false,
-    })
+        false,
+    ))
 }
 
 fn selection_prelude_nodes(

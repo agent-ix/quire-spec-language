@@ -3,10 +3,9 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, Production, TokenClass};
 use qsl_foundation::{SourceIdentity, Span};
-use quire_spec_language::complete::{
-    self, CompleteCause, CompleteCode, HostCause, Limits, Production, SourceEdit, TokenClass,
-};
+use quire_spec_language::complete::{self, SourceEdit};
 
 const SOURCE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\r\n",
@@ -39,7 +38,7 @@ fn identity(revision: &str) -> SourceIdentity {
 #[trace("TC-180", "TC-222", "FR-339-AC-1", "FR-339-AC-2", "FR-302-AC-1")]
 #[test]
 fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -100,7 +99,7 @@ fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
 #[trace("TC-222", "FR-302-AC-1")]
 #[test]
 fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
-    let baseline = complete::parse(
+    let baseline = qsl_cst::parse(
         identity("node-count"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -112,7 +111,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
         nodes: node_count,
         ..Limits::default()
     };
-    assert!(complete::parse(
+    assert!(qsl_cst::parse(
         identity("node-exact"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -125,7 +124,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
         ..Limits::default()
     };
     assert_eq!(
-        complete::parse(
+        qsl_cst::parse(
             identity("node-below"),
             "complete.native",
             SOURCE.as_bytes(),
@@ -140,7 +139,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
 #[trace("TC-222", "FR-302-AC-1")]
 #[test]
 fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
-    let baseline = complete::parse(
+    let baseline = qsl_cst::parse(
         identity("leaf-count"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -152,7 +151,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         tokens: leaf_count,
         ..Limits::default()
     };
-    let accepted = complete::parse(
+    let accepted = qsl_cst::parse(
         identity("leaf-exact"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -167,7 +166,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         tokens: leaf_count - 1,
         ..Limits::default()
     };
-    let refusal = complete::parse(
+    let refusal = qsl_cst::parse(
         identity("leaf-below"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -183,7 +182,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         ("comment-leaf", "// retained"),
         ("invalid-leaf", "@"),
     ] {
-        let refusal = complete::parse(
+        let refusal = qsl_cst::parse(
             identity(revision),
             "complete.native",
             source.as_bytes(),
@@ -203,7 +202,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
 #[test]
 fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
     let source = format!("0x{}", "f".repeat(900_000));
-    let refusal = complete::parse(
+    let refusal = qsl_cst::parse(
         identity("large-hex-leaf-budget"),
         "large.native",
         source.as_bytes(),
@@ -222,7 +221,7 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
 #[test]
 fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
     let source = "language \"ix:native\" edition \"1-draft\"; profile C = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"; record Broken { value: Integer }";
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("broken"),
         "broken.native",
         source.as_bytes(),
@@ -242,7 +241,7 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -291,7 +290,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -339,7 +338,7 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -383,14 +382,14 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
-    let first = complete::parse(
+    let first = qsl_cst::parse(
         identity("first"),
         "first.native",
         SOURCE.as_bytes(),
         Limits::default(),
     )
     .unwrap();
-    let second = complete::parse(
+    let second = qsl_cst::parse(
         SourceIdentity {
             identity: "test:other-cst".into(),
             revision: "second".into(),
@@ -413,7 +412,7 @@ fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("clone"),
         "clone.native",
         SOURCE.as_bytes(),
@@ -430,7 +429,7 @@ fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
 fn revision_bound_node_identity_includes_the_document_identity() {
-    let first = complete::parse(
+    let first = qsl_cst::parse(
         SourceIdentity {
             identity: "test:first-document".into(),
             revision: "shared-revision".into(),
@@ -440,7 +439,7 @@ fn revision_bound_node_identity_includes_the_document_identity() {
         Limits::default(),
     )
     .unwrap();
-    let second = complete::parse(
+    let second = qsl_cst::parse(
         SourceIdentity {
             identity: "test:second-document".into(),
             revision: "shared-revision".into(),
@@ -455,7 +454,7 @@ fn revision_bound_node_identity_includes_the_document_identity() {
         second.cst().root().identity()
     );
 
-    let changed = complete::parse(
+    let changed = qsl_cst::parse(
         SourceIdentity {
             identity: "test:first-document".into(),
             revision: "shared-revision".into(),
@@ -475,7 +474,7 @@ fn revision_bound_node_identity_includes_the_document_identity() {
 #[trace("Task-047")]
 #[test]
 fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -516,7 +515,7 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
 #[test]
 fn invalid_caller_edit_ranges_refuse_without_panicking() {
     let text = format!("{SOURCE}\r\n// 😀");
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("invalid-ranges"),
         "complete.native",
         text.as_bytes(),
@@ -573,7 +572,7 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
 #[trace("Task-047")]
 #[test]
 fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("bounded-edits"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -620,7 +619,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
 #[trace("Task-047")]
 #[test]
 fn insertion_inside_crlf_falls_back_to_full_lexing() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("crlf-r1"),
         "complete.native",
         SOURCE.as_bytes(),
@@ -643,7 +642,7 @@ fn insertion_inside_crlf_falls_back_to_full_lexing() {
     )
     .unwrap();
     assert!(!edited.is_incremental_result());
-    let full = complete::parse(
+    let full = qsl_cst::parse(
         identity("crlf-r2"),
         "complete.native",
         edited.source().text().as_bytes(),
@@ -663,7 +662,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
     ] {
         let original_revision = format!("{case}-r1");
         let edited_revision = format!("{case}-r2");
-        let parsed = complete::parse(
+        let parsed = qsl_cst::parse(
             identity(&original_revision),
             "complete.native",
             source.as_bytes(),
@@ -682,7 +681,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
         )
         .unwrap();
         assert!(edited.is_incremental_result(), "{case}");
-        let full = complete::parse(
+        let full = qsl_cst::parse(
             identity(&edited_revision),
             "complete.native",
             edited.source().text().as_bytes(),
@@ -706,7 +705,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
 #[trace("Task-047")]
 #[test]
 fn adjacent_half_open_edits_are_not_overlaps() {
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         identity("r1"),
         "complete.native",
         SOURCE.as_bytes(),

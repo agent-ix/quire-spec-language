@@ -162,7 +162,11 @@ pub(super) fn complete_v1() -> Grammar {
     grammar
 }
 
-pub(super) fn base_reserved_spellings() -> std::collections::BTreeSet<&'static str> {
+/// Every reserved keyword and symbol spelling in the base (non-complete)
+/// grammar, for editor completion candidates.
+// Widened to `pub`: the root crate's `complete::editor` calls it across the
+// crate boundary (ADR-011 §7.3 X-3).
+pub fn base_reserved_spellings() -> std::collections::BTreeSet<&'static str> {
     fn collect(rule: &Rule, output: &mut std::collections::BTreeSet<&'static str>) {
         match rule {
             Rule::Terminal(Terminal::Exact(value) | Terminal::Literal(value)) => {
@@ -1548,7 +1552,7 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::{complete_compound_spellings, complete_reserved_words, complete_v1};
-    use crate::complete::{self, Limits};
+    use crate::{parse, Limits};
     use qsl_foundation::SourceIdentity;
 
     #[trace("TC-180", "FR-339-AC-1", "FR-302-AC-1")]
@@ -1557,7 +1561,7 @@ mod tests {
         let compounds = complete_compound_spellings(&complete_v1());
         assert!(!compounds.is_empty());
         for compound in compounds {
-            let parsed = complete::parse(
+            let parsed = parse(
                 SourceIdentity {
                     identity: "test:compound-authority".into(),
                     revision: compound.into(),
@@ -1573,7 +1577,7 @@ mod tests {
             assert_eq!(parsed.cst().tokens().len(), 1, "`{compound}`");
             assert_eq!(parsed.cst().tokens()[0].spelling(), compound.as_bytes());
 
-            let refusal = complete::parse(
+            let refusal = parse(
                 SourceIdentity {
                     identity: "test:compound-authority".into(),
                     revision: format!("{compound}:below"),
@@ -1603,7 +1607,7 @@ mod tests {
         );
         for word in complete_reserved_words(&complete_v1()) {
             let text = format!("{prefix}{word} {{ datum: Integer; }}");
-            let parsed = complete::parse(
+            let parsed = parse(
                 SourceIdentity {
                     identity: "test:reserved-word-authority".into(),
                     revision: word.into(),

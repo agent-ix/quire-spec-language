@@ -403,16 +403,22 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
 }
 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
-/// `quire-exact` and `qsl-foundation` (ADR-011 §7.3 X-2, QSL-177 -- the
-/// first extracted §6.1 layer crate; each later extraction adds its own
-/// entry here the same way). `qsl-attrs` is excluded -- it is a proc-macro
-/// identity transform with no string dispatch of any kind (its own module
-/// doc).
+/// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2, QSL-177) and
+/// `qsl-cst` (ADR-011 §7.3 X-3, QSL-178 -- each extracted §6.1 layer crate
+/// adds its own entry here the same way). `qsl-attrs` is excluded -- it is a
+/// proc-macro identity transform with no string dispatch of any kind (its
+/// own module doc).
 fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
-    ["src", "xtask/src", "quire-exact/src", "qsl-foundation/src"]
-        .into_iter()
-        .map(|relative| workspace_root.join(relative))
-        .collect()
+    [
+        "src",
+        "xtask/src",
+        "quire-exact/src",
+        "qsl-foundation/src",
+        "qsl-cst/src",
+    ]
+    .into_iter()
+    .map(|relative| workspace_root.join(relative))
+    .collect()
 }
 
 /// Run the full `string-edge` scan over every crate root this module's

@@ -1,0 +1,27 @@
+[package]
+name = "qsl-cst"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer 1: the complete-V1 recovering concrete syntax tree -- token vocabulary, lexer, parser, declarative grammar and located diagnostics."
+
+[dependencies]
+qsl-foundation = { path = "../qsl-foundation" }
+logos = "=0.16.1"
+serde_json = "=1.0.151"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

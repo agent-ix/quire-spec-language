@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use super::{
+use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
+    SourceSelections,
 };
 use qsl_foundation::{Phase, SourceIdentity, Span};
 
@@ -95,7 +96,7 @@ fn apply_edits_selected(
         super::editor::validate_catalog_profiles(parsed, catalog)?;
     }
     let failure = |code, cause, span: Span, message| {
-        super::diagnostic::error(
+        qsl_cst::diagnostic::error(
             source,
             code,
             cause,
@@ -175,13 +176,13 @@ fn apply_edits_selected(
     if parsed.is_admissible()
         && edits.len() == 1
         && edits[0].range.start == edits[0].range.end
-        && crate::token::is_lexer_whitespace(&edits[0].replacement)
+        && qsl_cst::token::is_lexer_whitespace(&edits[0].replacement)
         && limits.source_bytes == Limits::default().source_bytes
         && limits.tokens == Limits::default().tokens
         && limits.nodes == Limits::default().nodes
         && limits.nesting == Limits::default().nesting
     {
-        let edited_source = super::diagnostic::read_source(
+        let edited_source = qsl_cst::diagnostic::read_source(
             new_identity.clone(),
             source.path(),
             &bytes,
@@ -212,11 +213,7 @@ fn apply_edits_selected(
     }
 }
 
-fn shifted_selections(
-    selections: &super::SourceSelections,
-    at: usize,
-    added: usize,
-) -> super::SourceSelections {
+fn shifted_selections(selections: &SourceSelections, at: usize, added: usize) -> SourceSelections {
     fn shifted(mut span: Span, at: usize, added: usize) -> Span {
         if span.start >= at {
             span.start = span.start.saturating_add(added);

@@ -18,7 +18,7 @@
 //! family having migrated onto S2 forms.
 
 use super::Expression;
-use crate::complete::{LosslessCst, Recovery, TokenClass};
+use qsl_cst::{LosslessCst, Recovery, TokenClass};
 use qsl_foundation::Span;
 
 /// A parsed form built from a lossless CST with no error or recovery node
@@ -266,7 +266,7 @@ fn unquote(spelling: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod test_support {
     use super::Expression;
-    use crate::complete::LosslessCst;
+    use qsl_cst::LosslessCst;
 
     /// The test-only leading token spelling `from_spelling` maps to
     /// [`super::LeadingTokenKind::TestProbe`].
@@ -310,7 +310,7 @@ mod tests {
         assert!(matches!(built.expression(), Expression::Boolean(true)));
 
         let recovering = probe_cst(vec![Recovery {
-            kind: crate::complete::RecoveryKind::Insert,
+            kind: qsl_cst::RecoveryKind::Insert,
             span: Span { start: 0, end: 0 },
             expected: "test recovery".into(),
         }]);

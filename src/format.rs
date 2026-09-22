@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-003: format validated source by rewriting whitespace, preserving every token and
 //! comment. Syntax formatting does not need a second expression printer/grammar.
-use crate::token::Kind;
 use crate::{Limits, ParsedUnit};
 use logos::Logos;
+use qsl_cst::token::Kind;
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 /// Format tokens/comments using the default 1 MiB output-byte ceiling.

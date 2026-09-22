@@ -1226,6 +1226,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-cst"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "logos",
+ "qsl-foundation",
+ "serde_json",
+]
+
+[[package]]
 name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
@@ -1319,6 +1329,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "qsl-attrs",
+ "qsl-cst",
  "qsl-foundation",
  "quire-contract-codegen",
  "quire-contract-ir",

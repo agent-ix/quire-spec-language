@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete-V1 document analysis and canonical-format round-tripping.
 use ix_trace_rs::trace;
+use qsl_cst::{
+    parse, CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionDigest, DefinitionRef,
+    HostCause, Limits, TokenClass,
+};
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
-    self, analyze_document, format_document, CompleteCause, CompleteCode, DefinitionDigest,
-    DefinitionRef, DocumentBinding, HostCause, Limits, ProfileCatalog, SourceEdit, TokenClass,
+    self, analyze_document, format_document, DocumentBinding, ProfileCatalog, SourceEdit,
 };
 
 fn ugly(profile: &DefinitionRef) -> String {
@@ -49,7 +52,7 @@ fn catalog() -> (ProfileCatalog, DefinitionRef) {
 fn formatting_is_idempotent_and_preserves_semantic_tokens() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -93,7 +96,7 @@ fn formatting_is_idempotent_and_preserves_semantic_tokens() {
 fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let ugly = complete::parse(
+    let ugly = parse(
         identity("seed"),
         "editor.native",
         source.as_bytes(),
@@ -115,7 +118,7 @@ fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
     ];
     for (index, source) in variants.into_iter().enumerate() {
         let revision = format!("variant-{index}");
-        let parsed = complete::parse(
+        let parsed = parse(
             identity(&revision),
             "editor.native",
             source.as_bytes(),
@@ -152,7 +155,7 @@ fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
 fn incremental_and_full_reparse_publish_identical_language_outputs() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -175,7 +178,7 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
     )
     .unwrap();
     assert!(incremental.is_incremental_result());
-    let full = complete::parse(
+    let full = parse(
         identity("r2"),
         "editor.native",
         incremental.source().text().as_bytes(),
@@ -203,7 +206,7 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
 fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -227,7 +230,7 @@ fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
         )
         .unwrap();
         assert!(!edited.is_incremental_result());
-        let full = complete::parse(
+        let full = parse(
             identity(revision),
             "editor.native",
             edited.source().text().as_bytes(),
@@ -246,7 +249,7 @@ fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
 fn lowered_parse_limits_force_full_incremental_validation() {
     let (_, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -281,7 +284,7 @@ fn lowered_parse_limits_force_full_incremental_validation() {
             complete::apply_edit(&parsed, "r1", identity(revision), edit, limits).unwrap_err();
         let mut candidate = source.clone();
         candidate.insert(record - 1, ' ');
-        let full = complete::parse(
+        let full = parse(
             identity(revision),
             "editor.native",
             candidate.as_bytes(),
@@ -298,7 +301,7 @@ fn lowered_parse_limits_force_full_incremental_validation() {
 fn stale_profile_and_cancelled_editor_requests_are_typed() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -318,11 +321,7 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
     wrong_profile.profile = DefinitionRef::new(
         "unknown",
         "1",
-        quire_spec_language::complete::DefinitionDigest::parse(&format!(
-            "sha256:{}",
-            "f".repeat(64)
-        ))
-        .unwrap(),
+        DefinitionDigest::parse(&format!("sha256:{}", "f".repeat(64))).unwrap(),
     )
     .unwrap();
     let unknown = format_document(&parsed, wrong_profile, &catalog, Limits::default()).unwrap_err();
@@ -345,7 +344,7 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
 fn formatter_reparse_uses_the_callers_explicit_limits() {
     let (catalog, profile) = catalog();
     let source = ugly(&profile);
-    let parsed = complete::parse(
+    let parsed = parse(
         identity("r1"),
         "editor.native",
         source.as_bytes(),
@@ -411,7 +410,7 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
             ),
             1,
         );
-        let parsed = complete::parse(
+        let parsed = parse(
             identity(revision),
             "editor.native",
             source.as_bytes(),
@@ -420,7 +419,7 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
         .unwrap();
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
         let failing_span = parsed.selections().profiles[1].identity_span;
-        let assert_failure = |failure: &complete::CompleteDiagnostic| {
+        let assert_failure = |failure: &CompleteDiagnostic| {
             assert_eq!(failure.code, expected_code, "{revision}");
             assert_eq!(failure.cause, expected_cause, "{revision}");
             assert_eq!(failure.source, *parsed.source().identity(), "{revision}");
@@ -491,7 +490,7 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
             Some(TokenClass::Comment),
         ),
     ] {
-        let parsed = complete::parse(
+        let parsed = parse(
             identity(revision),
             "editor.native",
             source.as_bytes(),

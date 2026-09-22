@@ -413,18 +413,18 @@ pub(crate) fn evaluate(
 /// rule scans every QSL workspace crate whose `[dependencies]` can name the
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/` -- `qsl-foundation`
-/// (ADR-011 §7.3 X-2, QSL-177) today, and each later layer crate as its own
-/// extraction PR adds it here. `quire-exact` and `qsl-attrs` are excluded:
-/// `quire-exact` is the kernel these rules' constructors are defined *in*,
-/// never a caller of them (T12-B/T12-C/T12-D's own scope notes already
-/// exclude checking a copy of the constructor elsewhere; the crate that
-/// defines a constructor calling its own inherent `impl` is not a "caller"),
-/// and `qsl-attrs` is a proc-macro crate with no dependency on `quire-exact`
-/// at all.
+/// (ADR-011 §7.3 X-2, QSL-177) and `qsl-cst` (ADR-011 §7.3 X-3, QSL-178)
+/// today, and each later layer crate as its own extraction PR adds it here.
+/// `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel
+/// these rules' constructors are defined *in*, never a caller of them
+/// (T12-B/T12-C/T12-D's own scope notes already exclude checking a copy of
+/// the constructor elsewhere; the crate that defines a constructor calling
+/// its own inherent `impl` is not a "caller"), and `qsl-attrs` is a
+/// proc-macro crate with no dependency on `quire-exact` at all.
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src"]
+        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src"]
             .into_iter()
             .map(|relative| scan_root.join(relative))
             .collect(),
@@ -768,5 +768,32 @@ mod tests {
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty());
         assert!(outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_016 (ADR-011 §7.3 X-3, QSL-178): a
+    /// `Role::Qsl` rule scans `qsl-cst/src/` too, the same way
+    /// tc_arch_lint_api_surface_014 covers `qsl-foundation/src/` -- the
+    /// extracted layer-1 crate is as much "QSL's own tree" as the root
+    /// crate.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_016_qsl_cst_crate_is_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-cst/src/token.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "token");
+        assert!(!outcome.passed());
     }
 }

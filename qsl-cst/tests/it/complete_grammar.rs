@@ -3,10 +3,8 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, ParsedSource, Production};
 use qsl_foundation::{SourceIdentity, Span};
-use quire_spec_language::complete::{
-    self, CompleteCause, CompleteCode, HostCause, Limits, Production,
-};
 
 // Independently transcribed from the accepted complete-V1 EBNF. This must not
 // be generated from the implementation grammar: an omitted implementation
@@ -119,8 +117,8 @@ fn source(declarations: &str) -> String {
     )
 }
 
-fn parse(id: &str, text: &str) -> complete::ParsedSource {
-    complete::parse(
+fn parse(id: &str, text: &str) -> ParsedSource {
+    qsl_cst::parse(
         SourceIdentity {
             identity: format!("test:{id}"),
             revision: "1".into(),
@@ -520,7 +518,7 @@ fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
         identity: format!("test:{id}"),
         revision: "1".into(),
     };
-    match complete::parse(identity, format!("{id}.native"), bytes, Limits::default()) {
+    match qsl_cst::parse(identity, format!("{id}.native"), bytes, Limits::default()) {
         Ok(parsed) => {
             for diagnostic in parsed.diagnostics() {
                 assert!(diagnostic.cause.is_cause_of(diagnostic.code), "{id}");
@@ -608,7 +606,7 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
     ];
     for (id, bytes, code, cause) in cases {
         let observed = if id == "unnamed" {
-            let refusal = complete::parse(
+            let refusal = qsl_cst::parse(
                 SourceIdentity {
                     identity: String::new(),
                     revision: "1".into(),

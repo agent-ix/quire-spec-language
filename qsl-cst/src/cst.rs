@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! The lossless complete-V1 concrete syntax tree: exact definition/model
+//! selection digests and identities, the recovering node/token tree, and
+//! incremental whitespace-only editing.
 use std::collections::BTreeSet;
 
 use qsl_foundation::digest::InvalidDigest;
@@ -15,7 +18,9 @@ impl DefinitionDigest {
     }
 
     /// Wrap an already-computed raw-byte digest.
-    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+    // Widened to `pub`: the root crate's `complete::package` calls it
+    // across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn from_digest(digest: ByteDigest) -> Self {
         Self(digest)
     }
 
@@ -109,7 +114,9 @@ impl ModelDigest {
     }
 
     /// Wrap an already-computed raw-byte digest.
-    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+    // Widened to `pub`: the root crate's `complete::package` calls it
+    // across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn from_digest(digest: ByteDigest) -> Self {
         Self(digest)
     }
 
@@ -634,7 +641,11 @@ impl LosslessCst {
             .min_by_key(|node| node.span.end.saturating_sub(node.span.start))
     }
 
-    pub(crate) fn with_whitespace_insertion(
+    /// Apply a single whitespace-only insertion to this CST without
+    /// reparsing, or `None` if the fast path does not apply.
+    // Widened to `pub`: the root crate's `complete::edit` calls it across the
+    // crate boundary (ADR-011 §7.3 X-3).
+    pub fn with_whitespace_insertion(
         &self,
         source: Source,
         at: usize,
@@ -791,7 +802,12 @@ fn append_tokens(tokens: &[CstToken], start: usize, end: usize, output: &mut Vec
     );
 }
 
-#[cfg(test)]
+// Not `#[cfg(test)]`: the root crate's `forms::dispatch` unit tests need this
+// fixture unconditionally in both the default-feature and `--all-features`
+// lanes (ADR-011 §7.3 X-3), and `cfg(test)` cannot cross a crate boundary --
+// it gates only qsl-cst's own test build, never a downstream crate's. A
+// Cargo feature would instead change which lane runs those tests, which
+// would move their count between lanes rather than preserve it.
 impl LosslessCst {
     /// Test-only fixture: a lossless CST over the given significant token
     /// spellings (space-joined into the backing source text, in order), one
@@ -814,7 +830,7 @@ impl LosslessCst {
     /// The root node has no children: nothing in `forms` reads a node's
     /// children, only [`Self::tokens`] (the whole stream) and
     /// [`Self::root`]'s own span.
-    pub(crate) fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
+    pub fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
         assert!(!spellings.is_empty(), "a fixture needs at least one token");
         let mut text = String::new();
         let mut tokens = Vec::with_capacity(spellings.len());

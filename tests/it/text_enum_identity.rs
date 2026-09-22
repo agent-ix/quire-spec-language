@@ -10,11 +10,11 @@
 use std::cmp::Ordering;
 
 use ix_trace_rs::trace;
+use qsl_cst::{Limits, ParsedSource};
 use qsl_foundation::{Code, SourceIdentity};
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
 };
-use quire_spec_language::complete::{self, Limits};
 use quire_spec_language::value::{
     admit_text, compare_enum, compare_text, ComparisonOperator, EmptyTextBounds, EnumDeclaration,
     EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, IllTyped, IllTypedCause,
@@ -150,8 +150,8 @@ fn complete_source(declarations: &str) -> String {
     )
 }
 
-fn parse(text: &str) -> complete::ParsedSource {
-    complete::parse(
+fn parse(text: &str) -> ParsedSource {
+    qsl_cst::parse(
         SourceIdentity {
             identity: "test:tc-186".into(),
             revision: "1".into(),

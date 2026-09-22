@@ -209,7 +209,9 @@ impl std::error::Error for CompleteDiagnostic {}
 
 /// Read exact source bytes at the complete API boundary, refusing with a typed
 /// cause.
-pub(crate) fn read_source(
+// Widened to `pub`: the root crate's `complete::parse_with_catalog` calls it
+// across the crate boundary (ADR-011 §7.3 X-3).
+pub fn read_source(
     identity: SourceIdentity,
     path: impl Into<String>,
     bytes: &[u8],
@@ -251,7 +253,10 @@ pub(crate) fn read_source(
     })
 }
 
-pub(crate) fn error(
+/// Build a located diagnostic at `source`'s exact `start..end` byte span.
+// Widened to `pub`: the root crate's `complete::parse_with_catalog` calls it
+// across the crate boundary (ADR-011 §7.3 X-3).
+pub fn error(
     source: &Source,
     code: CompleteCode,
     cause: CompleteCause,

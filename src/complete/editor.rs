@@ -4,9 +4,10 @@ use qsl_foundation::{Phase, SourceIdentity, Span};
 use std::collections::BTreeSet;
 
 use super::package::{ProfileStatus, StaleProfile};
-use super::{
+use super::{ProfileCatalog, SourceEdit};
+use qsl_cst::{
     CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionRef, HostCause, Limits,
-    NodeIdentity, ParsedSource, Production, ProfileCatalog, SourceEdit, TokenClass, TokenKind,
+    NodeIdentity, ParsedSource, Production, TokenClass, TokenKind,
 };
 
 /// Exact document/profile tuple carried by every editor request and response.
@@ -107,7 +108,7 @@ pub fn analyze_document(
 ) -> Result<DocumentSnapshot, Box<CompleteDiagnostic>> {
     validate_binding(parsed, &binding, catalog)?;
     if cancelled {
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::Cancelled,
             CompleteCause::CallerCancelled,
@@ -162,7 +163,7 @@ pub fn analyze_document(
     navigation.sort_by_key(|entry| (entry.span.start, entry.span.end, entry.production));
     let mut completion_set = BTreeSet::new();
     completion_set.extend(
-        super::grammar::base_reserved_spellings()
+        qsl_cst::grammar::base_reserved_spellings()
             .into_iter()
             .map(|spelling| (spelling.to_string(), CompletionKind::GrammarToken)),
     );
@@ -222,7 +223,7 @@ pub fn format_document(
             ),
             |origin| (origin.code, origin.cause),
         );
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             code,
             cause,
@@ -244,7 +245,7 @@ pub fn format_document(
         limits,
     )?;
     if !candidate.is_admissible() {
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidProjectionCorrespondence,
             CompleteCause::CorrespondenceLoss,
@@ -272,7 +273,7 @@ pub fn format_document(
             .zip(&candidate_tokens)
             .any(|(original, formatted)| original.spelling() != formatted.spelling())
     {
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidProjectionCorrespondence,
             CompleteCause::CorrespondenceLoss,
@@ -316,7 +317,7 @@ fn validate_binding(
     validate_catalog_profiles(parsed, catalog)?;
     let identity = parsed.source().identity();
     if identity.identity != binding.identity || identity.revision != binding.revision {
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidSourceIdentity,
             CompleteCause::Host(HostCause::RequestRevision),
@@ -346,7 +347,7 @@ fn validate_binding(
         ),
     };
     let (code, cause, message) = refusal;
-    Err(super::diagnostic::error(
+    Err(qsl_cst::diagnostic::error(
         parsed.source(),
         code,
         cause,
@@ -393,7 +394,7 @@ pub(super) fn validate_catalog_profiles(
         else {
             continue;
         };
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             code,
             cause,
@@ -412,7 +413,7 @@ fn formatted_text(
 ) -> Result<String, Box<CompleteDiagnostic>> {
     let mut output = String::new();
     let mut indent = 0_usize;
-    let mut previous: Option<&super::CstToken> = None;
+    let mut previous: Option<&qsl_cst::CstToken> = None;
     for token in parsed
         .cst()
         .tokens()
@@ -476,10 +477,10 @@ fn formatted_text(
 
 fn token_text<'a>(
     parsed: &'a ParsedSource,
-    token: &'a super::CstToken,
+    token: &'a qsl_cst::CstToken,
 ) -> Result<&'a str, Box<CompleteDiagnostic>> {
     std::str::from_utf8(token.spelling()).map_err(|_| {
-        super::diagnostic::error(
+        qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::RuntimeInvariant,
             CompleteCause::EstablishedInvariantBroken,
@@ -533,7 +534,7 @@ fn append_bounded(
         .checked_add(value.len())
         .is_none_or(|length| length > source_byte_limit)
     {
-        return Err(super::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::ResourceExhausted,
             CompleteCause::InsufficientNextCharge,
@@ -548,8 +549,8 @@ fn append_bounded(
 }
 
 fn needs_space(
-    previous: Option<&super::CstToken>,
-    current: &super::CstToken,
+    previous: Option<&qsl_cst::CstToken>,
+    current: &qsl_cst::CstToken,
     output: &str,
 ) -> bool {
     let Some(previous) = previous else {
