@@ -499,15 +499,18 @@ mod family_contract_tests {
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
-        let package = PackageDeclarations {
+        let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
             ..PackageDeclarations::default()
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly, never Incomplete");
-        let identity = package
+        let identity = graph
             .function_identity("f")
             .expect("f is declared in this package");
+        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // empty dependency closure -- this fixture declares no import.
+        let package = crate::package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {
@@ -548,7 +551,7 @@ mod family_contract_tests {
     /// denied.
     #[test]
     fn evaluate_returns_incomplete_when_a_nested_calls_local_meter_is_exhausted() {
-        let package = PackageDeclarations {
+        let graph = PackageDeclarations {
             functions: vec![
                 declaration("callee", Expression::Boolean(true)),
                 declaration(
@@ -563,9 +566,12 @@ mod family_contract_tests {
         }
         .check(CheckingLimits::default())
         .expect("callee and caller both check cleanly");
-        let identity = package
+        let identity = graph
             .function_identity("caller")
             .expect("caller is declared in this package");
+        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // empty dependency closure -- this fixture declares no import.
+        let package = crate::package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let exhausted_limits = quire_exact::ScalarLimits {
             work_units: 0,
