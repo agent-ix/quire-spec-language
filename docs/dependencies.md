@@ -26,10 +26,10 @@ prior pin, this revision is `AGPL-3.0-or-later` (relicensed in IR #94, not
 `MIT OR Apache-2.0`), and it newly pulls `quire-verification-contracts` at
 `2e06cf5b959bc325a0231329a0e3a223ea2c2606` (also `AGPL-3.0-or-later`) plus
 typify, schemars, jsonschema 0.55 and chrono into the lock. QSL's own I2
-reader (`src/package/checked_v2.rs`) delegates envelope parsing and
+reader (`src/checked_package/checked_v2.rs`) delegates envelope parsing and
 `package_id` recompute to IR's typed structs rather than re-declaring
 FR-322's `quire.checked-package/v2` vocabulary; QSL-6's emitter slice
-(`src/package/emit.rs`, agent-ix/quire-spec-language#297) builds and
+(`src/checked_package/emit.rs`, agent-ix/quire-spec-language#297) builds and
 serializes IR's typed structs the same way for emitting. This bump locks 38
 new packages in total (jsonschema 0.55's own dependency tree --
 `referencing`, `jsonschema-regex`, `jsonschema-value`, `regress`,
