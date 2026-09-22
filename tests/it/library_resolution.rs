@@ -9,10 +9,11 @@
 
 use ix_trace_rs::trace;
 use quire_spec_language::diagnostic::Code;
+use quire_spec_language::digest::WireNodeId;
 use quire_spec_language::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect, Selection,
-    StaleCause, WireNodeId,
+    StaleCause,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

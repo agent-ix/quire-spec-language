@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use super::WireNodeId;
+use crate::digest::WireNodeId;
 use crate::value::node::{is_qualified_name, NODE_KEY_DOMAIN};
 
 /// The identity preimage version constant.

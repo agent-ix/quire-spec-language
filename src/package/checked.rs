@@ -36,7 +36,7 @@
 use std::collections::BTreeMap;
 
 use crate::check::CheckedGraph;
-use crate::value::PackageId;
+use crate::library::PackageId;
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked

@@ -2,8 +2,7 @@
 //! ADR-011 §6.1 layer-3 `library`: FR-307 reusable semantic libraries
 //! (qualified imports bound to a library `package_id`, transitive closure
 //! into a lock with one selection per library identity, diamond
-//! unification, cycle refusal and identity-preserving migration), and
-//! [`WireNodeId`] (ADR-013 O-04, T-3).
+//! unification, cycle refusal and identity-preserving migration).
 //!
 //! A package's `quire.package.semantic/v2` `package_id` is the SHA-256 of the
 //! RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity preimage.
@@ -28,11 +27,19 @@
 //! forward in their pre-move shape:
 //!
 //! - `ExportIdentity{package, node: NodeKey}` is gone, not renamed: T-3's
-//!   `PackageNodeKey{package: package_id, node: WireNodeId}` is the module's
-//!   sole cross-package node reference after relocation (owner ruling item
-//!   3(c)). `PackageNodeKey` and `ImportView` are the typestate lane's own
-//!   PR against this same ticket (ADR-013 T-1's shells); this module defines
-//!   neither, only the [`WireNodeId`] field type both depend on.
+//!   [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` is the
+//!   module's sole cross-package node reference after relocation (owner
+//!   ruling item 3(c)). It relocates here from its temporary home in
+//!   `package::node_key` (the typestate lane's own stub PR against this
+//!   ticket, landed only so that lane had a stable, already-compiling
+//!   `PackageNodeKey` to build `CheckedGraph`/`CheckedPackage` against
+//!   without waiting on this slice), completing the `ExportIdentity` ->
+//!   `PackageNodeKey` call-site migration this slice owns. `ImportView` is
+//!   the typestate lane's own, separate PR against this same ticket
+//!   (ADR-013 T-1's shell); this module does not define it. `node`'s type,
+//!   `crate::digest::WireNodeId`, is likewise that lane's relocation (from
+//!   `replay::identity`, per ADR-011 `:588`'s `F` foundation-layer
+//!   placement), not this module's.
 //! - `resolve_name` does not relocate (owner ruling item 3(b)): name
 //!   resolution against an imported dependency's exports is E3's own
 //!   resolution over an `ImportView`, performed by the importing package's
@@ -54,78 +61,17 @@
 //! ```
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use sha2::{Digest, Sha256};
 
 use crate::diagnostic::Code;
+use crate::digest::WireNodeId;
 use crate::value::node::is_qualified_name;
 
 mod package_identity;
 
 pub use package_identity::{NodeDefect, PreimageDefect};
 use package_identity::{project_declarations, ProjectedDeclarations};
-
-/// A node id exactly as it travels on the wire (a v2 node key's 64
-/// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). Its canonical home (FR-087, #213
-/// S-3a): `T-3`'s `PackageNodeKey{package: package_id, node: WireNodeId}`
-/// pins it here, and `replay`'s #231 envelopes re-export this same type
-/// rather than defining a second one.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeId([u8; 32]);
-
-impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike
-    /// `quire_exact::NodeKey::from_digest`, this constructor carries no
-    /// "only `check` calls this" restriction: a `WireNodeId` is exactly the
-    /// unchecked wire spelling, never a claim that the id resolves to a
-    /// real node.
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
-    }
-
-    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
-    /// travels (`{domain, digest}`'s `digest` member).
-    pub fn from_hex(digest: &str) -> Option<Self> {
-        let (pairs, []) = digest.as_bytes().as_chunks::<2>() else {
-            return None;
-        };
-        if pairs.len() != 32 {
-            return None;
-        }
-        let mut key = [0_u8; 32];
-        for (slot, [high, low]) in key.iter_mut().zip(pairs) {
-            *slot = (lower_hex(*high)? << 4) | lower_hex(*low)?;
-        }
-        Some(Self(key))
-    }
-
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-fn lower_hex(digit: u8) -> Option<u8> {
-    match digit {
-        b'0'..=b'9' => Some(digit - b'0'),
-        b'a'..=b'f' => Some(digit - b'a' + 10),
-        _ => None,
-    }
-}
-
-impl fmt::Display for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WireNodeId({self})")
-    }
-}
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -165,6 +111,46 @@ impl PackageId {
     /// RFC 8785 JCS bytes.
     pub fn of_preimage(preimage: &[u8]) -> Self {
         Self(Sha256::digest(preimage).into())
+    }
+}
+
+/// A cross-package node reference (ADR-013 T-3): the sole cross-package node
+/// reference; pins the verified content (`package`) and names a node inside
+/// it (`node`), without ever constructing a `NodeKey` from wire bytes.
+/// Equality is declared: both components compare lexically (ADR-013 §2),
+/// matching the derived `PartialEq`/`Eq`/`PartialOrd`/`Ord` below -- no
+/// digest or structural comparison over the referenced node's own content
+/// substitutes. An I2 reference into an imported package's `ImportView`
+/// names a node this way; a `WireNodeId` becomes a `NodeKey` only by lookup
+/// in an already-checked package, at E4 (the dependency's own checked
+/// package, compiled from its digest-addressed source) or at E9 (`replay`'s
+/// recompiled package) -- never by a conversion function, and none is
+/// defined here.
+///
+/// Relocated from its temporary home in `package::node_key` (the typestate
+/// lane's own stub PR against this ticket, landed so that lane had a
+/// stable, already-compiling `PackageNodeKey` to build `CheckedGraph`/
+/// `CheckedPackage` against without waiting on this relocation slice): this
+/// is that same move into `library` with no shape change, completing the
+/// `ExportIdentity` -> `PackageNodeKey` call-site migration this slice owns
+/// (owner ruling item 3(c)).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PackageNodeKey {
+    /// The verified package's own content-addressed identity.
+    pub package: PackageId,
+    /// The node's wire spelling inside that package, resolved to a
+    /// `NodeKey` only by lookup in an already-checked package (E4/E9).
+    pub node: WireNodeId,
+}
+
+impl PackageNodeKey {
+    /// Build a reference from its two already-known components. Not
+    /// checked typestate (R-10 governs `CheckedGraph`/`CheckedPackage`, not
+    /// this plain data key): a `PackageNodeKey` names a node without
+    /// claiming it resolves to one, the same way `WireNodeId::from_digest`
+    /// carries no resolution claim either.
+    pub fn new(package: PackageId, node: WireNodeId) -> Self {
+        Self { package, node }
     }
 }
 
@@ -628,4 +614,36 @@ pub fn check_migration(
         from: (from.library.clone(), from.package_id),
         to: (to.library.clone(), to.package_id),
     })
+}
+
+#[cfg(test)]
+mod package_node_key_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn package_id(byte: u8) -> PackageId {
+        PackageId::of_preimage(&[byte; 32])
+    }
+
+    /// FR-087-AC-5: two `PackageNodeKey` values compare equal iff both
+    /// components compare lexically equal -- the declared-equality claim
+    /// itself, not only that the derive exists. A mutation that swapped the
+    /// equality implementation for a structural comparison over the
+    /// referenced node's content (rather than the two components
+    /// themselves) would still pass a same-value-same-value check; this
+    /// test additionally pins that changing either component alone breaks
+    /// equality, which such a mutation could not do consistently for an
+    /// opaque `WireNodeId`.
+    #[trace("TC-245", "FR-087-AC-5")]
+    #[test]
+    fn equality_holds_iff_both_components_are_lexically_equal() {
+        let a = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
+        let same = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
+        let different_package = PackageNodeKey::new(package_id(2), WireNodeId::from_digest([9; 32]));
+        let different_node = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([8; 32]));
+
+        assert_eq!(a, same);
+        assert_ne!(a, different_package);
+        assert_ne!(a, different_node);
+    }
 }

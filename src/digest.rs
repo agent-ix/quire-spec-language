@@ -424,7 +424,7 @@ impl InvalidDigestRecord {
 /// layer-6 `replay` facade -- `replay` (layer 6) importing `digest` (layer
 /// F) is the permitted direction; `package` (layer 4) or `library`
 /// (layer 3) importing `replay` would not be, which is exactly why
-/// `package::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
+/// `library::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
 /// in `replay`. A wire-read node id stays a `WireNodeId`, never a
 /// `NodeKey`, until a lookup in an already-checked package resolves it, at
 /// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
@@ -440,6 +440,28 @@ impl WireNodeId {
     /// real node.
     pub fn from_digest(digest: [u8; 32]) -> Self {
         Self(digest)
+    }
+
+    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
+    /// travels (a v2 node reference's `{domain, digest}` object's `digest`
+    /// member). Needed by `library::package_identity` (QSL-158 S-3a) to read
+    /// a wire node id out of an identity preimage without ever constructing
+    /// a `NodeKey` from it (R-10).
+    pub fn from_hex(digest: &str) -> Option<Self> {
+        let (pairs, []) = digest.as_bytes().as_chunks::<2>() else {
+            return None;
+        };
+        if pairs.len() != 32 {
+            return None;
+        }
+        let mut key = [0_u8; 32];
+        for (slot, &[high, low]) in key.iter_mut().zip(pairs) {
+            let (Some(high), Some(low)) = (lower_hex_nibble(high), lower_hex_nibble(low)) else {
+                return None;
+            };
+            *slot = (high << 4) | low;
+        }
+        Some(Self(key))
     }
 
     /// The raw digest bytes.
