@@ -67,8 +67,8 @@ use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
 use super::{CheckingLimits, DispatchTable, Scope};
-use crate::value::comparison::IllTypedCause;
 use crate::value::composite::CompositeShape;
+use quire_exact::IllTypedCause;
 // `QuantityUnit` and `TextProfile`: PR #282 review, F3. FR-068-AC-6/TC-175's
 // tier (b) originally bounded to five items across two modules
 // (`EnumDeclaration`, `EnumValue` from `enumeration`; `check_comparable`,
@@ -82,10 +82,10 @@ use crate::value::composite::CompositeShape;
 // `TextProfile` (`value::text`) explicitly -- see FR-068's Behavior section,
 // "The layer-3 sibling imports `check.rs` keeps," and this module's own doc.
 use crate::value::composite::ValueType;
-use crate::value::decimal::RoundingMode;
-use crate::value::ieee::IeeeWidth;
 use crate::value::quantity::QuantityUnit;
-use crate::value::text::TextProfile;
+use quire_exact::IeeeWidth;
+use quire_exact::RoundingMode;
+use quire_exact::TextProfile;
 
 /// The declaring package's `name@version` a checked node's identity
 /// preimage includes (ADR-013 O-04). Complete-V1's `PackageDeclarations` has
@@ -1418,9 +1418,9 @@ mod tests {
     // `value::expression::family` (PR #282 review F4) and its own doc
     // deliberately exercises `ValueType::Text` as part of the fixture's
     // grammar coverage -- a real, pre-existing dependency this move makes
-    // visible under `check` for the first time. FR-068-AC-6's layer rule
-    // permits any item of `value::text`, a K-copy module.
-    use crate::value::text::TextType;
+    // visible under `check` for the first time. `TextType` is `quire_exact`'s
+    // own kernel item, imported directly.
+    use quire_exact::TextType;
 
     /// PR #262 review, round 2 (moved here from `value::expression::family`
     /// under QSL-139's review, since this identity-minting content itself

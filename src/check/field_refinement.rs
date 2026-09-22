@@ -46,8 +46,8 @@ use crate::model::domain_package::{DomainPackage, PostconditionClause};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::value::composite::{Value, ValueType};
-use crate::value::numeric::OrderingOperator;
 use qsl_foundation::diagnostic::Code;
+use quire_exact::OrderingOperator;
 use quire_exact::{Integer, IntegerInterval};
 
 /// `self`, bound as local slot 0, for every synthetic guard tree

@@ -5,17 +5,17 @@
 
 use std::cmp::Ordering;
 
-use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
-use super::decimal::{
-    sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode,
-};
-use super::numeric::{rational_arithmetic_bits, RationalArithmetic};
+use super::decimal::{DecimalLoss, DecimalResult, DecimalType, Placed};
+use super::numeric::rational_arithmetic_bits;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::Rational;
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
+use quire_exact::Rational;
+use quire_exact::RationalArithmetic;
+use quire_exact::{sbits, sdigits, RoundingMode};
 use quire_exact::{
     BoundedInteger, Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter,
 };
+use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
 /// The unit of a quantity: an admitted declared unit or a compound unit
 /// produced by multiplication, division or power.

@@ -21,20 +21,20 @@ use super::composite::{
 };
 use super::equality::plan_pairs;
 use super::key::compare_keys;
-use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
+use super::outcome::{Outcome, Refusal, Stop};
 use quire_exact::{
-    length_amount, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter,
+    length_amount, BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer,
+    LimitKind, Meter,
 };
 
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own FR-144
 // kernel types (QSL-131 S-1b). `bound_and_retain` below recomputes the
 // three-way bound comparison from their public `minimum()`/`maximum()`
 // accessors rather than calling `quire_exact`'s own `violation` fn: that fn
-// is `pub(crate)` there, but the real reason is its return type,
-// `quire_exact::BoundViolation`, is not QSL's own duplicate
-// `value::outcome::BoundViolation` (`outcome.rs:236`) -- the two stay
-// distinct until the Outcome/Refusal cut later in QSL-131 merges them, and
-// no `From` conversion shims between them meanwhile.
+// is `pub(crate)` there. `BoundViolation` itself (QSL-131 K1) is this same
+// `quire_exact::BoundViolation` -- QSL's own former duplicate at
+// `value::outcome::BoundViolation` is deleted -- so no `From` conversion is
+// needed for the type; only the private `violation` fn stays unreachable.
 //
 // `CollectionType` and `CollectionValue` are not cut over (QSL-131,
 // remaining work): `quire_exact::collection` has same-named types, but they

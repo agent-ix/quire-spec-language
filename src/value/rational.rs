@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Canonical exact rationals (AD-005, FR-140 loss records).
 //!
-//! [`Rational`], [`ZeroDenominator`], [`RationalDomain`] and
-//! [`NonPositiveDenominatorBound`] are `quire_exact`'s own canonical items,
-//! re-exported below rather than duplicated. Every method these types carry
-//! -- `new`, `from_integer`, `numerator`, `denominator`, `is_integer`,
+//! [`Rational`](quire_exact::Rational), [`ZeroDenominator`], [`RationalDomain`]
+//! and [`NonPositiveDenominatorBound`] are `quire_exact`'s own canonical
+//! items. `ZeroDenominator`, `RationalDomain` and `NonPositiveDenominatorBound`
+//! are re-exported below rather than duplicated; `Rational` itself (QSL-131
+//! K1) is no longer re-exported here either -- every caller in this crate
+//! imports it straight from `quire_exact` now, the same repoint
+//! `value::numeric` gave `ArithmeticOperator`. Every method these types
+//! carry -- `new`, `from_integer`, `numerator`, `denominator`, `is_integer`,
 //! `is_zero`, `max_part_bits`, `add`, `sub`, `neg`, `mul`, `div`, `pow`,
 //! `divided_by_power_of_ten`, `divided_by_power_of_two`,
 //! `Ord`/`PartialOrd`/`Display`, `RationalDomain::new`/`numerator`/
 //! `denominator`/`contains`/`contains_domain`/`excludes_zero`/`negated`/
-//! `result_of` -- is reachable straight off the re-exported type; none of
+//! `result_of` -- is reachable straight off `quire_exact`'s own type; none of
 //! it is duplicated here.
 //!
 //! `RationalDomain::result_of` takes `quire_exact::ArithmeticOperator`
-//! (`value::numeric` re-exports the same type as `ArithmeticOperator`), so
-//! callers pass it directly.
+//! directly.
 //!
 //! `value::decimal`'s own evaluation engine (`evaluate_decimal` and
 //! everything beneath it) stays local: it returns this crate's own
@@ -25,4 +28,4 @@
 //! that engine cannot be cut until `value::outcome` unifies with
 //! `quire_exact::outcome` (QSL-166, QSL-174).
 
-pub use quire_exact::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
+pub use quire_exact::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};

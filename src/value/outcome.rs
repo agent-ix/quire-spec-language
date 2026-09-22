@@ -9,7 +9,7 @@ use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
+use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -237,25 +237,6 @@ impl Refusal {
             | Self::IeeeRationalOutOfDomain
             | Self::ForeignReference
             | Self::CheckedInvariant => None,
-        }
-    }
-}
-
-/// The side of a cardinality bound a formed collection violates.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum BoundViolation {
-    /// `below-minimum`.
-    BelowMinimum,
-    /// `above-maximum`.
-    AboveMaximum,
-}
-
-impl BoundViolation {
-    /// The FR-272 cause tag.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::BelowMinimum => "below-minimum",
-            Self::AboveMaximum => "above-maximum",
         }
     }
 }

@@ -30,19 +30,23 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::collection::{CollectionType, CollectionValue};
-use super::comparison::{IllTyped, IllTypedCause};
-use super::decimal::{Decimal, DecimalType};
+use super::decimal::DecimalType;
 use super::enumeration::EnumValue;
-use super::ieee::{IeeeValue, IeeeWidth};
+use super::ieee::IeeeValue;
 use super::node::NodeKey;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{Quantity, QuantityUnit};
-use super::rational::{Rational, RationalDomain};
+use super::rational::RationalDomain;
 use super::reference::ObjectReference;
-use super::text::{Text, TextType};
+use super::text::Text;
+use quire_exact::Decimal;
+use quire_exact::IeeeWidth;
+use quire_exact::Rational;
+use quire_exact::TextType;
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
 };
+use quire_exact::{IllTyped, IllTypedCause};
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.

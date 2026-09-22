@@ -179,8 +179,8 @@ pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, Qua
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::ObjectReference;
 pub use text::{
-    admit_text, compare_text, EmptyTextBounds, InvalidUtf8, NormalizationForm, Text, TextPayload,
-    TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION, UNICODE_VERSION,
+    admit_text, compare_text, EmptyTextBounds, InvalidUtf8, NormalizationForm, Normalized, Text,
+    TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION, UNICODE_VERSION,
 };
 pub use value::{
     evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, tuple, Component,

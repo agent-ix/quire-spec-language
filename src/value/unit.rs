@@ -29,8 +29,8 @@ use super::node::{
     CanonicalRational, InvalidSemanticGraph, NodeIdDocument, NodeKey, NodeOwner, OwnerSelection,
     RationalDocument, SemanticGraphCause,
 };
-use super::rational::Rational;
 use quire_exact::Integer;
+use quire_exact::Rational;
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";

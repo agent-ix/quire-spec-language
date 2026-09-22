@@ -6,6 +6,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
+use quire_exact::OrderingOperator;
 use quire_spec_language::check::check_field_refinement_obligation;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
 use quire_spec_language::model::conformance::{
@@ -22,7 +23,6 @@ use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
-use quire_spec_language::value::OrderingOperator;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {

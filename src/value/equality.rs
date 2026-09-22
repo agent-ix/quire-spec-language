@@ -23,20 +23,18 @@
 //! `EqualitySchedule`, `CheckedEquality`, `TypeEnvironment::check_equality`)
 //! -- stays local: remaining work, Linear QSL-131.
 
-use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
-use super::decimal::{
-    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal,
-    DecimalOperation, DecimalType,
-};
+use super::decimal::{compare_shifted, evaluate_decimal, power_of_ten_bits, DecimalType};
 use super::enumeration::compare_enum;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, Quantity, QuantityTarget,
 };
-use super::rational::Rational;
 use super::text::compare_text;
+use quire_exact::Rational;
+use quire_exact::{sbits, sdigits, Decimal, DecimalOperation};
 use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter};
+use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
 /// The grammar's equality operators.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

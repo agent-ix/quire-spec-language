@@ -16,21 +16,24 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
+use quire_exact::{
+    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, Presence, Rational, RoundingMode,
+    TextProfile, TextType,
+};
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
     AdmittedIeeeProfile, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal,
     CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, Decimal, DecimalType, DefinitionLock, DefinitionReference,
-    DefinitionRevision, DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage,
-    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, Expression,
-    FieldDeclaration, FieldExpression, FieldInitializer, FieldValue, FunctionDeclaration,
-    IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped, IllTypedCause,
+    ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
+    FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeFlag, IeeeValue,
     LocatedLoss, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
-    PackageDeclarations, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
-    RoundingMode, Text, TextPayload, TextProfile, TextType, TypeEnvironment, Undefined, UnitGraph,
-    UnitPreimage, UniverseIdentity, Value, ValueLoss, ValueType,
+    PackageDeclarations, Quantity, QuantityUnit, RationalDomain, Refusal, Text, TextPayload,
+    TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

@@ -19,6 +19,17 @@
 //! constructible: recording that a payload came from a source literal, and
 //! which one, is a real kernel-observable fact; only the JSON-based decode
 //! convenience was QSL's job, not the kernel's.
+//!
+//! QSL-131 K1 widened four items from `fn`-private/`pub(crate)` to `pub`:
+//! [`TextProfile::length`], [`TextProfile::order`], [`TextType::admits`] and
+//! [`NormalizationForm::apply`] (with its return type [`Normalized`]).
+//! `quire_spec_language::value::text`'s own `admit`/`compare`/`prepare`/
+//! `check_length` engine stays local -- it returns that crate's own
+//! `Outcome`, a strict superset not yet unified with this crate's -- and
+//! calls these four directly rather than porting a second copy. Each is a
+//! pure predicate or streaming decode over an already-retained/admitted
+//! sequence; none charges or materializes anything unmetered, so widening
+//! exposes no new unmetered-arithmetic risk (the #330 precedent).
 
 use std::cmp::Ordering;
 use std::str::Chars;
@@ -105,7 +116,12 @@ impl TextProfile {
 
     /// Profile length of a retained sequence: bytes for `binary-utf8`, scalars
     /// otherwise, counted on the retained (normalized) sequence.
-    fn length(self, retained: &str) -> u64 {
+    ///
+    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// text`'s own `Text::length` calls it directly. It is a pure counted
+    /// length over an already-retained sequence, so widening it charges or
+    /// bounds nothing that was not already the caller's job.
+    pub fn length(self, retained: &str) -> u64 {
         let count = match self {
             Self::BinaryUtf8 => retained.len(),
             Self::UnicodeScalars | Self::Nfc | Self::Nfd | Self::Nfkc | Self::Nfkd => {
@@ -115,7 +131,10 @@ impl TextProfile {
         length_amount(count)
     }
 
-    fn order(self, left: &str, right: &str) -> Ordering {
+    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// text`'s own `compare` calls it directly, the same reasoning as
+    /// [`Self::length`] above.
+    pub fn order(self, left: &str, right: &str) -> Ordering {
         match self {
             Self::BinaryUtf8 => left.as_bytes().cmp(right.as_bytes()),
             Self::UnicodeScalars | Self::Nfc | Self::Nfd | Self::Nfkc | Self::Nfkd => {
@@ -140,7 +159,14 @@ pub enum NormalizationForm {
 
 impl NormalizationForm {
     /// Stream the normalized scalars of `text`.
-    pub(crate) fn apply(self, text: &str) -> Normalized<'_> {
+    ///
+    /// `pub`, not `pub(crate)` (QSL-131 K1): `quire_spec_language::value::
+    /// text`'s own `prepare` engine, still local because it returns this
+    /// crate's own `Outcome`, calls it directly rather than reimplementing
+    /// Unicode normalization dispatch. This streams already-decoded scalars
+    /// and charges nothing itself, so widening it exposes no unmetered
+    /// materialization.
+    pub fn apply(self, text: &str) -> Normalized<'_> {
         match self {
             Self::Nfc => Normalized::Composed(text.nfc()),
             Self::Nfd => Normalized::Decomposed(text.nfd()),
@@ -151,8 +177,13 @@ impl NormalizationForm {
 }
 
 /// A streaming normalization of one scalar sequence.
-pub(crate) enum Normalized<'a> {
+///
+/// `pub`, not `pub(crate)` (QSL-131 K1): the return type of the now-`pub`
+/// [`NormalizationForm::apply`].
+pub enum Normalized<'a> {
+    /// A composing normalization form (NFC or NFKC).
     Composed(Recompositions<Chars<'a>>),
+    /// A decomposing normalization form (NFD or NFKD).
     Decomposed(Decompositions<Chars<'a>>),
 }
 
@@ -209,7 +240,10 @@ impl TextType {
         self.profile
     }
 
-    fn admits(&self, retained: &str) -> bool {
+    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// text`'s own `check_length` calls it directly, the same reasoning as
+    /// [`TextProfile::length`].
+    pub fn admits(&self, retained: &str) -> bool {
         (self.min..=self.max).contains(&self.profile.length(retained))
     }
 }

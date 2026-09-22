@@ -523,7 +523,7 @@ mod family_contract_tests {
             crate::family::StageFailure::Refused(refusal) => assert!(
                 matches!(
                     refusal.cause,
-                    CheckCause::IllTyped(crate::value::comparison::IllTypedCause::TypeMismatch)
+                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
                 ),
                 "expected an ill-typed/type-mismatch refusal, got {refusal:?}"
             ),

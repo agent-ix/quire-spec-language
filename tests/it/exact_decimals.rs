@@ -11,10 +11,12 @@ use num_traits::Pow;
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
 };
+use quire_exact::{
+    Decimal, DecimalOperation, IllTyped, IllTypedCause, OrderedOperands, OrderingOperator,
+    RoundingMode,
+};
 use quire_spec_language::value::{
-    evaluate_decimal, order_numbers, Decimal, DecimalOperation, DecimalResult, DecimalType,
-    IllTyped, IllTypedCause, OrderedOperands, OrderingOperator, Outcome, Refusal, RoundingMode,
-    Undefined,
+    evaluate_decimal, order_numbers, DecimalResult, DecimalType, Outcome, Refusal, Undefined,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

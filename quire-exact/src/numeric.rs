@@ -11,6 +11,12 @@
 //! `pub(crate)`, because [`crate::rational::RationalDomain::result_of`] (a
 //! kernel-row scalar operation this crate exposes to its consumers) names it
 //! in a public signature.
+//!
+//! QSL-131 K1 widened [`OrderingOperator::holds`] from `fn`-private to
+//! `pub`: `quire_spec_language::value::numeric`'s own `order`, still local
+//! because it returns this crate's own `Outcome`, calls it directly. It is
+//! a pure decision over an already-computed `Ordering`, so widening it
+//! exposes no unmetered computation.
 
 use std::cmp::Ordering;
 
@@ -47,7 +53,11 @@ pub enum OrderingOperator {
 }
 
 impl OrderingOperator {
-    fn holds(self, ordering: Ordering) -> bool {
+    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// numeric`'s own `order`, still local because it returns this crate's
+    /// own `Outcome`, calls it directly. It is a pure decision over an
+    /// already-computed `Ordering`, so widening charges or exposes nothing.
+    pub fn holds(self, ordering: Ordering) -> bool {
         match self {
             Self::Less => ordering.is_lt(),
             Self::LessOrEqual => ordering.is_le(),

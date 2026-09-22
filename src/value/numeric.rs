@@ -6,48 +6,12 @@
 //! Every size amount is derived before the value it measures is retained; no
 //! power of ten is allocated to measure an aligned decimal coefficient.
 
-use std::cmp::Ordering;
-
-use super::decimal::{sbits, sdigits, Decimal};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::{Rational, RationalDomain};
-pub(crate) use quire_exact::ArithmeticOperator;
-use quire_exact::{Charge, ChargePoint, Incomplete, Integer, IntegerInterval, LimitKind, Meter};
-
-/// A numeric ordering operator. Equality has its own FR-149 schedule.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum OrderingOperator {
-    /// `<`.
-    Less,
-    /// `<=`.
-    LessOrEqual,
-    /// `>`.
-    Greater,
-    /// `>=`.
-    GreaterOrEqual,
-}
-
-impl OrderingOperator {
-    fn holds(self, ordering: Ordering) -> bool {
-        match self {
-            Self::Less => ordering.is_lt(),
-            Self::LessOrEqual => ordering.is_le(),
-            Self::Greater => ordering.is_gt(),
-            Self::GreaterOrEqual => ordering.is_ge(),
-        }
-    }
-}
-
-/// The two operands of one numeric ordering, both of one exact kind.
-#[derive(Clone, Copy, Debug)]
-pub enum OrderedOperands<'a> {
-    /// `Integer` or `Int[..]` operands.
-    Integers(&'a Integer, &'a Integer),
-    /// `Rational[..]` operands.
-    Rationals(&'a Rational, &'a Rational),
-    /// `Decimal[..]` operands in their retained representations.
-    Decimals(&'a Decimal, &'a Decimal),
-}
+use quire_exact::{
+    sbits, sdigits, BooleanConnective, Charge, ChargePoint, Incomplete, Integer, IntegerArithmetic,
+    IntegerInterval, LimitKind, Meter, OrderedOperands, OrderingOperator, Rational,
+    RationalArithmetic, RationalDomain,
+};
 
 /// Order two exact numbers: `ordering.operands`, `ordering.arithmetic`, then
 /// `ordering.result-retain`.
@@ -200,19 +164,6 @@ pub(crate) fn rational_arithmetic_bits(operation: RationalArithmetic<'_>) -> Int
     numerator.max(denominator)
 }
 
-/// One `Integer` or `Int[..]` arithmetic operation.
-#[derive(Clone, Copy, Debug)]
-pub enum IntegerArithmetic<'a> {
-    /// `a + b`.
-    Add(&'a Integer, &'a Integer),
-    /// `a - b`.
-    Subtract(&'a Integer, &'a Integer),
-    /// `a * b`.
-    Multiply(&'a Integer, &'a Integer),
-    /// `-a`.
-    Negate(&'a Integer),
-}
-
 /// Evaluate integer arithmetic: `integer-arithmetic.operands`,
 /// `integer-arithmetic.arithmetic`, the uncharged membership of an optional
 /// FR-044 result bound, then `integer-arithmetic.result-retain`.
@@ -257,22 +208,6 @@ fn integer_arithmetic(
     }
     meter.charge(Charge::new(ChargePoint::IntegerArithmeticResultRetain).results(1))?;
     Ok(result)
-}
-
-/// One `Rational[..]` arithmetic operation. An `Integer` or `Int[..]` `/`
-/// producing `Rational[..]` takes each operand `n` as `n/1`.
-#[derive(Clone, Copy, Debug)]
-pub enum RationalArithmetic<'a> {
-    /// `a/b + c/d`.
-    Add(&'a Rational, &'a Rational),
-    /// `a/b - c/d`.
-    Subtract(&'a Rational, &'a Rational),
-    /// `a/b * c/d`.
-    Multiply(&'a Rational, &'a Rational),
-    /// `(a/b) / (c/d)`.
-    Divide(&'a Rational, &'a Rational),
-    /// `-(a/b)`.
-    Negate(&'a Rational),
 }
 
 /// Evaluate rational arithmetic: `rational-arithmetic.operands`, a zero
@@ -352,19 +287,6 @@ fn rational_arithmetic(
     }
     meter.charge(Charge::new(ChargePoint::RationalArithmeticResultRetain).results(1))?;
     Ok(result)
-}
-
-/// One Boolean connective over decided operands.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum BooleanConnective {
-    /// `a and b`.
-    And(bool, bool),
-    /// `a or b`.
-    Or(bool, bool),
-    /// `a implies b`.
-    Implies(bool, bool),
-    /// `not a`.
-    Not(bool),
 }
 
 /// Decide a connective, then charge `boolean.result-retain`.

@@ -7,27 +7,32 @@
 //!
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
-//!    [`Rational`], [`Decimal`], [`Text`], [`EnumValue`] and FR-142
-//!    [`Quantity`] over an admitted [`UnitGraph`];
+//!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
+//!    [`Text`], [`EnumValue`] and FR-142 [`Quantity`] over an admitted
+//!    [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
 //!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
-//!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
+//!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
+//!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
 //!    [`TypeEnvironment`], the FR-149 equality matrix
 //!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
 //!    [`CollectionValue`]s ([`construct_collection`]) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
 //!    (FR-087, #213 S-3a);
-//! 4. [`order_numbers`] compares one [`OrderedOperands`] pair (`Integer`,
-//!    `Rational` or `Decimal`) under one [`OrderingOperator`];
+//! 4. [`order_numbers`] compares one [`OrderedOperands`](quire_exact::OrderedOperands)
+//!    pair (`Integer`, `Rational` or `Decimal`) under one
+//!    [`OrderingOperator`](quire_exact::OrderingOperator);
 //!    [`evaluate_integer_arithmetic`] evaluates add/subtract/multiply/negate
-//!    over [`IntegerArithmetic`] operands (integer division is rational
-//!    division of `n`/`1`, so it has no `Divide` variant here) and
-//!    [`evaluate_rational_arithmetic`] evaluates add/subtract/multiply/divide/
-//!    negate over [`RationalArithmetic`] operands; [`evaluate_boolean`]
-//!    evaluates the QSL connectives `and`/`or`/`implies`/`not` over
-//!    [`BooleanConnective`] operands — all under `quire.value.accounting/v1`
-//!    (QSL #119);
+//!    over [`IntegerArithmetic`](quire_exact::IntegerArithmetic) operands
+//!    (integer division is rational division of `n`/`1`, so it has no
+//!    `Divide` variant here) and [`evaluate_rational_arithmetic`] evaluates
+//!    add/subtract/multiply/divide/negate over
+//!    [`RationalArithmetic`](quire_exact::RationalArithmetic) operands;
+//!    [`evaluate_boolean`] evaluates the QSL connectives
+//!    `and`/`or`/`implies`/`not` over
+//!    [`BooleanConnective`](quire_exact::BooleanConnective) operands — all
+//!    under `quire.value.accounting/v1` (QSL #119);
 //! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
 //!    and [`Incomplete`](quire_exact::Incomplete) reasons;
 //! 6. `quire.value.accounting/v1` metering through
@@ -98,7 +103,6 @@
 // tier 3). Every other `value::` submodule stays private; `check` imports
 // nothing from them.
 pub(crate) mod collection;
-pub(crate) mod comparison;
 pub(crate) mod composite;
 mod containment;
 pub(crate) mod decimal;
@@ -134,24 +138,22 @@ mod unit;
 // module does not re-export them (QSL-131 S-1b), so consumers import them from
 // `quire_exact` directly.
 pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
-pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use composite::{
     Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,
     ConstructionRefusal, DeclarationCause, Deferred, FieldDeclaration, FieldExpression, FieldValue,
-    InvalidDeclaration, ObjectTypeDeclaration, OptionValue, Presence, RecursionEdges,
-    TypeEnvironment, Value, ValueType,
+    InvalidDeclaration, ObjectTypeDeclaration, OptionValue, RecursionEdges, TypeEnvironment, Value,
+    ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{
-    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
-    DecimalType, RoundingMode,
+    evaluate_decimal, DecimalLoss, DecimalRepresentation, DecimalResult, DecimalType,
 };
 pub use definition::{
     AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
     DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
     SelectionRefusalCode, Trigger,
 };
-pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
+pub use division::{divide, modulo, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
@@ -205,32 +207,30 @@ pub use crate::forms::{
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind,
-    IeeeProvenance, IeeeResult, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget,
+    IeeeFlag, IeeeOperand, IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue,
+    IEEE_DEFINITION,
 };
 pub use member::Member;
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
-    SemanticGraphCause, NODE_KEY_DOMAIN,
+    SemanticGraphCause,
 };
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
-pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
+pub use outcome::{Outcome, PreconditionFailure, Refusal, Undefined};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,
 };
-pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
+pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
     ObjectIdentity, ObjectReference, PopulationConflict, UniverseIdentity,
 };
 pub use text::{
-    admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,
-    Text, TextPayload, TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION,
+    admit_text, compare_text, InvalidTextLiteral, Text, TextPayload, UNICODE_TEXT_DEFINITION,
     UNICODE_VERSION,
 };
 pub use unit::{

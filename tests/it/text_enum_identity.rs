@@ -15,12 +15,15 @@ use qsl_foundation::{Code, SourceIdentity};
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
 };
+use quire_exact::{
+    ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause, InvalidUtf8, TextProfile,
+    TextProvenance, TextType, NODE_KEY_DOMAIN,
+};
 use quire_spec_language::value::{
-    admit_text, compare_enum, compare_text, ComparisonOperator, EmptyTextBounds, EnumDeclaration,
-    EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, IllTyped, IllTypedCause,
-    InvalidSemanticGraph, InvalidUtf8, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject,
-    Refusal, SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType,
-    NODE_KEY_DOMAIN, UNICODE_TEXT_DEFINITION,
+    admit_text, compare_enum, compare_text, EnumDeclaration, EnumDeclarationPreimage,
+    EnumMemberPreimage, EnumValue, InvalidSemanticGraph, NodeKey, NodeOwner, Outcome,
+    OwnerSelection, OwnerSubject, Refusal, SemanticGraphCause, Text, TextPayload,
+    UNICODE_TEXT_DEFINITION,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

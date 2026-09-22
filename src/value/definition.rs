@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 use serde::Deserialize;
 
-use super::division::DivisionProfile;
+use quire_exact::DivisionProfile;
 
 /// The lock's `trigger_vocabulary`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

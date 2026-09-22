@@ -16,6 +16,7 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
 };
+use quire_exact::{IllTyped, IllTypedCause, Presence};
 use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
@@ -23,10 +24,10 @@ use quire_spec_language::value::{
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration,
     FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
-    IllTyped, IllTypedCause, InvalidDeclaration, NodeKey, ObjectEnvironment,
-    ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, OptionValue, Outcome, Presence, QualifiedName, RecursionEdges,
-    TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
+    InvalidDeclaration, NodeKey, ObjectEnvironment, ObjectEnvironmentCause,
+    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
+    Outcome, QualifiedName, RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -685,11 +686,11 @@ fn malformed_declarations_refuse_at_admission() {
 /// Rows that need the FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
+    use quire_exact::BoundViolation;
     use quire_spec_language::value::{
-        BinaryOperator, BoundViolation, CallFailure, CheckCause, CheckMode, CheckRefusal,
-        CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression,
-        FieldInitializer, FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations,
-        Refusal,
+        BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
+        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression, FieldInitializer,
+        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
     };
 
     fn name(spelling: &str) -> Expression {

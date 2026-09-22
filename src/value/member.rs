@@ -28,7 +28,7 @@ use quire_exact::Identifier;
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
 // tests below still assert the wire shape against the domain's own constant.
 #[cfg(test)]
-use super::node::NODE_KEY_DOMAIN;
+use quire_exact::NODE_KEY_DOMAIN;
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
