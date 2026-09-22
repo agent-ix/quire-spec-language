@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `qsl-replay`: the ADR-011 §6.1 layer **6** crate (QSL-185, ADR-011 §7.3
-//! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-26, C-13).
-//! Extracted out of the `quire-spec-language` root crate's own `replay`
-//! module (#231, ADR-013 O-24 to O-27, first landed with no compatibility
-//! re-export retained: the root crate no longer names any of these types).
+//! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-24 to
+//! O-27, C-13). It depends only on `quire-exact` (layer K) and
+//! `qsl-foundation` (layer F).
 //!
 //! **This crate builds only the four typed envelopes its public API
 //! exposes** -- the proof-result envelope (`proof_result`), the
@@ -19,17 +18,11 @@
 //! # Provisional local types
 //!
 //! Several members these envelopes carry have a canonical home ADR-013
-//! assigns to a ticket that had not landed on `origin/main` as of the
-//! original #231 change (#213 slices S-3/S-4: O-07's occurrence key beyond
-//! the kernel `quire_exact::Origin`/`Location` pair, O-09's obligation
-//! identity, O-11's `QualifiedName`, O-12's resolved region). `identity`
-//! defines this crate's own minimal, spec-faithful versions, documented
-//! there with exactly which ticket should absorb each one. This is not a
-//! compatibility layer or a redesign of ADR-013 -- each type has the shape
-//! ADR-013 already specifies -- only a placement decision made necessary by
-//! an unmerged dependency at the time (including PR #262's independent
-//! `QualifiedName` in the root crate's `value::expression`, which this
-//! crate does not touch or depend on).
+//! assigns to #213 slices S-3/S-4: O-07's occurrence key beyond the kernel
+//! `quire_exact::Origin`/`Location` pair, O-09's obligation identity, O-11's
+//! `QualifiedName` and O-12's resolved region. `identity` defines this
+//! crate's own minimal versions with the shape ADR-013 specifies, and names
+//! the ticket that absorbs each one.
 
 #![forbid(unsafe_code)]
 
