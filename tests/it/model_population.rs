@@ -159,6 +159,30 @@ fn p1_population_key() -> DeclarationKey {
     DeclarationKey::fixture(P1_POPULATION)
 }
 
+/// A second `Population` declaration identity, distinct from
+/// [`P1_POPULATION`] but on the same [`fixture_f1`] domain package --
+/// FR-089-AC-1's own distinct-`population_key` case (TC-291) needs two
+/// population declarations on one domain package to admit the same document
+/// against.
+const SECOND_POPULATION: &str = "model.pop.second";
+
+/// [`SECOND_POPULATION`]'s own declaration key.
+fn second_population_key() -> DeclarationKey {
+    DeclarationKey::fixture(SECOND_POPULATION)
+}
+
+/// [`fixture_f1`], plus [`SECOND_POPULATION`] alongside its own
+/// [`P1_POPULATION`] (same member types, same extent).
+fn fixture_f1_with_second_population() -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package.records.push(population_record(
+        SECOND_POPULATION,
+        &["model.A", "model.B"],
+        Extent::Closed,
+    ));
+    domain_package
+}
+
 /// TC-195 F1 (domain package `bundle.n01`), imported as `M` by TC-198: types
 /// `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own FR-153
 /// population declaration [`P1_POPULATION`] (member types `A`, `B`), at the
@@ -2830,4 +2854,156 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
             panic!("expected Refused(population_delta_mismatch/delta-disagreement), got {other:?}")
         }
     }
+}
+
+/// TC-291 (FR-089-AC-1): `PopulationId` is deterministic over its admission
+/// preimage -- the domain package it was admitted against, the
+/// `population_key` declaring it, and the closed three-state admission-role
+/// discriminator (`Direct`/`Pre`/`Post`) -- and distinguishes an admission
+/// that differs in any of them. Two independent `Direct` admissions of the
+/// same document/package/`population_key` mint the same id; a distinct
+/// `population_key` on the same package, a distinct domain package (this
+/// suite's `DomainPackageRef::fixture` hard-codes `identity` to
+/// `"test/orders"` for every fixture, so a distinct domain package here
+/// means a version-only header divergence -- `admit_binding`'s own doc
+/// already treats the full header, not bare `identity`, as what
+/// distinguishes one domain package selection from another), and the `Pre`
+/// versus `Post` role within one invocation, each mint a different id.
+#[test]
+#[trace("TC-291", "FR-089-AC-1")]
+fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
+    let domain_package = fixture_f1_with_second_population();
+    let view = view_of(&domain_package);
+
+    let admit = |package: &DomainPackage, view: &EffectiveView, key: &DeclarationKey| {
+        let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        match admit_binding(
+            package,
+            view,
+            &p1("test/orders"),
+            key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut meter,
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding.population_id(),
+            other => panic!("expected an admitted binding, got {other:?}"),
+        }
+    };
+
+    // Step 1: two independent Direct admissions of the same document,
+    // domain package and population_key mint the same identity.
+    let direct_1 = admit(&domain_package, &view, &p1_population_key());
+    let direct_1_again = admit(&domain_package, &view, &p1_population_key());
+    assert_eq!(direct_1, direct_1_again);
+
+    // Step 2: the same document/package, a distinct population_key ->
+    // a different identity.
+    let direct_second_key = admit(&domain_package, &view, &second_population_key());
+    assert_ne!(direct_second_key, direct_1);
+
+    // Step 3: the same document/population_key, a distinct domain package
+    // (version-only header divergence) -> a different identity.
+    let other_package = fixture_f1_with_version("2");
+    let other_view = view_of(&other_package);
+    let direct_other_package = admit(&other_package, &other_view, &p1_population_key());
+    assert_ne!(direct_other_package, direct_1);
+
+    // Step 4: within one invocation, admit the same document/package/key as
+    // the Pre binding, then again as the corresponding Post binding -- the
+    // two mint different identities from each other.
+    let effect = OperationEffect {
+        modifies: Vec::new(),
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let invocation_binding = match admit_invocation(
+        invocation_context(&domain_package, &view, &p1_population_key()),
+        &p1("test/orders"),
+        &p1("test/orders"),
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted invocation, got {other:?}"),
+    };
+    let id_post = invocation_binding.population_id();
+    let id_pre = invocation_binding
+        .pre_anchor()
+        .expect("admit_invocation attaches a pre binding")
+        .population_id();
+    assert_ne!(id_pre, id_post);
+}
+
+/// TC-296 (FR-089-AC-1's own collision case): a standalone `Direct`
+/// admission and an `admit_invocation`-attached `Post` binding, over the
+/// same domain package and `population_key`, mint distinct `PopulationId`s
+/// even when admitting the same document -- the collision a two-state
+/// `Option<AnchorSide>` discriminator (`None`/`Some(Post)`) could still
+/// produce depending on how the `Option` wrapper is discarded before
+/// hashing; this asserts the identity *values* themselves stay pairwise
+/// distinct, robust to either representation.
+#[test]
+#[trace("TC-296", "FR-089-AC-1")]
+fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+
+    let mut direct_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let id_direct = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut direct_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding.population_id(),
+        other => panic!("expected an admitted Direct binding, got {other:?}"),
+    };
+
+    let effect = OperationEffect {
+        modifies: Vec::new(),
+        creates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    let declared = InvocationDelta {
+        effect: &effect,
+        declared_created: &[],
+        declared_deleted: &[],
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let invocation_binding = match admit_invocation(
+        invocation_context(&domain_package, &view, &p1_population_key()),
+        &p1("test/orders"),
+        &p1("test/orders"),
+        &declared,
+        &mut pre_meter,
+        &mut post_meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted invocation, got {other:?}"),
+    };
+    let id_pre = invocation_binding
+        .pre_anchor()
+        .expect("admit_invocation attaches a pre binding")
+        .population_id();
+    let id_post = invocation_binding.population_id();
+
+    assert_ne!(
+        id_direct, id_post,
+        "a standalone Direct admission and an invocation's Post binding must not collide"
+    );
+    assert_ne!(id_direct, id_pre);
+    assert_ne!(id_pre, id_post);
 }

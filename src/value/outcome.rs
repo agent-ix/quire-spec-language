@@ -9,7 +9,7 @@ use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
+use quire_exact::{CardinalityBound, CollectionKind, Incomplete, PopulationId};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,6 +172,23 @@ pub enum Refusal {
     /// refused the query outright
     /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
     Model(ModelQueryRefusal),
+    /// FR-089-AC-4/AC-5: a consumed `Value::Population(population_id)`
+    /// (`evaluate.rs`'s `allInstances`/`lookup` sites) did not admit into
+    /// its declared `Population<T>[maximum]` parameter type --
+    /// `population_id` names no binding in this evaluation's own recorded
+    /// correspondence (AC-4), or its resolved binding's own declared
+    /// maximum differs from the parameter's checked `maximum` (AC-5).
+    /// Never [`Self::CheckedInvariant`]: `check::check::bind_parameters`'s
+    /// own doc records that a `Population<T>[N]` parameter bypasses
+    /// `Typer::check_declared_type`, so the checker never verifies a
+    /// caller-supplied runtime identity actually names a binding of that
+    /// declared shape -- this is real, caller-input-reachable, exactly like
+    /// [`Self::WrongSnapshot`], and names the identity that failed to
+    /// resolve or match. `code()`/`cause()` return `None`: no FR-272/
+    /// `native-diagnostics.md` catalog entry exists yet for this new
+    /// FR-089 refusal (QSL-131 Slice B), matching [`Self::CheckedInvariant`]'s
+    /// own precedent for an internal refusal with no wire spelling.
+    UnresolvedPopulation(PopulationId),
 }
 
 /// The closed code and FR-272 cause tag of an FR-153 population-query
@@ -205,7 +222,8 @@ impl Refusal {
             | Self::IntegerOutOfDomain
             | Self::RationalOutOfDomain
             | Self::IeeeNotExact { .. }
-            | Self::CheckedInvariant => None,
+            | Self::CheckedInvariant
+            | Self::UnresolvedPopulation(_) => None,
         }
     }
 
@@ -226,7 +244,8 @@ impl Refusal {
             | Self::IeeeNanPayloadNotRepresentable
             | Self::IeeeRationalOutOfDomain
             | Self::ForeignReference
-            | Self::CheckedInvariant => None,
+            | Self::CheckedInvariant
+            | Self::UnresolvedPopulation(_) => None,
         }
     }
 }

@@ -138,16 +138,30 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
-use crate::model::key::{hex, DeclarationKey, EffectiveId};
+use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
+use serde_json::{Map, Value as JsonValue};
+use sha2::{Digest, Sha256};
+
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
+    POPULATION_ID_DOMAIN,
 };
+
+/// The kernel's canonical `PopulationId` (ADR-013 O-13 Population row,
+/// QC-21): 32 bytes in domain `quire.population/v1`, minted only through
+/// [`quire_exact::PopulationId::from_digest`] -- this module's own T12-D
+/// call (ADR-011 T-12(d)), the only one the `arch-lint api-surface` check
+/// permits (`tools/arch-lint/api_surface.rs`). Re-exported at this path so
+/// callers reach it as `crate::model::population::PopulationId`, mirroring
+/// [`crate::model::key::EffectiveId`]'s identical re-export of its own
+/// kernel identity type.
+pub use quire_exact::PopulationId;
 
 // ---------------------------------------------------------------------------
 // PopulationAdmissionLimitsV1
@@ -519,6 +533,15 @@ pub struct PopulationBinding {
     /// indirection, never chained: the pre binding [`admit_invocation`]
     /// attaches here is itself always admitted with `pre_anchor: None`.
     pre_anchor: Option<Arc<PopulationBinding>>,
+    /// This binding's minted `PopulationId` (FR-089-AC-1, ADR-013 O-13
+    /// Population row, QC-21): a digest over the domain package identity
+    /// this binding was admitted against, the `population_key` declaring
+    /// it, and the closed three-state admission-role discriminator
+    /// (`Direct`/`Pre`/`Post`) -- see [`mint_population_id`]. The evaluator
+    /// carries this identity alone as `Value::Population`, resolving it
+    /// back to this binding through the caller's own recorded
+    /// correspondence (`crate::value::ObjectEnvironment::resolve_population`).
+    population_id: PopulationId,
 }
 
 impl PopulationBinding {
@@ -562,12 +585,104 @@ impl PopulationBinding {
         self.declared_maximum
     }
 
+    /// This binding's minted `PopulationId` (FR-089-AC-1); see the field's
+    /// own doc comment.
+    pub fn population_id(&self) -> PopulationId {
+        self.population_id
+    }
+
     /// Every declared object type of the admitted effective view,
     /// `DeclarationKey` to its FR-150-derived [`EffectiveId`]; see the field's
     /// own doc comment.
     pub fn type_catalog(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
         &self.type_catalog
     }
+}
+
+/// FR-089-AC-1's closed three-state admission-role discriminator, part of
+/// every [`PopulationId`]'s preimage: `Direct` for a binding [`admit_binding`]
+/// mints standalone, `Pre`/`Post` for the two bindings [`admit_invocation`]
+/// attaches to one invocation frame. Deliberately not a two-state
+/// `Option<AnchorSide>` (`None`/`Some(Pre)`/`Some(Post)`): QSL-172's review
+/// found that a standalone `Direct` admission and an invocation's `Post`
+/// binding sharing a domain package and `population_key` would carry an
+/// identical preimage under a two-state discriminator whenever `None` and
+/// one of the `Some` values end up compared the same way (TC-296); naming
+/// all three states directly, with no `Option` wrapper to discard, closes
+/// that collision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AdmissionRole {
+    /// A standalone [`admit_binding`] admission.
+    Direct,
+    /// [`admit_invocation`]'s pre-instant binding.
+    Pre,
+    /// [`admit_invocation`]'s post-instant binding.
+    Post,
+}
+
+impl AdmissionRole {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Pre => "pre",
+            Self::Post => "post",
+        }
+    }
+}
+
+/// [`PopulationId`]'s FR-089-AC-1 preimage: `{version,
+/// domain_package_identity, population_key, admission_role}`. Deliberately
+/// excludes the admitted document's own content -- FR-089's Behavior
+/// section states the preimage as exactly these three facts, so two
+/// admissions of *different* documents against the same domain package,
+/// `population_key` and role mint the same identity, and re-admitting the
+/// *same* document against the same package/key/role is idempotent
+/// (TC-291).
+fn population_id_preimage(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    role: AdmissionRole,
+) -> JsonValue {
+    let mut object = Map::new();
+    object.insert(
+        "version".to_owned(),
+        JsonValue::String(POPULATION_ID_DOMAIN.to_owned()),
+    );
+    // The full `DomainPackageRef` header (identity, version, digest), not
+    // only `identity`: this module's own `admit_binding` doc already
+    // establishes that comparing bare `identity` alone misses a
+    // version-only or digest-only divergence between two otherwise
+    // same-named domain packages (its own `ForeignModelSelection` check
+    // compares the full header for exactly that reason), so "the domain
+    // package identity" a binding was admitted against is this header, not
+    // its `identity` field alone.
+    object.insert(
+        "domain_package_selection".to_owned(),
+        domain_package.model_selection.to_json(),
+    );
+    object.insert("population_key".to_owned(), population_key.to_json());
+    object.insert(
+        "admission_role".to_owned(),
+        JsonValue::String(role.as_str().to_owned()),
+    );
+    JsonValue::Object(object)
+}
+
+/// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
+/// FR-089-AC-1) for a binding admitted against `domain_package`/
+/// `population_key` under `role`: this module's only call of the kernel's
+/// `PopulationId::from_digest` (T12-D).
+fn mint_population_id(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    role: AdmissionRole,
+) -> PopulationId {
+    let bytes = jcs_bytes(&population_id_preimage(
+        domain_package,
+        population_key,
+        role,
+    ));
+    PopulationId::from_digest(Sha256::digest(&bytes).into())
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -627,6 +742,37 @@ pub fn admit_binding(
     population_key: &DeclarationKey,
     subtype_closure: GeneralizationClosure,
     declared_maximum: Option<u64>,
+    meter: &mut AdmissionMeter,
+) -> AdmissionOutcome {
+    admit_binding_as(
+        domain_package,
+        view,
+        document,
+        population_key,
+        subtype_closure,
+        declared_maximum,
+        AdmissionRole::Direct,
+        meter,
+    )
+}
+
+/// [`admit_binding`]'s own admission logic, parameterized by the
+/// FR-089-AC-1 admission role its caller mints the resulting binding's
+/// [`PopulationId`] under: [`admit_binding`] itself always calls this with
+/// [`AdmissionRole::Direct`], and [`admit_invocation`] calls it directly
+/// (bypassing the public [`admit_binding`]) with [`AdmissionRole::Pre`]/
+/// [`AdmissionRole::Post`] for its own two constituent bindings.
+#[allow(clippy::too_many_arguments)] // Mirrors `admit_binding`'s own 7-argument
+                                     // admission surface plus the one FR-089-AC-1 `role` discriminator; the whole
+                                     // group is one admission call's own input, not independent knobs to bundle.
+fn admit_binding_as(
+    domain_package: &DomainPackage,
+    view: &EffectiveView,
+    document: &PopulationDocument,
+    population_key: &DeclarationKey,
+    subtype_closure: GeneralizationClosure,
+    declared_maximum: Option<u64>,
+    role: AdmissionRole,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
     if *view.model_selection() != domain_package.model_selection {
@@ -982,6 +1128,7 @@ pub fn admit_binding(
         generals,
         type_catalog: type_lookup,
         pre_anchor: None,
+        population_id: mint_population_id(domain_package, population_key, role),
     })
 }
 
@@ -1101,25 +1248,27 @@ pub fn admit_invocation(
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
-    let pre = match admit_binding(
+    let pre = match admit_binding_as(
         context.domain_package,
         context.view,
         pre_document,
         context.population,
         context.subtype_closure,
         context.declared_maximum,
+        AdmissionRole::Pre,
         pre_meter,
     ) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    let post = match admit_binding(
+    let post = match admit_binding_as(
         context.domain_package,
         context.view,
         post_document,
         context.population,
         context.subtype_closure,
         context.declared_maximum,
+        AdmissionRole::Post,
         post_meter,
     ) {
         AdmissionOutcome::Admitted(binding) => binding,

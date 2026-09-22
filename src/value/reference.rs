@@ -8,11 +8,14 @@
 //! in an [`ObjectEnvironment`].
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::composite::{
     fill_slots, ConstructionRefusal, FieldValue, ObjectTypeDeclaration, TypeEnvironment, Value,
 };
 use super::node::NodeKey;
+use crate::model::population::PopulationBinding;
+use quire_exact::PopulationId;
 
 /// A universe identity in its canonical identity bytes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -117,10 +120,20 @@ pub enum ObjectEnvironmentCause {
 }
 
 /// A closed object environment: every reference held by any attribute
-/// resolves to an object of the environment.
+/// resolves to an object of the environment. Also carries FR-089's
+/// recorded `PopulationId` -> `PopulationBinding` correspondence: `model`
+/// mints a `PopulationId` at binding-admission time
+/// (`admit_binding`/`admit_invocation`), and the caller records the pair
+/// here, in the same environment already threaded through
+/// `CheckedPackage::call`/`evaluate` and `Machine`, before constructing the
+/// `Value::Population(population_id)` argument that names it -- one
+/// existing threaded parameter rather than a second one, since neither
+/// binding correspondence needs to change mid-evaluation and both are
+/// closed once evaluation begins.
 #[derive(Clone, Debug, Default)]
 pub struct ObjectEnvironment {
     objects: BTreeMap<ObjectReference, Box<[FieldValue]>>,
+    populations: BTreeMap<PopulationId, Arc<PopulationBinding>>,
 }
 
 impl ObjectEnvironment {
@@ -146,11 +159,39 @@ impl ObjectEnvironment {
             }
             admitted.insert(reference, slots);
         }
-        let environment = Self { objects: admitted };
+        let environment = Self {
+            objects: admitted,
+            populations: BTreeMap::new(),
+        };
         for (owner, slots) in &environment.objects {
             environment.check_closed(owner, slots)?;
         }
         Ok(environment)
+    }
+
+    /// Records `binding`'s admission under `population_id` -- FR-089's
+    /// `PopulationId` -> `PopulationBinding` correspondence `model` mints at
+    /// binding-admission time. Consuming builder: call once per minted
+    /// `PopulationId`, before constructing the
+    /// `Value::Population(population_id)` argument that names it, so
+    /// [`Self::resolve_population`] can resolve it.
+    #[must_use]
+    pub fn with_population(
+        mut self,
+        population_id: PopulationId,
+        binding: PopulationBinding,
+    ) -> Self {
+        self.populations.insert(population_id, Arc::new(binding));
+        self
+    }
+
+    /// The `PopulationBinding` FR-089's recorded correspondence resolves
+    /// `population_id` to, or `None` when `population_id` names no binding
+    /// [`Self::with_population`] recorded in this environment
+    /// (FR-089-AC-4: the evaluator refuses this case, never panicking or
+    /// substituting a default binding).
+    pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
+        self.populations.get(&population_id).map(Arc::as_ref)
     }
 
     /// Whether the referenced object is in the environment.

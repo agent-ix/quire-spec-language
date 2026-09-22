@@ -41,7 +41,7 @@ use crate::check::{
 };
 use crate::model::population::PopulationBinding;
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter,
+    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
 };
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
@@ -401,6 +401,36 @@ impl<'a, 'm> Machine<'a, 'm> {
                 .ok_or(Stop::Refused(Refusal::WrongSnapshot(
                     WrongSnapshotCause::WrongAnchor,
                 ))),
+        }
+    }
+
+    /// FR-089-AC-3/AC-4/AC-5: resolves `population_id` (an
+    /// `allInstances`/`lookup` population operand's own identity) to the
+    /// admitted `PopulationBinding` this evaluation's own recorded
+    /// correspondence (`self.objects`, `model`'s
+    /// `admit_binding`/`admit_invocation` mint into) recorded it against,
+    /// by lookup alone -- never by decoding `population_id`'s own bytes.
+    /// Refuses `population_id` when it names no recorded binding at all
+    /// (AC-4), or when its resolved binding's own declared maximum differs
+    /// from `maximum`, the checked `Population<T>[maximum]` parameter type
+    /// this operand's own node declared (AC-5) -- the pairing
+    /// `ValueType::admits` performed directly when `Value::Population`
+    /// still carried the binding itself (`value::composite`'s own doc,
+    /// before this identity replaced it). Never
+    /// [`Refusal::CheckedInvariant`]: `check::check::bind_parameters`'s own
+    /// doc records that a `Population<T>[N]` parameter bypasses
+    /// `Typer::check_declared_type`, so the checker never verifies a
+    /// caller-supplied identity actually names a binding of that declared
+    /// shape -- this is real, caller-input-reachable, exactly like
+    /// [`Refusal::WrongSnapshot`].
+    fn resolve_population(
+        &self,
+        population_id: PopulationId,
+        maximum: u64,
+    ) -> Result<&'a PopulationBinding, Stop> {
+        match self.objects.resolve_population(population_id) {
+            Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
+            _ => Err(Stop::Refused(Refusal::UnresolvedPopulation(population_id))),
         }
     }
 
@@ -921,23 +951,33 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
-            NodeKind::AllInstances { .. } => {
-                let Value::Population(binding) = self.pop()? else {
+            NodeKind::AllInstances { population } => {
+                let Value::Population(population_id) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let ValueType::Population(maximum) = &population.value_type else {
                     return Err(invariant());
                 };
                 let ValueType::Collection(collection_type) = &node.value_type else {
                     return Err(invariant());
                 };
-                let binding = self.select_anchor(&binding)?;
+                let binding = self.resolve_population(population_id, *maximum)?;
+                let binding = self.select_anchor(binding)?;
                 evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
-                reference, absence, ..
+                reference,
+                absence,
+                population,
             } => {
                 let reference_value = self.pop()?;
-                let Value::Population(binding) = self.pop()? else {
+                let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
                 };
+                let ValueType::Population(maximum) = &population.value_type else {
+                    return Err(invariant());
+                };
+                let binding = self.resolve_population(population_id, *maximum)?;
                 let ValueType::Reference(static_key) = &reference.value_type else {
                     return Err(invariant());
                 };
@@ -949,7 +989,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     },
                     _ => return Err(invariant()),
                 };
-                let binding = self.select_anchor(&binding)?;
+                let binding = self.select_anchor(binding)?;
                 evaluate_lookup(
                     binding,
                     target_key,
