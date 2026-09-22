@@ -25,7 +25,7 @@ into `quire-exact` (ADR-011 §6.1's forbidden K-leaf violation) instead of
 adding an opaque identity, which a test that only checks "does `Value` admit
 a population value" cannot distinguish from the correct shape.
 
-## Inspection Procedure
+## Test Procedure
 
 1. Locate the `Value` enum definition in `quire-exact/src/value.rs` and
    inspect its `Population` variant's payload type.

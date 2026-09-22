@@ -12,7 +12,8 @@ relationships:
 
 Verify FR-090-AC-1. For a checked `Value` function, S6a returns every kernel
 outcome in `Ok(FamilyOutcome::Evaluated(o))`, and each `o` is a fixed,
-literal expected outcome. The hook's `EvaluateFailure::Incomplete(i)` becomes
+literal expected outcome. The hook's
+`Ok(EvalOutcome::Kernel(Outcome::Incomplete(i)))` becomes
 `Evaluated(Outcome::Incomplete(i))`. Scope: FR-090-AC-1.
 
 The fixture uses an IEEE-to-rational conversion because the checker's
@@ -50,7 +51,9 @@ Tag the test `#[trace("FR-090-AC-1", "TC-382")]`.
 ## Expected Results
 
 Each result is compared with a fixed literal outcome, not with another run
-of the hook.
+of the hook. `FamilyOutcome` has no `Eq`, so the test matches the
+`Evaluated` arm and compares the kernel `Outcome` it holds with
+`assert_eq!`.
 
 - Step 2: `Ok(FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2))))`.
 - Step 3: `Ok(FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite)))`.

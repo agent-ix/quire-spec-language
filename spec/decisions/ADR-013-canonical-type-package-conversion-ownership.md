@@ -358,8 +358,8 @@ Category mapping. Every source value has exactly one row.
 | --- | --- | --- | --- |
 | success | `Completed(value)`, except `Completed(false)` of a claim → value | `supported` | `Proved` with at least one SUCCESS check → result `proved`. A backend result `tested` is also success; it keeps the value `tested`, is never promoted to `proved`, and never counts as proof evidence. Only `proved` does. |
 | violation | `Completed(false)` of a claim → false/violation | not applicable | `Counterexample` → result `refuted` |
-| undefined | `Undefined` → `undefined` (FR-323-AC-1) | not applicable | not produced |
-| refusal | `Refused(Refusal)` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause; the result value is QC-9 |
+| undefined | `Undefined` → `undefined` (FR-323-AC-1); S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))` → `undefined` | not applicable | not produced |
+| refusal | `Refused(Refusal)` → refusal; S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and `FamilyOutcome::Refused(FamilyRefusal)` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause; the result value is QC-9 |
 | unsupported | not an evaluation outcome | `unsupported` or `requires-bound` | `Unavailable` (solver or backend absent after negotiation) → one FR-331 result with a typed unavailability cause; the result value is QC-9 |
 | incomplete (timeout, cancellation, bound exhaustion) | `Incomplete` with its charge point and limit → incomplete | not applicable | `TimedOut`, `Cancelled`, `ResourceExhausted` → result `incomplete`, cause kept |
 | inconclusive | not an evaluation outcome | not applicable | `Inconclusive` → result `inconclusive`. A vacuous `Proved` (a `Proved` run with zero SUCCESS checks in the obligation) maps to the existing `KaniOutcomeKind::Inconclusive` variant with the typed cause `kani_vacuous_proof`, following IR's typed-cause convention (Remaining work: agent-ix/quire-contract-ir#146, agent-ix/quire-specification#141). A replay parity disagreement (O-27) is also `inconclusive`, with a typed cause. |
@@ -373,15 +373,152 @@ proof column fixes the category part of AD-016's `OPEN — decided in WP9` cell
 state `EvaluationOutcome` and simulation `Outcome` are lane-private (§6); a
 family result wraps kernel outcomes and maps to these categories under its
 family contract (Q210-3). S6a returns `Result<FamilyOutcome, InternalFault>`,
-where `FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }` is
-a QSL layer-3 `check`-core type and `InternalFault` is T-4's. `FamilyRefusal`
-carries the family-dispatch causes, starting with `FamilyNotNativelyEvaluable`.
-`FamilyRefusal::catalog_code()` yields the catalog code, and F `diagnostic` maps
-that code to category `refusal` (O-17); F never names `FamilyRefusal`. A family
-that ADR-012 does not evaluate natively (`Relation`) returns
-`FamilyOutcome::Refused` with cause `FamilyNotNativelyEvaluable`. The kernel
-`Refusal` holds kernel causes only. Simulation (lane D) converges into S6a
-(ADR-011 §8), so its outcomes are the kernel `Outcome` through S6a.
+where
+
+```text
+FamilyOutcome<T> {
+    Evaluated(kernel::Outcome<T>),   // the kernel outcome, unchanged
+    Refused(FamilyRefusal),          // dispatch: the family does not run here
+    FamilyEvaluated(FamilyResult),   // the family ran; its own result
+}
+FamilyResult {
+    Refused(Box<dyn CatalogCoded>),     // category refusal
+    Undefined(Box<dyn UndefinedCoded>), // category undefined
+}
+EvalOutcome<T> {                     // what a family's evaluate hook returns
+    Kernel(kernel::Outcome<T>),
+    Family(FamilyResult),
+}
+```
+
+are QSL layer-3 `check`-core types and `InternalFault` is T-4's.
+`EvalOutcome` is in the `check` core because it is the family hook's return
+type and the `check` core defines the hook. A family's
+`evaluate` hook returns `Result<EvalOutcome<T>, InternalFault>` (ADR-012 §2),
+and the S6a seam passes `Kernel(o)` through as `Evaluated(o)`, `Family(r)` as
+`FamilyEvaluated(r)` and `Err(fault)` as `Err(fault)`, each unchanged. The
+hook has an `InternalFault` channel because it detects S6a invariant breaks
+(a consumed environment, an unresolved identity) that FR-090-AC-3 requires
+to reach the caller as `Err(InternalFault)`; refusal and undefined are
+outcome categories, so they travel in `Ok`.
+`FamilyRefusal` carries the family-dispatch causes only, starting with
+`FamilyNotNativelyEvaluable`. `FamilyRefusal::catalog_code()` yields the
+catalog code, and F `diagnostic` maps that code to category `refusal` (O-17);
+F never names `FamilyRefusal`. A family that ADR-012 does not evaluate natively
+(`Relation`) returns `FamilyOutcome::Refused` with cause
+`FamilyNotNativelyEvaluable`.
+
+`FamilyOutcome::FamilyEvaluated` carries an evaluation-time result that a
+family owns and the kernel does not. `FamilyResult::Refused` holds a family
+refusal cause, category `refusal`; `FamilyResult::Undefined` holds a family
+undefined cause, category `undefined`. The two arms keep the categories
+distinct by type. The cause types are family-owned, and the `check` core never
+names one: it holds them through two F `diagnostic` traits,
+`CatalogCoded` (`fn catalog_code(&self) -> CatalogCode`, the O-17 method) and
+`UndefinedCoded` (`fn undefined_record(&self) -> UndefinedRecord`). F names no
+family type.
+
+`UndefinedRecord { reason, fields }` is an F `diagnostic` type, the
+undefined-side counterpart of O-17's `RefusalRecord`. `reason` is an
+`UndefinedReason`, the closed reason of the `quire.native.diagnostics/v1`
+"Undefined reasons" table, which is not a refusal code. `fields` is the
+payload that table requires for the reason. The trait returns the record, not
+the bare reason, because the catalog requires the payload, and a consumer
+outside the family holds only the trait object: without the record it could
+reach the payload only by downcasting. The locus travels with the
+evaluation's location (FR-090-OQ-3). A consumer outside the family reads the
+O-17 `RefusalRecord` built from a `FamilyResult::Refused` cause, or the
+`UndefinedRecord` of a `FamilyResult::Undefined` cause, never the cause
+itself.
+
+A cause belongs to the family whose construct produces it. The module path
+does not decide the owner, because layer 5 `value::expression` holds every
+family's evaluator (ADR-011 §6.1). The evaluation causes are:
+
+- `WrongSnapshot` (`wrong-anchor` and `forbidden-pre-read`): an evaluation
+  cause of `ProtocolClause`, the family that owns `Pre` (ADR-012 §4.3;
+  FR-091-AC-8), defined in `value::expression` beside the `ProtocolClause`
+  evaluator and carried in `FamilyResult::Refused` (T-6). It arises only
+  from a `pre(..)` read.
+- The model-query refusal: `model`'s `ModelRefusal`, a `StateModel` cause
+  (ADR-012 §1 and §3 assign population evaluation to `StateModel`), carried
+  in `FamilyResult::Refused` with its own `catalog_code()` (O-17).
+- `PreconditionFalse` (FR-151 dispatch): a `StateModel` undefined cause,
+  defined in `value::expression` beside the `StateModel` evaluator and
+  carried in `FamilyResult::Undefined` with reason `precondition-false`.
+  ADR-012 assigns dispatch and dispatch preconditions to `StateModel` (§1,
+  §3, §4.3). The kernel `Undefined` has no `PreconditionFalse` reason.
+- `AbsentKey` (FR-153 `lookup<T>(p, r) absent undefined` with no member of
+  that key): a variant of the same `StateModel` undefined cause type,
+  carried in `FamilyResult::Undefined` with reason `absent-key` and the
+  catalog payload (the population binding and the requested key; the
+  `lookup` locus travels with the evaluation's location, FR-090-OQ-3). The
+  kernel `Undefined` has no `AbsentKey` reason, and this record is the only
+  carrier of undefined reason `absent-key`. Three reasons: the catalog
+  requires a payload that a payload-free kernel variant cannot carry;
+  `StateModel` lookup is the only code that detects an absent key; and a
+  key-lookup cause is model vocabulary, which O-13 keeps out of the kernel.
+
+`lookup<T>(p, r) absent refused` is a different query, which FR-153 has
+refuse an absent key. Its cause is `ModelRefusal`'s `AbsentKey` cause, code
+`invalid_runtime_input` with cause tag `absent-key`, category `refusal`,
+carried in `FamilyResult::Refused` as the model-query refusal. The catalog
+defines that refusal cause tag and the `absent-key` undefined reason as
+separate entries (`quire.native.diagnostics/v1` `invalid_runtime_input` row
+and "Undefined reasons" table; QSpec TC-198 L03), and each has one carrier.
+The absence mode the query names selects which one S6a returns.
+
+Representation. `CatalogCoded` and `UndefinedCoded` have the supertraits
+`fmt::Debug + Send + Sync + 'static`. `FamilyResult` and `FamilyOutcome`
+derive no `Clone`, `PartialEq` or `Eq`, so a test matches the arm with
+`matches!` and compares `catalog_code()` or `undefined_record()`; the kernel
+`Outcome` inside `Evaluated` keeps its own `Eq`. Assertions on a concrete
+cause type live in the producing family's unit tests. Both types are
+in-process only, with no serde implementation: a result crosses a process
+boundary as the `RefusalRecord` or `UndefinedRecord` built from it.
+
+The kernel `Refusal` holds kernel causes only. Simulation (lane D) converges
+into S6a (ADR-011 §8), so its outcomes are the kernel `Outcome` through S6a.
+
+Why a third arm (owner ruling on FR-090-OQ-1, QSL-174):
+
+1. O-17 rules that each family owns its own `Cause` enum and that no shared
+   enum lists every family's causes. Holding evaluation causes in
+   `FamilyRefusal` would make it that shared list.
+2. Families stay pluggable without editing the `check` core (ADR-012's
+   extension contract). A shared enum would force a `check` edit for every new
+   family cause; a trait object does not.
+3. A dispatch refusal means "cannot run here", so routing (#185) may try
+   another backend. An evaluation refusal means "it ran and the answer is
+   refused", which is never retried. `FamilyOutcome::Refused` and
+   `FamilyOutcome::FamilyEvaluated` tell the two apart by type.
+4. The kernel stays free of model vocabulary (O-13). `PreconditionFalse`
+   carries an operation, a selected method and a receiver, which come from
+   FR-151 dispatch.
+
+Rejected alternatives:
+
+- Widen `FamilyRefusal` to hold the evaluation causes and move
+  `PreconditionFalse` into the kernel `Undefined`: `FamilyRefusal` becomes
+  the shared cause list O-17 forbids, and model vocabulary enters the kernel.
+- Put all three causes into the kernel `Refusal` and `Undefined`: the kernel
+  then names QSL model and dispatch vocabulary, which O-13 forbids.
+- Make `FamilyOutcome` and `FamilyResult` generic over the cause types
+  (`FamilyOutcome<T, R, U>`): the S6a seam has one return type across every
+  `FamilyKind` arm, so `R` and `U` would each have to be one type covering
+  every family's causes. That is the shared cause enum O-17 forbids, and the
+  `check` core cannot name layer-5 cause types.
+- Give `ReferenceEvaluation` an associated cause type per family: one S6a run
+  of a family's body can produce another family's cause (`allInstances` in a
+  `Value` function body yields a `StateModel` `ModelRefusal`), so the
+  associated type would have to name another family's cause. ADR-012 §1 lets
+  `Value` read no other family's checked types. A trait object lets the cause
+  cross that boundary without the family naming it.
+- Hold `RefusalRecord` by value instead of a trait object: it would give
+  `Eq`, `Clone` and serialization, but it discards the typed cause before the
+  producing family's unit tests can assert it, and it ties the seam to #213
+  S-5b's `RefusalRecord`. A consumer that needs the record builds it from the
+  trait object at the consumer boundary.
 
 Implementing tickets: #213 S-1 builds the kernel outcome and refusal types;
 #213 S-5a builds the category type in F `diagnostic` (landed, #258); #231
@@ -641,7 +778,7 @@ stores one and derives four (QC-13).
 | --- | --- |
 | Owner | CG replay adapter builds the request (reconstruction, agent-ix/quire-contract-codegen#50). QSL owns the executor-side typed request type, in the ADR-011 layer-6 `replay` module (#231). |
 | Implementing ticket | #231 for the typed request and its round trip. agent-ix/quire-contract-codegen#50 for C-12. The executor entry (C-13) is TK-01. |
-| Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits, and the S1 to S4 stage limits copied from the proving run (QC-8). QSpec fixes the outcome → verdict map per O-16 category (FR-323, QC-8), and `Undefined` and `FamilyOutcome::Refused` never count as agreement. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
+| Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits, and the S1 to S4 stage limits copied from the proving run (QC-8). QSpec fixes the outcome → verdict map per O-16 category (FR-323, QC-8), and `Undefined`, `FamilyOutcome::Refused` and `FamilyOutcome::FamilyEvaluated` never count as agreement. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
 | Serialized authority | QSpec FR-323 `quire.native-runtime/v1` (`package`, `selection`, `state_environment`, `limits`, `replay`), plus the digest-addressed byte provision QC-1 adds. |
 | Conversions | Packet + #231 envelope members → request (CG, C-12); CG copies them and invents no member. Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles under the stage limits the request carries, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the `QualifiedName` by name lookup in the recompiled package's declarations (OQ-5 ruling), and calls the selected function. `CheckedPackage::call` admits the arguments before any evaluation. |
 | Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S1 to S4 and verifying the emitted v2 bytes under the ADR-011 §4 binding, and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain (an `InputRefusal`, carried by `replay` as a `StageFailure::Refused` cause and never `inconclusive`); a recompile that reaches a stage limit (`LimitExceeded`); and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
@@ -671,7 +808,7 @@ decides one. The O rows above hold the full decision where one exists.
 | T-3 | The canonical cross-package node key | `DeclarationKey{package, node}` does not serve: it names domain-package declarations only (O-03). Under the O-04 package scope a bare `NodeKey` is unique across packages. An I2 reference is `PackageNodeKey{package: package_id, node: WireNodeId}`, owned by QSL `library` and built by #213 S-3: it pins the verified content and names the node without making a `NodeKey` from wire bytes (R-10, O-04). Equality is declared: both components compare lexically. The v2 member for a reference into a dependency package is QC-10. |
 | T-4 | Stage outcome and refusal types, the limit cause and the internal-fault kind | Stages S1 to S4 and the I2 reader return `Result<Staged<T>, StageFailure<C>>`. `Staged<T>` carries the output and its warnings. `StageFailure<C>` has three variants: `Refused{causes, diagnostics}` with at least one typed cause `C` of that stage (O-17), `Limit(LimitExceeded)` and `Fault(InternalFault)`. `LimitExceeded` names the limit kind (closed enum: input bytes, nesting depth, node count, work budget), the configured bound and the `Locus` (T-5) where it was reached, so S1 and S2 limits have a location. `InternalFault` names the stage and the violated invariant by a stable identifier. It maps to the O-16 internal-failure category and is never a `Refusal`. A family `check` that reaches a limit returns `Limit(LimitExceeded)` with limit kind work budget. `CheckedPackage::call` admits arguments before S6a and returns `Result<FamilyOutcome, CallFailure>`, with `CallFailure { Input(InputRefusal), Fault(InternalFault) }`; `replay` carries `Input` as a `StageFailure::Refused` cause and `Fault` as an internal fault. S6a returns `Result<FamilyOutcome, InternalFault>` and keeps the kernel `Outcome<T>` (O-16): its `Incomplete` is a meter budget, not a stage limit, and `Incomplete` is an S6a outcome only. The layer-6 `replay` facade and the layer-R `route` module return `Result<Staged<T>, StageFailure<C>>`, each with its own cause type. The types live in F `diagnostic`: `InternalFault` is built by #213 S-5a (landed, #258); `Staged<T>`, `StageFailure<C>` and `LimitExceeded`/its limit-kind enum are #213 S-5b's. Catalog codes for each limit kind and for internal fault are QC-11. #225 renders them to exit codes. |
 | T-5 | The foundation `diagnostic` locus type (DA-13) | `Locus` has three variants. `Region(SourceRegion)` is the O-07 region (`RawSourceRef`, byte start, byte end), used by S0 to S2. `Occurrence(Location)` is the kernel location tag (node id and occurrence key, O-12), used from S3 on and resolved to regions through the source map when rendered. `Artifact{digest, pointer}` is a digest record (O-18) and a JSON pointer into that artifact, used by wire readers. F depends on K, so `Locus` uses the kernel `Location` directly. A stage converts its own position into a `Locus` when it emits a diagnostic (ADR-011 §6.1). #213 S-4 builds it. |
-| T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (QC-15), or its variant leaves the kernel type. The `Reference` payload moves in: `EffectiveId` and the universe and object identities (O-05). The `Quantity` payload moves in: magnitude and a `UnitId`, with no reference to `quantity` declarations. The `Enum` payload moves in as the O-14 sum shape: a `VariantId` only, with no `NodeKey`. The `Population` payload moves in as the O-13 Population row's shape: a `PopulationId` only, with no `PopulationBinding`. `UnitId`, `VariantId` and `MemberId` are opaque digest newtypes with no dependency on `check` (QC-15); QSL computes their digests. `PopulationId` is likewise an opaque digest newtype, with no dependency on `model` (QC-21); QSL `model` computes it, exactly as it computes `EffectiveId` (O-05), and only `model` calls its constructor (ADR-011 T-12). `PopulationId`'s preimage's admission-role component is a closed three-state discriminator -- `Direct`, `Pre`, `Post` -- applied to every admission, not only the two `admit_invocation` attaches, so a standalone `admit_binding` admission and an invocation's `Post` binding over the same domain package and `population_key` mint distinct identities rather than colliding. `ValueType::Population` keeps its `u64` count only (AD-016 model row); `Value::Population` carries `PopulationId`, never `PopulationBinding`, which stays in `model`. Any other `model::population` payload -- membership, closure and `allInstances`/`lookup` state -- leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes a `value::expression` family cause mapped through its own `catalog_code()` (O-17). Family-dispatch causes such as `FamilyNotNativelyEvaluable` are `FamilyRefusal` causes in the layer-3 `check` core, carried by S6a's `FamilyOutcome` (O-16), never kernel causes. `diagnostic::Code` leaves: the kernel `Refusal` carries the kernel's own typed cause, and QSL F `diagnostic`, which holds `CatalogCode` and the O-16 category type, maps that cause to a code. `NodeKey` and `EffectiveId` minting follows O-04 and O-05: one public constructor from a preimage digest, so the preimage types, JCS and hashing stay in QSL and the kernel imports none of them. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
+| T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (QC-15), or its variant leaves the kernel type. The `Reference` payload moves in: `EffectiveId` and the universe and object identities (O-05). The `Quantity` payload moves in: magnitude and a `UnitId`, with no reference to `quantity` declarations. The `Enum` payload moves in as the O-14 sum shape: a `VariantId` only, with no `NodeKey`. The `Population` payload moves in as the O-13 Population row's shape: a `PopulationId` only, with no `PopulationBinding`. `UnitId`, `VariantId` and `MemberId` are opaque digest newtypes with no dependency on `check` (QC-15); QSL computes their digests. `PopulationId` is likewise an opaque digest newtype, with no dependency on `model` (QC-21); QSL `model` computes it, exactly as it computes `EffectiveId` (O-05), and only `model` calls its constructor (ADR-011 T-12). `PopulationId`'s preimage's admission-role component is a closed three-state discriminator -- `Direct`, `Pre`, `Post` -- applied to every admission, not only the two `admit_invocation` attaches, so a standalone `admit_binding` admission and an invocation's `Post` binding over the same domain package and `population_key` mint distinct identities rather than colliding. `ValueType::Population` keeps its `u64` count only (AD-016 model row); `Value::Population` carries `PopulationId`, never `PopulationBinding`, which stays in `model`. Any other `model::population` payload -- membership, closure and `allInstances`/`lookup` state -- leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes an evaluation cause of `ProtocolClause`, the family that owns `Pre` (ADR-012 §4.3), defined in `value::expression` and mapped through its own `catalog_code()` (O-16, O-17). Family-dispatch causes such as `FamilyNotNativelyEvaluable` are `FamilyRefusal` causes in the layer-3 `check` core, carried by S6a's `FamilyOutcome` (O-16), never kernel causes. `diagnostic::Code` leaves: the kernel `Refusal` carries the kernel's own typed cause, and QSL F `diagnostic`, which holds `CatalogCode` and the O-16 category type, maps that cause to a code. `NodeKey` and `EffectiveId` minting follows O-04 and O-05: one public constructor from a preimage digest, so the preimage types, JCS and hashing stay in QSL and the kernel imports none of them. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
 | T-7 | Which crate holds `BackendDescriptor`, the candidate set and `Capability` | They cross as data in QSpec-authored formats. No shared Rust crate holds them. `quire-exact` cannot, because the AD-016 kernel row lists its types exactly, and ADR-011 §7 approves no other extraction. A backend's descriptor is its FR-331 provider manifest. The driver reads it, and QSL `route` converts it into its `BackendDescriptor` (C-28). A candidate set is one list of `backend` members (O-19) per `request_index`, sorted by (identity, manifest digest) (QC-12, C-29). A capability crosses in its agent-ix/quire-specification#134 (FR-290) wire spelling (C-24). QSL's `Capability` (#213 S-6) and CG's own representations each convert from the wire, so there is no CG → QSL type edge (FB-05). |
 | T-8 | The executor key | Ruled 2026-09-19 (OQ-5), as O-26 states: the replay request carries the selected function's `QualifiedName` (O-11), and E9 resolves it by name lookup in the recompiled package's declarations. It keeps AD-016 arrow 7 unchanged. ADR-011 E9 is aligned to this. |
 | T-9 | Pin representation (OBS-034 secondary) | O-23: a `RevisionPin` is the repository source exactly as `Cargo.lock` records it, plus the full 40-character lowercase commit sha. A short sha, branch or tag refuses. Equality is lexical on both fields. |
@@ -842,7 +979,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-5 | FR-321: a refusal code for a second selection of the same domain-package identity, if the catalog has none. | #213 S-2 |
 | QC-6 | FR-331 `counterexamples`: an entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript, never both (O-25). | #231 counterexample envelope |
 | QC-7 | AD-016 WP9 as amended by agent-ix/quire-specification#140: the parity carrier is the `ReplaySource` arm, and each arm has its own result type. | agent-ix/quire-contract-codegen#50 parity, #231 result type |
-| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined` and `FamilyOutcome::Refused` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
+| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined`, `FamilyOutcome::Refused` and `FamilyOutcome::FamilyEvaluated` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
 | QC-9 | FR-331: the result value for a `supported` item whose Kani run ends in `Refused`, `InvalidInput`, `IncompleteInput` or `Unavailable`, so the item keeps exactly one terminal record with a typed cause (O-16). | IR C-09, #231 C-23 |
 | QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. | #213 S-3, the v2 emitter (ADR-011 T-8) |
 | QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5a (the internal-fault code) and S-5b (each limit-kind code) |
