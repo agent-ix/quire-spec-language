@@ -21,7 +21,7 @@ use crate::integer::Integer;
 ///
 /// Every supported target has pointers of at most 64 bits, so an in-memory
 /// length always fits `u64`; a wider target would violate that invariant.
-pub(crate) fn length_amount(length: usize) -> u64 {
+pub fn length_amount(length: usize) -> u64 {
     u64::try_from(length)
         .expect("in-memory lengths fit u64 on targets with pointers of at most 64 bits")
 }
@@ -420,8 +420,17 @@ pub struct InjectedDenial {
 }
 
 /// One exact `{ counter: amount }` charge vector.
+///
+/// **`pub` (QSL-166).** Was `pub(crate)`: every consumer of this vector
+/// lived inside this crate until QSL's own `value::accounting` copy (the
+/// byte-identical duplicate this type replaces) was deleted and its ~19
+/// call sites repointed here across the `quire-spec-language` crate
+/// boundary. Widened together with [`Meter::charge`]/[`Meter::charge_plan`]
+/// and [`length_amount`], each verified against real cross-crate call
+/// sites, the same standard QSL-146 established for the kernel's other
+/// widenings.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Charge {
+pub struct Charge {
     point: ChargePoint,
     sizes: Vec<(LimitKind, Integer)>,
     work_units: Integer,
@@ -429,7 +438,9 @@ pub(crate) struct Charge {
 }
 
 impl Charge {
-    pub(crate) fn new(point: ChargePoint) -> Self {
+    /// A charge at `point` with no size yet, a default one work unit, and
+    /// no result units.
+    pub fn new(point: ChargePoint) -> Self {
         Self {
             point,
             sizes: Vec::new(),
@@ -438,28 +449,30 @@ impl Charge {
         }
     }
 
-    pub(crate) fn size(self, kind: LimitKind, amount: u64) -> Self {
+    /// A semantic-size charge against `kind`.
+    pub fn size(self, kind: LimitKind, amount: u64) -> Self {
         self.exact_size(kind, Integer::from(amount))
     }
 
     /// A semantic-size amount that may exceed `u64::MAX`.
-    pub(crate) fn exact_size(mut self, kind: LimitKind, amount: Integer) -> Self {
+    pub fn exact_size(mut self, kind: LimitKind, amount: Integer) -> Self {
         self.sizes.push((kind, amount));
         self
     }
 
     /// A `work_units` addition other than the default one.
-    pub(crate) fn work(mut self, amount: Integer) -> Self {
+    pub fn work(mut self, amount: Integer) -> Self {
         self.work_units = amount;
         self
     }
 
-    pub(crate) fn results(self, amount: u64) -> Self {
+    /// A `result_units` addition.
+    pub fn results(self, amount: u64) -> Self {
         self.exact_results(Integer::from(amount))
     }
 
     /// A `result_units` addition that may exceed `u64::MAX`.
-    pub(crate) fn exact_results(mut self, amount: Integer) -> Self {
+    pub fn exact_results(mut self, amount: Integer) -> Self {
         self.result_units = amount;
         self
     }
@@ -548,7 +561,12 @@ impl Meter {
 
     /// Atomically admit `charge` or return the first unavailable counter in
     /// `ScalarLimitsV1` field order.
-    pub(crate) fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
+    ///
+    /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`: QSL's own
+    /// `value::accounting::Meter::charge` call sites (~19 across the
+    /// `quire-spec-language` crate) now call this one directly, across the
+    /// crate boundary, after `value::accounting` was deleted as a duplicate.
+    pub fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
         self.check_injected(point, charge.work_units.clone())?;
         // Every semantic-size counter precedes `work_units` and `result_units`
@@ -592,7 +610,10 @@ impl Meter {
     /// planned pair count; without changing any consumed counter it requires
     /// `pairs + 2` remaining work units and one remaining result unit, then
     /// consumes the plan's own work unit.
-    pub(crate) fn charge_plan(&mut self, pairs: &Integer) -> Result<(), Incomplete> {
+    ///
+    /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`, same
+    /// reason as [`Self::charge`].
+    pub fn charge_plan(&mut self, pairs: &Integer) -> Result<(), Incomplete> {
         let point = ChargePoint::EqualityPlan;
         let reservation = pairs.add(&Integer::from(2_u64));
         self.check_injected(point, reservation.clone())?;

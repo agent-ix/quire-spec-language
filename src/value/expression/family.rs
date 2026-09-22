@@ -259,7 +259,7 @@ pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
     pub(crate) objects: &'a super::super::reference::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<super::super::composite::Value>>,
-    pub(crate) local_meter: &'a mut super::super::accounting::Meter,
+    pub(crate) local_meter: &'a mut quire_exact::Meter,
 }
 
 impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
@@ -269,11 +269,14 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
     /// FR-062-AC-6: reads only `checked` (a bare identity) and `env`'s
     /// checked package/object environment/meter -- no CST, token or
     /// display string. `_meter` (the shared kernel meter every family's
-    /// `evaluate` takes) is accepted but not charged: `quire_exact::Meter`'s
-    /// `charge`/`charge_plan` are `pub(crate)` inside `quire-exact`, not
-    /// exported here (see [`crate::family::EvaluateRefusal`]'s doc) --
-    /// `Value`'s own evaluation charges `env.local_meter` (its pre-existing
-    /// accounting meter) instead, unchanged by this contract.
+    /// `evaluate` takes) is accepted but not charged: `Value`'s own
+    /// evaluation charges `env.local_meter` (its pre-existing accounting
+    /// meter, `quire_exact::Meter` since QSL-166 -- the same type as
+    /// `_meter`, a separate instance) instead, unchanged by this contract.
+    /// QSL-166 exported `Meter::charge`/`charge_plan` as `pub` (they were
+    /// `pub(crate)` inside `quire-exact`), closing the export gap that used
+    /// to be the reason `_meter` could not be charged even if this contract
+    /// wanted to; QSL-152 still owns the decision of whether it should be.
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
@@ -348,29 +351,16 @@ mod family_contract_tests {
         ScopeStack, StageLimits,
     };
     use crate::forms::{Expression, FunctionDeclaration};
-    use crate::value::accounting::{Meter as ValueMeter, ScalarLimits as ValueScalarLimits};
     use crate::value::composite::{TypeEnvironment, ValueType};
     use crate::value::reference::ObjectEnvironment;
     use quire_exact::Meter;
 
-    // `EvaluationEnv::local_meter` is this crate's own `value::accounting::
-    // Meter` (`ValueFunctionFamily::evaluate`'s pre-existing accounting
-    // path); `ReferenceEvaluation::evaluate`'s own `_meter` parameter is
-    // the shared kernel `quire_exact::Meter` (`Meter`, imported above) --
-    // two distinct types with the same name in different crates, both
-    // needed by `evaluate_refuses_a_second_call_on_the_same_env`.
-    const VALUE_SCALAR_UNLIMITED: ValueScalarLimits = ValueScalarLimits {
-        integer_bits: u64::MAX,
-        decimal_digits: u64::MAX,
-        scale_expansion: u64::MAX,
-        text_input_bytes: u64::MAX,
-        text_scalars: u64::MAX,
-        normalized_scalars: u64::MAX,
-        unit_edges: u64::MAX,
-        value_occurrences: u64::MAX,
-        work_units: u64::MAX,
-        result_units: u64::MAX,
-    };
+    // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
+    // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
+    // own `_meter` parameter are both `quire_exact::Meter` since QSL-166
+    // (previously two distinct types with the same name in different
+    // crates) -- `evaluate_refuses_a_second_call_on_the_same_env` still
+    // needs two separate *instances*, one per role.
 
     fn limits() -> StageLimits {
         StageLimits { nesting_depth: 128 }
@@ -437,7 +427,7 @@ mod family_contract_tests {
             .function_identity("f")
             .expect("f is declared in this package");
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
-        let mut local_meter = ValueMeter::new(VALUE_SCALAR_UNLIMITED);
+        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {
             package: &package,
             objects: &objects,

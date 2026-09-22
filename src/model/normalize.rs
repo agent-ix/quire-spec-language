@@ -217,7 +217,7 @@ use crate::model::key::{
     digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId,
     EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
-use crate::value::length_amount;
+use quire_exact::length_amount;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the

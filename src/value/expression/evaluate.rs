@@ -10,7 +10,6 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
 use super::super::comparison::ComparisonOperator;
 use super::super::composite::{
@@ -41,7 +40,9 @@ use crate::check::{
     Scope, Slot, Visit, WrongSnapshotCause,
 };
 use crate::model::population::PopulationBinding;
-use quire_exact::{CollectionKind, Integer, IntegerInterval};
+use quire_exact::{
+    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter,
+};
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
 /// expression where a non-completed outcome originated.

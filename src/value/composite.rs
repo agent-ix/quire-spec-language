@@ -15,7 +15,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::collection::{CollectionType, CollectionValue};
 use super::comparison::{IllTyped, IllTypedCause};
 use super::decimal::{Decimal, DecimalType};
@@ -28,7 +27,9 @@ use super::rational::{Rational, RationalDomain};
 use super::reference::ObjectReference;
 use super::text::{Text, TextType};
 use crate::model::population::PopulationBinding;
-use quire_exact::{CollectionKind, Integer, IntegerInterval};
+use quire_exact::{
+    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter,
+};
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.

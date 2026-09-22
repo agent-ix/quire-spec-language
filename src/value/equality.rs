@@ -13,7 +13,6 @@
 //! Plan formation is iterative, so value depth never reaches the host stack,
 //! and it walks the occurrence tree, so DAG sharing never changes the plan.
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
 use super::decimal::{
@@ -27,7 +26,7 @@ use super::quantity::{
 };
 use super::rational::Rational;
 use super::text::compare_text;
-use quire_exact::Integer;
+use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter};
 
 /// The grammar's equality operators.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

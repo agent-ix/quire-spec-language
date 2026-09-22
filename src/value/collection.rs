@@ -16,14 +16,13 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::composite::{
     Component, ConstructionCause, ConstructionRefusal, Deferred, Value, ValueType,
 };
 use super::equality::plan_pairs;
 use super::key::compare_keys;
 use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
-use quire_exact::{CollectionKind, Integer};
+use quire_exact::{length_amount, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter};
 
 /// An inclusive declared cardinality bound `[minimum, maximum]`. It counts
 /// occurrences for sequences and bags and members for sets and ordered sets.

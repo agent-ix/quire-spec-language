@@ -15,15 +15,17 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
-use quire_exact::{Integer, IntegerInterval};
+use quire_exact::{
+    ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
+    ScalarLimits,
+};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, ChargePoint, Decimal, DecimalType,
-    DefinitionLock, DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison,
-    IeeeExact, IeeeExactLoss, IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation,
-    IeeeResult, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, Incomplete, InjectedDenial,
-    LimitKind, Meter, Outcome, PackageCause, PackageRefusalCode, Rational, RationalDomain, Refusal,
-    RoundingMode, ScalarLimits, Undefined, IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, Decimal, DecimalType, DefinitionLock,
+    DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
+    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
+    IeeeWidth, IllTyped, IllTypedCause, Outcome, PackageCause, PackageRefusalCode, Rational,
+    RationalDomain, Refusal, RoundingMode, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

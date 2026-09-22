@@ -15,7 +15,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use quire_exact::Integer;
+use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits};
 use quire_spec_language::absence::AbsenceMode;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
@@ -35,7 +35,6 @@ use quire_spec_language::model::population::{
     InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
     PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
-use quire_spec_language::value::{ChargePoint, LimitKind, Meter, ScalarLimits};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

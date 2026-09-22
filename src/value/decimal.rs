@@ -7,11 +7,10 @@
 
 use std::cmp::Ordering;
 
-use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
-use quire_exact::Integer;
+use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
 
 /// An authored or computed `(coefficient, scale)` pair denoting
 /// `coefficient × 10^-scale`.

@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
-use quire_exact::{Integer, IntegerInterval};
+use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
@@ -33,10 +33,10 @@ use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind,
     CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind, DispatchCandidate,
     DispatchFunctionRole, DispatchOperation, DispatchTable, Expression, FunctionDeclaration,
-    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, LimitKind, Location, Meter, NodeKey,
-    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome,
-    PackageDeclarations, PreconditionFailure, QualifiedName, ScalarLimits, TypeEnvironment,
-    Undefined, UniverseIdentity, Value, ValueType,
+    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
+    PreconditionFailure, QualifiedName, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
