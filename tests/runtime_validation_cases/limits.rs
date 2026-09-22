@@ -437,10 +437,12 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     .unwrap_err();
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert_eq!(report.usage, ValidationUsage::default());
-    assert_eq!(
-        report.terminal.as_ref().unwrap().message,
-        "validation inventory count limit"
-    );
+    assert!(report
+        .terminal
+        .as_ref()
+        .unwrap()
+        .message
+        .starts_with("validation inventory count limit"));
 
     let mut data = draft(&models[0]);
     data.populations[0].objects = vec![
@@ -462,10 +464,12 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     .unwrap_err();
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert_eq!(report.usage.objects, 0);
-    assert_eq!(
-        report.terminal.as_ref().unwrap().message,
-        "validation selected object limit"
-    );
+    assert!(report
+        .terminal
+        .as_ref()
+        .unwrap()
+        .message
+        .starts_with("validation selected object limit"));
 
     let mut data = draft(&models[0]);
     data.populations[0].objects = vec![
@@ -488,10 +492,12 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     assert_eq!(report.status, ValidationStatus::Refused);
     assert_eq!(report.usage.diagnostics, 256);
     assert_eq!(report.diagnostics.len(), 256);
-    assert_eq!(
-        report.terminal.as_ref().unwrap().message,
-        "validation detail diagnostic limit"
-    );
+    assert!(report
+        .terminal
+        .as_ref()
+        .unwrap()
+        .message
+        .starts_with("validation detail diagnostic limit"));
 }
 
 #[test]
@@ -548,14 +554,11 @@ fn shared_values_cannot_raise_hard_work_or_unicode_limits() {
         assert_eq!(terminal.code, Code::ResourceExhausted);
         let hard = if text { 8_388_608 } else { 1_000_000 };
         assert_eq!(counter.usage(report.usage), hard);
-        assert_eq!(
-            terminal.message,
-            if text {
-                "validation Unicode inspection limit"
-            } else {
-                "validation work limit"
-            }
-        );
+        assert!(terminal.message.starts_with(if text {
+            "validation Unicode inspection limit"
+        } else {
+            "validation work limit"
+        }));
     }
 }
 
@@ -614,10 +617,12 @@ fn exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing() {
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.usage.objects, 0);
-    assert_eq!(
-        report.terminal.as_ref().unwrap().message,
-        "validation inventory content limit"
-    );
+    assert!(report
+        .terminal
+        .as_ref()
+        .unwrap()
+        .message
+        .starts_with("validation inventory content limit"));
 }
 
 #[test]

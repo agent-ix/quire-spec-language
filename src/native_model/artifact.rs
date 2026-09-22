@@ -268,9 +268,11 @@ pub(super) fn encode(
             } else {
                 Code::InvalidModelBinding
             };
-            let mut error = failure(source, code, "formal declaration canonicalization failed");
-            error.upstream = Some(Box::new(upstream));
-            error
+            failure(
+                source,
+                code,
+                format!("formal declaration canonicalization failed: {upstream}"),
+            )
         })?;
     let declarations = std::str::from_utf8(canonical.bytes().as_slice()).map_err(|_| {
         failure(

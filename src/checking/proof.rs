@@ -351,14 +351,12 @@ impl<'u, 'a> Builder<'u, 'a> {
             "proof values",
         )?;
         let symbol = ir::SymbolName::new(format!("proof{}", key.0)).map_err(|upstream| {
-            let mut error = failure(
+            failure(
                 self.meter.source,
                 Code::InvalidModelBinding,
                 span,
-                "generated proof symbol is invalid",
-            );
-            error.upstream = Some(Box::new(upstream));
-            error
+                format!("generated proof symbol is invalid: {upstream}"),
+            )
         })?;
         let source = self.source(native)?;
         let representation = proof_type(ty).map_err(|error| {
@@ -701,7 +699,12 @@ fn upstream(
         Some(ir::DiagnosticCode::PotentiallyUndefined) => Code::UndefinedExpression,
         _ => Code::InvalidModelBinding,
     };
-    let mut error = failure(source, code, span, message);
-    error.upstream = cause.map(Box::new);
-    error
+    let message = match cause {
+        Some(cause) => {
+            let upstream_span = cause.span.clone();
+            format!("{message}: {cause} (upstream span: {upstream_span:?})")
+        }
+        None => message.to_owned(),
+    };
+    failure(source, code, span, message)
 }

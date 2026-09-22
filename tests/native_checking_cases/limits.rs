@@ -58,10 +58,6 @@ fn exhaustion(result: Result<CheckedPackage<'_>, Box<Diagnostic>>) -> Box<Diagno
         (Phase::Check, Code::ResourceExhausted)
     );
     assert!(error.is_incomplete());
-    assert!(
-        error.upstream.is_none(),
-        "native budgets precede IR execution"
-    );
     error
 }
 

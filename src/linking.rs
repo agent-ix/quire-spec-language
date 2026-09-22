@@ -275,14 +275,12 @@ fn ambiguous(
     mut related: Vec<DeclarationLocation>,
 ) -> Box<Diagnostic> {
     related.sort();
-    let mut error = failure(
+    failure(
         unit,
         Code::AmbiguousDeclaration,
         span,
-        "multiple formal declarations match",
-    );
-    error.related = related;
-    error
+        format!("multiple formal declarations match: {related:?}"),
+    )
 }
 
 /// Link native names using the native-formal-environment/1 binding profile.
@@ -379,14 +377,12 @@ fn formal_catalog<'a>(
                 } else {
                     Code::InvalidModelBinding
                 };
-                let mut error = failure(
+                failure(
                     unit,
                     code,
                     Span { start: 0, end: 0 },
-                    "formal declaration canonicalization failed",
-                );
-                error.upstream = Some(Box::new(upstream));
-                error
+                    format!("formal declaration canonicalization failed: {upstream}"),
+                )
             })?;
         emitted += output.bytes().as_slice().len();
         catalog.push(LinkedModel {

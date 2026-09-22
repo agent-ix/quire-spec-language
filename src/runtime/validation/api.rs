@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: exact validation requests, immutable contexts and classified reports.
 
-use std::cmp::Ordering;
-
 use quire_contract_ir as ir;
 
 use super::super::{
@@ -77,24 +75,6 @@ impl RuntimeReference {
             Self::Invocation(value) => value.digest(),
         }
     }
-
-    pub(super) fn compare(&self, other: &Self) -> Ordering {
-        let kind = |value: &Self| match value {
-            Self::Snapshot(_) => 0,
-            Self::Invocation(_) => 1,
-        };
-        (
-            kind(self),
-            &self.identity().identity,
-            &self.identity().revision,
-        )
-            .cmp(&(
-                kind(other),
-                &other.identity().identity,
-                &other.identity().revision,
-            ))
-            .then_with(|| self.digest().to_string().cmp(&other.digest().to_string()))
-    }
 }
 
 /// Typed location within a population or recorded invocation.
@@ -136,17 +116,6 @@ pub struct RuntimeLocation {
     pub clause: ir::ClauseId,
     /// Model/population/object/value/field/sequence components.
     pub path: Vec<RuntimePathSegment>,
-}
-
-impl RuntimeLocation {
-    pub(super) fn compare(&self, other: &Self) -> Ordering {
-        self.artifact
-            .compare(&other.artifact)
-            .then_with(|| self.observation.cmp(&other.observation))
-            .then_with(|| self.requirement.cmp(&other.requirement))
-            .then_with(|| self.clause.cmp(&other.clause))
-            .then_with(|| self.path.cmp(&other.path))
-    }
 }
 
 /// Caller-lowered inclusive validation ceilings; larger options clamp to defaults.

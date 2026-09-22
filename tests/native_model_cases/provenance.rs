@@ -209,8 +209,15 @@ fn tc_043_all_locus_classes_reject_false_coordinates_and_foreign_identity() {
             });
             let error = refuse(input, Code::InvalidModelBinding);
             if !matches!(target, Target::Object) {
-                assert_eq!(error.related.len(), 1, "{target:?}/{mutation}");
-                assert_eq!(error.related[0].source, bad);
+                assert_eq!(
+                    error.message.matches("DeclarationLocation").count(),
+                    1,
+                    "{target:?}/{mutation}"
+                );
+                assert!(
+                    error.message.contains(&format!("{bad:?}")),
+                    "{target:?}/{mutation}"
+                );
             }
         }
     }

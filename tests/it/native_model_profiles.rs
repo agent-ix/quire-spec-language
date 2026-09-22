@@ -612,15 +612,11 @@ fn every_rational_site_requires_one_consistent_role() {
             "{description}"
         );
         if mutation == 11 {
-            let [related] = cause.related.as_slice() else {
-                panic!("foreign scalar refusal must retain exactly its locus: {cause:?}")
-            };
-            assert_eq!(related.identity.owner, owner);
-            assert_eq!(
-                related.identity.key,
-                DeclarationKey::Scalar(symbol("Ratio"))
-            );
-            assert_eq!(related.source, foreign_span);
+            assert!(cause.message.contains(&format!("{owner:?}")));
+            assert!(cause
+                .message
+                .contains(&format!("{:?}", DeclarationKey::Scalar(symbol("Ratio")))));
+            assert!(cause.message.contains(&format!("{foreign_span:?}")));
         }
         assert_eq!(error.source().source().text(), text);
     }
@@ -1124,10 +1120,7 @@ fn rational_output_limits_use_independently_assembled_artifact_content() {
                 let ModelSourceCause::Admission(cause) = &error.cause else {
                     panic!("admission budget")
                 };
-                assert_eq!(
-                    cause.upstream.as_ref().unwrap().code,
-                    ir::DiagnosticCode::CanonicalizationResourceExhausted
-                );
+                assert!(cause.message.contains("canonicalization_resource_exhausted"));
             }
         } else {
             let admitted = result.unwrap();

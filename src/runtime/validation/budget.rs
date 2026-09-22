@@ -5,7 +5,6 @@ use super::{
     RuntimeLocation, ValidationLimits, ValidationReport, ValidationStatus, ValidationUsage,
 };
 use crate::{Code, Diagnostic, Phase, Source, Span};
-use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Stage {
@@ -56,17 +55,15 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
         }
     }
 
-    pub fn diagnostic(&self, code: Code, message: &'static str) -> Box<Diagnostic> {
-        let mut diagnostic = crate::diagnostic::error(
+    pub fn diagnostic(&self, code: Code, message: impl Into<String>) -> Box<Diagnostic> {
+        crate::diagnostic::error(
             self.source,
             code,
             Phase::Validate,
             self.span.start,
             self.span.end,
-            message,
-        );
-        diagnostic.runtime = Some(Box::new(self.location.clone()));
-        diagnostic
+            format!("{} (runtime location: {:?})", message.into(), self.location),
+        )
     }
 
     fn stop(&mut self, code: Code, message: &'static str) -> Stopped {
@@ -195,19 +192,15 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
         self.details.sort_by(|(a_stage, a), (b_stage, b)| {
             a_stage
                 .cmp(b_stage)
-                .then_with(|| match (&a.runtime, &b.runtime) {
-                    (None, None) => Ordering::Equal,
-                    (None, Some(_)) => Ordering::Less,
-                    (Some(_), None) => Ordering::Greater,
-                    (Some(a), Some(b)) => a.compare(b),
-                })
                 .then_with(|| {
                     (a.span.start.byte, a.span.end.byte).cmp(&(b.span.start.byte, b.span.end.byte))
                 })
                 .then_with(|| a.code.as_str().cmp(b.code.as_str()))
                 // Several independent defects can share the prescribed key.
                 // Break those ties by retained content, never discovery order.
-                .then_with(|| a.related.cmp(&b.related))
+                // The runtime location and any related declarations are part
+                // of `message` (`Budget::diagnostic`, `Validator::related`),
+                // so comparing `message` already covers them.
                 .then_with(|| a.message.cmp(&b.message))
         });
         Box::new(ValidationReport {

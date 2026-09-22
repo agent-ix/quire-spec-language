@@ -230,20 +230,20 @@ fn locus(
     span: &ir::SourceSpan,
 ) -> Result<()> {
     source.to_native(span).map(|_| ()).map_err(|cause| {
-        let mut error = failure(
-            source,
-            Code::InvalidModelBinding,
-            "model declaration locus does not match its exact source",
-        );
-        error.upstream = cause.upstream;
-        error.related.push(DeclarationLocation {
+        let location = DeclarationLocation {
             identity: DeclarationIdentity {
                 owner: environment.owner().clone(),
                 key,
             },
             source: span.clone(),
-        });
-        error
+        };
+        failure(
+            source,
+            Code::InvalidModelBinding,
+            format!(
+                "model declaration locus does not match its exact source: {cause}; related declaration {location:?}"
+            ),
+        )
     })
 }
 
@@ -306,13 +306,11 @@ fn check_loci(
     }
     for object in &roles.objects {
         source.to_native(&object.source).map_err(|cause| {
-            let mut error = failure(
+            failure(
                 source,
                 Code::InvalidModelBinding,
-                "object-role locus does not match its exact source",
-            );
-            error.upstream = cause.upstream;
-            error
+                format!("object-role locus does not match its exact source: {cause}"),
+            )
         })?;
     }
     for operation in &roles.operations {

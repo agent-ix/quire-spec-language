@@ -126,14 +126,11 @@ impl<'u, 'a> Context<'a> for Builder<'u, 'a> {
         Ok(())
     }
     fn invalid(&self, at: ExprId, message: &str, upstream: Option<ir::Diagnostic>) -> Self::Error {
-        let mut error = failure(
-            self.meter.source,
-            Code::InvalidModelBinding,
-            self.span(at),
-            message,
-        );
-        error.upstream = upstream.map(Box::new);
-        error
+        let message = match upstream {
+            Some(upstream) => format!("{message}: {upstream}"),
+            None => message.to_owned(),
+        };
+        failure(self.meter.source, Code::InvalidModelBinding, self.span(at), message)
     }
 }
 impl Builder<'_, '_> {

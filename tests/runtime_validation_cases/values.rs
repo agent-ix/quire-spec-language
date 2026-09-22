@@ -328,15 +328,11 @@ fn every_native_shape_is_checked_at_fields_state_parameters_and_results() {
                     4 => RuntimePathSegment::Result,
                     _ => unreachable!(),
                 };
+                let expected_repr = format!("{expected:?}");
                 assert!(
                     report.diagnostics.iter().any(|diagnostic| diagnostic.code
                         == Code::InvalidRuntimeInput
-                        && diagnostic
-                            .runtime
-                            .as_ref()
-                            .unwrap()
-                            .path
-                            .contains(&expected)),
+                        && diagnostic.message.contains(&expected_repr)),
                     "{shape:?} at {site}"
                 );
             }
@@ -489,11 +485,14 @@ fn nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_va
                 "{shape:?} mutation {variant}, value {root:?}"
             );
             assert!(report.terminal.is_none());
-            assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
-                == Code::InvalidRuntimeInput
-                && diagnostic.runtime.as_ref().unwrap().path.contains(
-                    &RuntimePathSegment::State(qualified(model, "payload_state"))
-                )));
+            let expected_repr = format!(
+                "{:?}",
+                RuntimePathSegment::State(qualified(model, "payload_state"))
+            );
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == Code::InvalidRuntimeInput
+                    && diagnostic.message.contains(&expected_repr)
+            }));
         }
     }
 }
@@ -595,16 +594,17 @@ fn mixed_defects_preserve_diagnostics_under_inventory_population_object_and_fiel
             baseline_references = actual.clone();
         }
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
-            assert!(
-                actual.contains(&runtime.artifact),
-                "diagnostics bind this permutation's actual bytes"
-            );
-            runtime.artifact = baseline_references
+            let matched = actual
                 .iter()
-                .find(|reference| reference.identity() == runtime.artifact.identity())
-                .unwrap()
-                .clone();
+                .find(|reference| diagnostic.message.contains(&format!("{reference:?}")))
+                .expect("diagnostics bind this permutation's actual bytes");
+            let actual_repr = format!("{matched:?}");
+            let baseline_reference = baseline_references
+                .iter()
+                .find(|reference| reference.identity() == matched.identity())
+                .unwrap();
+            let baseline_repr = format!("{baseline_reference:?}");
+            diagnostic.message = diagnostic.message.replace(&actual_repr, &baseline_repr);
         }
         if let Some((diagnostics, usage)) = &baseline {
             assert_eq!(

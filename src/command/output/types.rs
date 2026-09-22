@@ -2,7 +2,7 @@
 //! FR-026: typed native result views; upstream identities retain their serializers.
 
 use super::super::wire;
-use crate::runtime::{EvaluationUsage, InvocationRef, QualifiedName, SnapshotRef, ValidationUsage};
+use crate::runtime::{EvaluationUsage, InvocationRef, SnapshotRef, ValidationUsage};
 use crate::{LocatedSpan, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use serde::Serialize;
@@ -70,31 +70,6 @@ pub(super) enum Reference<'a> {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum RuntimePath<'a> {
-    Model(&'a ir::RequirementRef),
-    Population {
-        record: &'a ir::SymbolName,
-        universe: &'a ir::SymbolName,
-    },
-    Object(&'a str),
-    State(&'a QualifiedName),
-    Parameter(&'a QualifiedName),
-    Result(bool),
-    Field(&'a ir::SymbolName),
-    Index(usize),
-}
-
-#[derive(Serialize)]
-pub(super) struct RuntimeLocation<'a> {
-    pub artifact: Reference<'a>,
-    pub observation: Option<ir::StateObservation>,
-    pub requirement: &'a ir::RequirementRef,
-    pub clause: &'a ir::ClauseId,
-    pub path: Vec<RuntimePath<'a>>,
-}
-
-#[derive(Serialize)]
 pub(super) struct Diagnostic<'a> {
     pub phase: &'static str,
     pub code: &'static str,
@@ -102,8 +77,6 @@ pub(super) struct Diagnostic<'a> {
     pub source: &'a SourceIdentity,
     pub path: &'a str,
     pub span: LocatedSpan,
-    pub upstream: Option<&'a ir::Diagnostic>,
-    pub runtime: Option<RuntimeLocation<'a>>,
 }
 
 #[derive(Serialize)]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-004: checked body-to-document byte correspondence; no Markdown or wire decoding.
-use crate::{Code, Diagnostic, LocatedSpan, Phase, Source, Span};
+use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
 
 /// Hard ceiling on selected correspondence segments.
 pub const MAX_SEGMENTS: usize = 50_000;
@@ -35,35 +35,64 @@ pub struct SourceMap {
     layout: Layout,
 }
 
+/// Cause-specific location and message for a [`SourceMap::verify`] or
+/// [`SourceMap::map_span`] refusal, before `diagnostic` (later in this
+/// layer's order) maps it onto a stable `Code`. `source_map` does not
+/// construct a `Diagnostic` (ADR-011 §6.1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SourceMapError {
+    pub(crate) cause: SourceMapErrorCause,
+    pub(crate) source: SourceIdentity,
+    pub(crate) path: String,
+    pub(crate) span: LocatedSpan,
+    pub(crate) message: String,
+}
+
+/// Why a [`SourceMap::verify`] or [`SourceMap::map_span`] refused its input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SourceMapErrorCause {
+    /// The selected segment count exceeds the caller's budget.
+    SegmentBudget,
+    /// Anything else: an invalid region, segment, correspondence or coverage.
+    InvalidMap,
+}
+
 impl SourceMap {
-    /// Validate a complete monotonic map against immutable exact source bytes.
-    /// Both sources can be loaded with Source::read_verified when consuming pinned artifacts.
-    pub fn verify(
+    /// [`SourceMap::verify`] with the refusal's typed cause retained, before
+    /// `diagnostic` maps it onto a stable code (`SourceMap::verify` itself is
+    /// implemented there; see `diagnostic.rs`).
+    pub(crate) fn verify_typed(
         original: Source,
         body: Source,
         region: Span,
         segments: Vec<Segment>,
         layout: Layout,
         segment_limit: usize,
-    ) -> Result<Self, Box<Diagnostic>> {
-        let fail = |code, message: &str| {
-            crate::diagnostic::error(&original, code, Phase::SourceMap, 0, 0, message)
+    ) -> Result<Self, SourceMapError> {
+        let fail = |cause, message: &str| SourceMapError {
+            cause,
+            source: original.identity().clone(),
+            path: original.path().into(),
+            span: original
+                .locate(Span { start: 0, end: 0 })
+                .expect("internal offsets are UTF-8 boundaries"),
+            message: message.into(),
         };
         if segments.len() > segment_limit.min(MAX_SEGMENTS) {
             return Err(fail(
-                Code::ResourceExhausted,
+                SourceMapErrorCause::SegmentBudget,
                 "source-map segment budget exhausted",
             ));
         }
         if original.slice(region).is_none() {
             return Err(fail(
-                Code::InvalidSourceMap,
+                SourceMapErrorCause::InvalidMap,
                 "invalid original source region",
             ));
         }
         if original.identity() == body.identity() && original.digest() != body.digest() {
             return Err(fail(
-                Code::InvalidSourceMap,
+                SourceMapErrorCause::InvalidMap,
                 "original and extracted body reuse one identity/revision for different bytes",
             ));
         }
@@ -71,20 +100,23 @@ impl SourceMap {
         let mut original_cursor = region.start;
         for segment in &segments {
             let Some(body_bytes) = body.slice(segment.body) else {
-                return Err(fail(Code::InvalidSourceMap, "invalid body segment"));
+                return Err(fail(SourceMapErrorCause::InvalidMap, "invalid body segment"));
             };
             let Some(original_bytes) = original.slice(segment.original) else {
-                return Err(fail(Code::InvalidSourceMap, "invalid original segment"));
+                return Err(fail(
+                    SourceMapErrorCause::InvalidMap,
+                    "invalid original segment",
+                ));
             };
             if body_bytes.is_empty()
                 || segment.body.start != body_cursor
                 || segment.original.start < original_cursor
                 || segment.original.end > region.end
             {
-                return Err(fail(Code::InvalidSourceMap, "segments must cover the body once in original order inside the selected region"));
+                return Err(fail(SourceMapErrorCause::InvalidMap, "segments must cover the body once in original order inside the selected region"));
             }
             if body_bytes != original_bytes {
-                return Err(fail(Code::InvalidSourceMap, "mapped bytes differ"));
+                return Err(fail(SourceMapErrorCause::InvalidMap, "mapped bytes differ"));
             }
             if !allowed_gap(
                 &original,
@@ -97,7 +129,7 @@ impl SourceMap {
                 layout,
             ) {
                 return Err(fail(
-                    Code::InvalidSourceMap,
+                    SourceMapErrorCause::InvalidMap,
                     "mapping discards bytes outside the selected layout policy",
                 ));
             }
@@ -117,7 +149,7 @@ impl SourceMap {
             )
         {
             return Err(fail(
-                Code::InvalidSourceMap,
+                SourceMapErrorCause::InvalidMap,
                 "mapping omits body bytes or discards an unapproved source suffix",
             ));
         }
@@ -153,20 +185,20 @@ impl SourceMap {
     /// Map a span from the exact body source. Discontiguous regions stay separate;
     /// concatenating their original bytes reproduces the body region exactly.
     /// A zero-width boundary selects the following segment, except EOF uses the last end.
-    pub fn map_span(
+    pub(crate) fn map_span_typed(
         &self,
         source: &Source,
         span: Span,
-    ) -> Result<Vec<LocatedSpan>, Box<Diagnostic>> {
-        let fail = |message: &str| {
-            crate::diagnostic::error(
-                &self.body,
-                Code::InvalidSourceMap,
-                Phase::SourceMap,
-                0,
-                0,
-                message,
-            )
+    ) -> Result<Vec<LocatedSpan>, SourceMapError> {
+        let fail = |message: &str| SourceMapError {
+            cause: SourceMapErrorCause::InvalidMap,
+            source: self.body.identity().clone(),
+            path: self.body.path().into(),
+            span: self
+                .body
+                .locate(Span { start: 0, end: 0 })
+                .expect("internal offsets are UTF-8 boundaries"),
+            message: message.into(),
         };
         if source.identity() != self.body.identity()
             || source.path() != self.body.path()

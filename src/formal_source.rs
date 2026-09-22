@@ -100,8 +100,8 @@ impl FormalSource {
     }
 
     fn upstream_failure(&self, upstream: quire_contract_ir::Diagnostic) -> Box<Diagnostic> {
-        let mut diagnostic = self.failure("formal source constructor rejected mapped coordinates");
-        diagnostic.upstream = Some(Box::new(upstream));
-        diagnostic
+        self.failure(&format!(
+            "formal source constructor rejected mapped coordinates: {upstream}"
+        ))
     }
 }

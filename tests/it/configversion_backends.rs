@@ -263,7 +263,9 @@ fn native_verdict(
         };
         assert!(failure.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
-                && diagnostic.message == "integer is outside its nominal bounds"
+                && diagnostic
+                    .message
+                    .starts_with("integer is outside its nominal bounds")
         }));
     }
     report.truth()

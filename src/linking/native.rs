@@ -116,15 +116,7 @@ pub(super) fn catalog<'a>(
 }
 
 fn conflict(model: &NativeModel, previous: &NativeModel, message: &str) -> Box<Diagnostic> {
-    let mut error = crate::diagnostic::error(
-        model.source().source(),
-        Code::InvalidModelBinding,
-        crate::Phase::Link,
-        0,
-        0,
-        message,
-    );
-    error.related = [previous, model]
+    let mut related: Vec<_> = [previous, model]
         .into_iter()
         .flat_map(|model| {
             let types = model.environment().types().iter().map(|declaration| {
@@ -144,8 +136,15 @@ fn conflict(model: &NativeModel, previous: &NativeModel, message: &str) -> Box<D
             types.chain(values)
         })
         .collect();
-    error.related.sort();
-    error
+    related.sort();
+    crate::diagnostic::error(
+        model.source().source(),
+        Code::InvalidModelBinding,
+        crate::Phase::Link,
+        0,
+        0,
+        format!("{message}: {related:?}"),
+    )
 }
 
 pub(super) fn operation<'a>(

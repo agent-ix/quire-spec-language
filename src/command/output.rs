@@ -9,8 +9,8 @@ use super::{wire, LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::runtime::{
-    EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
-    RuntimeReference, ValidationStatus,
+    EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimeReference,
+    ValidationStatus,
 };
 use crate::{ByteDigest, Diagnostic};
 use serde_json::Value;
@@ -50,21 +50,6 @@ fn reference(value: &RuntimeReference) -> types::Reference<'_> {
     }
 }
 
-fn runtime_path(value: &RuntimePathSegment) -> types::RuntimePath<'_> {
-    match value {
-        RuntimePathSegment::Model(value) => types::RuntimePath::Model(value),
-        RuntimePathSegment::Population { record, universe } => {
-            types::RuntimePath::Population { record, universe }
-        }
-        RuntimePathSegment::Object(value) => types::RuntimePath::Object(value),
-        RuntimePathSegment::State(value) => types::RuntimePath::State(value),
-        RuntimePathSegment::Parameter(value) => types::RuntimePath::Parameter(value),
-        RuntimePathSegment::Result => types::RuntimePath::Result(true),
-        RuntimePathSegment::Field(value) => types::RuntimePath::Field(value),
-        RuntimePathSegment::Index(value) => types::RuntimePath::Index(*value),
-    }
-}
-
 fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     types::Diagnostic {
         phase: value.phase.as_str(),
@@ -73,17 +58,6 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         source: &value.source,
         path: &value.path,
         span: value.span,
-        upstream: value.upstream.as_deref(),
-        runtime: value
-            .runtime
-            .as_ref()
-            .map(|location| types::RuntimeLocation {
-                artifact: reference(&location.artifact),
-                observation: location.observation,
-                requirement: &location.requirement,
-                clause: &location.clause,
-                path: location.path.iter().map(runtime_path).collect(),
-            }),
     }
 }
 

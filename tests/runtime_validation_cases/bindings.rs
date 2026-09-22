@@ -220,12 +220,14 @@ fn missing_required_state_and_operation_capture_correspondence_are_diagnosed() {
         .unwrap_err();
         if variant == 0 {
             assert_eq!(report.status, ValidationStatus::Incomplete);
-            assert!(report
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.code == Code::UnavailableObservation
-                    && diagnostic.runtime.as_ref().unwrap().path
-                        == [RuntimePathSegment::State(qualified(&models[0], "other"))]));
+            let expected_path = format!(
+                "{:?}",
+                [RuntimePathSegment::State(qualified(&models[0], "other"))]
+            );
+            assert!(report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == Code::UnavailableObservation
+                    && diagnostic.message.contains(&expected_path)
+            }));
         } else {
             assert_eq!(
                 report.status,
@@ -271,10 +273,11 @@ fn conflicting_field_permutations_retain_the_same_sorted_diagnostics() {
         .unwrap_err();
         assert_eq!(report.status, ValidationStatus::Refused);
         assert!(report.terminal.is_none());
+        let actual_ref = format!("{:?}", RuntimeReference::Snapshot(actual.clone()));
+        let baseline_ref = format!("{:?}", RuntimeReference::Snapshot(baseline.clone()));
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
-            assert_eq!(runtime.artifact, RuntimeReference::Snapshot(actual.clone()));
-            runtime.artifact = RuntimeReference::Snapshot(baseline.clone());
+            assert!(diagnostic.message.contains(&actual_ref));
+            diagnostic.message = diagnostic.message.replace(&actual_ref, &baseline_ref);
         }
         reports.push(report.diagnostics);
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-001: immutable exact source bytes, integrity and checked scalar coordinates.
-use crate::{ByteDigest, Code, Diagnostic, Phase};
+use crate::ByteDigest;
 use std::sync::Arc;
 
 /// Authored identity/revision, separate from path and any later semantic digest.
@@ -80,27 +80,30 @@ pub(crate) enum SourceReadCause {
     Nul,
 }
 
-/// A typed [`Source::read`] refusal and its legacy diagnostic.
+/// Cause-specific location and message for a [`Source::read`] refusal, before
+/// `diagnostic` (later in this layer's order) maps it onto a stable `Code`.
+/// `source` does not construct a `Diagnostic` (ADR-011 §6.1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SourceReadError {
+    pub(crate) source: SourceIdentity,
+    pub(crate) path: String,
+    pub(crate) span: LocatedSpan,
+    pub(crate) message: String,
+}
+
+/// A typed [`Source::read`] refusal.
 pub(crate) struct SourceReadRefusal {
     pub(crate) cause: SourceReadCause,
-    pub(crate) diagnostic: Box<Diagnostic>,
+    pub(crate) error: SourceReadError,
 }
 
 /// Hard source-content ceiling; callers may select a lower value.
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 
 impl Source {
-    /// Read original UTF-8 bytes without normalization. Caller may lower the 1 MiB ceiling.
-    pub fn read(
-        identity: SourceIdentity,
-        path: impl Into<String>,
-        bytes: &[u8],
-        byte_limit: usize,
-    ) -> Result<Self, Box<Diagnostic>> {
-        Self::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| refusal.diagnostic)
-    }
-
-    /// [`Self::read`] with the refusal's typed cause retained.
+    /// [`Source::read`] with the refusal's typed cause retained, before
+    /// `diagnostic` maps it onto a stable code (`Source::read` itself is
+    /// implemented there; see `diagnostic.rs`).
     pub(crate) fn read_typed(
         identity: SourceIdentity,
         path: impl Into<String>,
@@ -114,22 +117,17 @@ impl Source {
             line: 1,
             column: 1,
         };
-        let refusal = |cause, code, message: &str| SourceReadRefusal {
+        let refusal = |cause, source: SourceIdentity, path: String, message: &str| SourceReadRefusal {
             cause,
-            diagnostic: Box::new(Diagnostic {
-                phase: Phase::Source,
-                code,
-                source: identity.clone(),
-                path: path.clone(),
+            error: SourceReadError {
+                source,
+                path,
                 span: LocatedSpan {
                     start: point,
                     end: point,
                 },
                 message: message.into(),
-                related: Vec::new(),
-                upstream: None,
-                runtime: None,
-            }),
+            },
         };
         if identity.identity.trim().is_empty()
             || identity.revision.trim().is_empty()
@@ -137,14 +135,16 @@ impl Source {
         {
             return Err(refusal(
                 SourceReadCause::UnnamedSource,
-                Code::InvalidSourceIdentity,
+                identity,
+                path,
                 "source identity, revision and path must be explicit",
             ));
         }
         if bytes.len() > byte_limit {
             return Err(refusal(
                 SourceReadCause::ByteBudget,
-                Code::ResourceExhausted,
+                identity,
+                path,
                 "source byte budget exhausted",
             ));
         }
@@ -153,13 +153,14 @@ impl Source {
             Err(error) => {
                 let mut refused = refusal(
                     SourceReadCause::InvalidUtf8,
-                    Code::InvalidUtf8,
+                    identity.clone(),
+                    path.clone(),
                     "source must be valid UTF-8",
                 );
                 let prefix =
                     std::str::from_utf8(&bytes[..error.valid_up_to()]).expect("UTF-8 valid prefix");
                 let source = Source::new(identity.clone(), path.clone(), prefix);
-                refused.diagnostic.span = source
+                refused.error.span = source
                     .locate(Span {
                         start: prefix.len(),
                         end: prefix.len(),
@@ -170,39 +171,21 @@ impl Source {
         };
         let source = Source::new(identity, path, text);
         if let Some(at) = text.find('\0') {
+            let span = source
+                .locate(Span {
+                    start: at,
+                    end: at + 1,
+                })
+                .expect("internal offsets are UTF-8 boundaries");
             return Err(SourceReadRefusal {
                 cause: SourceReadCause::Nul,
-                diagnostic: crate::diagnostic::error(
-                    &source,
-                    Code::InvalidSyntax,
-                    Phase::Source,
-                    at,
-                    at + 1,
-                    "NUL is forbidden in source bytes",
-                ),
+                error: SourceReadError {
+                    source: source.identity().clone(),
+                    path: source.path().into(),
+                    span,
+                    message: "NUL is forbidden in source bytes".into(),
+                },
             });
-        }
-        Ok(source)
-    }
-
-    /// Verify an independently supplied byte digest before constructing a mapped subject.
-    pub fn read_verified(
-        identity: SourceIdentity,
-        path: impl Into<String>,
-        bytes: &[u8],
-        expected: ByteDigest,
-        byte_limit: usize,
-    ) -> Result<Self, Box<Diagnostic>> {
-        let source = Self::read(identity, path, bytes, byte_limit)?;
-        if source.digest() != expected {
-            return Err(crate::diagnostic::error(
-                &source,
-                Code::SourceDigestMismatch,
-                Phase::Source,
-                0,
-                0,
-                "source bytes differ from the selected digest",
-            ));
         }
         Ok(source)
     }

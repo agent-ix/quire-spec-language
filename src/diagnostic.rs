@@ -321,12 +321,6 @@ pub struct Diagnostic {
     pub span: LocatedSpan,
     /// Contextual human-readable explanation; code carries stable classification.
     pub message: String,
-    /// Related formal declarations, sorted by identity and source location.
-    pub related: Vec<crate::linking::DeclarationLocation>,
-    /// Structured upstream formal diagnostic, when that operation failed.
-    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
-    /// Exact programmatic input location, separate from authored source coordinates.
-    pub runtime: Option<Box<crate::runtime::RuntimeLocation>>,
 }
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
@@ -381,10 +375,117 @@ pub(crate) fn error(
             .locate(Span { start, end })
             .expect("internal offsets are UTF-8 boundaries"),
         message: message.into(),
-        related: Vec::new(),
-        upstream: None,
-        runtime: None,
     })
+}
+
+// ADR-011 §6.1: `source` (and `source_map`) precede `diagnostic` in layer F's
+// module order, so neither may depend on `diagnostic`. These `impl Source`
+// and `impl SourceMap` blocks live here, not in `source.rs`/`source_map.rs`,
+// so that `source`/`source_map` construct only their own typed refusal
+// (`SourceReadError`, `SourceMapError`) and `diagnostic` — the owner of the
+// code vocabulary — maps that refusal onto a stable `Code`. Public callers
+// see no difference: `Source::read`, `Source::read_verified`,
+// `SourceMap::verify` and `SourceMap::map_span` keep their existing
+// `Result<_, Box<Diagnostic>>` signatures.
+impl crate::source::Source {
+    /// Read original UTF-8 bytes without normalization. Caller may lower the 1 MiB ceiling.
+    pub fn read(
+        identity: SourceIdentity,
+        path: impl Into<String>,
+        bytes: &[u8],
+        byte_limit: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        Self::read_typed(identity, path, bytes, byte_limit)
+            .map_err(|refusal| Box::new(Diagnostic::from(refusal)))
+    }
+
+    /// Verify an independently supplied byte digest before constructing a mapped subject.
+    pub fn read_verified(
+        identity: SourceIdentity,
+        path: impl Into<String>,
+        bytes: &[u8],
+        expected: crate::ByteDigest,
+        byte_limit: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        let source = Self::read(identity, path, bytes, byte_limit)?;
+        if source.digest() != expected {
+            return Err(error(
+                &source,
+                Code::SourceDigestMismatch,
+                Phase::Source,
+                0,
+                0,
+                "source bytes differ from the selected digest",
+            ));
+        }
+        Ok(source)
+    }
+}
+
+impl From<crate::source::SourceReadRefusal> for Diagnostic {
+    fn from(refusal: crate::source::SourceReadRefusal) -> Self {
+        use crate::source::SourceReadCause;
+        let code = match refusal.cause {
+            SourceReadCause::UnnamedSource => Code::InvalidSourceIdentity,
+            SourceReadCause::ByteBudget => Code::ResourceExhausted,
+            SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
+            SourceReadCause::Nul => Code::InvalidSyntax,
+        };
+        Diagnostic {
+            phase: Phase::Source,
+            code,
+            source: refusal.error.source,
+            path: refusal.error.path,
+            span: refusal.error.span,
+            message: refusal.error.message,
+        }
+    }
+}
+
+impl crate::source_map::SourceMap {
+    /// Validate a complete monotonic map against immutable exact source bytes.
+    /// Both sources can be loaded with Source::read_verified when consuming pinned artifacts.
+    pub fn verify(
+        original: Source,
+        body: Source,
+        region: crate::source::Span,
+        segments: Vec<crate::source_map::Segment>,
+        layout: crate::source_map::Layout,
+        segment_limit: usize,
+    ) -> Result<Self, Box<Diagnostic>> {
+        Self::verify_typed(original, body, region, segments, layout, segment_limit)
+            .map_err(|error| Box::new(Diagnostic::from(error)))
+    }
+
+    /// Map a span from the exact body source. Discontiguous regions stay separate;
+    /// concatenating their original bytes reproduces the body region exactly.
+    /// A zero-width boundary selects the following segment, except EOF uses the last end.
+    pub fn map_span(
+        &self,
+        source: &Source,
+        span: crate::source::Span,
+    ) -> Result<Vec<LocatedSpan>, Box<Diagnostic>> {
+        self.map_span_typed(source, span)
+            .map_err(|error| Box::new(Diagnostic::from(error)))
+    }
+}
+
+impl From<crate::source_map::SourceMapError> for Diagnostic {
+    fn from(error: crate::source_map::SourceMapError) -> Self {
+        use crate::source_map::SourceMapErrorCause;
+        let code = match error.cause {
+            SourceMapErrorCause::SegmentBudget => Code::ResourceExhausted,
+            SourceMapErrorCause::InvalidMap => Code::InvalidSourceMap,
+        };
+        Diagnostic {
+            phase: Phase::SourceMap,
+            code,
+            source: error.source,
+            path: error.path,
+            span: error.span,
+            message: error.message,
+        }
+    }
 }
 
 // ADR-013 slice S-5 (agent-ix/quire-spec-language#213), part one of a split

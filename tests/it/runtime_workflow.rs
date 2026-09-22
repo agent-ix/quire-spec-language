@@ -126,15 +126,13 @@ fn assert_validation_failure(
         diagnostic.source,
         *checked.linked().unit().source().identity()
     );
-    let runtime = diagnostic
-        .runtime
-        .as_ref()
-        .expect("runtime provenance accompanies validation refusal");
-    assert_eq!(runtime.requirement, authored_owner());
-    assert_eq!(runtime.clause.as_str(), "population_rule");
+    assert!(diagnostic
+        .message
+        .contains(&format!("{:?}", authored_owner())));
+    assert!(diagnostic.message.contains("population_rule"));
     assert!(report.usage.work > 0);
-    println!("case={name} phase=validate status={:?} code={} native={:?} runtime={runtime:?} related={:?} usage={:?}",
-        report.status, diagnostic.code, diagnostic.span, diagnostic.related, report.usage);
+    println!("case={name} phase=validate status={:?} code={} native={:?} message={:?} usage={:?}",
+        report.status, diagnostic.code, diagnostic.span, diagnostic.message, report.usage);
 }
 
 #[test]
@@ -283,7 +281,7 @@ fn native_pipeline_retains_dangling_stale_and_incomplete_input_stages() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|d| d.code == code && !d.related.is_empty()));
+                .any(|d| d.code == code && d.message.contains("related declaration:")));
         }
     }
 }
