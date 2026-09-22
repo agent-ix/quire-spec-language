@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 #[allow(
     dead_code,
-    reason = "Shared fixture module; each test binary selects its own constructor"
+    reason = "Shared fixture module; each caller selects its own constructor"
 )]
 pub fn model(name: &str) -> NativeModel {
     model_with_maximum(name, 5)
@@ -27,7 +27,7 @@ pub fn model(name: &str) -> NativeModel {
 
 #[allow(
     dead_code,
-    reason = "Shared fixture module; each test binary selects its own constructor"
+    reason = "Shared fixture module; each caller selects its own constructor"
 )]
 pub fn model_with_maximum(name: &str, maximum: u32) -> NativeModel {
     try_model_with_maximum(name, maximum).expect("admitted model fixture")
@@ -35,7 +35,7 @@ pub fn model_with_maximum(name: &str, maximum: u32) -> NativeModel {
 
 #[allow(
     dead_code,
-    reason = "Shared fixture module; each test binary selects its own constructor"
+    reason = "Shared fixture module; each caller selects its own constructor"
 )]
 pub fn try_model_with_maximum(
     name: &str,

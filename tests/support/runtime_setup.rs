@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared public-API setup for native validation and reference execution tests.
 
+// File-relative #[path], not `crate::support::native_rule_model` -- this file
+// is also compiled directly into the library crate itself (`src/lib.rs`'s
+// `#[cfg(test)] #[path = "../tests/support/runtime_setup.rs"] mod
+// runtime_test_setup;`, QSL-175/#306 pre-dates and is out of this ticket's
+// scope), where no `crate::support` exists. A self-relative `mod` resolves
+// identically in both hosts.
 #[path = "native_rule_model.rs"]
 pub(crate) mod native_rule_model;
 
@@ -18,15 +24,15 @@ use quire_spec_language::runtime::{
 use quire_spec_language::syntax::ClauseKind;
 use quire_spec_language::{link_native, parse, Limits, LinkLimits, SourceIdentity};
 
-pub(super) fn symbol(name: &str) -> ir::SymbolName {
+pub(crate) fn symbol(name: &str) -> ir::SymbolName {
     native_rule_model::symbol(name)
 }
 
-pub(super) fn authored_owner() -> ir::RequirementRef {
+pub(crate) fn authored_owner() -> ir::RequirementRef {
     ir::RequirementRef::parse("example/runtime-rules", "PopulationRule", 7).unwrap()
 }
 
-pub(super) fn checked<'a>(models: &'a [NativeModel], expression: &str) -> CheckedPackage<'a> {
+pub(crate) fn checked<'a>(models: &'a [NativeModel], expression: &str) -> CheckedPackage<'a> {
     checked_kind(models, expression, ClauseKind::Invariant)
 }
 
@@ -38,7 +44,7 @@ pub(crate) fn checked_kind<'a>(
     request(models, expression, kind).expect("static setup must succeed before runtime judgment")
 }
 
-pub(super) fn request<'a>(
+pub(crate) fn request<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,
@@ -46,7 +52,7 @@ pub(super) fn request<'a>(
     request_source(models, expression, kind, |text| text)
 }
 
-pub(super) fn request_source<'a>(
+pub(crate) fn request_source<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,
@@ -129,7 +135,7 @@ pub(super) fn request_source<'a>(
     Ok(checked)
 }
 
-pub(super) fn object(model: &NativeModel, key: &str) -> ObjectIdentity {
+pub(crate) fn object(model: &NativeModel, key: &str) -> ObjectIdentity {
     ObjectIdentity {
         model: model.environment().owner().clone(),
         record: symbol("Node"),
@@ -138,14 +144,14 @@ pub(super) fn object(model: &NativeModel, key: &str) -> ObjectIdentity {
     }
 }
 
-pub(super) fn field(name: &str, value: u32) -> FieldBinding {
+pub(crate) fn field(name: &str, value: u32) -> FieldBinding {
     FieldBinding {
         name: symbol(name),
         value: ValueId::new(value),
     }
 }
 
-pub(super) fn draft(model: &NativeModel) -> SnapshotDraft {
+pub(crate) fn draft(model: &NativeModel) -> SnapshotDraft {
     SnapshotDraft {
         observation: ir::StateObservation::Current,
         models: vec![ModelBinding {
@@ -186,7 +192,7 @@ pub(super) fn draft(model: &NativeModel) -> SnapshotDraft {
     }
 }
 
-pub(super) fn snapshot(draft: SnapshotDraft) -> Snapshot {
+pub(crate) fn snapshot(draft: SnapshotDraft) -> Snapshot {
     Snapshot::new(
         SourceIdentity {
             identity: "test:runtime-current".into(),
@@ -198,7 +204,7 @@ pub(super) fn snapshot(draft: SnapshotDraft) -> Snapshot {
     .expect("flat input construction must succeed before model-aware validation")
 }
 
-pub(super) fn selection(model: &NativeModel, snapshot: SnapshotRef) -> ExecutionSelection {
+pub(crate) fn selection(model: &NativeModel, snapshot: SnapshotRef) -> ExecutionSelection {
     ExecutionSelection {
         requirement: authored_owner(),
         clause: ir::ClauseId::new("population_rule").unwrap(),
@@ -209,14 +215,14 @@ pub(super) fn selection(model: &NativeModel, snapshot: SnapshotRef) -> Execution
     }
 }
 
-pub(super) fn input(snapshot: Snapshot) -> RuntimeInput {
+pub(crate) fn input(snapshot: Snapshot) -> RuntimeInput {
     RuntimeInput {
         snapshots: vec![snapshot],
         invocations: Vec::new(),
     }
 }
 
-pub(super) fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
+pub(crate) fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> NativeModel {
     let mut data = serde_json::from_str(native_rule_model::FIXTURE).unwrap();
     change(&mut data);
     native_rule_model::from_text(
@@ -228,14 +234,14 @@ pub(super) fn authored_model(change: impl FnOnce(&mut serde_json::Value)) -> Nat
     .model()
 }
 
-pub(super) fn qualified(model: &NativeModel, name: &str) -> QualifiedName {
+pub(crate) fn qualified(model: &NativeModel, name: &str) -> QualifiedName {
     QualifiedName {
         model: model.environment().owner().clone(),
         name: symbol(name),
     }
 }
 
-pub(super) fn recorded(
+pub(crate) fn recorded(
     model: &NativeModel,
     mut before: SnapshotDraft,
     mut after: SnapshotDraft,
@@ -300,7 +306,7 @@ pub(super) fn recorded(
     )
 }
 
-pub(super) fn change_field(draft: &mut SnapshotDraft, name: &str, value: ValueNode) {
+pub(crate) fn change_field(draft: &mut SnapshotDraft, name: &str, value: ValueNode) {
     let index = u32::try_from(draft.arena.len()).unwrap();
     draft.arena.push(value);
     draft.populations[0].objects[0]

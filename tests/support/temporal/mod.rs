@@ -7,8 +7,7 @@
 //! the constructor-private evidence the evaluator requires; no test constructs a
 //! wire package directly.
 
-#[path = "../native_protocol/mod.rs"]
-mod protocol;
+use crate::support::native_protocol as protocol;
 
 use std::collections::BTreeMap;
 

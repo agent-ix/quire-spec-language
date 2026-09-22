@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real native inputs and fixture-authored external selections for emission tests.
 
-#[path = "../composed_types/mod.rs"]
-mod composed_inputs;
+use crate::support::composed_types as composed_inputs;
 
 use std::collections::BTreeMap;
 
@@ -157,7 +156,7 @@ impl Inputs {
 
     #[allow(
         dead_code,
-        reason = "Shared fixture module; each test binary selects its own constructor"
+        reason = "Shared fixture module; each caller selects its own constructor"
     )]
     pub fn new(units: &[Unit<'_>]) -> Self {
         Self::with_model(units, composed_inputs::model("NativeEmission"))

@@ -76,7 +76,7 @@ identified derivation and a separately qualified source correspondence contract.
 ## Reproducible checks
 
 ```sh
-cargo test --locked --target-dir target --test source_map --no-default-features
+cargo test --locked --target-dir target --test it source_map:: --no-default-features
 ```
 
 The tests include a parser unsupported diagnostic mapped through an indented

@@ -51,11 +51,14 @@ string-edge:
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below. `test-support`
-# fixture constructors are reachable with `--features test-support` (Cargo.toml
-# `[[test]] required-features`), not only under `--all-features`, so a
-# default-feature build must also be checked or a fixture-only test target
-# can silently stop compiling under the feature set every non-Quire caller
-# actually builds with.
+# fixture constructors are reachable with `--features test-support`, not only
+# under `--all-features`; QSL-175 (#306) gates the seven modules that call
+# them with `#[cfg(feature = "test-support")]` on their own `mod` line in
+# `tests/it/main.rs` rather than a `[[test]] required-features` (there is now
+# one `[[test]]` target, `it`, covering all of `tests/`), so a default-feature
+# build must also be checked or those seven modules can silently stop
+# compiling under the feature set every non-Quire caller actually builds
+# with.
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings

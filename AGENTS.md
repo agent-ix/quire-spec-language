@@ -19,6 +19,7 @@ with C before overlapping edits.
 - Keep private research, traces and issue links out of public releases. No public posting, visibility change, or source relicensing without explicit approval.
 - Use isolated worktrees for concurrent code sessions; preserve unrelated edits.
 - Run the actual build/test commands documented in README.md and record their outcomes.
+- New integration tests go in `tests/it/<name>.rs` with a `mod <name>;` line added to `tests/it/main.rs` (QSL-175/#306); never a new top-level `tests/*.rs` file.
 - Owner directive: checks run locally until stable. Every hosted workflow must be manual-dispatch only (`workflow_dispatch`); do not add automatic triggers or dispatch a run without explicit direction. See NFR-002 and IT-004.
 
 <!-- required-language-policy:start -->
