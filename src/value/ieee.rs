@@ -48,13 +48,13 @@ use num_integer::Integer as _;
 use num_traits::{One, Zero};
 
 use super::comparison::{IllTyped, IllTypedCause};
-use super::decimal::{Decimal, DecimalType, RoundingMode};
+use super::decimal::{decimal_representation_to_rational, Decimal, DecimalType, RoundingMode};
 use super::definition::{
     CatalogRole, DefinitionLock, DefinitionReference, PackageCause, PackageRefusal,
     PackageRefusalCode, DIGEST_DOMAIN,
 };
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::{Rational, RationalDomain};
+use super::rational::{rational_divided_by_power_of_two, Rational, RationalDomain};
 pub use quire_exact::{
     ieee_intrinsic_identities, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeFlags, IeeeOperation,
     IeeeOperationKind, IeeeValue, IeeeWidth, IEEE_DEFINITION,
@@ -117,7 +117,7 @@ impl ExactScalar<'_> {
         match self {
             Self::Integer(value) => Rational::from_integer(value.clone()),
             Self::Rational(value) => value.clone(),
-            Self::Decimal(value) => value.representation().to_rational(),
+            Self::Decimal(value) => decimal_representation_to_rational(value.representation()),
         }
     }
 }
@@ -667,7 +667,10 @@ impl Finite {
         if self.exponent >= 0 {
             Rational::from_integer(Integer::from_big(signed << shift))
         } else {
-            Rational::from_integer(Integer::from_big(signed)).divided_by_power_of_two(shift)
+            rational_divided_by_power_of_two(
+                &Rational::from_integer(Integer::from_big(signed)),
+                shift,
+            )
         }
     }
 }

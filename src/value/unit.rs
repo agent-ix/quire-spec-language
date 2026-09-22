@@ -29,7 +29,7 @@ use super::node::{
     CanonicalRational, InvalidSemanticGraph, NodeIdDocument, NodeKey, NodeOwner, OwnerSelection,
     RationalDocument, SemanticGraphCause,
 };
-use super::rational::Rational;
+use super::rational::{rational_add, rational_mul, Rational};
 use quire_exact::Integer;
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
@@ -628,8 +628,11 @@ fn unit_paths(
                 }
                 let edge = current.1.edge.clone();
                 canonical = UnitEdge {
-                    scale: edge.scale.mul(&canonical.scale),
-                    offset: edge.scale.mul(&canonical.offset).add(&edge.offset),
+                    scale: rational_mul(&edge.scale, &canonical.scale),
+                    offset: rational_add(
+                        &rational_mul(&edge.scale, &canonical.offset),
+                        &edge.offset,
+                    ),
                 };
                 path.push(edge);
                 let next = units

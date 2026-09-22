@@ -63,7 +63,7 @@ use crate::value::ieee::AdmittedIeeeProfile;
 use crate::value::node::NodeKey;
 use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
-use crate::value::rational::Rational;
+use crate::value::rational::{rational_domain_result_of, Rational};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{CardinalityBound, CollectionKind, Integer};
 
@@ -1475,7 +1475,7 @@ impl<'a> Typer<'a> {
             (ValueType::Rational(l), ValueType::Rational(r), _) => {
                 let domain = match hint {
                     Some(ValueType::Rational(expected)) => expected.clone(),
-                    _ => l.result_of(operator, r),
+                    _ => rational_domain_result_of(l, operator, r),
                 };
                 (
                     NodeKind::Rational {

@@ -16,8 +16,8 @@
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
 use super::decimal::{
-    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal,
-    DecimalOperation, DecimalType,
+    compare_shifted, decimal_representation_to_rational, evaluate_decimal, power_of_ten_bits,
+    sbits, sdigits, Decimal, DecimalOperation, DecimalType,
 };
 use super::enumeration::compare_enum;
 use super::outcome::{Outcome, Refusal, Stop};
@@ -467,7 +467,7 @@ pub(crate) fn operand_value(
             Value::Decimal(result.value().clone())
         }
         (_, ValueType::Integer | ValueType::Int(_), Value::Decimal(decimal)) => {
-            let rational = decimal.normalized().to_rational();
+            let rational = decimal_representation_to_rational(decimal.normalized());
             if !rational.is_integer() {
                 return Err(invariant());
             }
@@ -566,7 +566,7 @@ fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop
                     .max(Integer::from(scale).add(&Integer::one())),
             ),
     )?;
-    let rational = representation.to_rational();
+    let rational = decimal_representation_to_rational(representation);
     let maxparts = rational.max_part_bits();
     meter.charge(
         Charge::new(ChargePoint::DecimalResultRetain)
