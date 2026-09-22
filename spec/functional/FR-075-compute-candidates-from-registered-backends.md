@@ -25,9 +25,9 @@ from that registry's current contents, matching on capability kind alone
 The registry sits alongside the fixed `ProjectionTarget` catalog at
 `src/lowering/target.rs` (the `targets!` macro block), which remains the
 lowering-target selector. Resolving a backend by `BackendId` in `route` is
-this requirement's work (#185, QSL-46). Deleting the catalog is
-[#217](https://github.com/agent-ix/quire-spec-language/issues/217)'s, with
-SEAM-1 (ADR-011 §6.2, the `lowering` row; §7.3 M-6b).
+this requirement's work (#185, QSL-46). The catalog is deleted with
+`lowering` in ADR-011 §7.3 M-6a, once the skeleton spine is green (ADR-011
+§6.2, the `lowering` row).
 The registry SHALL define no local capability-kind type. The registry SHALL
 consume the canonical `Capability` value type
 ([quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)),
@@ -183,7 +183,8 @@ Specified under
 Implemented under QSL-46 (PR #305) as `src/route.rs`, over the canonical
 `Capability` type (QSL-173, `src/check/capability.rs`).
 `src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
-the lowering-target selector; its deletion is #217's (Description).
+the lowering-target selector; it is deleted with `lowering` in ADR-011
+§7.3 M-6a (Description).
 
 By Acceptance Criterion:
 - FR-075-AC-1: backed (`TC-193`):

@@ -26,8 +26,10 @@ ADR-011 §2.1 fixes the path from source to check as E1 (S0 → S1), E2
 (S1 → S2) and E3 (S2 → S3). The S2 `forms` core exists (FR-067), but no
 family is wired onto its dispatch table, so every source is refused at S2.
 The checker takes a `PackageDeclarations` value that only tests build by
-hand. The M-6a lane (ADR-011 §7.3) replaces the native `compile` and `run`
-paths with the spine, and the spine starts at source.
+hand. The M-6a lane (ADR-011 §7.3) replaces native `compile` with spine
+`compile`, which takes complete-V1 source, and adds spine `run`, which calls a
+named checked function (ADR-011 §5). Native-run/1 clause execution stays
+until M-6c. The spine starts at source.
 
 ## Acceptance Examples (Illustrative)
 
@@ -54,7 +56,7 @@ paths with the spine, and the spine starts at source.
 
 ## Priority and Risk (Informative)
 
-Priority: High. The M-6a `compile` and `run` replacements, and `replay`'s S1
+Priority: High. The M-6a spine `compile` and `run`, and `replay`'s S1
 to S4 recompile, need source to reach the checker. With no S2 production and
 no assembler, the checker is reachable only from hand-built test values.
 
