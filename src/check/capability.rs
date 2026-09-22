@@ -64,9 +64,19 @@ macro_rules! capability_kinds {
         /// (FR-057-AC-4). Declaration order here, in the FR-290 vocabulary table,
         /// and in any serialization confers no strength, precedence or dispatch
         /// priority (FR-057, "Spelling, identity and order").
+        ///
+        /// `#[cfg(seam_probe)]` adds one probe-only variant (ADR-012 §5.1 S7,
+        /// FR-063): under `--cfg seam_probe`, every closed `match` over this
+        /// type below this module's own [`Capability::to_wire`] becomes
+        /// non-exhaustive (`E0004`) unless it has its own probe arm.
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
         pub enum Capability {
-            $($(#[$doc])* $variant),+
+            $($(#[$doc])* $variant),+,
+            /// FR-063/S7: exists only so `--cfg seam_probe` makes every
+            /// match over `Capability` outside this module non-exhaustive.
+            /// Never constructed outside the probe build.
+            #[cfg(seam_probe)]
+            __SeamProbe,
         }
 
         impl Capability {
@@ -86,9 +96,16 @@ macro_rules! capability_kinds {
             ///
             /// Total (ADR-013 C-24): every [`Capability`] has exactly one wire
             /// string, and this function never fails.
+            ///
+            /// Not an S7 seam-probe location: this function owns the probe
+            /// variant's own arm (below), since it is generated in the same
+            /// macro expansion as the variant itself. The seam probe
+            /// exercises match sites *outside* this module instead.
             pub const fn to_wire(self) -> &'static str {
                 match self {
-                    $(Capability::$variant => $wire),+
+                    $(Capability::$variant => $wire),+,
+                    #[cfg(seam_probe)]
+                    Capability::__SeamProbe => "__seam_probe__",
                 }
             }
 

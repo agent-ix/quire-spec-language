@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `cargo xtask seam-probe` / `cargo xtask string-edge`: the two gates
-//! `make ci` runs standalone.
+//! `cargo xtask seam-probe` / `cargo xtask string-edge` / `cargo xtask
+//! route-lint`: the gates `make ci` runs standalone.
 #![forbid(unsafe_code)]
 
 use std::ffi::OsString;
@@ -10,10 +10,11 @@ use std::process::ExitCode;
 
 use xtask::{
     error::{Error, Result},
-    seam_probe, string_edge,
+    route_lint, seam_probe, string_edge,
 };
 
-const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge";
+const USAGE: &str =
+    "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       cargo xtask route-lint";
 
 fn run(arguments: &[OsString]) -> Result<String> {
     let Some((command, operands)) = arguments.split_first() else {
@@ -30,6 +31,7 @@ fn run(arguments: &[OsString]) -> Result<String> {
     match command {
         "seam-probe" => seam_probe::run(&workspace_root),
         "string-edge" => string_edge::run(&workspace_root),
+        "route-lint" => route_lint::run(&workspace_root),
         _ => Err(Error::Usage(USAGE)),
     }
 }

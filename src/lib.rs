@@ -37,6 +37,7 @@ pub mod protocol_artifact;
 #[cfg(feature = "quire-extraction")]
 pub mod quire_source;
 pub mod replay;
+pub mod route;
 pub mod runtime;
 mod serde_object;
 pub mod simulation;
