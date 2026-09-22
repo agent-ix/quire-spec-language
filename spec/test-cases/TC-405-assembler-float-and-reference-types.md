@@ -12,10 +12,11 @@ relationships:
 
 Verify the explicit resolution arms for `Float32`/`Float64` and
 `Reference<Q>`. A floating type refuses rather than dropping its rounding
-mode (ADR-013 R-07). A model reference with no admitted domain package is
+mode (ADR-013 R-07), and a floating type written without a mode is
+admitted by S1 and read as mode `exact` (QSpec FR-148). A model reference with no admitted domain package is
 an unresolved name.
 
-Scope: FR-091-AC-19.
+Scope: FR-091-AC-19, FR-091-AC-23.
 
 ## Test Procedure
 
@@ -24,17 +25,24 @@ Every fixture unit below starts with the complete-V1 header
 alias is `v`.
 
 1. Assemble a unit with `function f using v(x: Float64[nearest-even]): Boolean pure { true }`.
-2. Assemble a unit, with no `model` selection and no admitted domain
+2. Parse and assemble a unit with
+   `function h using v(x: Float64): Boolean pure { true }`. Confirm
+   `is_admissible()` after S1, and read the parameter's type form after S2.
+3. Assemble a unit, with no `model` selection and no admitted domain
    package, holding `function g using v(r: Reference<M::T>): Boolean pure { true }`.
 
-Tag the test `#[trace("FR-091-AC-19", "TC-405")]`.
+Tag the test `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`.
 
 ## Expected Results
 
-- Step 1 gives a floating-type error that names `nearest-even` and the type
-  form's span.
-- Step 2 gives an unresolved-type-name error naming `M::T`.
-- Neither step returns a `PackageDeclarations` value.
+- Step 1 gives a floating-type error, code
+  `unknown_required_feature`/`unsupported-feature`, that names `Float64`,
+  `nearest-even`, the profile selection `v` and the type form's span.
+- Step 2's source is admissible, its type form has head `Float64` and no
+  mode, and the assembler gives the same floating-type error naming
+  `exact`.
+- Step 3 gives an unresolved-type-name error naming `M::T`.
+- No step returns a `PackageDeclarations` value.
 
 ## Status
 

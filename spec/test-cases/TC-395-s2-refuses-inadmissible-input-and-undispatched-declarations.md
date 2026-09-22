@@ -18,8 +18,6 @@ declarations and skips the rest. It also catches one that admits a source
 that carries a diagnostic but no recovery, or reports that source as
 `RecoveringCst`.
 
-Step 4 depends on FR-091-OQ-1.
-
 Scope: FR-091-AC-4, FR-091-AC-5, FR-091-AC-6.
 
 ## Test Procedure
@@ -35,8 +33,12 @@ alias is `v`.
 3. Parse an admissible unit holding
    `function t using v(): Boolean pure { true }` followed by
    `invariant Positive using v on M::T at current { true }`. Run S2.
-4. For each of `enum`, `predicate`, `dimension` and `unit`, parse an
-   admissible unit whose only declaration uses that keyword, and run S2.
+4. For each of `enum`, `ordered enum`, `predicate`, `dimension` and
+   `unit`, parse an admissible unit whose only declaration uses that
+   keyword, and run S2.
+5. With `syn`, scan every module under `forms` for the names
+   `EnumDeclaration`, `Predicate`, `DimensionDeclaration` and
+   `UnitDeclaration`.
 
 Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
 
@@ -47,9 +49,11 @@ Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
   `RecoveringCst` and holds the prepended diagnostic's code.
 - Step 3 refuses with cause `NoDispatchEntry`, the spelling `invariant` and
   the `invariant` declaration's span. No form is returned for `t`.
-- Step 4 refuses each unit with `NoDispatchEntry`, naming that keyword and
-  the declaration's span.
-- No step returns a parsed unit.
+- Step 4 refuses each unit with `NoDispatchEntry`, naming the leading
+  token (`ordered` for `ordered enum`) and the declaration's span.
+- Step 5 finds those names only in the `Value` family form builder, or
+  nowhere.
+- No step from 1 to 4 returns a parsed unit.
 
 ## Status
 

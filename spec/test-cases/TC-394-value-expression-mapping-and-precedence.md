@@ -30,6 +30,8 @@ alias is `v`.
 2. Run S2 and read the function's body.
 3. Separately run S2 on the bodies `a or b and c`, `a - b - c`,
    `a implies b implies c` and `(a + b) * c`.
+4. Run S2 on the bodies `map(x in c: x)`, `collect(x in c: x)` and
+   `allInstances<M::T>(p)`.
 
 Tag the test `#[trace("FR-091-AC-3", "TC-394")]`.
 
@@ -40,6 +42,9 @@ Tag the test `#[trace("FR-091-AC-3", "TC-394")]`.
   and `(a)` gives `Name("a")`.
 - Step 3 reads `Or(a, And(b, c))`, `Subtract(Subtract(a, b), c)`,
   `Implies(a, Implies(b, c))` and `Multiply(Add(a, b), c)`.
+- Step 4 reads `Query` with `BinderQuery::Map` for both `map` and
+  `collect`, and `AllInstances` whose target is a type form with
+  qualified-name head `M::T`.
 
 ## Status
 

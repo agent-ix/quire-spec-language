@@ -142,7 +142,7 @@ operational validation remains outside this audit-only plan.
 | TC-256 | check and package's dependency edge is one direction, and CheckedPackage wraps CheckedGraph | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
 | TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
 | TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 (not in #300's scope) |
-| TC-259 | A package type's identity is its checked node id, package-scoped | Unit | P1 | FR-088-AC-7 | ✅ Passed locally; #300 |
+| TC-259 | A package type's identity is its checked node id, owner-scoped | Unit | P1 | FR-088-AC-7 | ✅ Passed locally; #300 |
 | TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Planned; QSL-158 (not in #300's scope) |
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
@@ -173,23 +173,24 @@ operational validation remains outside this audit-only plan.
 | TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
 | TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |
 | TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | 🚧 Planned; QSL-141 |
-| TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141; AC-6 cases per FR-091-OQ-1 |
-| TC-396 | S2 refuses unrepresented constructs and constructs owned by another family | Unit | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141; cases per FR-091-OQ-5 and FR-091-OQ-1 |
+| TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141 |
+| TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141 |
 | TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
 | TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Planned; QSL-141 |
 | TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | 🚧 Planned; QSL-141 |
 | TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | 🚧 Planned; QSL-141 |
-| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; blocked by FR-091-OQ-3 |
+| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; source owner needs QSL-159 |
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | 🚧 Planned; QSL-8 |
-| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19 | 🚧 Planned; QSL-141 |
-| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; alias cycle per FR-091-OQ-7 |
+| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23 | 🚧 Planned; QSL-141 |
+| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | 🚧 Planned; QSL-174 |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | 🚧 Planned; QSL-174 |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | 🚧 Planned; QSL-131 |
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | 🚧 Planned; QSL-131 |
+| TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | 🚧 Planned; QSL-141 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -472,11 +473,9 @@ the ruling on FR-090-OQ-2.
 carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 §4.3, and ADR-013 O-11, O-17, R-07, T-4 and T-5 for the `Value` family's S2
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
-`check` core. TC-392 to TC-403, TC-405 and TC-406 are `🚧 Planned` under
-QSL-141. TC-398 and TC-402 use the resolved-import and definition-scan
+`check` core. TC-392 to TC-403, TC-405, TC-406 and TC-412 are `🚧 Planned`
+under QSL-141. TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
-source to `CheckedPackage::call`. TC-395's AC-6 cases, TC-396, TC-401 and
-TC-406's alias-cycle code depend on FR-091-OQ-1, OQ-5, OQ-3 and OQ-7 as
-marked. TC-404 backs FR-003-AC-7
+source to `CheckedPackage::call`. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
 M-6a), under QSL-8.

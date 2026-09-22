@@ -39,7 +39,7 @@ Tag the test `#[trace("FR-091-AC-2", "TC-393")]`.
 
 ## Expected Results
 
-- Name `inc`; `using` alias `v`.
+- Name `inc`; the `using` field holds alias `v` and the span of that `v`.
 - Parameter `x`: head `Int`, bounds spelled `0` and `9`. Parameter `y`:
   qualified-name head `Digit`.
 - Result: head `Int`, bounds spelled `0` and `10`.
