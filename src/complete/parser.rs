@@ -5,17 +5,16 @@ use std::collections::BTreeSet;
 use logos::Logos;
 
 use super::cst::{
-    self, CstElement, LosslessCst, Production, RawNode, Recovery, RecoveryKind, TokenClass,
-    TokenKind,
+    self, CstElement, DefinitionDigest, DefinitionRef, ImportSelection, InvalidDefinitionComponent,
+    InvalidModelComponent, LosslessCst, ModelDigest, ModelRef, ModelSelection, Production, RawNode,
+    Recovery, RecoveryKind, SourceSelections, TokenClass, TokenKind,
 };
 use super::diagnostic::{CompleteCause, HostCause};
 use super::grammar::{self, Grammar, Rule, Terminal};
-use super::{
-    CompleteCode, CompleteDiagnostic, DefinitionDigest, DefinitionRef, ImportSelection,
-    ModelDigest, ModelRef, ModelSelection, ParsedSource, ProfileSelection, SourceSelections,
-};
+use super::{CompleteCode, CompleteDiagnostic, ParsedSource, ProfileSelection};
+use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
-use crate::{Limits, Phase, Source, Span};
+use crate::{Phase, Source, Span};
 
 #[derive(Clone, Debug)]
 struct Significant {
@@ -352,8 +351,8 @@ fn extract_selections(
         let version_value = text(version).ok_or_else(invalid_version)?;
         DefinitionRef::validate_components(identity_value, version_value).map_err(|component| {
             match component {
-                super::package::InvalidDefinitionComponent::Identity => invalid_identity(),
-                super::package::InvalidDefinitionComponent::Version => invalid_version(),
+                InvalidDefinitionComponent::Identity => invalid_identity(),
+                InvalidDefinitionComponent::Version => invalid_version(),
             }
         })?;
         let digest_value = DefinitionDigest::parse(text(digest).ok_or_else(invalid_digest)?)
@@ -389,8 +388,8 @@ fn extract_selections(
         let version_value = text(version).ok_or_else(invalid_version)?;
         ModelRef::validate_components(identity_value, version_value).map_err(|component| {
             match component {
-                super::package::InvalidModelComponent::Identity => invalid_identity(),
-                super::package::InvalidModelComponent::Version => invalid_version(),
+                InvalidModelComponent::Identity => invalid_identity(),
+                InvalidModelComponent::Version => invalid_version(),
             }
         })?;
         let digest_value = ModelDigest::parse(text(digest).ok_or_else(invalid_digest)?)

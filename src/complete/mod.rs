@@ -16,8 +16,10 @@ mod package_tests;
 mod parser;
 
 pub use cst::{
-    CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, Production, Recovery, RecoveryKind,
-    StableNodeId, TokenClass, TokenKind,
+    CstElement, CstNode, CstToken, DefinitionDigest, DefinitionRef, ImportSelection,
+    InvalidDefinitionComponent, InvalidModelComponent, LosslessCst, ModelDigest, ModelRef,
+    ModelSelection, NodeIdentity, Production, ProfileSelection, Recovery, RecoveryKind,
+    SourceSelections, StableNodeId, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use edit::{
@@ -32,12 +34,10 @@ pub use package::{
     DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
     ReaderAuthority, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
 };
-pub use package::{
-    CapabilityId, DefinitionDigest, DefinitionRef, ImportSelection, ModelDigest, ModelRef,
-    ModelSelection, PackageError, ProfileCatalog, ProfileSelection, SourceDigest, SourceSelections,
-};
+pub use package::{CapabilityId, PackageError, ProfileCatalog, SourceDigest};
 
-use crate::{Limits, Source, SourceIdentity};
+pub use crate::lexer::Limits;
+use crate::{Source, SourceIdentity};
 
 /// A version-bound source artifact and its lossless parse evidence.
 #[derive(Clone, Debug)]
@@ -80,6 +80,33 @@ impl ParsedSource {
     pub fn is_incremental_result(&self) -> bool {
         self.incremental
     }
+
+    /// Assemble a parse result from its already-computed layer-1 evidence.
+    /// Owned by layer 1: the caller (the full parser or the bounded
+    /// incremental-edit path) has already produced every field, and this is
+    /// the one place that pairs them, so no other module reaches into
+    /// [`ParsedSource`]'s private fields directly.
+    pub(crate) fn from_parts(
+        source: Source,
+        cst: LosslessCst,
+        diagnostics: Vec<CompleteDiagnostic>,
+        selections: SourceSelections,
+        incremental: bool,
+    ) -> Self {
+        Self {
+            source,
+            cst,
+            diagnostics,
+            selections,
+            incremental,
+        }
+    }
+
+    /// Insert a diagnostic at the given position, ahead of every diagnostic
+    /// already recorded from parsing.
+    pub(crate) fn insert_diagnostic(&mut self, index: usize, diagnostic: CompleteDiagnostic) {
+        self.diagnostics.insert(index, diagnostic);
+    }
 }
 
 /// Parse the complete-V1 grammar while retaining every original source byte.
@@ -89,7 +116,8 @@ impl ParsedSource {
 ///
 /// ```compile_fail
 /// use std::collections::BTreeSet;
-/// use quire_spec_language::{complete, Limits, SourceIdentity};
+/// use quire_spec_language::complete::{self, Limits};
+/// use quire_spec_language::SourceIdentity;
 /// let installed_backends = BTreeSet::from(["solver:x"]);
 /// let _ = complete::parse(
 ///     SourceIdentity { identity: "doc".into(), revision: "1".into() },
@@ -136,7 +164,7 @@ pub fn parse_with_catalog(
             .map(|refusal| (selection.identity_span, refusal))
     });
     if let Some((identity_span, (code, cause, message))) = refused {
-        base.diagnostics.insert(
+        base.insert_diagnostic(
             0,
             *diagnostic::error(
                 &source,

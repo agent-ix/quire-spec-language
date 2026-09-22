@@ -5,6 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest as _, Sha256};
 use std::sync::Arc;
 
+use super::cst::{
+    DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, InvalidModelComponent,
+    ModelDigest, ModelRef,
+};
 use crate::{ByteDigest, SourceIdentity, Span};
 
 /// Unforgeable crate-issued proof that typed definition/model parts came from
@@ -24,213 +28,30 @@ impl ReaderAuthority {
     }
 }
 
-/// Exact versioned definition digest in the profile/import domain.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct DefinitionDigest(ByteDigest);
-
-impl DefinitionDigest {
-    /// Parse the canonical SHA-256 spelling selected by source.
-    pub fn parse(value: &str) -> Result<Self, PackageError> {
-        value
-            .parse()
-            .map(Self)
-            .map_err(|_| PackageError::InvalidDefinitionDigest(value.into()))
-    }
-
-    /// Canonical selected value.
-    pub fn digest(self) -> ByteDigest {
-        self.0
-    }
-}
-
-/// Exact definition identity/version/digest triple.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct DefinitionRef {
-    /// Opaque definition identity.
-    identity: String,
-    /// Exact selected version.
-    version: String,
-    /// Exact content digest.
-    digest: DefinitionDigest,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InvalidDefinitionComponent {
-    Identity,
-    Version,
-}
-
-impl DefinitionRef {
-    /// Validate a non-empty exact definition selection.
-    pub fn new(
-        identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: DefinitionDigest,
-    ) -> Result<Self, PackageError> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version).map_err(|component| match component {
-            InvalidDefinitionComponent::Identity => PackageError::InvalidDefinitionIdentity,
-            InvalidDefinitionComponent::Version => PackageError::InvalidDefinitionVersion,
-        })?;
-        Ok(Self::from_validated(identity, version, digest))
-    }
-
-    pub(crate) fn validate_components(
-        identity: &str,
-        version: &str,
-    ) -> Result<(), InvalidDefinitionComponent> {
-        if identity.is_empty() || identity.len() > 512 {
-            return Err(InvalidDefinitionComponent::Identity);
-        }
-        if version.is_empty() || version.len() > 256 {
-            return Err(InvalidDefinitionComponent::Version);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn from_validated(
-        identity: String,
-        version: String,
-        digest: DefinitionDigest,
-    ) -> Self {
-        Self {
-            identity,
-            version,
-            digest,
+// `DefinitionDigest`, `DefinitionRef`, `ModelDigest`, `ModelRef` and the
+// selection types (`ProfileSelection`, `ImportSelection`, `ModelSelection`,
+// `SourceSelections`) are layer-1 CST types, defined in `super::cst`: they are
+// the exact syntax-level selection domain the parser produces, not package
+// resolution. This module (layer 3) depends on them downward. `new()` stays
+// an inherent impl in `cst` (an inherent impl for a foreign type is an error
+// once layer 1 is its own crate); this module maps its public layer-1
+// validation errors onto `PackageError` instead.
+impl From<InvalidDefinitionComponent> for PackageError {
+    fn from(component: InvalidDefinitionComponent) -> Self {
+        match component {
+            InvalidDefinitionComponent::Identity => Self::InvalidDefinitionIdentity,
+            InvalidDefinitionComponent::Version => Self::InvalidDefinitionVersion,
         }
     }
-
-    /// Opaque definition identity.
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
-
-    /// Exact selected version.
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// Exact raw-byte definition digest.
-    pub fn digest(&self) -> DefinitionDigest {
-        self.digest
-    }
 }
 
-/// Raw-byte SHA-256 digest of one compiled-model document.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ModelDigest(ByteDigest);
-
-impl ModelDigest {
-    /// Parse the canonical SHA-256 spelling selected by source.
-    pub fn parse(value: &str) -> Result<Self, PackageError> {
-        value
-            .parse()
-            .map(Self)
-            .map_err(|_| PackageError::InvalidModelDigest(value.into()))
-    }
-
-    /// Canonical selected value.
-    pub fn digest(self) -> ByteDigest {
-        self.0
-    }
-}
-
-/// Exact compiled-model identity/version/raw-byte-digest triple.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ModelRef {
-    identity: String,
-    version: String,
-    digest: ModelDigest,
-}
-
-impl ModelRef {
-    /// Validate a non-empty exact compiled-model selection.
-    pub fn new(
-        identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: ModelDigest,
-    ) -> Result<Self, PackageError> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version).map_err(|component| match component {
-            InvalidModelComponent::Identity => PackageError::InvalidModelIdentity,
-            InvalidModelComponent::Version => PackageError::InvalidModelVersion,
-        })?;
-        Ok(Self::from_validated(identity, version, digest))
-    }
-
-    pub(crate) fn validate_components(
-        identity: &str,
-        version: &str,
-    ) -> Result<(), InvalidModelComponent> {
-        DefinitionRef::validate_components(identity, version).map_err(|component| match component {
-            InvalidDefinitionComponent::Identity => InvalidModelComponent::Identity,
-            InvalidDefinitionComponent::Version => InvalidModelComponent::Version,
-        })
-    }
-
-    pub(crate) fn from_validated(identity: String, version: String, digest: ModelDigest) -> Self {
-        Self {
-            identity,
-            version,
-            digest,
+impl From<InvalidModelComponent> for PackageError {
+    fn from(component: InvalidModelComponent) -> Self {
+        match component {
+            InvalidModelComponent::Identity => Self::InvalidModelIdentity,
+            InvalidModelComponent::Version => Self::InvalidModelVersion,
         }
     }
-
-    /// Opaque compiled-model identity.
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
-
-    /// Exact selected version.
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// Exact raw-byte compiled-model digest.
-    pub fn digest(&self) -> ModelDigest {
-        self.digest
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InvalidModelComponent {
-    Identity,
-    Version,
-}
-
-/// Source-located profile definition selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProfileSelection {
-    /// Local alias used by declarations.
-    pub alias: String,
-    /// Exact definition triple.
-    pub definition: DefinitionRef,
-    /// Full profile declaration range.
-    pub span: Span,
-    /// Exact identity literal range used for located refusals.
-    pub identity_span: Span,
-}
-
-/// Source-located import definition selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ImportSelection {
-    /// Optional local alias.
-    pub alias: Option<String>,
-    /// Exact definition triple.
-    pub definition: DefinitionRef,
-    /// Full import declaration range.
-    pub span: Span,
-}
-
-/// Source-located formal model selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelSelection {
-    /// Local model alias.
-    pub alias: String,
-    /// Exact compiled-model document selection.
-    pub model: ModelRef,
-    /// Full model declaration range.
-    pub span: Span,
 }
 
 /// Exact compiled-model artifact admitted by its owning model reader.
@@ -252,7 +73,11 @@ impl ModelArtifact {
         if exact_bytes.is_empty() || exact_bytes.len() > crate::source::MAX_SOURCE_BYTES {
             return Err(PackageError::InvalidModelArtifactBytes);
         }
-        let exact = ModelRef::new(identity, version, ModelDigest(ByteDigest::of(exact_bytes)))?;
+        let exact = ModelRef::new(
+            identity,
+            version,
+            ModelDigest::from_digest(ByteDigest::of(exact_bytes)),
+        )?;
         Ok(Self {
             exact,
             exact_bytes: exact_bytes.into(),
@@ -269,17 +94,6 @@ impl ModelArtifact {
     pub fn exact_bytes(&self) -> &[u8] {
         &self.exact_bytes
     }
-}
-
-/// Exact package-relevant selections recovered from the admitted syntax.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct SourceSelections {
-    /// Selected profile definitions in source order.
-    pub profiles: Vec<ProfileSelection>,
-    /// Selected package imports in source order.
-    pub imports: Vec<ImportSelection>,
-    /// Selected model exports in source order.
-    pub models: Vec<ModelSelection>,
 }
 
 /// Role supplied by one exact profile definition.
@@ -406,7 +220,7 @@ impl Definition {
         let exact = DefinitionRef::new(
             identity,
             version,
-            DefinitionDigest(ByteDigest::of(exact_bytes)),
+            DefinitionDigest::from_digest(ByteDigest::of(exact_bytes)),
         )?;
         Ok(Self {
             exact,
@@ -481,13 +295,13 @@ impl DefinitionCatalog {
     fn contains_identity(&self, identity: &str) -> bool {
         self.definitions
             .keys()
-            .any(|definition| definition.identity == identity)
+            .any(|definition| definition.identity() == identity)
     }
 
     fn contains_version(&self, identity: &str, version: &str) -> bool {
         self.definitions
             .keys()
-            .any(|definition| definition.identity == identity && definition.version == version)
+            .any(|definition| definition.identity() == identity && definition.version() == version)
     }
 }
 
@@ -521,13 +335,13 @@ impl ProfileCatalog {
         if self.profiles.contains(selected) {
             ProfileStatus::Exact
         } else if self.profiles.iter().any(|profile| {
-            profile.identity == selected.identity && profile.version == selected.version
+            profile.identity() == selected.identity() && profile.version() == selected.version()
         }) {
             ProfileStatus::Stale(StaleProfile::ByteDigest)
         } else if self
             .profiles
             .iter()
-            .any(|profile| profile.identity == selected.identity)
+            .any(|profile| profile.identity() == selected.identity())
         {
             ProfileStatus::Stale(StaleProfile::Revision)
         } else {
@@ -912,7 +726,7 @@ pub fn resolve_source_package(
                         selection
                             .alias
                             .as_deref()
-                            .unwrap_or(&selection.definition.identity),
+                            .unwrap_or(selection.definition.identity()),
                         selection.span,
                     )
                 })
@@ -1002,7 +816,7 @@ pub fn resolve_source_package(
     let mut logical = BTreeMap::<&str, (&DefinitionRef, Span)>::new();
     for (selected, span, _) in &roots {
         if let Some((previous, previous_span)) =
-            logical.insert(&selected.identity, (selected, *span))
+            logical.insert(selected.identity(), (selected, *span))
         {
             if previous != *selected {
                 return Err(refusal(
@@ -1020,8 +834,8 @@ pub fn resolve_source_package(
 
     for (selected, span, profile) in &roots {
         if catalog.exact(selected).is_none() {
-            let (code, cause) = if catalog.contains_identity(&selected.identity) {
-                if catalog.contains_version(&selected.identity, &selected.version) {
+            let (code, cause) = if catalog.contains_identity(selected.identity()) {
+                if catalog.contains_version(selected.identity(), selected.version()) {
                     let mut stale = refusal(
                         super::CompleteCode::StaleDependency,
                         *span,
@@ -1135,7 +949,7 @@ pub fn resolve_source_package(
     for selected in discovered {
         let selected_span = provenance[selected];
         if let Some((previous, previous_span)) =
-            closed_logical.insert(&selected.identity, (selected, selected_span))
+            closed_logical.insert(selected.identity(), (selected, selected_span))
         {
             if previous != selected {
                 return Err(refusal(
@@ -1211,10 +1025,13 @@ pub fn resolve_source_package(
     bundle.capabilities = capabilities;
     let mut identity = SemanticIdentityBuilder::new(b"quire.complete.resolved-graph/1\0");
     for definition in resolved.values() {
-        let digest = definition.exact.digest.digest().to_string();
+        let digest = definition.exact.digest().digest().to_string();
         for (name, value) in [
-            ("definition-identity", definition.exact.identity.as_bytes()),
-            ("definition-version", definition.exact.version.as_bytes()),
+            (
+                "definition-identity",
+                definition.exact.identity().as_bytes(),
+            ),
+            ("definition-version", definition.exact.version().as_bytes()),
             ("definition-digest", digest.as_bytes()),
             (
                 "definition-role",
@@ -1226,10 +1043,10 @@ pub fn resolve_source_package(
             })?;
         }
         for dependency in &definition.dependencies {
-            let digest = dependency.digest.digest().to_string();
+            let digest = dependency.digest().digest().to_string();
             for (name, value) in [
-                ("dependency-identity", dependency.identity.as_bytes()),
-                ("dependency-version", dependency.version.as_bytes()),
+                ("dependency-identity", dependency.identity().as_bytes()),
+                ("dependency-version", dependency.version().as_bytes()),
                 ("dependency-digest", digest.as_bytes()),
             ] {
                 identity.field(name, value).map_err(|cause| {
@@ -1246,10 +1063,10 @@ pub fn resolve_source_package(
         }
     }
     for model in resolved_models.values() {
-        let digest = model.exact.digest.digest().to_string();
+        let digest = model.exact.digest().digest().to_string();
         for (name, value) in [
-            ("model-identity", model.exact.identity.as_bytes()),
-            ("model-version", model.exact.version.as_bytes()),
+            ("model-identity", model.exact.identity().as_bytes()),
+            ("model-version", model.exact.version().as_bytes()),
             ("model-digest", digest.as_bytes()),
         ] {
             identity.field(name, value).map_err(|cause| {
@@ -1306,11 +1123,9 @@ fn cause_tag(code: super::CompleteCode, cause: &PackageError) -> super::Complete
         PackageError::InvalidSource => Tag::EstablishedInvariantBroken,
         PackageError::InvalidDefinitionIdentity
         | PackageError::InvalidDefinitionVersion
-        | PackageError::InvalidDefinitionDigest(_)
         | PackageError::InvalidDefinitionArtifactBytes
         | PackageError::InvalidModelIdentity
         | PackageError::InvalidModelVersion
-        | PackageError::InvalidModelDigest(_)
         | PackageError::InvalidModelArtifactBytes => Tag::InvalidValue,
         PackageError::DuplicateDefinition | PackageError::DuplicateModel => Tag::DuplicateMember,
         PackageError::MissingDefinition(_) if code == super::CompleteCode::UnknownProfile => {
@@ -1413,9 +1228,6 @@ pub enum PackageError {
     /// Definition version was empty or outside its bound.
     #[error("invalid definition version")]
     InvalidDefinitionVersion,
-    /// Definition digest was not canonical SHA-256.
-    #[error("invalid definition digest {0}")]
-    InvalidDefinitionDigest(String),
     /// Supplied definition artifact bytes were empty or exceeded the hard ceiling.
     #[error("invalid exact definition artifact bytes")]
     InvalidDefinitionArtifactBytes,
@@ -1425,9 +1237,6 @@ pub enum PackageError {
     /// Compiled-model version was empty or outside its bound.
     #[error("invalid compiled-model version")]
     InvalidModelVersion,
-    /// Compiled-model digest was not canonical SHA-256.
-    #[error("invalid compiled-model digest {0}")]
-    InvalidModelDigest(String),
     /// Supplied compiled-model document bytes were empty or too large.
     #[error("invalid exact compiled-model document bytes")]
     InvalidModelArtifactBytes,

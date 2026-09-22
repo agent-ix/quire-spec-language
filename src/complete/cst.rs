@@ -1,7 +1,232 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use std::collections::BTreeSet;
 
+use crate::digest::InvalidDigest;
 use crate::{ByteDigest, Source, Span};
+
+/// Exact versioned definition digest in the profile/import domain.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DefinitionDigest(ByteDigest);
+
+impl DefinitionDigest {
+    /// Parse the canonical SHA-256 spelling selected by source.
+    pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
+        value.parse().map(Self)
+    }
+
+    /// Wrap an already-computed raw-byte digest.
+    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+        Self(digest)
+    }
+
+    /// Canonical selected value.
+    pub fn digest(self) -> ByteDigest {
+        self.0
+    }
+}
+
+/// Exact definition identity/version/digest triple.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DefinitionRef {
+    /// Opaque definition identity.
+    identity: String,
+    /// Exact selected version.
+    version: String,
+    /// Exact content digest.
+    digest: DefinitionDigest,
+}
+
+/// Why an identity/version pair failed [`DefinitionRef::new`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvalidDefinitionComponent {
+    /// Identity was empty or exceeded 512 bytes.
+    Identity,
+    /// Version was empty or exceeded 256 bytes.
+    Version,
+}
+
+impl DefinitionRef {
+    /// Validate a non-empty exact definition selection.
+    pub fn new(
+        identity: impl Into<String>,
+        version: impl Into<String>,
+        digest: DefinitionDigest,
+    ) -> Result<Self, InvalidDefinitionComponent> {
+        let (identity, version) = (identity.into(), version.into());
+        Self::validate_components(&identity, &version)?;
+        Ok(Self::from_validated(identity, version, digest))
+    }
+
+    pub(crate) fn validate_components(
+        identity: &str,
+        version: &str,
+    ) -> Result<(), InvalidDefinitionComponent> {
+        if identity.is_empty() || identity.len() > 512 {
+            return Err(InvalidDefinitionComponent::Identity);
+        }
+        if version.is_empty() || version.len() > 256 {
+            return Err(InvalidDefinitionComponent::Version);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn from_validated(
+        identity: String,
+        version: String,
+        digest: DefinitionDigest,
+    ) -> Self {
+        Self {
+            identity,
+            version,
+            digest,
+        }
+    }
+
+    /// Opaque definition identity.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// Exact selected version.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// Exact raw-byte definition digest.
+    pub fn digest(&self) -> DefinitionDigest {
+        self.digest
+    }
+}
+
+/// Raw-byte SHA-256 digest of one compiled-model document.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModelDigest(ByteDigest);
+
+impl ModelDigest {
+    /// Parse the canonical SHA-256 spelling selected by source.
+    pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
+        value.parse().map(Self)
+    }
+
+    /// Wrap an already-computed raw-byte digest.
+    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+        Self(digest)
+    }
+
+    /// Canonical selected value.
+    pub fn digest(self) -> ByteDigest {
+        self.0
+    }
+}
+
+/// Exact compiled-model identity/version/raw-byte-digest triple.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModelRef {
+    identity: String,
+    version: String,
+    digest: ModelDigest,
+}
+
+impl ModelRef {
+    /// Validate a non-empty exact compiled-model selection.
+    pub fn new(
+        identity: impl Into<String>,
+        version: impl Into<String>,
+        digest: ModelDigest,
+    ) -> Result<Self, InvalidModelComponent> {
+        let (identity, version) = (identity.into(), version.into());
+        Self::validate_components(&identity, &version)?;
+        Ok(Self::from_validated(identity, version, digest))
+    }
+
+    pub(crate) fn validate_components(
+        identity: &str,
+        version: &str,
+    ) -> Result<(), InvalidModelComponent> {
+        DefinitionRef::validate_components(identity, version).map_err(|component| match component {
+            InvalidDefinitionComponent::Identity => InvalidModelComponent::Identity,
+            InvalidDefinitionComponent::Version => InvalidModelComponent::Version,
+        })
+    }
+
+    pub(crate) fn from_validated(identity: String, version: String, digest: ModelDigest) -> Self {
+        Self {
+            identity,
+            version,
+            digest,
+        }
+    }
+
+    /// Opaque compiled-model identity.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// Exact selected version.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// Exact raw-byte compiled-model digest.
+    pub fn digest(&self) -> ModelDigest {
+        self.digest
+    }
+}
+
+/// Why an identity/version pair failed [`ModelRef::new`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvalidModelComponent {
+    /// Identity was empty or exceeded 512 bytes.
+    Identity,
+    /// Version was empty or exceeded 256 bytes.
+    Version,
+}
+
+/// Source-located profile definition selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileSelection {
+    /// Local alias used by declarations.
+    pub alias: String,
+    /// Exact definition triple.
+    pub definition: DefinitionRef,
+    /// Full profile declaration range.
+    pub span: Span,
+    /// Exact identity literal range used for located refusals.
+    pub identity_span: Span,
+}
+
+/// Source-located import definition selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportSelection {
+    /// Optional local alias.
+    pub alias: Option<String>,
+    /// Exact definition triple.
+    pub definition: DefinitionRef,
+    /// Full import declaration range.
+    pub span: Span,
+}
+
+/// Source-located formal model selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelSelection {
+    /// Local model alias.
+    pub alias: String,
+    /// Exact compiled-model document selection.
+    pub model: ModelRef,
+    /// Full model declaration range.
+    pub span: Span,
+}
+
+/// Exact package-relevant selections recovered from the admitted syntax.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SourceSelections {
+    /// Selected profile definitions in source order.
+    pub profiles: Vec<ProfileSelection>,
+    /// Selected package imports in source order.
+    pub imports: Vec<ImportSelection>,
+    /// Selected model exports in source order.
+    pub models: Vec<ModelSelection>,
+}
 
 /// Public lossless leaf classification; token spellings remain exact bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,11 +1,52 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: apply token budgets and delimiter checks to the generated recognizer.
 use crate::diagnostic::error;
-use crate::syntax::Limits;
 pub(crate) use crate::token::Kind;
 use crate::token::LexError;
 use crate::{Code, Diagnostic, Phase, Source, Span};
 use logos::Logos;
+
+/// Layer-1 parse limits: the lexer's own recognizer bounds and the
+/// complete-V1 CST bounds built on it. Caller limits may lower these
+/// ceilings, never disable them. Equality compares the requested capacities,
+/// so a resource-only configuration change remains visible in retained build
+/// provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Limits {
+    /// Inclusive input-content ceiling, clamped to 1 MiB.
+    pub source_bytes: usize,
+    /// Maximum tokens the lexer's recognizer admits, and the retained CST
+    /// leaf ceiling for complete-V1 parsing. Clamped to 100,000.
+    pub tokens: usize,
+    /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
+    /// node per matched grammar production.
+    pub nodes: usize,
+    /// Maximum delimiter or recursive parser nesting, clamped to 64.
+    pub nesting: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            source_bytes: crate::source::MAX_SOURCE_BYTES,
+            tokens: 100_000,
+            nodes: 50_000,
+            nesting: 64,
+        }
+    }
+}
+
+impl Limits {
+    pub(crate) fn bounded(self) -> Self {
+        let hard = Self::default();
+        Self {
+            source_bytes: self.source_bytes.min(hard.source_bytes),
+            tokens: self.tokens.min(hard.tokens),
+            nodes: self.nodes.min(hard.nodes),
+            nesting: self.nesting.min(hard.nesting),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Token {

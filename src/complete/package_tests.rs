@@ -3,10 +3,11 @@ use std::collections::BTreeSet;
 
 use crate::complete::{
     self, resolve_source_package, CapabilityId, CompleteCause, CompleteCode, Definition,
-    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet, ModelArtifact,
-    ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority, SourceDigest,
+    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet,
+    InvalidDefinitionComponent, Limits, ModelArtifact, ModelCatalog, PackageError, PackageLimits,
+    ProfileCatalog, ReaderAuthority, SourceDigest,
 };
-use crate::{Limits, SourceIdentity};
+use crate::SourceIdentity;
 use ix_trace_rs::trace;
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [
@@ -775,11 +776,11 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
     let parsed_digest = DefinitionDigest::parse(&valid_digest).unwrap();
     assert_eq!(
         DefinitionRef::new("", "1", parsed_digest).unwrap_err(),
-        PackageError::InvalidDefinitionIdentity
+        InvalidDefinitionComponent::Identity
     );
     assert_eq!(
         DefinitionRef::new("acme/definition", "", parsed_digest).unwrap_err(),
-        PackageError::InvalidDefinitionVersion
+        InvalidDefinitionComponent::Version
     );
 
     for declaration_kind in ["profile", "import", "model"] {

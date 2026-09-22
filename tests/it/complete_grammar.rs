@@ -3,8 +3,10 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use quire_spec_language::complete::{self, CompleteCause, CompleteCode, HostCause, Production};
-use quire_spec_language::{Limits, SourceIdentity, Span};
+use quire_spec_language::complete::{
+    self, CompleteCause, CompleteCode, HostCause, Limits, Production,
+};
+use quire_spec_language::{SourceIdentity, Span};
 
 // Independently transcribed from the accepted complete-V1 EBNF. This must not
 // be generated from the implementation grammar: an omitted implementation

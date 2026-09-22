@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use super::{parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, ParsedSource};
-use crate::{Limits, Phase, SourceIdentity, Span};
+use super::{
+    parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
+};
+use crate::{Phase, SourceIdentity, Span};
 
 /// One UTF-8-boundary-preserving source replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -190,17 +192,17 @@ fn apply_edits_selected(
             edits[0].range.start,
             &edits[0].replacement,
         ) {
-            return Ok(ParsedSource {
-                source: edited_source,
+            return Ok(ParsedSource::from_parts(
+                edited_source,
                 cst,
-                diagnostics: Vec::new(),
-                selections: shifted_selections(
+                Vec::new(),
+                shifted_selections(
                     parsed.selections(),
                     edits[0].range.start,
                     edits[0].replacement.len(),
                 ),
-                incremental: true,
-            });
+                true,
+            ));
         }
     }
     if let Some(catalog) = catalog {

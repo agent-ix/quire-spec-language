@@ -34,9 +34,22 @@ pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Di
             "source byte budget exhausted",
         ));
     }
-    let tokens = lexer::lex(&source, limits)?;
+    let tokens = lexer::lex(&source, lexer_limits(limits))?;
     let mut parser = Parser::new(source, tokens, limits);
     parser.unit()
+}
+
+/// Convert this SEAM's own parse limits into the layer-1 lexer's equivalent
+/// bounds. The two `Limits` types are independently defined (ADR-011 §6.1);
+/// this is a field-by-field conversion at the SEAM/layer-1 boundary, not a
+/// compatibility alias.
+fn lexer_limits(limits: Limits) -> lexer::Limits {
+    lexer::Limits {
+        source_bytes: limits.source_bytes,
+        tokens: limits.tokens,
+        nodes: limits.nodes,
+        nesting: limits.nesting,
+    }
 }
 
 /// Parse the source-selected historical or composed edition, without semantic admission.
@@ -67,7 +80,7 @@ pub fn parse_native_source(
             "source byte budget exhausted",
         ));
     }
-    let tokens = lexer::recognize(&source, limits)?;
+    let tokens = lexer::recognize(&source, lexer_limits(limits))?;
     Parser::new(source, tokens, limits).native_unit()
 }
 

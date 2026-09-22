@@ -14,7 +14,7 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
 };
-use quire_spec_language::complete::{self, CompleteCause, CompleteCode};
+use quire_spec_language::complete::{self, CompleteCause, CompleteCode, Limits};
 use quire_spec_language::value::{
     resolve_libraries, CollectionType, Component, CompositeDeclaration, CompositeShape,
     ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator,
@@ -25,7 +25,7 @@ use quire_spec_language::value::{
     ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, QualifiedName,
     RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
 };
-use quire_spec_language::{Limits, SourceIdentity};
+use quire_spec_language::SourceIdentity;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

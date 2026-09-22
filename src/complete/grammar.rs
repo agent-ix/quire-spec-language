@@ -1548,7 +1548,8 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::{complete_compound_spellings, complete_reserved_words, complete_v1};
-    use crate::{complete, Limits, SourceIdentity};
+    use crate::complete::{self, Limits};
+    use crate::SourceIdentity;
 
     #[trace("TC-180", "FR-339-AC-1", "FR-302-AC-1")]
     #[test]
