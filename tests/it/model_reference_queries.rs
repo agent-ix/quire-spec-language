@@ -2642,7 +2642,9 @@ fn tc_294_unresolved_population_id_refuses_typed() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2676,7 +2678,9 @@ fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2811,7 +2815,9 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2853,7 +2859,9 @@ fn tc_294_lookup_refuses_an_unresolved_population_id() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2880,9 +2888,9 @@ fn tc_391_call_refuses_an_unresolved_population_id_at_admission() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!(
-            "expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"
-        ),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
     assert!(
         meter.admitted_charges().is_empty(),
@@ -2938,9 +2946,9 @@ fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
         Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
             assert_eq!(parameter, 0)
         }
-        other => panic!(
-            "expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}"
-        ),
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
     assert!(
         meter.admitted_charges().is_empty(),
