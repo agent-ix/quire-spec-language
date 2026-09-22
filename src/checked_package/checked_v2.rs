@@ -24,12 +24,13 @@
 //!   (`crate::library::declared_exports`/`verify_package`, layer-3);
 //! - refusing a lock that names `dependency_selections` this reader cannot
 //!   yet derive imports from (QC-10, ADR-013 TK-08, not yet mapped);
-//! - the ADR-011 §4 verified binding itself, conditions 2 and 3
-//!   (`crate::library::verify_binding`, layer-3, QSL-6 slice S1b/A1): this
-//!   reader hands its digest-checked candidate and the caller's `pinned`
-//!   identities to `library`, which constructs the `VerifiedPackage`
-//!   (FR-087-AC-1, AC-3) this reader now returns instead of a bare
-//!   `LibraryPackage`.
+//! - the ADR-011 §4 verified binding itself (`crate::library::verify_binding`,
+//!   layer-3, QSL-6 slice A1): once IR admits the wire, this reader mints
+//!   the condition-1 witness (`crate::library::SupportedV2Wire`, which only
+//!   this module constructs) and hands it, its digest-checked candidate and
+//!   the caller's `pinned` request to `library`, which applies conditions 2
+//!   and 3 and constructs the `VerifiedPackage` (FR-087-AC-1, AC-3) this
+//!   reader returns.
 //!
 //! IR's v2 reader validates the whole I04 contract unconditionally (lock
 //! staleness against caller-supplied evidence, the complete semantic graph,
@@ -91,7 +92,7 @@ use quire_contract_ir::{
 
 use crate::library::{
     declared_exports, verify_binding, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
-    Selection, VerifiedPackage,
+    PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_foundation::diagnostic::Code;
 
@@ -280,10 +281,8 @@ pub(crate) enum V2ReadOutcome {
 /// `evidence` proves the wire's locked sources, definitions and domain
 /// packages are current; the caller owns it (this reader does not itself
 /// know which bytes are current). `pinned` is condition 3's own input: the
-/// consumer's already-resolved library-lock selections
-/// ([`crate::library::LibraryLock::selections`]), or a directly pinned
-/// request built in that same shape (`crate::library::verify_binding`'s own
-/// doc).
+/// consumer's library lock (`PinnedRequest::from(&LibraryLock)`) or pinned
+/// request, one selection per library identity.
 #[allow(
     dead_code,
     reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
@@ -294,7 +293,7 @@ pub(crate) fn read_checked_package_v2(
     version: String,
     limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
-    pinned: &[(LibraryName, Selection)],
+    pinned: &PinnedRequest,
 ) -> V2ReadOutcome {
     let limits = limits.bounded();
     if bytes.len() > limits.artifact_bytes {
@@ -377,7 +376,10 @@ pub(crate) fn read_checked_package_v2(
                 imports: Vec::new(),
                 exports,
             };
-            match verify_binding(candidate, pinned) {
+            // Condition 1: IR's `AdmittedV2` arm is the only place this
+            // witness is minted (`tests/it/verified_binding_witness.rs`).
+            let admitted = SupportedV2Wire::attest_ir_admitted_v2();
+            match verify_binding(admitted, candidate, pinned) {
                 Ok(verified) => V2ReadOutcome::Verified(verified),
                 Err(refusal) => V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)),
             }

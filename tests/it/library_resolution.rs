@@ -13,7 +13,7 @@ use qsl_foundation::digest::WireNodeId;
 use quire_spec_language::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
-    RefusalClass, Selection, StaleCause,
+    RefusalClass, Selection, StaleCause, StalePin,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -230,7 +230,7 @@ fn l01_an_import_binds_the_library_package_id() {
         resolve_libraries(&by_bytes, &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            import: import("L", "1", raw_source, Some("l")),
+            pin: StalePin::Import(import("L", "1", raw_source, Some("l"))),
             cause: StaleCause::ByteDigestMismatch,
         },
         Code::StaleDependency,
@@ -241,7 +241,7 @@ fn l01_an_import_binds_the_library_package_id() {
         resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            import: import("L", "2", id("L@1"), Some("l")),
+            pin: StalePin::Import(import("L", "2", id("L@1"), Some("l"))),
             cause: StaleCause::RevisionMismatch,
         },
         Code::StaleDependency,
@@ -1139,7 +1139,7 @@ fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
         resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            import: import("L", "2", id("L@1"), Some("l")),
+            pin: StalePin::Import(import("L", "2", id("L@1"), Some("l"))),
             cause: StaleCause::RevisionMismatch,
         },
         Code::StaleDependency,
@@ -1156,7 +1156,7 @@ fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
         resolve_libraries(&over_l("P", "1", raw_source), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            import: import("L", "1", raw_source, Some("l")),
+            pin: StalePin::Import(import("L", "1", raw_source, Some("l"))),
             cause: StaleCause::ByteDigestMismatch,
         },
         Code::StaleDependency,

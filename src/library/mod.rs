@@ -26,10 +26,12 @@
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
 //! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
 //! layer-4 `package` reader (`checked_package::checked_v2`) reads
-//! `quire.checked-package/v2` bytes and calls [`verify_binding`] here to
-//! apply the ADR-011 §4 verified binding's condition 3 and construct
+//! `quire.checked-package/v2` bytes and calls the crate-private
+//! `verify_binding` here, handing it the condition-1 witness only that
+//! reader constructs, to apply the ADR-011 §4 verified binding and construct
 //! `VerifiedPackage`; [`VerifiedPackage::into_import_view`] is the only
-//! `ImportView` constructor.
+//! `ImportView` constructor. No constructor of either type is reachable from
+//! outside this crate.
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
@@ -42,8 +44,12 @@
 //! by the importing package's own check stage (FR-087-AC-4), never by
 //! `library` calling back into itself. `ImportView` exposes its exported
 //! declarations only as data (`ImportView::exports`, an iterator of
-//! `(name, PackageNodeKey)` pairs); no function here takes a name and
-//! returns a declaration or node id (FR-087-AC-4). This module names none of
+//! `(name, PackageNodeKey)` pairs) and has no method that takes a name.
+//! `library` builds no `NodeKey` and has no function that takes a name and
+//! returns a `NodeKey` or `PackageNodeKey`. It does map a package's own
+//! export names to their `WireNodeId`s while admitting that package
+//! (`package_identity::ProjectedDeclarations::node`, reached through
+//! `verify_package`'s export selection). This module names none of
 //! `resolve_name`, `ExportIdentity`, `NameReference` or `NameRefusal`.
 
 use std::collections::BTreeMap;
@@ -54,6 +60,8 @@ use crate::value::node::is_qualified_name;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 
+#[cfg(test)]
+mod binding_tests;
 mod package_identity;
 
 pub(crate) use package_identity::PACKAGE_ID_VERSION;
@@ -246,6 +254,25 @@ pub enum StaleCause {
     ByteDigestMismatch,
 }
 
+/// The entry a stale supplied package was checked against.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum StalePin {
+    /// An importing package's own import declaration ([`resolve_libraries`]).
+    Import(ImportDeclaration),
+    /// A consumer's library-lock or pinned-request entry, checked by the
+    /// ADR-011 §4 verified binding's condition 3.
+    Pinned(Box<PinMismatch>),
+}
+
+/// A pinned selection and the one a verified-binding candidate presented.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PinMismatch {
+    /// The selection the lock or request records.
+    pub pinned: Selection,
+    /// The version and recomputed `package_id` the candidate presented.
+    pub presented: Selection,
+}
+
 /// The member path of a refused `package_id`.
 pub const PACKAGE_ID_PATH: &str = "/package_id";
 /// The member path of a structurally malformed identity preimage.
@@ -311,8 +338,8 @@ pub enum LibraryRefusal {
     StaleDependency {
         /// Importer path, then the imported library.
         path: ImportPath,
-        /// The import.
-        import: ImportDeclaration,
+        /// The import declaration or lock entry the package disagrees with.
+        pin: StalePin,
         /// Which selection differs.
         cause: StaleCause,
     },
@@ -526,24 +553,38 @@ pub(crate) fn verify_package(
 }
 
 /// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
-/// T-2): a [`LibraryPackage`] for which conditions 1 (supported schema
-/// version, the layer-4 reader's and IR's own job) and 2 (the FR-322
-/// `package_id` recompute, `verify_package`) already held before
-/// [`verify_binding`] additionally required condition 3 (this identity
-/// listed in the consumer's library lock or pinned request). Not checked
-/// typestate (R-10): a `VerifiedPackage` is never accepted as, or converted
-/// into, a `CheckedGraph` or `CheckedPackage` -- only
-/// [`Self::into_import_view`] converts it, into an `ImportView`.
+/// T-2): a [`LibraryPackage`] read from v2 wire bytes for which all three
+/// conditions held -- 1, a supported schema version (witnessed by the
+/// crate-private `SupportedV2Wire`, which only the layer-4 v2 reader
+/// constructs); 2, the FR-322 `package_id` recompute (`verify_package`); and
+/// 3, this identity and version listed in the consumer's library lock or
+/// pinned request (the crate-private `PinnedRequest`). Not checked typestate
+/// (R-10): a `VerifiedPackage` is
+/// never accepted as, or converted into, a `CheckedGraph` or
+/// `CheckedPackage` -- only [`Self::into_import_view`] converts it, into an
+/// `ImportView`.
 ///
-/// Both fields are private to this module; [`verify_binding`] is the sole
-/// constructor (FR-087-AC-1). Naming them directly from outside `library`
-/// does not compile:
+/// Both fields are private to this module, and the crate-private
+/// `verify_binding` is the sole constructor (FR-087-AC-1). Naming the
+/// fields directly from outside `library` does not compile:
 /// ```compile_fail,E0451
 /// use quire_spec_language::library::VerifiedPackage;
 /// let forged = VerifiedPackage {
 ///     package: todo!(),
 ///     exports: todo!(),
 /// };
+/// ```
+///
+/// Nor does calling the binding from outside the crate with a hand-built
+/// candidate, which is how PR #340's review minted a `VerifiedPackage` from
+/// no wire bytes at all. `verify_binding`, its condition-1 witness and its
+/// pinned-request type are all crate-private; making the three public lets
+/// this snippet compile, so the test fails. (Stable rustdoc does not check
+/// a `compile_fail` error code, so none is claimed here.)
+/// ```compile_fail
+/// use quire_spec_language::library::{verify_binding, LibraryPackage};
+/// let candidate: LibraryPackage = todo!();
+/// let _ = verify_binding(todo!(), candidate, todo!());
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPackage {
@@ -581,57 +622,133 @@ impl VerifiedPackage {
     }
 }
 
-/// ADR-011 §4's verified binding: `library`'s own entry point, called by
-/// the layer-4 `package` reader after it has admitted the wire (condition 1)
-/// and cross-checked the recomputed `package_id` against IR's own
-/// already-verified digest (condition 2, QSL-6 L2). This function re-applies
-/// condition 2 through `verify_package` (owner ruling item 3(f): reused
-/// unchanged, not a second digest implementation) and additionally applies
-/// condition 3: `candidate`'s identity must appear in `pinned` -- the
-/// consumer's already-resolved [`LibraryLock::selections`], or a directly
-/// pinned request assembled in that same `(LibraryName, Selection)` shape
-/// (no second lock type exists, FR-087 Description item 3 owner ruling
-/// (a)). Refuses with a named cause and yields nothing on either failure
-/// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
-/// of the file bytes, a lock file or the source.
-pub fn verify_binding(
-    candidate: LibraryPackage,
-    pinned: &[(LibraryName, Selection)],
-) -> Result<VerifiedPackage, LibraryRefusal> {
-    let exports = verify_package(&candidate)?;
-    match pinned
-        .iter()
-        .find(|(library, _)| *library == candidate.library)
-    {
-        Some((_, selection)) if selection.package_id == candidate.package_id => {
-            Ok(VerifiedPackage {
-                package: candidate,
-                exports,
-            })
-        }
-        Some((library, selection)) => Err(LibraryRefusal::StaleDependency {
-            path: vec![library.clone()],
-            import: ImportDeclaration {
-                library: library.clone(),
-                version: selection.version.clone(),
-                package_id: selection.package_id,
-                qualifier: None,
-            },
-            cause: StaleCause::ByteDigestMismatch,
-        }),
-        None => Err(LibraryRefusal::MissingImport {
-            path: vec![candidate.library.clone()],
-        }),
+/// ADR-011 §4 condition 1's witness: IR's I04 reader admitted the bytes as a
+/// supported `quire.checked-package/v2` wire. `library` is layer 3 and may
+/// not name IR's admitted package type (ADR-011 §6.1: only layer-4
+/// `package` depends on `quire-contract-model`), so the layer-4 reader
+/// attests it with this token instead. [`Self::attest_ir_admitted_v2`] has
+/// exactly one call site, in `checked_package::checked_v2`'s `AdmittedV2`
+/// arm; `tests/it/verified_binding_witness.rs` fails on any other.
+#[derive(Debug)]
+pub(crate) struct SupportedV2Wire(());
+
+impl SupportedV2Wire {
+    /// Attest that IR's v2 reader has just admitted the bytes the candidate
+    /// is derived from. Only `checked_package::checked_v2` calls this.
+    pub(crate) fn attest_ir_admitted_v2() -> Self {
+        Self(())
     }
 }
 
+/// A consumer's pinned request or library lock, as the ADR-011 §4 binding's
+/// condition 3 reads it: at most one [`Selection`] per library identity, so
+/// the binding's answer never depends on the order entries were supplied.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PinnedRequest(BTreeMap<LibraryName, Selection>);
+
+/// Two entries of one pinned request select different versions or
+/// `package_id`s for one library identity (ADR-011 I2's second rule).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("two pins for one library identity select different packages")]
+pub(crate) struct ConflictingPin {
+    /// The library identity pinned twice.
+    pub(crate) library: LibraryName,
+    /// The earlier entry, then the later, conflicting one.
+    pub(crate) selections: Box<[Selection; 2]>,
+}
+
+impl PinnedRequest {
+    /// A pinned request from `entries`. A repeated identity with an equal
+    /// selection is one pin; a repeated identity with a different
+    /// selection is refused.
+    #[allow(
+        dead_code,
+        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
+    )]
+    pub(crate) fn new(
+        entries: impl IntoIterator<Item = (LibraryName, Selection)>,
+    ) -> Result<Self, ConflictingPin> {
+        let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();
+        for (library, selection) in entries {
+            match pins.get(&library) {
+                Some(first) if *first != selection => {
+                    return Err(ConflictingPin {
+                        selections: Box::new([first.clone(), selection]),
+                        library,
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    pins.insert(library, selection);
+                }
+            }
+        }
+        Ok(Self(pins))
+    }
+}
+
+impl From<&LibraryLock> for PinnedRequest {
+    /// A resolved lock's selections: already one per identity.
+    fn from(lock: &LibraryLock) -> Self {
+        Self(lock.selections().into_iter().collect())
+    }
+}
+
+/// ADR-011 §4's verified binding, `library`'s own entry point. The layer-4
+/// `package` reader calls it after IR admitted the wire (condition 1,
+/// `admitted`) and after cross-checking its recomputed `package_id` against
+/// IR's own verified digest (QSL-6 L2). It re-applies condition 2 through
+/// `verify_package` (owner ruling item 3(f): reused unchanged, not a second
+/// digest implementation), then condition 3: `pinned` must select
+/// `candidate`'s identity at `candidate`'s recomputed `package_id` and
+/// version. A different `package_id` refuses as
+/// `StaleDependency{ByteDigestMismatch}`, the same `package_id` at a
+/// different version as `StaleDependency{RevisionMismatch}` (FR-087
+/// Description item 3 ruling (e), FR-087-AC-12), and an unlisted identity as
+/// `MissingImport`. Every refusal names its cause and yields nothing
+/// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
+/// of the file bytes, a lock file or the source.
+pub(crate) fn verify_binding(
+    admitted: SupportedV2Wire,
+    candidate: LibraryPackage,
+    pinned: &PinnedRequest,
+) -> Result<VerifiedPackage, LibraryRefusal> {
+    let SupportedV2Wire(()) = admitted;
+    let exports = verify_package(&candidate)?;
+    let Some(selection) = pinned.0.get(&candidate.library) else {
+        return Err(LibraryRefusal::MissingImport {
+            path: vec![candidate.library],
+        });
+    };
+    let cause = if selection.package_id != candidate.package_id {
+        StaleCause::ByteDigestMismatch
+    } else if selection.version != candidate.version {
+        StaleCause::RevisionMismatch
+    } else {
+        return Ok(VerifiedPackage {
+            package: candidate,
+            exports,
+        });
+    };
+    Err(LibraryRefusal::StaleDependency {
+        pin: StalePin::Pinned(Box::new(PinMismatch {
+            pinned: selection.clone(),
+            presented: Selection {
+                version: candidate.version,
+                package_id: candidate.package_id,
+            },
+        })),
+        path: vec![candidate.library],
+        cause,
+    })
+}
+
 /// The verified package's exported declarations, exposed as opaque data
-/// (ADR-013 T-1; FR-087-AC-4): keyed by their qualified name, each pairable
-/// with [`Self::package`] into a [`PackageNodeKey`] (T-3) for lookup by an
-/// importing package's own check stage. `library` performs no name
-/// resolution over this data, before or after conversion (ADR-013 R-06):
-/// there is no function here that takes a name and returns a declaration or
-/// node id.
+/// (ADR-013 T-1; FR-087-AC-4): each exported qualified name mapped to its
+/// `WireNodeId`, paired with [`Self::package`] into a [`PackageNodeKey`]
+/// (T-3) for an importing package's own check stage to look up. `library`
+/// performs no name resolution over this data (ADR-013 R-06): `ImportView`
+/// has no method that takes a name.
 ///
 /// The only field-carrying constructor is
 /// [`VerifiedPackage::into_import_view`] (private fields, private to this
@@ -786,7 +903,7 @@ pub fn resolve_libraries(
             };
             return Err(LibraryRefusal::StaleDependency {
                 path,
-                import: import.clone(),
+                pin: StalePin::Import(import.clone()),
                 cause,
             });
         };

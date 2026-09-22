@@ -588,20 +588,57 @@ Landed: PR #304 added `CheckedGraph` (`check`), which
 `value::package_identity` into the top-level `library` module, where
 `PackageNodeKey{package, node: WireNodeId}` is defined and wire-fed node
 references are `WireNodeId`s, and added `LibraryRefusal::class()`. QSL-6
-slice A1 added `VerifiedPackage` and the §4 verified binding's `library::
-verify_binding` (conditions 2 and 3; condition 1 stays the layer-4 reader's
-and IR's own job) and `ImportView` (`VerifiedPackage::into_import_view`,
-its only constructor), and wired the I2 reader (`checked_package::
-checked_v2::read_checked_package_v2`) to return `VerifiedPackage` instead
-of a bare `LibraryPackage` candidate. Backed: FR-087-AC-3 (TC-253),
-FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245) and FR-087-AC-12 (TC-282). Still
-to land: the retirement of `ResolvedSourcePackage` (AC-7) and E3
-imported-name resolution (AC-13, TC-379, Planned). AC-1 (constructor/field
-privacy across all five stage-output types) now holds for `VerifiedPackage`
-and `ImportView` too (each has a `compile_fail,E0451` doctest), but AC-1
-itself stays an Inspection criterion across all five types together and is
-not separately flipped here. AC-2, AC-6, AC-8, AC-9, AC-10 and AC-11 have no
-traced test yet.
+slice A1 (PR #340) added `VerifiedPackage`, `ImportView`
+(`VerifiedPackage::into_import_view`, its only constructor) and the §4
+verified binding, the crate-private `library::verify_binding`. The binding
+takes a condition-1 witness (`SupportedV2Wire`) that only the layer-4 v2
+reader mints, in IR's `AdmittedV2` arm; it applies condition 2 through
+`verify_package`, and condition 3 against a `PinnedRequest` (one selection
+per identity, built from a `LibraryLock` or refused on a conflicting pin),
+comparing both the `package_id` and the version (ruling (e)). The I2 reader
+(`checked_package::checked_v2::read_checked_package_v2`) returns
+`VerifiedPackage`. A binding refusal names the pinned selection and the one
+the candidate presented, so `LibraryRefusal::StaleDependency` now carries
+`pin: StalePin` (an import declaration, or a pinned entry) in place of
+`import: ImportDeclaration`. That is a field-shape change AC-11's "variant
+set ... unchanged in shape" wording does not yet list.
+
+Backed: FR-087-AC-3 (TC-253), FR-087-AC-5 (TC-245) and FR-087-AC-12
+(TC-282). TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
+the wire path (`checked_v2` tests). Step 3 runs at the `library` level
+(`library::binding_tests`), because on the wire path IR refuses a
+non-recomputing `package_id` first and names it `stale_dependency`
+(IR-238 item 3); `library` refuses it as `PackageIdMismatch`. Steps 5-7 also
+run at the `library` level. Any wrong `package_id` refuses, so each of those
+cases makes the substitute digest the value the candidate claims *and* the
+pin selects; an implementation that trusted an agreeing claim and pin
+instead of recomputing would admit it. A `syn` scan
+(`tests/it/verified_binding_witness.rs`) fails if the condition-1 witness is
+minted outside the v2 reader.
+
+Not backed: FR-087-AC-4 (TC-254). TC-254's tests show a two-export
+`ImportView` carrying each export at its own `WireNodeId`, and a scan of
+`library` finds no `NodeKey` and no name → `NodeKey`/`PackageNodeKey`
+function. But `ImportView` maps an exported *name* to a `WireNodeId`, and
+`library::package_identity::ProjectedDeclarations::node(&str) ->
+Option<WireNodeId>` maps a name to a node id while admitting a package.
+AC-4 as written ("no function in `library` takes a name ... and returns a
+declaration or node id"), TC-254 steps 2-4 ("keyed by its `WireNodeId` ...
+not by its declared name") and ADR-011 §2.1 I2 ("data keyed by
+`WireNodeId`") forbid both, and AC-11 and this requirement's Behavior
+("No name → identity lookup SHALL exist in `library`") say the same.
+Which of those texts changes is not yet ruled. Remaining work: QSL-6.
+
+AC-1 (constructor/field privacy across all five stage-output types) stays
+an Inspection criterion across all five types together and is not flipped
+here. For `VerifiedPackage` and `ImportView`, crate-external construction
+is shown by `compile_fail` doctests: a struct literal of either type, and a
+call to `verify_binding` with a hand-built candidate. The doctests show only
+that a crate-external caller fails to compile; stable rustdoc does not check
+a `compile_fail` block's error code. Still to land: the retirement of
+`ResolvedSourcePackage` (AC-7) and E3 imported-name resolution (AC-13,
+TC-379, Planned). AC-2, AC-6, AC-8, AC-9, AC-10 and AC-11 have no traced
+test yet.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is
