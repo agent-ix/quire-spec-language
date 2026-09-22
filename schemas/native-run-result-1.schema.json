@@ -112,6 +112,12 @@
             "end"
           ],
           "additionalProperties": false
+        },
+        "runtime": {
+          "type": [
+            "object",
+            "null"
+          ]
         }
       },
       "required": [
@@ -120,7 +126,8 @@
         "message",
         "source",
         "path",
-        "span"
+        "span",
+        "runtime"
       ],
       "additionalProperties": false
     },
