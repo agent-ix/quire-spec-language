@@ -10,23 +10,37 @@
 //!
 //! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
 //! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
-//! form. **Correction (PR #262 review headline finding):** an earlier
-//! version of this note claimed "only the function-application arm moved to
-//! a thin call into `super::family`." It did not move: `Self::call` (the
-//! function `infer_form`'s `Expression::Call` arm dispatches to) is this
-//! module's own unchanged method, still doing the real name resolution,
-//! arity check and per-argument typing, with one incidental call to
-//! `family::mint_call_identity` added for identity. See `Self::call`'s own
-//! doc and `infer_form`'s doc for the full account and FR-065-AC-4/AC-5's
-//! resulting unbacked status. `infer_form` itself carries
-//! `#[deny(clippy::wildcard_enum_match_arm)]` (see its own doc) rather than
-//! this whole module: the module also holds several pre-existing, unrelated
-//! wildcard arms over *other* enums (`ValueType`, `BinaryOperator`) in
-//! small type-eligibility helpers that predate this migration and are
-//! outside FR-065-CON-1's scope ("no internal representation of any family
-//! other than `Value`'s function-declaration and function-application
-//! forms") to rework under this ticket. The denial is pointed at the one
-//! seam the review actually flagged.
+//! form. **QSL-148 moves function-application checking out of this module.**
+//! `Self::call` -- the method `infer_form`'s `Expression::Call` arm used to
+//! dispatch to, doing the real name resolution, arity check and
+//! per-argument typing -- is deleted; its logic now lives in
+//! [`super::family::check_application`], reached through this module's own
+//! `Typer::scope`/`Typer::signatures`/`Typer::type_named`/`Typer::check_as`
+//! accessors (widened from private to `pub(crate)` for exactly this one
+//! caller). `infer_form`'s `Expression::Call` arm makes one call into that
+//! function and holds no semantic logic of its own (FR-065-AC-4). This
+//! module still owns function-declaration *typing*'s underlying engine
+//! (`bind_parameters`, `check_declared_type`, `check_as`), because a
+//! function body is an arbitrary `Expression` and checking one still needs
+//! the same general recursive typer every other `Value` form uses --
+//! FR-065-CON-1 forbids reimplementing that engine a second time inside the
+//! family module, not calling into this module's existing one. What moved
+//! is the *entry point*: `check::family::check_declaration_body` (not this
+//! module's own `PackageDeclarations::check`) now constructs the `Typer`
+//! and drives it for a function declaration's body and measure, so this
+//! module's `check.rs` no longer independently decides whether a
+//! declaration or a call is admitted. See `check::family`'s own doc for the
+//! full account, and for why termination checking (a whole-package call-graph
+//! analysis, not a per-declaration one) cannot move the same way.
+//! `infer_form` itself carries `#[deny(clippy::wildcard_enum_match_arm)]`
+//! (see its own doc) rather than this whole module: the module also holds
+//! several pre-existing, unrelated wildcard arms over *other* enums
+//! (`ValueType`, `BinaryOperator`) in small type-eligibility helpers that
+//! predate this migration and are outside FR-065-CON-1's scope ("no
+//! internal representation of any family other than `Value`'s
+//! function-declaration and function-application forms") to rework under
+//! this ticket. The denial is pointed at the one seam the review actually
+//! flagged.
 
 use super::ir::{
     Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
@@ -419,6 +433,24 @@ impl<'a> Typer<'a> {
         self.slots
     }
 
+    /// The package-level declarations this typing pass resolves names
+    /// against. QSL-148: `check::family::check_application` (the relocated
+    /// function-application checker) reads this to resolve a call's callee
+    /// against `model_operations` and tuple-constructor types, the same way
+    /// this `Typer`'s own other methods already do.
+    pub(crate) fn scope(&self) -> &'a Scope {
+        self.scope
+    }
+
+    /// Every function signature this typing pass may resolve an ordinary
+    /// named [`Expression::Call`] against. QSL-148: `check::family::
+    /// check_application` reads this for name resolution and arity
+    /// checking, exactly as this `Typer`'s own (now deleted) `call` method
+    /// did.
+    pub(crate) fn signatures(&self) -> &'a [Signature] {
+        self.signatures
+    }
+
     /// Bind a parameter or local name, refusing a name already in scope.
     pub(crate) fn bind(
         &mut self,
@@ -649,7 +681,17 @@ impl<'a> Typer<'a> {
     }
 
     /// Resolve a qualified type name: an alias, a record or tuple, or an enum.
-    fn type_named(&self, name: &str, location: &Location) -> Result<ValueType, CheckRefusal> {
+    ///
+    /// `pub(crate)` (QSL-148): `check::family::check_application` (the
+    /// relocated function-application checker) calls this the same way this
+    /// `Typer`'s own (now deleted) `call` method did, to resolve a call's
+    /// callee against a tuple-constructor type when no function signature
+    /// matches.
+    pub(crate) fn type_named(
+        &self,
+        name: &str,
+        location: &Location,
+    ) -> Result<ValueType, CheckRefusal> {
         let mut candidates: Vec<ValueType> = self
             .scope
             .aliases
@@ -754,36 +796,21 @@ impl<'a> Typer<'a> {
 
     /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3).
     ///
-    /// **`Expression::Call` is not thin, and FR-065-AC-4/AC-5 are unbacked
-    /// (PR #262 review headline finding; rescoping decision on #262).** An
-    /// earlier version of this doc claimed the function-application arm
-    /// "makes exactly one call into `super::family::mint_call_identity`/
-    /// `Self::call` and holds no semantic logic of its own," and argued for
-    /// keeping `Expression::Call` as a variant on the grounds that a call is
-    /// "an ordinary, still-nestable operand of every other `Value` form."
-    /// Both statements describe a migration that has not happened: `self.call`
-    /// (`Self::call`, below) is this `Typer`'s own pre-existing method,
-    /// unchanged by this ticket, and it retains its full semantic logic --
-    /// name resolution against `self.signatures`, the arity check, and a
-    /// `self.check_as` typing pass over every argument. The one call this
-    /// arm makes reaches that unchanged logic, not "family check code";
-    /// `family::mint_call_identity` is one incidental call *inside*
-    /// `Self::call`, not the arm's target. FR-065-AC-4 ("the arm... contains
-    /// exactly one call into `Value`'s family check code and no other
-    /// conditional, lookup or loop") and FR-065-AC-5 (the composed checker's
-    /// pre-migration entry points are absent, and its input enum carries no
-    /// function-declaration/application variant) are both unmet, for the
-    /// same reason: the checking itself never moved onto the contract, so
-    /// there is nothing to delete from this enum or from `Self::call`
-    /// without deleting the only checker function application has ever had.
-    /// Both criteria are recorded unbacked; the real migration -- moving
-    /// this arm's logic into `ValueFunctionFamily::check` and removing it
-    /// from `Typer` -- is its own, separately filed ticket, not amended
-    /// spec text here. The former argument for keeping `Expression::Call`
-    /// "as an ordinary nestable operand" was reasoning about that migration
-    /// as if it had already happened; it had not, so that argument is
-    /// deleted along with the claim it was defending, not carried forward
-    /// as this ticket's own justification.
+    /// **`Expression::Call` is thin (QSL-148).** The arm below makes exactly
+    /// one call, into [`super::family::check_application`] -- `Value`'s
+    /// family check code for function application -- and holds no semantic
+    /// logic of its own (FR-065-AC-4): no name resolution, arity check or
+    /// per-argument typing loop runs directly in this arm. `Self::call`, the
+    /// method that used to hold that logic, is deleted; `check_application`
+    /// is its relocated replacement, reached through `Typer`'s own
+    /// `scope`/`signatures`/`type_named`/`check_as` accessors (see this
+    /// module's own doc). `Expression::Call` itself is not deleted from
+    /// [`Expression`] -- a call remains an ordinary, nestable operand of
+    /// every other `Value` form, and `infer_form`'s match must stay
+    /// exhaustive over every variant the enum actually carries -- what
+    /// FR-065-AC-5 requires absent is the composed checker's *own*
+    /// pre-migration checking entry point (`Self::call`), not the syntax
+    /// variant every parsed call still needs.
     ///
     /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
     /// QSL-25 implementation by owner ruling): a future change that wants
@@ -944,7 +971,9 @@ impl<'a> Typer<'a> {
                 let value_type = operand.value_type.clone();
                 Ok(node(NodeKind::Pre(Box::new(operand)), value_type, location))
             }
-            Expression::Call { name, arguments } => self.call(name, arguments, location),
+            Expression::Call { name, arguments } => {
+                super::family::check_application(self, name, arguments, location)
+            }
             Expression::Record { name, fields } => self.record(name, fields, location),
             Expression::Collection { kind, elements } => {
                 self.collection_literal(*kind, elements, hint, location)
@@ -1609,100 +1638,6 @@ impl<'a> Typer<'a> {
             value_type,
             location,
         ))
-    }
-
-    fn call(
-        &mut self,
-        name: &str,
-        arguments: &[Expression],
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let functions: Vec<usize> = self
-            .signatures
-            .iter()
-            .enumerate()
-            .filter(|(_, signature)| signature.name == name && signature.callable_by_name)
-            .map(|(index, _)| index)
-            .collect();
-        if let Some(&function) = functions.first() {
-            let signature = self
-                .signatures
-                .get(function)
-                .ok_or_else(|| mismatch(location))?;
-            if signature.parameters.len() != arguments.len() {
-                return Err(mismatch(location));
-            }
-            let mut typed = Vec::with_capacity(arguments.len());
-            for (index, (argument, (_, parameter))) in
-                arguments.iter().zip(&signature.parameters).enumerate()
-            {
-                typed.push(self.check_as(argument, parameter, &location.child(index))?);
-            }
-            // FR-062/FR-065: identity is minted from the call's *parsed*
-            // structure (`name`, `arguments` before typing), never from
-            // `function` (a position-dependent index into `self.signatures`
-            // that shifts when unrelated declarations reorder) -- see
-            // `super::family::mint_call_identity`'s doc.
-            let identity = super::family::mint_call_identity(
-                super::family::DEFAULT_PACKAGE_IDENTITY,
-                name,
-                arguments,
-            );
-            return Ok(node(
-                NodeKind::Call {
-                    identity,
-                    function,
-                    arguments: typed,
-                },
-                signature.result.clone(),
-                location,
-            ));
-        }
-        let declared = match self.type_named(name, location) {
-            Ok(value_type) => Some(value_type),
-            Err(CheckRefusal {
-                cause: CheckCause::MissingName(_),
-                ..
-            }) => None,
-            Err(refusal) => return Err(refusal),
-        };
-        match declared {
-            Some(ValueType::Composite(key)) => {
-                let Some(CompositeShape::Tuple(positions)) = self
-                    .scope
-                    .types
-                    .composite(key)
-                    .map(|declaration| declaration.shape())
-                else {
-                    return Err(ineligible(location));
-                };
-                if positions.len() != arguments.len() {
-                    return Err(mismatch(location));
-                }
-                let mut typed = Vec::with_capacity(arguments.len());
-                for (index, (argument, position)) in arguments.iter().zip(positions).enumerate() {
-                    typed.push(self.check_as(argument, position, &location.child(index))?);
-                }
-                Ok(node(
-                    NodeKind::Tuple {
-                        declaration: key,
-                        arguments: typed,
-                    },
-                    ValueType::Composite(key),
-                    location,
-                ))
-            }
-            Some(_) => Err(ineligible(location)),
-            None if self
-                .scope
-                .model_operations
-                .iter()
-                .any(|operation| operation == name) =>
-            {
-                Err(ineligible(location))
-            }
-            None => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
-        }
     }
 
     /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):

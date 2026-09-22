@@ -197,8 +197,8 @@ for the function family.
 | FR-065-AC-1 | Calling the function packaging/lowering public API with a checked node or verified checked-package bytes succeeds; a test that attempts to call it with a raw CST node or a raw source string fails to compile (no accepting overload or conversion exists), not merely at runtime. | Test (TC-163) |
 | FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity is the same value read at three points: immediately after `check`, again after S4 linking, and again after decoding the emitted v2 bytes. Reordering unrelated top-level declarations in the source leaves that identity unchanged at all three points. | Test (TC-163) |
 | FR-065-AC-3 | Given the same source file, the call's source occurrence (identity, role, ordinal) resolves to the same byte span before linking, after linking, and after decoding from v2 bytes; corrupting one byte of the occurrence's region in a hand-built alternate package makes the resolved span differ, showing the test actually reads the region rather than a constant. | Test (TC-163) |
-| FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
-| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
+| FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163, TC-376) |
+| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164, TC-377) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 
 ## Dependencies
@@ -304,18 +304,39 @@ delivered code today:
   `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
   deleted as self-corrupting in the PR #262 review round, finding F6, and
   not replaced). Owner: QSL-154.
-- FR-065-AC-4: unbacked. Untagged, and unmeetable as worded while the
-  checking decision stays in `Typer`: the arm's one call reaches
-  `Self::call`, not "family check code" (see `check.rs`'s corrected doc).
-  Owner: QSL-148 (named explicitly, not only implied by AC-5's row).
-- FR-065-AC-5: unbacked, by the rescoping decision on #262. The composed
-  checker's pre-migration entry points for both forms are not absent --
-  `Typer`'s declaration-typing pass and `Self::call` are exactly those
-  entry points, unchanged and still the only checker either form has. This
-  criterion is intentionally not narrowed to match; it names the real
-  target (move the checking into `ValueFunctionFamily::check` and delete it
-  from `Typer`), which is filed as its own, separate ticket rather than
-  attempted as part of #214. Owner: QSL-148.
+- FR-065-AC-4: backed (QSL-148; `TC-376`). The checking decision no longer
+  stays in `Typer`: `infer_form`'s `Call` arm is exactly one call into
+  `super::family::check_application` (`Value`'s function family's own
+  checking code, `src/check/family.rs`) and holds no other conditional,
+  lookup or loop, satisfying this criterion's shape as literally worded.
+  `check_application_accepts_a_well_typed_call`,
+  `check_application_refuses_wrong_arity` and
+  `check_application_refuses_an_unknown_name`
+  (`#[trace("TC-376", "FR-065-AC-4")]`) verify that call's own accept/refuse
+  behavior directly, per the team-lead testing-policy ruling recorded on
+  `TC-376` (test what the family check accepts and refuses, not the arm's
+  code shape) -- so this criterion's own literal verification method (a
+  code-shape/AST test) is not implemented as worded; `TC-163`'s step 6
+  covers that shape directly and is unaffected by this note.
+- FR-065-AC-5: backed (QSL-148; `TC-377`). The composed checker's
+  pre-migration entry points for both forms are now genuinely absent:
+  `Typer::call` is deleted (`src/check/check.rs`), and the inline per-
+  declaration typing/definedness pass previously in `check/mod.rs`'s loop
+  is replaced by a call to `check::family::check_declaration_body`. Real
+  recursive checking (typing, definedness) now runs through the function
+  family's own module; `check_declaration_body_accepts_a_well_typed_
+  declaration_and_reports_its_calls` and `check_declaration_body_refuses_
+  an_ill_typed_body` (`#[trace("TC-377", "FR-065-AC-5")]`) verify that
+  entry point's accept/refuse behavior and its call-reporting directly, per
+  the same team-lead testing-policy ruling -- so this criterion's own
+  literal verification method (a symbol-absence grep and an `E0004`
+  compile-fail fixture) is not implemented as worded; see `TC-164`'s own
+  Status section. Termination checking is explicitly excluded from this
+  move -- see `check_declaration_body`'s doc comment
+  (`src/check/family.rs`) and this ticket's report for why a whole-package,
+  cross-declaration call-graph analysis cannot become a per-declaration
+  `FamilyContract`-style check; `check::termination::check` remains an
+  unchanged, separate whole-package pass.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
@@ -323,8 +344,11 @@ delivered code today:
   QSL-5 / #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
 
-One of this requirement's six Acceptance Criteria is backed (AC-2,
-identity/provenance); the other five are unbacked, for the reasons above.
-`TC-164`, `TC-165` and `TC-166` -- the test cases FR-065-AC-5, the
-migration-recipe completeness check, and FR-065-AC-6 verify against -- have
-zero tests each in the delivered code.
+Three of this requirement's six Acceptance Criteria are backed (AC-2,
+identity/provenance; AC-4 and AC-5, function checking moved into the
+family, QSL-148); the other three are unbacked, for the reasons above.
+`TC-165` and `TC-166` -- the migration-recipe completeness check and
+FR-065-AC-6 -- have zero tests each in the delivered code. `TC-164` keeps
+its own zero-test procedure (see its Status section) but the criterion it
+targets, AC-5, is now backed through `TC-377` instead, per the team-lead
+testing-policy ruling recorded there.

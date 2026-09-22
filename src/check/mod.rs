@@ -450,19 +450,19 @@ impl PackageDeclarations {
             .collect();
         let mut nodes = 0_u64;
         let mut functions = Vec::with_capacity(self.functions.len());
-        // FR-062/FR-065, corrected per PR #262 review (the headline
-        // question): identity is minted, and one diagnostic logged, through
+        let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(self.functions.len());
+        // QSL-148: identity is minted, and one diagnostic logged, through
         // the checked-family contract's own `check` hook
-        // (`family::ValueFunctionFamily::check`) -- that part is real and
-        // exclusive to the contract. It is NOT what decides whether this
-        // declaration is admitted: `check` only ever refuses on the
-        // nesting-depth limit below, and admits unconditionally otherwise.
-        // The typing, definedness and termination verdict is still made
-        // entirely by the unchanged `Typer`, invoked immediately below, for
-        // every function, unconditionally -- FR-065's own claim that this
-        // migration makes the form "check... exclusively through" the
-        // contract is accurate only for identity/provenance minting, not
-        // for the checking decision itself.
+        // (`family::ValueFunctionFamily::check`) -- unchanged from #214.
+        // What changed: the typing and static-definedness verdict is no
+        // longer made by a `Typer` this loop constructs and drives
+        // directly. `family::check_declaration_body` (`check::family`, this
+        // migration's own function) is the only place that now constructs a
+        // `Typer` for a function declaration's body or measure; this loop
+        // calls it once per declaration, immediately after the contract's
+        // own `check`. Termination stays below, over every declaration's
+        // own `calls` this loop collects: see `check_declaration_body`'s
+        // own doc for why that one part cannot move the same way.
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
         // PR #262 review, finding F4: this used to hardcode
         // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
@@ -544,54 +544,41 @@ impl PackageDeclarations {
                     continue;
                 }
             };
-            let typed = (|| {
-                let mut typer = Typer::new(
-                    &scope,
-                    &signatures,
-                    limits,
-                    &mut nodes,
-                    function.clause_kind,
-                );
-                bind_parameters(&mut typer, &function.parameters, &location)?;
-                typer.check_declared_type(&function.result, &location)?;
-                let body = typer.check_as(&function.body, &function.result, &location)?;
-                let slots = typer.slots();
-                let measure = match &function.measure {
-                    Some(measure) => {
-                        let at = root(Origin::Measure {
-                            function: function.name.clone(),
-                            index,
-                        });
-                        // A `decreases` measure is always checked as
-                        // `ClauseKind::Body` (`syntax.rs`'s own doc: "A
-                        // function body, an operation body, or a `decreases`
-                        // measure"), never `function.clause_kind`: FR-151's
-                        // dispatch-call restriction gates on the *body's*
-                        // context, and a measure is its own, always-Body
-                        // context regardless of what the body itself is
-                        // checked as.
-                        let mut typer =
-                            Typer::new(&scope, &signatures, limits, &mut nodes, ClauseKind::Body);
-                        bind_parameters(&mut typer, &function.parameters, &at)?;
-                        Some(typer.infer(measure, None, &at)?)
-                    }
-                    None => None,
-                };
-                Ok::<_, CheckRefusal>((body, measure, slots))
-            })();
-            match typed {
-                Ok((body, measure, slots)) => functions.push(CheckedFunction {
-                    identity,
-                    signature: Signature {
-                        name: function.name,
-                        parameters: function.parameters,
-                        result: function.result,
-                        callable_by_name: function.callable_by_name,
-                    },
-                    body,
-                    measure,
-                    slots,
-                }),
+            let measure_location = root(Origin::Measure {
+                function: function.name.clone(),
+                index,
+            });
+            // QSL-148: the real typing and static-definedness verdict, made
+            // by `family::check_declaration_body` (not this loop, and not a
+            // `Typer` this loop constructs directly any more -- see this
+            // method's own doc above and `check_declaration_body`'s doc for
+            // why termination stays below instead of moving in too).
+            let checked = family::check_declaration_body(
+                &scope,
+                &signatures,
+                &dispatch_tables,
+                limits,
+                &mut nodes,
+                &function,
+                &location,
+                &measure_location,
+            );
+            match checked {
+                Ok(checked) => {
+                    functions.push(CheckedFunction {
+                        identity,
+                        signature: Signature {
+                            name: function.name,
+                            parameters: function.parameters,
+                            result: function.result,
+                            callable_by_name: function.callable_by_name,
+                        },
+                        body: checked.body,
+                        measure: checked.measure,
+                        slots: checked.slots,
+                    });
+                    calls.push(checked.calls);
+                }
                 Err(refusal) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted { .. });
                     refusals.push(refusal);
@@ -604,28 +591,14 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(functions.len());
-        for function in &functions {
-            let parameters = function.signature.parameters.len();
-            let mut body =
-                Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations);
-            let checked = body
-                .check(&function.body)
-                .and_then(|()| match &function.measure {
-                    Some(measure) => {
-                        Definedness::new(parameters, &dispatch_tables, &scope.dispatch_operations)
-                            .check(measure)
-                    }
-                    None => Ok(()),
-                });
-            if let Err(refusal) = checked {
-                refusals.push(refusal);
-            }
-            calls.push(body.calls);
-        }
-        if !refusals.is_empty() {
-            return Err(refusals);
-        }
+        // QSL-148: static definedness is checked per declaration now, inside
+        // `family::check_declaration_body`, immediately after that same
+        // declaration's typing -- `calls` (one entry per admitted function,
+        // in the same order as `functions`) is collected there, not by a
+        // separate pass over `&functions` here. Termination is unchanged: it
+        // is still a whole-package call-graph analysis over every
+        // declaration's own `calls` at once (see `check_declaration_body`'s
+        // own doc for why it cannot move alongside typing/definedness).
         let members: Vec<termination::Member<'_>> = functions
             .iter()
             .zip(&calls)

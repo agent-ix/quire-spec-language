@@ -655,7 +655,7 @@ mod family_contract_tests {
         assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
-    /// **Tagged `FR-062-AC-5` (QSL-153), still not `FR-062-AC-7`.** AC-5's
+    /// **Tagged `FR-062-AC-5` (QSL-153), not `FR-062-AC-7`.** AC-5's
     /// `Limit` half only requires that *some* limit be reached and reported
     /// as a `Limit` outcome naming its kind, not a refusal, checked node or
     /// `Incomplete` -- exactly what this test shows below, structurally
@@ -670,7 +670,8 @@ mod family_contract_tests {
     /// `self.depth += 1` from `CheckContext::enter_nesting` (removing the
     /// nesting bound entirely) leaves this test passing unchanged, because
     /// it never calls `enter_nesting` more than once to observe the
-    /// increment. QSL-148 owns AC-7's real recursive-descent fixture.
+    /// increment. QSL-148 owns AC-7's real recursive-descent fixture --
+    /// [`real_recursive_descent_is_nesting_depth_bounded`] below.
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn nesting_depth_limit_is_the_proximate_cause() {
@@ -842,6 +843,60 @@ mod family_contract_tests {
             &mut scopes,
         );
         assert!(ValueFunctionFamily::check(&form, &mut cx).is_ok());
+    }
+
+    /// FR-062-AC-7 (QSL-148, TC-378): the nesting-depth limit is the
+    /// proximate cause for a fixture genuinely nested past depth 1 --
+    /// `Not(Not(Not(true)))`, four levels deep counting the `Boolean`
+    /// leaf. Before QSL-148, `check` charged `enter_nesting` exactly once
+    /// per top-level declaration regardless of the body's own shape, so
+    /// this fixture would have been admitted at any limit >= 1; the
+    /// predicate this test exercises now genuinely reduces to "does the
+    /// body's own deepest nesting fit the configured limit", not "was
+    /// `check` called".
+    #[trace("TC-378", "FR-062-AC-7")]
+    #[test]
+    fn real_recursive_descent_is_nesting_depth_bounded() {
+        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
+            Box::new(Expression::Boolean(true)),
+        )))));
+        let form = declaration("f", nested);
+
+        let mut tight = StageLimits {
+            nesting_depth: 3,
+            input_bytes: u64::MAX,
+            node_count: u64::MAX,
+        };
+        let mut cx = CheckContext::new(
+            &package_identity,
+            tight,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let refused = ValueFunctionFamily::check(&form, &mut cx);
+        assert!(
+            matches!(refused, Err(crate::family::StageFailure::Limit(_))),
+            "a limit of 3 must refuse a body nested 4 deep (3 `Not`s plus the `Boolean` leaf)"
+        );
+
+        tight.nesting_depth = 4;
+        let mut cx = CheckContext::new(
+            &package_identity,
+            tight,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let admitted = ValueFunctionFamily::check(&form, &mut cx);
+        assert!(
+            admitted.is_ok(),
+            "a limit of 4 must admit a body nested exactly 4 deep"
+        );
     }
 }
 
