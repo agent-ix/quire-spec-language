@@ -34,10 +34,10 @@ this evaluator diverge, the owned rule governs and this requirement is defective
 
 | Behavior subsection | Owned source |
 | --- | --- |
-| Profile and clock selection | FR-090 Behavior; the three profile definition artifacts |
+| Profile and clock selection | `ix://agent-ix/quire-specification/FR-090` Behavior; the three profile definition artifacts |
 | Operators — the eight bounded operators, inclusive intervals, `once[1,1]` | temporal-common.md "Temporal forms and obligations"; FR-091, FR-092 |
 | Operators — lower-bound convention and the release/triggered duals | FR-091-AC-3, FR-092-AC-3; temporal-common.md until/since rule |
-| Operators — order-sensitive refusal on equal coordinates | FR-090-AC-4; temporal-timestamped-window.md |
+| Operators — order-sensitive refusal on equal coordinates | `ix://agent-ix/quire-specification/FR-090`-AC-4; temporal-timestamped-window.md |
 | Atoms, constants and boundaries | FR-091-AC-2, FR-092-AC-2; the three profile definition artifacts |
 | Progress, closure and settlement | FR-094 Behavior and FR-094-AC-1..AC-8; FR-091-AC-4 |
 
