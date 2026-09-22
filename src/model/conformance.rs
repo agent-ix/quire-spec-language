@@ -28,7 +28,7 @@
 //!   single-relation guard form directly, as
 //!   [`crate::model::domain_package::PostconditionClause`]. What a clause
 //!   actually establishes is not caller-trusted, though —
-//!   [`crate::check::check_field_refinement_obligation`] (ADR-011 §7.3 M-2,
+//!   `crate::check::check_field_refinement_obligation` (ADR-011 §7.3 M-2,
 //!   QSL-7: moved to `check` from this module, the only `conformance` code
 //!   that read `value::expression`/`check` facts) rebuilds the small typed guard
 //!   tree each clause describes and runs it through `crate::check`'s own
@@ -160,14 +160,14 @@ pub enum RedefinitionTargetOutcome {
 }
 
 /// `fields`, `operations` and `scalars` are `pub(crate)` (ADR-011 §7.3 M-2,
-/// QSL-7): [`crate::check::check_field_refinement_obligation`] reaches back
+/// QSL-7): `crate::check::check_field_refinement_obligation` reaches back
 /// into this model-layer index from `check`, which sits above `model` in
 /// ADR-011 §6.1's layer-3 order, so that direction is legal. `generals_by_specific`
 /// and `member_owner` stay private -- nothing outside `model` reads them.
 pub(crate) struct ConformanceIndex {
     generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
     pub(crate) fields: HashMap<DeclarationKey, FieldMemberRecord>,
-    /// A `BTreeMap`, not a `HashMap`: [`crate::check::check_field_refinement_obligation`]
+    /// A `BTreeMap`, not a `HashMap`: `crate::check::check_field_refinement_obligation`
     /// scans `.values()` for the (assumed unique) writer of a field, and a
     /// `HashMap`'s `RandomState` iteration order made that scan
     /// nondeterministic across runs of the same domain package (finding #3).

@@ -9,7 +9,7 @@ use super::cst::{
     DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, InvalidModelComponent,
     ModelDigest, ModelRef,
 };
-use crate::{ByteDigest, SourceIdentity, Span};
+use crate::{ByteDigest, Code, SourceIdentity, Span};
 
 /// Unforgeable crate-issued proof that typed definition/model parts came from
 /// the owning reader boundary.
@@ -668,7 +668,7 @@ fn link_complete_bundle(selected: BTreeSet<Facet>) -> Result<CompleteBundle, Pac
 #[error("{code:?} in {authority:?} at {span:?}: {cause}")]
 pub struct PackageRefusal {
     /// Stable producer classification.
-    pub code: super::CompleteCode,
+    pub code: Code,
     /// Exact source identity, path and raw-byte digest being refused.
     pub authority: Box<SourceAuthority>,
     /// Exact selecting source range.
@@ -695,11 +695,7 @@ pub fn resolve_source_package(
         };
         // The source's first diagnostic classifies it; an inadmissible source
         // without one broke the parser's established invariant.
-        let mut refused = refusal(
-            super::CompleteCode::RuntimeInvariant,
-            whole,
-            PackageError::InvalidSource,
-        );
+        let mut refused = refusal(Code::RuntimeInvariant, whole, PackageError::InvalidSource);
         if let Some(first) = parsed.diagnostics().first() {
             refused.code = first.code;
             refused.cause_tag = first.cause;
@@ -745,7 +741,7 @@ pub fn resolve_source_package(
         for (alias, span) in aliases {
             if let Some(first_span) = seen.insert(alias, span) {
                 return Err(refusal(
-                    super::CompleteCode::AmbiguousDeclaration,
+                    Code::AmbiguousDeclaration,
                     span,
                     PackageError::DuplicateAlias {
                         namespace: namespace.into(),
@@ -777,7 +773,7 @@ pub fn resolve_source_package(
         {
             if previous != selected {
                 return Err(refusal(
-                    super::CompleteCode::InvalidModelBinding,
+                    Code::InvalidModelBinding,
                     selection.span,
                     PackageError::ConflictingModels(Box::new(ModelConflict {
                         first: previous.clone(),
@@ -793,11 +789,7 @@ pub fn resolve_source_package(
             } else {
                 PackageError::MissingModel(selected.clone())
             };
-            return Err(refusal(
-                super::CompleteCode::InvalidModelBinding,
-                selection.span,
-                cause,
-            ));
+            return Err(refusal(Code::InvalidModelBinding, selection.span, cause));
         };
         resolved_models.insert(selected.clone(), model.clone());
     }
@@ -807,7 +799,7 @@ pub fn resolve_source_package(
         .is_none_or(|count| count > limits.definitions)
     {
         return Err(refusal(
-            super::CompleteCode::ResourceExhausted,
+            Code::ResourceExhausted,
             Span { start: 0, end: 0 },
             PackageError::ResourceLimit,
         ));
@@ -820,7 +812,7 @@ pub fn resolve_source_package(
         {
             if previous != *selected {
                 return Err(refusal(
-                    super::CompleteCode::AmbiguousDeclaration,
+                    Code::AmbiguousDeclaration,
                     *span,
                     PackageError::ConflictingDefinitions(Box::new(DefinitionConflict {
                         first: previous.clone(),
@@ -837,7 +829,7 @@ pub fn resolve_source_package(
             let (code, cause) = if catalog.contains_identity(selected.identity()) {
                 if catalog.contains_version(selected.identity(), selected.version()) {
                     let mut stale = refusal(
-                        super::CompleteCode::StaleDependency,
+                        Code::StaleDependency,
                         *span,
                         PackageError::StaleDefinition((*selected).clone()),
                     );
@@ -845,17 +837,17 @@ pub fn resolve_source_package(
                     return Err(stale);
                 }
                 (
-                    super::CompleteCode::StaleDependency,
+                    Code::StaleDependency,
                     PackageError::StaleDefinition((*selected).clone()),
                 )
             } else if *profile {
                 (
-                    super::CompleteCode::UnknownProfile,
+                    Code::UnknownProfile,
                     PackageError::MissingDefinition((*selected).clone()),
                 )
             } else {
                 (
-                    super::CompleteCode::MissingImport,
+                    Code::MissingImport,
                     PackageError::MissingDefinition((*selected).clone()),
                 )
             };
@@ -881,7 +873,7 @@ pub fn resolve_source_package(
                 done.insert(selected.clone());
                 if resolved.len() >= limits.definitions {
                     return Err(refusal(
-                        super::CompleteCode::ResourceExhausted,
+                        Code::ResourceExhausted,
                         span,
                         PackageError::ResourceLimit,
                     ));
@@ -898,7 +890,7 @@ pub fn resolve_source_package(
             }
             if let Some(start) = active.iter().position(|definition| definition == &selected) {
                 return Err(refusal(
-                    super::CompleteCode::InvalidPackage,
+                    Code::InvalidPackage,
                     span,
                     PackageError::DefinitionCycle(
                         active[start..].iter().cloned().chain([selected]).collect(),
@@ -907,14 +899,14 @@ pub fn resolve_source_package(
             }
             let Some(definition) = catalog.exact(&selected) else {
                 return Err(refusal(
-                    super::CompleteCode::MissingImport,
+                    Code::MissingImport,
                     span,
                     PackageError::MissingDefinition(selected),
                 ));
             };
             if active.len() >= limits.depth {
                 return Err(refusal(
-                    super::CompleteCode::ResourceExhausted,
+                    Code::ResourceExhausted,
                     span,
                     PackageError::ResourceLimit,
                 ));
@@ -922,15 +914,11 @@ pub fn resolve_source_package(
             traversed_edges = traversed_edges
                 .checked_add(definition.dependencies.len())
                 .ok_or_else(|| {
-                    refusal(
-                        super::CompleteCode::ResourceExhausted,
-                        span,
-                        PackageError::ResourceLimit,
-                    )
+                    refusal(Code::ResourceExhausted, span, PackageError::ResourceLimit)
                 })?;
             if traversed_edges > limits.dependency_edges {
                 return Err(refusal(
-                    super::CompleteCode::ResourceExhausted,
+                    Code::ResourceExhausted,
                     span,
                     PackageError::ResourceLimit,
                 ));
@@ -953,7 +941,7 @@ pub fn resolve_source_package(
         {
             if previous != selected {
                 return Err(refusal(
-                    super::CompleteCode::AmbiguousDeclaration,
+                    Code::AmbiguousDeclaration,
                     selected_span,
                     PackageError::ConflictingDefinitions(Box::new(DefinitionConflict {
                         first: previous.clone(),
@@ -986,7 +974,7 @@ pub fn resolve_source_package(
         });
     if resolved_artifact_bytes.is_none_or(|bytes| bytes > limits.artifact_bytes) {
         return Err(refusal(
-            super::CompleteCode::ResourceExhausted,
+            Code::ResourceExhausted,
             artifact_span,
             PackageError::ResourceLimit,
         ));
@@ -1004,7 +992,7 @@ pub fn resolve_source_package(
         CapabilityId::complete_inventory().into_iter().collect();
     if let Some(missing) = required_capabilities.difference(&capabilities).next() {
         return Err(refusal(
-            super::CompleteCode::UnknownRequiredFeature,
+            Code::UnknownRequiredFeature,
             selections
                 .profiles
                 .first()
@@ -1101,7 +1089,7 @@ fn source_authority(parsed: &super::ParsedSource) -> SourceAuthority {
 
 fn refusal(
     parsed: &super::ParsedSource,
-    code: super::CompleteCode,
+    code: Code,
     span: Span,
     cause: PackageError,
 ) -> PackageRefusal {
@@ -1117,7 +1105,7 @@ fn refusal(
 /// The catalogued cause tag of a package-graph refusal. A stale definition is
 /// tagged at its call site, which knows whether the version or only the digest
 /// differs; here it is the version.
-fn cause_tag(code: super::CompleteCode, cause: &PackageError) -> super::CompleteCause {
+fn cause_tag(code: Code, cause: &PackageError) -> super::CompleteCause {
     use super::CompleteCause as Tag;
     match cause {
         PackageError::InvalidSource => Tag::EstablishedInvariantBroken,
@@ -1128,7 +1116,7 @@ fn cause_tag(code: super::CompleteCode, cause: &PackageError) -> super::Complete
         | PackageError::InvalidModelVersion
         | PackageError::InvalidModelArtifactBytes => Tag::InvalidValue,
         PackageError::DuplicateDefinition | PackageError::DuplicateModel => Tag::DuplicateMember,
-        PackageError::MissingDefinition(_) if code == super::CompleteCode::UnknownProfile => {
+        PackageError::MissingDefinition(_) if code == Code::UnknownProfile => {
             Tag::UnsupportedSelection
         }
         PackageError::MissingDefinition(_) => Tag::MissingSelection,
@@ -1151,10 +1139,8 @@ fn identity_refusal(
     cause: PackageError,
 ) -> PackageRefusal {
     let code = match &cause {
-        PackageError::CanonicalSize | PackageError::ResourceLimit => {
-            super::CompleteCode::ResourceExhausted
-        }
-        _ => super::CompleteCode::InvalidPackage,
+        PackageError::CanonicalSize | PackageError::ResourceLimit => Code::ResourceExhausted,
+        _ => Code::InvalidPackage,
     };
     refusal(parsed, code, span, cause)
 }
