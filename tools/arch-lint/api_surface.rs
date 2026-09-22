@@ -156,7 +156,6 @@ pub(crate) const RULES: &[Rule] = &[
         allowed_caller_prefixes: &[
             "value::expression::check",
             "check::checked_dispatch",
-            "value::library",
             "value::node",
         ],
         requires_path: Some("src/value/node.rs"),
