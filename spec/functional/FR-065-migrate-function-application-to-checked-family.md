@@ -77,6 +77,15 @@ verified through the package boundary (ADR-011 E4/E5). It SHALL NOT accept
 raw CST, raw source text or a token stream as an input from which it derives
 function semantics.
 
+### The contract's `check` hook makes the typing verdict
+
+The `Value` family's `check` hook for a function declaration SHALL type-check
+the declaration's body against its declared result type. It SHALL refuse an
+ill-typed declaration through the contract's refusal outcome
+(`StageFailure::Refused`), carrying an `ill_typed` cause, and SHALL record no
+success diagnostic for it. It SHALL admit a well-typed declaration with the
+declaration's minted identity.
+
 ### `infer_form`'s function-application arms are thin
 
 The function-application arms of `infer_form` (ADR-012 §4.3; today
@@ -200,6 +209,7 @@ for the function family.
 | FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
 | FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
+| FR-065-AC-7 | Checking the declaration `g() -> Boolean = 1` (an `Integer` body against a declared `Boolean` result) through the `Value` family's contract `check` hook returns `StageFailure::Refused` whose cause is `ill_typed` / `type-mismatch`, and the diagnostic sink holds no entry afterwards. Checking the well-typed declaration `f() -> Boolean = true` through the same hook returns the checked declaration, whose identity equals the identity minted for `f`. | Test (TC-380) |
 
 ## Dependencies
 
@@ -275,7 +285,9 @@ itself -- typing, definedness and termination -- does not: it is made
 entirely by the unchanged `Typer`, unconditionally, for every declaration
 and every call, exactly as before this ticket. `ValueFunctionFamily::check`
 only ever refuses on the nesting-depth limit; `Expression::Call` never
-calls any `FamilyContract` method at all.
+calls any `FamilyContract` method at all. (QSL-148, PR #303, later moved the
+declaration typing verdict into `ValueFunctionFamily::check`; see the AC-7
+entry below.)
 
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:
@@ -361,11 +373,17 @@ delivered code today:
   in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
   QSL-5 / #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
+- FR-065-AC-7: covered in behavior, not yet traced. Since QSL-148 (PR #303)
+  the contract's `check` hook type-checks the body.
+  `value_function_family_check_refuses_an_ill_typed_body` (refusal half)
+  and `value_function_family_checks_through_the_contract` (admission half),
+  both in `src/value/expression/family.rs`, assert what AC-7 states, but
+  neither carries a `TC-380` / `FR-065-AC-7` trace tag yet.
 
-One of this requirement's six Acceptance Criteria is backed (AC-2,
+One of this requirement's seven Acceptance Criteria is backed (AC-2,
 identity/provenance); AC-4 is true by inspection but not backed by a test
-that could catch its own regression; the other four (AC-1, AC-3, AC-5, AC-6)
-are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
+that could catch its own regression; AC-7 is covered by untagged tests; the
+other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
 migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
 in the delivered code. `TC-164` keeps its own zero-test procedure (see its
 Status section); the criterion it targets, AC-5, stays unbacked (see the

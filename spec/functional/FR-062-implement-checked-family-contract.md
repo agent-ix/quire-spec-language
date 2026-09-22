@@ -143,6 +143,15 @@ called on an arbitrarily deeply nested form (for example, nested function
 application) SHALL refuse with a limit outcome naming the nesting-depth
 limit once that limit is reached, rather than exhaust the native stack.
 
+The expression-node limit a caller configures for checking a package
+(`CheckingLimits::new(nodes, depth)`) bounds the package as a whole: the
+expression nodes of every declaration in the package count against that one
+budget. When the package's declarations together exceed it, package checking
+SHALL refuse with `resource_exhausted`, naming the typing stage, the node
+limit kind and the caller's configured limit value
+(`ResourceExhausted{Typing, Nodes, <configured limit>}`), including when
+each declaration alone is within the limit.
+
 ### Packaging is all-or-nothing
 
 A family's `package` hook, given one checked item, SHALL either emit every
@@ -167,6 +176,7 @@ outcome.
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
+| FR-062-AC-11 | Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it refuses the package holding both with `ResourceExhausted{stage: Typing, kind: Nodes, limit: 4}`. | Test (TC-381) |
 
 ## Dependencies
 
@@ -297,13 +307,15 @@ they exist in the delivered code today:
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
+- FR-062-AC-11: backed (`TC-381`):
+  `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
+  (`tests/it/total_functions.rs`).
 
-Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-5;
-PR #303 review round 3, finding F3 -- corrected back from an intervening
-"one... (AC-2)" summary that briefly contradicted AC-5's own row and its
-two `FR-062-AC-5`-tagged tests, both still real and passing:
+Three of this requirement's eleven Acceptance Criteria are backed (AC-2,
+AC-5, AC-11). AC-5's two tagged tests are
 `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
-`evaluate_returns_incomplete_when_the_meter_is_exhausted`,
-`src/value/expression/family.rs`); the other eight are unbacked, for the
+`evaluate_returns_incomplete_when_the_meter_is_exhausted`
+(`src/value/expression/family.rs`; PR #303 review round 3, finding F3).
+The other eight are unbacked, for the
 reasons above -- not silently. AC-7 in particular stays unbacked pending a
 scoping decision on the `Typer` entanglement described in its row above.
