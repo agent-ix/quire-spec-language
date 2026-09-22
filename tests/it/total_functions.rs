@@ -1004,24 +1004,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
 /// `ValueDeclarations::nodes_used`/`CheckedDeclarationBody::nodes_used`
 /// (ordinary `Ok` payloads, not a side channel) -- see
 /// `check_declaration_body`'s own doc for the mechanism.
-///
-/// **Untagged.** No acceptance criterion in the currently authored spec
-/// governs this specific, pre-QSL-148 `CheckingLimits`/`Typer` package-wide
-/// `nodes` contract. FR-016-AC-8 ("Caller/hard budgets bound native
-/// checking...") was this finding's own suggested mapping, but FR-016
-/// governs a different subsystem entirely -- the *native* checker
-/// (`native_checking`/`runtime`, a `LinkedPackage`/`CheckBindings`/
-/// `CheckedPackage` all distinct from this file's `Value`
-/// `PackageDeclarations`/`CheckingLimits`/`Typer`) -- so it does not fit.
-/// FR-062-AC-5/TC-160 (`family_contract_tests::
-/// stage_limits_restored_kinds_refuse_one_below_the_real_metric`) is the
-/// nearest real candidate but governs a different, deliberately
-/// per-declaration-only mechanism (`StageLimits::node_count`, QSL-153's
-/// `Limit` outcome) -- not this cumulative, package-wide `Refused
-/// {ResourceExhausted}` one. No FR/AC in `spec/functional` or
-/// `spec/non-functional` currently states the package-wide contract this
-/// test exercises; this is reported rather than guessed at, per this
-/// fix's own brief ("do not write new AC text").
+#[trace("TC-381", "FR-062-AC-11")]
 #[test]
 fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
     fn small(name: &str) -> FunctionDeclaration {

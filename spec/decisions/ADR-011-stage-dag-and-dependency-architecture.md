@@ -1120,6 +1120,19 @@ To QSpec (wire owner):
   separate wires or are replaced by v2 forms once S4 emits them (SEAM-3). The
   format is authored in QSpec.
 
+## Open questions for the owner
+
+- **ADR-011-OQ-1: FR-079 against M-6b.** FR-079-AC-1 requires Kani lowering
+  corpus output to be byte-identical across the replacement of the fixed
+  `ProjectionTarget` catalog, and FR-079-AC-2 requires `boolean-oracle/v1`,
+  `integer-ir/v1` and `state-scalar-ir/v1` to parse, round-trip and appear
+  in the CLI target list identically before and after it. §6.2 (the
+  `lowering` row) and §7.3 M-6b assign #217 the deletion of the `lowering`
+  targets, `ProjectionTarget` and `--target`, with the backend chosen only by
+  `BackendId`. Open: whether FR-079's two criteria are amended or retired at
+  M-6b, or M-6b keeps the three target names. Raised by the PR #321 spec
+  review, finding FND-001.
+
 ## Owner rulings (2026-09-19)
 
 The owner delegated these to the #205 coordinator.

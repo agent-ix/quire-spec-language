@@ -353,15 +353,24 @@ FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 are partial: each AC's value-type
 portion (label round-trip, refusal-with-bytes and label equality on this
 type) is passed under TC-153; each AC's admission portion (the composed
 linker actually receiving and admitting a requested clause/capability pair)
-is planned under #213. `linking::composed::requests::Capability` still
-declares its own, different four-member request vocabulary
-(`src/linking/composed/requests.rs:36`; OBS-003/FR-077 removes it),
-`requests::report` still reads a caller-declared backend's support, and
-`admitted_bodies` still selects bodies by a family-check request, so
-FR-057-AC-3 and FR-057-AC-5 through FR-057-AC-10 (the carrier-version
-refusal, composed-linker admission rules, family-body handoff, registration
-and routing, and AC-7's full single-type claim) remain not yet implemented.
-Remaining work: #213 lands admission and the family-body handoff; #185
-builds registration, candidate sets and routing on the now-implemented type.
-TC-154 and TC-155, and the admission portion of TC-153 (including AC-7 and
-AC-10), are planned under those tickets.
+is planned under #213.
+
+Since QSL-46 (PR #305), `linking::composed::requests::Request` carries the
+canonical `crate::check::Capability`, and no other capability-kind type exists
+in `requests`. `requests::report` reads no backend; the layer-R `route`
+registry computes candidate sets over the same type (FR-075). `admitted_bodies`
+is every declaration whose names resolved, independent of capability requests,
+as "Family-body admission" states. `report` marks a request inapplicable when
+its kind is not defined for the requested declaration's family, using a
+provisional, non-normative kind-to-family mapping (`requests::families`). It
+follows this requirement's admitted-vocabulary table for every kind except
+`finite-replay`, which it maps to the protocol family as the retired
+four-member request enum did. Which family records which capability kind is
+open under QSL-29.
+
+FR-057-AC-3 and FR-057-AC-5 through FR-057-AC-10 are not yet backed by
+tests traced to them. Remaining work: #213 lands the carrier-version refusal
+(AC-3) and composed-linker admission of a received clause/capability pair;
+the post-E7 routing step (AC-6, AC-9) is still to land on the `route`
+registry. TC-154 and TC-155, and the admission portion of TC-153 (including
+AC-7 and AC-10), are planned under those tickets.

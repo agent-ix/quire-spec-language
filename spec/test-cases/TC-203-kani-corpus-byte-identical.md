@@ -53,3 +53,8 @@ fixture was updated alongside the implementation change; the comparison is
 against the independently captured, committed pre-swap recording. Step 5
 confirms the recording is pinned to a pre-swap commit and could not have
 been silently re-captured from the post-swap tree.
+
+## Status
+
+Planned; no test backs this case. Which change step 2 names is open under
+ADR-011-OQ-1.

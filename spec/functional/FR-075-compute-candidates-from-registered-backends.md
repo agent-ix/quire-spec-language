@@ -16,11 +16,18 @@ relationships:
 
 ## Description
 
-QSL SHALL replace the fixed `ProjectionTarget` catalog at
-`src/lowering/target.rs` (the `targets!` macro block) with a registry that
-backends populate by registering a `BackendDescriptor` under one contract.
-QSL SHALL compute each requested item's candidate set from that registry's
-current contents, matching on capability kind alone (ADR-012 §7.1, §7.2).
+QSL SHALL provide a registry, the layer-R `route` module's `Registry`
+(ADR-011 §6.1), that backends populate by registering a `BackendDescriptor`
+under one contract. QSL SHALL compute each requested item's candidate set
+from that registry's current contents, matching on capability kind alone
+(ADR-012 §7.1, §7.2).
+
+The registry sits alongside the fixed `ProjectionTarget` catalog at
+`src/lowering/target.rs` (the `targets!` macro block), which remains the
+lowering-target selector. Resolving a backend by `BackendId` in `route` is
+this requirement's work (#185, QSL-46). Deleting the catalog is
+[#217](https://github.com/agent-ix/quire-spec-language/issues/217)'s, with
+SEAM-1 (ADR-011 §6.2, the `lowering` row; §7.3 M-6b).
 The registry SHALL define no local capability-kind type. The registry SHALL
 consume the canonical `Capability` value type
 ([quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)),
@@ -173,7 +180,28 @@ registrations were added.
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Not yet implemented (#185). `src/lowering/target.rs` still declares the fixed
-three-variant `targets!` catalog this requirement replaces. The canonical
-`Capability` type this requirement consumes is implemented (QSL-173,
-`src/check/capability.rs`).
+Implemented under QSL-46 (PR #305) as `src/route.rs`, over the canonical
+`Capability` type (QSL-173, `src/check/capability.rs`).
+`src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
+the lowering-target selector; its deletion is #217's (Description).
+
+By Acceptance Criterion:
+- FR-075-AC-1: backed (`TC-193`):
+  `candidate_set_matches_registered_backends_advertising_the_requested_kind`
+  (`tests/it/route_registry.rs`).
+- FR-075-AC-2: backed (`TC-194`):
+  `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`
+  and `thirty_sampled_orderings_of_five_descriptors_agree`
+  (`tests/it/route_registry.rs`).
+- FR-075-AC-3: backed (`TC-195`):
+  `unregistered_named_backend_yields_a_distinct_unknown_backend_marker`
+  (`tests/it/route_registry.rs`).
+- FR-075-AC-4: backed (`TC-196`):
+  `duplicate_backend_identity_registration_is_refused_and_the_original_stands`
+  (`tests/it/route_registry.rs`).
+- FR-075-AC-5: backed for its matching half (`TC-193`):
+  `advertises_kind_matches_only_the_exact_capability` (`src/route.rs`)
+  shows candidate matching goes through `Capability` and tells two kinds
+  apart. Its second half, that no other enum in scope carries FR-290
+  capability-kind variants, holds by inspection: `route` imports
+  `crate::check::Capability` and defines no capability-kind type.
