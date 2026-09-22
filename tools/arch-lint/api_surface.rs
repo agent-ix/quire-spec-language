@@ -8,24 +8,26 @@
 //! that type's `from_digest` constructor, and `src/value/node.rs` re-exports
 //! the kernel `NodeKey` type rather than defining its own.
 //!
-//! **Scanning method (the layer-rule ruling, 2026-09-22).** The scan is
-//! textual: it looks for each rule's declared `call_patterns` substring in a
-//! `.rs` file and does not resolve `use ... as` renames or macro expansion.
-//! A `forbidden_patterns` entry is a violation from any module, including an
-//! allowed caller: a spelling that no longer names the rule's symbol at all
-//! (T12-A's `quire_spec_language::replay::`, dead since the facade became
-//! its own crate, QSL-185). Most rules match `Type::method(` call syntax;
-//! T12-B's pattern is the bare path `NodeKey::from_digest`, which also
-//! catches the constructor passed as a value rather than called (see T12-B's
-//! own comment, below). T12-A and T12-D keep the original, looser posture --
-//! neither excludes a match found inside a comment or string literal, both
-//! stated limitations, not silent gaps. T12-B and T12-C (`Rule::shipped_only`)
-//! additionally parse each file with `syn` to exclude `#[cfg(test)]` items
-//! entirely and to blank out comment text before matching (FR-060 Behavior,
-//! "T12-B and T12-C: shipped code and debt lists"), and to resolve each
-//! mint's enclosing function for the named debt list. A match inside a
-//! string literal remains a known limitation of all four rules. `main.rs`'s
-//! printed report states these limitations.
+//! **Scanning method (FR-060 Behavior, "Scanning method and its stated
+//! limitations").** A `forbidden_patterns` entry is a violation from any
+//! module, including an allowed caller: a spelling that no longer names the
+//! rule's symbol at all (T12-A's `quire_spec_language::replay::`, dead since
+//! the facade became its own crate, QSL-185).
+//!
+//! T12-B, T12-C and T12-D (`Rule::shipped_only`) match each pattern against
+//! the file's `proc_macro2` tokens, not its text: `NodeKey::from_digest` is
+//! the token run `NodeKey` `:` `:` `from_digest`. A comment is not a token and
+//! a string is one literal token, so neither can match, while a call split
+//! across lines, a constructor passed as a function value, and a call inside
+//! a macro's arguments all do. They also parse each file with `syn` to
+//! exclude `#[cfg(test)]` items and to resolve each mint's enclosing function
+//! for the named debt list.
+//!
+//! T12-A scans CG's text for its substrings, so a match inside a comment or
+//! string literal is reported (a possible false positive).
+//!
+//! No rule resolves a `use ... as` rename of the constructor's type.
+//! `main.rs`'s printed report states these limitations.
 //!
 //! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
 //! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
@@ -100,10 +102,9 @@ pub(crate) struct Rule {
     pub(crate) id: &'static str,
     pub(crate) description: &'static str,
     pub(crate) role: Role,
-    /// Call-site substrings that identify a use of the rule's symbol. Most
-    /// rules match call syntax, for example `"EffectiveId::from_digest("`;
-    /// T12-B matches the bare path `"NodeKey::from_digest"` instead (see its
-    /// own comment, below).
+    /// Patterns that identify a use of the rule's symbol: a path such as
+    /// `"NodeKey::from_digest"` (called or passed as a value), or a trailing
+    /// `(` to require a call, as in `"node_key_of("`.
     pub(crate) call_patterns: &'static [&'static str],
     /// Call-site substrings that are a violation from any module, including
     /// an allowed caller: a path that no longer names the rule's symbol.
@@ -124,12 +125,11 @@ pub(crate) struct Rule {
     /// applies unconditionally, not only while the rule is pending (#249
     /// review round 2 H-1). `None` for a rule with no such gap.
     pub(crate) scope_note: Option<&'static str>,
-    /// Whether this rule scans shipped code only (FR-060 Behavior, "T12-B
-    /// and T12-C: shipped code and debt lists"): `#[cfg(test)]` items and
-    /// comment text are excluded, and each site's enclosing function is
-    /// resolved for `debt_list`. `false` for T12-A/T12-D, which keep the
-    /// original unfiltered textual scan and always carry an empty
-    /// `debt_list`.
+    /// Whether this rule scans shipped code by token (FR-060 Behavior,
+    /// "T12-B and T12-C: shipped code and debt lists"): `#[cfg(test)]` items,
+    /// comments and string literals are excluded, and each site's enclosing
+    /// function is resolved for `debt_list`. `false` for T12-A, a textual
+    /// scan of CG's tree whose `debt_list` is always empty.
     pub(crate) shipped_only: bool,
     /// FR-060's named, shrinking debt list: a `(module, function)` pair
     /// whose mint is reported as debt rather than failing the rule. Keyed
@@ -182,16 +182,9 @@ pub(crate) const RULES: &[Rule] = &[
         // modules' own minting sites (R1, #249 review, review item 7).
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
-        // The layer-rule ruling (2026-09-22): T12-B's allowed callers are
-        // `check` and every module under it (ADR-013 O-04), replacing the
-        // former fixed three-module list (`value::expression::check`,
-        // `check::checked_dispatch`, `check::identity`) -- each of those was
-        // already a `check` descendant, so the prefix alone covers them,
-        // plus `check::family`'s `mint_declaration_identity`/
-        // `mint_call_identity`, with no allow-list edit needed for a future
-        // `check` descendant. `check::identity`'s own `from_digest` call
-        // today is test-only (`identity.rs`, inside `#[cfg(test)]`, so it is
-        // excluded from the shipped-code scan regardless of the allow-list).
+        // T12-B's allowed callers are `check` and every module under it
+        // (ADR-013 O-04), including `check::family`'s
+        // `mint_declaration_identity`/`mint_call_identity`.
         //
         // `value::node` re-exports the kernel `NodeKey` and is not
         // allow-listed: `node_key_of`'s own mint and `NodeIdDocument::key`'s
@@ -231,12 +224,10 @@ pub(crate) const RULES: &[Rule] = &[
         id: "T12-C",
         description: "only `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05)",
         role: Role::Qsl,
-        // The kernel's real constructor (`quire-exact`'s `EffectiveId::
-        // from_digest`, #213 S-1/S-2), not the pre-migration
-        // `from_digest_bytes` name this rule matched before S-2 retired
-        // `model::key`'s own `EffectiveId` struct in favor of re-exporting
-        // the kernel type.
-        call_patterns: &["EffectiveId::from_digest("],
+        // The kernel's constructor (`quire-exact`'s `EffectiveId::
+        // from_digest`, #213 S-1/S-2). The bare path matches it called or
+        // passed as a function value (`.map(EffectiveId::from_digest)`).
+        call_patterns: &["EffectiveId::from_digest"],
         forbidden_patterns: &[],
         allowed_caller_prefixes: &["model"],
         requires_path: Some("src/model/key.rs"),
@@ -262,13 +253,12 @@ pub(crate) const RULES: &[Rule] = &[
         id: "T12-D",
         description: "only `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21)",
         role: Role::Qsl,
-        // The kernel's real constructor (`quire-exact`'s `PopulationId::
-        // from_digest`, QSL-131 Slice B). No mint call site exists yet on
-        // origin/main (QSL `model` minting a `PopulationId` at admission
-        // time is QSL-131's other half), so this rule is expected to report
-        // zero violations until that lands, the same as any newly added
-        // rule with no live callers yet.
-        call_patterns: &["PopulationId::from_digest("],
+        // The kernel's constructor (`quire-exact`'s `PopulationId::
+        // from_digest`, QSL-131 Slice B), called or passed as a function
+        // value. Shipped code only: a test fixture that builds a
+        // `PopulationId` from literal bytes mints nothing. Its debt list is
+        // empty, so any shipped mint outside `model` fails.
+        call_patterns: &["PopulationId::from_digest"],
         forbidden_patterns: &[],
         allowed_caller_prefixes: &["model"],
         requires_path: Some("src/model/population.rs"),
@@ -283,7 +273,7 @@ pub(crate) const RULES: &[Rule] = &[
         // makes no claim about either, rather than asserting a copy this
         // scan has not found.
         scope_note: Some("scoped to QSL's own tree only"),
-        shipped_only: false,
+        shipped_only: true,
         debt_list: &[],
     },
 ];
@@ -390,42 +380,134 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// Blank out `//`-style line comments (covering `///`/`//!` doc comments)
-/// and `/* ... */` block comments from `source`, one output line per input
-/// line, so a pattern match inside either is never reported for T12-B/T12-C
-/// (FR-060 Behavior). A conservative, line-oriented pass: it does not
-/// distinguish `//`/`/*` text that appears inside a string literal from a
-/// real comment -- a known limitation, the same shape T12-A/T12-D's own
-/// stated textual-scan limitations already have, and not one QSL's own
-/// source style triggers (a constructor name is never written as a string
-/// literal next to a real comment marker).
-fn strip_comments(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut in_block_comment = false;
-    for line in source.lines() {
-        let mut sanitized = String::with_capacity(line.len());
-        let mut chars = line.char_indices();
-        while let Some((index, ch)) = chars.next() {
-            if in_block_comment {
-                if ch == '*' && line[index..].starts_with("*/") {
-                    in_block_comment = false;
-                    chars.next();
-                }
-                continue;
+/// One source token, reduced to what [`CallPattern`] matching needs. Comments
+/// are not tokens at all, a doc comment lexes as a `#[doc = "..."]` string
+/// literal, and every literal is [`Token::Other`], so a pattern named inside a
+/// comment or a string never matches.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Token {
+    Ident(String),
+    Punct(char),
+    /// The opening delimiter of a `( ... )` group.
+    OpenParen,
+    /// A literal, or any other group delimiter.
+    Other,
+}
+
+/// A [`Token`] and the 1-based source line it starts on.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LocatedToken {
+    token: Token,
+    line: usize,
+}
+
+/// Flatten `stream` depth-first into `out`, descending into every group --
+/// macro arguments included -- so a call split across lines or written
+/// inside `vec![...]` is one contiguous token run.
+fn flatten_tokens(stream: proc_macro2::TokenStream, out: &mut Vec<LocatedToken>) {
+    for tree in stream {
+        let line = tree.span().start().line;
+        match tree {
+            proc_macro2::TokenTree::Ident(ident) => out.push(LocatedToken {
+                token: Token::Ident(ident.to_string()),
+                line,
+            }),
+            proc_macro2::TokenTree::Punct(punct) => out.push(LocatedToken {
+                token: Token::Punct(punct.as_char()),
+                line,
+            }),
+            proc_macro2::TokenTree::Literal(_) => out.push(LocatedToken {
+                token: Token::Other,
+                line,
+            }),
+            proc_macro2::TokenTree::Group(group) => {
+                let open = match group.delimiter() {
+                    proc_macro2::Delimiter::Parenthesis => Token::OpenParen,
+                    _ => Token::Other,
+                };
+                out.push(LocatedToken { token: open, line });
+                flatten_tokens(group.stream(), out);
+                out.push(LocatedToken {
+                    token: Token::Other,
+                    line: group.span_close().start().line,
+                });
             }
-            if ch == '/' && line[index..].starts_with("//") {
-                break;
-            }
-            if ch == '/' && line[index..].starts_with("/*") {
-                in_block_comment = true;
-                chars.next();
-                continue;
-            }
-            sanitized.push(ch);
         }
-        out.push(sanitized);
     }
-    out
+}
+
+/// A rule's call pattern compiled to a token sequence: `"NodeKey::from_digest"`
+/// is `NodeKey`, `:`, `:`, `from_digest`; a trailing `(`, as in
+/// `"node_key_of("`, requires an opening parenthesis next.
+struct CallPattern {
+    tokens: Vec<Token>,
+}
+
+impl CallPattern {
+    fn compile(pattern: &str) -> Self {
+        let (path, call) = match pattern.strip_suffix('(') {
+            Some(path) => (path, true),
+            None => (pattern, false),
+        };
+        let mut tokens = Vec::new();
+        for (index, segment) in path.split("::").enumerate() {
+            if index > 0 {
+                tokens.extend([Token::Punct(':'), Token::Punct(':')]);
+            }
+            tokens.push(Token::Ident(segment.to_owned()));
+        }
+        if call {
+            tokens.push(Token::OpenParen);
+        }
+        Self { tokens }
+    }
+
+    /// Whether the pattern names a plain function (no `::`), whose own
+    /// `fn name(` definition is not a call of it.
+    fn is_bare_function(&self) -> bool {
+        !self.tokens.contains(&Token::Punct(':'))
+    }
+
+    /// Whether this pattern matches `source` starting at `start`. A `>`
+    /// between a type segment and its `::` is skipped, so the qualified-path
+    /// spelling `<NodeKey>::from_digest` matches too.
+    fn matches_at(&self, source: &[LocatedToken], start: usize) -> bool {
+        let mut position = start;
+        for (index, expected) in self.tokens.iter().enumerate() {
+            let follows_ident = index > 0 && matches!(self.tokens[index - 1], Token::Ident(_));
+            if *expected == Token::Punct(':')
+                && follows_ident
+                && source.get(position).map(|located| &located.token) == Some(&Token::Punct('>'))
+            {
+                position += 1;
+            }
+            match source.get(position) {
+                Some(located) if located.token == *expected => position += 1,
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
+/// The 1-based line of every match of any of `patterns` in `tokens`. A
+/// bare-function pattern preceded by `fn` is that function's own definition,
+/// not a call, and is skipped (FR-060 Behavior: "the helper's own `fn
+/// node_key_of(` definition line is not a mint").
+fn pattern_match_lines(tokens: &[LocatedToken], patterns: &[CallPattern]) -> BTreeSet<usize> {
+    let mut lines = BTreeSet::new();
+    for (start, located) in tokens.iter().enumerate() {
+        let is_definition = start.checked_sub(1).is_some_and(
+            |previous| matches!(&tokens[previous].token, Token::Ident(name) if name == "fn"),
+        );
+        let matched = patterns.iter().any(|pattern| {
+            pattern.matches_at(tokens, start) && !(pattern.is_bare_function() && is_definition)
+        });
+        if matched {
+            lines.insert(located.line);
+        }
+    }
+    lines
 }
 
 /// Every source line inside a `#[cfg(test)]`-gated item (`mod`, `fn`, `impl`,
@@ -566,43 +648,6 @@ fn enclosing_function(parsed: &syn::File, line: usize) -> String {
     visitor.found.map(|(name, _)| name).unwrap_or_default()
 }
 
-/// The source line a bare (no `::`) call pattern's *own* function
-/// definition sits on, if this file defines one -- FR-060 Behavior, "T12-B
-/// also matches calls of `node_key_of`... the helper's own `fn
-/// node_key_of(` definition line is not a mint." `bare_names` is each
-/// pattern with `::` in it filtered out and any trailing `(` trimmed (a
-/// pattern naming an associated function, like `NodeKey::from_digest`,
-/// never collides with a plain `fn`'s own signature text this way).
-fn bare_fn_definition_lines(parsed: &syn::File, bare_names: &[&str]) -> BTreeSet<usize> {
-    struct DefFinder<'a> {
-        names: &'a [&'a str],
-        lines: BTreeSet<usize>,
-    }
-    impl DefFinder<'_> {
-        fn consider(&mut self, ident: &syn::Ident, fn_token_span: proc_macro2::Span) {
-            if self.names.contains(&ident.to_string().as_str()) {
-                self.lines.insert(fn_token_span.start().line);
-            }
-        }
-    }
-    impl<'ast> Visit<'ast> for DefFinder<'_> {
-        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-            self.consider(&node.sig.ident, node.sig.fn_token.span());
-            syn::visit::visit_item_fn(self, node);
-        }
-        fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-            self.consider(&node.sig.ident, node.sig.fn_token.span());
-            syn::visit::visit_impl_item_fn(self, node);
-        }
-    }
-    let mut finder = DefFinder {
-        names: bare_names,
-        lines: BTreeSet::new(),
-    };
-    finder.visit_file(parsed);
-    finder.lines
-}
-
 /// Every line of `path` that violates `rule`: a `forbidden_patterns` match
 /// from any module (tagged `true`), or a `call_patterns` match from a
 /// module outside the allowed callers (tagged `false`, for `evaluate`'s
@@ -630,53 +675,45 @@ fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bo
     Ok(sites)
 }
 
-/// T12-B/T12-C's scan (`Rule::shipped_only`): excludes `#[cfg(test)]` items
-/// and comment text, and resolves each site's enclosing function. Tags each
-/// site the same way [`scan_file`] does (`forbidden_patterns` vs.
+/// The scan for a [`Rule::shipped_only`] rule (T12-B, T12-C, T12-D): matches
+/// each pattern against the file's tokens, not its text, so comments and
+/// string literals never match and a call split across lines still does;
+/// excludes `#[cfg(test)]` items; and resolves each site's enclosing function.
+/// Tags each site the same way [`scan_file`] does (`forbidden_patterns` vs.
 /// `call_patterns`).
 fn scan_shipped_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bool)>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let parsed = syn::parse_file(&text).map_err(|source| Error::source_parse(path, source))?;
+    let stream: proc_macro2::TokenStream = text
+        .parse()
+        .map_err(|source| Error::source_parse(path, source))?;
+    let mut tokens = Vec::new();
+    flatten_tokens(stream, &mut tokens);
     let excluded_lines = cfg_test_lines(&parsed);
-    let caller_allowed = module_allowed(module, rule.allowed_caller_prefixes);
-    let bare_patterns: Vec<&str> = rule
-        .call_patterns
-        .iter()
-        .copied()
-        .filter(|pattern| !pattern.contains("::"))
-        .map(|pattern| pattern.trim_end_matches('('))
-        .collect();
-    let bare_definition_lines = bare_fn_definition_lines(&parsed, &bare_patterns);
-    let mut sites = Vec::new();
-    for (index, line) in strip_comments(&text).iter().enumerate() {
-        let line_number = index + 1;
-        if excluded_lines.contains(&line_number) {
-            continue;
-        }
-        let is_forbidden = rule
-            .forbidden_patterns
-            .iter()
-            .any(|pattern| line.contains(pattern));
-        let is_call = !caller_allowed
-            && rule.call_patterns.iter().any(|pattern| {
-                if !line.contains(pattern) {
-                    return false;
-                }
-                let bare = pattern.trim_end_matches('(');
-                !(bare_patterns.contains(&bare) && bare_definition_lines.contains(&line_number))
-            });
-        if is_forbidden || is_call {
-            sites.push((
+    let compile = |patterns: &[&str]| -> Vec<CallPattern> {
+        patterns.iter().map(|p| CallPattern::compile(p)).collect()
+    };
+    let forbidden_lines = pattern_match_lines(&tokens, &compile(rule.forbidden_patterns));
+    let call_lines = if module_allowed(module, rule.allowed_caller_prefixes) {
+        BTreeSet::new()
+    } else {
+        pattern_match_lines(&tokens, &compile(rule.call_patterns))
+    };
+    let sites = forbidden_lines
+        .union(&call_lines)
+        .filter(|line| !excluded_lines.contains(line))
+        .map(|&line| {
+            (
                 CallSite {
                     file: path.to_path_buf(),
-                    line: line_number,
+                    line,
                     module: module.to_owned(),
-                    function: enclosing_function(&parsed, line_number),
+                    function: enclosing_function(&parsed, line),
                 },
-                is_forbidden,
-            ));
-        }
-    }
+                forbidden_lines.contains(&line),
+            )
+        })
+        .collect();
     Ok(sites)
 }
 
@@ -1381,9 +1418,9 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
-    // FR-060 T12-B/T12-C (the layer-rule ruling, 2026-09-22): the named,
-    // shrinking debt list, `#[cfg(test)]`/comment exclusion, and the
-    // function-value-reference patterns (TC-157 step 6/7).
+    // FR-060 T12-B/T12-C/T12-D: the named, shrinking debt list,
+    // `#[cfg(test)]`/comment/string exclusion, and the token-level patterns
+    // (TC-157 steps 5-7).
     // -------------------------------------------------------------------
 
     /// TC-157 step 6: a shipped `NodeKey::from_digest(` call in a `check`
@@ -1589,5 +1626,141 @@ mod tests {
         assert_eq!(outcome.violations[0].module, "value::model_query");
         assert_eq!(outcome.violations[0].function, "a_new_function");
         assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 7: a `"/*"` inside a string literal does not open a block
+    /// comment -- the scan matches tokens, so the real mint after it is still
+    /// reported.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_block_comment_opener_in_a_string_does_not_hide_a_later_mint() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/model/key.rs", "pub struct EffectiveId;\n");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn glob() -> &'static str {\n    \"src/*.rs\"\n}\n\
+             fn a_new_function(bytes: [u8; 32]) -> EffectiveId {\n    EffectiveId::from_digest(bytes)\n}\n",
+        );
+        let rule = &RULES[2]; // T12-C
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].line, 5);
+        assert_eq!(outcome.violations[0].function, "a_new_function");
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 7: `.map(EffectiveId::from_digest)` -- the constructor
+    /// passed as a function value -- is a T12-C mint.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_t12c_function_value_mint_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/model/key.rs", "pub struct EffectiveId;\n");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn f(bytes: Option<[u8; 32]>) -> Option<EffectiveId> {\n    bytes.map(EffectiveId::from_digest)\n}\n",
+        );
+        let rule = &RULES[2]; // T12-C
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].line, 2);
+        assert_eq!(outcome.violations[0].function, "f");
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 7: a call split across lines (`EffectiveId::from_digest`
+    /// on one line, its arguments on the next) is a mint, reported at the
+    /// line the path starts on.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_t12c_call_split_across_lines_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/model/key.rs", "pub struct EffectiveId;\n");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn f(bytes: [u8; 32]) -> EffectiveId {\n    EffectiveId\n        ::\n        from_digest\n        (bytes)\n}\n",
+        );
+        let rule = &RULES[2]; // T12-C
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].line, 2);
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 6: the qualified-path spelling `<NodeKey>::from_digest`
+    /// and a call inside a macro's arguments are both T12-B mints; the
+    /// constructor named only inside a string literal is not.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_qualified_path_and_macro_argument_mints_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn a(bytes: [u8; 32]) -> NodeKey {\n    <NodeKey>::from_digest(bytes)\n}\n\
+             fn b(bytes: [u8; 32]) -> Vec<NodeKey> {\n    vec![NodeKey::from_digest(bytes)]\n}\n\
+             fn c() -> &'static str {\n    \"NodeKey::from_digest\"\n}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        let lines: Vec<usize> = outcome.violations.iter().map(|site| site.line).collect();
+        assert_eq!(lines, vec![2, 5], "{:?}", outcome.violations);
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 6: `node_key_of`'s own definition is not a mint, but a
+    /// call of it split across lines is.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_helper_definition_is_not_a_mint_but_a_split_call_is() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn node_key_of(x: u8) -> u8 {\n    x\n}\n\
+             fn caller() -> u8 {\n    node_key_of\n        (1)\n}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].line, 5);
+        assert_eq!(outcome.violations[0].function, "caller");
+    }
+
+    /// TC-157 step 5: T12-D scans shipped code only -- a `PopulationId`
+    /// built from literal bytes inside `#[cfg(test)] mod tests` outside
+    /// `model` (the shape at `src/value/expression/evaluate.rs`) is not a
+    /// mint, and T12-D passes with zero call sites.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_t12d_cfg_test_mint_is_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "pub struct PopulationId;\n",
+        );
+        write(
+            dir.path(),
+            "src/value/expression/evaluate.rs",
+            "pub fn run() {}\n#[cfg(test)]\nmod tests {\n    fn f() {\n        let _ = PopulationId::from_digest([7; 32]);\n    }\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(outcome.debt.is_empty(), "{:?}", outcome.debt);
+        assert!(outcome.passed());
     }
 }

@@ -1419,9 +1419,7 @@ mod tests {
     // deliberately exercises `ValueType::Text` as part of the fixture's
     // grammar coverage -- a real, pre-existing dependency this move makes
     // visible under `check` for the first time. FR-068-AC-6's layer rule
-    // (the layer-rule ruling, 2026-09-22) permits any item of `value::text`,
-    // a K-copy module, so this import needs no special admission at all,
-    // in shipped code or here.
+    // permits any item of `value::text`, a K-copy module.
     use crate::value::text::TextType;
 
     /// PR #262 review, round 2 (moved here from `value::expression::family`

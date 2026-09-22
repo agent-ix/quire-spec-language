@@ -44,14 +44,15 @@
 //! constrains `check`'s *shipped* dependency graph, and a test-only import is
 //! not part of it.
 //!
-//! **FR-068-AC-6's layer rule (the layer-rule ruling, 2026-09-22;
-//! [`check_layer_edges`]).** `check`'s shipped imports are bounded by
-//! module and layer, not by item: any item of a permitted module is
-//! allowed, and the number imported is never checked. This covers both
-//! `use` lines and inline `crate::`/`super::`/`self::` paths under
-//! `src/check/`, resolving a flat `crate::value::Name` aggregate import to
-//! its real submodule (failing regardless, since the rule requires the
-//! qualified form) and a `super::`/`self::` path relative to its own file.
+//! **FR-068-AC-6's layer rule ([`check_layer_edges`]).** `check`'s shipped
+//! imports are bounded by module and layer, not by item: any item of a
+//! permitted module is allowed, and the number imported is never checked.
+//! This covers every shipped `use` item at any depth, every inline
+//! `crate::`/`super::`/`self::` path (including one inside a macro's
+//! arguments), and every later path through a module a `use` binds, under
+//! `src/check/`. A flat `crate::value::Name` aggregate import resolves to its
+//! real submodule (failing regardless, since the rule requires the qualified
+//! form), and a `super::`/`self::` path resolves relative to its own file.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -85,6 +86,12 @@ pub struct UseEdge {
     /// Whether this edge came from a glob import (`use a::b::*;`), which
     /// binds no single named leaf; `leaf` is empty for a glob edge.
     pub is_glob: bool,
+    /// Whether this edge is a `self` import (`use a::b::{self};`), which
+    /// binds module `b` itself: `path` ends with `b` and `leaf` is `b`.
+    pub is_self: bool,
+    /// The local name this edge binds in its scope: the `as` rename if
+    /// any, otherwise `leaf`. Empty for a glob edge.
+    pub binding: String,
     /// 1-based source line the bound leaf (or the `*` token, for a glob)
     /// starts on -- FR-068-AC-6's layer rule names a failing edge's file,
     /// line and resolved module, so this edge type needs its own line, not
@@ -92,50 +99,53 @@ pub struct UseEdge {
     pub line: usize,
 }
 
+impl UseEdge {
+    /// The written path of what this edge binds: `path` followed by `leaf`
+    /// for a named import, `path` alone for a glob or a `self` import (whose
+    /// last `path` segment is already the bound module).
+    fn bound_path(&self) -> Vec<String> {
+        let mut bound = self.path.clone();
+        if !self.is_glob && !self.is_self {
+            bound.push(self.leaf.clone());
+        }
+        bound
+    }
+}
+
 /// Flatten one `syn::UseTree` into zero or more [`UseEdge`]s, appending to
 /// `prefix` as the walk descends and reporting `leaf` as each branch's own
-/// terminal name (its rename target if any, otherwise its own ident).
+/// terminal name (its original ident, not its rename).
 fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mut Vec<UseEdge>) {
+    let named = |ident: &syn::Ident, rename: Option<&syn::Ident>| {
+        let written = ident.to_string();
+        // `use a::b::self;` binds `b` itself under prefix `a`; the leaf is
+        // the last prefix segment, not the literal "self".
+        let is_self = written == "self";
+        let leaf = if is_self {
+            prefix.last().cloned().unwrap_or_default()
+        } else {
+            written
+        };
+        let binding = rename.map_or_else(|| leaf.clone(), ToString::to_string);
+        UseEdge {
+            file: file.to_owned(),
+            path: prefix.to_vec(),
+            leaf,
+            is_glob: false,
+            is_self,
+            binding,
+            line: ident.span().start().line,
+        }
+    };
     match tree {
         syn::UseTree::Path(use_path) => {
             let mut next = prefix.to_vec();
             next.push(use_path.ident.to_string());
             flatten_use_tree(&use_path.tree, &next, file, out);
         }
-        syn::UseTree::Name(use_name) => {
-            let line = use_name.ident.span().start().line;
-            let ident = use_name.ident.to_string();
-            if ident == "self" {
-                // `use a::b::self;` binds `b` itself under prefix `a`; the
-                // leaf is the last prefix segment, not the literal "self".
-                let leaf = prefix.last().cloned().unwrap_or_default();
-                out.push(UseEdge {
-                    file: file.to_owned(),
-                    path: prefix.to_vec(),
-                    leaf,
-                    is_glob: false,
-                    line,
-                });
-            } else {
-                out.push(UseEdge {
-                    file: file.to_owned(),
-                    path: prefix.to_vec(),
-                    leaf: ident,
-                    is_glob: false,
-                    line,
-                });
-            }
-        }
+        syn::UseTree::Name(use_name) => out.push(named(&use_name.ident, None)),
         syn::UseTree::Rename(use_rename) => {
-            // The name that matters for resolution is the *original*
-            // ident, not the local alias `as` renames it to.
-            out.push(UseEdge {
-                file: file.to_owned(),
-                path: prefix.to_vec(),
-                leaf: use_rename.ident.to_string(),
-                is_glob: false,
-                line: use_rename.ident.span().start().line,
-            });
+            out.push(named(&use_rename.ident, Some(&use_rename.rename)));
         }
         syn::UseTree::Glob(use_glob) => {
             out.push(UseEdge {
@@ -143,6 +153,8 @@ fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mu
                 path: prefix.to_vec(),
                 leaf: String::new(),
                 is_glob: true,
+                is_self: false,
+                binding: String::new(),
                 line: use_glob.star_token.span().start().line,
             });
         }
@@ -195,35 +207,6 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
         });
         found
     })
-}
-
-/// Every `use` edge declared at module scope in one already-parsed file,
-/// excluding any edge that is itself `#[cfg(test)]`-gated or that sits
-/// inside a `#[cfg(test)] mod { ... }` block -- i.e. every edge that is part
-/// of the crate's *shipped* (non-test) dependency graph. Used where a bound
-/// governs a shipped layering property rather than every line of source text
-/// (see [`check_layer_edges`]'s own doc for why it uses this instead of
-/// [`use_edges_in_file`]).
-fn shipped_use_edges_in_file(parsed: &syn::File, file: &str) -> Vec<UseEdge> {
-    let mut out = Vec::new();
-    collect_shipped_use_edges(&parsed.items, file, &mut out);
-    out
-}
-
-fn collect_shipped_use_edges(items: &[syn::Item], file: &str, out: &mut Vec<UseEdge>) {
-    for item in items {
-        match item {
-            syn::Item::Use(item_use) if !has_cfg_test(&item_use.attrs) => {
-                flatten_use_tree(&item_use.tree, &[], file, out);
-            }
-            syn::Item::Mod(item_mod) if !has_cfg_test(&item_mod.attrs) => {
-                if let Some((_, inner_items)) = &item_mod.content {
-                    collect_shipped_use_edges(inner_items, file, out);
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 /// The two name sets `src/value/mod.rs`'s own aggregate `use` blocks
@@ -453,11 +436,8 @@ fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, S
 }
 
 // ---------------------------------------------------------------------
-// FR-068-AC-6, the layer-rule ruling (2026-09-22): `check`'s imports are
-// bounded by module and layer, not by item. This retires the former
-// tier-1/tier-2 item lists (`K_DESIGNATED_MODULES`, `DECLARED_INTERIM_ITEMS`)
-// entirely -- the bound below is per module, and the number of items
-// imported from a permitted module is not checked.
+// FR-068-AC-6: `check`'s imports are bounded by module and layer, not by
+// item. The number of items imported from a permitted module is not checked.
 // ---------------------------------------------------------------------
 
 /// FR-068-AC-6's permitted-module list (closed): any item of a listed
@@ -617,29 +597,26 @@ fn resolve_layer_module(
 /// `current_module` (the scanning file's own crate-relative module path),
 /// stripping a leading `crate` and resolving a leading `super`/`self`
 /// relative to the file (FR-068-AC-6: "A `super::` or `self::` path is
-/// resolved relative to its file"). A path rooted at anything else (an
-/// extern crate name, `quire_exact`/`qsl_foundation` included) is returned
-/// unchanged -- it needs no crate-relative substitution.
+/// resolved relative to its file"). `self` may be followed by `super`s
+/// (`self::super::x`). A path rooted at anything else (an extern crate name,
+/// `quire_exact`/`qsl_foundation` included) is returned unchanged -- it
+/// needs no crate-relative substitution.
 fn resolve_relative_path(raw: &[String], current_module: &[String]) -> Vec<String> {
-    match raw.first().map(String::as_str) {
-        Some("crate") => raw[1..].to_vec(),
-        Some("super") => {
-            let mut base = current_module.to_vec();
-            let mut rest = raw;
-            while rest.first().map(String::as_str) == Some("super") {
-                base.pop();
-                rest = &rest[1..];
-            }
-            base.extend(rest.iter().cloned());
-            base
+    let (mut base, mut rest) = match raw.split_first() {
+        Some((first, rest)) if first == "crate" => (Vec::new(), rest),
+        Some((first, rest)) if first == "self" => (current_module.to_vec(), rest),
+        Some((first, _)) if first == "super" => (current_module.to_vec(), raw),
+        _ => return raw.to_vec(),
+    };
+    while let Some((first, tail)) = rest.split_first() {
+        if first != "super" {
+            break;
         }
-        Some("self") => {
-            let mut base = current_module.to_vec();
-            base.extend(raw[1..].iter().cloned());
-            base
-        }
-        _ => raw.to_vec(),
+        base.pop();
+        rest = tail;
     }
+    base.extend(rest.iter().cloned());
+    base
 }
 
 /// One FR-068-AC-6 layer-rule edge: a `use` line or inline
@@ -673,65 +650,30 @@ impl LayerEdge {
     }
 }
 
-/// Classify one `use` edge already found under `src/check/`. `None` when
-/// the edge's resolved root is `std` or a third-party crate other than
-/// `quire_exact`/`qsl_foundation` -- out of FR-068-AC-6's scope entirely,
-/// not a finding.
-fn classify_use_edge(
+/// Classify one already-resolved path (crate-relative, `crate`/`super`/`self`
+/// substituted) found at `file:line` under `src/check/`. `None` when the
+/// path's root is `std` or a third-party crate other than
+/// `quire_exact`/`qsl_foundation` -- out of FR-068-AC-6's scope entirely, not
+/// a finding. `next_is_module_by_syntax`: see [`resolve_layer_module`].
+fn classify_resolved(
     workspace_root: &Path,
     submodule_reexports: &BTreeMap<String, String>,
-    current_module: &[String],
-    edge: &UseEdge,
+    file: &str,
+    line: usize,
+    resolved: &[String],
+    next_is_module_by_syntax: bool,
 ) -> Option<LayerEdge> {
-    let resolved = resolve_relative_path(&edge.path, current_module);
-    let top = resolved.first()?.clone();
-    if !in_layer_rule_scope(workspace_root, &top) {
+    let top = resolved.first()?;
+    if !in_layer_rule_scope(workspace_root, top) {
         return None;
     }
-    let next = if resolved.len() >= 2 {
-        Some(resolved[1].as_str())
-    } else if edge.is_glob {
-        None
-    } else {
-        Some(edge.leaf.as_str())
-    };
-    let next_is_module_by_syntax = resolved.len() >= 2;
     let (module, submodule_qualified) = resolve_layer_module(
         workspace_root,
         submodule_reexports,
-        &top,
-        next,
+        top,
+        resolved.get(1).map(String::as_str),
         next_is_module_by_syntax,
     );
-    let class = classify_layer_module(&module);
-    Some(LayerEdge {
-        file: edge.file.clone(),
-        line: edge.line,
-        module,
-        class,
-        submodule_qualified,
-    })
-}
-
-/// Classify one inline `crate::`/`super::`/`self::` path found under
-/// `src/check/`. `None` when out of scope, the same as
-/// [`classify_use_edge`].
-fn classify_inline_edge(
-    workspace_root: &Path,
-    submodule_reexports: &BTreeMap<String, String>,
-    current_module: &[String],
-    file: &str,
-    line: usize,
-    raw_segments: &[String],
-) -> Option<LayerEdge> {
-    let resolved = resolve_relative_path(raw_segments, current_module);
-    let top = resolved.first()?.clone();
-    if !in_layer_rule_scope(workspace_root, &top) {
-        return None;
-    }
-    let next = resolved.get(1).map(String::as_str);
-    let (module, submodule_qualified) =
-        resolve_layer_module(workspace_root, submodule_reexports, &top, next, false);
     let class = classify_layer_module(&module);
     Some(LayerEdge {
         file: file.to_owned(),
@@ -740,6 +682,35 @@ fn classify_inline_edge(
         class,
         submodule_qualified,
     })
+}
+
+/// Classify one `use` edge found under `src/check/`, on the resolved path of
+/// what it binds -- so `use crate::checked_package;`, `use
+/// crate::{package, route};` and `use super::super::route;`, which bind a
+/// module by name, are classified on that module. Every resolved segment but
+/// a named leaf is a module by syntax; a named leaf may itself be a module
+/// (`use crate::value::composite;`), which [`resolve_layer_module`] tells
+/// apart from a flat aggregate item.
+fn classify_use_edge(
+    workspace_root: &Path,
+    submodule_reexports: &BTreeMap<String, String>,
+    current_module: &[String],
+    edge: &UseEdge,
+) -> Option<LayerEdge> {
+    let resolved = resolve_relative_path(&edge.bound_path(), current_module);
+    let module_segments = if edge.is_glob || edge.is_self {
+        resolved.len()
+    } else {
+        resolved.len().saturating_sub(1)
+    };
+    classify_resolved(
+        workspace_root,
+        submodule_reexports,
+        &edge.file,
+        edge.line,
+        &resolved,
+        module_segments >= 2,
+    )
 }
 
 /// The crate-relative module path segments for a `.rs` file, relative to
@@ -792,45 +763,94 @@ fn walk_rs_files_recursive(dir: &Path, workspace_root: &Path, out: &mut Vec<Stri
     Ok(())
 }
 
-/// One inline `crate::`/`super::`/`self::`-rooted path found in shipped
-/// (non-`#[cfg(test)]`) code.
+/// One inline path found in shipped (non-`#[cfg(test)]`) code: either rooted
+/// at `crate`, `super` or `self`, or of two or more segments (whose first
+/// segment may be a `use`-bound alias, resolved in [`check_layer_edges`]).
 struct InlinePath {
     line: usize,
     segments: Vec<String>,
 }
 
-/// Walks a parsed file collecting every inline path rooted at `crate`,
-/// `super` or `self`, skipping any item gated `#[cfg(test)]` -- mirroring
-/// [`shipped_use_edges_in_file`]'s scope at the expression/type level, which
-/// that function's own item-list walk cannot reach. `visit_path` is not
-/// triggered by a `use` item's own tree (`syn` models `use` paths as
-/// `UseTree`, a distinct grammar), so this never double-counts a `use` edge.
-struct InlinePathVisitor {
-    found: Vec<InlinePath>,
+impl InlinePath {
+    fn is_relevant(segments: &[String]) -> bool {
+        segments.len() >= 2
+            || segments
+                .first()
+                .is_some_and(|first| matches!(first.as_str(), "crate" | "super" | "self"))
+    }
 }
 
-impl InlinePathVisitor {
-    fn record(&mut self, path: &syn::Path) {
-        let Some(first) = path.segments.first() else {
-            return;
-        };
-        if !matches!(first.ident.to_string().as_str(), "crate" | "super" | "self") {
-            return;
+/// Every path-shaped run `ident (:: ident)*` in a macro invocation's
+/// arguments, at any group depth: `syn` does not parse a macro's arguments,
+/// so `vec![crate::package::X]` is only visible as tokens.
+fn macro_token_paths(stream: proc_macro2::TokenStream, out: &mut Vec<InlinePath>) {
+    let trees: Vec<proc_macro2::TokenTree> = stream.into_iter().collect();
+    let is_colon = |index: usize| matches!(trees.get(index), Some(proc_macro2::TokenTree::Punct(punct)) if punct.as_char() == ':');
+    let mut index = 0;
+    while let Some(tree) = trees.get(index) {
+        match tree {
+            proc_macro2::TokenTree::Group(group) => {
+                macro_token_paths(group.stream(), out);
+                index += 1;
+            }
+            proc_macro2::TokenTree::Ident(first) => {
+                let mut segments = vec![first.to_string()];
+                index += 1;
+                while is_colon(index) && is_colon(index + 1) {
+                    let Some(proc_macro2::TokenTree::Ident(next)) = trees.get(index + 2) else {
+                        break;
+                    };
+                    segments.push(next.to_string());
+                    index += 3;
+                }
+                if InlinePath::is_relevant(&segments) {
+                    out.push(InlinePath {
+                        line: first.span().start().line,
+                        segments,
+                    });
+                }
+            }
+            _ => index += 1,
         }
-        let line = first.ident.span().start().line;
-        let segments = path
+    }
+}
+
+/// Walks a parsed file collecting, outside any item gated `#[cfg(test)]`:
+/// every `use` edge at any depth (module scope, nested `mod`, and a
+/// function body's own block-level `use`), every inline path
+/// [`InlinePath::is_relevant`] keeps, and every such path written inside a
+/// macro invocation's arguments.
+struct ShippedEdgeVisitor<'f> {
+    file: &'f str,
+    uses: Vec<UseEdge>,
+    paths: Vec<InlinePath>,
+}
+
+impl<'ast> Visit<'ast> for ShippedEdgeVisitor<'_> {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        if !has_cfg_test(&node.attrs) {
+            flatten_use_tree(&node.tree, &[], self.file, &mut self.uses);
+        }
+    }
+
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        let segments: Vec<String> = node
             .segments
             .iter()
             .map(|segment| segment.ident.to_string())
             .collect();
-        self.found.push(InlinePath { line, segments });
-    }
-}
-
-impl<'ast> Visit<'ast> for InlinePathVisitor {
-    fn visit_path(&mut self, node: &'ast syn::Path) {
-        self.record(node);
+        if let (Some(first), true) = (node.segments.first(), InlinePath::is_relevant(&segments)) {
+            self.paths.push(InlinePath {
+                line: first.ident.span().start().line,
+                segments,
+            });
+        }
         syn::visit::visit_path(self, node);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        macro_token_paths(node.tokens.clone(), &mut self.paths);
+        syn::visit::visit_macro(self, node);
     }
 
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
@@ -888,48 +908,70 @@ impl<'ast> Visit<'ast> for InlinePathVisitor {
     }
 }
 
-fn shipped_inline_paths_in_file(parsed: &syn::File) -> Vec<InlinePath> {
-    let mut visitor = InlinePathVisitor { found: Vec::new() };
-    visitor.visit_file(parsed);
-    visitor.found
-}
-
-/// FR-068-AC-6/TC-175 (the layer-rule ruling, 2026-09-22): every shipped
-/// `use` line and inline `crate::`/`super::`/`self::` path under
-/// `src/check/`, classified against the module-level layer rule. Replaces
-/// the former `value_import_edges`/`check_package_import_edges` item-tier
-/// scan entirely -- the bound is per module now, so one scan covers both
-/// `value`'s submodules and the `package`/`checked_package`/`route`/
-/// `replay`/`lowering` forbidden list together.
+/// FR-068-AC-6/TC-175: every shipped `use` edge and inline path under
+/// `src/check/`, classified against the module-level layer rule, so one scan
+/// covers both `value`'s submodules and the `package`/`checked_package`/
+/// `route`/`replay`/`lowering` forbidden list.
 ///
-/// **Known limitation, shared with `tools/arch-lint`'s textual scan:** a
-/// path reached only through a `use ... as` rename at the call site, or a
-/// path written inside a macro invocation's own token stream (`syn` does
-/// not parse an arbitrary macro's arguments into expressions), is not
-/// resolved by this scan.
+/// An inline path is classified when it is rooted at `crate`, `super` or
+/// `self`, or when its first segment is a name some shipped `use` in the
+/// same file binds: `use crate::value;` followed by `value::Presence` is
+/// classified as `crate::value::Presence`. A binding is tracked file-wide,
+/// whatever block its `use` sits in, and a name bound more than once is
+/// classified against every binding -- both over-approximate, never hide.
 pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
     let mut edges = Vec::new();
     for file in files_in_recursive(workspace_root, "src/check")? {
         let parsed = parse_file(workspace_root, &file)?;
         let current_module = module_segments_of(&file);
-        for edge in shipped_use_edges_in_file(&parsed, &file) {
-            if let Some(layer_edge) =
-                classify_use_edge(workspace_root, &submodule_reexports, &current_module, &edge)
-            {
-                edges.push(layer_edge);
+        let mut visitor = ShippedEdgeVisitor {
+            file: &file,
+            uses: Vec::new(),
+            paths: Vec::new(),
+        };
+        visitor.visit_file(&parsed);
+        let mut bindings: BTreeMap<&str, Vec<Vec<String>>> = BTreeMap::new();
+        for edge in &visitor.uses {
+            if !edge.is_glob {
+                bindings
+                    .entry(edge.binding.as_str())
+                    .or_default()
+                    .push(resolve_relative_path(&edge.bound_path(), &current_module));
             }
         }
-        for inline in shipped_inline_paths_in_file(&parsed) {
-            if let Some(layer_edge) = classify_inline_edge(
+        for edge in &visitor.uses {
+            edges.extend(classify_use_edge(
                 workspace_root,
                 &submodule_reexports,
                 &current_module,
-                &file,
-                inline.line,
-                &inline.segments,
-            ) {
-                edges.push(layer_edge);
+                edge,
+            ));
+        }
+        for inline in &visitor.paths {
+            let Some((first, rest)) = inline.segments.split_first() else {
+                continue;
+            };
+            let resolved_paths: Vec<Vec<String>> =
+                if matches!(first.as_str(), "crate" | "super" | "self") {
+                    vec![resolve_relative_path(&inline.segments, &current_module)]
+                } else {
+                    bindings
+                        .get(first.as_str())
+                        .into_iter()
+                        .flatten()
+                        .map(|bound| bound.iter().chain(rest).cloned().collect())
+                        .collect()
+                };
+            for resolved in resolved_paths {
+                edges.extend(classify_resolved(
+                    workspace_root,
+                    &submodule_reexports,
+                    &file,
+                    inline.line,
+                    &resolved,
+                    false,
+                ));
             }
         }
     }
@@ -1136,12 +1178,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
-    // FR-068-AC-6 (TC-175): the layer-rule ruling (2026-09-22). The former
-    // tier-classification tests above this point are retired along with
-    // `value_import_edges`/`check_package_import_edges` themselves -- one
-    // scan (`check_layer_edges`) now covers both `value`'s submodules and
-    // the `package`/`checked_package`/`route`/`replay`/`lowering` forbidden
-    // list together.
+    // FR-068-AC-6 (TC-175): the module-level layer rule.
     // -------------------------------------------------------------------
 
     fn write(root: &Path, relative: &str, contents: &str) {
@@ -1206,11 +1243,7 @@ mod tests {
     /// Against the real, current tree: every shipped edge under
     /// `src/check/` -- `use` line and inline path alike -- is permitted,
     /// and every `value` edge names its submodule. This is TC-175 steps 1-2
-    /// against the module-level layer rule (the former tier assertion is
-    /// retired above). Red against `main` (the four flat
-    /// `crate::value::Presence::Optional` inline paths at `check.rs` lines
-    /// 1620, 1653, 1854 and 1867), green once they are repointed at
-    /// `crate::value::composite::Presence`/`Presence` brought into scope.
+    /// against the module-level layer rule.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn real_check_layer_edges_have_no_violation() {
@@ -1245,9 +1278,7 @@ mod tests {
 
     /// TC-175 step 6: a shipped inline `use crate::package::*;` glob fails
     /// the same way a named import would -- `package` has no allow-list to
-    /// check a leaf against, so a glob must still be caught (retiring the
-    /// dedicated `check_package_import_edges` glob fixtures this scan now
-    /// subsumes).
+    /// check a leaf against, so a glob must still be caught.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn forbidden_glob_use_edge_is_a_violation() {
@@ -1311,9 +1342,7 @@ mod tests {
     /// TC-175's own flat-inline-path fixture: a shipped inline flat path
     /// `crate::value::Presence::Optional` fails, resolved to
     /// `value::composite` (the module `Presence` actually belongs to)
-    /// through `value::mod.rs`'s own re-export table -- exactly the shape
-    /// `src/check/check.rs` carried at lines 1620, 1653, 1854 and 1867
-    /// before this change repointed them.
+    /// through `value::mod.rs`'s own re-export table.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn flat_inline_value_path_is_a_violation() {
@@ -1442,5 +1471,166 @@ mod tests {
         );
         assert_eq!(module_segments_of("src/check/mod.rs"), vec!["check"]);
         assert_eq!(module_segments_of("src/lib.rs"), Vec::<String>::new());
+    }
+
+    /// Every violation's `(module, line)` in a fixture file, for the
+    /// module-binding and macro fixtures below.
+    fn violations_of(dir: &Path) -> Vec<(String, usize)> {
+        check_layer_edges(dir)
+            .expect("scan runs")
+            .into_iter()
+            .filter(LayerEdge::is_violation)
+            .map(|edge| (edge.module, edge.line))
+            .collect()
+    }
+
+    /// TC-175 step 6: a `use` that binds a forbidden module by name --
+    /// `use crate::checked_package;`, `use crate::{package, route};`,
+    /// `use super::super::route;` -- fails on that module.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn use_binding_a_forbidden_module_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::checked_package;\nuse crate::{package, route};\nuse super::super::lowering;\n",
+        );
+        assert_eq!(
+            violations_of(dir.path()),
+            vec![
+                ("checked_package".to_owned(), 1),
+                ("package".to_owned(), 2),
+                ("route".to_owned(), 2),
+                ("lowering".to_owned(), 3),
+            ]
+        );
+    }
+
+    /// TC-175 step 6: `{self}` imports bind the module they name.
+    /// `use crate::lowering::{self};` fails; `use crate::value::composite::
+    /// {self};` names a permitted submodule and passes.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn self_import_binds_the_named_module() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::lowering::{self};\nuse crate::value::composite::{self as c};\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 2, "{edges:?}");
+        assert_eq!(edges[0].module, "lowering");
+        assert!(edges[0].is_violation());
+        assert_eq!(edges[1].module, "value::composite");
+        assert!(!edges[1].is_violation());
+    }
+
+    /// TC-175 step 6: `use crate::value;` binds `value`'s flat aggregate. The
+    /// `use` fails (it names no submodule), and so does a later
+    /// `value::Presence::Optional`, resolved through the tracked binding to
+    /// `value::composite` without naming it.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn use_binding_value_and_later_flat_paths_are_violations() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/value/mod.rs",
+            "pub use composite::Presence;\n",
+        );
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::value;\npub fn f() -> bool {\n    matches!(g(), value::Presence::Optional)\n}\n",
+        );
+        assert_eq!(
+            violations_of(dir.path()),
+            vec![("value".to_owned(), 1), ("value::composite".to_owned(), 3)]
+        );
+    }
+
+    /// TC-175 step 6: a module bound by a `use`, renamed or not, is tracked:
+    /// `use crate::checked_package as cp;` then `cp::CheckedPackage::new()`
+    /// fails on both lines, while `use crate::value::composite;` then
+    /// `composite::Presence` resolves to the permitted, named submodule.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn later_paths_through_a_bound_module_are_classified() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::checked_package as cp;\nuse crate::value::composite;\n\
+             pub fn f() {\n    let _ = cp::CheckedPackage::new();\n    let _ = composite::Presence::Optional;\n}\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        let lines = |module: &str| -> Vec<(usize, bool)> {
+            edges
+                .iter()
+                .filter(|edge| edge.module == module)
+                .map(|edge| (edge.line, edge.is_violation()))
+                .collect()
+        };
+        assert_eq!(lines("checked_package"), vec![(1, true), (4, true)]);
+        assert_eq!(lines("value::composite"), vec![(2, false), (5, false)]);
+    }
+
+    /// TC-175 step 6: a `use` inside a function body is shipped code and is
+    /// scanned; one inside a `#[cfg(test)]` function is not.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn function_body_use_is_scanned() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "pub fn f() {\n    use crate::package::PackageDeclarations;\n}\n\
+             #[cfg(test)]\nfn t() {\n    use crate::route::Route;\n}\n",
+        );
+        assert_eq!(violations_of(dir.path()), vec![("package".to_owned(), 2)]);
+    }
+
+    /// TC-175 step 6: a `crate::` path inside a macro invocation's arguments
+    /// (`vec![crate::package::X]`, `format!("{}", crate::route::R)`) is
+    /// scanned from the macro's tokens.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn crate_path_inside_macro_arguments_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "pub fn f() {\n    let _ = vec![crate::package::X];\n    let _ = format!(\"{}\", crate::route::R);\n}\n",
+        );
+        assert_eq!(
+            violations_of(dir.path()),
+            vec![("package".to_owned(), 2), ("route".to_owned(), 3)]
+        );
+    }
+
+    /// TC-175 step 6 / FR-068-AC-6 ("A `super::` or `self::` path is
+    /// resolved relative to its file"): `self::super::super::lowering::L`
+    /// from `src/check/fixture.rs` resolves to `lowering` and fails.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn self_then_super_path_resolves_relative_to_its_file() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "pub fn f() -> self::super::super::lowering::L {\n    todo!()\n}\n",
+        );
+        assert_eq!(violations_of(dir.path()), vec![("lowering".to_owned(), 1)]);
+        let current = vec!["check".to_owned(), "fixture".to_owned()];
+        let raw: Vec<String> = ["self", "super", "family"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(
+            resolve_relative_path(&raw, &current),
+            vec!["check", "family"]
+        );
     }
 }

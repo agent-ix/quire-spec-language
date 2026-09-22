@@ -115,6 +115,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arch-lint"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "proc-macro2",
+ "serde_json",
+ "syn 2.0.119",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1338,7 +1350,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "proc-macro2",
  "qsl-attrs",
  "qsl-cst",
  "qsl-foundation",

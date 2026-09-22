@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
 resolver = "2"
 
 [package]
@@ -42,12 +42,6 @@ sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
-# `tools/arch-lint/api_surface.rs` (FR-060 T12-B/T12-C, a `[[bin]]` target)
-# and `src/forms/dispatch.rs`'s own self-check test both parse QSL source
-# with `syn`; `tests/it/name_resolution_confinement.rs` (TC-251) walks a
-# type's AST the same way. "full" is the full grammar; "visit" is the
-# `syn::visit::Visit` trait both scanners use.
-syn = { version = "=2.0.119", features = ["full", "visit"] }
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "dbb2e22d577b56fed5c27e81e584370acdf02512" }
 qsl-attrs = { path = "qsl-attrs" }
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
@@ -56,12 +50,6 @@ agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data",
 # writes its document to a required output path (FR-099); this is that
 # scratch directory, not test-only.
 tempfile = "=3.27.0"
-# `tools/arch-lint/api_surface.rs` (FR-060 T12-B/T12-C) parses QSL source
-# with `syn` to skip `#[cfg(test)]` code and comment text and to resolve a
-# mint's enclosing function for the named debt list -- a `[[bin]]` target,
-# so this cannot be a dev-dependency (TC-251's own signature scanner uses
-# the same crate, but only inside `tests/`, where a dev-dependency suffices).
-proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 
 [dev-dependencies]
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
@@ -79,6 +67,13 @@ qsl-cst = { path = "qsl-cst", features = ["test-support"] }
 xtask = { path = "xtask" }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
 quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
+# TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
+# walks a parameter/return type's own AST directly (an exact path-segment
+# match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted
+# tree, so it needs only "full" (the full grammar) and "visit" -- PR #300
+# review round 2, L5 dropped the "extra-traits" feature that used to exist
+# solely to put `Debug` on `syn::Type` for that string search.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 
 [[bin]]
 name = "quire-spec"
@@ -87,13 +82,6 @@ path = "src/main.rs"
 [[bin]]
 name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
-
-# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
-# checks over the QSL/IR/RT/CG ecosystem. Self-contained (does not link
-# `quire-spec-language`); see tools/arch-lint/main.rs.
-[[bin]]
-name = "arch-lint"
-path = "tools/arch-lint/main.rs"
 
 # QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for

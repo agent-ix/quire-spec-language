@@ -15,9 +15,9 @@ pub(crate) enum Code {
     /// a silently different (and possibly clean-looking) answer than the
     /// same command run against a fresh one.
     Stale,
-    /// FR-060 T12-B/T12-C's `syn`-based scan (`#[cfg(test)]` exclusion,
-    /// comment exclusion, debt-list function resolution) could not parse a
-    /// source file as Rust.
+    /// FR-060 T12-B/T12-C/T12-D's scan (`#[cfg(test)]` exclusion, token
+    /// matching, debt-list function resolution) could not parse or tokenize
+    /// a source file as Rust.
     SourceParse,
 }
 
@@ -72,7 +72,7 @@ impl Error {
         Self::new(Code::Io, format!("{source} ({})", path.display()))
     }
 
-    pub(crate) fn source_parse(path: &Path, source: syn::Error) -> Self {
+    pub(crate) fn source_parse(path: &Path, source: impl fmt::Display) -> Self {
         Self::new(Code::SourceParse, format!("{source} ({})", path.display()))
     }
 

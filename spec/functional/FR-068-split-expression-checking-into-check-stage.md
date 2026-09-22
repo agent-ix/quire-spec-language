@@ -86,7 +86,7 @@ The PR #282 review ruling that kept `check` from importing
 `value::text::TextType` is superseded. `value::text` is a permitted K-copy
 module, and the rule does not bound which of its items `check` imports.
 
-The layer rule is an interim, textual gate. Once `qsl-semantics` is its own
+The layer rule is an interim, source-scan gate. Once `qsl-semantics` is its own
 crate (ADR-011 §6.1 crate map, §7.2), Cargo's dependency graph enforces
 direction and this gate is deleted.
 
@@ -358,8 +358,13 @@ ADR-011 §6.2 and an edit to this list.
 **Scope: shipped code.** The rule covers every `use` line and every
 `crate::`-rooted path outside `#[cfg(test)]` items under `src/check/`. A
 fully-qualified inline path is covered as well as a `use` line, because an
-inline path into a later layer is the same edge. A `super::` or `self::`
-path is resolved relative to its file before it is classified. The rule
+inline path into a later layer is the same edge. This includes a `use`
+inside a function body, a path written inside a macro invocation's
+arguments, and a later path through a module a `use` binds (`use
+crate::value;` followed by `value::Presence`). A `use` that binds a module
+by name (`use crate::checked_package;`) is classified on that module. A
+`super::` or `self::` path is resolved relative to its file before it is
+classified. The rule
 classifies this crate's own modules and the workspace crates `quire_exact`
 and `qsl_foundation`; `std` and third-party crates (`serde_json`, `sha2`,
 `ix_trace_rs`) are governed by the Cargo manifest, not by this rule. Test code is excluded
@@ -530,21 +535,17 @@ the move surface despite `check.rs`'s pre-existing dependency on it
 (Description, Inputs, Outputs; see F4). PR #282 also wrote `check`'s
 `value` imports in crate-absolute, submodule-qualified form, per F2.
 
-**Amended by the layer-rule ruling (2026-09-22).** FR-068-AC-6's item-level
-tiers are retired in favour of a module-level layer rule (Description,
+**FR-068-AC-6 is implemented as a module-level layer rule** (Description,
 "Amendment (layer-rule ruling, 2026-09-22)"; Behavior, "`check`'s import
-rule: modules by layer"). `xtask/src/import_graph.rs` still enforces the
-retired item tiers and scans `use` lines only; the module-level rule is not
-implemented yet. Measured on `main` at `dccf9175`: every shipped `use` line
-under `src/check/` resolves into a permitted module, and no shipped `use`
-line or inline path resolves into a forbidden one. Four shipped inline paths
-go through `value`'s flat aggregate, `crate::value::Presence::Optional` at
-`src/check/check.rs` lines 1620, 1653, 1854 and 1867, and fail the
-submodule-naming rule once inline paths are scanned; the gate-rewrite change
-repoints them at `crate::value::composite::Presence` or
-`quire_exact::Presence`, which it re-exports. The `crate::checked_package`
-paths under `src/check/` are in doc comments or `#[cfg(test)]` code.
-Remaining work: gate rewrite.
+rule: modules by layer"). `xtask::import_graph::check_layer_edges` parses
+every file under `src/check/` with `syn` and classifies, outside
+`#[cfg(test)]` items: every `use` item at any depth, including a function
+body's; every `crate::`/`super::`/`self::`-rooted inline path, including
+one inside a macro invocation's arguments; and every later path through a
+module a `use` binds. The test `real_check_layer_edges_have_no_violation`
+(TC-175) runs it over the real tree in `make ci` and finds no violation.
+The `crate::checked_package` paths under `src/check/` are in doc comments
+or `#[cfg(test)]` code.
 
 **Amended by FR-087, owner ruling on QSL-158 (2026-09-21): `CheckedPackage`
 relocates from `check` to layer-4 `package`.** This requirement's own

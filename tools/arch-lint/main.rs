@@ -181,12 +181,12 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     let mut summary = String::new();
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
     summary.push_str(
-        "  Note: this is a textual scan. It does not resolve `use ... as` renamed \
-         imports or macro-expanded call sites, and a match inside a string literal is \
-         never excluded -- stated limitations of this check, not silent gaps. T12-A and \
-         T12-D also do not exclude a match found inside a comment. T12-B and T12-C \
-         additionally exclude `#[cfg(test)]` items and comment text, and resolve each \
-         mint's enclosing function against a named, shrinking debt list.\n",
+        "  Note: T12-B, T12-C and T12-D match source tokens in shipped code: comments, \
+         string literals and `#[cfg(test)]` items are excluded, and each mint's enclosing \
+         function is resolved against a named, shrinking debt list. T12-A is a textual \
+         scan of the CG tree, so a match inside a comment or string literal is reported. \
+         No rule resolves a `use ... as` rename of the constructor's type -- a stated \
+         limitation of this check, not a silent gap.\n",
     );
     let mut all_passed = true;
     // Flags a rule needed but was not given. Every rule is still evaluated,
