@@ -557,9 +557,9 @@ mod checked {
     use super::*;
     use quire_spec_language::value::{
         BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckingLimits, EnumBinding, EnumDeclaration, EnumDeclarationPreimage,
-        EnumMemberPreimage, Expression, NodeOwner, ObjectEnvironment, OwnerSelection, OwnerSubject,
-        PackageDeclarations, SemanticGraphCause, NODE_KEY_DOMAIN,
+        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, EnumBinding, EnumDeclaration,
+        EnumDeclarationPreimage, EnumMemberPreimage, Expression, NodeOwner, ObjectEnvironment,
+        OwnerSelection, OwnerSubject, PackageDeclarations, SemanticGraphCause, NODE_KEY_DOMAIN,
     };
     use serde_json::json;
 

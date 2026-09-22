@@ -103,7 +103,7 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
 /// outside `Machine` ever builds, matches or forwards one. Only
 /// [`Machine::run`] unwraps a `Halt`, and only its `Fault` arm returns
 /// `Err(InternalFault)`; every `Stop` arm still goes through
-/// [`Self::stopped`]/[`Outcome::from_stop`] exactly as before this change.
+/// [`Machine::stopped`]/[`Outcome::from_stop`] exactly as before this change.
 /// A future `Stop`-returning helper, or a new site inside `Machine`, cannot
 /// smuggle a fault into `Outcome::from_stop`'s three real arms: there is no
 /// `Stop` variant left to build.
@@ -128,7 +128,7 @@ impl From<Incomplete> for Halt {
 
 /// The real `Stop` a checked-invariant break constructs -- shared by
 /// [`invariant`] (for a `Halt`-returning `Machine` method) and
-/// [`Machine::run`]'s own no-value fallback (which calls [`Self::stopped`]
+/// [`Machine::run`]'s own no-value fallback (which calls [`Machine::stopped`]
 /// directly, needing a bare `Stop`, never a `Halt`).
 fn checked_invariant() -> Stop {
     Stop::Refused(Refusal::CheckedInvariant)

@@ -8,7 +8,7 @@
 //! contract in.
 //!
 //! **What this ticket (#214/QSL-25) migrates onto the contract**: `Value`'s
-//! function-declaration form only ([`crate::value::expression::family`]).
+//! function-declaration form only (`value::expression::family`).
 //! `FamilyKind`'s other five variants exist here because ADR-012 §1 closes
 //! the catalogue over all six names now, so each sibling ticket's
 //! `FamilyContract` implementation is added against an already-complete

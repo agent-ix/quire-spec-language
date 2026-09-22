@@ -38,9 +38,9 @@ use quire_spec_language::model::population::{
 };
 use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-    CheckedPackage, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
-    DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause,
-    InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
+    CompositeShape, DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration,
+    IllTypedCause, InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, QualifiedName, Refusal,
     TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };

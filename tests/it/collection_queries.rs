@@ -9,8 +9,8 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, BinderQuery, BoundViolation, CheckCause, CheckMode, CheckRefusal,
-    CheckedPackage, CheckingLimits, CollectionLoss, CollectionProperty, CollectionType,
-    CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
+    CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionLoss, CollectionProperty,
+    CollectionType, CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
     FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment, ObjectIdentity,
     ObjectReference, ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, Presence,
     ProvedInterval, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
