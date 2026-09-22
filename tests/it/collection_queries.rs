@@ -4,13 +4,13 @@
 
 use ix_trace_rs::trace;
 use quire_exact::{
-    ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
-    ScalarLimits,
+    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
+    Meter, ScalarLimits,
 };
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, BinderQuery, BoundViolation, CardinalityBound, CheckCause,
-    CheckMode, CheckRefusal, CheckedPackage, CheckingLimits, CollectionLoss, CollectionProperty,
-    CollectionType, CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
+    Accumulation, BinaryOperator, BinderQuery, BoundViolation, CheckCause, CheckMode, CheckRefusal,
+    CheckedPackage, CheckingLimits, CollectionLoss, CollectionProperty, CollectionType,
+    CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
     FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment, ObjectIdentity,
     ObjectReference, ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, Presence,
     ProvedInterval, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,

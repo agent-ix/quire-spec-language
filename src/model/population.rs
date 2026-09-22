@@ -144,9 +144,8 @@ use crate::model::key::{hex, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
-use crate::value::CardinalityBound;
 use quire_exact::{
-    length_amount, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
+    length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
 };
 

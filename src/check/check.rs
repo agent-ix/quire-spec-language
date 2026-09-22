@@ -40,7 +40,7 @@ use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
-use crate::value::collection::{CardinalityBound, CollectionType};
+use crate::value::collection::CollectionType;
 use crate::value::comparison::IllTypedCause;
 use crate::value::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
 use crate::value::decimal::DecimalType;
@@ -51,7 +51,7 @@ use crate::value::node::NodeKey;
 use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
 use crate::value::rational::Rational;
-use quire_exact::{CollectionKind, Integer};
+use quire_exact::{CardinalityBound, CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.

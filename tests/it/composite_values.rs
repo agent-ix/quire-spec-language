@@ -11,14 +11,15 @@ use std::cell::Cell;
 
 use ix_trace_rs::trace;
 use quire_exact::{
-    ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ScalarLimits,
+    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
+    ScalarLimits,
 };
 use quire_spec_language::complete::{self, CompleteCause, CompleteCode};
 use quire_spec_language::value::{
-    resolve_libraries, CardinalityBound, CollectionType, Component, CompositeDeclaration,
-    CompositeShape, ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand,
-    EqualityOperator, ExportIdentity, FieldDeclaration, FieldExpression, FieldValue, GraphCause,
-    GraphNode, GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, ImportDeclaration,
+    resolve_libraries, CollectionType, Component, CompositeDeclaration, CompositeShape,
+    ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator,
+    ExportIdentity, FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode,
+    GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, ImportDeclaration,
     InvalidDeclaration, LibraryName, LibraryPackage, NameReference, NodeKey, ObjectEnvironment,
     ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, QualifiedName,

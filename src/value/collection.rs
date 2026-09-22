@@ -22,55 +22,17 @@ use super::composite::{
 use super::equality::plan_pairs;
 use super::key::compare_keys;
 use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
-use quire_exact::{length_amount, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter};
+use quire_exact::{
+    length_amount, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter,
+};
 
-/// An inclusive declared cardinality bound `[minimum, maximum]`. It counts
-/// occurrences for sequences and bags and members for sets and ordered sets.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CardinalityBound {
-    minimum: u64,
-    maximum: u64,
-}
-
-/// A cardinality bound with `minimum > maximum`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("empty cardinality bound [{minimum}, {maximum}]")]
-pub struct EmptyCardinalityBound {
-    /// The declared minimum.
-    pub minimum: u64,
-    /// The declared maximum.
-    pub maximum: u64,
-}
-
-impl CardinalityBound {
-    /// The inclusive bound `[minimum, maximum]`.
-    pub fn new(minimum: u64, maximum: u64) -> Result<Self, EmptyCardinalityBound> {
-        if minimum > maximum {
-            return Err(EmptyCardinalityBound { minimum, maximum });
-        }
-        Ok(Self { minimum, maximum })
-    }
-
-    /// The inclusive minimum.
-    pub fn minimum(self) -> u64 {
-        self.minimum
-    }
-
-    /// The inclusive maximum.
-    pub fn maximum(self) -> u64 {
-        self.maximum
-    }
-
-    fn violation(self, count: u64) -> Option<BoundViolation> {
-        if count < self.minimum {
-            Some(BoundViolation::BelowMinimum)
-        } else if count > self.maximum {
-            Some(BoundViolation::AboveMaximum)
-        } else {
-            None
-        }
-    }
-}
+// QSL-131 (S-1b): `CardinalityBound` and `EmptyCardinalityBound` duplicated
+// `quire-exact/src/collection.rs` byte-for-byte and are deleted; every
+// consumer now imports `quire_exact::{CardinalityBound, EmptyCardinalityBound}`
+// directly. `CardinalityBound::violation` stayed `pub(crate)` to that crate
+// (it is not part of the exported facade), so `bound_and_retain` below
+// recomputes the same three-way comparison from the public `minimum()`/
+// `maximum()` accessors instead of porting a copy of that method.
 
 /// A collection type `K<T>[min, max]`. Two collection types are the same type
 /// exactly when kind, element type and bound are all equal.
@@ -256,11 +218,19 @@ fn bound_and_retain(
     meter.charge(
         Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
     )?;
-    if let Some(violation) = collection_type.bound.violation(count) {
+    let bound = collection_type.bound;
+    let violation = if count < bound.minimum() {
+        Some(BoundViolation::BelowMinimum)
+    } else if count > bound.maximum() {
+        Some(BoundViolation::AboveMaximum)
+    } else {
+        None
+    };
+    if let Some(violation) = violation {
         return Err(Stop::Refused(Refusal::CardinalityOutOfBound {
             violation,
             kind,
-            bound: collection_type.bound,
+            bound,
             count,
         }));
     }
