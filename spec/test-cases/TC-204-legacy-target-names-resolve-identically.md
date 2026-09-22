@@ -46,5 +46,6 @@ unknown name in step 4 is unchanged by the swap.
 
 Steps 1 and 4 are backed for the current catalog by
 `legacy_target_names_parse_round_trip_and_list_identically`
-(`tests/it/lowering_registry_isolation.rs`). Steps 2 and 3 are subject to
-ADR-011-OQ-1.
+(`tests/it/lowering_registry_isolation.rs`). ADR-011 §7.3 M-6a deletes
+`lowering` and its catalog without replacing it, so steps 2 and 3 have no
+swap to compare across; this case retires with `lowering`.

@@ -31,10 +31,13 @@ The contract's six parts (ADR-012 §2):
 
 1. **Identity.** Every checked node the contract's `check` produces SHALL
    carry a stable identity minted once, at check time, from a
-   content-addressed preimage over the node's structure and its owner
-   (ADR-013 O-04). Structurally identical nodes SHALL share one
-   identity, and `check` SHALL key each source occurrence of a node
-   separately from the node's identity, by (identity, role, ordinal).
+   content-addressed preimage over the node's structure, its owner when it
+   has one, and its package-local qualified name when it is declared
+   (ADR-013 O-04). A declared node has an owner; a builtin or anonymous type
+   node has none. Nodes with identical structure, qualified name and
+   owner SHALL share one identity. `check` SHALL key each source
+   occurrence of a node separately from the node's identity, by (identity,
+   role, ordinal).
 2. **Provenance.** Every checked node occurrence SHALL map to its source span
    through a source map keyed by that occurrence key, minted only by QSL.
 3. **Checked input (typing context).** A family's `check` SHALL receive a

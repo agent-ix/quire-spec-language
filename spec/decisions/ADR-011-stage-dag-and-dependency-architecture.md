@@ -252,11 +252,11 @@ distinct nominal type with private constructors in its stage module.
 |---|---|---|---|---|
 | E1 | S0 → S1 | Source bytes, `SourceIdentity`, limits | Lossless CST | QSL `cst` |
 | E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders (ADR-012 §2) |
-| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, library lock | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
+| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, library lock, and the package's lock evidence (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
 | E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its digest-addressed source through S1 to S4, whose recomputed `package_id` equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, and beside them the expected `package_id` the driver received in E4's `EmittedPackage`. IR's reader enforces conditions 1 and 2 of the §4 verified binding (supported version, digest equal to declared identity) under FR-322 (IR TC-048), and condition 3 (identity pinned by the request) against that expected `package_id` | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
 | E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` carrying a `FamilyOutcome` | QSL `value::expression` |
-| E7 | S5 → S6b | IR nodes with `capability_report` (keyed by occurrence key, ADR-012 §13.5), bounds, and the `route` candidate sets, passed by the orchestrating driver (T-13) | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
+| E7 | S5 → S6b | IR nodes; the per-item requirement records (keyed by occurrence key, ADR-012 §13.5), which the driver passes from the in-process `CheckedPackage`; bounds, and the `route` candidate sets, passed by the orchestrating driver (T-13) | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
 | E8 | S6b → S7 | Kani run of a `supported` item | `CounterexamplePacket{source: ReplaySource}`, where `ReplaySource` is `Witness(Witness)` or `Input(values)` (ADR-013 O-25; the AD-016 amendment is ADR-013 QC-20) | IR |
 | E9 | S7 → S8 | The replay request: the IR packet plus the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run), and the digest-addressed source of the proved package and of its domain and dependency packages (QC-1 byte provision) | Parity verdict | CG replay adapter, through QSL layer-6 `replay` only. `replay` recompiles the source through S1 to S4 into a `CheckedPackage` whose closure carries the checked dependency nodes (E4). It checks that `package_id` equals the packet's (ADR-013 T-2, O-26), that each `RawSourceRef` source digest matches, and the §4 dependency binding for each dependency, selects the function by `QualifiedName`, then calls the S6a executor. No `CheckedPackage` is built from wire bytes. |
 
@@ -318,8 +318,8 @@ FR-331 dispositions as wire and returns the `BackendId` of each item settled
 `supported`, and nothing else. The orchestrating driver (T-13) passes that
 `BackendId` to CG generation.
 
-- `route` computes each item's candidate set from the `Requirements` recorded
-  in the S4 `capability_report` and a registry value. The registry value is
+- `route` computes each item's candidate set from the per-item `Requirements`
+  records made at E3 (§2.2) and a registry value. The registry value is
   built from provider manifests by the orchestrating driver (T-13) and passed
   in as an argument; it is never global state.
 - The orchestrating driver (T-13) passes the checked package's v2 bytes and
@@ -353,8 +353,8 @@ by design, and no later stage may recover it.
 |---|---|---|---|---|---|
 | E1 | Minted, lossless | Minted: spans against `SourceIdentity` and revision; I3 adds the document `SourceMap` | none | Edition read from source | none |
 | E2 | Dropped | Carried: each form holds the span of its CST node | none: forms carry position only | Edition and the unit's profile, import and model selections carried; each form's `using` alias carried as written | Declared bounds and extents carried as syntax |
-| E3 | none | Carried: QSL, the only span minter, keys the source map by occurrence key (node id, role, ordinal; ADR-013 O-07) | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201). A node bound to a domain-package declaration carries that declaration's `DeclarationKey{package, node}`, which the domain package assigns and I1 intake admits; QSL never mints one (ADR-013 O-03, C-02). AD-016 arrow 1 is stale here. Remaining work: agent-ix/quire-specification#141. Node ids are content-addressed over the ADR-013 O-04 preimage. Structurally identical nodes share one id, and each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). The node-identity preimage names the node's owner: `SourceOwner` or `DefinitionOwner` (`{authority, identity}`) for a source- or definition-declared node, and the domain package identity, declared version and IR node for a `ModelOwner` node (QC-18), so a bare `NodeKey` is unique across owners (ADR-013 O-04). A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Dependency and domain-package identities resolved and recorded | Bounds and extents typed. The `capability_report` is recorded without negotiation: exactly one entry per checked item that has `Requirements`, keyed by its occurrence key, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. `request_index` is the bytewise order of those keys, so two identical claims stay distinct. The entry holds kind, extent and bound only (ADR-012 §13.5). |
-| E4 | none | Carried: source map by occurrence key, in the package | Carried verbatim | **Minted**: package identity and digest, v2 schema version | Carried as v2 `bounded_domain`, `model_population` and `capability_report` |
+| E3 | none | Carried: QSL, the only span minter, keys the source map by occurrence key (node id, role, ordinal; ADR-013 O-07) | **Minted**: checked node id (`quire.checked-semantic-node/v1`, FR-201). A node bound to a domain-package declaration carries that declaration's `DeclarationKey{package, node}`, which the domain package assigns and I1 intake admits; QSL never mints one (ADR-013 O-03, C-02). AD-016 arrow 1 is stale here. Remaining work: agent-ix/quire-specification#141. Node ids are content-addressed over the ADR-013 O-04 preimage. Structurally identical nodes share one id, and each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). The node-identity preimage names the node's owner: `SourceOwner` or `DefinitionOwner` (`{authority, identity}`) for a source- or definition-declared node, and the domain package identity, declared version and IR node for a `ModelOwner` node (QC-18). Package scope comes only from that owner; a node's FR-322 `declaration` is package-local and contributes its qualified name to the content key (ADR-013 O-04). A declared record, tuple or function carries its owner, so only packages of one owner share its id, and declared nodes of distinct owners never share a `NodeKey`. Builtin and anonymous structural types (`scalar_type`, `bounded_domain` and anonymous composite types) carry no owner and share one id across packages (OQ-7 ruling). The lock evidence (§2.4) is admitted here, because the FR-322 application-node key hashes each operation's law `DefinitionRef`s, digests included. A reference into an I2 view is `PackageNodeKey{package: package_id, node: WireNodeId}` in `library` (ADR-013 T-3); it names the view's node without making a `NodeKey` from wire bytes. | Lock evidence admitted (§2.4); dependency and domain-package identities resolved and recorded | Bounds and extents typed. Each checked item that has `Requirements` gets one requirement record, made without negotiation and keyed by its occurrence key, holding the item's one capability kind (the #134 vocabulary, FR-057), the declared extent and the authored bound. `request_index` is the bytewise order of those keys, so two identical claims stay distinct. The record holds kind, extent and bound only (ADR-012 §13.5). AD-016 arrow 1's `capability_report` wording is stale here: the v2 `capability_report` is FR-322's feature-level report (E4). |
+| E4 | none | Carried: source map by occurrence key, in the package | Carried verbatim | **Minted**: package identity and digest, v2 schema version | Carried as v2 `bounded_domain` and `model_population`. The per-item requirement records are carried in the in-process `CheckedPackage`, not in the v2 bytes. The v2 `capability_report` follows FR-322: one `{feature, disposition}` entry per `required_features` entry and per selected model capability. A function-only `Value` package has `required_features = ["quire.value.complete/v1"]` and one entry for it with disposition `available`. |
 | E5 | none | Carried as `CheckedSourceMapEntry`, never re-minted | Carried read-only as `CheckedNodeId` and `CheckedDomainPackageRef` | Checked: an unsupported v2 contract version refuses | Carried; `requires-bound` derived once from the IR table |
 | E6 | none | Carried: `Evaluation.location` from the node id | Carried | Package identity bound to the evaluation | none |
 | E7 | none | CG tags from node ids | Obligation id = digest over every `KaniObligationIdentity` member except `source_span` (AD-016 arrow 5; QC-14, landed by agent-ix/quire-specification#140); it gains the clause occurrence key with QC-8. Remaining work: agent-ix/quire-specification#141. | Kani tool pin and runtime revision become part of the evidence identity | **Minted**: disposition per `request_index`, obligation identity with its per-argument bound subset |
@@ -481,6 +481,49 @@ outside the #205 gates is a cross-repository rule, proposed to QSpec as an NFR
 agent-ix/quire-contract-codegen#60 and #73 are defects in CG's generated-harness
 gate, not the gate itself.
 
+### 2.4 Lock evidence
+
+A package's lock evidence is the FR-322 `lock` content: edition, profile
+selections, definition selections, model selections, sources, required
+features and dependency selections. Every member except `sources` enters
+`package_id` through the identity preimage. It enters at E3, where node
+identity is minted, and not at E4. The inputs it is derived from are the
+source bytes, the QSL build, and the domain and dependency sources, because
+E9 recompiles from those alone (ADR-013 O-26) and must reproduce `package_id`.
+A caller-supplied lock file never enters `package_id`.
+
+| Member | Source |
+|---|---|
+| `edition` | The edition QSpec's value lock selects as always-selected: role `edition` in `proposals/quire-v1/definitions/complete-value-lock.json` (agent-ix/quire-specification), `agent-ix` / `ix:native` / `quire-draft 1-draft.2`, with the digest that file records. The source header's `language "ix:native" edition "1-draft";` names it, and E3 matches it to that `edition` role. The edition in QSpec's v2 positive fixtures (`quire-edition`, an all-`1` digest) is a placeholder, not an edition. |
+| `profile_selections` | The source header's `profile … version … digest …` declarations. E3 refuses a header digest that differs from the accessor's entry for that definition. |
+| `definition_selections` and each law `DefinitionRef` | QSpec's value lock |
+| `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1. Spine `compile` (§5) admits no domain package, so its E3 refuses a `model` declaration. |
+| `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
+| `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
+| `dependency_selections` | Each dependency's `package_id` |
+
+Every definition digest QSL writes is read from a QSpec-published accessor
+for `complete-value-lock.json`. QSL holds no digest constant that restates
+QSpec data. Until QSpec publishes that accessor, the emitter has no edition
+selection and refuses (Remaining work: the QSpec lock accessor, owned and
+raised by QSL). QSL's `DefinitionLock` catalog (`src/value/definition.rs`)
+restates QSpec identities and revisions, and records lock revision `1-draft.1`
+and root revision `1-draft.1` where QSpec's lock is at `1-draft.2` for both. The
+accessor replaces that whole restatement. The catalog is a temporary
+exception to the no-restatement rule, and it expires when the QSpec accessor
+lands: the change that adopts the accessor deletes the catalog's restated
+identities, revisions and digests.
+
+A `dependency_selections` entry holds the dependency's `package_id`. FR-322's
+`lock` prose, its `dependency_reference` member and FR-322-AC-26, QSL
+`library::ImportDeclaration` and the complete-V1 `import … digest …` grammar
+all key a dependency by its `package_id`. QSpec's
+`proposals/checked-package-v2/schema.json` types the entry as a `Selection`
+with a `quire.definition.bytes/v1` `DefinitionRef`, which is a QSpec schema
+defect. Until QSpec corrects the schema, E4 emits `dependency_selections: []`,
+E3 refuses a unit that declares an `import`, and the I2 reader refuses a
+non-empty `dependency_selections` (Remaining work: the QSpec schema defect).
+
 ## 3. Forbidden bypasses
 
 Until #226 lands, the #216 and #219 gate walks check this table, §6.1 and
@@ -591,6 +634,18 @@ constraints that design must meet. The field list and the exit-code values are
   same stage APIs and never bypass §3.
 - #29 (CLI parse and dispatch) and #133 (parsing `quire` fences, input I3)
   land inside these rules.
+- Spine `compile` takes complete-V1 source: `compile <identity> <revision>
+  <path>`, the operand shape of `parse` and `format`. It writes the
+  `quire.checked-package/v2` bytes to stdout. The lock evidence comes from the
+  source header and the QSpec lock accessor (§2.4), and no lock file or
+  request file is read. It takes no domain or dependency source, so E3
+  refuses a `model` or `import` declaration. No native-compile/1
+  request or `native-rule-model/1` model has a spine equivalent.
+- Spine `run` calls a named checked function: a `QualifiedName` resolved by
+  name lookup in the compiled package, then `CheckedPackage::call` (E6, and
+  the same shape E9 uses). Native-run/1 clause execution over snapshots and
+  invocations (FR-023, FR-026, FR-028, FR-031, FR-032) has no spine
+  equivalent before M-6c and stays until M-6c lands one (§7.3).
 
 ## 6. Module DAG
 
@@ -764,10 +819,10 @@ Seams:
 
 | Seam | Contents | Retires when | Owning change |
 |---|---|---|---|
-| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding`, `features` and `view` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | Per lane (§7.3 M-6). The checked-package producer lane (M-6a) is deleted before gate #216: "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). | M-6a to M-6e |
+| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding`, `features` and `view` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | Per lane (§7.3 M-6). The checked-package producer lane (M-6a) is deleted before gate #216: "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). Native `run` clause execution and the modules only it reaches retire with M-6c. | M-6a, M-6c to M-6e |
 | SEAM-2 composed | ADR-010 lane B: `syntax::composed`, `parser::composed`, `linking::composed`, `checking::composed`, and shared code such as `formal_source` | Deleted (owner ruling). Each composed family is deleted in the PR that lands its S3 family checker and S4 emission, so everything reaches IR through the one S4 spine. #185 removes the `requests` backend disposition from QSL (FB-12). | M-6e with the family implementation tickets (§7.3); #185 for `requests` |
 | SEAM-3 protocol wires | `protocol_artifact` (compiled-protocol /1 to /3 emit and read; checked-predicate, temporal-subject and native-temporal handoffs) | Its reads that feed `state` and `temporal` are deleted with #120, #121 and #164 (state) and #188 and #189 (temporal) (M-6c). Its handoffs to IR are deleted with #218 and agent-ix/quire-contract-ir#141, which land S4 emission over the checked graph and IR v2 admission (M-6d). The last lane PR deletes the remainder. The QSpec wire question is in §Questions. | M-6c, M-6d |
-| SEAM-4 IT-010 | `tests/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Deleted with #217, which lands the CG replay adapter through S6a | M-6b |
+| SEAM-4 IT-010 | `tests/it/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Deleted with `lowering` once the skeleton spine (§1.1) is green, so CI keeps a Kani proof-and-replay check throughout | M-6a |
 | SEAM-5 source graph | `complete::package::lower_source_graph` / `LoweredSourceGraph` (ADR-010 C3) | The S2 `forms` producer lands and replaces it | QSL-138 (M-3a) |
 
 Module table:
@@ -788,8 +843,8 @@ Module table:
 | `linking` | SEAM-1 (`native`) and SEAM-2 (`composed`) | name binding becomes an S3 phase |
 | `checking` | SEAM-1 and SEAM-2 | |
 | `formal_source` | SEAM-2 | shared native and composed code |
-| `native_model`, `model_source`, `mapped`, `runtime` | SEAM-1 | `runtime::execute` is not a replay target (AD-016). `NativeModelProfile` and its ceiling sites retire with SEAM-1. |
-| `lowering` | SEAM-1 | `lowering::target` (`src/lowering/target.rs:39-46`), its `ProjectionTarget` enum and the `--target` argument are deleted with SEAM-1. The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). M-6b deletes the rest of `lowering` with #217. |
+| `native_model`, `model_source`, `mapped`, `runtime` | SEAM-1 | `runtime::execute` is not a replay target (AD-016). Native `run` reaches `model_source`, `mapped` and `runtime`, so they retire with it in M-6c (§7.3, ADR-011-OQ-2). `NativeModelProfile` and its ceiling sites retire with SEAM-1. |
+| `lowering` | SEAM-1 | `lowering` as a whole, including `lowering::target`, its `ProjectionTarget` enum and the `--target` argument, is deleted in M-6a once the skeleton spine (§1.1) is green. The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). |
 | `quire_source` | I3 | the extraction adapter stays at S0; its call into `mapped` retires with SEAM-1 |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1; the v2 emitter and the I2 byte reader are new in M-4. Until X-7 extracts `qsl-package`, layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — lives in the top-level module `checked_package`, and the module named `package` holds only SEAM-1. Every rule this ADR states for layer-4 `package` applies to `checked_package`. |
 | `value` kernel submodules: `numeric`, `integer` (QSL's copy is a `value/mod.rs` `pub use` re-export, not a module; QSL-146 owns it), `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `node`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. #213 S-1 (X-1) added these as new `quire-exact` types; its own PR summary states no file under `src/value/` or `src/model/` was touched (§6.1's "K is a leaf" bullet), so removing the matching QSL copies is a separate, outstanding step — confirmed still needed for `accounting` (QSL-166) and for `collection`, `equality`, `division`, `ieee`, `composite` and `outcome` (QSL-131, same bullet). This row does not claim the remaining modules' QSL copies are gone. |
@@ -811,7 +866,7 @@ Module table:
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
 | crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
-| none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: `capability_report` is recorded at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
+| none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: the per-item requirement records are made at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
 
 ## 7. Crate DAG and extraction
 
@@ -861,8 +916,8 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | Edge | Target | Owning change |
 |---|---|---|
 | IR root → QSL (normal and dev, f1700a9) | **Removed** in the IR change that lands predicate and temporal admission over the v2 value, expression and temporal nodes at v2 intake, with #218 and #223 (M-6d). | agent-ix/quire-contract-ir#141; #218, #223 |
-| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6b with #217 |
-| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
+| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6a, once the skeleton spine is green |
+| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6a, once the skeleton spine is green |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
 | QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); X-10 (`qsl-replay`) is extracted (QSL-185); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
@@ -993,9 +1048,9 @@ old path and its replacement both run:
 
 | Lane | Deleted | In the PR that lands |
 |---|---|---|
-| M-6a checked-package producer | native `run` and `compile` producing packages or backend artifacts, the `lower` command, `package::NativePackage` and native-linked-package/1; `format` is retargeted to the CST | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216 |
-| M-6b proof and replay | the IT-010 path (SEAM-4), the QSL dev dependencies on CG, IR and the RT fixture crate, the `lowering` targets, `ProjectionTarget` and `--target` | #217. Until then the skeleton spine (§1.1) is the proof-and-replay evidence. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
-| M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222) |
+| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST. Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
+| M-6b proof and replay | nothing: its former contents, SEAM-4 and `lowering`, are deleted in M-6a | #217 widens the skeleton spine to the function-application exemplar and deletes nothing. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
+| M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them; native `run` (native-run/1 clause execution over snapshots and invocations) and the SEAM-1 modules only it reaches, including `package::NativePackage`, the native-linked-package/1 reader, `runtime`, `mapped` and `model_source` (ADR-011-OQ-2) | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222). The PR that lands spine clause execution deletes native `run`. |
 | M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 (design #223), with agent-ix/quire-contract-ir#141 |
 | M-6e composed checker | SEAM-2: each composed family is deleted in the PR that lands its S3 family checker and S4 emission. The composed checker is deleted, not kept (owner ruling). | Each family implementation ticket as its family lands: #214, #120, #164, #170 and #175 (`Value`), #120, #121 and #164 (`StateModel`), #187 (`SumCase`), #188 and #189 (`TemporalTrace`), #218 (`ProtocolClause`), #191, #192 and #198 (`Relation`); the last one deletes the remainder |
 
@@ -1006,7 +1061,12 @@ consumer.
 
 Gate #216 is evaluated per lane. At #216, M-6a has landed: no CLI command or
 library API produces a checked package, v2 bytes or a backend artifact except
-through the spine. The M-6b to M-6e lanes are not checked-package producers;
+through the spine. Native `run` builds a `NativePackage` in process as the
+input to its clause execution, writes no package bytes and no backend
+artifact, and retires in M-6c. The `NativePackage` library API it uses,
+including its constructor and its native-linked-package/1 bytes, stays with
+it until M-6c; no CLI command writes those bytes after M-6a (ADR-011-OQ-2
+records this against #216's wording). The M-6b to M-6e lanes are not checked-package producers;
 their "old path unreachable" evidence belongs to the gate after each
 replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
 #216 is an owner ruling (2026-09-19); the coordinator amends the text of #216,
@@ -1028,7 +1088,7 @@ The approved crate extractions are X-1 to X-10.
 | Item | Decision |
 |---|---|
 | OBS-001 | S4 `package` owns the checked-package/v2 emitter (M-4). It is the only QSL → IR path. |
-| OBS-002 | IT-010's proof path is SEAM-4, deleted in #217 (M-6b), which lands the CG replay adapter. The skeleton spine is the proof-and-replay evidence until then (FB-07, FB-08). |
+| OBS-002 | IT-010's proof path is SEAM-4, deleted in M-6a once the skeleton spine is green. The skeleton spine is then the proof-and-replay evidence (FB-07, FB-08), and #217 widens it. |
 | OBS-007 | S2 `forms` is the only producer of check-stage input from source (SEAM-5, M-3a). `model::checked_dispatch` moves to `check` (M-2). |
 | OBS-008 | One spine (lane C). Lane A retires, lane B converges, lane D joins S6a (§8). The other checked-package producer paths are deleted before #216 (M-6a); each other lane is deleted with its replacement (M-6). |
 | OBS-009 | Name and model binding is a phase of S3. "Linked" means S4 closure over package identities (§1). |
@@ -1101,10 +1161,9 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
   DAG.
 - #188, #189, #217 and #223 keep their #185 edge, because their exit criteria
   settle an item through `route` and E7.
-- M-6 adds no #185 edge. M-6b deletes the native lowering targets with #217,
-  which already waits on #185, together with `ProjectionTarget` and
-  `--target`; the `BackendId` argument that `route` resolves in #185 is the
-  only backend choice.
+- M-6 adds no #185 edge. M-6a deletes `lowering`, together with
+  `ProjectionTarget` and `--target`; the `BackendId` argument that `route`
+  resolves in #185 is the only backend choice.
 
 ## Questions handed to sibling tickets
 
@@ -1122,9 +1181,10 @@ Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
   The kernel `Refusal` carries no family cause. At lowering and proof
   stages, a family that sits out the stage has an explicit, hand-written arm
   that returns `unsupported` with a catalog code.
-- **`capability_report`.** Exactly one entry per checked item that has
+- **Requirement records.** Exactly one record per checked item that has
   `Requirements`: the item's one kind, extent and bound. No backend, candidate
-  or disposition (§2.2 E3).
+  or disposition (§2.2 E3). The v2 `capability_report` member is FR-322's
+  feature-level report (§2.2 E4), not these records.
 - **IR admission.** IR's predicate admission reads the v2 value and expression
   nodes, and its temporal admission reads the v2 temporal nodes, decoded at v2
   intake (agent-ix/quire-contract-ir#141; §7.1).
@@ -1147,19 +1207,38 @@ To QSpec (wire owner):
 - Whether compiled-protocol /1 to /3 and the checked handoff formats return as
   separate wires or are replaced by v2 forms once S4 emits them (SEAM-3). The
   format is authored in QSpec.
+- A published accessor for `proposals/quire-v1/definitions/complete-value-lock.json`,
+  from which QSL reads every definition digest it writes (§2.4). QSL owns
+  raising it; it blocks v2 emission.
+- A type-node arm of `node-identity-preimage.schema.json`, with vectors, for
+  builtin `scalar_type`, `bounded_domain` and anonymous `composite_type`
+  nodes: a content key with no owner (ADR-013 O-04, QC-18). Declared
+  records, tuples and functions carry their owner (QC-18's owner-member
+  request).
+- The `dependency_selections` item type in
+  `proposals/checked-package-v2/schema.json`: the dependency's `package_id`,
+  not a `Selection` (§2.4).
+- An AD-016 amendment: arrow 1 and the Shared-type rows name
+  `capability_report` as the carrier of per-item requirements, while FR-322
+  defines it as a feature-level report (§2.2 E3, E4). The wire that carries
+  the per-item requirement records to CG is open with it.
+- The v2 positive fixtures' placeholders: the `quire-edition` edition, the
+  diagnostics `catalog` reference and every type-node key. Until they are
+  replaced, a conformant producer cannot emit the fixtures byte for byte, so
+  QSL's fixture test compares only what the fixtures pin: IR admits QSL's
+  emission of equivalent source, and QSL's I2 reader admits the fixtures.
 
 ## Open questions for the owner
 
-- **ADR-011-OQ-1: FR-079 against M-6b.** FR-079-AC-1 requires Kani lowering
-  corpus output to be byte-identical across the replacement of the fixed
-  `ProjectionTarget` catalog, and FR-079-AC-2 requires `boolean-oracle/v1`,
-  `integer-ir/v1` and `state-scalar-ir/v1` to parse, round-trip and appear
-  in the CLI target list identically before and after it. §6.2 (the
-  `lowering` row) and §7.3 M-6b assign #217 the deletion of the `lowering`
-  targets, `ProjectionTarget` and `--target`, with the backend chosen only by
-  `BackendId`. Open: whether FR-079's two criteria are amended or retired at
-  M-6b, or M-6b keeps the three target names. Raised by the PR #321 spec
-  review, finding FND-001.
+- **ADR-011-OQ-2: `NativePackage` and `runtime` under native `run`.** The
+  2026-09-22 OQ-3 ruling deletes `package::NativePackage`, `lowering`,
+  `runtime` and IT-010 in the last M-6a change. The OQ-1 ruling keeps native
+  `run` until M-6c, and native `run` executes clauses through
+  `runtime::execute` over a `NativePackage` (`src/command.rs`, `run_bytes`).
+  Deleting either in M-6a removes native `run`, which the no-gap ruling
+  forbids. This record deletes `lowering` and IT-010 in M-6a and retires
+  `NativePackage` and `runtime` with native `run` in M-6c (§7.3). Open:
+  whether the owner confirms that placement.
 
 ## Owner rulings (2026-09-19)
 
@@ -1180,13 +1259,87 @@ The owner delegated these to the #205 coordinator.
 - **Sibling questions.** Answered by ADR-012 §13.5 and ADR-013 §3.1 and
   applied in this record (§Questions).
 
+## Rulings (2026-09-22): M-6a owner questions
+
+The QSL lead ruled these for the QSL-8 and QSL-6 lane. Each is applied in the
+sections it names.
+
+- **OQ-1: spine `run`.** Spine `run` calls a named checked function: a
+  `QualifiedName`, then `CheckedPackage::call` (§5; US-014-EX-1; E6, E9).
+  Native-run/1 clause execution (FR-026 clauses over snapshots) stays until
+  M-6c provides its spine equivalent (§7.3). Reason: the 2026-09-19 ruling
+  says nothing working is removed early, and clause execution has no spine
+  replacement before M-6c, so removing it in M-6a would be an unreplaced
+  regression. It is existing function with no successor yet. Reopen if the
+  owner lifts that ruling for this lane.
+- **OQ-2: spine `compile` input.** Complete-V1 source, as §8, §2.1 E1 and I1,
+  and US-014 already state. The request format is `compile <identity>
+  <revision> <path>`, returning v2 bytes, with the source header as the lock
+  (§5, §2.4).
+- **OQ-3: `NativePackage`, `lowering`, `runtime` and IT-010.** `lowering`
+  and IT-010 are deleted in the last M-6a change, which runs only once the
+  skeleton spine is green: QSL #243 (QSL-5) with
+  agent-ix/quire-contract-codegen#87 (§6.2, §7.3). `NativePackage`,
+  `runtime`, `mapped`, `model_source` and the native-linked-package/1 reader
+  stay until native `run` retires in M-6c. Reason: the owner ruling that
+  nothing working is removed early. IT-010 is the only Kani
+  proof-and-replay check in `make ci`, so gating its deletion on its
+  replacement keeps that coverage continuous, and native `run` executes
+  through the modules that stay. ADR-011-OQ-2 stays open for the owner. With
+  it, the §6.2 `lowering` row, the §7.3 lane table
+  and #216's "backend artifact" wording agree. ADR-011-OQ-2 records its
+  interaction with OQ-1. FR-079's criteria guard a catalog replacement that
+  no longer happens: they hold until `lowering` is deleted and retire with
+  it.
+- **OQ-4: `format` over a recovering CST.** Refused, as FR-003's Behavior
+  and FR-003-AC-8 state. FR-003-AC-7 and FR-003-AC-8 supersede the
+  recovery-node criterion proposed in a QSL-8 comment.
+- **OQ-5: `dependency_selections`.** Each entry holds the dependency's
+  `package_id`; QSpec's schema typing is a QSpec defect. Until QSpec corrects
+  it, `dependency_selections` is `[]` and an `import` is refused (§2.4). It is
+  not a prerequisite of the lock-evidence work.
+- **OQ-6: edition and definition digests.** The edition is `ix:native` /
+  `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
+  `quire-edition` edition is a placeholder. Every digest comes from a
+  QSpec-published accessor for that file, and QSL holds no digest constant
+  restating QSpec data (§2.4). Reason: E9 recompiles from source alone, which
+  rules out a caller-supplied lock file, and constants are a copy of another
+  repository's data, which drifts. Until the accessor exists, its absence is
+  a cross-repository blocker that QSL owns and raises. The accessor replaces
+  the whole `DefinitionLock` catalog's restatement of QSpec data; that
+  catalog is a temporary exception whose expiry is the accessor landing
+  (§2.4).
+- **SG-1: where lock evidence enters.** At E3, not E4 (§2.2, §2.4). Reason:
+  node identity is minted at E3, and the FR-322 application-node key includes
+  law `DefinitionRef` digests.
+- **OQ-7: type-node keys.** Node keys are content keys scoped only by
+  owner (ADR-013 O-04, OQ-G). A record, tuple or function declared in
+  source carries its owner, so only packages of the same owner share its
+  id. Builtin and anonymous structural types (builtin `scalar_type`,
+  `bounded_domain`, anonymous `composite_type`) carry no owner and share
+  one id across all packages. `PackageNodeKey` carries cross-package
+  references (ADR-013 T-3). QSpec publishes no preimage arm for builtin and
+  anonymous type nodes, so QSL implements a proposed one. Reason: declared
+  records and tuples are nominal, like the enum, dimension and unit nodes
+  QSpec already scopes by owner; without the owner, two unrelated packages
+  declaring `geo.Point` with the same fields would get equal `NodeKey`s in
+  one check; builtin and anonymous types have no owner and stay shared
+  (ADR-013 OQ-G). Reopen if QSpec rejects the QC-18 owner-member request;
+  QSL then conforms to QSpec and adds explicit collision handling.
+- **SG-2: `capability_report`.** It follows FR-322 and the fixtures: one
+  `available` entry for `quire.value.complete/v1` (§2.2 E4).
+- **SG-3 (the FR-030 split), SG-4 (the FR-003 input) and SG-5 (`Value` S2
+  production and its assembler, FR-091)** are settled by the merged QSL PRs
+  #341 and #336. **SG-6 (the ADR-013 T-4 stage types)** is implementation, not
+  an owner question.
+
 ## Tickets to open at #212
 
 | # | Proposed change | Proposed owner and repository |
 |---|---|---|
-| T-1 | M-6a: the CLI `run` and `compile` rewire onto the spine, `format` retarget, `lower` and native-linked-package/1 deletion, before #216 (a Layer 2 move that amends #205's layer plan) | QSL, Layer 2, with QSL-8 (this repo's #240) |
+| T-1 | M-6a: spine `compile` and spine `run` (§5), `format` retarget, deletion of native `compile`, `lower`, `lowering` and SEAM-4, before #216 (a Layer 2 move that amends #205's layer plan). Native `run` stays until M-6c. | QSL, Layer 2, with QSL-8 (this repo's #240) |
 | T-2 | The skeleton spine (§1.1) as a tracked ticket. QSL #243 lands the layer-6 `replay` facade (ADR-013 TK-01), and agent-ix/quire-contract-codegen#87 lands the replay adapter. Each family's implementation ticket then widens `replay` for that family. | QSL #243 and agent-ix/quire-contract-codegen#87, with QSL M-4 |
-| T-3 | Add the lane deletions M-6b to M-6e to the exit criteria of the implementation tickets that land each replacement: #217, #120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198, #214 and #218 | QSL (issue text for those tickets) |
+| T-3 | Add the lane deletions M-6c to M-6e, native `run` included, to the exit criteria of the implementation tickets that land each replacement: #217, #120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198, #214 and #218 | QSL (issue text for those tickets) |
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
 | T-5 | Confirm that agent-ix/quire-contract-ir#141 (v2 intake admission of value, expression and temporal nodes) also removes the IR root → QSL edge | agent-ix/quire-contract-ir#141, with #218 and #223 |
 | T-6 | Record X-1 `quire-exact` extraction as #213 S-1, with its kernel gate under §2.3 and the blocking edge from the AD-016 amendment (TK-10, QC-15) | QSL #213 and RT |
@@ -1219,7 +1372,7 @@ The owner delegated these to the #205 coordinator.
   in `src/exact/`, with a run mutation of each shared helper that fails the
   proof, and a mutation control there.
 - The skeleton spine is the proof-and-replay evidence counted by #205 gates
-  until #217 lands.
+  from the M-6a deletion of IT-010, and #217 widens it.
 
 ## Alternatives Considered
 
@@ -1248,6 +1401,7 @@ The owner delegated these to the #205 coordinator.
   AD-016).
 - **Split crates along the largest modules (`protocol_artifact`, `value`,
   `model`).** Rejected by §7.2 and the #205 non-goal on size-only splits.
-- **Keep native-v1 serving the CLI until Layer 5.** Rejected. #216 fails while
+- **Keep native-v1 `compile` and `lower` serving the CLI until Layer 5.**
+  Rejected. #216 fails while
   two authoritative producer paths coexist, and native-v1 keeps a second
   checked type and a second type system (ADR-010 OBS-017, OBS-019).

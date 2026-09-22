@@ -31,10 +31,10 @@ function-application arms of `infer_form` reduced to a thin dispatch seam
 (ADR-012 §4.3).
 
 This requirement builds the checked-package producer for function
-declaration and application; it does not perform the CLI cutover. Native
-`run` and `compile`'s deletion of their native-v1 producer path, the `lower`
-command, `package::NativePackage`, `native-linked-package/1`, and the
-retarget of `format` to the CST are ADR-011 §7.3 M-6a, T-1's own PR, carried
+declaration and application; it does not perform the CLI cutover. Spine
+`compile` and spine `run`, the deletion of native `compile`, the `lower`
+command and `lowering`, and the retarget of `format` to the CST are
+ADR-011 §7.3 M-6a, T-1's own PR, carried
 by [#240](https://github.com/agent-ix/quire-spec-language/issues/240)
 because that cutover cannot land before #242's S4 emitter exists. This
 requirement's checked-package producer is #240's precondition, not its
@@ -173,13 +173,14 @@ a value the composed checker's input type can hold.
 This requirement builds S1 through S4 (and E4 v2 emission on request) for
 function declaration and application: a checked-package producer that
 `run`, `compile` and a future backend-artifact caller can route through.
-This requirement does not wire `run` or `compile` onto that producer, does
-not delete the native-v1 producer path, the `lower` command,
-`package::NativePackage` or `native-linked-package/1`, and does not
-retarget `format`. Those five changes are ADR-011 §7.3 M-6a, T-1's own PR
+This requirement does not add spine `compile` or spine `run`, does not
+delete native `compile`, the `lower` command or `lowering`, and does not
+retarget `format`. Those changes are ADR-011 §7.3 M-6a, T-1's own PR
 (#240), which deletes each old path in the same change that lands its spine
 replacement, per the T-3 same-change rule; #240 cannot land that PR before
-this requirement's producer, and #242's S4 emitter, both exist.
+this requirement's producer, and #242's S4 emitter, both exist. Native `run`
+(native-run/1 clause execution), `package::NativePackage` and the
+native-linked-package/1 reader stay until ADR-011 §7.3 M-6c (ADR-011-OQ-2).
 
 ### The replay executor selects a function by typed name
 
@@ -245,8 +246,8 @@ sum/case, temporal/trace, protocol/frame and refinement migrations, and the
 remaining `Value` forms, are out of scope and are tracked by their own
 tickets (#120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198,
 #218 via #220-#223), per ADR-012 §14.1. The M-6a CLI producer cutover
-(native `run`/`compile` deletion, `lower`, `package::NativePackage`,
-`native-linked-package/1`, and the `format` retarget) is
+(spine `compile` and `run`, deletion of native `compile`, `lower` and
+`lowering`, and the `format` retarget) is
 [#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s own
 requirement, owner-ruled against this ticket's contradiction between an
 earlier draft of this requirement, QSL-25's body and ADR-011 T-1: this
@@ -254,17 +255,15 @@ requirement supplies #240's precondition (the checked-package producer) and
 does not perform the cutover itself.
 
 **This deferral is a citation, not a #214-local ruling (PR #262 review,
-finding F1).** `src/cli.rs`'s `lower` command and `src/package.rs`'s
-`NativePackageRef` are still present after this ticket lands; that is
-correct, not an oversight this Status section is excusing. ADR-011
-§7.3's M-6a row (`spec/decisions/ADR-011-stage-dag-and-dependency-
-architecture.md`, the "M-6a checked-package producer" line) names the
-scope those two artifacts belong to -- native `run`/`compile`, `lower`,
-`package::NativePackage` and `native-linked-package/1` -- and states its
-owner verbatim: "QSL-8 (this repo's #240) with M-4, before #216". #214's
-own ticket body says the same. Deleting `lower`/`NativePackageRef` inside
-#214 would contradict that row, not satisfy it; #240 deletes them in the
-same change that rewires `run`/`compile` onto this requirement's spine
+finding F1).** `src/cli.rs`'s `lower` command is still present after this
+ticket lands; that is correct. ADR-011 §7.3's M-6a row
+(`spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md`, the
+"M-6a checked-package producer" line) names the scope it belongs to and
+states its owner verbatim: "QSL-8 (this repo's #240) with M-4, before
+#216". `src/package.rs`'s `NativePackageRef` belongs to native `run`, which
+§7.3 retires in M-6c (ADR-011-OQ-2). Deleting `lower` inside #214 would contradict that
+row, not satisfy it; #240 deletes it in the same change that lands spine
+`compile` and `run` over this requirement's spine
 (the T-3 same-change rule the Description section above already states),
 which cannot happen before this requirement's own producer, and #242's S4
 emitter, both exist.

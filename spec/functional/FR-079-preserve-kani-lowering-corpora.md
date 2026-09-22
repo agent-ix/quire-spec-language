@@ -19,13 +19,13 @@ when it replaces the fixed `ProjectionTarget` catalog with the registry
 `integer-ir/v1`, `state-scalar-ir/v1`), or their parsing, display and
 CLI-selection behavior, as part of that replacement.
 
-Today the registry (FR-075) sits alongside the fixed catalog, the catalog
+The registry (FR-075) sits alongside the fixed catalog, the catalog
 selects the lowering target, and lowering takes no registry input.
-ADR-011 §6.2 (the `lowering` row) and §7.3 M-6b assign #217 the deletion of
-the `lowering` targets, `ProjectionTarget` and `--target`, with the backend
-chosen only by `BackendId`. How that deletion relates to this requirement's
-preserved target names is an open question for the owner (ADR-011, "Open
-questions for the owner", ADR-011-OQ-1).
+ADR-011 §6.2 (the `lowering` row) and §7.3 M-6a delete `lowering` as a
+whole, `ProjectionTarget` and `--target` included, once the skeleton spine is
+green, with the backend chosen only by `BackendId`. The catalog is deleted,
+not replaced, so this requirement holds while `lowering` exists and retires
+with it (ADR-011, Rulings 2026-09-22, OQ-3).
 
 ## Inputs
 
@@ -83,8 +83,8 @@ would still pass without showing the output is unchanged.
 - Ticket exit condition: "existing Kani lowering corpora unchanged"
   ([quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)).
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
-  §6.2 and §7.3 M-6b, and ADR-011-OQ-1, which records their open question
-  against FR-079-AC-1 and FR-079-AC-2.
+  §6.2 and §7.3 M-6a, which delete `lowering`, and the 2026-09-22 OQ-3
+  ruling, which retires FR-079-AC-1 and FR-079-AC-2 with it.
 
 ## Status
 
@@ -94,7 +94,7 @@ The registry landed under QSL-46 (PR #305) alongside the unchanged catalog.
 
 By Acceptance Criterion:
 - FR-079-AC-1: unbacked. No test compares corpus output across a catalog
-  replacement. Open question: ADR-011-OQ-1.
+  replacement, and none is planned: the catalog is deleted, not replaced.
 - FR-079-AC-2: backed for the current catalog (`TC-204`):
   `legacy_target_names_parse_round_trip_and_list_identically`
-  (`tests/it/lowering_registry_isolation.rs`). Open question: ADR-011-OQ-1.
+  (`tests/it/lowering_registry_isolation.rs`). It retires with `lowering`.

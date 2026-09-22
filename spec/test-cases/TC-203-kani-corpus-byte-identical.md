@@ -56,5 +56,6 @@ been silently re-captured from the post-swap tree.
 
 ## Status
 
-Planned; no test backs this case. Which change step 2 names is open under
-ADR-011-OQ-1.
+Planned; no test backs this case. ADR-011 §7.3 M-6a deletes `lowering` and
+its catalog without replacing it, so no swap occurs for step 2 to name; this
+case retires with `lowering`.
