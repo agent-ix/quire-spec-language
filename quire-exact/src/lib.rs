@@ -3,7 +3,7 @@
 //! S-1).
 //!
 //! This crate is the AD-016/ADR-011 module-DAG leaf layer `K`: checked
-//! identity ([`NodeKey`] and the six opaque digest identities, such as
+//! identity ([`NodeKey`] and the seven opaque digest identities, such as
 //! [`EffectiveId`]), provenance ([`Location`]), kernel outcomes and refusals
 //! ([`Outcome`], [`Refusal`]), bounds and accounting ([`Meter`],
 //! [`BoundedInteger`], [`CardinalityBound`]), and the exact semantic value
@@ -18,23 +18,33 @@
 //! It depends on nothing else in the `quire-spec-language` workspace (ADR-011
 //! §6.1, §7.1: every crate-DAG edge points *into* this crate, never out of
 //! it), and on no wire format, hashing or JCS canonicalization crate: every
-//! digest identity here ([`NodeKey`] and the six digest identities,
+//! digest identity here ([`NodeKey`] and the seven digest identities,
 //! [`EffectiveId`], [`UniverseId`], [`ObjectId`], [`UnitId`], [`VariantId`],
-//! [`MemberId`]) is minted by wrapping an already-computed digest through
-//! its one public `from_digest` constructor (ADR-013 T-6), never by hashing
-//! internally.
+//! [`MemberId`], [`PopulationId`]) is minted by wrapping an already-computed
+//! digest through its one public `from_digest` constructor (ADR-013 T-6),
+//! never by hashing internally.
+//!
+//! [`Value`]/[`ValueType`]: `ValueType::admits` never pairs
+//! `ValueType::Population(u64)` with `Value::Population(PopulationId)`
+//! (ADR-013 O-13 Population row, QC-21, FR-089). This is not a capability
+//! loss: FR-089-AC-5's declared-maximum comparison is a QSL-layer check --
+//! the model/evaluator resolves a `PopulationId` to its binding and compares
+//! the binding's own declared maximum there, work this leaf crate has no way
+//! to do -- so kernel `admits` refuses every population pair outright,
+//! falling through to its catch-all and returning `false` (the
+//! `ValueType::Enum` shape, by contrast, carries its variant set inline per
+//! ADR-013 O-14, so it needs no declaration lookup at all).
 //!
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
-//! - [`Value`]/[`ValueType`]: `Value::Population` has no kernel payload at
-//!   all (the `ValueType::Enum` shape, by contrast, carries its variant set
-//!   inline per ADR-013 O-14, so it needs no declaration lookup and is not a
-//!   capability loss).
-//! - the `key` and `equality` modules: an enum pair keys and compares equal
-//!   by raw digest, with no declaration-aware ordering. (A same-enum check
-//!   is *not* a loss here: `ValueType::Enum(EnumShape)`'s admission already
-//!   guarantees both operands share one enum's variant set before either
-//!   module ever runs, per ADR-013 O-14.)
+//! - the `key` and `equality` modules: `Value::Population` has no key and
+//!   compares under neither, matching QSL's own `value::equality`/
+//!   `value::key`, which refuse a population as an equality operand or key
+//!   participant today -- a population binding is a direct operand of
+//!   `allInstances`/`lookup` only, never an equality or key operand. (A
+//!   same-enum check *is* still available: `ValueType::Enum(EnumShape)`'s
+//!   admission already guarantees both operands share one enum's variant
+//!   set before either module ever runs, per ADR-013 O-14.)
 //! - [`Quantity`]: no cross-unit arithmetic, comparison or equality; only
 //!   same-unit operations.
 //! - the `equality` module: the top-level text/enum/quantity schedule
@@ -49,13 +59,16 @@
 //! dependency's own fixture `Cargo.toml`. Building the gate is tracked
 //! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 //!
-//! **H-9: no acceptance criterion exists for this crate's own test suite.**
-//! Every `#[trace("TC-3NN")]` tag here is the bare one-argument form,
+//! **H-9: no acceptance criterion exists for most of this crate's own test
+//! suite.** The exception is FR-089-AC-6 (TC-297): the three kernel
+//! population-pair refusal tests in `value`, `equality` and `key` carry the
+//! two-argument `#[trace("TC-297", "FR-089-AC-6")]` form. Every other
+//! `#[trace("TC-3NN")]` tag here is the bare one-argument form,
 //! against the repo's two-argument `#[trace("TC-NNN", "FR-NNN-AC-n")]`
 //! convention, because there is no `FR-NNN-AC-n` to name: no `spec/`
 //! functional requirement or acceptance criterion, no `spec/test-cases/
 //! TC-3NN-*.md` file and no `spec/tests.md`/subsystem `tests.md` test
-//! matrix row exists for `quire-exact`'s value-kernel behavior as of this
+//! matrix row exists for the rest of `quire-exact`'s value-kernel behavior as of this
 //! PR. This is stated here rather than left silent, and rather than bound
 //! to an approximate existing FR (every FR found under `spec/functional/`
 //! that mentions ADR-011/ADR-013 is about package/capability admission,
@@ -139,8 +152,9 @@ pub use decimal::{
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};
 pub use identity::{
-    EffectiveId, MemberId, ObjectId, UnitId, UniverseId, VariantId, EFFECTIVE_ID_DOMAIN,
-    MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, UNIT_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
+    EffectiveId, MemberId, ObjectId, PopulationId, UnitId, UniverseId, VariantId,
+    EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, POPULATION_ID_DOMAIN, UNIT_ID_DOMAIN,
+    UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

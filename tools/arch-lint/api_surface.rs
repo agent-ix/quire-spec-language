@@ -19,9 +19,9 @@
 //! quote a call pattern, is not distinguished from a real call site by this
 //! version of the check. `main.rs`'s printed report states both limitations.
 //!
-//! Each rule scans one *role*'s source tree (see [`Role`]): T12-B and T12-C
-//! are QSL-side rules (which QSL module calls the kernel constructor), scanned
-//! against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
+//! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
+//! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
+//! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
 //! call only QSL's `replay` facade), scanned against the CG tree passed with
 //! `--cg` -- never against QSL's own tree, which the rule's call pattern
 //! (`quire_spec_language::replay::`, a fully-qualified external-caller path)
@@ -87,8 +87,9 @@ pub(crate) struct Rule {
     pub(crate) allowed_caller_prefixes: &'static [&'static str],
     /// A file path, relative to the QSL tree, whose presence the rule needs
     /// before it is live. `None` means the rule is always live once a root is
-    /// given (the constructor rules below: the files that define `NodeKey`
-    /// and `EffectiveId` already exist on origin/main).
+    /// given (the constructor rules below: the files that define `NodeKey`,
+    /// `EffectiveId` and `PopulationId`'s minting site already exist on
+    /// origin/main).
     pub(crate) requires_path: Option<&'static str>,
     pub(crate) pending_reason: &'static str,
     /// A fixed note on scope this rule does not evaluate, printed alongside
@@ -99,7 +100,7 @@ pub(crate) struct Rule {
     pub(crate) scope_note: Option<&'static str>,
 }
 
-/// today's three T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05).
+/// today's four T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
@@ -204,6 +205,31 @@ pub(crate) const RULES: &[Rule] = &[
              name an allowed-caller mapping for either, not decided here (#213)",
         ),
     },
+    Rule {
+        id: "T12-D",
+        description: "only `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21)",
+        role: Role::Qsl,
+        // The kernel's real constructor (`quire-exact`'s `PopulationId::
+        // from_digest`, QSL-131 Slice B). No mint call site exists yet on
+        // origin/main (QSL `model` minting a `PopulationId` at admission
+        // time is QSL-131's other half), so this rule is expected to report
+        // zero violations until that lands, the same as any newly added
+        // rule with no live callers yet.
+        call_patterns: &["PopulationId::from_digest("],
+        allowed_caller_prefixes: &["model"],
+        requires_path: Some("src/model/population.rs"),
+        // Genuinely unreachable for the same reason as T12-C's, above:
+        // `src/model/population.rs` already exists on origin/main (FR-084's
+        // `admit_binding`/`admit_invocation`), so the marker path's presence
+        // is all this check tests.
+        pending_reason: "unreachable: src/model/population.rs already exists on origin/main",
+        // Unlike T12-B/T12-C's `NodeKey`/`EffectiveId`, no cross-repo
+        // `PopulationId` shape is known to exist in quire-contract-runtime or
+        // quire-contract-codegen today (#295 review finding 8): this rule
+        // makes no claim about either, rather than asserting a copy this
+        // scan has not found.
+        scope_note: Some("scoped to QSL's own tree only"),
+    },
 ];
 
 /// Validates that `qsl_root` is actually a quire-spec-language checkout, by
@@ -228,8 +254,8 @@ pub(crate) fn assert_is_qsl_root(qsl_root: &Path) -> Result<()> {
             format!(
                 "{} is not a quire-spec-language checkout (its Cargo.toml does not declare \
                  name = \"quire-spec-language\"); --qsl must point at quire-spec-language \
-                 itself. T12-B and T12-C scan QSL's own tree only; see each rule's scope note \
-                 for what they do not evaluate",
+                 itself. T12-B, T12-C and T12-D scan QSL's own tree only; see each rule's scope \
+                 note for what they do not evaluate",
                 qsl_root.display()
             ),
         ));
@@ -609,5 +635,51 @@ mod tests {
         let rule = &RULES[0]; // T12-A: now live (src/replay.rs exists).
         let error = evaluate(rule, qsl_dir.path(), None).unwrap_err();
         assert!(error.to_string().contains("--cg"), "{error}");
+    }
+
+    /// tc_arch_lint_api_surface_012 (negative control, ADR-013 QC-21): a call
+    /// to the kernel `PopulationId` constructor from a module outside T12-D's
+    /// allowed list is a violation, the same shape as T12-C's `EffectiveId`
+    /// check (tc_arch_lint_api_surface_003).
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "src/value/composite.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "value::composite");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_013 (ADR-013 QC-21): a call to the kernel
+    /// `PopulationId` constructor from a `model` module is not a violation --
+    /// the mirror of T12-C's allowed-caller check
+    /// (tc_arch_lint_api_surface_004).
+    #[trace("TC-157", "FR-060-AC-2")]
+    #[test]
+    fn tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D: allowed prefix "model"
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty());
+        assert!(outcome.passed());
     }
 }

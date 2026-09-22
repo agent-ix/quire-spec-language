@@ -190,6 +190,7 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
                 | Value::Quantity(_)
                 | Value::Text(_)
                 | Value::Enum(_)
+                | Value::Population(_)
                 | Value::Reference(_)
                 | Value::Option(_)
                 | Value::Composite(_)
@@ -272,6 +273,27 @@ mod tests {
         let plan = plan_pairs(&left, &right).unwrap();
         assert_eq!(plan.pairs, Integer::one());
         assert!(plan.equal);
+    }
+
+    /// TC-297 (FR-089-AC-6): a population pair is not an equality operand
+    /// pair in the kernel.
+    #[trace("TC-297", "FR-089-AC-6")]
+    #[test]
+    fn plan_pairs_refuses_a_population_pair() {
+        use crate::identity::PopulationId;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Population(PopulationId::from_digest(digest(1)));
+        let right = Value::Population(PopulationId::from_digest(digest(2)));
+        assert!(matches!(
+            plan_pairs(&left, &right),
+            Err(Refusal::CheckedInvariant)
+        ));
     }
 
     /// TC-322: a reference pair of different universes refuses with

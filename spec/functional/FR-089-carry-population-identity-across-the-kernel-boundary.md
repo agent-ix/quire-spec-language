@@ -97,24 +97,36 @@ absent from the correspondence SHALL produce a typed evaluator refusal,
 never a panic, an `Undefined` outcome, or a silently substituted default
 binding.
 
-### The type pairing is restored
+### The type pairing is a QSL-layer check
 
-`ValueType::admits` SHALL treat `ValueType::Population(maximum)` as admitting
+The QSL layer SHALL treat `ValueType::Population(maximum)` as admitting
 exactly the `Value::Population(population_id)` values whose resolved
-binding's own declared maximum equals `maximum`, restoring the pairing
-`src/value/composite.rs:104` already performs at the QSL layer today between
-`ValueType::Population(maximum)` and `Value::Population(binding)`, with no
-kernel equivalent.
+binding's own declared maximum equals `maximum`: QSL `model`/the evaluator
+resolves `population_id` to its `PopulationBinding` through the recorded
+correspondence, then compares that binding's declared maximum with `maximum`.
+This is the pairing `src/value/composite.rs:104` performs at the QSL layer
+between `ValueType::Population(maximum)` and `Value::Population(binding)`.
+
+The kernel is a leaf under ADR-011 §6.1's K-leaf rule: the
+`PopulationId` → `PopulationBinding` correspondence and every binding's
+declared maximum live in `model`. Kernel `ValueType::admits` SHALL return `false` for every
+`(ValueType::Population(_), Value::Population(_))` pair. The kernel's
+`equality::plan_pairs` SHALL refuse a pair of `Value::Population` operands
+with `Refusal::CheckedInvariant`, and `key::compare_keys` SHALL yield no key
+(`None`) for a pair of `Value::Population` values: a population is neither an
+equality operand nor a key participant in the kernel, matching QSL's own
+`value::equality`/`value::key`.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key` and domain package identity, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
-| FR-089-AC-2 | The kernel `Value::Population` variant's payload type is `PopulationId`; no kernel source file imports `PopulationBinding` or any other `model::population` type to define, construct or match this variant. | Test (TC-292) |
+| FR-089-AC-2 | The kernel `Value::Population` variant's payload type is `PopulationId`; no kernel source file imports `PopulationBinding` or any other `model::population` type to define, construct or match this variant. | Inspection (TC-292): crate DAG, `quire-exact/Cargo.toml` has no workspace dependency (ADR-011 §6.1) |
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
-| FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)` whose resolved binding's declared maximum equals `maximum`, `ValueType::admits` returns true; given a resolved binding whose declared maximum differs, it returns false. | Test (TC-295) |
+| FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
+| FR-089-AC-6 | Given any `ValueType::Population(maximum)` and any `Value::Population(population_id)`, kernel `ValueType::admits` returns false; given two `Value::Population` operands, kernel `equality::plan_pairs` returns `Err(Refusal::CheckedInvariant)` and kernel `key::compare_keys` returns `None`. | Test (TC-297) |
 
 ## Dependencies
 
@@ -132,8 +144,17 @@ kernel equivalent.
 ## Status
 
 Specified under QSL-172, which found the gap, and ADR-013 O-13's Population
-row, which decided it. Not yet implemented: the kernel `quire-exact::Value`
-has no `Population` variant today (`quire-exact/src/value.rs:26-27,115-116`),
-and the evaluator still matches `Value::Population(binding)` directly
+row, which decided it. QSL-131 Slice B (kernel half) implements
+`PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
+(FR-089-AC-2; TC-292), with kernel `admits`, `plan_pairs` and `compare_keys`
+refusing a population pair (FR-089-AC-6; TC-297). The QSL-layer
+declared-maximum comparison (FR-089-AC-5) needs a resolved binding, which
+requires QSL `model` to mint a `PopulationId` at admission time and record the
+`PopulationId` -> `PopulationBinding` correspondence
+(`admit_binding`/`admit_invocation`, `src/model/population.rs:624,1097`);
+neither exists yet, and the evaluator still matches
+`Value::Population(binding)` directly
 (`src/value/expression/evaluate.rs:921,934`) rather than through a resolved
-identity. Remaining work: QSL-131 Slice B.
+identity. Remaining work: QSL-131's other half (`model` minting and the
+evaluator's resolution step), covering FR-089-AC-1, FR-089-AC-3, FR-089-AC-4
+and FR-089-AC-5 (TC-291, TC-293, TC-294, TC-295, TC-296).

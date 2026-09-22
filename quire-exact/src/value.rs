@@ -23,10 +23,19 @@
 //! - `ValueType::Quantity(QuantityUnit)` becomes `ValueType::Quantity(UnitId)`;
 //!   `Value::Quantity` carries [`crate::quantity::Quantity`], a bare
 //!   `(magnitude, UnitId)` pair with no unit-graph declaration.
-//! - `Value::Population(Arc<PopulationBinding>)` is **dropped**: a
-//!   `PopulationBinding` is a QSL `model` type. `ValueType::Population(u64)`
-//!   is unchanged (T-6: "keeps `u64` count only") but now admits no `Value`
-//!   variant at all, since the value side of that pairing left the kernel.
+//! - `Value::Population(Arc<PopulationBinding>)` becomes
+//!   `Value::Population(PopulationId)` (ADR-013 O-13 Population row, QC-21,
+//!   FR-089): the kernel carries the opaque identity alone, never the
+//!   `PopulationBinding` a QSL `model` type owns. `ValueType::Population(u64)`
+//!   is unchanged (T-6: "keeps `u64` count only"). FR-089-AC-5's
+//!   declared-maximum comparison is a QSL-layer check: the model/evaluator
+//!   resolves a `PopulationId` to its binding and compares the binding's own
+//!   declared maximum there, since this leaf crate has no way to resolve a
+//!   `PopulationId` to anything. Kernel `ValueType::admits` refuses every
+//!   population pair outright: it never pairs `ValueType::Population` with
+//!   `Value::Population`, so every `(ValueType::Population(_),
+//!   Value::Population(_))` pair falls through to `admits`'s existing
+//!   catch-all and returns `false`.
 //! - `TypeEnvironment::record`/`tuple`/`evaluate_record`/`evaluate_tuple`
 //!   become free functions taking the declared shape directly
 //!   (`&[FieldDeclaration]` or `&[ValueType]`) instead of looking it up by
@@ -45,7 +54,7 @@ use std::sync::Arc;
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::collection::{CollectionType, CollectionValue};
 use crate::decimal::{Decimal, DecimalType};
-use crate::identity::{EffectiveId, MemberId, UnitId, VariantId};
+use crate::identity::{EffectiveId, MemberId, PopulationId, UnitId, VariantId};
 use crate::ieee::{IeeeValue, IeeeWidth};
 use crate::integer::{Integer, IntegerInterval};
 use crate::node::NodeKey;
@@ -153,6 +162,12 @@ impl ValueType {
             (Self::Reference(object_type), Value::Reference(reference)) => {
                 reference.object_type() == *object_type
             }
+            // `ValueType::Population` does not pair with `Value::Population`
+            // here (see this module's doc comment): FR-089-AC-5's
+            // declared-maximum comparison is a QSL-layer check, performed by
+            // the model/evaluator once it resolves the binding. Kernel
+            // `admits` refuses population pairs outright; this pair falls
+            // through to the catch-all below and returns `false`.
             (
                 Self::Boolean
                 | Self::Integer
@@ -195,6 +210,10 @@ pub enum Value {
     Text(Text),
     /// A bare enum member identity (ADR-013 T-6).
     Enum(VariantId),
+    /// An opaque population admission identity (ADR-013 O-13 Population
+    /// row, QC-21, FR-089): never the `PopulationBinding` itself, which
+    /// stays a QSL `model` type.
+    Population(PopulationId),
     /// An option value.
     Option(Arc<OptionValue>),
     /// A record or tuple value.
@@ -222,6 +241,7 @@ impl Value {
             | Self::Quantity(_)
             | Self::Text(_)
             | Self::Enum(_)
+            | Self::Population(_)
             | Self::Reference(_) => Integer::one(),
         }
     }
@@ -704,6 +724,15 @@ mod tests {
     fn tc_307_admits_checks_the_matching_variant_only() {
         assert!(ValueType::Boolean.admits(&Value::Boolean(true)));
         assert!(!ValueType::Boolean.admits(&Value::Integer(Integer::one())));
+    }
+
+    /// TC-297 (FR-089-AC-6): kernel `admits` refuses every population pair;
+    /// the declared-maximum comparison is the QSL layer's (FR-089-AC-5).
+    #[trace("TC-297", "FR-089-AC-6")]
+    #[test]
+    fn admits_refuses_a_population_pair() {
+        assert!(!ValueType::Population(5)
+            .admits(&Value::Population(PopulationId::from_digest(digest(1)))));
     }
 
     /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it

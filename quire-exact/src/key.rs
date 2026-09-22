@@ -133,6 +133,7 @@ fn leaf<'a>(
             | Value::Quantity(_)
             | Value::Text(_)
             | Value::Enum(_)
+            | Value::Population(_)
             | Value::Reference(_)
             | Value::Option(_)
             | Value::Composite(_)
@@ -169,6 +170,23 @@ mod tests {
         let boolean = Value::Boolean(true);
         let integer = Value::Integer(Integer::one());
         assert_eq!(compare_keys(&boolean, &integer), None);
+    }
+
+    /// TC-297 (FR-089-AC-6): a population pair has no key in the kernel.
+    #[trace("TC-297", "FR-089-AC-6")]
+    #[test]
+    fn compare_keys_yields_no_key_for_a_population_pair() {
+        use crate::identity::PopulationId;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Population(PopulationId::from_digest(digest(1)));
+        let right = Value::Population(PopulationId::from_digest(digest(2)));
+        assert_eq!(compare_keys(&left, &right), None);
     }
 
     /// TC-349 (M-2): a same-type `Value::Float` pair has no key, matching

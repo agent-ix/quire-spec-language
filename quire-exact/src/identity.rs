@@ -1,43 +1,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QC-15 opaque value-component identities (ADR-013 QC-15, T-6).
+//! QC-15/QC-21 opaque value-component identities (ADR-013 QC-15, QC-21, T-6).
 //!
-//! Six digest newtypes appear as bare payload inside kernel `Value`s wherever
-//! ADR-013 T-6 cuts a payload down to "just the id": `EffectiveId`
+//! Seven digest newtypes appear as bare payload inside kernel `Value`s
+//! wherever ADR-013 T-6 cuts a payload down to "just the id": `EffectiveId`
 //! (declaration identity, O-05), `UniverseId` and `ObjectId` (a `Reference`
 //! payload, T-6), `UnitId` (a `Quantity` payload, T-6), `VariantId` (an `Enum`
-//! payload, T-6) and `MemberId` (O-06). Each is an opaque 32-byte digest with
-//! exactly one public constructor, `from_digest` (each type's own, e.g.
-//! [`EffectiveId::from_digest`]), mirroring [`crate::NodeKey::from_digest`]:
-//! the kernel wraps an already-computed digest and never hashes. QSL's
-//! `check`/`model` compute each digest over their own preimage schema and
-//! mint the id; this crate holds no preimage knowledge for any of them. The
-//! ADR-011 T-12 `arch-lint api-surface` check (T12-C) enforces "only `model`
-//! calls `EffectiveId::from_digest`" by scanning QSL's tree for that call
-//! pattern (#213 S-2 fixed the rule's pattern to match this crate's real
-//! `from_digest`, in place of the pre-migration `from_digest_bytes(` name).
+//! payload, T-6), `MemberId` (O-06) and `PopulationId` (a `Population`
+//! payload, O-13 Population row, QC-21, QSL-172). Each is an opaque 32-byte
+//! digest with exactly one public constructor, `from_digest` (each type's
+//! own, e.g. [`EffectiveId::from_digest`]), mirroring
+//! [`crate::NodeKey::from_digest`]: the kernel wraps an already-computed
+//! digest and never hashes. QSL's `check`/`model` compute each digest over
+//! their own preimage schema and mint the id; this crate holds no preimage
+//! knowledge for any of them. The ADR-011 T-12 `arch-lint api-surface` check
+//! enforces "only `model` calls `EffectiveId::from_digest`" (T12-C) and
+//! "only `model` calls `PopulationId::from_digest`" (T12-D, ADR-013 QC-21)
+//! by scanning QSL's tree for each call pattern (#213 S-2 fixed T12-C's
+//! pattern to match this crate's real `from_digest`, in place of the
+//! pre-migration `from_digest_bytes(` name).
 //! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) still
 //! scans for the pre-migration `crate::value::node::NodeKey` names and is
 //! separate, unclaimed debt.
 //!
-//! The six types share one shape (an opaque 32-byte digest, `Eq`/`Ord`/`Hash`,
-//! hex `Display`/`Debug`), so the `digest_identity!` macro below generates
-//! all six from one macro body rather than repeating the impls six times
-//! ("one fact, one place").
+//! The seven types share one shape (an opaque 32-byte digest,
+//! `Eq`/`Ord`/`Hash`, hex `Display`/`Debug`), so the `digest_identity!` macro
+//! below generates all seven from one macro body rather than repeating the
+//! impls seven times ("one fact, one place").
 //!
 //! **Domain strings.** `EffectiveId`'s domain, `quire.model.effective-
 //! declaration/v1`, is the real value already live at
 //! `src/model/key.rs:26`'s `EFFECTIVE_DECLARATION_DOMAIN` (confirmed against
-//! ADR-013 O-05 and ADR-010's DA-02 row). The other five domain strings below
-//! (`UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`) do not appear
-//! anywhere in `spec/` or `src/` today -- there is no existing canonical
-//! value to copy the way there was for `EffectiveId`. They are placeholders,
-//! not settled product semantics: ADR-013 QC-2 requires an FR-201 amendment
-//! to list the model digest domains, scoped to #213 S-2, not this slice. Each
-//! of the five types they belong to is genuinely used elsewhere in this
-//! crate ([`crate::reference::ObjectReference`] for `UniverseId`/`ObjectId`,
+//! ADR-013 O-05 and ADR-010's DA-02 row). The other six domain strings below
+//! (`UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`,
+//! `PopulationId`) do not appear anywhere in `spec/` or `src/` today -- there
+//! is no existing canonical value to copy the way there was for
+//! `EffectiveId`. They are placeholders, not settled product semantics:
+//! ADR-013 QC-2 requires an FR-201 amendment to list the model digest
+//! domains, scoped to #213 S-2, not this slice. Each of the six types they
+//! belong to is genuinely used elsewhere in this crate
+//! ([`crate::reference::ObjectReference`] for `UniverseId`/`ObjectId`,
 //! [`crate::quantity::Quantity`] and `ValueType::Quantity` for `UnitId`,
 //! `Value::Enum` and `ValueType`'s enum sum shape for `VariantId`,
-//! [`crate::value::FieldDeclaration`] for `MemberId`) -- kept for that reason
+//! [`crate::value::FieldDeclaration`] for `MemberId`, `Value::Population`
+//! and `ValueType::Population` for `PopulationId`) -- kept for that reason
 //! -- but their domain *strings* are not to be treated as ratified until the
 //! FR-201 amendment lands.
 
@@ -137,6 +142,22 @@ digest_identity!(
     "quire.member/v1"
 );
 
+digest_identity!(
+    /// An opaque `quire.population/v1` identity (ADR-013 O-13 Population
+    /// row, QC-21, QSL-172): a `Population` payload's admission identity.
+    /// Only QSL `model` calls [`PopulationId::from_digest`] in production,
+    /// minting it from the admitted binding's own preimage (domain package,
+    /// `population_key`, and the closed three-state admission-role
+    /// discriminator `Direct`/`Pre`/`Post`) at admission time -- this crate
+    /// holds none of that preimage knowledge, only the resulting digest.
+    /// `PopulationBinding` itself -- admission, membership, and the
+    /// `allInstances`/`lookup` closure state -- stays a QSL `model` type,
+    /// never a kernel one (FR-089).
+    PopulationId,
+    POPULATION_ID_DOMAIN,
+    "quire.population/v1"
+);
+
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
@@ -149,11 +170,11 @@ mod tests {
         bytes
     }
 
-    /// TC-302 (H-7/H-8, strengthened): each of the six digest identities
-    /// treats equal digest bytes as interchangeable ids -- not just `==`,
-    /// but hashing equal (either stands in for the other as a set/map key)
-    /// -- and distinct digests as distinct, differently ordered ids
-    /// (ADR-013 QC-15).
+    /// TC-302 (H-7/H-8, strengthened): each of the seven digest identities
+    /// (QC-15's six, plus QC-21's `PopulationId`) treats equal digest bytes
+    /// as interchangeable ids -- not just `==`, but hashing equal (either
+    /// stands in for the other as a set/map key) -- and distinct digests as
+    /// distinct, differently ordered ids (ADR-013 QC-15, QC-21).
     #[trace("TC-302")]
     #[test]
     fn tc_302_equal_digest_bytes_mint_interchangeable_identities() {
@@ -174,11 +195,13 @@ mod tests {
         check!(UnitId);
         check!(VariantId);
         check!(MemberId);
+        check!(PopulationId);
     }
 
     /// TC-303 (H-7/H-8, strengthened): each identity's domain constant is
-    /// distinct, so no two of the six can be confused by domain string
-    /// (ADR-013 QC-15). Also pins `EFFECTIVE_ID_DOMAIN` against the literal
+    /// distinct, so no two of the seven (QC-15's six, plus QC-21's
+    /// `PopulationId`) can be confused by domain string (ADR-013 QC-15,
+    /// QC-21). Also pins `EFFECTIVE_ID_DOMAIN` against the literal
     /// this module's own doc comment claims to match (`src/model/key.rs:26`'s
     /// `EFFECTIVE_DECLARATION_DOMAIN`, per H-2).
     ///
@@ -204,6 +227,7 @@ mod tests {
             UNIT_ID_DOMAIN,
             VARIANT_ID_DOMAIN,
             MEMBER_ID_DOMAIN,
+            POPULATION_ID_DOMAIN,
         ];
         for (i, a) in domains.iter().enumerate() {
             for (j, b) in domains.iter().enumerate() {
