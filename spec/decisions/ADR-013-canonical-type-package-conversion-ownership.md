@@ -503,8 +503,10 @@ types to that design, and #188 and #189 consume them.
 | Evaluation resource limit | `quire-exact` `Meter`, `ChargePoint`, `Incomplete` under `quire.value.accounting/v1` | FR-323 `limits` (`ScalarLimitsV1`, `PopulationAdmissionLimitsV1`) |
 | Backend tool budget | IR `ResourceBounds`; Kani pin table (unwind, solver) | AD-016 Kani tool pin |
 
-`model::accounting` has the same shape as `value::accounting` and folds into the
-kernel meter (#213 S-6); one meter, one set of charge points. The protocol
+`value::accounting` has the same shape as the kernel `Meter`/`Incomplete`/`LimitKind`
+and consolidates onto them (QSL-166, #213 S-6). `model::accounting` is a separate
+layer-3 `model` rung meter over its own disjoint counters (`ModelNormalizationLimits`)
+and does not fold into the kernel meter (QSL-164). The protocol
 `artifact-work/1`, `temporal-work/1`, state `evaluation-work/1` and runtime
 `native-ref-cost/1-draft` budgets are lane-private (§6). Representations in
 different rows never convert into one another except where #222 names a
@@ -813,13 +815,13 @@ direction is S-3's, not a gate on S-2 (Consequences).
 
 | Slice | Objects | Gate |
 | --- | --- | --- |
-| S-1 | `quire-exact` kernel (ADR-011 X-1), exactly the AD-016 kernel row: O-04 `NodeKey`, O-13 values, O-16 kernel outcome and refusal types, `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, the kernel bound value types (O-21), and the QC-15 `Value` component types, with the T-6 edge cuts (ADR-011 X-1). It does not remove the QSL `negotiate_*` copies from `division` and `ieee` (`src/value/division.rs:223`, `src/value/ieee.rs:882` are still present, unchanged), which stay in RT (OBS-004). It leaves the QSL `value` kernel's byte-identical duplicate copies (`CollectionKind`, `Integer`, `IntegerInterval`) in place; QSL-146 removes those and moves `AbsenceMode` into F. `CatalogCode` and the category type are S-5a's, in F `diagnostic`. `quire-exact`'s `ValueType`/`Value` are a redesigned target shape, not a byte-identical duplicate of the QSL copy (their `Enum`, `Reference` and `Quantity` payloads diverge, and `quire-exact`'s `Value` has no `Population` variant), so consolidating them is not S-1's or QSL-146's removal. QSL-131 (#213 S-1b) owns `ValueType`/`Value` and the `negotiate_*` removal alike. O-13's Population row (QC-21) directs QSL-131 Slice B to add a kernel `Value::Population(PopulationId)` variant, carrying only the opaque identity, as part of that same ownership (QSL-172). If it exceeds one bounded effort it splits into values and outcomes first, then accounting and location. | TK-10 (QC-15, QC-21) |
+| S-1 | `quire-exact` kernel (ADR-011 X-1), exactly the AD-016 kernel row: O-04 `NodeKey`, O-13 values, O-16 kernel outcome and refusal types, `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, the kernel bound value types (O-21), and the QC-15 `Value` component types, with the T-6 edge cuts (ADR-011 X-1). It did not remove the QSL `negotiate_*` copies from `division` and `ieee` itself; QSL-131 Slice A (PR #290) has since removed them (`src/value/division.rs:223`, `src/value/ieee.rs:882` no longer define `negotiate_*`) — the predicates themselves stay in RT (OBS-004). It leaves the QSL `value` kernel's byte-identical duplicate copies (`CollectionKind`, `Integer`, `IntegerInterval`) in place; QSL-146 removes those and moves `AbsenceMode` into F. `CatalogCode` and the category type are S-5a's, in F `diagnostic`. `quire-exact`'s `ValueType`/`Value` are a redesigned target shape, not a byte-identical duplicate of the QSL copy (their `Enum`, `Reference` and `Quantity` payloads diverge, and `quire-exact`'s `Value` has no `Population` variant), so consolidating them is not S-1's or QSL-146's removal. QSL-131 (#213 S-1b) owns `ValueType`/`Value`. O-13's Population row (QC-21) directs QSL-131 Slice B to add a kernel `Value::Population(PopulationId)` variant, carrying only the opaque identity, as part of that same ownership (QSL-172). If it exceeds one bounded effort it splits into values and outcomes first, then accounting and location. | TK-10 (QC-15, QC-21) |
 | S-2 | Identities and digests: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 | S-1, #131 merged, QC-15 (adds `EffectiveId` and the reference identities to the kernel), QC-2, QC-3, QC-5 |
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus` | S-3 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
 | S-5b | Refusals and readers: O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22 QSL readers — all carry `Locus` (T-5). O-22's readers additionally need `Locus::Artifact{digest, pointer}`'s O-18 digest record, S-2's row. Held until S-4 lands. | S-5a (landed, #258), S-4, QC-11 |
-| S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, the `model::accounting` fold into the S-1 meter, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
+| S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
 
 Work that this record assigns and that no ticket owns is listed in §8
 Tickets to open at #212 (OQ-4 ruling).
@@ -938,7 +940,7 @@ Primary-owner items:
 | DA-08 | O-10: one checked clause kind in the layer-3 `check` core. |
 | DA-09 | O-16: three outcome families, one QSL category type, total category-preserving maps. |
 | DA-10 | O-17: catalog codes shared, typed causes per stage, one `catalog_code()` each. |
-| DA-12 | O-21: owners of the existing bound representations; one kernel meter; taxonomy to #222. |
+| DA-12 | O-21: owners of the existing bound representations; `value::accounting` consolidates onto the kernel meter, `model::accounting` stays a separate `model` meter (QSL-164); taxonomy to #222. |
 | DA-13 | O-07, O-12, T-5: QSL sole minter; FR-322 occurrence key; occurrence-key-keyed source map (O-07), occurrence key → regions; kernel location tag; foundation `Locus`. |
 | DA-14 | O-22, O-23: one version per contract; Cargo lock is the only pin authority. |
 | DA-15 | O-18: one domain-labelled digest record in QSL `digest`. |
@@ -954,7 +956,7 @@ Primary-owner items:
 | OBS-021 | O-12: the occurrence-key-keyed source map (O-07), occurrence key → regions, is the authority; body↔document map is a source-stage helper. |
 | OBS-022 | O-23: revision literals checked equal to the lock by a test (#215). |
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
-| OBS-025 | O-21: `model::accounting` folds into the kernel meter. |
+| OBS-025 | O-21: `model::accounting` does not fold into the kernel meter; it is a separate layer-3 `model` rung meter over disjoint counters, and only `value::accounting` consolidates onto it (QSL-164). |
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: IR `Witness{transcript}` admitted through `parse`, with derived accessors. |
 | OBS-032 | O-13: single kernel ends the RT/QSL drift. |
