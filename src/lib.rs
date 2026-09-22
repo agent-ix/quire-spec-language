@@ -11,7 +11,6 @@ extern crate self as quire_spec_language;
 mod runtime_test_setup;
 
 pub mod absence;
-pub mod capability;
 pub mod check;
 pub mod checking;
 pub mod command;

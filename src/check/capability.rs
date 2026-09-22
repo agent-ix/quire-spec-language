@@ -13,19 +13,34 @@
 //! requests, grants no checking, lowering, proof or execution, and
 //! negotiates nothing.
 //!
-//! This type lives here, in foundation, rather than in `check`, `package`
-//! or `route`, because O-19 has it cross every one of those layers: it is
-//! recorded during S3 admission (layer 3 `check`), carried into the v2
-//! `capability_report` at S4 (layer 4 `package`), and read by the layer-R
-//! registry (`route`, [#185]). A shared value with consumers on more than
-//! one side of a layer boundary lives in F, the same reasoning
-//! [`crate::absence`] already states for `AbsenceMode`.
+//! This type lives in `check` core, not in a foundation module, because its
+//! three consumers form a downward chain rather than AbsenceMode's
+//! two-sided boundary. It is recorded during S3 admission at E3 (ADR-011
+//! §2.1, "capability_report ... holding the item's one capability kind";
+//! `check` is E3's producer, ADR-011 §2.1's own E3 row), carried into the
+//! v2 `capability_report` at S4 (layer 4 `package`), and read by the
+//! layer-R registry (`route`, [#185]). ADR-011 §6.1's layer table lists
+//! layer 4's and layer R's "Depends on" columns as each including "3"
+//! (`package | ... | 3, F, K`; `route | ... | 4, 3, F, K`), so both may
+//! import layer 3 `check` directly; nothing needs to import upward. §6.1's
+//! layer-3 row also names the right home directly: `check` core holds
+//! "`CheckContext`, family checker trait, shared checked types,
+//! `FamilyOutcome` and `FamilyRefusal`" -- `Capability` is exactly a shared
+//! checked type admission produces. (`AbsenceMode`, in
+//! [`crate::absence`], sits in foundation for the opposite reason: its two
+//! consumers, layer-2 `forms` and layer-3 `model`, cannot depend on each
+//! other, so neither layer may own it.)
 //!
 //! `Capability` converts to and from its FR-290 wire spelling totally
 //! (ADR-013 C-24, [`Capability::to_wire`] and [`Capability::from_wire`]):
 //! every value has exactly one wire string, and every wire string either
 //! names exactly one value or is refused. There is no default for an
-//! unrecognized string.
+//! unrecognized string. [`Capability::from_wire`] derives from
+//! [`Capability::to_wire`] and [`Capability::ALL`] rather than repeating
+//! the label list a third time, and a private `index` match plus a
+//! const-time assertion make `ALL` fail to compile out of sync with the
+//! enum: adding an eleventh variant, or reordering `ALL`, without updating
+//! both is a compile error, not a silent gap.
 //!
 //! Registration, negotiation and routing over this type, and the composed
 //! linker's admission rules that produce a `Capability` from a requested
@@ -74,8 +89,10 @@ impl Capability {
     /// table's declaration order.
     ///
     /// The order carries no meaning (see the type's own doc); this array
-    /// exists only so callers, including this module's own tests, can walk
-    /// the whole vocabulary without repeating its ten members.
+    /// exists so [`Capability::from_wire`] and this module's tests can walk
+    /// the whole vocabulary without repeating its ten members a third time.
+    /// A const assertion below checks this array against [`Capability::index`]
+    /// so the two cannot silently drift apart.
     pub const ALL: [Capability; 10] = [
         Capability::ValueValidity,
         Capability::OperationContract,
@@ -88,6 +105,27 @@ impl Capability {
         Capability::Realizability,
         Capability::Composition,
     ];
+
+    /// This value's position in [`Capability::ALL`].
+    ///
+    /// Exhaustive and private: it exists only so the const assertion below
+    /// can check `ALL` against the enum. Adding a variant without adding an
+    /// arm here is a compile error (non-exhaustive match), the same
+    /// property [`Capability::to_wire`]'s match already has.
+    const fn index(self) -> usize {
+        match self {
+            Capability::ValueValidity => 0,
+            Capability::OperationContract => 1,
+            Capability::FiniteReplay => 2,
+            Capability::TemporalSatisfaction => 3,
+            Capability::GlobalConformance => 4,
+            Capability::Monitorability => 5,
+            Capability::LocalProjection => 6,
+            Capability::Refinement => 7,
+            Capability::Realizability => 8,
+            Capability::Composition => 9,
+        }
+    }
 
     /// The FR-290 wire spelling of this value.
     ///
@@ -112,28 +150,36 @@ impl Capability {
     ///
     /// Matches by exact equality of the decoded bytes against one admitted
     /// label (FR-057, "Spelling, identity and order"); this function
-    /// applies no normalization, alias or default. A label that is not
-    /// byte-equal to one of the ten admitted labels -- including the empty
-    /// string, a case variant, a separator variant, a display form, a
-    /// padded label, or a Rust variant name -- refuses with
+    /// applies no normalization, alias or default. Derives its answer from
+    /// [`Capability::ALL`] and [`Capability::to_wire`] rather than
+    /// restating the label list, so the two conversions cannot disagree. A
+    /// label that is not byte-equal to one of the ten admitted labels --
+    /// including the empty string, a case variant, a separator variant, a
+    /// display form, a padded label, or a Rust variant name -- refuses with
     /// [`UnknownCapabilityLabel`], carrying the exact received bytes
     /// (ADR-013 C-24; FR-057-AC-2).
     pub fn from_wire(label: &str) -> Result<Capability, UnknownCapabilityLabel> {
-        match label {
-            "value-validity" => Ok(Capability::ValueValidity),
-            "operation-contract" => Ok(Capability::OperationContract),
-            "finite-replay" => Ok(Capability::FiniteReplay),
-            "temporal-satisfaction" => Ok(Capability::TemporalSatisfaction),
-            "global-conformance" => Ok(Capability::GlobalConformance),
-            "monitorability" => Ok(Capability::Monitorability),
-            "local-projection" => Ok(Capability::LocalProjection),
-            "refinement" => Ok(Capability::Refinement),
-            "realizability" => Ok(Capability::Realizability),
-            "composition" => Ok(Capability::Composition),
-            other => Err(UnknownCapabilityLabel(other.to_owned())),
-        }
+        Capability::ALL
+            .into_iter()
+            .find(|value| value.to_wire() == label)
+            .ok_or_else(|| UnknownCapabilityLabel(label.to_owned()))
     }
 }
+
+// `Capability::ALL` must hold each variant exactly once, at the position
+// `Capability::index` gives it. Reordering `ALL`, or adding a variant to
+// the enum (and so to the now non-exhaustive `index`/`to_wire` matches)
+// without keeping this in sync, fails to compile.
+const _: () = {
+    let mut i = 0;
+    while i < Capability::ALL.len() {
+        assert!(
+            Capability::ALL[i].index() == i,
+            "Capability::ALL is out of sync with Capability::index"
+        );
+        i += 1;
+    }
+};
 
 impl fmt::Display for Capability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -177,42 +223,56 @@ mod tests {
     /// The FR-290 vocabulary `quire.capability-kind/v1` at
     /// quire-specification revision `55d2fcc`
     /// (`ix://agent-ix/quire-specification#134`), exactly as FR-057's own
-    /// "Admitted vocabulary" table restates it. Listed here, independently
-    /// of [`Capability::ALL`]/[`Capability::to_wire`], so the round-trip
-    /// test below checks the implementation against the vocabulary rather
-    /// than against itself.
-    const FR_290_LABELS: [&str; 10] = [
-        "value-validity",
-        "operation-contract",
-        "finite-replay",
-        "temporal-satisfaction",
-        "global-conformance",
-        "monitorability",
-        "local-projection",
-        "refinement",
-        "realizability",
-        "composition",
+    /// "Admitted vocabulary" table restates it, paired with the specific
+    /// [`Capability`] variant each label names. Listed here, independently
+    /// of [`Capability::ALL`]/[`Capability::to_wire`], so the test below
+    /// checks the implementation against the vocabulary rather than
+    /// against itself.
+    ///
+    /// The pairing matters, not just the label set: [`Capability::from_wire`]
+    /// derives from [`Capability::to_wire`] (both directions move together),
+    /// so a bug that swaps two labels between two variants in `to_wire`
+    /// still round-trips every label to itself -- each label just now names
+    /// the other variant. Asserting `variant.to_wire() == label` per pair,
+    /// against this independently-typed table, is what actually catches
+    /// that swap.
+    const FR_290_VOCABULARY: [(Capability, &str); 10] = [
+        (Capability::ValueValidity, "value-validity"),
+        (Capability::OperationContract, "operation-contract"),
+        (Capability::FiniteReplay, "finite-replay"),
+        (Capability::TemporalSatisfaction, "temporal-satisfaction"),
+        (Capability::GlobalConformance, "global-conformance"),
+        (Capability::Monitorability, "monitorability"),
+        (Capability::LocalProjection, "local-projection"),
+        (Capability::Refinement, "refinement"),
+        (Capability::Realizability, "realizability"),
+        (Capability::Composition, "composition"),
     ];
 
     #[test]
     #[trace("TC-153", "FR-057-AC-1")]
-    fn every_fr_290_label_round_trips_to_a_byte_identical_string() {
-        assert_eq!(FR_290_LABELS.len(), Capability::ALL.len());
-        for label in FR_290_LABELS {
-            let value = Capability::from_wire(label)
-                .unwrap_or_else(|e| panic!("admitted label {label:?} refused: {e}"));
+    fn every_fr_290_label_names_its_specific_variant_and_round_trips() {
+        assert_eq!(FR_290_VOCABULARY.len(), Capability::ALL.len());
+        for (variant, label) in FR_290_VOCABULARY {
             assert_eq!(
-                value.to_wire(),
+                variant.to_wire(),
                 label,
-                "round trip changed the wire spelling of {label:?}"
+                "{variant:?} no longer converts to its FR-290 label {label:?}"
+            );
+            assert_eq!(
+                Capability::from_wire(label),
+                Ok(variant),
+                "{label:?} no longer reads back as {variant:?}"
             );
         }
         // The admitted set equals the FR-290 table exactly: no extra and no
         // missing member (FR-057-AC-1).
         for value in Capability::ALL {
             assert!(
-                FR_290_LABELS.contains(&value.to_wire()),
-                "{value:?} is not one of the ten FR-290 labels"
+                FR_290_VOCABULARY
+                    .iter()
+                    .any(|(variant, _)| *variant == value),
+                "{value:?} is not one of the ten FR-290 vocabulary entries"
             );
         }
     }
