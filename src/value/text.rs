@@ -17,7 +17,6 @@ use quire_exact::{
     length_amount, Charge, ChargePoint, ComparisonOperator, IllTyped, IllTypedCause, InvalidUtf8,
     LimitKind, Meter, TextProfile, TextProvenance, TextType,
 };
-pub use quire_exact::{UNICODE_TEXT_DEFINITION, UNICODE_VERSION};
 
 /// A source text literal is not one complete JSON-compatible quoted string
 /// denoting Unicode scalars.

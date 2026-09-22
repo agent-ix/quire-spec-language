@@ -10,9 +10,8 @@
 //! `compare_shifted`, `sbits` and `sdigits` are `quire_exact`'s own
 //! canonical items, imported directly rather than duplicated: every method
 //! and function these carry is reachable straight off the imported type or
-//! name; none of it is duplicated here. [`DecimalRepresentation`] is
-//! re-exported (`value::mod`'s own aggregate still names it); the others
-//! are imported for this module's own use only.
+//! name; none of it is duplicated here. All of them are imported for this
+//! module's own use only; callers name them from `quire_exact` directly.
 //!
 //! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
@@ -32,7 +31,7 @@
 use std::cmp::Ordering;
 
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-pub use quire_exact::DecimalRepresentation;
+use quire_exact::DecimalRepresentation;
 use quire_exact::Rational;
 use quire_exact::{compare_shifted, sbits, sdigits, Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};

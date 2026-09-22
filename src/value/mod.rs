@@ -145,9 +145,7 @@ pub use composite::{
     ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
-pub use decimal::{
-    evaluate_decimal, DecimalLoss, DecimalRepresentation, DecimalResult, DecimalType,
-};
+pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
 pub use definition::{
     AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
     DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
@@ -229,10 +227,7 @@ pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
     ObjectIdentity, ObjectReference, PopulationConflict, UniverseIdentity,
 };
-pub use text::{
-    admit_text, compare_text, InvalidTextLiteral, Text, TextPayload, UNICODE_TEXT_DEFINITION,
-    UNICODE_VERSION,
-};
+pub use text::{admit_text, compare_text, InvalidTextLiteral, Text, TextPayload};
 pub use unit::{
     CompoundUnit, CompoundUnitCause, CompoundUnitIdentity, CompoundUnitPreimage, Dimension,
     DimensionPreimage, InvalidCompoundUnit, Unit, UnitEdge, UnitGraph, UnitPreimage,
