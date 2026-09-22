@@ -80,6 +80,33 @@ impl ParsedSource {
     pub fn is_incremental_result(&self) -> bool {
         self.incremental
     }
+
+    /// Assemble a parse result from its already-computed layer-1 evidence.
+    /// Owned by layer 1: the caller (the full parser or the bounded
+    /// incremental-edit path) has already produced every field, and this is
+    /// the one place that pairs them, so no other module reaches into
+    /// [`ParsedSource`]'s private fields directly.
+    pub(crate) fn from_parts(
+        source: Source,
+        cst: LosslessCst,
+        diagnostics: Vec<CompleteDiagnostic>,
+        selections: SourceSelections,
+        incremental: bool,
+    ) -> Self {
+        Self {
+            source,
+            cst,
+            diagnostics,
+            selections,
+            incremental,
+        }
+    }
+
+    /// Insert a diagnostic at the given position, ahead of every diagnostic
+    /// already recorded from parsing.
+    pub(crate) fn insert_diagnostic(&mut self, index: usize, diagnostic: CompleteDiagnostic) {
+        self.diagnostics.insert(index, diagnostic);
+    }
 }
 
 /// Parse the complete-V1 grammar while retaining every original source byte.
@@ -137,7 +164,7 @@ pub fn parse_with_catalog(
             .map(|refusal| (selection.identity_span, refusal))
     });
     if let Some((identity_span, (code, cause, message))) = refused {
-        base.diagnostics.insert(
+        base.insert_diagnostic(
             0,
             *diagnostic::error(
                 &source,
