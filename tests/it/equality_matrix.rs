@@ -1674,13 +1674,16 @@ fn e_construction_refusals_are_located() {
 // ---- scalar operators through the expression checker and evaluator ----------
 
 fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
-    PackageDeclarations {
+    let graph = PackageDeclarations {
         types,
         ieee_profile: ieee.then(|| profile().clone()),
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
-    .unwrap()
+    .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import.
+    CheckedPackage::link(graph)
 }
 
 fn plain_package() -> CheckedPackage {
@@ -1714,7 +1717,7 @@ fn check_in(
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
-    package.check_expression(
+    package.graph().check_expression(
         parameters,
         expression,
         expected,
@@ -2143,7 +2146,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         [],
     )
     .unwrap();
-    let package = PackageDeclarations {
+    let graph = PackageDeclarations {
         types,
         functions: vec![FunctionDeclaration::new(
             "pick".to_owned(),
@@ -2156,6 +2159,9 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     }
     .check(CheckingLimits::default())
     .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import.
+    let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Integer)];
     // `eA = pick(p)` refuses its `Int[0,1]` argument before `function.call`;
     // `eB = p + 1` charges and is incomplete under the zero tuple.

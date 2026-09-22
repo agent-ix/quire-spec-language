@@ -296,12 +296,13 @@ fn types(scenario: &Scenario) -> TypeEnvironment {
 }
 
 fn package(scenario: &Scenario) -> CheckedPackage {
-    PackageDeclarations {
+    let graph = PackageDeclarations {
         types: types(scenario),
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
-    .unwrap()
+    .unwrap();
+    CheckedPackage::link(graph)
 }
 
 /// Like [`package`], plus one declared function `F(p: Population<M::A>[3]):
@@ -315,7 +316,7 @@ fn package(scenario: &Scenario) -> CheckedPackage {
 /// body.
 fn package_with_function(scenario: &Scenario) -> CheckedPackage {
     let target = ValueType::Reference(node_key(&scenario.a));
-    PackageDeclarations {
+    let graph = PackageDeclarations {
         types: types(scenario),
         functions: vec![FunctionDeclaration::new(
             "F",
@@ -327,7 +328,8 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
-    .unwrap()
+    .unwrap();
+    CheckedPackage::link(graph)
 }
 
 /// Like [`package`], plus one declared function `F2(elements:
@@ -347,7 +349,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
         element,
         CardinalityBound::new(0, 3).unwrap(),
     ));
-    PackageDeclarations {
+    let graph = PackageDeclarations {
         types: types(scenario),
         functions: vec![FunctionDeclaration::new(
             "F2",
@@ -359,7 +361,8 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
-    .unwrap()
+    .unwrap();
+    CheckedPackage::link(graph)
 }
 
 /// A real object world containing every object these tests pass as a
@@ -397,6 +400,7 @@ fn check(
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
     package
+        .graph()
         .check_expression(
             parameters,
             expression,
@@ -420,7 +424,7 @@ fn check_refusal(
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
-    match package.check_expression(
+    match package.graph().check_expression(
         parameters,
         expression,
         None,
@@ -451,6 +455,7 @@ fn check_postcondition(
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
     package
+        .graph()
         .check_postcondition_expression(
             parameters,
             expression,
@@ -477,7 +482,7 @@ fn check_refusal_as_postcondition(
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
-    match package.check_postcondition_expression(
+    match package.graph().check_postcondition_expression(
         parameters,
         expression,
         None,
@@ -1061,12 +1066,13 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         ],
     )
     .unwrap();
-    let package = PackageDeclarations {
+    let graph = PackageDeclarations {
         types,
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
     .unwrap();
+    let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(foreign_key));
 
@@ -1541,6 +1547,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
 
     let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
     let checked = package
+        .graph()
         .check_expression(
             parameters
                 .iter()

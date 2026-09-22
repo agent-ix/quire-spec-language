@@ -2,7 +2,7 @@
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068): the layer-3 checking half of what was
 //! `value::expression`. This module owns name resolution, typing, static
 //! definedness and termination checking, and the checked-output types
-//! ([`CheckedPackage`], [`CheckedExpression`], `CheckedFunction`) whose
+//! ([`CheckedGraph`], [`CheckedExpression`], `CheckedFunction`) whose
 //! constructors are private here (ADR-011 §4's private-constructor/
 //! public-accessor mechanism). The evaluation half -- `evaluate.rs`,
 //! `CheckedPackage::call`, `CheckedPackage::evaluate` and the
@@ -11,6 +11,21 @@
 //! intra-doc link) (S6a), reaching this module's state only
 //! through the accessor methods below, never through a private field: the
 //! two modules no longer share private state (US-009).
+//!
+//! # `CheckedGraph` (S3) versus `CheckedPackage` (S4) (ADR-013 T-1, FR-087,
+//! QSL-158 S-3a)
+//!
+//! This module's own checked-output type is [`CheckedGraph`]: the S3
+//! checker's stage output, produced by [`PackageDeclarations::check`].
+//! `CheckedPackage` (the S4 in-process link step's output, `CheckedGraph`
+//! plus the checked dependency closure) is a *different*, canonical type,
+//! defined in layer-4 [`crate::package`], not here -- `check` defines no
+//! `CheckedPackage` type, method or field, and imports nothing from
+//! `package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
+//! `CheckedPackage::evaluate` references in this module's own doc comments
+//! name `value::expression`'s re-export of `package::CheckedPackage`,
+//! reached only through `package`'s own `CheckedGraph`-typed field and its
+//! `graph()` accessor.
 //!
 //! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2, QSL-7)
 //!
@@ -137,11 +152,28 @@ struct CheckedFunction {
     slots: usize,
 }
 
-/// A package whose every function is admitted. Its constructor and every
-/// field are private to this module (ADR-011 §4): `value::expression`
-/// reaches this state only through the accessor methods below.
+/// S3's stage output (ADR-013 T-1): a package whose every function is
+/// admitted. Its constructor and every field are private to this module
+/// (ADR-011 §4): `package`'s S4 link step (which builds the *different*
+/// canonical `CheckedPackage`, layer-4 `package`) reaches this state only
+/// through the accessor methods below, never through a private field or a
+/// conversion function (R-10).
+///
+/// TC-244 row 1 (FR-087-AC-2): an unchecked `ParsedSource` never becomes a
+/// `CheckedGraph` by any path other than [`PackageDeclarations::check`] --
+/// in particular, not by naming this struct's private fields directly from
+/// outside `check`:
+/// ```compile_fail,E0451
+/// use quire_spec_language::check::CheckedGraph;
+/// let forged = CheckedGraph {
+///     scope: todo!(),
+///     functions: Vec::new(),
+///     dispatch_tables: Vec::new(),
+///     occurrences: todo!(),
+/// };
+/// ```
 #[derive(Debug)]
-pub struct CheckedPackage {
+pub struct CheckedGraph {
     scope: Scope,
     functions: Vec<CheckedFunction>,
     dispatch_tables: Vec<DispatchTable>,
@@ -305,7 +337,7 @@ impl PackageDeclarations {
     /// definedness and termination, in that order. Every refusal is made
     /// before any charge; a reached checking limit is `resource_exhausted`
     /// and yields no admission verdict.
-    pub fn check(self, limits: CheckingLimits) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+    pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let body_location = |index: usize, name: &str| {
             root(Origin::Body {
                 function: name.to_owned(),
@@ -629,7 +661,7 @@ impl PackageDeclarations {
                 }
             }
         }
-        Ok(CheckedPackage {
+        Ok(CheckedGraph {
             scope,
             functions,
             dispatch_tables,
@@ -638,7 +670,7 @@ impl PackageDeclarations {
     }
 }
 
-impl CheckedPackage {
+impl CheckedGraph {
     /// Check a standalone expression over `parameters`, against `expected`
     /// when given, as a function or operation body (`ClauseKind::Body`).
     /// `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here: this is not

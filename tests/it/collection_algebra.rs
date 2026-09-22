@@ -600,7 +600,10 @@ mod checked {
     }
 
     fn package(declarations: PackageDeclarations) -> CheckedPackage {
-        declarations.check(CheckingLimits::default()).unwrap()
+        let graph = declarations.check(CheckingLimits::default()).unwrap();
+        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // empty dependency closure -- this fixture declares no import.
+        CheckedPackage::link(graph)
     }
 
     fn check(
@@ -608,7 +611,7 @@ mod checked {
         parameters: &[(&str, ValueType)],
         expression: &Expression,
     ) -> Result<CheckedExpression, CheckRefusal> {
-        package.check_expression(
+        package.graph().check_expression(
             parameters
                 .iter()
                 .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))

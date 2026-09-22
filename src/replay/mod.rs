@@ -40,7 +40,7 @@ mod witness;
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, OccurrenceKey,
-    ProfileSelection, QualifiedName, RawSourceRef, TracePosition, WireNodeId,
+    ProfileSelection, QualifiedName, RawSourceRef, TracePosition,
 };
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, IncompleteCause, InconclusiveCause,
@@ -65,8 +65,7 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use crate::digest::{ByteDigest, DigestDomain, DigestRecord};
-    use crate::replay::identity::WireNodeId;
+    use crate::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
     use crate::value::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {

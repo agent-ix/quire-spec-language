@@ -167,12 +167,20 @@ pub use equality::{
 // second definition" pattern FR-067-AC-9 already established for the
 // `forms` move) -- `check` is these types' one remaining defining module.
 pub use crate::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage, CheckingLimitKind,
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedGraph, CheckingLimitKind,
     CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
     DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
     InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin,
     PackageDeclarations, ProvedInterval, WrongSnapshotCause, MAX_CHECKING_DEPTH,
 };
+// ADR-013 T-1 (FR-087, QSL-158 S-3a): `CheckedPackage` (S4 in-process, the
+// S3 `CheckedGraph` above plus the checked dependency closure) is a
+// different, canonical type, defined in layer-4 `package`, not `check`.
+// Re-exported through `expression` (which already re-exports it from
+// `crate::package` as the S6a entry point, FR-087-AC-9/TC-256) rather than
+// a second, independent `pub use crate::package::CheckedPackage;` line, so
+// there is exactly one re-export source for `value` to track.
+pub use expression::CheckedPackage;
 // The evaluation half stays at layer 5, in `value::expression` itself.
 pub use expression::{
     DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,

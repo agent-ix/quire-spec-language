@@ -756,6 +756,9 @@ mod checked {
             ..PackageDeclarations::default()
         }
         .check(CheckingLimits::default())
+        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // empty dependency closure -- this fixture declares no import.
+        .map(CheckedPackage::link)
     }
 
     fn check(
@@ -764,7 +767,7 @@ mod checked {
         expression: &Expression,
         mode: CheckMode,
     ) -> Result<CheckedExpression, CheckRefusal> {
-        package.check_expression(
+        package.graph().check_expression(
             owned(parameters),
             expression,
             None,

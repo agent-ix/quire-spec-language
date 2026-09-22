@@ -509,7 +509,7 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
 #[trace("TC-196")]
 #[test]
 fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup() {
-    let package = PackageDeclarations {
+    let graph = PackageDeclarations {
         functions: vec![FunctionDeclaration::clause(
             "internal_guard",
             vec![],
@@ -522,6 +522,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     }
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
+    let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
@@ -610,6 +611,7 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     );
 
     let target_name = QualifiedName::unqualified("target").expect("\"target\" is an identifier");
+    let target_first = CheckedPackage::link(target_first);
     let bytes = target_first
         .emit_function_package_v2()
         .expect("every declared name here is identifier-shaped");
@@ -633,6 +635,7 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     // only half-covered at the v2 checkpoint (PR #262 review round 4, item
     // 6). Round-trip `unrelated_first` too and compare against the same
     // target identity.
+    let unrelated_first = CheckedPackage::link(unrelated_first);
     let unrelated_first_bytes = unrelated_first
         .emit_function_package_v2()
         .expect("every declared name here is identifier-shaped");
@@ -1008,9 +1011,10 @@ fn ab_bridge_package(
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> quire_spec_language::value::CheckedPackage {
-    ab_bridge_declarations(receiver_type, pa, pb)
+    let graph = ab_bridge_declarations(receiver_type, pa, pb)
         .check(CheckingLimits::default())
-        .unwrap()
+        .unwrap();
+    CheckedPackage::link(graph)
 }
 
 /// D06 (FR-151-AC-7/AC-8): a `B`-typed receiver, statically declared
@@ -1031,6 +1035,7 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
     let objects = objects(b_type, "b1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
     let checked = package
+        .graph()
         .check_clause_expression(
             parameters,
             &dispatch_expression(),
@@ -1079,6 +1084,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
     let objects = objects(a_type, "a1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
     let checked = package
+        .graph()
         .check_clause_expression(
             parameters,
             &dispatch_expression(),
@@ -1199,6 +1205,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             CheckingLimits::default(),
         )
         .unwrap();
+    let package = CheckedPackage::link(package);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let evaluation = package
@@ -1287,6 +1294,7 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
     let objects = objects(b_type, "b1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
     let checked = package
+        .graph()
         .check_clause_expression(
             parameters,
             &dispatch_expression(),
@@ -1343,6 +1351,7 @@ fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
     let objects = objects(b_type, "b1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
     let checked = package
+        .graph()
         .check_clause_expression(
             parameters,
             &dispatch_expression(),
@@ -1552,6 +1561,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
             CheckingLimits::default(),
         )
         .unwrap();
+    let package = CheckedPackage::link(package);
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let evaluation = package
@@ -1749,6 +1759,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
             CheckingLimits::default(),
         )
         .unwrap();
+    let package = CheckedPackage::link(package);
 
     let mut meter_a = Meter::new(SCALAR_UNLIMITED);
     let evaluation_a = package

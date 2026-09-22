@@ -415,6 +415,51 @@ impl InvalidDigestRecord {
     }
 }
 
+/// A node id exactly as it travels on the wire (a v2 node key's 64
+/// lowercase-hex digest), before a checked-package lookup resolves it to a
+/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here (QSL-158 S-3a) from
+/// `replay::identity`, whose own module doc named this as a provisional,
+/// not-yet-canonical home: ADR-011 `:588` places the wire node id in the `F`
+/// foundation layer, alongside `digest` and before `wire_format`, not in the
+/// layer-6 `replay` facade -- `replay` (layer 6) importing `digest` (layer
+/// F) is the permitted direction; `package` (layer 4) or `library`
+/// (layer 3) importing `replay` would not be, which is exactly why
+/// `package::PackageNodeKey` (ADR-013 T-3) needs this type here rather than
+/// in `replay`. A wire-read node id stays a `WireNodeId`, never a
+/// `NodeKey`, until a lookup in an already-checked package resolves it, at
+/// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
+/// package) -- never by a conversion function, and none is defined here.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WireNodeId([u8; 32]);
+
+impl WireNodeId {
+    /// Wrap an already-known wire node-id digest. Unlike
+    /// `quire_exact::NodeKey::from_digest`, this constructor carries no
+    /// "only `check` calls this" restriction: a `WireNodeId` is exactly the
+    /// unchecked wire spelling, never a claim that the id resolves to a
+    /// real node.
+    pub fn from_digest(digest: [u8; 32]) -> Self {
+        Self(digest)
+    }
+
+    /// The raw digest bytes.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl fmt::Display for WireNodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+impl fmt::Debug for WireNodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WireNodeId({self})")
+    }
+}
+
 #[cfg(test)]
 mod digest_record_tests {
     use super::*;

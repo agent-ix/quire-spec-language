@@ -23,12 +23,17 @@ use quire_exact::Meter;
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
 
-// ADR-011 §4's mechanism (FR-068-AC-10): `check` is the one defining module
-// for these two checked-output types; this is the one, closed, non-glob
-// re-export naming it, so `value::expression::CheckedPackage::call` remains
-// the S6a entry point ADR-011 §7.3's M-5 row names, with `CheckedPackage`
-// itself defined exactly once, in `check`.
-pub use crate::check::{CheckedExpression, CheckedPackage};
+// ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
+// QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
+// re-exported by this one, closed, non-glob line. `CheckedPackage` (S4
+// in-process) is no longer `check`'s: it is layer-4 `package`'s own
+// canonical type (this package's checked declarations plus the checked
+// dependency closure), re-exported by the second line below so that
+// `value::expression::CheckedPackage::call` remains the S6a entry point
+// ADR-011 §7.3's M-5 row names -- the sole closed re-export FR-087-AC-9/
+// TC-256 requires, naming no other path and no glob.
+pub use crate::check::CheckedExpression;
+pub use crate::package::CheckedPackage;
 
 /// A runtime input a call or evaluation refuses before any charge. Stays at
 /// layer 5 (FR-068's refusal split): every *check-cause* type moved to
@@ -139,12 +144,17 @@ fn validate(
 impl CheckedPackage {
     /// Every admitted function's own name, checked body and slot count, as
     /// [`evaluate::Callable`] -- built from `check`'s
-    /// [`crate::check::CheckedPackage::function_states`] accessor, since
-    /// `Callable` is a layer-5 type `check` itself must never construct
-    /// (that would be a `check` -> `value::expression` edge, forbidden by
-    /// FR-068-AC-3).
+    /// [`crate::check::CheckedGraph::function_states`] accessor, reached
+    /// through this package's own [`Self::graph`] accessor (ADR-013 T-1,
+    /// FR-087-AC-9/TC-256: `package` itself imports nothing from `check`
+    /// beyond `CheckedGraph`; this module's own, separate,
+    /// layer-5-depends-on-layer-3 edge is what reaches `check`-owned state
+    /// here), since `Callable` is a layer-5 type `check` itself must never
+    /// construct (that would be a `check` -> `value::expression` edge,
+    /// forbidden by FR-068-AC-3).
     fn callables(&self) -> Vec<Callable<'_>> {
-        self.function_states()
+        self.graph()
+            .function_states()
             .map(|state| Callable {
                 body: state.body,
                 slots: state.slots,
@@ -158,11 +168,12 @@ impl CheckedPackage {
     /// S4-links each identity first (`family::link_function_identity`),
     /// then emits directly through `family::emit_v2`. Reads no CST, no
     /// source text, only each function's already-checked identity, through
-    /// `check`'s `CheckedPackage::function_identities` (`pub(crate)`, not
-    /// part of this crate's public doc surface) accessor -- this method
-    /// itself, not `check`, is what builds
-    /// `QualifiedName` and calls the v2 codec, both `value::expression`
-    /// types/functions `check` must not import (FR-068-AC-3).
+    /// `check`'s `CheckedGraph::function_identities` (`pub(crate)`, not
+    /// part of this crate's public doc surface) accessor, reached through
+    /// [`Self::graph`] -- this method itself, not `check` and not
+    /// `package`, is what builds `QualifiedName` and calls the v2 codec,
+    /// both `value::expression` types/functions `check` must not import
+    /// (FR-068-AC-3).
     ///
     /// `Result<_, InvalidQualifiedName>`: the v2 wire format is typed on
     /// `QualifiedName`, matching `call`'s own `&QualifiedName` parameter,
@@ -173,6 +184,7 @@ impl CheckedPackage {
     /// `QualifiedName` anyway.
     pub fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
         let entries = self
+            .graph()
             .function_identities()
             .map(|(name, identity)| {
                 let linked = family::link_function_identity(identity);
@@ -218,6 +230,7 @@ impl CheckedPackage {
             .as_unqualified()
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         let callable = self
+            .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         validate(callable.parameters, &arguments, objects)?;
@@ -301,11 +314,11 @@ impl CheckedPackage {
         validate(expression.parameters(), &arguments, objects)?;
         let callables = self.callables();
         Ok(Machine::new(
-            self.scope(),
+            self.graph().scope(),
             &callables,
             objects,
             meter,
-            self.dispatch_tables(),
+            self.graph().dispatch_tables(),
         )
         .run(expression.root(), expression.slots(), arguments))
     }
@@ -317,7 +330,7 @@ mod tests {
     //! results before and after QSL-139's split -- specifically, that
     //! `check`'s per-function accessor state (here, each function's own
     //! `slots` count, read directly through
-    //! [`crate::check::CheckedPackage::function_states`], never inferred
+    //! [`crate::check::CheckedGraph::function_states`], never inferred
     //! from whether [`Evaluation`] happens to expose it) is not sensitive to
     //! a function's position in the package's declaration list. This is the
     //! bug class the Description names: `check`'s accessor for one
@@ -399,11 +412,21 @@ mod tests {
         }
     }
 
-    fn slots_by_name(package: &CheckedPackage) -> std::collections::BTreeMap<String, usize> {
-        package
+    fn slots_by_name(
+        graph: &crate::check::CheckedGraph,
+    ) -> std::collections::BTreeMap<String, usize> {
+        graph
             .function_states()
             .map(|state| (state.name.to_owned(), state.slots))
             .collect()
+    }
+
+    /// ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    /// dependency closure -- every fixture here declares no import, so E4
+    /// never has a real dependency to populate (see [`CheckedPackage`]'s own
+    /// `dependencies` field doc).
+    fn link(graph: crate::check::CheckedGraph) -> CheckedPackage {
+        CheckedPackage::link(graph)
     }
 
     /// TC-174 steps 1-4: each function's own `slots` count, read directly,
@@ -453,9 +476,11 @@ mod tests {
             vec![function_one(), function_two()],
             vec![function_two(), function_one()],
         ] {
-            let package = declarations(functions)
-                .check(CheckingLimits::default())
-                .unwrap();
+            let package = link(
+                declarations(functions)
+                    .check(CheckingLimits::default())
+                    .unwrap(),
+            );
             let mut meter = Meter::new(UNLIMITED);
             let one = package
                 .call(
@@ -513,9 +538,11 @@ mod tests {
     #[trace("TC-174", "FR-068-AC-5")]
     #[test]
     fn call_to_an_unknown_function_is_refused() {
-        let package = declarations(vec![function_one()])
-            .check(CheckingLimits::default())
-            .unwrap();
+        let package = link(
+            declarations(vec![function_one()])
+                .check(CheckingLimits::default())
+                .unwrap(),
+        );
         let objects = ObjectEnvironment::default();
         let mut meter = Meter::new(UNLIMITED);
         let result = package.call(

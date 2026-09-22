@@ -342,15 +342,24 @@ mod tests {
     /// under `check`/`value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
     /// rather than crate-wide).
+    ///
+    /// **Updated (QSL-158 S-3a).** `check`'s S3 output type was renamed
+    /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
+    /// methods this test pins moved with it, and `CheckedPackage` itself is
+    /// now `package`'s own, different, S4 in-process type (`src/package/
+    /// checked.rs`), so it no longer belongs in this check-scoped assertion
+    /// at all -- it is covered instead by `package`'s own TC-243 inspection.
+    /// This test does not itself verify FR-087-AC-9 (TC-256, the
+    /// `graph()` delegation point, does), so it no longer cites that AC.
     #[trace("TC-170", "FR-068-CON-3")]
     #[test]
     fn con3_methods_and_symbols_each_have_exactly_one_defining_location() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
         let methods = [
             ("PackageDeclarations", "check"),
-            ("CheckedPackage", "check_expression"),
-            ("CheckedPackage", "check_postcondition_expression"),
-            ("CheckedPackage", "check_clause_expression"),
+            ("CheckedGraph", "check_expression"),
+            ("CheckedGraph", "check_postcondition_expression"),
+            ("CheckedGraph", "check_clause_expression"),
         ];
         for (self_ty, method) in methods {
             let key = (self_ty.to_owned(), method.to_owned());
@@ -375,7 +384,7 @@ mod tests {
             "Origin",
             "ProvedInterval",
             "WrongSnapshotCause",
-            "CheckedPackage",
+            "CheckedGraph",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",

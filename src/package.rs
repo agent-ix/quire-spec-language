@@ -1,15 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-019/021: immutable native checked artifacts and source-bound static identity.
+//! FR-019/021: immutable native checked artifacts and source-bound static
+//! identity, plus ADR-013 T-1 (FR-087, QSL-158 S-3a)'s canonical, layer-4
+//! [`CheckedPackage`]/[`EmittedPackage`] typestate (defined in this module's
+//! private `checked` submodule and re-exported below). The two are unrelated:
+//! this file's own top-level `NativePackage` wraps the lane-private
+//! `checking::CheckedPackage<'a>` (ADR-013 §6), referenced here by its full
+//! path rather than a bare `use` import, precisely so that name stays
+//! distinct from [`CheckedPackage`] in this module's own item namespace (both
+//! are reachable as
+//! `crate::package::*` items once `checked`'s canonical type is re-exported
+//! below) -- `src/package/features.rs` and `src/package/view.rs` keep their
+//! own pre-existing, unrelated `use crate::checking::CheckedPackage;`
+//! imports unchanged (FR-087-AC-10/TC-247).
 
+mod checked;
 mod encoding;
 mod features;
 mod intake;
+mod node_key;
 mod reading;
 #[cfg(test)]
 mod tests;
 mod view;
 mod wire;
 
+pub use checked::{CheckedPackage, EmittedPackage};
+pub use node_key::PackageNodeKey;
 pub use reading::{PackageReadLimits, PackageSupport};
 
 use std::fmt;
@@ -17,7 +33,6 @@ use std::fmt;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::checking::CheckedPackage;
 use crate::{ByteDigest, Code, Diagnostic};
 
 /// Inclusive per-pass ceilings; elevated options clamp to the defaults.
@@ -222,7 +237,7 @@ impl fmt::Display for NativePackageIdentity {
 /// Immutable checked source, complete artifact bytes and separately typed identities.
 #[derive(Debug)]
 pub struct NativePackage<'model> {
-    checked: CheckedPackage<'model>,
+    checked: crate::checking::CheckedPackage<'model>,
     bytes: Vec<u8>,
     digest: ByteDigest,
     canonical_identity: NativePackageIdentity,
@@ -250,7 +265,7 @@ impl<'model> NativePackage<'model> {
     /// # Errors
     /// Returns the actual bounded pass refusal, without exposing a partial package.
     pub fn new(
-        checked: CheckedPackage<'model>,
+        checked: crate::checking::CheckedPackage<'model>,
         limits: PackageLimits,
     ) -> Result<Self, Box<PackageError>> {
         let limits = limits.bounded();
@@ -281,7 +296,7 @@ impl<'model> NativePackage<'model> {
         })
     }
     /// Original checked source/model/runtime-obligation correspondence.
-    pub fn checked(&self) -> &CheckedPackage<'model> {
+    pub fn checked(&self) -> &crate::checking::CheckedPackage<'model> {
         &self.checked
     }
     /// Complete immutable accepted artifact bytes.
