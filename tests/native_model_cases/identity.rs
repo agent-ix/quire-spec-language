@@ -3,7 +3,8 @@
 
 use super::*;
 use ix_trace_rs::trace;
-use quire_spec_language::{formal_source::FormalSource, Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
+use quire_spec_language::formal_source::FormalSource;
 
 #[test]
 #[trace("TC-042", "FR-015-AC-3")]

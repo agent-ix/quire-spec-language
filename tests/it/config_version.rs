@@ -5,10 +5,10 @@ use crate::support::config_version as fixtures;
 
 use fixtures::Case;
 use ix_trace_rs::trace;
-use quire_contract_ir as ir;
-use quire_spec_language::ByteDigest;
+use qsl_foundation::ByteDigest;
 #[cfg(feature = "quire-extraction")]
-use quire_spec_language::Span;
+use qsl_foundation::Span;
+use quire_contract_ir as ir;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 

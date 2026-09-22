@@ -12,6 +12,7 @@ use crate::support::native_rule_model;
 mod types;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Phase, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, CheckingError, ClauseBinding, NativeType,
@@ -20,7 +21,7 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::{LinkedPackage, LinkingError};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{link_native, parse, Code, Limits, LinkLimits, Phase, SourceIdentity};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 
 fn authored_owner() -> ir::RequirementRef {
     ir::RequirementRef::new(

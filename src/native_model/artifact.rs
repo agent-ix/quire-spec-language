@@ -9,7 +9,8 @@ use serde::Serialize;
 use super::{
     failure, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit,
 };
-use crate::{formal_source::FormalSource, Code};
+use crate::formal_source::FormalSource;
+use qsl_foundation::Code;
 
 type Result<T> = std::result::Result<T, Box<NativeModelError>>;
 

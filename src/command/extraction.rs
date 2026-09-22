@@ -7,7 +7,7 @@ use crate::native_model::NativeModel;
 use crate::quire_source::{
     self, ExtractedPackage, Selection, CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
 };
-use crate::Code;
+use qsl_foundation::Code;
 use quire_rs::semantic::{read_semantic_block, BundleIndex, SemanticContext, SemanticFailure};
 use serde_json::json;
 

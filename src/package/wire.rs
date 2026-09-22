@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020: closed representation adapters; admitted models still come from callers.
 
-use crate::serde_object::from_object;
-use crate::ByteDigest;
+use qsl_foundation::serde_object::from_object;
+use qsl_foundation::ByteDigest;
 use quire_contract_ir as ir;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;

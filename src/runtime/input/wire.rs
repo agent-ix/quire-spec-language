@@ -5,8 +5,8 @@ use quire_contract_ir as ir;
 use serde::Deserialize;
 
 use super::ValueId;
-use crate::serde_object::Object;
-use crate::{ByteDigest, SourceIdentity};
+use qsl_foundation::serde_object::Object;
+use qsl_foundation::{ByteDigest, SourceIdentity};
 
 // The foreign RequirementRef decoder permits unknown keys. Keep the native
 // record closed, then delegate identifier semantics to its existing constructor.

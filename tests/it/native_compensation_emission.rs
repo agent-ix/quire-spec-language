@@ -5,6 +5,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{
     proofs, CauseKind as TypeCause, TypeDisposition, TypeLimits,
@@ -22,7 +23,6 @@ use quire_spec_language::state::{
     Refusal, StateView, Value, ValueKind,
 };
 use quire_spec_language::syntax::composed as c;
-use quire_spec_language::ByteDigest;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
 
 fn obligation(name: &str, recovery: &str, commit: &str) -> String {

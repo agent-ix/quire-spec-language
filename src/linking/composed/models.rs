@@ -12,7 +12,7 @@ use crate::checking::{Catalog, NativeType};
 use crate::linking::{location, DeclarationKey, DeclarationLocation};
 use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
-use crate::{ByteDigest, Span, Spanned};
+use qsl_foundation::{ByteDigest, Span, Spanned};
 
 /// Supplied model selections; only constructor-admitted native artifacts bind.
 #[derive(Clone, Copy, Debug)]

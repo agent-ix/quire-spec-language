@@ -4,6 +4,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Source, SourceIdentity, Spanned};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
@@ -21,7 +22,7 @@ use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::syntax::composed::{
     DeclarationKind, Operation, ParameterType, QualifiedName,
 };
-use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity, Spanned};
+use quire_spec_language::Limits;
 
 fn model(package: &str, formal: &str, native: &str) -> NativeModel {
     let mut document: serde_json::Value = serde_json::from_str(native_rule_model::FIXTURE).unwrap();

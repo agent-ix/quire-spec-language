@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-020: external authority and actual native compiler failures.
 use super::*;
-use quire_spec_language::{Phase, Source};
+use qsl_foundation::{Phase, Source};
 
 #[test]
 #[trace("TC-082", "TC-086", "FR-020-AC-7", "FR-020-AC-10")]

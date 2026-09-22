@@ -1,0 +1,20 @@
+[package]
+name = "qsl-foundation"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer F: absence/json-number/serde-object utilities, byte digests, the native wire-format catalog, exact source text and source maps, and stable native diagnostics."
+
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+sha2 = "=0.10.9"
+thiserror = "=2.0.20"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

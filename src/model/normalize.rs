@@ -205,7 +205,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::diagnostic::Code;
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
@@ -217,6 +216,7 @@ use crate::model::key::{
     digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId,
     EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
+use qsl_foundation::diagnostic::Code;
 use quire_exact::length_amount;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module

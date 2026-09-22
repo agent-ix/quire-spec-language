@@ -36,7 +36,7 @@ fn invoke_bytes(directory: &Path, command: &str, bytes: &[u8]) -> (i32, Value, b
         "result schema rejected {value}"
     );
     if let Some(code) = value.get("code") {
-        assert!(quire_spec_language::Code::from_code(code.as_str().unwrap()).is_some());
+        assert!(qsl_foundation::Code::from_code(code.as_str().unwrap()).is_some());
     }
     (output.status.code().unwrap(), value, stdout)
 }
@@ -62,7 +62,7 @@ fn extraction_request_obeys_the_build_feature() {
 #[cfg(feature = "quire-extraction")]
 mod enabled {
     use super::*;
-    use quire_spec_language::ByteDigest;
+    use qsl_foundation::ByteDigest;
     use serde_json::json;
 
     fn replace(directory: &Path, job: &mut Value, text: &str) {

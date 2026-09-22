@@ -5,14 +5,12 @@ use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
 use native_rule_model::{parts, symbol, Parts};
+use qsl_foundation::{ByteDigest, Code, Phase, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::{
-    link, link_native, parse, ByteDigest, Code, Limits, LinkLimits, ParsedUnit, Phase, Source,
-    SourceIdentity,
-};
+use quire_spec_language::{link, link_native, parse, Limits, LinkLimits, ParsedUnit};
 
 fn read(text: &str) -> ParsedUnit {
     parse(

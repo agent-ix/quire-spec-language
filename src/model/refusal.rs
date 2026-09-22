@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use crate::source::LocatedSpan;
+use qsl_foundation::source::LocatedSpan;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay
@@ -457,7 +457,7 @@ pub enum ModelRefusalCause {
         artifact: Option<String>,
         /// The node's source position, mapped from FCD's `origin.source`
         /// (`startLine`/`startColumn`, one-based) into
-        /// [`crate::source::LocatedSpan`]'s own `{start, end}` shape. FCD's
+        /// [`qsl_foundation::source::LocatedSpan`]'s own `{start, end}` shape. FCD's
         /// wire carries a start position only, no byte offset and no end
         /// position, so both ends of the mapped span are that same point
         /// and its byte offset is `0` -- a placeholder QSL does not treat
@@ -721,7 +721,7 @@ mod tests {
     use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::{digest_of, DeclarationKey};
-    use crate::source::{LocatedSpan, Position};
+    use qsl_foundation::source::{LocatedSpan, Position};
 
     fn key(identity: &str) -> DeclarationKey {
         DeclarationKey::fixture(identity)

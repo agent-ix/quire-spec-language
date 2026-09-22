@@ -10,7 +10,7 @@ use serde::de::{
 use serde::{Deserialize, Deserializer};
 
 use super::{PackageLimits, PackagePassUsage, PackagePathSegment};
-use crate::Code;
+use qsl_foundation::Code;
 
 #[derive(Debug)]
 pub(super) struct Failure {
@@ -400,7 +400,7 @@ fn decode_with_tags<T: DeserializeOwned>(
     // serde_json's additive `arbitrary_precision` feature for its own wire.
     // Preserve this package wire's admission domain before asking Serde to
     // recognize an otherwise unknown format.
-    if !crate::json_number::all(bytes, |number| {
+    if !qsl_foundation::json_number::all(bytes, |number| {
         number.parse::<f64>().is_ok_and(f64::is_finite)
     }) {
         return Err(Failure {

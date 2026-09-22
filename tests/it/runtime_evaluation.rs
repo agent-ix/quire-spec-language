@@ -18,13 +18,13 @@ mod records;
 mod scalars;
 
 use ix_trace_rs::trace;
+use qsl_foundation::Code;
 use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ImplicationEventKind, SnapshotDraft,
     ValidatedContext, ValidationLimits, ValueBinding, ValueId, ValueNode,
 };
-use quire_spec_language::Code;
 
 fn current<'c, 'm>(
     checked: &'c CheckedPackage<'m>,

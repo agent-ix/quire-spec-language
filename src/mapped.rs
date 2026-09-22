@@ -7,10 +7,9 @@ use crate::checking::{check, CheckBindings, CheckLimits, ClauseBinding};
 use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::package::{NativePackage, PackageCause, PackageError, PackageLimits};
-use crate::source_map::SourceMap;
-use crate::{
-    link_native, parse_source, Code, Diagnostic, Limits, LinkLimits, LocatedSpan, Phase, Span,
-};
+use crate::{link_native, parse_source, Limits, LinkLimits};
+use qsl_foundation::source_map::SourceMap;
+use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, Span};
 
 /// Existing stage budgets; each stage retains its own implementation ceilings.
 #[derive(Clone, Copy, Debug, Default)]
@@ -119,7 +118,7 @@ impl CompileError {
             || diagnostic.path != body.path()
             || body.locate(span) != Some(diagnostic.span)
         {
-            return Err(crate::diagnostic::error(
+            return Err(qsl_foundation::diagnostic::error(
                 body,
                 Code::InvalidSourceMap,
                 Phase::SourceMap,
@@ -173,7 +172,7 @@ pub fn compile<'model>(
     let compile_native = || -> Result<NativePackage<'model>, CompileCause> {
         let body = mapping.body();
         if language != "ix:native" {
-            return Err(crate::diagnostic::error(
+            return Err(qsl_foundation::diagnostic::error(
                 body,
                 Code::UnknownLanguage,
                 Phase::Profile,
@@ -185,7 +184,7 @@ pub fn compile<'model>(
         }
         let unit = parse_source(body.clone(), limits.syntax)?;
         let [clause] = unit.clauses() else {
-            return Err(crate::diagnostic::error(
+            return Err(qsl_foundation::diagnostic::error(
                 body,
                 Code::InvalidModelBinding,
                 Phase::Check,
@@ -196,7 +195,7 @@ pub fn compile<'model>(
             .into());
         };
         if clause.name.value != binding.name {
-            return Err(crate::diagnostic::error(
+            return Err(qsl_foundation::diagnostic::error(
                 body,
                 Code::InvalidModelBinding,
                 Phase::Check,

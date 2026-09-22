@@ -5,7 +5,7 @@ use crate::{
     input::{array, equal, field, number, text, Input},
     review::digest,
 };
-use quire_spec_language::{Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 use serde_json::{json, Map, Value};
 use std::{collections::BTreeMap, path::Path};
 
@@ -151,7 +151,7 @@ fn check_source_compositions(
             },
             source_key,
             bytes(raws, source_key)?,
-            quire_spec_language::source::MAX_SOURCE_BYTES,
+            qsl_foundation::source::MAX_SOURCE_BYTES,
         )
         .map_err(|e| {
             Error::new(

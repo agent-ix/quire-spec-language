@@ -15,7 +15,7 @@
 //! execution.
 
 use super::definitions::Selection;
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 /// A compiler-known interpretation, unavailable through caller-defined metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

@@ -28,7 +28,7 @@ pub use input::{
     SnapshotDraft, SnapshotRef, ValueBinding, ValueId, ValueNode,
 };
 
-use crate::{ByteDigest, SourceIdentity};
+use qsl_foundation::{ByteDigest, SourceIdentity};
 
 /// Immutable byte-bound snapshot, awaiting model-aware runtime validation.
 #[derive(Clone, Debug)]

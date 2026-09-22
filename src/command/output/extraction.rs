@@ -4,7 +4,7 @@
 use super::{diagnostic, diagnostic_with_upstream, source, types};
 use crate::command::{compilation::RunPackage, ExtractionError, ExtractionMode};
 use crate::quire_source::{self, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
-use crate::{Diagnostic, LocatedSpan, SourceIdentity, Span};
+use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use quire_rs::semantic::{
     ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic, SemanticFailure,

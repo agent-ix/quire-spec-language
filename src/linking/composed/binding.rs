@@ -9,7 +9,7 @@ use super::definitions;
 use super::models::{self, ModelBindings, ModelDeclarationReport, ModelInput};
 use super::scopes::{self, ScopeDisposition, ScopeReport};
 use super::{DeclarationDisposition, DeclarationId, SyntaxNamespace, UnitId};
-use crate::Span;
+use qsl_foundation::Span;
 
 /// Source-owned evidence location in one of the retained component reports.
 #[derive(Clone, Debug, Eq, PartialEq)]

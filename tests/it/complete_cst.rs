@@ -3,10 +3,10 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
     self, CompleteCause, CompleteCode, HostCause, Limits, Production, SourceEdit, TokenClass,
 };
-use quire_spec_language::{SourceIdentity, Span};
 
 const SOURCE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\r\n",

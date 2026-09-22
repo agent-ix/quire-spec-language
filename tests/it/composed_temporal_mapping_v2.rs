@@ -13,6 +13,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
@@ -21,7 +22,6 @@ use quire_spec_language::protocol_artifact::{
 use quire_spec_language::temporal::{
     self, Closure, Dimension, Error, Refusal, Subject, Support, Unmatched,
 };
-use quire_spec_language::ByteDigest;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
 
 /// One authored declaration per registered profile, each reaching a bounded

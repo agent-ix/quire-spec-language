@@ -43,7 +43,8 @@ pub use occurrence::{
 };
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
-use crate::{native_model::NativeModel, ByteDigest};
+use crate::native_model::NativeModel;
+use qsl_foundation::ByteDigest;
 
 /// Payload wire version; the external reference retains its separate wire pair.
 pub const WIRE: &str = "quire.compiled-protocol/1";

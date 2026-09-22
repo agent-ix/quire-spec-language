@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located complete-source diagnostics over the crate's existing code type.
 
-use crate::source::SourceReadCause;
-use crate::{LocatedSpan, Phase, Source, SourceIdentity};
+use qsl_foundation::source::SourceReadCause;
+use qsl_foundation::{LocatedSpan, Phase, Source, SourceIdentity};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
 /// authority-bound complete-V1 catalog is deliberately not selected here.
-pub type CompleteCode = crate::Code;
+pub type CompleteCode = qsl_foundation::Code;
 
 /// The closed typed cause of a complete-source diagnostic, selected by its
 /// producer at the failing operation under `quire.native.diagnostics/v1`
@@ -267,7 +267,7 @@ pub(crate) fn error(
         source: source.identity().clone(),
         path: source.path().into(),
         span: source
-            .locate(crate::Span { start, end })
+            .locate(qsl_foundation::Span { start, end })
             .expect("internal offsets are UTF-8 boundaries"),
         related: Vec::new(),
         message: message.into(),

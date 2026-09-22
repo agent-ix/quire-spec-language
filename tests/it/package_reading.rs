@@ -7,12 +7,12 @@ use crate::support::native_rule_model;
 use crate::support::package_vector_setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::package::{
     NativePackageRef, PackageReadLimits, PackageStage, PackageSupport,
 };
-use quire_spec_language::{ByteDigest, Code};
 
 fn model() -> NativeModel {
     native_rule_model::from_text(

@@ -14,7 +14,7 @@ use super::grammar::{self, Grammar, Rule, Terminal};
 use super::{CompleteCode, CompleteDiagnostic, ParsedSource, ProfileSelection};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
-use crate::{Phase, Source, Span};
+use qsl_foundation::{Phase, Source, Span};
 
 #[derive(Clone, Debug)]
 struct Significant {

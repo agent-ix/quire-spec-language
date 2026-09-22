@@ -5,7 +5,7 @@ use super::{
     Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
     SEMANTIC_CORE_VERSION,
 };
-use crate::Code;
+use qsl_foundation::Code;
 
 /// Failure before invoking Quire, with a typed discriminator and actual context.
 #[derive(Debug, Eq, PartialEq, thiserror::Error, serde::Serialize)]

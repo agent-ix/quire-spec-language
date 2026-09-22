@@ -5,6 +5,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
 use quire_spec_language::formal_source::FormalSource;
@@ -13,7 +14,6 @@ use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Error, Invalid, Limits, Unsupported,
 };
-use quire_spec_language::{ByteDigest, Source, SourceIdentity};
 use serde_json::{json, Value};
 use setup::{Inputs, Unit};
 

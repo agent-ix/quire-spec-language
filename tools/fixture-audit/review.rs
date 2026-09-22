@@ -4,7 +4,7 @@ use crate::{
     error::{ensure, Code, Error, Result},
     input::{self, array, field, text, Input},
 };
-use quire_spec_language::ByteDigest;
+use qsl_foundation::ByteDigest;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},

@@ -7,7 +7,7 @@ use super::{
 };
 use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
-use crate::ByteDigest;
+use qsl_foundation::ByteDigest;
 
 fn headers(
     package: &wire::Package,

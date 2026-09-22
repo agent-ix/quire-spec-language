@@ -10,6 +10,7 @@
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
+use qsl_foundation::SourceIdentity;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
@@ -27,7 +28,6 @@ use quire_spec_language::value::{
     ObjectTypeDeclaration, OptionValue, Outcome, Presence, QualifiedName, RecursionEdges,
     TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
 };
-use quire_spec_language::SourceIdentity;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

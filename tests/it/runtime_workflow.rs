@@ -5,6 +5,7 @@ use crate::support::runtime_setup as setup;
 use setup::*;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Phase};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
@@ -14,7 +15,6 @@ use quire_spec_language::runtime::{
     ValidationReport, ValidationStatus, ValueBinding, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{ByteDigest, Code, Phase};
 use serde_json::json;
 
 const PARENT: &str = "present(self.parent) implies deref(value(self.parent)).n < self.n";

@@ -9,14 +9,12 @@ mod limits;
 mod values;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 use quire_contract_ir as ir;
-use quire_spec_language::{
-    runtime::{
-        ArtifactLimits, DraftPathSegment, FieldBinding, Invocation, InvocationDraft, InvocationRef,
-        ModelBinding, ObjectEntry, ObjectIdentity, Population, QualifiedName, Snapshot,
-        SnapshotDraft, SnapshotRef, ValueBinding, ValueId, ValueNode,
-    },
-    ByteDigest, Code, SourceIdentity,
+use quire_spec_language::runtime::{
+    ArtifactLimits, DraftPathSegment, FieldBinding, Invocation, InvocationDraft, InvocationRef,
+    ModelBinding, ObjectEntry, ObjectIdentity, Population, QualifiedName, Snapshot, SnapshotDraft,
+    SnapshotRef, ValueBinding, ValueId, ValueNode,
 };
 
 fn owner() -> ir::RequirementRef {

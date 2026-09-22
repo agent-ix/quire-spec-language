@@ -5,7 +5,8 @@ use crate::{
     input::{array, equal, field, text, Input},
     review::digest,
 };
-use quire_spec_language::{parse, Code as NativeCode, Limits, SourceIdentity};
+use qsl_foundation::{Code as NativeCode, SourceIdentity};
+use quire_spec_language::{parse, Limits};
 use serde_json::json;
 use std::{collections::BTreeSet, path::Path};
 
@@ -92,8 +93,7 @@ impl<'a> SyntaxInvocation<'a> {
 
     fn parse(
         &self,
-    ) -> std::result::Result<quire_spec_language::ParsedUnit, Box<quire_spec_language::Diagnostic>>
-    {
+    ) -> std::result::Result<quire_spec_language::ParsedUnit, Box<qsl_foundation::Diagnostic>> {
         let anchor = self.anchor;
         let expression = self.expression;
         let source = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"0.0.0-fixture\" digest \"unresolved-model-package\";\n{anchor} {{ {expression} }}\n");
@@ -117,10 +117,7 @@ enum SyntaxOutcome {
 fn check_syntax_outcome(
     case: &serde_json::Value,
     id: &str,
-    observed: std::result::Result<
-        quire_spec_language::ParsedUnit,
-        Box<quire_spec_language::Diagnostic>,
-    >,
+    observed: std::result::Result<quire_spec_language::ParsedUnit, Box<qsl_foundation::Diagnostic>>,
 ) -> Result<SyntaxOutcome> {
     let expected = text(field(field(case, "expected")?, "syntax")?)?;
     match (expected, observed) {

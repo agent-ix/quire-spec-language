@@ -49,11 +49,11 @@ use sha2::{Digest, Sha256};
 
 use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
 
-use crate::absence::AbsenceMode;
 use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
+use qsl_foundation::absence::AbsenceMode;
 // QSL-148: the relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general recursive typer this family delegates to for a body or a call's

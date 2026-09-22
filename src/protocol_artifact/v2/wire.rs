@@ -2,7 +2,7 @@
 //! FR-050: the closed version-2 temporal binding delta.
 
 use crate::protocol_artifact::wire as v1;
-use crate::serde_object::from_object;
+use qsl_foundation::serde_object::from_object;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Exact clock configuration selected for one temporal declaration.

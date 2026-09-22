@@ -2,7 +2,7 @@
 //! FR-029: lowering failure context resolved before the compiled source is released.
 
 use crate::formal_source::FormalSource;
-use crate::{ByteDigest, LocatedSpan, Source, SourceIdentity, Span};
+use qsl_foundation::{ByteDigest, LocatedSpan, Source, SourceIdentity, Span};
 use quire_contract_ir as ir;
 
 /// Exact program identity retained by a command failure, without the program text.
@@ -150,7 +150,10 @@ mod tests {
                 let value = error.value().unwrap();
                 assert_eq!(value["stage"], "lower");
                 assert_eq!(value["code"], expected_code);
-                assert_eq!(crate::Code::from_code(expected_code), Some(code.code()));
+                assert_eq!(
+                    qsl_foundation::Code::from_code(expected_code),
+                    Some(code.code())
+                );
                 assert_eq!(value["details"]["source"]["identity"], "test:lowering");
                 assert_eq!(
                     value["details"]["source"]["digest"],

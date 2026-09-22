@@ -5,7 +5,7 @@ use crate::linking::composed::scopes::{Anchor, BinderKind, BinderType, Declarati
 use crate::linking::composed::{DeclarationId, SyntaxNamespace};
 use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid};
 use crate::syntax::{composed as c, ExprId, ExprKind, UnaryOp};
-use crate::Span;
+use qsl_foundation::Span;
 use std::collections::BTreeMap;
 
 use super::types::index;

@@ -23,11 +23,13 @@ use std::fmt;
 use quire_exact::Origin;
 use quire_exact::ScalarLimits;
 
-use crate::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId};
 use crate::replay::bounds::BoundExceeded;
 use crate::replay::identity::{
     Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection, QualifiedName,
     RawSourceRef, SourceDigestWire, TracePosition,
+};
+use qsl_foundation::digest::{
+    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
 };
 
 // ---------------------------------------------------------------------------

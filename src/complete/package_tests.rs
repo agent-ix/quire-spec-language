@@ -7,8 +7,8 @@ use crate::complete::{
     ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
     SourceDigest,
 };
-use crate::{Code, SourceIdentity};
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, SourceIdentity};
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [
     ("quire.source.complete/v1", DefinitionRole::Source),

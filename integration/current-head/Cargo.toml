@@ -22,6 +22,9 @@ description = "FR-058 current-head cross-repository integration lane for QSL/IR/
 
 [dependencies]
 quire-spec-language = { path = "../..", default-features = false }
+# ADR-011 §7.3 X-2 (QSL-177): layer F, extracted out of quire-spec-language;
+# this lane's own tests reach it directly now (`SourceIdentity` moved).
+qsl-foundation = { path = "../../qsl-foundation" }
 # Declared at the exact source quire-spec-language's own root `Cargo.toml`
 # pins (same `rev`), so the `[patch]` below overrides this declaration and
 # quire-spec-language's identical transitive one to the same current-head

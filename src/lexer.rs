@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: apply token budgets and delimiter checks to the generated recognizer.
-use crate::diagnostic::error;
 pub(crate) use crate::token::Kind;
 use crate::token::LexError;
-use crate::{Code, Diagnostic, Phase, Source, Span};
 use logos::Logos;
+use qsl_foundation::diagnostic::error;
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 /// Layer-1 parse limits: the lexer's own recognizer bounds and the
 /// complete-V1 CST bounds built on it. Caller limits may lower these
@@ -28,7 +28,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            source_bytes: crate::source::MAX_SOURCE_BYTES,
+            source_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
             nesting: 64,

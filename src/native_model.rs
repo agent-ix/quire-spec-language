@@ -8,8 +8,9 @@ use quire_contract_ir::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolNa
 use serde::Serialize;
 use std::sync::Arc;
 
+use crate::formal_source::FormalSource;
 use crate::linking::DeclarationLocation;
-use crate::{formal_source::FormalSource, ByteDigest, Code, Diagnostic, Phase};
+use qsl_foundation::{ByteDigest, Code, Diagnostic, Phase};
 
 /// Explicit producer semantics retained in the immutable native artifact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -307,7 +308,14 @@ impl NativeModel {
 
 fn failure(source: &FormalSource, code: Code, message: impl Into<String>) -> Box<NativeModelError> {
     Box::new(NativeModelError {
-        diagnostic: crate::diagnostic::error(source.source(), code, Phase::Link, 0, 0, message),
+        diagnostic: qsl_foundation::diagnostic::error(
+            source.source(),
+            code,
+            Phase::Link,
+            0,
+            0,
+            message,
+        ),
         related: Vec::new(),
         upstream: None,
     })

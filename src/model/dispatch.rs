@@ -41,12 +41,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::diagnostic::Code;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
+use qsl_foundation::diagnostic::Code;
 
 /// Bounds the family-closure walk `link_dispatch` performs over operation
 /// members' own inline `redefines` edges: an explicit task stack, never

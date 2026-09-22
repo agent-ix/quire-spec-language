@@ -2,8 +2,9 @@
 //! FR-003: format validated source by rewriting whitespace, preserving every token and
 //! comment. Syntax formatting does not need a second expression printer/grammar.
 use crate::token::Kind;
-use crate::{Code, Diagnostic, Limits, ParsedUnit, Phase, Source, Span};
+use crate::{Limits, ParsedUnit};
 use logos::Logos;
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 /// Format tokens/comments using the default 1 MiB output-byte ceiling.
 pub fn format(unit: &ParsedUnit) -> Result<String, Box<Diagnostic>> {
@@ -91,7 +92,7 @@ impl Output<'_> {
             .checked_add(text.len())
             .is_none_or(|length| length > self.limit)
         {
-            return Err(crate::diagnostic::error(
+            return Err(qsl_foundation::diagnostic::error(
                 self.source,
                 Code::ResourceExhausted,
                 Phase::Format,
@@ -146,7 +147,7 @@ mod tests {
                 "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n"
             );
             let unit = crate::parse(
-                crate::SourceIdentity {
+                qsl_foundation::SourceIdentity {
                     identity: "test:format".into(),
                     revision: "1".into(),
                 },

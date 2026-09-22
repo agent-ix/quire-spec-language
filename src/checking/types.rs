@@ -454,8 +454,8 @@ mod profile_tests {
     use crate::formal_source::FormalSource;
     use crate::model_source::{read, ModelSourceLimits, FORMAT_V2};
     use crate::native_model::ModelLimits;
-    use crate::{Source, SourceIdentity};
     use ix_trace_rs::trace;
+    use qsl_foundation::{Source, SourceIdentity};
 
     #[test]
     #[trace("TC-120", "FR-041-AC-4", "FR-041-AC-5")]

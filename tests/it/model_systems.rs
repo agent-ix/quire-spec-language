@@ -10,7 +10,7 @@
 //! module's own computed values.
 
 use ix_trace_rs::trace;
-use quire_spec_language::diagnostic::Code;
+use qsl_foundation::diagnostic::Code;
 use quire_spec_language::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
 use quire_spec_language::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,

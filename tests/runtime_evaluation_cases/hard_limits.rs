@@ -231,5 +231,5 @@ fn maximum_expression_depth_and_frontend_coupling_are_explicit() {
     )
     .unwrap_err();
     assert_eq!(too_deep.code, Code::ResourceExhausted);
-    assert_ne!(too_deep.phase, quire_spec_language::Phase::Evaluate);
+    assert_ne!(too_deep.phase, qsl_foundation::Phase::Evaluate);
 }

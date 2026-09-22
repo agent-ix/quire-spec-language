@@ -8,8 +8,8 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`Expression::children`] lists the children.
 
-use crate::absence::AbsenceMode;
 use crate::value::ValueType;
+use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{CollectionKind, Integer};
 
 /// A binary operator of the expression grammar.

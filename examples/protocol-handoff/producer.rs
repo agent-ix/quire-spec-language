@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::{
     checking::{
@@ -33,7 +34,6 @@ use quire_spec_language::{
         },
         native, v2, wire as w,
     },
-    ByteDigest, Source, SourceIdentity,
 };
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
@@ -333,7 +333,7 @@ pub enum Error {
     #[error("invalid authored formal identifier: {0:?}")]
     Identifier(ir::Diagnostic),
     #[error("{0}")]
-    Source(#[from] Box<quire_spec_language::Diagnostic>),
+    Source(#[from] Box<qsl_foundation::Diagnostic>),
     #[error("{0}")]
     Model(#[from] Box<model_source::ModelSourceError>),
     #[error("{stage} did not complete: {completed}/{expected} records, {issues} issues, incomplete={incomplete}; first issue: {first:?}")]
@@ -369,7 +369,7 @@ pub enum Error {
     #[error("dependency {identity}: expected one selection, found {matches}")]
     Dependency { identity: String, matches: usize },
     #[error("source span {span:?} exceeds the wire offset range")]
-    Span { span: quire_spec_language::Span },
+    Span { span: qsl_foundation::Span },
     #[error("the authored recipe requires one operation, found {count}")]
     OperationCount { count: usize },
     #[error("the authored recipe requires Workflow::apply, found {context:?}::{name:?}")]
@@ -427,8 +427,8 @@ pub enum StageIssue {
     Namespace {
         kind: &'static str,
         supplied: Option<usize>,
-        span: Option<quire_spec_language::Span>,
-        code: Option<quire_spec_language::Code>,
+        span: Option<qsl_foundation::Span>,
+        code: Option<qsl_foundation::Code>,
     },
     #[error("declaration {declaration}: {disposition:?}, site={site:?}, cause={cause:?}")]
     Proof {
@@ -1289,7 +1289,7 @@ fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
         } => (
             "source header conflict",
             Some(*supplied),
-            Some(quire_spec_language::Span {
+            Some(qsl_foundation::Span {
                 start: language.span.start,
                 end: edition.span.end,
             }),
@@ -1301,7 +1301,7 @@ fn namespace_issue(issue: &linking::InventoryIssue) -> StageIssue {
         } => (
             "source parse failure",
             Some(*supplied),
-            Some(quire_spec_language::Span {
+            Some(qsl_foundation::Span {
                 start: diagnostic.span.start.byte,
                 end: diagnostic.span.end.byte,
             }),

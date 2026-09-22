@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete-V1 document analysis and canonical-format round-tripping.
 use ix_trace_rs::trace;
+use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
     self, analyze_document, format_document, CompleteCause, CompleteCode, DefinitionDigest,
     DefinitionRef, DocumentBinding, HostCause, Limits, ProfileCatalog, SourceEdit, TokenClass,
 };
-use quire_spec_language::{SourceIdentity, Span};
 
 fn ugly(profile: &DefinitionRef) -> String {
     format!(

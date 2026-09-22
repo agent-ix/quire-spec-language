@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-024: selected native bytes, closed Serde decoding and structural admission.
 
-use crate::serde_object::Object;
+use qsl_foundation::serde_object::Object;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::value::RawValue;
 
 use super::construction::{Artifact, Body};
 use super::{ArtifactLimits, InputError, RuntimeReference};
-use crate::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 
 /// Actual stage of a native artifact read failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

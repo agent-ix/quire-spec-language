@@ -5,22 +5,24 @@ use crate::checking::ClauseBinding;
 use crate::runtime::{
     ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
 };
-use crate::serde_object::{deserialize_objects, from_object};
+use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use quire_contract_ir as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 /// The selected request shape owns its admitted envelope format.
 pub(super) trait RequestKind: serde::de::DeserializeOwned {
-    const FORMAT: crate::wire_format::WireFormat;
+    const FORMAT: qsl_foundation::wire_format::WireFormat;
 }
 
 impl RequestKind for Request {
-    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::RunRequest;
+    const FORMAT: qsl_foundation::wire_format::WireFormat =
+        qsl_foundation::wire_format::WireFormat::RunRequest;
 }
 
 impl RequestKind for CompileRequest {
-    const FORMAT: crate::wire_format::WireFormat = crate::wire_format::WireFormat::CompileRequest;
+    const FORMAT: qsl_foundation::wire_format::WireFormat =
+        qsl_foundation::wire_format::WireFormat::CompileRequest;
 }
 
 #[derive(Deserialize)]
@@ -129,7 +131,7 @@ pub(super) struct Identity {
 impl Identity {
     pub fn bind(&self) -> Result<crate::formal_source::SourceIdentities, ir::Diagnostic> {
         Ok(crate::formal_source::SourceIdentities {
-            native: crate::SourceIdentity {
+            native: qsl_foundation::SourceIdentity {
                 identity: self.identity.clone(),
                 revision: self.revision.clone(),
             },

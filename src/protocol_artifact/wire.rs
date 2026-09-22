@@ -5,8 +5,8 @@
 //! not establish source correspondence, family admission or an accepted artifact.
 
 use super::{NumberError, NumberWire, ProtocolNumber};
-use crate::serde_object::from_object;
-use crate::ByteDigest;
+use qsl_foundation::serde_object::from_object;
+use qsl_foundation::ByteDigest;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 // Unlike a derived struct's default decoder, every record below requires an

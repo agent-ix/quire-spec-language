@@ -2,7 +2,7 @@
 //! TC-049: exact authored/source/operation correspondence through the public API.
 
 use super::*;
-use quire_spec_language::Source;
+use qsl_foundation::Source;
 
 fn invalid(linked: LinkedPackage<'_>, bindings: CheckBindings) {
     let source = linked.unit().source().clone();

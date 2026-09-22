@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Source-map layout and byte/segment lookup over parsed source text.
 use ix_trace_rs::trace;
-use quire_spec_language::source_map::{Layout, Segment, SourceMap};
-use quire_spec_language::{parse_source, ByteDigest, Code, Limits, Source, SourceIdentity, Span};
+use qsl_foundation::source_map::{Layout, Segment, SourceMap};
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
+use quire_spec_language::{parse_source, Limits};
 
 fn source(id: &str, text: &str) -> Source {
     Source::read(
@@ -35,7 +36,7 @@ fn layout() -> Layout {
         drop_final_newline: true,
     }
 }
-fn bytes(source: &Source, locations: &[quire_spec_language::LocatedSpan]) -> String {
+fn bytes(source: &Source, locations: &[qsl_foundation::LocatedSpan]) -> String {
     locations
         .iter()
         .map(|s| {

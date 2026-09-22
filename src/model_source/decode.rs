@@ -8,7 +8,7 @@ use super::{EntryKind, ModelSourceCause, ModelSourceLimits, Result};
 use crate::formal_source::FormalSource;
 use crate::located_json::{self, Located};
 use crate::native_model::NativeModelProfile;
-use crate::serde_object::Object as JsonObject;
+use qsl_foundation::serde_object::Object as JsonObject;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::value::RawValue;
 

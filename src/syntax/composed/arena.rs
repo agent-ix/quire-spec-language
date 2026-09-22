@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-035/036/040: declaration ownership shared by binding and type admission.
 
-use crate::Span;
+use qsl_foundation::Span;
 use std::ops::Range;
 
 /// Parser nodes are contiguous by declaration, with every node contained in its

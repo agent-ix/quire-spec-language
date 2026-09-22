@@ -19,7 +19,7 @@
 
 use super::Expression;
 use crate::complete::{LosslessCst, Recovery, TokenClass};
-use crate::Span;
+use qsl_foundation::Span;
 
 /// A parsed form built from a lossless CST with no error or recovery node
 /// (ADR-011 §2.1 E2). It carries only the span of its originating CST node

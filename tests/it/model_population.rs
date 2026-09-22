@@ -15,9 +15,9 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits};
-use quire_spec_language::absence::AbsenceMode;
-use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{

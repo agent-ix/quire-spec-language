@@ -15,8 +15,9 @@ use super::common::{
 };
 use crate::{
     protocol_artifact::{temporal_subject::ValidatedTemporalSubject, v2, wire as w},
-    temporal, ByteDigest,
+    temporal,
 };
+use qsl_foundation::ByteDigest;
 
 /// Canonical immutable JSON Schema bytes for [`CONTRACT`].
 pub const SCHEMA_BYTES: &[u8] =

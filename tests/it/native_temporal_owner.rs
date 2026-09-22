@@ -6,6 +6,7 @@ use crate::support::native_protocol as setup;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_spec_language::{
     checking::composed::{proofs, TypeDisposition, TypeLimits},
     linking::composed::definition_source::RegisteredDefinition,
@@ -14,7 +15,7 @@ use quire_spec_language::{
         native_temporal::{self, request, result, v2 as temporal_v2},
         v2, wire as w,
     },
-    temporal, ByteDigest,
+    temporal,
 };
 use serde_json::Value;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};

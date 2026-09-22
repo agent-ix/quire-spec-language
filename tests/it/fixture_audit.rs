@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-012: real audit process boundaries and the private packet lane.
 use ix_trace_rs::trace;
-use quire_spec_language::ByteDigest;
+use qsl_foundation::ByteDigest;
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,

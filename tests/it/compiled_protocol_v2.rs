@@ -10,6 +10,7 @@ use std::{
 };
 
 use ix_trace_rs::trace;
+use qsl_foundation::ByteDigest;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
@@ -30,7 +31,6 @@ use quire_spec_language::state::{
     ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
 };
 use quire_spec_language::temporal;
-use quire_spec_language::ByteDigest;
 use serde_json::Value;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
 use sha2::{Digest as _, Sha256};

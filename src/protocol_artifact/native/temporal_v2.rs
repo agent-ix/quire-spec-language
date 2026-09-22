@@ -44,7 +44,7 @@ impl AdmissionV2 {
     }
 
     /// Raw-byte digest of the complete canonical version-2 payload.
-    pub fn digest(&self) -> crate::ByteDigest {
+    pub fn digest(&self) -> qsl_foundation::ByteDigest {
         self.candidate.digest()
     }
 

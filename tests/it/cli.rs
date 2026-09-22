@@ -95,7 +95,7 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
     assert_eq!(value["source"]["revision"], "revision:😀");
     assert_eq!(
         value["source"]["digest"],
-        quire_spec_language::ByteDigest::of(bytes).to_string()
+        qsl_foundation::ByteDigest::of(bytes).to_string()
     );
     assert_eq!(value["path"], path.to_string_lossy().as_ref());
     assert!(value["path"].as_str().unwrap().contains('\u{fffd}'));
@@ -124,8 +124,7 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert_eq!(value["path"], "tests/fixtures/parent.native");
     assert_eq!(
         value["source"]["digest"],
-        quire_spec_language::ByteDigest::of(include_bytes!("../fixtures/parent.native"))
-            .to_string()
+        qsl_foundation::ByteDigest::of(include_bytes!("../fixtures/parent.native")).to_string()
     );
     assert!(value.get("value").is_none());
     let formatted = Command::new(env!("CARGO_BIN_EXE_quire-spec"))

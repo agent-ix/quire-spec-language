@@ -27,7 +27,7 @@
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
-//! type, `crate::digest::WireNodeId`, is the `F` foundation layer's own
+//! type, `qsl_foundation::digest::WireNodeId`, is the `F` foundation layer's own
 //! type (ADR-011 `:588`), not this module's. `ImportView` (ADR-013 T-1) is
 //! a different module's type; this module does not define it.
 //!
@@ -42,9 +42,9 @@ use std::collections::BTreeMap;
 
 use sha2::{Digest, Sha256};
 
-use crate::diagnostic::Code;
-use crate::digest::WireNodeId;
 use crate::value::node::is_qualified_name;
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
 
 mod package_identity;
 

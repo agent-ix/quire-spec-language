@@ -266,7 +266,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
         "measured refusal count over the post-#200 golden, post-H1 fix: {refusals:#?}"
     );
 
-    use quire_spec_language::diagnostic::Code;
+    use qsl_foundation::diagnostic::Code;
     use quire_spec_language::model::normalize::ModelRefusalCause;
 
     let (count, flow2, pump, sys, tank) = (

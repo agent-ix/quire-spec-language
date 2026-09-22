@@ -10,6 +10,7 @@
 #[path = "native_rule_model.rs"]
 pub(crate) mod native_rule_model;
 
+use qsl_foundation::SourceIdentity;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
@@ -22,7 +23,7 @@ use quire_spec_language::runtime::{
     Snapshot, SnapshotDraft, SnapshotRef, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{link_native, parse, Limits, LinkLimits, SourceIdentity};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 
 pub(crate) fn symbol(name: &str) -> ir::SymbolName {
     native_rule_model::symbol(name)
@@ -48,7 +49,7 @@ pub(crate) fn request<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,
-) -> Result<CheckedPackage<'a>, Box<quire_spec_language::Diagnostic>> {
+) -> Result<CheckedPackage<'a>, Box<qsl_foundation::Diagnostic>> {
     request_source(models, expression, kind, |text| text)
 }
 
@@ -57,7 +58,7 @@ pub(crate) fn request_source<'a>(
     expression: &str,
     kind: ClauseKind,
     rewrite: impl FnOnce(String) -> String,
-) -> Result<CheckedPackage<'a>, Box<quire_spec_language::Diagnostic>> {
+) -> Result<CheckedPackage<'a>, Box<qsl_foundation::Diagnostic>> {
     let (keyword, context, execution_point) = match kind {
         ClauseKind::Invariant => (
             "invariant",

@@ -4,13 +4,13 @@
 use quire_contract_ir as ir;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::serde_object::Object;
-use crate::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::serde_object::Object;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 
 pub(super) mod wire;
 
 /// One version shared by native input construction and reading.
-pub(super) const FORMAT: &str = crate::wire_format::WireFormat::RuntimeInput.as_str();
+pub(super) const FORMAT: &str = qsl_foundation::wire_format::WireFormat::RuntimeInput.as_str();
 
 /// Artifact-local arena index; it carries no model or cross-artifact identity.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

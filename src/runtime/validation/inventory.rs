@@ -8,7 +8,7 @@ use super::{
     RuntimeReference, Validator,
 };
 use crate::syntax::ClauseKind;
-use crate::Code;
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 

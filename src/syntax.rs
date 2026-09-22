@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: located syntax and parser ceilings, before model linking or evaluation.
-use crate::source::{Source, Span, Spanned};
+use qsl_foundation::source::{Source, Span, Spanned};
 
 pub mod composed;
 
@@ -32,7 +32,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            source_bytes: crate::source::MAX_SOURCE_BYTES,
+            source_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
             nesting: 64,

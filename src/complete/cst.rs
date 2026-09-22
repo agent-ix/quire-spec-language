@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use std::collections::BTreeSet;
 
-use crate::digest::InvalidDigest;
-use crate::{ByteDigest, Source, Span};
+use qsl_foundation::digest::InvalidDigest;
+use qsl_foundation::{ByteDigest, Source, Span};
 
 /// Exact versioned definition digest in the profile/import domain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -596,7 +596,7 @@ impl LosslessCst {
                 &self.source,
                 super::CompleteCode::InvalidSourceIdentity,
                 super::CompleteCause::Host(super::HostCause::ForeignNode),
-                crate::Phase::SourceMap,
+                qsl_foundation::Phase::SourceMap,
                 0,
                 0,
                 "CST node belongs to a different parsed source",
@@ -836,14 +836,14 @@ impl LosslessCst {
                 root_span = Span { start, end };
             }
         }
-        let source = crate::Source::read(
-            crate::SourceIdentity {
+        let source = qsl_foundation::Source::read(
+            qsl_foundation::SourceIdentity {
                 identity: "forms-fixture".into(),
                 revision: "0".into(),
             },
             "forms-fixture",
             text.as_bytes(),
-            crate::source::MAX_SOURCE_BYTES,
+            qsl_foundation::source::MAX_SOURCE_BYTES,
         )
         .expect("fixture text is within the byte limit");
         let root = RawNode {

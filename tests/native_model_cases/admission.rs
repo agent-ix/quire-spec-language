@@ -175,7 +175,7 @@ fn tc_040_all_sites_wrappers_and_operation_roles_match_authored_model() {
     assert_eq!(model.source().source().identity().revision, "draft:1");
     assert_eq!(
         model.source().source().digest(),
-        quire_spec_language::ByteDigest::of(native_rule_model::FIXTURE.as_bytes())
+        qsl_foundation::ByteDigest::of(native_rule_model::FIXTURE.as_bytes())
     );
 }
 

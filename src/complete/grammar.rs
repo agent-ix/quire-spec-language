@@ -1549,7 +1549,7 @@ mod tests {
 
     use super::{complete_compound_spellings, complete_reserved_words, complete_v1};
     use crate::complete::{self, Limits};
-    use crate::SourceIdentity;
+    use qsl_foundation::SourceIdentity;
 
     #[trace("TC-180", "FR-339-AC-1", "FR-302-AC-1")]
     #[test]
@@ -1586,7 +1586,7 @@ mod tests {
                 },
             )
             .unwrap_err();
-            assert_eq!(refusal.code, crate::Code::ResourceExhausted);
+            assert_eq!(refusal.code, qsl_foundation::Code::ResourceExhausted);
             assert_eq!(refusal.span.start.byte, 0);
             assert_eq!(refusal.span.end.byte, compound.len());
         }

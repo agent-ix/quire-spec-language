@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! IT-005 / FR-025: fixture setup through the public model-source frontend.
 
+use qsl_foundation::{Diagnostic, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::native_model::{ModelLimits, NativeModel, NativeRoles};
-use quire_spec_language::{Diagnostic, Source, SourceIdentity};
 
 /// Separately authored, licensed native rule-model input.
 pub const FIXTURE: &str = include_str!("../fixtures/native-rule-model.json");
@@ -114,7 +114,7 @@ fn bind_source(text: &str, path: &str, revision: &str) -> Result<FormalSource> {
         },
         path,
         text.as_bytes(),
-        quire_spec_language::source::MAX_SOURCE_BYTES,
+        qsl_foundation::source::MAX_SOURCE_BYTES,
     )?;
     let formal = ir::SourceIdentity::new(
         ir::SourceDocumentId::new("RuleModelSource")?,

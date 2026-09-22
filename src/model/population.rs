@@ -132,8 +132,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::absence::AbsenceMode;
-use crate::diagnostic::Code;
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
@@ -144,6 +142,8 @@ use crate::model::key::{hex, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
+use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,

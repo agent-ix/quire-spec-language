@@ -27,6 +27,7 @@ fn run() -> Result<(), producer::Error> {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+    use qsl_foundation::ByteDigest;
     use quire_spec_language::protocol_artifact::{
         handoff::{
             MUTATION_MANIFEST_FORMAT, PUBLISHED_ARTIFACT_REFERENCE_FILE,
@@ -34,7 +35,6 @@ mod tests {
         },
         v2, wire as w,
     };
-    use quire_spec_language::ByteDigest;
 
     #[trace("TC-138", "FR-050-AC-1", "FR-050-AC-4")]
     #[test]

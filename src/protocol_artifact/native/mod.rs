@@ -74,7 +74,7 @@ impl EmittedPackage {
         self.candidate.bytes()
     }
     /// Raw-byte digest of the complete native-emitted payload.
-    pub fn digest(&self) -> crate::ByteDigest {
+    pub fn digest(&self) -> qsl_foundation::ByteDigest {
         self.candidate.digest()
     }
 }

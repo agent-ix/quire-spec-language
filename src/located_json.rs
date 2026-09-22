@@ -2,7 +2,7 @@
 //! FR-017/025: typed JSON values with checked provenance from Serde's original borrow.
 
 use crate::formal_source::{FormalSource, FormalSourceError};
-use crate::Span;
+use qsl_foundation::Span;
 use quire_contract_ir::SourceSpan;
 use serde::Deserialize;
 use serde_json::value::RawValue;

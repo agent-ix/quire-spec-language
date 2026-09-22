@@ -2,7 +2,7 @@
 //! NFR-006: atomic expression/event entry and independent bounded work counters.
 
 use super::{EvaluationLimits, EvaluationUsage, ImplicationEvent, Result};
-use crate::{Code, Diagnostic, Phase, Source, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 pub(super) struct Budget<'a, P> {
     pub source: &'a Source,
@@ -14,7 +14,7 @@ pub(super) struct Budget<'a, P> {
 
 impl<P: FnMut() -> bool> Budget<'_, P> {
     pub fn error(&self, code: Code, span: Span, message: &'static str) -> Box<Diagnostic> {
-        crate::diagnostic::error(
+        qsl_foundation::diagnostic::error(
             self.source,
             code,
             Phase::Evaluate,

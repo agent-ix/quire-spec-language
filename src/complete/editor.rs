@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Revision-bound formatter and editor snapshot over the lossless CST.
-use crate::{Phase, SourceIdentity, Span};
+use qsl_foundation::{Phase, SourceIdentity, Span};
 use std::collections::BTreeSet;
 
 use super::package::{ProfileStatus, StaleProfile};

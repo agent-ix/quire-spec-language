@@ -265,8 +265,8 @@ impl Conversion<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Source, SourceIdentity, Span};
     use ix_trace_rs::trace;
+    use qsl_foundation::{Source, SourceIdentity, Span};
 
     #[test]
     #[trace("TC-111", "FR-033-AC-3")]

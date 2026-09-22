@@ -6,6 +6,7 @@ use crate::support::config_version as config;
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::SourceIdentity;
 use quire_contract_ir as ir;
 use quire_spec_language::{
     checking::{check, CheckBindings, CheckLimits, ClauseBinding},
@@ -23,7 +24,7 @@ use quire_spec_language::{
         RuntimeReference, Snapshot, ValidationLimits, ValueBinding, ValueId, ValueNode,
     },
     syntax::ClauseKind,
-    Limits, LinkLimits, SourceIdentity,
+    Limits, LinkLimits,
 };
 use serde_json::{json, Value};
 use std::{path::Path, process::Command};
@@ -280,7 +281,7 @@ fn concrete_config_update_binds_and_materializes_actual_pre_post_values() {
     assert!(failure
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.diagnostic.code == quire_spec_language::Code::FrameViolation));
+        .any(|diagnostic| diagnostic.diagnostic.code == qsl_foundation::Code::FrameViolation));
 }
 
 #[test]
@@ -658,7 +659,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     })];
     // A current invariant cannot statically acquire invocation parameters.
     let rejected = setup::request(&models, "flag", ClauseKind::Invariant).unwrap_err();
-    assert_eq!(rejected.code, quire_spec_language::Code::MissingDeclaration);
+    assert_eq!(rejected.code, qsl_foundation::Code::MissingDeclaration);
     assert_eq!(rejected.source.identity, "test:runtime-rule");
 
     let native = package(&models, "flag", ClauseKind::Postcondition);
@@ -731,7 +732,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     let diagnostic = missing
         .diagnostics
         .iter()
-        .find(|d| d.diagnostic.code == quire_spec_language::Code::UnavailableObservation)
+        .find(|d| d.diagnostic.code == qsl_foundation::Code::UnavailableObservation)
         .expect("missing selected invocation is a validation failure");
     let location = &diagnostic.runtime;
     assert_eq!(
@@ -755,7 +756,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     assert!(current
         .diagnostics
         .iter()
-        .any(|d| d.diagnostic.code == quire_spec_language::Code::WrongSnapshot));
+        .any(|d| d.diagnostic.code == qsl_foundation::Code::WrongSnapshot));
 
     let (input, selection) = recorded(false);
     let invocation = input.invocations[0].reference();
@@ -772,7 +773,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
         .diagnostics
         .iter()
         .find(|d| {
-            d.diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
+            d.diagnostic.code == qsl_foundation::Code::InvalidRuntimeInput
                 && d.runtime.path
                     == [runtime::RuntimePathSegment::Parameter(setup::qualified(
                         &models[0], "flag",
@@ -836,7 +837,7 @@ fn every_projection_target_keeps_its_boolean_and_signed_integer_capability() {
                 assert_eq!(error.code, LoweringCode::Unsupported);
                 assert_eq!(
                     error.code.code(),
-                    quire_spec_language::Code::UnsupportedProjection
+                    qsl_foundation::Code::UnsupportedProjection
                 );
                 assert_eq!(error.clause.unwrap().clause().as_str(), "population_rule");
                 continue;
@@ -922,10 +923,7 @@ fn real_model_alias_collisions_consume_bounded_work_before_candidate_creation() 
     )
     .unwrap_err();
     assert_eq!(blocked.code, LoweringCode::ResourceExhausted);
-    assert_eq!(
-        blocked.code.code(),
-        quire_spec_language::Code::ResourceExhausted
-    );
+    assert_eq!(blocked.code.code(), qsl_foundation::Code::ResourceExhausted);
     assert_eq!(
         blocked.clause.as_ref().unwrap().clause().as_str(),
         "population_rule"

@@ -9,8 +9,8 @@ mod values;
 
 use super::{ObjectIdentity, QualifiedName, Snapshot};
 use crate::checking::{Catalog, CheckedPackage};
-use crate::Code;
 use budget::{Budget, Result, Stage};
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use std::collections::{BTreeMap, BTreeSet};
 

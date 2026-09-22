@@ -8,14 +8,14 @@ use quire_contract_ir as ir;
 use super::{failure, CheckBindings, Result};
 use crate::linking::LinkedPackage;
 use crate::syntax::ClauseKind;
-use crate::{Code, Span};
+use qsl_foundation::{Code, Span};
 
 pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> Result<Vec<usize>> {
     let unit = linked.unit();
     let at_start = Span { start: 0, end: 0 };
     let invalid = |message| failure(unit.source(), Code::InvalidModelBinding, at_start, message);
     linked.require_historical_native().map_err(|mut error| {
-        error.diagnostic.phase = crate::Phase::Check;
+        error.diagnostic.phase = qsl_foundation::Phase::Check;
         error
     })?;
     let bound = bindings.source.source();

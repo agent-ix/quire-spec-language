@@ -6,12 +6,13 @@ mod lower;
 mod wire;
 
 use crate::formal_source::FormalSource;
+use crate::located_json;
 use crate::native_model::{
     ModelLimits, NativeModel, NativeModelError, NativeModelProfile, NativeRoles,
 };
-use crate::{located_json, Code};
 use decode::decode_model;
 use lower::lower_model;
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 
 /// Category charged against the model source's shared entry ceiling.
@@ -34,10 +35,10 @@ pub enum EntryKind {
 }
 
 /// Explicit authoring profile for the existing rule-model JSON syntax.
-pub const FORMAT: &str = crate::wire_format::WireFormat::RuleModel.as_str();
+pub const FORMAT: &str = qsl_foundation::wire_format::WireFormat::RuleModel.as_str();
 
 /// Explicit source profile adding exact rational scalar declarations.
-pub const FORMAT_V2: &str = crate::wire_format::WireFormat::RuleModelV2.as_str();
+pub const FORMAT_V2: &str = qsl_foundation::wire_format::WireFormat::RuleModelV2.as_str();
 
 /// Inclusive frontend limits, independently clamped to their defaults.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

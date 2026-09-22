@@ -5,9 +5,9 @@ use crate::support::standalone_setup as fixtures;
 use fixtures::runtime;
 
 use ix_trace_rs::trace;
-use quire_spec_language::{
-    package::{NativePackage, NativePackageRef, PackageReadLimits, PackageSupport},
-    ByteDigest,
+use qsl_foundation::ByteDigest;
+use quire_spec_language::package::{
+    NativePackage, NativePackageRef, PackageReadLimits, PackageSupport,
 };
 use serde_json::{json, Value};
 use std::{
@@ -234,7 +234,7 @@ fn file_count_refusals_name_the_exhausted_group_before_file_io() {
 #[test]
 #[trace("TC-105", "FR-027-AC-1", "FR-027-AC-2")]
 fn shared_format_catalog_preserves_existing_wire_spellings() {
-    use quire_spec_language::wire_format::WireFormat;
+    use qsl_foundation::wire_format::WireFormat;
     let names: Vec<_> = WireFormat::ALL
         .iter()
         .map(|format| serde_json::to_value(format).unwrap())

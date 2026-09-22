@@ -12,9 +12,9 @@ use serde::{
 use super::NativePackageIdentity;
 use crate::checking::{CheckedPackage, RuntimeRequirements, UniverseRequirement};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget, ResolvedOccurrence};
-use crate::{ByteDigest, Span};
+use qsl_foundation::{ByteDigest, Span};
 
-pub(super) const FORMAT: &str = crate::wire_format::WireFormat::LinkedPackage.as_str();
+pub(super) const FORMAT: &str = qsl_foundation::wire_format::WireFormat::LinkedPackage.as_str();
 
 #[derive(Serialize)]
 pub(super) struct Definition {

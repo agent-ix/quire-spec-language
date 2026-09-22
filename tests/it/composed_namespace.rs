@@ -3,13 +3,14 @@
 //! Unresolved profile/model strings are syntax inputs, not model-intake evidence.
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::{
     admit_namespace, ConflictKind, DeclarationDisposition, DeclarationRefusal, Dimension,
     Exhaustion, ExpectedSource, InventoryIssue, NamespaceReport, SourceInventory, Usage, Work,
     WorkLimits, ACCOUNTING_VERSION, DEFAULT_LIMITS, HARD_LIMITS,
 };
 use quire_spec_language::syntax::composed::NativeUnit;
-use quire_spec_language::{ByteDigest, Code, Limits, Source, SourceIdentity, Span};
+use quire_spec_language::Limits;
 
 const LANGUAGE: &str = "ix:native";
 const EDITION: &str = "1-draft";

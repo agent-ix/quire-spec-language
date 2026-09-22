@@ -8,7 +8,8 @@ use serde::{
 };
 use sha2::{Digest as _, Sha256};
 
-use crate::{temporal, ByteDigest};
+use crate::temporal;
+use qsl_foundation::ByteDigest;
 
 /// Contract identifier for the native-temporal request document.
 pub const REQUEST_CONTRACT: &str = "quire.native-temporal-request/v1";

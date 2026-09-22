@@ -40,8 +40,8 @@
 //!    lowering output -- serialized to bytes -- is identical either way.
 
 use ix_trace_rs::trace;
+use qsl_foundation::digest::ByteDigest;
 use quire_spec_language::check::Capability;
-use quire_spec_language::digest::ByteDigest;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};

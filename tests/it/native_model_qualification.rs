@@ -12,11 +12,11 @@ use crate::support::native_rule_model;
 mod provenance;
 
 use native_rule_model::{parts, symbol, Parts};
+use qsl_foundation::{Code, Phase};
 use quire_contract_ir as ir;
 use quire_spec_language::native_model::{
     ModelLimits, NativeModel, NativeModelError, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
-use quire_spec_language::{Code, Phase};
 use serde_json::{json, Value};
 
 fn authored(change: impl FnOnce(&mut Value)) -> Parts {

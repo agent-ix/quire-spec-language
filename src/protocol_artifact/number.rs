@@ -176,7 +176,7 @@ impl<'de> Deserialize<'de> for NumberWire {
             },
         }
         // A tagged Serde struct must not acquire a positional-array alternative.
-        let fields: Fields = crate::serde_object::from_object(deserializer)?;
+        let fields: Fields = qsl_foundation::serde_object::from_object(deserializer)?;
         Ok(match fields {
             Fields::Integer { decimal } => Self::Integer { decimal },
             Fields::Rational {

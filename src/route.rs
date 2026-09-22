@@ -32,8 +32,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use crate::check::Capability;
-use crate::digest::ByteDigest;
-use crate::CatalogCode;
+use qsl_foundation::digest::ByteDigest;
+use qsl_foundation::CatalogCode;
 
 /// A backend's declared identity, unique within one [`Registry`] (FR-290
 /// "Candidate set and negotiation": "a backend identity is unique within a

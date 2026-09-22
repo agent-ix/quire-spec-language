@@ -20,8 +20,8 @@ use crate::package::{NativePackage, NativePackageRef, PackageError};
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
-use crate::serde_object::Object;
-use crate::{ByteDigest, Code, Diagnostic, Source};
+use qsl_foundation::serde_object::Object;
+use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use quire_contract_ir as ir;
 use std::{
     fs::File,
@@ -147,7 +147,7 @@ pub enum RunCause {
     Limit(LimitKind),
     /// Selected digest spelling is invalid.
     #[error("{0}")]
-    Digest(#[from] crate::digest::InvalidDigest),
+    Digest(#[from] qsl_foundation::digest::InvalidDigest),
     /// Existing IR identifier validation failed.
     #[error("invalid request identifier: {0:?}")]
     Identifier(ir::Diagnostic),

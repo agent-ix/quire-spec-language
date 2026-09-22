@@ -2,12 +2,11 @@
 //! FR-014: exact native/IR source correspondence through actual public types.
 
 use ix_trace_rs::trace;
-use quire_contract_ir as ir;
-use quire_spec_language::{
-    formal_source::{FormalSource, FormalSourceError},
-    source::MAX_SOURCE_BYTES,
-    ByteDigest, Code, Phase, Source, SourceIdentity, Span,
+use qsl_foundation::{
+    source::MAX_SOURCE_BYTES, ByteDigest, Code, Phase, Source, SourceIdentity, Span,
 };
+use quire_contract_ir as ir;
+use quire_spec_language::formal_source::{FormalSource, FormalSourceError};
 
 fn source(text: &str) -> Source {
     Source::read_verified(

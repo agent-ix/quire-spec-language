@@ -11,7 +11,7 @@ use crate::checking::{NativeType, Observation};
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation, ResolutionTarget};
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarSite};
 use crate::syntax::ClauseKind;
-use crate::Code;
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use std::collections::BTreeSet;
 

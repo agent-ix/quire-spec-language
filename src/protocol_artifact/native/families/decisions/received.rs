@@ -15,7 +15,7 @@ use crate::linking::composed::scopes::{
 use crate::native_model::NativeModel;
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid};
 use crate::syntax::{composed as c, ExprId};
-use crate::{Span, Spanned};
+use qsl_foundation::{Span, Spanned};
 
 use super::Context;
 

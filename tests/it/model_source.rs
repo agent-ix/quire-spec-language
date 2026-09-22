@@ -5,6 +5,7 @@
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Source, SourceIdentity};
 use quire_contract_ir as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::model_source::{
@@ -16,7 +17,6 @@ use quire_spec_language::runtime::{
     execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{Code, Source, SourceIdentity};
 use serde_json::{json, Value};
 
 fn source(text: &str, revision: &str) -> FormalSource {

@@ -4,8 +4,9 @@
 use crate::support::located_json;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Source, SourceIdentity, Span};
 use quire_contract_ir as ir;
-use quire_spec_language::{formal_source::FormalSource, Source, SourceIdentity, Span};
+use quire_spec_language::formal_source::FormalSource;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 

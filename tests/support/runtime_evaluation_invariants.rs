@@ -6,8 +6,8 @@ use crate::runtime::{
 };
 use crate::runtime_test_setup as setup;
 use crate::syntax::ClauseKind;
-use crate::{Code, Phase};
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Phase};
 use setup::*;
 
 #[test]

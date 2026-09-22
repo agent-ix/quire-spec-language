@@ -5,6 +5,7 @@
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
@@ -13,7 +14,6 @@ use quire_spec_language::runtime::{
     ValidationLimits, ValidationStatus, ValueId, ValueNode,
 };
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::Code;
 
 fn assert_request(
     report: &ExecutionReport<'_, '_>,

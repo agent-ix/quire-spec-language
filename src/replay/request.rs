@@ -14,12 +14,12 @@ use std::collections::BTreeMap;
 
 use quire_exact::ScalarLimits;
 
-use crate::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 use crate::replay::bounds::BoundExceeded;
 use crate::replay::identity::{
     Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
 };
 use crate::replay::witness::ReplaySource;
+use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -453,10 +453,10 @@ impl ReplayRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digest::{ByteDigest, DigestDomain, WireNodeId};
     use crate::replay::bounds::MAX_ENCODED_BYTES;
     use crate::value::Identifier;
     use ix_trace_rs::trace;
+    use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {

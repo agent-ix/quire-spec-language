@@ -237,7 +237,12 @@ impl<'a> Solver<'_, 'a, '_, '_> {
         }
         Ok(())
     }
-    fn graph(&mut self, start: ExprId, name: &crate::Spanned<String>, at: ExprId) -> Result<()> {
+    fn graph(
+        &mut self,
+        start: ExprId,
+        name: &qsl_foundation::Spanned<String>,
+        at: ExprId,
+    ) -> Result<()> {
         let Some(endpoint) = self.get(self.var(start), at)? else {
             return Ok(());
         };

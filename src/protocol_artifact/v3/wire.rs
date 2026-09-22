@@ -2,7 +2,7 @@
 //! FR-054: the closed version-3 control-to-temporal mapping delta.
 
 use crate::protocol_artifact::{v2, wire as v1};
-use crate::serde_object::from_object;
+use qsl_foundation::serde_object::from_object;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 
 /// One declaration-local event control's exact authored temporal selection.

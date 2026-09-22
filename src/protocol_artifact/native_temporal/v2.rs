@@ -16,7 +16,8 @@ use super::{
     },
     request, result, EvidenceRef,
 };
-use crate::{protocol_artifact::temporal_subject::ValidatedTemporalSubject, temporal, ByteDigest};
+use crate::{protocol_artifact::temporal_subject::ValidatedTemporalSubject, temporal};
+use qsl_foundation::ByteDigest;
 
 /// Exact v2 request contract selection.
 pub const REQUEST_CONTRACT: &str = "quire.native-temporal-request/v2";

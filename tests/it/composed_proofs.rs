@@ -5,6 +5,7 @@
 use crate::support::composed_types as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::proofs::work::Dimension;
 use quire_spec_language::checking::composed::proofs::{
@@ -21,9 +22,7 @@ use quire_spec_language::linking::composed::scopes::Anchor;
 use quire_spec_language::linking::composed::DeclarationId;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
-use quire_spec_language::{
-    link_native, parse, Code, Limits, LinkLimits, Source, SourceIdentity, Span,
-};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 
 fn owner() -> ir::RequirementRef {
     ir::RequirementRef::new(

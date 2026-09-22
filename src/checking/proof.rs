@@ -20,8 +20,8 @@ use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
 use crate::native_model::ScalarKind;
 use crate::syntax::{BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
-use crate::{Code, Source, Span};
 use facts::{Facts, Outcomes};
+use qsl_foundation::{Code, Source, Span};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ValueKey(pub(super) usize);

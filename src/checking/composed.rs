@@ -12,7 +12,7 @@ use crate::linking::composed::definition_source::RegisteredDefinition;
 use crate::linking::composed::scopes::{Anchor, BinderId};
 use crate::linking::composed::{binding, DeclarationId, UnitId};
 use crate::syntax::ExprId;
-use crate::Span;
+use qsl_foundation::Span;
 
 pub use work::{Exhaustion, Limits as TypeLimits, Usage as TypeUsage};
 

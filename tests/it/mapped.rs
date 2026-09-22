@@ -5,6 +5,8 @@
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::source_map::{Layout, Segment, SourceMap};
+use qsl_foundation::{Code, Phase, Source, SourceIdentity, Span};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::ClauseBinding;
 use quire_spec_language::mapped::{compile, CompileCause, CompileLimits};
@@ -12,8 +14,6 @@ use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ValidationLimits, ValueId, ValueNode,
 };
-use quire_spec_language::source_map::{Layout, Segment, SourceMap};
-use quire_spec_language::{Code, Phase, Source, SourceIdentity, Span};
 
 fn binding() -> ClauseBinding {
     ClauseBinding {

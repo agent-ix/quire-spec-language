@@ -12,7 +12,7 @@ use crate::runtime::{
     EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
     RuntimeReference, ValidationDiagnostic, ValidationStatus,
 };
-use crate::{ByteDigest, Diagnostic};
+use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_ir as ir;
 use serde_json::Value;
 

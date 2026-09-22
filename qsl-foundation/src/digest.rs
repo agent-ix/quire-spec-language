@@ -15,18 +15,19 @@ impl ByteDigest {
         Self(Sha256::digest(bytes).into())
     }
 
-    /// The raw 32-byte digest. `pub(crate)`: outside this module, the
-    /// `sha256:`-prefixed [`fmt::Display`] form is `ByteDigest`'s public
-    /// spelling; this is an internal accessor for callers, such as
-    /// `replay::identity`'s digest-match checks, that need the raw bytes
-    /// rather than the prefixed text.
-    pub(crate) fn as_bytes(&self) -> [u8; 32] {
+    /// The raw 32-byte digest. The `sha256:`-prefixed [`fmt::Display`] form
+    /// is `ByteDigest`'s usual public spelling; this accessor is for callers,
+    /// such as `replay::identity`'s digest-match checks, that need the raw
+    /// bytes rather than the prefixed text.
+    pub fn as_bytes(&self) -> [u8; 32] {
         self.0
     }
 
-    // Native input fields declare the algorithm through their enclosing format.
-    // Other digest domains retain the algorithm-prefixed FromStr contract.
-    pub(crate) fn from_hex(hex: &str) -> Result<Self, InvalidDigest> {
+    /// Parse exactly 64 lowercase hexadecimal digits with no `sha256:`
+    /// prefix. Native input fields declare the algorithm through their
+    /// enclosing format; other digest domains retain the
+    /// algorithm-prefixed [`FromStr`] contract.
+    pub fn from_hex(hex: &str) -> Result<Self, InvalidDigest> {
         if hex.len() != 64
             || !hex
                 .bytes()
@@ -239,7 +240,7 @@ impl DigestDomain {
     /// make every entry under it fail the raw-bytes check with a spurious
     /// `byte-digest-mismatch`, naming a staleness that does not exist for a
     /// domain the entry was never eligible to declare in the first place.
-    pub(crate) fn is_raw_byte_addressed(&self) -> bool {
+    pub fn is_raw_byte_addressed(&self) -> bool {
         matches!(
             self,
             Self::SourceBytesV1
@@ -422,7 +423,7 @@ impl InvalidDigestRecord {
     /// caller rendering a catalog cause for this refusal must not spell a
     /// malformed-encoding case as `digest-domain-mismatch`: the domain named
     /// no problem at all in that case.
-    pub(crate) fn is_domain_mismatch(&self) -> bool {
+    pub fn is_domain_mismatch(&self) -> bool {
         matches!(self, Self::AbsentDomain | Self::UnknownDomain(_))
     }
 }

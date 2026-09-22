@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Expression-grammar parsing into the native syntax tree.
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, SourceIdentity, Span};
 use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
-use quire_spec_language::{format::format, parse, Code, Limits, ParsedUnit, SourceIdentity, Span};
+use quire_spec_language::{format::format, parse, Limits, ParsedUnit};
 
 fn document(expression: &str) -> String {
     format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
 }
-fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<quire_spec_language::Diagnostic>> {
+fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<qsl_foundation::Diagnostic>> {
     parse(
         SourceIdentity {
             identity: "test:source".into(),
@@ -389,7 +390,7 @@ fn syntax_kinds(unit: &ParsedUnit) -> Vec<E> {
         .iter()
         .map(|expression| {
             let mut kind = expression.kind.clone();
-            let reset = |value: &mut quire_spec_language::Spanned<String>| {
+            let reset = |value: &mut qsl_foundation::Spanned<String>| {
                 value.span = Span { start: 0, end: 0 }
             };
             match &mut kind {
@@ -419,7 +420,7 @@ fn syntax_kinds(unit: &ParsedUnit) -> Vec<E> {
 fn every_import_and_name_reference_keeps_its_exact_token_locus() {
     let text = document("let object = self in forall(item in object.items: item.color = M::Color::Red and reaches(item, object, parent))");
     let u = read(text.as_bytes(), Limits::default()).unwrap();
-    let check = |name: &quire_spec_language::Spanned<String>| {
+    let check = |name: &qsl_foundation::Spanned<String>| {
         assert_eq!(u.source().slice(name.span), Some(name.value.as_str()));
     };
     let import = &u.imports()[0];

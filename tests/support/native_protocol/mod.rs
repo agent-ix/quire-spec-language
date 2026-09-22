@@ -5,6 +5,7 @@ use crate::support::composed_types as composed_inputs;
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::{ByteDigest, Source};
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{self, proofs, TypeLimits};
 use quire_spec_language::checking::{CheckBindings, ClauseBinding};
@@ -13,7 +14,6 @@ use quire_spec_language::linking::composed::binding_work::Limits as BindingLimit
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::protocol_artifact::{self as artifact, native, v2, v3, wire as w};
-use quire_spec_language::{ByteDigest, Source};
 
 pub struct Unit<'a> {
     pub name: &'a str,

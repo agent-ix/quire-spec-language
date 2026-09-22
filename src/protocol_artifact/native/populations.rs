@@ -10,7 +10,7 @@ use crate::checking::{composed::ObservationOrigin, Catalog, NativeType};
 use crate::linking::composed::scopes::{Anchor, BinderKind};
 use crate::native_model::{NativeModel, ObjectRole};
 use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid};
-use crate::Span;
+use qsl_foundation::Span;
 
 use super::context::Declaration;
 

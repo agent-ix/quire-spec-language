@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{ByteDigest, Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::binding_work::{
     Dimension, Limits as BindingLimits, Work, ACCOUNTING_VERSION,
 };
@@ -14,7 +15,7 @@ use quire_spec_language::linking::composed::definitions::{
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
-use quire_spec_language::{ByteDigest, Limits, Source, SourceIdentity, Span};
+use quire_spec_language::Limits;
 
 fn definitions() -> Vec<Artifact<'static>> {
     R::all()

@@ -15,7 +15,7 @@
 //!   *checked* domain sibling (`quire_exact::Location`) exists.
 //!   `OccurrenceKey` reuses the kernel's own `Role`/`Origin` pair for its
 //!   role/ordinal half, since that part carries no checked-only
-//!   restriction; its node half is `crate::digest::WireNodeId` (O-04,
+//!   restriction; its node half is `qsl_foundation::digest::WireNodeId` (O-04,
 //!   relocated there by QSL-158 S-3a per ADR-011 `:588`'s `F` foundation
 //!   layer placement -- imported directly from `digest` below, not
 //!   re-exported back out under this module's own path, so `replay`'s own
@@ -32,8 +32,8 @@ use std::fmt;
 
 use quire_exact::Origin;
 
-use crate::digest::{DigestRecord, WireNodeId};
 use crate::value::Identifier;
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
 
 /// ADR-013 O-07: an occurrence key -- `(node id, role, ordinal)` -- keeping
 /// two source occurrences of a structurally identical node apart. Reuses
@@ -69,7 +69,7 @@ impl OccurrenceKey {
 /// arrow 5), so this type only wraps and compares it, performing no hashing
 /// and holding no preimage knowledge -- the same shape as
 /// `quire_exact`'s QC-15 opaque identities. Its digest domain is not in the
-/// closed FR-201 set (QC-4), so it is not a `crate::digest::DigestRecord`.
+/// closed FR-201 set (QC-4), so it is not a `qsl_foundation::digest::DigestRecord`.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObligationIdentity([u8; 32]);
 

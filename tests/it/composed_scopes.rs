@@ -4,6 +4,7 @@
 use crate::support::native_rule_model;
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Source, SourceIdentity};
 use quire_spec_language::linking::composed::binding_work::{
     Dimension, Limits as BindingLimits, Work,
 };
@@ -15,7 +16,7 @@ use quire_spec_language::linking::composed::scopes::{
 use quire_spec_language::linking::composed::{
     admit_namespace, DeclarationId, ExpectedSource, SourceInventory, SyntaxNamespace, WorkLimits,
 };
-use quire_spec_language::{Limits, Source, SourceIdentity};
+use quire_spec_language::Limits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n";
 fn program(body: &str) -> String {

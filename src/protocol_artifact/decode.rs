@@ -114,7 +114,7 @@ pub(super) fn bounded<T: DeserializeOwned>(bytes: &[u8], work: &mut Work) -> Res
     // Every JSON number in this wire is a bounded structural index. Keep that
     // domain stable even when another dependency enables serde_json's additive
     // arbitrary-precision feature for an unrelated producer format.
-    if !crate::json_number::all(bytes, |number| {
+    if !qsl_foundation::json_number::all(bytes, |number| {
         number.parse::<u64>().is_ok_and(|value| value <= 1_048_576)
     }) {
         return Err(Error::Invalid(Invalid::StructuralInteger));

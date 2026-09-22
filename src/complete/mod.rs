@@ -37,7 +37,7 @@ pub use package::{
 pub use package::{CapabilityId, PackageError, ProfileCatalog, SourceDigest};
 
 pub use crate::lexer::Limits;
-use crate::{Source, SourceIdentity};
+use qsl_foundation::{Source, SourceIdentity};
 
 /// A version-bound source artifact and its lossless parse evidence.
 #[derive(Clone, Debug)]
@@ -117,7 +117,7 @@ impl ParsedSource {
 /// ```compile_fail
 /// use std::collections::BTreeSet;
 /// use quire_spec_language::complete::{self, Limits};
-/// use quire_spec_language::SourceIdentity;
+/// use qsl_foundation::SourceIdentity;
 /// let installed_backends = BTreeSet::from(["solver:x"]);
 /// let _ = complete::parse(
 ///     SourceIdentity { identity: "doc".into(), revision: "1".into() },
@@ -170,7 +170,7 @@ pub fn parse_with_catalog(
                 &source,
                 code,
                 cause,
-                crate::Phase::Profile,
+                qsl_foundation::Phase::Profile,
                 identity_span.start,
                 identity_span.end,
                 message,

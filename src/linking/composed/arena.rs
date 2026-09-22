@@ -2,7 +2,7 @@
 //! FR-036: bounded lookup of a declaration's contiguous parser-arena region.
 
 use super::binding_work::{Dimension, Exhaustion, Work};
-use crate::Span;
+use qsl_foundation::Span;
 
 /// Parser arenas are postorder within each source-ordered declaration (the same
 /// invariant used by dependencies::declaration_at). Nodes inside a declaration
@@ -29,8 +29,9 @@ mod tests {
     use super::*;
     use crate::linking::composed::binding_work::Limits as BindingLimits;
     use crate::syntax::composed::NativeUnit;
-    use crate::{parse_native, Limits, SourceIdentity};
+    use crate::{parse_native, Limits};
     use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
 
     fn assert_regions<T>(nodes: &[T], owners: &[Span], span: impl Fn(&T) -> Span) {
         for node in nodes {

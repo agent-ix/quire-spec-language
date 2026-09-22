@@ -5,6 +5,7 @@
 use crate::support::composed_types as setup;
 
 use ix_trace_rs::trace;
+use qsl_foundation::Source;
 use quire_spec_language::checking::composed::{
     self, CauseKind, ObligationKind, TypeDisposition, TypeLimits,
 };
@@ -13,7 +14,6 @@ use quire_spec_language::linking::composed::binding::Disposition as BindingDispo
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::Source;
 
 fn ecosystem(model: &NativeModel, predicate: &str) -> Vec<Source> {
     vec![

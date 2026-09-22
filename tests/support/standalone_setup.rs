@@ -198,7 +198,7 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<V
     // This generator selects the first clause using the real syntax tree.
     // The ordinary multi-clause fixture remains intact for the other commands.
     let unit = quire_spec_language::parse(
-        quire_spec_language::SourceIdentity {
+        qsl_foundation::SourceIdentity {
             identity: "test:fixture-selection".into(),
             revision: "1".into(),
         },
@@ -223,7 +223,7 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<V
         "document":selected["document"],"formal_revision":selected["formal_revision"]
     }});
     program["source"] = json!({"file":"rules.md","identity":"ix://example/runtime-rules/spec",
-        "revision":"authored:7","digest":quire_spec_language::ByteDigest::of(text.as_bytes()).to_string(),
+        "revision":"authored:7","digest":qsl_foundation::ByteDigest::of(text.as_bytes()).to_string(),
         "document":"AuthoredRules","formal_revision":7});
     std::fs::write(directory.join("rules.md"), text)?;
     std::fs::write(

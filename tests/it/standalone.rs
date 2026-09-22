@@ -4,7 +4,7 @@
 use crate::support::standalone_setup as setup;
 
 use ix_trace_rs::trace;
-use quire_spec_language::ByteDigest;
+use qsl_foundation::ByteDigest;
 use serde_json::{json, Value};
 use std::{path::Path, process::Command};
 
@@ -33,7 +33,7 @@ fn invoke(directory: &Path) -> (i32, Value, bool) {
     );
     if let Some(code) = value.get("code") {
         assert!(
-            quire_spec_language::Code::from_code(code.as_str().unwrap()).is_some(),
+            qsl_foundation::Code::from_code(code.as_str().unwrap()).is_some(),
             "uncatalogued command code: {code}"
         );
     }
@@ -573,9 +573,9 @@ fn bounded_intake_and_runtime_stops_allow_fresh_default_execution() {
 #[test]
 #[trace("TC-104", "FR-026-AC-3", "FR-026-AC-4")]
 fn typed_package_failure_retains_incomplete_classification() {
+    use qsl_foundation::Code;
     use quire_spec_language::command::{RunCause, RunError};
     use quire_spec_language::package::{PackageError, PackageStage, PackageUsage};
-    use quire_spec_language::Code;
     for (code, expected, status) in [
         (Code::Cancelled, 22, "incomplete"),
         (Code::InvalidPackage, 20, "refused"),

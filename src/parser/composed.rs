@@ -2,8 +2,8 @@
 //! Composed productions on the existing token cursor and value Pratt parser.
 use super::{c, Parser, K};
 use crate::syntax::{ClauseKind, ExprId, ModelImport, LANGUAGE};
-use crate::{Code, Diagnostic, Phase, Span, Spanned};
 use c::*;
+use qsl_foundation::{Code, Diagnostic, Phase, Span, Spanned};
 
 mod protocol;
 mod temporal;

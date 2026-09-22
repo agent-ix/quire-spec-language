@@ -2,15 +2,13 @@
 //! TC-113: independent grammar scenarios through the public edition-selected API.
 
 use ix_trace_rs::trace;
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span};
 use quire_spec_language::syntax::composed::{
     Activation, ComposedUnit, ControlKind, DeclarationKind, EventKind, NativeUnit, ParameterType,
     ProductOp, ProtocolRequirement, QueryOp, TemporalKind, TemporalOp, ValueKind,
 };
 use quire_spec_language::syntax::{BinaryOp, ExprId, ExprKind};
-use quire_spec_language::{
-    format::format, parse, parse_native, parse_native_source, Code, Diagnostic, Limits, Phase,
-    Source, SourceIdentity, Span,
-};
+use quire_spec_language::{format::format, parse, parse_native, parse_native_source, Limits};
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";

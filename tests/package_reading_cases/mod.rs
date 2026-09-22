@@ -2,11 +2,12 @@
 //! Closed wire mutations and independent authority controls.
 
 use super::*;
+use qsl_foundation::SourceIdentity;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{check, CheckBindings, CheckLimits, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::package::PackageCause;
-use quire_spec_language::{link_native, parse, Limits, LinkLimits, SourceIdentity};
+use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 use serde_json::{json, Value};
 
 mod authority;
