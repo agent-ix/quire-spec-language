@@ -4,6 +4,7 @@
 //! `check` receives.
 
 use super::outcome::CheckOutcome;
+use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Meter;
 
 /// A diagnostic a family's `check` records against the scope it was raised
@@ -337,8 +338,10 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// Evaluate `checked` under `env` and `meter`. ADR-012 §2 reserves this
     /// hook alone for returning a meter-budget `Incomplete` outcome (`check`
     /// never does, FR-062-AC-5); [`EvaluateFailure::Incomplete`] is that
-    /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported --
-    /// `EvaluateRefusal`'s own doc explains why #214 could not add it).
+    /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported).
+    /// FR-090-AC-3 (ADR-013 T-4) is the other failure shape this hook
+    /// returns: a broken S6a invariant, [`EvaluateFailure::Fault`], never a
+    /// `FamilyRefusal` or a kernel-shaped refusal.
     fn evaluate<'a>(
         checked: &Self::Key,
         env: &mut Self::Env<'a>,
@@ -346,89 +349,25 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     ) -> Result<Self::Observed, EvaluateFailure>;
 }
 
-/// `evaluate`'s own refusal shape: constructed only from checked input --
-/// never by reading a CST, a token or a display string (FR-062-AC-6 is
-/// about what `evaluate` reads, not what a refusal's own message renders
-/// as; each variant's payload is a rendered failure message, not something
-/// read back in as input).
+/// `evaluate`'s full failure shape: the shared kernel meter's own
+/// `Incomplete` (QSL-153, ADR-012 §2's "a refusal... or `Incomplete`, a
+/// meter-budget outcome", FR-062-AC-5), or an S6a invariant break
+/// (FR-090-AC-3/AC-10, ADR-013 T-4).
 ///
-/// **Two distinct variants, not one `Refused(String)` (PR #262 review,
-/// finding F3, this round).** An earlier version had exactly one
-/// `Refused(String)` variant standing for two different conditions --
-/// `UnknownIdentity` below (a public "this identity is not in this
-/// package" input error) and `EnvironmentAlreadyConsumed` (a purely
-/// internal invariant: this crate's own code called `evaluate` twice on one
-/// `EvaluationEnv`). The one caller mapping this into a public
-/// `InputRefusal` (`value::expression::mod.rs`'s `CheckedPackage::call`)
-/// matched `Refused` once and turned *both* into `InputRefusal::
-/// UnknownFunction`, so the internal-invariant message ("evaluate called
-/// more than once...") could have surfaced to a caller asking a perfectly
-/// ordinary "does this function exist" question. The variant set is the
-/// API; splitting it lets that one call site treat the two conditions
-/// differently, which it now does.
-///
-/// **`UnknownIdentity`'s one call site is not reachable today (PR #262
-/// review, an earlier round's finding F8, carried over unchanged by the
-/// split above).** `ValueFunctionFamily::evaluate` constructs it only when
-/// `env.package.function_by_identity(*checked)` finds nothing, but
-/// `CheckedPackage::call` -- `EvaluationEnv`'s one real (non-test)
-/// constructor -- always passes an identity it just read out of the same
-/// `self.functions` list `function_by_identity` searches, so that lookup
-/// cannot fail through `call()`. Unlike the deleted `StageFailure::Fault`
-/// self-comparison, this is not a tautology (`function_by_identity`
-/// genuinely does an `Option`-returning search, not a compile-time-known
-/// constant), and removing the `Result` would force `evaluate` to panic on
-/// a lookup miss instead -- worse than an unreached refusal path, not
-/// better, given #262's own ruling that a structured outcome undone by a
-/// panic at its one call site is the wrong trade. `UnknownIdentity`
-/// therefore stays, kept honest about being unreached by any caller today
-/// rather than presented as exercised: #243 (the layer-6 `replay` facade
-/// widening) resolves `checked` from a bare identity with no prior name
-/// lookup, and is the named, tracked owner of the change that would
-/// genuinely trigger this path -- not a guess at whoever comes first.
-///
-/// **`EnvironmentAlreadyConsumed` is also unreached through `call()`**, for
-/// the opposite reason: `call()` always builds a *fresh* `EvaluationEnv`
-/// with `Some(arguments)` and calls `evaluate` exactly once, so its own
-/// construction rules this condition out. It stays a typed `Result` variant
-/// rather than an `unwrap`/`expect` inside `evaluate` itself, because
-/// `evaluate` is reachable from test code that deliberately reuses one
-/// `EvaluationEnv` across two calls (`value::expression::family`'s
-/// `evaluate_refuses_a_second_call_on_the_same_env`) -- panicking there
-/// would just move the "surfaces as a typed refusal, not a wrong silent
-/// answer" property this variant exists for out of `evaluate` and into a
-/// panic the test would have to catch instead.
-///
-/// **No `Incomplete` variant here (QSL-153).** ADR-012 §2 reserves
-/// `evaluate` as the one hook allowed to return the kernel meter's
-/// `Incomplete` outcome; `EvaluateFailure` (below), not this type, carries
-/// it -- `EvaluateRefusal` stays exactly the two checked-input-only
-/// refusals it always was, both constructed from `checked`/`env` alone,
-/// never from a meter's charge result. `quire_exact::Meter::charge`/
-/// `charge_plan` are `pub` (QSL-166), which is what makes
-/// `EvaluateFailure::Incomplete` constructible for real.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum EvaluateRefusal {
-    /// No checked function is admitted for `identity`.
-    #[error("no checked function for identity {identity}")]
-    UnknownIdentity {
-        /// The identity `evaluate` could not resolve.
-        identity: quire_exact::NodeKey,
-    },
-    /// `evaluate` was called a second time on an `EvaluationEnv` whose
-    /// `arguments` an earlier call already consumed via `Option::take`.
-    #[error(
-        "evaluate called more than once on the same EvaluationEnv \
-         (arguments already consumed by an earlier call)"
-    )]
-    EnvironmentAlreadyConsumed,
-}
-
-/// `evaluate`'s full failure shape (QSL-153): a typed refusal built only
-/// from checked input, or the shared kernel meter's own `Incomplete` --
-/// distinct types, per ADR-012 §2's own split ("a refusal... or `Incomplete`,
-/// a meter-budget outcome", FR-062-AC-5), not two constructors folded into
-/// one `Refused`/`String` shape.
+/// **No `Refused` variant.** An earlier version also carried
+/// `Refused(EvaluateRefusal)`, with two variants -- `UnknownIdentity` (no
+/// checked function admitted for the identity `evaluate` was asked to run)
+/// and `EnvironmentAlreadyConsumed` (this crate's own code called
+/// `evaluate` twice on one `EvaluationEnv`) -- both constructed only from
+/// `checked`/`env`, never from a display string. FR-090-AC-3 rules that
+/// both conditions are broken S6a invariants, not caller-input refusals:
+/// `ValueFunctionFamily::evaluate` (`value::expression::family.rs`)
+/// constructs `Fault(InternalFault::new("S6a", ..))` directly for each,
+/// with its own stable invariant identifier, so `EvaluateRefusal` had no
+/// variant and no constructor left and was deleted along with it.
+/// `CheckedPackage::call`'s own `map_evaluate_failure` adapter
+/// (`value::expression::mod.rs`) now forwards `Fault` unchanged into
+/// `CallFailure::Fault` rather than re-deriving it from a refusal.
 ///
 /// **Real producer, not always reachable through today's one production
 /// caller.** `ValueFunctionFamily::evaluate` (`crate::check::family`'s
@@ -442,13 +381,28 @@ pub(crate) enum EvaluateRefusal {
 /// had before a caller-configurable knob existed for it. The mechanism is
 /// exercised directly, against a deliberately tight meter, by
 /// `src/value/expression/family.rs`'s `family_contract_tests` (FR-062-AC-5).
+/// `call` also never reaches either `Fault` case -- it always resolves the
+/// identity from this same package and builds a fresh `EvaluationEnv` --
+/// so both are exercised directly against `evaluate`, bypassing `call`,
+/// by `family.rs`'s `evaluate_faults_on_a_second_call_on_the_same_env` and
+/// `value::expression::mod.rs`'s `s6a_invariant_breaks_are_internal_faults_
+/// not_panics` (FR-090-AC-3, TC-384).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EvaluateFailure {
-    /// A typed refusal built only from checked input.
-    #[error(transparent)]
-    Refused(#[from] EvaluateRefusal),
     /// The shared kernel meter's budget is exhausted (FR-062-AC-5's
     /// `Incomplete` half).
     #[error("evaluate exhausted the kernel meter budget: {0:?}")]
     Incomplete(quire_exact::Incomplete),
+    /// FR-090-AC-3/AC-10 (ADR-013 T-4): a broken S6a invariant -- never a
+    /// `FamilyRefusal`/kernel `Refused`. `Value`'s own `evaluate` hook
+    /// (`value::expression::family::ValueFunctionFamily::evaluate`) raises
+    /// this directly for its own two invariants (an unresolved identity, or
+    /// a second call on one `EvaluationEnv`), and forwards it unchanged from
+    /// `Machine::run` (`value::expression::evaluate.rs`), which raises it
+    /// when a checked program's own `Value::Population` argument cannot be
+    /// resolved past the point `CheckedPackage::call`'s own `validate`
+    /// already admitted it -- both internal-only conditions, never a
+    /// caller-input refusal.
+    #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
+    Fault(InternalFault),
 }

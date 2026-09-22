@@ -30,13 +30,13 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckingLimitKind,
-    CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind, DispatchCandidate,
-    DispatchFunctionRole, DispatchOperation, DispatchTable, Expression, FunctionDeclaration,
-    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, QualifiedName, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
+    CheckingLimitKind, CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind,
+    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, Expression,
+    FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration, Location,
+    NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin,
+    Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment, Undefined,
+    UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -538,7 +538,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
         );
     assert_eq!(
         refusal,
-        InputRefusal::UnknownFunction("internal_guard".to_owned())
+        CallFailure::Input(InputRefusal::UnknownFunction("internal_guard".to_owned()))
     );
 }
 

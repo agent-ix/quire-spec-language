@@ -690,9 +690,9 @@ fn malformed_declarations_refuse_at_admission() {
 mod checked {
     use super::*;
     use quire_spec_language::value::{
-        BinaryOperator, BoundViolation, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckingLimits, Expression, FieldInitializer, FunctionDeclaration,
-        InputRefusal, Obligation, PackageDeclarations, Refusal,
+        BinaryOperator, BoundViolation, CallFailure, CheckCause, CheckMode, CheckRefusal,
+        CheckedExpression, CheckedPackage, CheckingLimits, Expression, FieldInitializer,
+        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -901,9 +901,14 @@ mod checked {
                 &mut meter,
             )
             .unwrap_err();
-        assert_eq!(refused, InputRefusal::WrongValueKind { parameter: 0 });
-        assert_eq!(refused.code().as_str(), "invalid_runtime_input");
-        assert_eq!(refused.cause(), "wrong-value-kind");
+        match refused {
+            CallFailure::Input(refused) => {
+                assert_eq!(refused, InputRefusal::WrongValueKind { parameter: 0 });
+                assert_eq!(refused.code().as_str(), "invalid_runtime_input");
+                assert_eq!(refused.cause(), "wrong-value-kind");
+            }
+            other => panic!("expected CallFailure::Input(_), got {other:?}"),
+        }
         assert!(meter.admitted_charges().is_empty());
     }
 

@@ -37,12 +37,12 @@ use quire_spec_language::model::population::{
     PopulationMember,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-    CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape, DeclarationCause,
-    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, InputRefusal, NodeKey,
-    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
-    PackageDeclarations, Presence, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType, WrongSnapshotCause,
+    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
+    CheckedPackage, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
+    DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause,
+    InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, QualifiedName, Refusal,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -2639,8 +2639,12 @@ fn tc_294_unresolved_population_id_refuses_typed() {
         &mut meter,
     );
     match result {
-        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
-        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2671,8 +2675,12 @@ fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
         &mut meter,
     );
     match result {
-        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
-        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2744,9 +2752,12 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
         &mut meter_6,
     );
     match result_6 {
-        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
         other => panic!(
-            "expected Err(InputRefusal::WrongValueKind) under a mismatched Population<6>, got {other:?}"
+            "expected Err(CallFailure::Input(InputRefusal::WrongValueKind)) under a mismatched \
+             Population<6>, got {other:?}"
         ),
     }
 }
@@ -2801,8 +2812,12 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
         &mut meter,
     );
     match result {
-        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
-        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
 }
 
@@ -2841,7 +2856,102 @@ fn tc_294_lookup_refuses_an_unresolved_population_id() {
         &mut meter,
     );
     match result {
-        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
-        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
     }
+}
+
+/// TC-391 (FR-090-AC-10): `CheckedPackage::call` -- not only `evaluate`,
+/// which TC-294 already covers above -- refuses a `Value::Population`
+/// argument whose id names no recorded binding as `Err(CallFailure::
+/// Input(_))`, before S6a runs and before any charge. `F`'s own declared
+/// parameter is `p: Population<M::A>[3]` ([`package_with_function`]).
+#[test]
+#[trace("TC-391", "FR-090-AC-10")]
+fn tc_391_call_refuses_an_unresolved_population_id_at_admission() {
+    let scenario = scenario();
+    let package = package_with_function(&scenario);
+    let unresolved_id = scenario.binding.population_id();
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+
+    let result = package.call(
+        &QualifiedName::unqualified("F").unwrap(),
+        vec![Value::Population(unresolved_id)],
+        &ObjectEnvironment::default(),
+        &mut meter,
+    );
+    match result {
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
+    }
+    assert!(
+        meter.admitted_charges().is_empty(),
+        "admission refuses before any charge"
+    );
+}
+
+/// TC-391 (FR-090-AC-10): the companion admission refusal, a resolved
+/// binding whose own declared maximum (2) differs from `F`'s declared
+/// `Population<3>` -- also `Err(CallFailure::Input(_))` from `call`, before
+/// S6a runs and before any charge.
+#[test]
+#[trace("TC-391", "FR-090-AC-10")]
+fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(2),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let id = binding.population_id();
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: binding.clone(),
+    };
+    let objects = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let package = package_with_function(&scenario);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+
+    let result = package.call(
+        &QualifiedName::unqualified("F").unwrap(),
+        vec![Value::Population(id)],
+        &objects,
+        &mut meter,
+    );
+    match result {
+        Err(CallFailure::Input(InputRefusal::WrongValueKind { parameter })) => {
+            assert_eq!(parameter, 0)
+        }
+        other => {
+            panic!("expected Err(CallFailure::Input(InputRefusal::WrongValueKind)), got {other:?}")
+        }
+    }
+    assert!(
+        meter.admitted_charges().is_empty(),
+        "admission refuses before any charge"
+    );
 }

@@ -9,7 +9,7 @@ use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{CardinalityBound, CollectionKind, Incomplete, PopulationId};
+use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,41 +172,16 @@ pub enum Refusal {
     /// refused the query outright
     /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
     Model(ModelQueryRefusal),
-    /// FR-089-AC-4: a consumed `Value::Population(population_id)`
-    /// (`evaluate.rs`'s `allInstances`/`lookup` sites) names no binding in
-    /// this evaluation's own recorded correspondence. Distinguished from
-    /// [`Self::PopulationMaximumMismatch`]: a caller cannot otherwise tell
-    /// "not recorded" from "recorded, wrong maximum" apart, though the spec
-    /// names no code for either case to keep separate -- see this variant's
-    /// own `code`/`cause`. Never
-    /// [`Self::CheckedInvariant`]: `check::check::bind_parameters`'s own
-    /// doc records that a `Population<T>[N]` parameter bypasses
-    /// `Typer::check_declared_type`, so the checker never verifies a
-    /// caller-supplied runtime identity actually names a binding of that
-    /// declared shape -- this is real, caller-input-reachable, exactly like
-    /// [`Self::WrongSnapshot`], and names the identity that failed to
-    /// resolve. `CheckedPackage::call`/`evaluate`'s own `validate`
-    /// (`expression/mod.rs`) now performs this identical check at
-    /// argument-admission time over every top-level `Population<T>[N]`
-    /// parameter (the only context FR-153 lets one appear in), so this
-    /// evaluator-level variant is unreachable defence in depth for any
-    /// checked program reached through a public entry point (see
-    /// `Machine::resolve_population`'s own doc). `code()`/`cause()` return
-    /// `None`: no FR-272/`native-diagnostics.md` catalog entry exists yet
-    /// for this new FR-089 refusal (QSL-131 Slice B), matching
-    /// [`Self::CheckedInvariant`]'s own precedent for an internal refusal
-    /// with no wire spelling.
-    UnresolvedPopulation(PopulationId),
-    /// FR-089-AC-5: a consumed `Value::Population(population_id)` resolves
-    /// to a recorded binding, but that binding's own declared maximum
-    /// differs from the parameter's checked `Population<T>[maximum]`
-    /// maximum. Split from [`Self::UnresolvedPopulation`] so a caller can
-    /// distinguish "not recorded" from "recorded, wrong maximum"; see that
-    /// variant's own doc for why this is otherwise identical (never
-    /// [`Self::CheckedInvariant`], unreachable defence in depth once
-    /// `validate` performs the same check at admission, `code()`/`cause()`
-    /// return `None`).
-    PopulationMaximumMismatch(PopulationId),
+    // FR-089-AC-4/AC-5's `UnresolvedPopulation`/`PopulationMaximumMismatch`
+    // variants are deleted (FR-090-AC-10, ADR-013 T-4): a consumed
+    // `Value::Population(population_id)` that names no recorded binding, or
+    // whose resolved binding's declared maximum differs from the checked
+    // parameter's, is refused at admission (`CallFailure::Input`,
+    // `CheckedPackage::call`/`evaluate`'s own `validate`) before S6a ever
+    // runs; meeting either condition inside S6a (`Machine::
+    // resolve_population`, `expression/evaluate.rs`) is now an
+    // `InternalFault`, never a kernel `Refused` outcome -- so this public
+    // `Refusal` enum has no variant left for either case.
 }
 
 /// The closed code and FR-272 cause tag of an FR-153 population-query
@@ -240,9 +215,7 @@ impl Refusal {
             | Self::IntegerOutOfDomain
             | Self::RationalOutOfDomain
             | Self::IeeeNotExact { .. }
-            | Self::CheckedInvariant
-            | Self::UnresolvedPopulation(_)
-            | Self::PopulationMaximumMismatch(_) => None,
+            | Self::CheckedInvariant => None,
         }
     }
 
@@ -263,9 +236,7 @@ impl Refusal {
             | Self::IeeeNanPayloadNotRepresentable
             | Self::IeeeRationalOutOfDomain
             | Self::ForeignReference
-            | Self::CheckedInvariant
-            | Self::UnresolvedPopulation(_)
-            | Self::PopulationMaximumMismatch(_) => None,
+            | Self::CheckedInvariant => None,
         }
     }
 }
@@ -289,7 +260,16 @@ impl BoundViolation {
     }
 }
 
-/// Internal early-exit carrier converted into [`Outcome`].
+/// Internal early-exit carrier, always converted into an [`Outcome`] by
+/// [`Outcome::from_stop`]. An S6a invariant break (FR-090-AC-3/AC-10,
+/// ADR-013 T-4) is never a `Stop`: this type is shared by roughly two dozen
+/// `value/*.rs` computations that all convert through `from_stop`, so a
+/// fault variant here would be reachable from every one of them with no
+/// compiler-checked guarantee that `Machine::run` intercepts it first (PR
+/// #334 review round 2, finding N1) -- `Machine`'s own crate-private `Halt`
+/// (`value::expression::evaluate.rs`) carries a fault instead, and no
+/// `From<Halt> for Stop`/`Outcome` conversion exists, so a fault is
+/// unrepresentable here by construction, not by convention.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Stop {
     Undefined(Undefined),

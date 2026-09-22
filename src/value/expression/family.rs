@@ -20,6 +20,7 @@
 
 use qsl_attrs::string_edge;
 
+use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::NodeKey;
 
 use crate::check::ValueFunctionFamily;
@@ -295,11 +296,18 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         env: &mut EvaluationEnv<'a>,
         meter: &mut quire_exact::Meter,
     ) -> Result<super::Evaluation, crate::family::EvaluateFailure> {
-        let function = env
-            .package
-            .graph()
-            .function_by_identity(*checked)
-            .ok_or(crate::family::EvaluateRefusal::UnknownIdentity { identity: *checked })?;
+        // FR-090-AC-3 (ADR-013 T-4): `call` always resolves `checked` from
+        // this same package's declarations before calling `evaluate`, so a
+        // lookup miss here means the two lookups disagreed -- a broken S6a
+        // invariant, never a caller-input refusal (`call` supplied nothing
+        // wrong). Names the identifier `map_evaluate_failure`
+        // (`value::expression::mod.rs`) forwards unchanged.
+        let function = env.package.graph().function_by_identity(*checked).ok_or(
+            crate::family::EvaluateFailure::Fault(InternalFault::new(
+                "S6a",
+                "checked-identity-not-resolved-by-package",
+            )),
+        )?;
         meter
             .charge(quire_exact::Charge::new(
                 quire_exact::ChargePoint::FunctionCall,
@@ -313,26 +321,28 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         // rather than the reused-env bug it actually is.
         // `EvaluationEnv`'s one real constructor (`CheckedPackage::call`)
         // always builds a fresh env with `Some(arguments)` and calls
-        // `evaluate` exactly once, so this refusal is unreached today; it
-        // exists so a future second call surfaces as a typed refusal
-        // instead of a wrong, silent answer. Its own distinct variant, not
-        // `UnknownIdentity`'s (PR #262 review, finding F3, this round): the
-        // two are different conditions, and the one caller mapping this
-        // into a public `InputRefusal` (`value::expression::mod.rs`'s
-        // `CheckedPackage::call`) must be able to tell them apart.
+        // `evaluate` exactly once, so this fault is unreached through that
+        // path; it exists so a future second call surfaces as a typed
+        // `Err`, never a wrong, silent answer. FR-090-AC-3: a broken S6a
+        // invariant, its own distinct identifier from the lookup-miss case
+        // above, never a caller-input refusal.
         let arguments = env
             .arguments
             .take()
-            .ok_or(crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed)?;
+            .ok_or(crate::family::EvaluateFailure::Fault(InternalFault::new(
+                "S6a",
+                "evaluation-environment-arguments-already-consumed",
+            )))?;
         let callables = env.package.callables();
-        Ok(super::evaluate::Machine::new(
+        super::evaluate::Machine::new(
             env.package.graph().scope(),
             &callables,
             env.objects,
             env.local_meter,
             env.package.graph().dispatch_tables(),
         )
-        .run(function.body, function.slots, arguments))
+        .run(function.body, function.slots, arguments)
+        .map_err(crate::family::EvaluateFailure::Fault)
     }
 }
 
@@ -378,8 +388,8 @@ mod family_contract_tests {
         SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
-        CheckContext, DiagnosticSink, EvaluateFailure, EvaluateRefusal, FamilyContract,
-        ReferenceEvaluation, ScopeStack, StageLimits,
+        CheckContext, DiagnosticSink, EvaluateFailure, FamilyContract, ReferenceEvaluation,
+        ScopeStack, StageLimits,
     };
     use crate::forms::{Expression, FunctionDeclaration};
     use crate::value::composite::{TypeEnvironment, ValueType};
@@ -391,7 +401,7 @@ mod family_contract_tests {
     // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
     // own `_meter` parameter are both `quire_exact::Meter` since QSL-166
     // (previously two distinct types with the same name in different
-    // crates) -- `evaluate_refuses_a_second_call_on_the_same_env` still
+    // crates) -- `evaluate_faults_on_a_second_call_on_the_same_env` still
     // needs two separate *instances*, one per role.
 
     fn limits() -> StageLimits {
@@ -512,19 +522,23 @@ mod family_contract_tests {
         assert_eq!(diagnostics.entries().len(), 0);
     }
 
-    /// PR #262 review, finding F17 (round 3, item 8): a second `evaluate`
-    /// call on the same `EvaluationEnv` -- whose `arguments` the first call
-    /// already consumed via `.take()` -- refuses with a typed
-    /// `EvaluateRefusal` rather than silently evaluating with zero
-    /// arguments. `EvaluationEnv`'s one real (non-test) constructor
-    /// (`CheckedPackage::call`) never reaches this: it always builds a
-    /// fresh env with `Some(arguments)` and calls `evaluate` exactly once,
-    /// so the guard is unreached through that path. This test bypasses
-    /// that constructor -- the same thing the F17 finding's own fix
-    /// verified by hand and then reverted, leaving the fix itself
-    /// unguarded -- and lands the guard with a real second call.
+    /// PR #262 review, finding F17 (round 3, item 8), amended by FR-090-AC-3
+    /// (TC-384): a second `evaluate` call on the same `EvaluationEnv` --
+    /// whose `arguments` the first call already consumed via `.take()` --
+    /// is a broken S6a invariant, `Err(EvaluateFailure::Fault(_))` naming
+    /// stage `"S6a"`, never a silent zero-argument evaluation and never a
+    /// `FamilyRefusal`/kernel-shaped refusal. `EvaluationEnv`'s one real
+    /// (non-test) constructor (`CheckedPackage::call`) never reaches this:
+    /// it always builds a fresh env with `Some(arguments)` and calls
+    /// `evaluate` exactly once, so the guard is unreached through that
+    /// path. This test bypasses that constructor -- the same thing the F17
+    /// finding's own fix verified by hand and then reverted, leaving the
+    /// fix itself unguarded -- and lands the guard with a real second call,
+    /// asserting the S6a seam's own result directly rather than through
+    /// `CheckedPackage::call`'s `map_evaluate_failure` adapter.
+    #[trace("FR-090-AC-3", "TC-384")]
     #[test]
-    fn evaluate_refuses_a_second_call_on_the_same_env() {
+    fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
             ..PackageDeclarations::default()
@@ -548,12 +562,22 @@ mod family_contract_tests {
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
             .expect("first call, with real arguments still present, evaluates cleanly");
-        let refusal = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-            .expect_err("second call on the same env, arguments already consumed, must refuse");
-        assert_eq!(
-            refusal,
-            EvaluateFailure::Refused(EvaluateRefusal::EnvironmentAlreadyConsumed)
-        );
+        let failure = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+            .expect_err("second call on the same env, arguments already consumed, must fault");
+        match failure {
+            EvaluateFailure::Fault(fault) => {
+                assert_eq!(fault.stage(), "S6a");
+                assert_eq!(
+                    fault.category(),
+                    qsl_foundation::diagnostic::Category::InternalFailure
+                );
+                assert_eq!(
+                    fault.invariant(),
+                    "evaluation-environment-arguments-already-consumed"
+                );
+            }
+            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
+        }
     }
 
     /// FR-062-AC-5's `Incomplete` half (QSL-153): `evaluate` genuinely
@@ -561,7 +585,7 @@ mod family_contract_tests {
     /// `ValueFunctionFamily::evaluate`'s own doc) -- given a meter whose
     /// `work_units` limit is already exhausted, that charge is denied and
     /// `evaluate` returns `EvaluateFailure::Incomplete`, a real
-    /// `quire_exact::Incomplete`, never folded into `EvaluateRefusal`.
+    /// `quire_exact::Incomplete`, never `EvaluateFailure::Fault`.
     /// `check`, run against the same declaration, admits it normally: its
     /// return type (`CheckOutcome`/`StageFailure`) has no `Incomplete`
     /// variant to return in the first place, so the two hooks cannot be

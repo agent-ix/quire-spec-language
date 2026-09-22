@@ -183,8 +183,8 @@ pub use crate::check::{
 pub use expression::CheckedPackage;
 // The evaluation half stays at layer 5, in `value::expression` itself.
 pub use expression::{
-    DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
-    ValueLoss,
+    CallFailure, DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss,
+    QualifiedName, ValueLoss,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
