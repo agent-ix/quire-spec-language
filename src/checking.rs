@@ -29,21 +29,10 @@ type Result<T> = std::result::Result<T, Box<CheckingError>>;
 pub struct CheckingError {
     /// Stable code, native source locus and human-readable explanation.
     pub diagnostic: Box<Diagnostic>,
+    /// Related formal declarations, sorted by identity and source location.
+    pub related: Vec<DeclarationLocation>,
     /// Structured upstream IR proof refusal, when the proof engine rejected it.
     pub upstream: Option<Box<ir::Diagnostic>>,
-}
-
-impl std::ops::Deref for CheckingError {
-    type Target = Diagnostic;
-    fn deref(&self) -> &Diagnostic {
-        &self.diagnostic
-    }
-}
-
-impl std::ops::DerefMut for CheckingError {
-    fn deref_mut(&mut self) -> &mut Diagnostic {
-        &mut self.diagnostic
-    }
 }
 
 impl std::fmt::Display for CheckingError {
@@ -64,6 +53,7 @@ impl From<Box<crate::linking::LinkingError>> for Box<CheckingError> {
     fn from(error: Box<crate::linking::LinkingError>) -> Self {
         Box::new(CheckingError {
             diagnostic: error.diagnostic,
+            related: error.related,
             upstream: error.upstream,
         })
     }
@@ -73,6 +63,7 @@ impl From<Box<crate::formal_source::FormalSourceError>> for Box<CheckingError> {
     fn from(error: Box<crate::formal_source::FormalSourceError>) -> Self {
         Box::new(CheckingError {
             diagnostic: error.diagnostic,
+            related: Vec::new(),
             upstream: error.upstream,
         })
     }
@@ -361,6 +352,7 @@ fn failure(
             span.end,
             message,
         ),
+        related: Vec::new(),
         upstream: None,
     })
 }
