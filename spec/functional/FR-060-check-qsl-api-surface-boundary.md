@@ -129,8 +129,9 @@ limitations (#249 review, MEDIUM-5).
 
 Running the check against QSL's real source tree at any commit SHALL report
 whatever it finds, including a pre-existing violation ADR-013's own text
-already names as known architecture debt (OBS-018,
-`value/model_query.rs:108,123,155`), and any real call site the check finds
+already names as known architecture debt (OBS-018, `value/model_query.rs`'s
+`to_object_reference`, `bridge_lookup_key` and `resolve_target` functions),
+and any real call site the check finds
 that OBS-018's or ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
 make a run pass (#249 review R1). At the time of this requirement, running
@@ -145,7 +146,7 @@ the exact sites and the discrepancy this surfaces.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rule T12-C reports failing at exactly the two OBS-018 sites (`value/model_query.rs:123,155`); rule T12-B reports failing at exactly five real sites -- `value/enumeration.rs:117,162`, `value/unit.rs:198,311` and the one OBS-018 site `value/model_query.rs:108` -- none of which the check excludes, and none of which are the three modules ADR-011 §1's S3 "today" mapping names for the `check` stage; rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rule T12-C reports failing at exactly the two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and `resolve_target` functions); rule T12-B reports failing at exactly five real sites -- `value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and `EnumMemberPreimage::node_key`, `value/unit.rs`'s `DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the one OBS-018 site in `value/model_query.rs`'s `to_object_reference` -- none of which the check excludes, and none of which are the three modules ADR-011 §1's S3 "today" mapping names for the `check` stage; rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
 
 ## Dependencies
 
@@ -170,7 +171,8 @@ per-rule role (`--qsl`/`--cg`) and a `node_key_of(` call pattern added at
 facade does not exist; once it lands, `arch-lint api-surface` needs `--cg
 <checkout>` to scan it -- the Makefile's `CG_CLONE` variable). T12-C is
 QSL-role, live, and fails at exactly the two OBS-018 locations
-(`src/value/model_query.rs:123,155`). T12-D is QSL-role, live, and passes
+(`src/value/model_query.rs`'s `bridge_lookup_key` and `resolve_target`
+functions). T12-D is QSL-role, live, and passes
 with zero call sites: `quire-exact`'s `PopulationId::from_digest` (QSL-131
 Slice B) has no caller outside `model` (tests
 `tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation`
@@ -178,8 +180,10 @@ and `tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violatio
 back its failing and passing paths).
 
 T12-B is QSL-role, live, and fails at exactly five real sites:
-`src/value/enumeration.rs:117,162`, `src/value/unit.rs:198,311` and the one
-OBS-018 site `src/value/model_query.rs:108`. Each is a call to the
+`src/value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and
+`EnumMemberPreimage::node_key`, `src/value/unit.rs`'s
+`DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the one
+OBS-018 site in `src/value/model_query.rs`'s `to_object_reference`. Each is a call to the
 crate-internal helper `node_key_of`, which itself calls `NodeKey::of`
 directly from its own defining module, `src/value/node.rs`; #249 review R1
 exempts that defining module from T12-B's allowed-caller list (a helper

@@ -46,9 +46,12 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
   boundary, not a textual prefix.
 - Step 5: T12-A reports `pending` (the `replay` facade module does not exist
   yet; no `--cg` checkout is given). T12-C reports `failing` at exactly the
-  two OBS-018 sites (`value/model_query.rs:123,155`). T12-B reports `failing`
-  at exactly five real sites: `value/enumeration.rs:117,162`,
-  `value/unit.rs:198,311` and the OBS-018 site `value/model_query.rs:108`
+  two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and
+  `resolve_target` functions). T12-B reports `failing` at exactly five real
+  sites: `value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and
+  `EnumMemberPreimage::node_key`, `value/unit.rs`'s
+  `DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the
+  OBS-018 site in `value/model_query.rs`'s `to_object_reference`
   (#249 review R1: `node_key_of(` was added to T12-B's call patterns, and
   `value::node`, the helper's own defining module, to its allowed callers, so
   the check reports the helper's five real external callers rather than the
