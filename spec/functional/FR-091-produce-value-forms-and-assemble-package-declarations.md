@@ -52,7 +52,7 @@ The requirement carries testable criteria for decisions already taken:
   to recover meaning. FB-13: only `check` calls the kernel `NodeKey`
   constructor.
 - ADR-011 §6.1. Layer 2 (`forms` core < family form builders) depends on
-  "1, F", and the column is an exhaustive allow-list. A family module
+  "1, F, K", and the column is an exhaustive allow-list. A family module
   depends on its layer's core only. The `check` core is layer 3.
 - ADR-012 §1 and §3: `Value` covers scalar and composite values, types,
   expressions and function application. Its parsing forms are literals,
@@ -233,17 +233,18 @@ clamp is independent of it.
 ### S2 layering
 
 The `Value` family form builder is a module under `forms`. ADR-011 §6.1
-allows layer 2 to depend on layer 1 (`qsl-cst`) and F (`qsl-foundation`),
-and on its own layer's `forms` core. The builder depends on no other family
-module and on nothing in layers 3 to 6. No `Value` parsed form, type form
-or `Value`-owned `Expression` variant has a field of type `ValueType` or
-`NodeKey`.
+allows layer 2 to depend on layer 1 (`qsl-cst`), F (`qsl-foundation`) and K
+(`quire-exact`), and on its own layer's `forms` core. The builder depends on
+no other family module and on nothing in layers 3 to 6. No `Value` parsed
+form, type form or `Value`-owned `Expression` variant has a field of type
+`ValueType` or `NodeKey`.
 
-The `forms` core imports `quire_exact` today (`src/forms/syntax.rs`, for the
-`Integer` and `CollectionKind` payloads of `Expression::Integer`,
-`Expression::Rational` and `Expression::Collection`), and a builder that
-constructs those variants inherits that edge. Whether layer 2 may depend on
-K is FR-091-OQ-8.
+`Expression::Integer` and `Expression::Rational` carry `quire_exact::Integer`
+values, and `Expression::Collection` carries a `quire_exact::CollectionKind`.
+The builder constructs those values from the literal and keyword tokens, so
+E3 reads the value and never token text (ADR-011 §3 FB-01). K is the only
+kernel edge the builder has, and it builds kernel values without calling a
+kernel operation (ADR-013 OQ-A).
 
 ### The assembler builds `PackageDeclarations` from parsed forms
 
@@ -342,7 +343,7 @@ O-17). The codes are these existing `qsl-foundation` catalog codes:
 | FR-091-AC-8 | S2 refuses the whole unit with cause `ForeignFamilyConstruct`, naming the construct, its owning family (`StateModel` for `deref(r)` and `allInstances<M::T>(p)`, `ProtocolClause` for `pre(a)`) and its span, for a function body that holds one of those constructs. Open question: FR-091-OQ-1. | Test (TC-396) |
 | FR-091-AC-9 | With S2 nesting-depth bound `L = 8`, S2 builds a function body `not`×7 `a`, whose deepest node is at depth 8. It refuses `not`×8 `a` with a limit refusal that names limit kind nesting depth, bound `8`, and the span of the node at depth 9, and returns no parsed unit. It refuses `not`×20 `a` in the same way. S1 admits all three sources, so each refusal comes from S2. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
-| FR-091-AC-11 | The `Value` family form builder module has `use` edges and inline paths only to the `forms` core, `qsl_cst` and `qsl_foundation`. It has none to another family module or to anything under `crate::check`, `crate::value` or `crate::model`. No field of a `Value` parsed form, of the type form, or of an `Expression` variant in the mapping table has type `ValueType` or `NodeKey`. The dispatch `match`, the expression `match` and the assembler's resolution `match` have no `_` arm. The `quire_exact` edge that the `Integer`, `Rational` and `Collection` payloads bring in is FR-091-OQ-8. | Test (TC-398) |
+| FR-091-AC-11 | The `Value` family form builder module has `use` edges and inline paths only to the `forms` core, `qsl_cst`, `qsl_foundation` and `quire_exact`. It has none to another family module or to anything under `crate::check`, `crate::value` or `crate::model`. No field of a `Value` parsed form, of the type form, or of an `Expression` variant in the mapping table has type `ValueType` or `NodeKey`. The dispatch `match`, the expression `match` and the assembler's resolution `match` have no `_` arm. | Test (TC-398) |
 | FR-091-AC-12 | The assembler returns a `PackageDeclarations` value for the S2 output of source that declares `type Digit = Int[0, 9];`, then `function inc using v(x: Digit): Int[0, 10] pure { x + 1 }`, then `function two using v(): Int[0, 10] pure { inc(1) }`. Its `aliases` is `[("Digit", Int[0..9])]`. Its `functions` are `inc` and then `two`. `inc`'s check-owned resolved signature has parameter type `Int[0..9]` and result type `Int[0..10]`. | Test (TC-399) |
 | FR-091-AC-13 | Calling `two` with no arguments through `CheckedPackage::call`, on the package that `PackageDeclarations::check` admits and links from the AC-12 assembler output, returns a completed outcome with integer value `2`. | Test (TC-399) |
 | FR-091-AC-14 | The assembler returns one refusal holding two unresolved-type-name errors for a unit with `function f using v(x: Missing): Boolean pure { true }` and `function g using v(y: Absent): Boolean pure { true }`. One error names `Missing` with its type form's span, and the other names `Absent` with its type form's span. It returns no `PackageDeclarations`. | Test (TC-400) |
@@ -433,14 +434,10 @@ which AC-2 and AC-11 do not allow. `Expression` nodes carry no span.
   inventing one. No existing `qsl-foundation` code clearly names a cyclic
   type alias. A catalog entry is needed from
   `ix://agent-ix/quire-specification` (ADR-013 O-17).
-- **FR-091-OQ-8: May layer 2 depend on K?** Against: ADR-011 §6.1 gives layer
-  2 "1, F" in an exhaustive allow-list; the crate-map rule limits a layer
-  crate's `[dependencies]` to its "Depends on" cell; and the §7.1 graph gives
-  `qsl-forms` no edge to `quire-exact`. FR-067 states that the `forms` core
-  depends on layer 1 and F only. For: ADR-011 §7.3's QSL-146 row repointed
-  the removed types' consumers, `src/forms/syntax.rs` among them, at
-  `quire-exact`, and `src/forms/mod.rs` calls K "allow-listed". The options
-  are to amend §6.1 and §7.1 to add K to layer 2, or to have S2 carry
-  integer literals and collection kinds as syntax. This is recorded as OQ-A
-  in the QSL-180 kernel-convergence plan. FR-091-AC-11 does not allow the
-  `quire_exact` edge, and names this question for it.
+- **FR-091-OQ-9: Do type-form bounds carry kernel values or spelled text?**
+  A type form carries every declared bound "as spelled", and the ADR-011
+  §2.2 E2 row carries declared bounds and extents "as syntax". Expression
+  literals carry `quire_exact::Integer` values so that E3 never reads token
+  text (ADR-011 §3 FB-01; ADR-013 OQ-A). Resolving a spelled bound at E3
+  reads token text in the same way. FR-091-AC-2 and AC-16 observe bounds as
+  spelled.

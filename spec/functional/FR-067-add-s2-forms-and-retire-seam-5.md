@@ -108,7 +108,7 @@ The `forms` core module and each family's own form builder SHALL together
 be the only producers of a parsed semantic form from a CST (ADR-011 §2.1 E2
 owner: "QSL `forms`; family form builders"); the core alone is not a
 complete producer, and this requirement does not claim otherwise. The
-`forms` core SHALL depend on layer 1 (`cst`) and F only (ADR-011 §6.1).
+`forms` core SHALL depend on layer 1 (`cst`), F and K only (ADR-011 §6.1).
 Given a CST with no error or recovery node, whose root construct's leading
 token has an entry in the dispatch table, the forms stage SHALL return a
 parsed form built from that CST. Given a CST that carries an error or

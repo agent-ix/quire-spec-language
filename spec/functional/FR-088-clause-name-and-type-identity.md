@@ -61,10 +61,16 @@ ADR's summary sentence as if it were itself testable.
   owner O-10); native-v1's use of `ir::SymbolName` (canonical owner O-11);
   `checking::types::NativeType` and native-v1's use of `ir::ValueType`
   (canonical owner O-14).
-- ADR-013 §8 QC-15 (`:848`; the kernel `Value`/`ValueType` component types
+- ADR-013 §8 QC-15 (the kernel `Value`/`ValueType` component types
   this requirement's sum shape depends on, already added to the kernel row
   by S-1/S-2: `VariantId`, an opaque digest newtype with one public
   constructor from a digest, no dependency on `check` or `model`).
+- ADR-013 O-14, T-6, C-30, QC-22 and the OQ-B, OQ-D and OQ-F rulings: an
+  enum variant's `VariantId` is its QSpec FR-141 enum member node key, an
+  enum value carries its `VariantId` and its rank in the FR-141 canonical
+  member list, and the rank is its QSpec FR-144 canonical key; a quantity
+  type's `UnitId` is a two-domain digest record over the QSpec FR-142 unit
+  identities.
 - The layer-3 `check` core module ADR-011 §6.1 places the clause-kind enum
   in (`CheckContext`, family checker trait, shared checked types,
   `FamilyOutcome`, `FamilyResult`, `EvalOutcome`).
@@ -161,7 +167,7 @@ from the checked node by C-26; it is not itself identity-bearing the way
 the checked node id is (ADR-013 O-14: "Equality | normalized (node id) ...
 Semantic (structural) for kernel `ValueType` during evaluation").
 
-### C-26 is total, and a sum keeps both its node id and its variant identities
+### C-26 is total, and a sum keeps its node id and its variant identities
 
 QSL's checker SHALL convert every checked type-node form to the kernel
 `ValueType` with no `_` arm: a source checked type node with no matching
@@ -170,8 +176,30 @@ the conversion SHALL preserve both the node's own id (unchanged, since the
 node id is never re-minted by a conversion) and each variant's `VariantId`
 (computed from the declaring sum and its member, QC-15); the resulting
 kernel sum shape SHALL carry no `NodeKey`, and a sum value produced from it
-SHALL carry its `VariantId`, never a variant index (ADR-013 O-14 "Sum
-types").
+SHALL carry its `VariantId`, never a variant index in its place (ADR-013
+O-14 "Sum types").
+
+### An enum value carries its FR-141 member key and its canonical rank
+
+For an enum, each variant's `VariantId` SHALL be its QSpec FR-141 enum
+member node key, whose preimage names the enum's node key and the case
+(ADR-013 O-14, C-30). The kernel enum shape SHALL carry the FR-141
+canonical member list, and an enum value SHALL carry its `VariantId` and
+its rank, the variant's index in that list. Admission SHALL refuse a value
+whose rank disagrees with its `VariantId`'s index in the shape. Identity and
+equality of an enum value SHALL use its `VariantId` only, and its canonical
+key SHALL be its rank, which orders values as the QSpec FR-144 enumeration
+key row states. C-30 SHALL admit only an enum member node key as a
+`VariantId`.
+
+### A quantity type carries a two-domain UnitId
+
+For a quantity type, C-26 SHALL produce a `UnitId` that is the declared
+unit's QSpec FR-142 node key under the `quire.checked-semantic-node/v1`
+label, and `semantic_value` SHALL produce the `quire.value.compound-unit/v1`
+digest under its own label for a compound unit (ADR-013 T-6, OQ-B). A
+declared unit and a compound unit SHALL never be equal. C-30 SHALL admit
+only a unit node key as a declared-arm `UnitId`.
 
 ## Constraints
 
@@ -197,6 +225,8 @@ types").
 | FR-088-AC-8 | `ValueTypeRef` is exactly the two-member union `{Native(NativeValueType), Package(DeclarationKey)}`; no third variant exists, and no model field type is represented by a bare `NodeKey` or a raw string type name. | Inspection (TC-260) |
 | FR-088-AC-9 | C-26's conversion function is total: for every checked type-node form (`scalar_type`, `composite_type`, `bounded_domain`, and the sum form), a test constructs a checked node of that form and confirms the function returns a kernel `ValueType` with no panic, no `_`-arm fallback, and no lossy substitution; a checked type-node form added without a corresponding match arm fails to compile (`clippy::wildcard_enum_match_arm`, following ADR-011 §5's convention for other exhaustive maps). | Test (TC-252) |
 | FR-088-AC-10 | For the sum form specifically, the source checked node's own id is not re-minted by C-26's conversion (it is the same content-addressed id the node carried before conversion, read from `CheckedGraph`/`CheckedPackage`, not a value the kernel shape carries); C-26's output kernel `ValueType` carries, per variant, a `VariantId` computed from the declaring sum and that member, and the kernel shape carries no `NodeKey` anywhere in its variant representation. A sum value built from this conversion carries its `VariantId`, and an adverse test confirms no code path reads or stores a bare variant index in place of the `VariantId`. | Test (TC-252) |
+| FR-088-AC-11 | For an enum `E` declared with cases `b`, `a`, `c` in that order, each variant's `VariantId` equals the node key over `{version: quire.enum-member-node/v1, declaration_node_id: E's node key, case}`. When `E` is ordered, the variants' ranks are `b` 0, `a` 1, `c` 2, and a set of all three values visits `b`, `a`, `c`. When `E` is unordered, its canonical member list is `a`, `b`, `c`, the ranks are `a` 0, `b` 1, `c` 2, and the set visits `a`, `b`, `c`. A value that pairs `E::a`'s `VariantId` with rank 2 is refused at admission. Renaming the declaration `E` to `F` changes every `VariantId` and changes no rank and no visiting order. C-30 refuses `E`'s own declaration node key as a `VariantId`. | Test (TC-409) |
+| FR-088-AC-12 | For declared units `m` and `km` (a scaled unit of `m`) and the compound unit `m^1`, the three `UnitId`s are pairwise unequal. `m`'s `UnitId` carries `m`'s node key under the `quire.checked-semantic-node/v1` label. The compound `UnitId`s of every entry in QSpec's compound-unit vectors equal the vector digests under the `quire.value.compound-unit/v1` label. C-30 refuses a dimension node key as a declared-arm `UnitId`. | Test (TC-411) |
 
 ## Dependencies
 
@@ -214,6 +244,10 @@ types").
   module.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split).
+  FR-088-AC-11 and AC-12 are QSL-131's, amended into this requirement in
+  place.
+- ADR-013 §8 OQ-B, OQ-D and OQ-F; QSpec FR-141, FR-142 and FR-144
+  (`ix://agent-ix/quire-specification/FR-141`, `FR-142`, `FR-144`).
 
 ## Status
 
@@ -224,4 +258,5 @@ AC-3, AC-4, AC-7, AC-9 and AC-10 are backed by real `check()`-driven tests
 `QualifiedName` half only (TC-251); the "or a bare string" half is
 investigated and documented as a gap, not enforced (see
 `tests/it/name_resolution_confinement.rs`'s own module doc). AC-6 (TC-258)
-and AC-8 (TC-260) remain unimplemented, out of #300's scope.
+and AC-8 (TC-260) remain unimplemented, out of #300's scope. AC-11 (TC-409)
+and AC-12 (TC-411) are not implemented. Remaining work: QSL-131.
