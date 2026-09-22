@@ -136,19 +136,37 @@ pub struct EmittedPackage {
 
 impl EmittedPackage {
     /// The v2 emitter's sole constructor (ADR-011 T-8, M-4, QSL-6/#242,
-    /// slice S1a). `package_id` is minted here, from `identity_preimage`'s
-    /// own RFC 8785 JCS bytes (`PackageId::of_preimage`, ADR-013 O-02) --
-    /// there is no parameter through which a caller could instead supply an
-    /// arbitrary `package_id`. `pub(super)`: reachable from anywhere in
-    /// `package` (in particular, `package::emit`), never from outside it.
+    /// slice S1a). `identity_preimage` is IR's own typed
+    /// `CheckedPackageIdentityPreimageV2`, JCS-encoded inside this
+    /// constructor before `package_id` is minted from those bytes
+    /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
+    /// through which a caller could instead supply arbitrary preimage
+    /// bytes, let alone an arbitrary `package_id` directly. `pub(super)`:
+    /// reachable from anywhere in `package` (in particular,
+    /// `package::emit`), never from outside it.
     #[allow(
         dead_code,
         reason = "no caller yet: package::emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
     )]
-    pub(super) fn new(identity_preimage: &[u8], bytes: Vec<u8>) -> Self {
+    pub(super) fn new(
+        identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
+        bytes: Vec<u8>,
+    ) -> Self {
+        // Matches IR's own `digest_json` procedure: re-serialize through
+        // `serde_json::Value` (whose `Map` sorts keys lexicographically
+        // without this crate's `preserve_order` feature) before hashing,
+        // rather than hashing the typed struct's own `Serialize` output
+        // directly, which would emit fields in declaration order, not RFC
+        // 8785 order.
+        let preimage_value = serde_json::to_value(identity_preimage).expect(
+            "CheckedPackageIdentityPreimageV2 is composed only of owned strings and vecs, \
+             which always serialize",
+        );
+        let preimage_bytes = serde_json::to_vec(&preimage_value)
+            .expect("a serde_json::Value re-serializes without error");
         Self {
             bytes,
-            package_id: PackageId::of_preimage(identity_preimage),
+            package_id: PackageId::of_preimage(&preimage_bytes),
         }
     }
 

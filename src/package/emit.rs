@@ -20,28 +20,29 @@
 //! module builds the identity preimage that a later slice (S1b) needs in
 //! order to mint `package_id` and assemble the full envelope
 //! ([`EmittedPackage::new`], ADR-013 O-02's sole constructor, already
-//! exists and takes no `package_id` parameter -- there is simply no
-//! caller for it yet). Per the published schema's `IdentityPreimage`
-//! definition (`agent-ix/quire-specification`,
-//! `proposals/checked-package-v2/schema.json`), the preimage's members
-//! are not uniformly shaped:
+//! exists and takes IR's own typed preimage -- there is simply no caller
+//! for it yet). [`quire_contract_ir::CheckedPackageIdentityPreimageV2`]'s
+//! own field types ([`quire_contract_ir::CheckedSelection`],
+//! [`quire_contract_ir::CheckedArtifactRef`],
+//! [`quire_contract_ir::CheckedDomainPackageRef`]) define every member's
+//! exact shape; this doc does not restate it in prose, so the compiler,
+//! not this comment, is what stays honest as IR's schema evolves. Whether
+//! the schema's `dependency_selections` shape (a bare `CheckedSelection`,
+//! the same shape `profile_selections` uses) is the right one for
+//! FR-322-AC-26 is an open question this slice does not settle -- nothing
+//! here should be read as resolving it.
 //!
-//! - `profile_selections` and `dependency_selections` are
-//!   `Selection[]` -- each entry a closed `role` plus a `DefinitionRef`
-//!   (`quire.definition.bytes/v1`-domain digest of an actual definition
-//!   artifact).
-//! - `definition_selections` is a bare `DefinitionRef[]` (no `role`
-//!   wrapper).
-//! - `model_selections` is a bare `ModelRef[]` (`sha256-jcs`-domain
-//!   digest of a domain package, not a definition).
-//! - `required_features` is a plain non-empty-string array, no artifact
-//!   reference at all.
-//!
-//! No part of this crate tracks any of these five yet, so all five are
-//! correctly, honestly empty ([`identity_preimage`]). `identity_projection`
-//! is likewise empty: its node bodies (ADR-011 §6.1's emission arm per
-//! family, matching `check::ir::NodeKind`) are QSL-6 slice S1b
-//! ([`identity_projection`]).
+//! No part of this crate tracks `profile_selections`,
+//! `definition_selections`, `model_selections`, `required_features` or
+//! `dependency_selections` yet, so all five are correctly, honestly empty
+//! ([`identity_preimage`]). `identity_projection` is also empty for a
+//! package with no declaration, but refuses
+//! ([`EmitRefusal::ProjectionNotYetImplemented`]) for one with any: its
+//! node bodies (ADR-011 §6.1's emission arm per family, matching
+//! `check::ir::NodeKind`) are QSL-6 slice S1b
+//! ([`identity_projection`]), and an empty projection for a non-empty
+//! graph would mint a `package_id` that ignores the package's content
+//! (prior review finding 3).
 //!
 //! `edition` is different in kind from the five above: it is FR-322's one
 //! *non-list* lock-selection member, and IR's
@@ -73,9 +74,15 @@ use crate::Code;
 
 use super::CheckedPackage;
 
-/// Why the v2 emitter refuses to emit `package`'s bytes. FR-062's
-/// packaging rule: a refusal yields no v2 bytes for the whole package,
-/// never a partial one.
+/// Why the v2 emitter refuses to emit `package`'s bytes. FR-062-AC-9's
+/// packaging rule is per item, not per package: a fault partway through
+/// one checked item's v2 emission yields no v2 bytes for that item and a
+/// refusal, never a partial node set for it, while other items in the same
+/// package are unaffected. This enum's own refusals are broader than
+/// AC-9's fault-injection scenario (S1a has no real data to emit at all
+/// yet, for any item), but they are still per-item in the same sense: a
+/// refusal here means "no v2 bytes for the affected item," not "no v2
+/// bytes for the whole package."
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EmitRefusal {
     /// No real `lock.edition`/`identity_preimage.edition` selection exists
@@ -83,15 +90,35 @@ pub(crate) enum EmitRefusal {
     /// `CheckedArtifactRef` for the edition definition it checked against.
     #[error("no edition-selection evidence exists yet to emit a checked-package/v2 lock")]
     EditionNotYetSelected,
+    /// `identity_projection`'s own emission arm per family (ADR-011 §6.1,
+    /// QSL-6 slice S1b) does not exist yet: a package with any declaration
+    /// cannot be projected today, since an empty projection would ignore
+    /// that declaration and mint a `package_id` blind to the package's
+    /// actual content (prior review finding 3).
+    #[error("identity_projection is not implemented yet for a package with any declaration")]
+    ProjectionNotYetImplemented,
+    /// Defensive: `emit_package`'s own success arm (minting `package_id`
+    /// and calling `EmittedPackage::new`) does not exist until QSL-6 slice
+    /// S1b lands, even for the rare package `identity_preimage` could
+    /// otherwise build in full today (see the module doc). Guards against
+    /// a panic if a future edit to `edition_selection` alone made
+    /// `identity_preimage` start succeeding before S1b's emission arm is
+    /// wired in to actually consume the result.
+    #[error("checked-package/v2 emission is not implemented yet")]
+    EmissionNotYetImplemented,
 }
 
 impl EmitRefusal {
-    /// The catalog code (FR-010). A real, admitted capability this build
-    /// does not implement yet -- not a fault in `package`'s own content --
-    /// so this is `is_unsupported()`, not a source-data code.
+    /// The catalog code (FR-010). Every variant here names a real,
+    /// admitted capability this build does not implement yet -- not a
+    /// fault in `package`'s own content -- so all three are
+    /// `is_unsupported()`, not a source-data code (see
+    /// [`Code::UnsupportedProjection`]'s own doc).
     pub(crate) fn code(self) -> Code {
         match self {
-            Self::EditionNotYetSelected => Code::UnsupportedProjection,
+            Self::EditionNotYetSelected
+            | Self::ProjectionNotYetImplemented
+            | Self::EmissionNotYetImplemented => Code::UnsupportedProjection,
         }
     }
 }
@@ -108,9 +135,17 @@ fn edition_selection(_package: &CheckedPackage) -> Option<CheckedSelection> {
 /// `identity_projection` (FR-322): one entry per family-emitted v2 node
 /// (ADR-011 §6.1's emission arm per family, matching `check::ir::NodeKind`;
 /// QSL-6 slice S1b). `CheckedGraph` exposes no such per-family dispatch
-/// yet, so this returns no nodes until S1b lands.
-fn identity_projection(_graph: &CheckedGraph) -> Vec<quire_contract_ir::CheckedNodeProjectionV2> {
-    Vec::new()
+/// yet: a graph with no declaration correctly has an empty projection, but
+/// a graph with any declaration refuses rather than silently return an
+/// empty projection that would ignore it and mint a content-blind
+/// `package_id` (prior review finding 3).
+fn identity_projection(
+    graph: &CheckedGraph,
+) -> Result<Vec<quire_contract_ir::CheckedNodeProjectionV2>, EmitRefusal> {
+    if graph.function_identities().next().is_some() {
+        return Err(EmitRefusal::ProjectionNotYetImplemented);
+    }
+    Ok(Vec::new())
 }
 
 /// The `quire.checked-package-id/v2` identity preimage (FR-322), or a
@@ -120,6 +155,7 @@ fn identity_preimage(
     package: &CheckedPackage,
 ) -> Result<CheckedPackageIdentityPreimageV2, EmitRefusal> {
     let edition = edition_selection(package).ok_or(EmitRefusal::EditionNotYetSelected)?;
+    let identity_projection = identity_projection(package.graph())?;
     Ok(CheckedPackageIdentityPreimageV2 {
         version: crate::library::PACKAGE_ID_VERSION.into(),
         edition,
@@ -128,7 +164,7 @@ fn identity_preimage(
         model_selections: Vec::new(),
         required_features: Vec::new(),
         dependency_selections: Vec::new(),
-        identity_projection: identity_projection(package.graph()),
+        identity_projection,
     })
 }
 
@@ -137,12 +173,14 @@ fn identity_preimage(
 /// (see the module doc) -- `Infallible` on the `Ok` side makes that a
 /// structural fact, not just today's behavior. S1b adds the arm that
 /// mints `package_id` from the preimage and calls
-/// [`EmittedPackage::new`](super::EmittedPackage::new).
+/// [`EmittedPackage::new`](super::EmittedPackage::new). The `Ok(_)` arm
+/// below is a refusal, not a panic (rust-review: no panic on a path whose
+/// safety depends on another function's current body): `identity_preimage`
+/// cannot succeed today only because `edition_selection` always returns
+/// `None`, a fact this function must not assume stays true forever.
 pub(crate) fn emit_package(package: &CheckedPackage) -> Result<Infallible, EmitRefusal> {
     match identity_preimage(package) {
-        Ok(_) => unreachable!(
-            "S1b adds emit_package's success arm; identity_preimage cannot succeed before it lands"
-        ),
+        Ok(_) => Err(EmitRefusal::EmissionNotYetImplemented),
         Err(refusal) => Err(refusal),
     }
 }
@@ -199,13 +237,24 @@ mod tests {
         }
     }
 
-    /// The refusal is deterministic, not just present.
+    /// `identity_projection` for a graph with no declaration is correctly
+    /// empty, not a refusal.
     #[test]
-    fn the_edition_refusal_is_deterministic() {
+    fn identity_projection_is_empty_for_a_graph_with_no_declaration() {
+        let package = empty();
+        assert_eq!(identity_projection(package.graph()), Ok(Vec::new()));
+    }
+
+    /// `identity_projection` refuses, rather than silently drop, any
+    /// declaration a graph carries (F2/prior finding 3): an empty
+    /// projection here would mint a `package_id` blind to the package's
+    /// actual content.
+    #[test]
+    fn identity_projection_refuses_a_graph_with_any_declaration() {
         let package = with_function("f");
         assert_eq!(
-            emit_package(&package).unwrap_err(),
-            emit_package(&package).unwrap_err()
+            identity_projection(package.graph()),
+            Err(EmitRefusal::ProjectionNotYetImplemented)
         );
     }
 }
