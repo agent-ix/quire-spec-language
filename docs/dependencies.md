@@ -10,13 +10,26 @@ qualifies against (`quire.value.text.unicode-17.0.0/v1` and the rest of
 by identity and revision, not held as local content.
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the
-cycle-free `quire-contract-model` package at
+cycle-free `quire-contract-model` package, initially at
 `53cc03c639e2e26528132d34d96dc56449df78e8`, retaining its declared
 `MIT OR Apache-2.0` grant. The compatibility `quire-contract-ir` package at
 `04eb6f849c03be23177d373549c6c272551f957d` is now explicitly named
 `quire-contract-ir-historical` and is development-only for the already retained
 code-generation fixtures. No source is copied, and the production graph does
 not contain that compatibility package.
+
+QSL-6 (M-4) bumps the same key to `dbb2e22d577b56fed5c27e81e584370acdf02512`
+(origin/main at the time of the bump), the first revision to carry
+`checked_package::v2` (`read_checked_package`, `CheckedPackageV2`,
+`CheckedPackageIdentityPreimageV2`, `CheckedPackageRefusalCode`). Unlike the
+prior pin, this revision is `AGPL-3.0-or-later` (relicensed in IR #94, not
+`MIT OR Apache-2.0`), and it newly pulls `quire-verification-contracts` at
+`2e06cf5b959bc325a0231329a0e3a223ea2c2606` (also `AGPL-3.0-or-later`) plus
+typify, schemars, jsonschema 0.55 and chrono into the lock. QSL's own I2
+reader (`src/package/checked_v2.rs`) delegates envelope parsing and
+`package_id` recompute to IR's typed structs rather than re-declaring
+FR-322's `quire.checked-package/v2` vocabulary; QSL-6's emitter slice does the
+same for emitting (agent-ix/quire-spec-language#297).
 
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
@@ -120,6 +133,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | bytecount | 0.6.9 | `Apache-2.0/MIT` |
 | cc | 1.4.5 | `MIT OR Apache-2.0` |
 | cfg-if | 1.0.4 | `MIT OR Apache-2.0` |
+| chrono | 0.4.45 | `MIT OR Apache-2.0` |
 | cpufeatures | 0.2.17 | `MIT OR Apache-2.0` |
 | crossbeam-deque | 0.8.8 | `MIT OR Apache-2.0` |
 | crossbeam-epoch | 0.9.21 | `MIT OR Apache-2.0` |
@@ -166,6 +180,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | js-sys | 0.3.105 | `MIT OR Apache-2.0` |
 | jsonschema | 0.17.1 | `MIT` |
 | jsonschema | 0.18.3 | `MIT` |
+| jsonschema | 0.55.1 | `MIT` |
 | lazy_static | 1.5.0 | `MIT OR Apache-2.0` |
 | libc | 0.2.189 | `MIT OR Apache-2.0` |
 | linux-raw-sys | 0.12.1 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
@@ -200,10 +215,11 @@ Python, JavaScript or shell qualification helper is introduced.
 | proc-macro2 | 1.0.107 | `MIT OR Apache-2.0` |
 | psm | 0.1.32 | `MIT OR Apache-2.0` |
 | quire-contract-codegen | 0.1.0 | `MIT OR Apache-2.0` |
-| quire-contract-model | 0.1.0 | `MIT OR Apache-2.0` |
+| quire-contract-model | 0.1.0 | `AGPL-3.0-or-later` |
 | quire-contract-ir | 0.1.0 | `MIT OR Apache-2.0` |
 | quire-rs | 0.46.0 | `AGPL-3.0-or-later` |
 | quire-spec-language | 0.2.0 | `AGPL-3.0-or-later` |
+| quire-verification-contracts | 0.1.0 | `AGPL-3.0-or-later` |
 | quote | 1.0.47 | `MIT OR Apache-2.0` |
 | r-efi | 5.3.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | r-efi | 6.0.0 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
@@ -217,6 +233,8 @@ Python, JavaScript or shell qualification helper is introduced.
 | rustversion | 1.0.23 | `MIT OR Apache-2.0` |
 | ryu | 1.0.23 | `Apache-2.0 OR BSL-1.0` |
 | same-file | 1.0.6 | `Unlicense/MIT` |
+| schemars | 0.8.22 | `MIT` |
+| schemars_derive | 0.8.22 | `MIT` |
 | scoped-tls | 1.0.1 | `MIT/Apache-2.0` |
 | scopeguard | 1.2.0 | `MIT OR Apache-2.0` |
 | serde | 1.0.228 | `MIT OR Apache-2.0` |
@@ -250,6 +268,9 @@ Python, JavaScript or shell qualification helper is introduced.
 | tracing-log | 0.2.0 | `MIT` |
 | tracing-subscriber | 0.3.23 | `MIT` |
 | typenum | 1.20.1 | `MIT OR Apache-2.0` |
+| typify | 0.7.0 | `Apache-2.0` |
+| typify-impl | 0.7.0 | `Apache-2.0` |
+| typify-macro | 0.7.0 | `Apache-2.0` |
 | unicode-ident | 1.0.24 | `(MIT OR Apache-2.0) AND Unicode-3.0` |
 | unicode-normalization | 0.1.25 | `MIT OR Apache-2.0` |
 | unsafe-libyaml | 0.2.11 | `MIT` |

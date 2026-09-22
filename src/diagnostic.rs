@@ -148,6 +148,10 @@ pub enum Code {
     /// ADR-013 O-01/QC-5: a second selection of a domain-package identity
     /// already selected at a different (or the same) version.
     DuplicateSelection,
+    /// FR-322 I2: an admitted `quire.checked-package/v2` wire's lock names
+    /// one or more `dependency_selections`; this reader does not yet derive
+    /// imports from a lock (QC-10, ADR-013 TK-08).
+    UnsupportedDependencySelections,
 }
 
 impl Code {
@@ -200,6 +204,7 @@ impl Code {
             Self::ForeignReference => "foreign_reference",
             Self::CardinalityOutOfBound => "cardinality_out_of_bound",
             Self::DuplicateSelection => "duplicate_selection",
+            Self::UnsupportedDependencySelections => "unsupported_dependency_selections",
         }
     }
 
@@ -252,6 +257,7 @@ impl Code {
             Self::ForeignReference,
             Self::CardinalityOutOfBound,
             Self::DuplicateSelection,
+            Self::UnsupportedDependencySelections,
         ]
     }
 

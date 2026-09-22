@@ -86,7 +86,13 @@ pub struct PackageId([u8; 32]);
 
 impl PackageId {
     /// The `package_id` of identity preimage `preimage`: SHA-256 of its exact
-    /// RFC 8785 JCS bytes.
+    /// RFC 8785 JCS bytes. The only constructor (ADR-013 O-02): a wire's own
+    /// declared `package_id` digest is never parsed into a `PackageId`
+    /// directly (that would let untrusted hex mint an "authoritative"
+    /// identity); a wire-read candidate's `package_id` is always this
+    /// function applied to the preimage bytes the wire itself carries, and
+    /// `verify_package` (crate-private) then requires it to equal whatever
+    /// a caller separately claims.
     pub fn of_preimage(preimage: &[u8]) -> Self {
         Self(Sha256::digest(preimage).into())
     }
@@ -435,7 +441,19 @@ pub enum RefusalClass {
 
 /// Recompute `package`'s `package_id` from its identity preimage, then
 /// validate the preimage and derive the package's export node keys from it.
-fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, LibraryRefusal> {
+///
+/// ADR-011 §4's I2 verified binding, checks 1-2 for the wire case: a
+/// `quire.checked-package/v2` reader (the layer-4 `package` module) parses
+/// the wire envelope, checks the contract version itself, and hands the
+/// resulting candidate here to check that the declared `package_id`
+/// recomputes from `identity_preimage`'s exact JCS bytes and that the
+/// preimage itself is well-formed. Check 3 -- the identity is listed in the
+/// consumer's library lock or pinned request -- is the caller's:
+/// [`resolve_libraries`] applies it when the package is offered as a
+/// candidate import.
+pub(crate) fn verify_package(
+    package: &LibraryPackage,
+) -> Result<ProjectedDeclarations, LibraryRefusal> {
     let recomputed = PackageId::of_preimage(&package.identity_preimage);
     if recomputed != package.package_id {
         return Err(LibraryRefusal::PackageIdMismatch {
@@ -454,6 +472,24 @@ fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, Lib
             library: package.library.clone(),
             export: export.to_owned(),
         })
+}
+
+/// Every name `identity_preimage` declares, in ascending order (FR-307: "a
+/// package's local declarations are exactly its exports", this module's own
+/// doc). The layer-4 `package` I2 reader calls this to populate a freshly
+/// wire-read [`LibraryPackage::exports`] before handing the candidate to
+/// [`verify_package`]: a package read straight from its own wire bytes
+/// carries no separate export selection, so its exports are exactly what its
+/// preimage declares.
+#[allow(
+    dead_code,
+    reason = "no production caller yet: the I2 reader (`package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
+)]
+pub(crate) fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
+    Ok(project_declarations(identity_preimage)?
+        .declared_names()
+        .map(str::to_owned)
+        .collect())
 }
 
 /// One selected package and the first dependency path that reached it.

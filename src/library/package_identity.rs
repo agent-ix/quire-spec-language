@@ -143,6 +143,18 @@ impl ProjectedDeclarations {
         self.0.get(name).copied()
     }
 
+    /// Every declared name, in ascending order: FR-307's "a package's local
+    /// declarations are exactly its exports" (`library` module doc), read by
+    /// the layer-4 `package` I2 reader (ADR-011 §4) before it populates a
+    /// freshly wire-read [`crate::library::LibraryPackage::exports`].
+    #[allow(
+        dead_code,
+        reason = "no production caller yet: reachable only through `library::declared_exports`, itself uncalled until ADR-011 §4's round trip (QSL-6 slice S3) wires the I2 reader in"
+    )]
+    pub(crate) fn declared_names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+
     /// The declarations of `exports` only, or the first export no nominal
     /// declaration spells.
     pub(crate) fn select<'a>(&self, exports: &'a [String]) -> Result<Self, &'a str> {

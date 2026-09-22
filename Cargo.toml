@@ -38,7 +38,7 @@ sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
-quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "dbb2e22d577b56fed5c27e81e584370acdf02512" }
 qsl-attrs = { path = "qsl-attrs" }
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
 agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }

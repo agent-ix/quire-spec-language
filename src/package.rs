@@ -14,6 +14,7 @@
 //! imports unchanged (FR-087-AC-10/TC-247).
 
 mod checked;
+mod checked_v2;
 mod encoding;
 mod features;
 mod intake;
@@ -25,6 +26,15 @@ mod wire;
 
 pub use checked::{CheckedPackage, EmittedPackage};
 pub use reading::{PackageReadLimits, PackageSupport};
+
+// ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
+// (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
+// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
+// review) and not re-exported here: its candidate is not yet a
+// checked-package-crossing type any caller outside this crate should see
+// (`resolve_libraries` check 3 has not run, and FR-087's `VerifiedPackage`
+// does not exist yet), and this module has no caller yet (S3, ADR-011 §4's
+// round trip, has not landed) beyond `checked_v2`'s own tests.
 
 use std::fmt;
 
