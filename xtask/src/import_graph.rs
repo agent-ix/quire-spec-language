@@ -39,15 +39,26 @@
 //! those two scans *stricter* than a build would be, and is deliberate --
 //! `check` must import nothing from `value::expression` even in its own test
 //! code (TC-174's test lives in `value::expression` instead, precisely
-//! because of this). [`value_import_edges`] (TC-175/AC-6), by contrast,
-//! excludes `#[cfg(test)]`-gated imports on purpose: AC-6's tier bound
+//! because of this). [`check_layer_edges`] (TC-175/AC-6), by contrast,
+//! excludes `#[cfg(test)]`-gated imports and items on purpose: AC-6's bound
 //! constrains `check`'s *shipped* dependency graph, and a test-only import is
-//! not part of it -- see [`value_import_edges`]'s own doc for the concrete
-//! case (`TextType`) this distinction was written to resolve correctly.
+//! not part of it.
+//!
+//! **FR-068-AC-6's layer rule (the layer-rule ruling, 2026-09-22;
+//! [`check_layer_edges`]).** `check`'s shipped imports are bounded by
+//! module and layer, not by item: any item of a permitted module is
+//! allowed, and the number imported is never checked. This covers both
+//! `use` lines and inline `crate::`/`super::`/`self::` paths under
+//! `src/check/`, resolving a flat `crate::value::Name` aggregate import to
+//! its real submodule (failing regardless, since the rule requires the
+//! qualified form) and a `super::`/`self::` path relative to its own file.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+
+use syn::spanned::Spanned;
+use syn::visit::Visit;
 
 use crate::error::{Error, Result};
 
@@ -74,6 +85,11 @@ pub struct UseEdge {
     /// Whether this edge came from a glob import (`use a::b::*;`), which
     /// binds no single named leaf; `leaf` is empty for a glob edge.
     pub is_glob: bool,
+    /// 1-based source line the bound leaf (or the `*` token, for a glob)
+    /// starts on -- FR-068-AC-6's layer rule names a failing edge's file,
+    /// line and resolved module, so this edge type needs its own line, not
+    /// only the enclosing `use` item's.
+    pub line: usize,
 }
 
 /// Flatten one `syn::UseTree` into zero or more [`UseEdge`]s, appending to
@@ -87,6 +103,7 @@ fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mu
             flatten_use_tree(&use_path.tree, &next, file, out);
         }
         syn::UseTree::Name(use_name) => {
+            let line = use_name.ident.span().start().line;
             let ident = use_name.ident.to_string();
             if ident == "self" {
                 // `use a::b::self;` binds `b` itself under prefix `a`; the
@@ -97,6 +114,7 @@ fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mu
                     path: prefix.to_vec(),
                     leaf,
                     is_glob: false,
+                    line,
                 });
             } else {
                 out.push(UseEdge {
@@ -104,6 +122,7 @@ fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mu
                     path: prefix.to_vec(),
                     leaf: ident,
                     is_glob: false,
+                    line,
                 });
             }
         }
@@ -115,14 +134,16 @@ fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mu
                 path: prefix.to_vec(),
                 leaf: use_rename.ident.to_string(),
                 is_glob: false,
+                line: use_rename.ident.span().start().line,
             });
         }
-        syn::UseTree::Glob(_) => {
+        syn::UseTree::Glob(use_glob) => {
             out.push(UseEdge {
                 file: file.to_owned(),
                 path: prefix.to_vec(),
                 leaf: String::new(),
                 is_glob: true,
+                line: use_glob.star_token.span().start().line,
             });
         }
         syn::UseTree::Group(use_group) => {
@@ -181,7 +202,7 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
 /// inside a `#[cfg(test)] mod { ... }` block -- i.e. every edge that is part
 /// of the crate's *shipped* (non-test) dependency graph. Used where a bound
 /// governs a shipped layering property rather than every line of source text
-/// (see [`value_import_edges`]'s own doc for why tier 2 uses this instead of
+/// (see [`check_layer_edges`]'s own doc for why it uses this instead of
 /// [`use_edges_in_file`]).
 fn shipped_use_edges_in_file(parsed: &syn::File, file: &str) -> Vec<UseEdge> {
     let mut out = Vec::new();
@@ -410,95 +431,16 @@ pub fn model_check_edges(workspace_root: &Path) -> Result<Vec<ModelCheckEdge>> {
     Ok(edges_found)
 }
 
-/// FR-068-AC-6's tier-1 allow-list: the nine K-designated siblings X-1 has
-/// not yet relocated, unbounded in which items `check` imports from them.
-const K_DESIGNATED_MODULES: [&str; 9] = [
-    "collection",
-    "comparison",
-    "composite",
-    "decimal",
-    "equality",
-    "ieee",
-    "node",
-    "numeric",
-    "rational",
-];
-
-/// FR-068-AC-6's tier-2 allow-list, amended once by the PR #282 review
-/// findings: F3 widened it from five items/two modules to seven/three
-/// (`family.rs`'s pre-existing `encode_value_type` needs
-/// `QuantityUnit`/`TextProfile`). AC-6 could not pass as originally written
-/// against any conforming implementation that actually carries `family.rs`'s
-/// production code.
-///
-/// **`TextType` is deliberately absent (owner ruling, PR #282 review,
-/// post-rebase).** `check::family::tests::
-/// mint_declaration_identity_matches_a_checked_in_digest`'s moved golden-digest
-/// fixture does import `TextType` from `value::text`, but only inside
-/// `#[cfg(test)] mod tests` -- [`value_import_edges`] excludes `#[cfg(test)]`
-/// imports from this bound by design (see its own doc), because this
-/// allow-list constrains `check`'s *shipped* dependency graph, the layering
-/// property FR-068-AC-6 actually governs; a test-only import is not part of
-/// that graph, and admitting it into tier 2 would permanently license
-/// production code to import it too, unchecked, since AC-6's own scan would
-/// then have no way to tell the two apart. Widening the list to fit a test
-/// import was tried and reverted for exactly this reason: it would have
-/// bought a green at the cost of the bound's own meaning, the same shape as
-/// an unjustified raised size limit.
-const DECLARED_INTERIM_ITEMS: [(&str, &str); 7] = [
-    ("enumeration", "EnumDeclaration"),
-    ("enumeration", "EnumValue"),
-    ("quantity", "check_comparable"),
-    ("quantity", "result_unit"),
-    ("quantity", "UnitOperation"),
-    ("quantity", "QuantityUnit"),
-    ("text", "TextProfile"),
-];
-
-/// Which of FR-068-AC-6's tiers one `check` -> `value::<submodule>` edge
-/// falls into.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ValueImportTier {
-    /// Tier 1: unbounded imports from the nine K-designated siblings.
-    KDesignated,
-    /// Tier 2: exactly the seven named items (see this module's own
-    /// `DECLARED_INTERIM_ITEMS` constant).
-    DeclaredInterim,
-    /// Tier 3: forbidden -- anything else.
-    Forbidden,
-}
-
-/// One resolved `check` -> `value::<submodule>` edge, classified into
-/// FR-068-AC-6's tiers (TC-175).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValueImportEdge {
-    /// The file this edge was found in.
-    pub file: String,
-    /// The `value::` submodule the edge resolves into.
-    pub submodule: String,
-    /// The bound leaf name.
-    pub leaf: String,
-    /// Which tier this edge falls into.
-    pub tier: ValueImportTier,
-    /// Whether this edge is written in crate-absolute, submodule-qualified
-    /// form (`crate::value::<submodule>::Name`) -- FR-068-CON-2/AC-6's own
-    /// required form (PR #282 review F2) -- rather than a flat
-    /// `crate::value::Name` reached only through `value`'s own aggregate.
-    pub submodule_qualified: bool,
-}
-
 /// Every name `value::mod.rs` re-exports from one of its own *sibling*
 /// submodules via a bare (non-`crate`-rooted) `pub use <submodule>::{...}`
 /// line -- `crate::check`'s and `crate::forms`'s cross-module re-exports
 /// have a two-segment path (`crate::X`) and are excluded by construction,
 /// since TC-175 cares which `value::` submodule an item belongs to, not
 /// `check`'s or `forms`'s own re-exports.
-fn value_submodule_reexports(
-    workspace_root: &Path,
-) -> Result<std::collections::BTreeMap<String, String>> {
+fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, String>> {
     let parsed = parse_file(workspace_root, "src/value/mod.rs")?;
     let edges = use_edges_in_file(&parsed, "src/value/mod.rs");
-    let mut map = std::collections::BTreeMap::new();
+    let mut map = BTreeMap::new();
     for edge in &edges {
         if edge.is_glob {
             continue;
@@ -510,102 +452,489 @@ fn value_submodule_reexports(
     Ok(map)
 }
 
-/// TC-175: every *shipped* `use` edge under `src/check/` resolving into any
-/// `value::` submodule at all (not only `expression`/`checking`, which
-/// [`check_module_violations`] covers), classified into FR-068-AC-6's
-/// tiers. A flat `crate::value::Name` edge is resolved to its owning
-/// submodule by scanning `value::mod.rs`'s whole sibling re-export table,
-/// not only the two names [`value_reexports`] needs -- TC-175's own
-/// criterion is which submodule an item belongs to, not only whether it is
-/// `expression`.
+// ---------------------------------------------------------------------
+// FR-068-AC-6, the layer-rule ruling (2026-09-22): `check`'s imports are
+// bounded by module and layer, not by item. This retires the former
+// tier-1/tier-2 item lists (`K_DESIGNATED_MODULES`, `DECLARED_INTERIM_ITEMS`)
+// entirely -- the bound below is per module, and the number of items
+// imported from a permitted module is not checked.
+// ---------------------------------------------------------------------
+
+/// FR-068-AC-6's permitted-module list (closed): any item of a listed
+/// module is allowed. A `value::<submodule>` entry names one specific
+/// submodule; every other entry is matched by its own name and all of its
+/// descendants (`check` and its descendants; `library` and its
+/// descendants; and so on) -- see [`module_or_descendant`].
+const LAYER_PERMITTED_MODULES: &[&str] = &[
+    // K, F.
+    "quire_exact",
+    "qsl_foundation",
+    // Layer 2.
+    "forms",
+    // Layer 3, before `check` core (ADR-011 §6.1: `semantic_value < model <
+    // library < check core`).
+    "value::definition",
+    "value::enumeration",
+    "value::unit",
+    "value::quantity",
+    "value::key",
+    "value::reference",
+    "value::containment",
+    "value::declaration",
+    "model",
+    "value::model_query",
+    "library",
+    // Layer 3, `check` core itself.
+    "check",
+    "family",
+    // The `value` K-copy modules, each only while it exists (this list
+    // only shrinks; a module leaves it in the change that deletes that
+    // module's QSL copy).
+    "value::collection",
+    "value::comparison",
+    "value::composite",
+    "value::decimal",
+    "value::division",
+    "value::equality",
+    "value::ieee",
+    "value::node",
+    "value::numeric",
+    "value::outcome",
+    "value::rational",
+    "value::text",
+];
+
+/// FR-068-AC-6's MUST NOT list (closed): a later layer, forbidden including
+/// any descendant.
+const LAYER_FORBIDDEN_MODULES: &[&str] = &[
+    "checked_package",
+    "package",
+    "value::expression",
+    "route",
+    "replay",
+    "lowering",
+];
+
+/// Whether `module` is exactly `entry` or a `::`-segment descendant of it
+/// (`model_query` is not a descendant of `model` by this rule -- only a
+/// `::` boundary counts, the same segment-matching FR-060 T12-B/T12-C use).
+fn module_or_descendant(module: &str, entry: &str) -> bool {
+    module == entry || module.starts_with(&format!("{entry}::"))
+}
+
+/// FR-068-AC-6's layer classification of one resolved module.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LayerClass {
+    /// On the permitted list (or a descendant of a permitted entry).
+    Permitted,
+    /// On the MUST NOT list (or a descendant of one) -- a later layer.
+    Forbidden,
+    /// On neither list.
+    Unlisted,
+}
+
+fn classify_layer_module(module: &str) -> LayerClass {
+    if LAYER_FORBIDDEN_MODULES
+        .iter()
+        .any(|entry| module_or_descendant(module, entry))
+    {
+        LayerClass::Forbidden
+    } else if LAYER_PERMITTED_MODULES
+        .iter()
+        .any(|entry| module_or_descendant(module, entry))
+    {
+        LayerClass::Permitted
+    } else {
+        LayerClass::Unlisted
+    }
+}
+
+/// Whether `name` is a real top-level module of this crate -- a file or
+/// directory directly under `src/` -- as opposed to `std` or a third-party
+/// crate, which FR-068-AC-6 does not classify at all.
+fn is_real_crate_module(workspace_root: &Path, name: &str) -> bool {
+    let src = workspace_root.join("src");
+    src.join(format!("{name}.rs")).is_file() || src.join(name).is_dir()
+}
+
+/// Whether `name` is a real submodule of `value` -- a file or directory
+/// directly under `src/value/` -- used to tell a genuinely nested
+/// `crate::value::<submodule>::Name` path apart from a flat
+/// `crate::value::Name` one at the inline-path level, where (unlike a `use`
+/// line) source syntax alone does not separate a path's module prefix from
+/// its bound item.
+fn is_real_value_submodule(workspace_root: &Path, name: &str) -> bool {
+    let value_dir = workspace_root.join("src/value");
+    value_dir.join(format!("{name}.rs")).is_file() || value_dir.join(name).is_dir()
+}
+
+/// Whether `top` (a resolved path's first segment) is in FR-068-AC-6's
+/// scope at all: `quire_exact`/`qsl_foundation` by name, or any other real
+/// module of this crate. `std` and every other third-party crate are out of
+/// scope and return `false`.
+fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
+    top == "quire_exact" || top == "qsl_foundation" || is_real_crate_module(workspace_root, top)
+}
+
+/// Resolve `top` (a resolved path's first segment) and `next` (its second,
+/// if any) into FR-068-AC-6's module label and whether the edge names its
+/// submodule. Only `value` needs `next` resolved further: every other
+/// permitted/forbidden entry is matched on `top` alone (`module_or_descendant`
+/// covers the rest of the path).
 ///
-/// **Shipped imports only (owner ruling, PR #282 review, post-rebase).**
-/// Unlike [`check_module_violations`] (TC-172/AC-3, deliberately stricter:
-/// `check` must import nothing from `value::expression` at all, in test code
-/// or not, so a `check`-side test can never quietly reopen that edge) and
-/// [`model_check_edges`] (TC-176), this scan uses this module's own
-/// `shipped_use_edges_in_file` helper, not `use_edges_in_file`, and so
-/// excludes `#[cfg(test)]`-gated imports. FR-068-AC-6's tier bound constrains `check`'s
-/// dependency on `value` as a layering property of the *shipped* crate; a
-/// test-only import is not part of that dependency graph, and admitting one
-/// into the tier-2 allow-list to make a test pass would permanently license
-/// production code to import it too, with no way for this scan to ever catch
-/// that widening back. `check::family::tests::
-/// mint_declaration_identity_matches_a_checked_in_digest`'s `TextType`
-/// import is the concrete case this excludes: real, `#[cfg(test)]`-gated,
-/// and out of tier 2's scope by this design choice, not by oversight.
-pub fn value_import_edges(workspace_root: &Path) -> Result<Vec<ValueImportEdge>> {
+/// `next_is_module_by_syntax` is `true` when the caller already knows `next`
+/// is a real module segment because the source syntax itself guarantees it
+/// (a `use` edge's own path, where every segment but the bound leaf is a
+/// module by construction); it is `false` for an inline path, where syntax
+/// alone cannot tell a submodule segment (`composite` in
+/// `crate::value::composite::Presence`) apart from a flat aggregate item
+/// (`Presence` in `crate::value::Presence::Optional`) -- that case falls
+/// back to a filesystem check and then `value::mod.rs`'s own re-export
+/// table, the same two-step resolution the flat-`use` case already needed.
+fn resolve_layer_module(
+    workspace_root: &Path,
+    submodule_reexports: &BTreeMap<String, String>,
+    top: &str,
+    next: Option<&str>,
+    next_is_module_by_syntax: bool,
+) -> (String, bool) {
+    if top != "value" {
+        return (top.to_owned(), true);
+    }
+    let Some(next) = next else {
+        return ("value".to_owned(), false);
+    };
+    if next_is_module_by_syntax || is_real_value_submodule(workspace_root, next) {
+        return (format!("value::{next}"), true);
+    }
+    match submodule_reexports.get(next) {
+        Some(target) => (format!("value::{target}"), false),
+        None => ("value".to_owned(), false),
+    }
+}
+
+/// Resolve a `use` edge's or inline path's own written segments against
+/// `current_module` (the scanning file's own crate-relative module path),
+/// stripping a leading `crate` and resolving a leading `super`/`self`
+/// relative to the file (FR-068-AC-6: "A `super::` or `self::` path is
+/// resolved relative to its file"). A path rooted at anything else (an
+/// extern crate name, `quire_exact`/`qsl_foundation` included) is returned
+/// unchanged -- it needs no crate-relative substitution.
+fn resolve_relative_path(raw: &[String], current_module: &[String]) -> Vec<String> {
+    match raw.first().map(String::as_str) {
+        Some("crate") => raw[1..].to_vec(),
+        Some("super") => {
+            let mut base = current_module.to_vec();
+            let mut rest = raw;
+            while rest.first().map(String::as_str) == Some("super") {
+                base.pop();
+                rest = &rest[1..];
+            }
+            base.extend(rest.iter().cloned());
+            base
+        }
+        Some("self") => {
+            let mut base = current_module.to_vec();
+            base.extend(raw[1..].iter().cloned());
+            base
+        }
+        _ => raw.to_vec(),
+    }
+}
+
+/// One FR-068-AC-6 layer-rule edge: a `use` line or inline
+/// `crate::`/`super::`/`self::` path under `src/check/`, resolved and
+/// classified (TC-175).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayerEdge {
+    /// The file this edge was found in.
+    pub file: String,
+    /// 1-based source line.
+    pub line: usize,
+    /// The resolved module label (e.g. `"value::composite"`, `"model"`).
+    pub module: String,
+    /// Permitted, forbidden, or unlisted.
+    pub class: LayerClass,
+    /// Whether a `value` edge names its submodule (`crate::value::
+    /// <submodule>::Name`) rather than reaching it through `value`'s flat
+    /// aggregate (`crate::value::Name`). Always `true` for a non-`value`
+    /// edge, where the rule does not apply.
+    pub submodule_qualified: bool,
+}
+
+impl LayerEdge {
+    /// Whether this edge violates FR-068-AC-6: its module is not permitted,
+    /// or it is a `value` edge that does not name its submodule. The flat
+    /// form fails even when the submodule it actually reaches is itself
+    /// permitted (TC-175: `crate::value::Rational` still fails, though
+    /// `value::rational` is a K-copy module).
+    pub fn is_violation(&self) -> bool {
+        self.class != LayerClass::Permitted || !self.submodule_qualified
+    }
+}
+
+/// Classify one `use` edge already found under `src/check/`. `None` when
+/// the edge's resolved root is `std` or a third-party crate other than
+/// `quire_exact`/`qsl_foundation` -- out of FR-068-AC-6's scope entirely,
+/// not a finding.
+fn classify_use_edge(
+    workspace_root: &Path,
+    submodule_reexports: &BTreeMap<String, String>,
+    current_module: &[String],
+    edge: &UseEdge,
+) -> Option<LayerEdge> {
+    let resolved = resolve_relative_path(&edge.path, current_module);
+    let top = resolved.first()?.clone();
+    if !in_layer_rule_scope(workspace_root, &top) {
+        return None;
+    }
+    let next = if resolved.len() >= 2 {
+        Some(resolved[1].as_str())
+    } else if edge.is_glob {
+        None
+    } else {
+        Some(edge.leaf.as_str())
+    };
+    let next_is_module_by_syntax = resolved.len() >= 2;
+    let (module, submodule_qualified) = resolve_layer_module(
+        workspace_root,
+        submodule_reexports,
+        &top,
+        next,
+        next_is_module_by_syntax,
+    );
+    let class = classify_layer_module(&module);
+    Some(LayerEdge {
+        file: edge.file.clone(),
+        line: edge.line,
+        module,
+        class,
+        submodule_qualified,
+    })
+}
+
+/// Classify one inline `crate::`/`super::`/`self::` path found under
+/// `src/check/`. `None` when out of scope, the same as
+/// [`classify_use_edge`].
+fn classify_inline_edge(
+    workspace_root: &Path,
+    submodule_reexports: &BTreeMap<String, String>,
+    current_module: &[String],
+    file: &str,
+    line: usize,
+    raw_segments: &[String],
+) -> Option<LayerEdge> {
+    let resolved = resolve_relative_path(raw_segments, current_module);
+    let top = resolved.first()?.clone();
+    if !in_layer_rule_scope(workspace_root, &top) {
+        return None;
+    }
+    let next = resolved.get(1).map(String::as_str);
+    let (module, submodule_qualified) =
+        resolve_layer_module(workspace_root, submodule_reexports, &top, next, false);
+    let class = classify_layer_module(&module);
+    Some(LayerEdge {
+        file: file.to_owned(),
+        line,
+        module,
+        class,
+        submodule_qualified,
+    })
+}
+
+/// The crate-relative module path segments for a `.rs` file, relative to
+/// the workspace root (`src/check/check.rs` -> `["check", "check"]`;
+/// `src/check/mod.rs` -> `["check"]`; `src/lib.rs` -> `[]`) -- Rust's own
+/// `mod.rs`/`foo.rs` file-to-module convention, needed to resolve a
+/// `super::`/`self::` path relative to its file.
+fn module_segments_of(relative_file: &str) -> Vec<String> {
+    let mut segments: Vec<String> = Path::new(relative_file)
+        .with_extension("")
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if segments.first().map(String::as_str) == Some("src") {
+        segments.remove(0);
+    }
+    if segments.last().map(String::as_str) == Some("mod") {
+        segments.pop();
+    }
+    if segments.len() == 1 && matches!(segments[0].as_str(), "lib" | "main") {
+        segments.clear();
+    }
+    segments
+}
+
+/// Every `.rs` file under `dir`, recursive -- unlike [`files_in`], which is
+/// non-recursive because `check`'s and `model`'s layouts happen to be flat
+/// today. FR-068-AC-6's layer rule explicitly covers "`check` and its
+/// descendants," so this scan must not stop at the first level if `check`
+/// ever grows a nested submodule directory.
+fn files_in_recursive(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    walk_rs_files_recursive(&workspace_root.join(dir), workspace_root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn walk_rs_files_recursive(dir: &Path, workspace_root: &Path, out: &mut Vec<String>) -> Result<()> {
+    let entries = fs::read_dir(dir).map_err(|source| Error::io(dir, source))?;
+    for entry in entries {
+        let entry = entry.map_err(|source| Error::io(dir, source))?;
+        let path = entry.path();
+        if path.is_dir() {
+            walk_rs_files_recursive(&path, workspace_root, out)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            let relative = path.strip_prefix(workspace_root).unwrap_or(&path);
+            out.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
+/// One inline `crate::`/`super::`/`self::`-rooted path found in shipped
+/// (non-`#[cfg(test)]`) code.
+struct InlinePath {
+    line: usize,
+    segments: Vec<String>,
+}
+
+/// Walks a parsed file collecting every inline path rooted at `crate`,
+/// `super` or `self`, skipping any item gated `#[cfg(test)]` -- mirroring
+/// [`shipped_use_edges_in_file`]'s scope at the expression/type level, which
+/// that function's own item-list walk cannot reach. `visit_path` is not
+/// triggered by a `use` item's own tree (`syn` models `use` paths as
+/// `UseTree`, a distinct grammar), so this never double-counts a `use` edge.
+struct InlinePathVisitor {
+    found: Vec<InlinePath>,
+}
+
+impl InlinePathVisitor {
+    fn record(&mut self, path: &syn::Path) {
+        let Some(first) = path.segments.first() else {
+            return;
+        };
+        if !matches!(first.ident.to_string().as_str(), "crate" | "super" | "self") {
+            return;
+        }
+        let line = first.ident.span().start().line;
+        let segments = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        self.found.push(InlinePath { line, segments });
+    }
+}
+
+impl<'ast> Visit<'ast> for InlinePathVisitor {
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        self.record(node);
+        syn::visit::visit_path(self, node);
+    }
+
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_mod(self, node);
+        }
+    }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_fn(self, node);
+        }
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_impl(self, node);
+        }
+    }
+
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_impl_item_fn(self, node);
+        }
+    }
+
+    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_struct(self, node);
+        }
+    }
+
+    fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_enum(self, node);
+        }
+    }
+
+    fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_trait(self, node);
+        }
+    }
+
+    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_static(self, node);
+        }
+    }
+
+    fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
+        if !has_cfg_test(&node.attrs) {
+            syn::visit::visit_item_const(self, node);
+        }
+    }
+}
+
+fn shipped_inline_paths_in_file(parsed: &syn::File) -> Vec<InlinePath> {
+    let mut visitor = InlinePathVisitor { found: Vec::new() };
+    visitor.visit_file(parsed);
+    visitor.found
+}
+
+/// FR-068-AC-6/TC-175 (the layer-rule ruling, 2026-09-22): every shipped
+/// `use` line and inline `crate::`/`super::`/`self::` path under
+/// `src/check/`, classified against the module-level layer rule. Replaces
+/// the former `value_import_edges`/`check_package_import_edges` item-tier
+/// scan entirely -- the bound is per module now, so one scan covers both
+/// `value`'s submodules and the `package`/`checked_package`/`route`/
+/// `replay`/`lowering` forbidden list together.
+///
+/// **Known limitation, shared with `tools/arch-lint`'s textual scan:** a
+/// path reached only through a `use ... as` rename at the call site, or a
+/// path written inside a macro invocation's own token stream (`syn` does
+/// not parse an arbitrary macro's arguments into expressions), is not
+/// resolved by this scan.
+pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
-    let mut edges_found = Vec::new();
-    for file in files_in(workspace_root, "src/check")? {
+    let mut edges = Vec::new();
+    for file in files_in_recursive(workspace_root, "src/check")? {
         let parsed = parse_file(workspace_root, &file)?;
+        let current_module = module_segments_of(&file);
         for edge in shipped_use_edges_in_file(&parsed, &file) {
-            if edge.is_glob {
-                continue;
+            if let Some(layer_edge) =
+                classify_use_edge(workspace_root, &submodule_reexports, &current_module, &edge)
+            {
+                edges.push(layer_edge);
             }
-            let normalized = strip_leading_crate(&edge.path);
-            let (submodule, submodule_qualified) = match normalized {
-                [first, second, ..] if first == "value" => (Some(second.clone()), true),
-                [first] if first == "value" => {
-                    (submodule_reexports.get(&edge.leaf).cloned(), false)
-                }
-                _ => (None, false),
-            };
-            let Some(submodule) = submodule else {
-                continue;
-            };
-            let tier = if K_DESIGNATED_MODULES.contains(&submodule.as_str()) {
-                ValueImportTier::KDesignated
-            } else if DECLARED_INTERIM_ITEMS.contains(&(submodule.as_str(), edge.leaf.as_str())) {
-                ValueImportTier::DeclaredInterim
-            } else {
-                ValueImportTier::Forbidden
-            };
-            edges_found.push(ValueImportEdge {
-                file: edge.file.clone(),
-                submodule,
-                leaf: edge.leaf.clone(),
-                tier,
-                submodule_qualified,
-            });
         }
-    }
-    Ok(edges_found)
-}
-
-/// Whether `path` (a `use` edge's segments, `crate`-rooted or not) resolves
-/// into `crate::package` or `crate::checked_package`. Both are layer-4
-/// (ADR-011 §6.1): QSL-182 prep split the former's moving half out into the
-/// latter, a sibling module, so a `check` (layer 3) import of either is the
-/// same forbidden layer-3-depends-on-layer-4 edge FR-068-AC-6 already named
-/// for `package` alone before the split.
-fn resolves_into_package(path: &[String]) -> bool {
-    matches!(strip_leading_crate(path), [first, ..] if first == "package" || first == "checked_package")
-}
-
-/// FR-068-AC-6's last sentence ("No file under `check` imports from ...
-/// `package`") had no mechanized test (PR #291 review, finding 3):
-/// [`value_import_edges`] only scans edges whose resolved path starts with
-/// `value`, so a `crate::package` import -- direct or, unlike `value`,
-/// **including a glob**, since `package` has no declared-interim allow-list
-/// to check a leaf against -- was invisible to it. This scan closes that
-/// gap directly, over `check`'s *shipped* dependency graph only, matching
-/// AC-6's own scope for the rest of its bound (see this module's header
-/// doc, "`#[cfg(test)]` handling differs by which criterion is being
-/// checked"). Widened by QSL-182 prep to also flag `checked_package`, the
-/// sibling module the same layer-4 content partly moved into (see
-/// `resolves_into_package`'s own doc, private to this module).
-pub fn check_package_import_edges(workspace_root: &Path) -> Result<Vec<UseEdge>> {
-    let mut edges_found = Vec::new();
-    for file in files_in(workspace_root, "src/check")? {
-        let parsed = parse_file(workspace_root, &file)?;
-        for edge in shipped_use_edges_in_file(&parsed, &file) {
-            if resolves_into_package(&edge.path) {
-                edges_found.push(edge);
+        for inline in shipped_inline_paths_in_file(&parsed) {
+            if let Some(layer_edge) = classify_inline_edge(
+                workspace_root,
+                &submodule_reexports,
+                &current_module,
+                &file,
+                inline.line,
+                &inline.segments,
+            ) {
+                edges.push(layer_edge);
             }
         }
     }
-    Ok(edges_found)
+    edges.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+    Ok(edges)
 }
 
 #[cfg(test)]
@@ -806,180 +1135,296 @@ mod tests {
         assert!(reexports.check.contains("DispatchTable"));
     }
 
-    /// TC-175 steps 1-2 (Expected Results): a fixture item resolving into a
-    /// K-designated module is tier 1, one of the seven named items is tier
-    /// 2, and anything else -- including a *different* item from
-    /// `enumeration`/`quantity`/`text` -- is tier 3 (forbidden). Written
-    /// against the classifier directly (not the real tree) so this test
-    /// exercises a synthetic tier-3 case the real, currently-clean tree
-    /// does not itself contain.
-    #[trace("TC-175", "FR-068-AC-6")]
-    #[test]
-    fn tier_classification_matches_ac6s_amended_allow_lists() {
-        assert!(K_DESIGNATED_MODULES.contains(&"numeric"));
-        assert!(DECLARED_INTERIM_ITEMS.contains(&("quantity", "QuantityUnit")));
-        assert!(DECLARED_INTERIM_ITEMS.contains(&("text", "TextProfile")));
-        // `TextType` is deliberately NOT tier 2 (owner ruling, PR #282
-        // review, post-rebase): its only real dependency is
-        // `#[cfg(test)]`-gated, and `value_import_edges` excludes test-only
-        // imports from this bound entirely (see its own doc and
-        // `shipped_scan_excludes_a_cfg_test_only_forbidden_import` below),
-        // so it needs no tier-2 admission at all.
-        assert!(!DECLARED_INTERIM_ITEMS.contains(&("text", "TextType")));
-        // An item from a tier-2 *module* that is not one of the seven named
-        // items (e.g. `quantity::Quantity`, which `check` does not import)
-        // must not be silently admitted just because its module is tier 2.
-        assert!(!DECLARED_INTERIM_ITEMS.contains(&("quantity", "Quantity")));
+    // -------------------------------------------------------------------
+    // FR-068-AC-6 (TC-175): the layer-rule ruling (2026-09-22). The former
+    // tier-classification tests above this point are retired along with
+    // `value_import_edges`/`check_package_import_edges` themselves -- one
+    // scan (`check_layer_edges`) now covers both `value`'s submodules and
+    // the `package`/`checked_package`/`route`/`replay`/`lowering` forbidden
+    // list together.
+    // -------------------------------------------------------------------
+
+    fn write(root: &Path, relative: &str, contents: &str) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
     }
 
-    /// Against the real, current tree: every `check` -> `value::<submodule>`
-    /// edge is tier 1 or tier 2 (group (c) is empty), and every one is
-    /// written in crate-absolute, submodule-qualified form -- PR #282
-    /// review F2's rewrite, confirmed at the resolved level rather than
-    /// merely by having been the one that wrote it. This includes
-    /// `check::family.rs`'s own `#[cfg(test)]`-gated `TextType` import: it
-    /// resolves to `Forbidden` under [`shipped_use_edges_in_file`]'s
-    /// unfiltered sibling [`use_edges_in_file`] (see
-    /// `shipped_scan_excludes_a_cfg_test_only_forbidden_import` immediately
-    /// below for that exact assertion), but is invisible to this scan by
-    /// design, so it does not appear here at all.
+    /// A minimal QSL-shaped fixture tree: a bare marker file for every
+    /// non-`value` module FR-068-AC-6 names (so [`is_real_crate_module`]
+    /// can tell each apart from an external crate), every named `value`
+    /// submodule (K-copy and `semantic_value` alike), plus `value::member`
+    /// and `value::expression` -- two real submodules the rule deliberately
+    /// leaves off both lists (the first permanently unlisted, the second
+    /// forbidden).
+    fn layer_fixture_root() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for module in [
+            "model",
+            "library",
+            "forms",
+            "family",
+            "checked_package",
+            "package",
+            "route",
+            "replay",
+            "lowering",
+            "checking",
+        ] {
+            write(dir.path(), &format!("src/{module}.rs"), "");
+        }
+        for submodule in [
+            "definition",
+            "enumeration",
+            "unit",
+            "quantity",
+            "key",
+            "reference",
+            "containment",
+            "collection",
+            "comparison",
+            "composite",
+            "decimal",
+            "division",
+            "equality",
+            "ieee",
+            "node",
+            "numeric",
+            "outcome",
+            "rational",
+            "text",
+            "model_query",
+            "member",
+        ] {
+            write(dir.path(), &format!("src/value/{submodule}.rs"), "");
+        }
+        write(dir.path(), "src/value/expression/mod.rs", "");
+        write(dir.path(), "src/value/mod.rs", "");
+        dir
+    }
+
+    /// Against the real, current tree: every shipped edge under
+    /// `src/check/` -- `use` line and inline path alike -- is permitted,
+    /// and every `value` edge names its submodule. This is TC-175 steps 1-2
+    /// against the module-level layer rule (the former tier assertion is
+    /// retired above). Red against `main` (the four flat
+    /// `crate::value::Presence::Optional` inline paths at `check.rs` lines
+    /// 1620, 1653, 1854 and 1867), green once they are repointed at
+    /// `crate::value::composite::Presence`/`Presence` brought into scope.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn real_check_value_imports_are_bounded_to_tier_1_and_2_and_submodule_qualified() {
-        let edges = value_import_edges(&workspace_root()).expect("scan runs");
+    fn real_check_layer_edges_have_no_violation() {
+        let edges = check_layer_edges(&workspace_root()).expect("scan runs");
         assert!(
             !edges.is_empty(),
-            "fixture sanity: check must import something real from value"
+            "fixture sanity: check must import something real"
         );
         for edge in &edges {
-            assert_ne!(
-                edge.tier,
-                ValueImportTier::Forbidden,
-                "tier-3 (forbidden) edge found: {edge:?}"
-            );
-            assert!(
-                edge.submodule_qualified,
-                "edge not written in submodule-qualified form: {edge:?}"
-            );
+            assert!(!edge.is_violation(), "layer violation found: {edge:?}");
         }
     }
 
-    /// FR-068-AC-6's own forbidden list ("No file under `check` imports from
-    /// ... `package`"), checked directly (PR #291 review, finding 3):
-    /// `value_import_edges` only ever scans `value::`-rooted edges, so this
-    /// half of AC-6 had no mechanized backing until now. Against the real,
-    /// current tree, `check`'s shipped dependency graph imports nothing from
-    /// `package` at all -- confirmed live: a `use crate::package::*;` was
-    /// planted temporarily in `src/check/mod.rs` and confirmed to fail this
-    /// test before being reverted.
+    /// TC-175 step 6: a shipped `use crate::checked_package::CheckedPackage;`
+    /// under `src/check/` fails, naming the file, line and resolved module.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn real_check_has_no_package_import() {
-        let edges = check_package_import_edges(&workspace_root()).expect("scan runs");
-        assert!(
-            edges.is_empty(),
-            "check must never import from package or checked_package (FR-068-AC-6): {edges:?}"
+    fn forbidden_use_edge_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::checked_package::CheckedPackage;\n",
         );
-    }
-
-    /// A fixture proving `check_package_import_edges` actually rejects a
-    /// `package` import, including a glob -- unlike a `value::` import, a
-    /// `package` import is forbidden outright with no allow-list to bound
-    /// it, so a glob (which binds no named leaf to check against an
-    /// allow-list) must still be caught. Pins
-    /// `real_check_has_no_package_import`'s fix permanently.
-    #[trace("TC-175", "FR-068-AC-6")]
-    #[test]
-    fn package_import_is_classified_as_a_violation_including_glob() {
-        let source = r#"
-            use crate::package::PackageDeclarations;
-            use crate::package::*;
-        "#;
-        let parsed = syn::parse_file(source).expect("fixture parses");
-        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
-        assert_eq!(edges.len(), 2);
-        for edge in &edges {
-            assert!(
-                resolves_into_package(&edge.path),
-                "expected a package-resolving edge: {edge:?}"
-            );
-        }
-    }
-
-    /// QSL-182 prep: `checked_package` is the sibling module the moving
-    /// half of layer-4 `package` split into, so a `check` import of it is
-    /// the same forbidden layer-3-depends-on-layer-4 edge as a `package`
-    /// import, and must be caught the same way, including a glob. Pins
-    /// [`resolves_into_package`]'s widened match arm permanently.
-    #[trace("TC-175", "FR-068-AC-6")]
-    #[test]
-    fn checked_package_import_is_classified_as_a_violation_including_glob() {
-        let source = r#"
-            use crate::checked_package::CheckedPackage;
-            use crate::checked_package::*;
-        "#;
-        let parsed = syn::parse_file(source).expect("fixture parses");
-        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
-        assert_eq!(edges.len(), 2);
-        for edge in &edges {
-            assert!(
-                resolves_into_package(&edge.path),
-                "expected a checked_package-resolving edge: {edge:?}"
-            );
-        }
-    }
-
-    /// A deliberately-introduced, non-`#[cfg(test)]` (shipped) import of an
-    /// unlisted item from a tier-2 module (`value::text::NormalizationForm`,
-    /// real in this crate, not one of the seven named tier-2 items) is
-    /// classified `Forbidden` -- this is TC-175's own falsifiability
-    /// requirement (owner ruling, PR #282 review, post-rebase): the tier
-    /// scan must actually reject something, not merely fail to reject
-    /// anything the allow-list was widened to admit. A live equivalent of
-    /// this fixture was run against the real tree (`src/check/mod.rs`,
-    /// temporarily) and confirmed `real_check_value_imports_are_bounded_
-    /// to_tier_1_and_2_and_submodule_qualified` fails with exactly this
-    /// `Forbidden` classification before being reverted; this test pins that
-    /// behavior permanently.
-    #[trace("TC-175", "FR-068-AC-6")]
-    #[test]
-    fn shipped_forbidden_import_is_classified_forbidden() {
-        let source = r#"
-            use crate::value::text::NormalizationForm;
-        "#;
-        let parsed = syn::parse_file(source).expect("fixture parses");
-        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert!(!K_DESIGNATED_MODULES.contains(&"text"));
-        assert!(!DECLARED_INTERIM_ITEMS.contains(&("text", "NormalizationForm")));
+        assert_eq!(edges[0].module, "checked_package");
+        assert_eq!(edges[0].class, LayerClass::Forbidden);
+        assert_eq!(edges[0].line, 1);
+        assert!(edges[0].is_violation());
     }
 
-    /// A `#[cfg(test)]`-gated import of the same otherwise-forbidden shape
-    /// is excluded entirely by [`shipped_use_edges_in_file`] -- the concrete
-    /// mechanism `TextType` relies on to need no tier-2 admission (owner
-    /// ruling, PR #282 review, post-rebase). [`use_edges_in_file`], by
-    /// contrast, still reports it: this test pins the difference between the
-    /// two collectors directly, not only its effect on one real name.
+    /// TC-175 step 6: a shipped inline `use crate::package::*;` glob fails
+    /// the same way a named import would -- `package` has no allow-list to
+    /// check a leaf against, so a glob must still be caught (retiring the
+    /// dedicated `check_package_import_edges` glob fixtures this scan now
+    /// subsumes).
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn shipped_scan_excludes_a_cfg_test_only_forbidden_import() {
-        let source = r#"
-            #[cfg(test)]
-            mod tests {
-                use crate::value::text::NormalizationForm;
-            }
-        "#;
-        let parsed = syn::parse_file(source).expect("fixture parses");
-        let shipped = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
-        assert!(
-            shipped.is_empty(),
-            "a #[cfg(test)]-only import must not appear in the shipped scan: {shipped:?}"
+    fn forbidden_glob_use_edge_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(dir.path(), "src/check/fixture.rs", "use crate::package::*;\n");
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "package");
+        assert!(edges[0].is_violation());
+    }
+
+    /// TC-175 step 6: a shipped inline path `crate::value::expression::
+    /// Evaluation` with no `use` line fails -- an inline path into a later
+    /// layer is the same forbidden edge a `use` line would be.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn forbidden_inline_path_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "pub fn f() -> crate::value::expression::Evaluation {\n    todo!()\n}\n",
         );
-        let unfiltered = use_edges_in_file(&parsed, "src/check/fixture.rs");
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "value::expression");
+        assert_eq!(edges[0].class, LayerClass::Forbidden);
+        assert!(edges[0].is_violation());
+    }
+
+    /// TC-175 step 6: a shipped `use crate::value::Rational;` (the flat
+    /// aggregate) fails even though `value::rational` -- the submodule it
+    /// actually reaches -- is itself a permitted K-copy module. The flat
+    /// form itself is what FR-068-AC-6 forbids, independent of the target.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn flat_value_use_import_is_a_violation_even_when_the_target_is_permitted() {
+        let dir = layer_fixture_root();
+        write(dir.path(), "src/value/mod.rs", "pub use rational::Rational;\n");
+        write(dir.path(), "src/check/fixture.rs", "use crate::value::Rational;\n");
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "value::rational");
+        assert_eq!(edges[0].class, LayerClass::Permitted);
+        assert!(!edges[0].submodule_qualified);
+        assert!(edges[0].is_violation());
+    }
+
+    /// TC-175's own flat-inline-path fixture: a shipped inline flat path
+    /// `crate::value::Presence::Optional` fails, resolved to
+    /// `value::composite` (the module `Presence` actually belongs to)
+    /// through `value::mod.rs`'s own re-export table -- exactly the shape
+    /// `src/check/check.rs` carried at lines 1620, 1653, 1854 and 1867
+    /// before this change repointed them.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn flat_inline_value_path_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(dir.path(), "src/value/mod.rs", "pub use composite::Presence;\n");
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "pub fn f() -> u8 {\n    match crate::value::Presence::Optional {\n        _ => 0,\n    }\n}\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "value::composite");
+        assert!(!edges[0].submodule_qualified);
+        assert!(edges[0].is_violation());
+    }
+
+    /// TC-175 step 6 / Behavior ("A `value` submodule this section does not
+    /// name (today `value::member`) is unlisted"): a shipped
+    /// `use crate::value::member::SomeThing;` fails as unlisted, even
+    /// though `value::member` is a real, submodule-qualified import (not a
+    /// flat one) -- being on neither list is its own failure.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn unlisted_value_submodule_is_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::value::member::SomeThing;\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "value::member");
+        assert_eq!(edges[0].class, LayerClass::Unlisted);
+        assert!(edges[0].submodule_qualified);
+        assert!(edges[0].is_violation());
+    }
+
+    /// TC-175 step 6: the same forbidden import inside a `#[cfg(test)]`
+    /// item does not fail -- shipped-only scope.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn cfg_test_forbidden_import_is_not_reported() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "#[cfg(test)]\nmod tests {\n    use crate::checked_package::CheckedPackage;\n}\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert!(edges.is_empty(), "{edges:?}");
+    }
+
+    /// TC-175 step 6: an additional item from a permitted module (a new
+    /// name from `crate::value::quantity`) does not fail -- the number of
+    /// items imported from a permitted module is not checked.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn extra_item_from_a_permitted_module_is_not_a_violation() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::value::quantity::BrandNewQuantityItem;\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "value::quantity");
+        assert_eq!(edges[0].class, LayerClass::Permitted);
+        assert!(edges[0].submodule_qualified);
+        assert!(!edges[0].is_violation());
+    }
+
+    /// `std` and third-party crates are out of FR-068-AC-6's scope entirely
+    /// -- not classified, and never reported, even though they are on
+    /// neither list.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn external_crate_use_is_out_of_scope() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use std::collections::BTreeMap;\nuse serde_json::Value;\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert!(edges.is_empty(), "{edges:?}");
+    }
+
+    /// FR-068-AC-6: "A `super::` or `self::` path is resolved relative to
+    /// its file." `super::` climbs one module level from the file's own
+    /// crate-relative module path; `self::` stays at it; `crate::` strips
+    /// to the crate root regardless of the current file.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn resolve_relative_path_resolves_super_self_and_crate() {
+        let current = vec!["check".to_owned(), "check".to_owned()];
         assert_eq!(
-            unfiltered.len(),
-            1,
-            "the unfiltered collector (used by TC-172/TC-176) must still see it: {unfiltered:?}"
+            resolve_relative_path(&["super".to_owned(), "family".to_owned()], &current),
+            vec!["check", "family"]
         );
+        assert_eq!(
+            resolve_relative_path(&["self".to_owned(), "Foo".to_owned()], &current),
+            vec!["check", "check", "Foo"]
+        );
+        assert_eq!(
+            resolve_relative_path(&["crate".to_owned(), "value".to_owned()], &current),
+            vec!["value"]
+        );
+    }
+
+    /// `module_segments_of` mirrors Rust's own `mod.rs`/`foo.rs`
+    /// file-to-module convention, the basis [`resolve_relative_path`] needs
+    /// to resolve a `super::`/`self::` path relative to its file.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn module_segments_of_matches_the_mod_rs_convention() {
+        assert_eq!(
+            module_segments_of("src/check/check.rs"),
+            vec!["check", "check"]
+        );
+        assert_eq!(module_segments_of("src/check/mod.rs"), vec!["check"]);
+        assert_eq!(module_segments_of("src/lib.rs"), Vec::<String>::new());
     }
 }

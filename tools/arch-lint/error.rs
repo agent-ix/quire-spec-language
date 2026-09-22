@@ -15,6 +15,10 @@ pub(crate) enum Code {
     /// a silently different (and possibly clean-looking) answer than the
     /// same command run against a fresh one.
     Stale,
+    /// FR-060 T12-B/T12-C's `syn`-based scan (`#[cfg(test)]` exclusion,
+    /// comment exclusion, debt-list function resolution) could not parse a
+    /// source file as Rust.
+    SourceParse,
 }
 
 impl Code {
@@ -26,6 +30,7 @@ impl Code {
             Self::InvalidMetadata => "invalid-metadata",
             Self::InvalidLockfile => "invalid-lockfile",
             Self::Stale => "stale-clone",
+            Self::SourceParse => "source-parse-failed",
         }
     }
 }
@@ -67,13 +72,18 @@ impl Error {
         Self::new(Code::Io, format!("{source} ({})", path.display()))
     }
 
+    pub(crate) fn source_parse(path: &Path, source: syn::Error) -> Self {
+        Self::new(Code::SourceParse, format!("{source} ({})", path.display()))
+    }
+
     /// Distinguish usage/environment failure from a reported architecture
     /// violation. `run` decides the violation exit code (1) itself; this
     /// covers only the errors that stop the tool before it can report.
     pub(crate) fn exit_code(&self) -> u8 {
         match self.code {
             Code::Usage => 2,
-            Code::Io | Code::CargoMetadata | Code::InvalidMetadata | Code::InvalidLockfile => 3,
+            Code::Io | Code::CargoMetadata | Code::InvalidMetadata | Code::InvalidLockfile
+            | Code::SourceParse => 3,
             Code::Stale => 4,
         }
     }

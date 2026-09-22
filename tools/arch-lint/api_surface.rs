@@ -8,40 +8,58 @@
 //! that type's `from_digest` constructor, and `src/value/node.rs` re-exports
 //! the kernel `NodeKey` type rather than defining its own.
 //!
-//! The scan is textual: it looks for each rule's declared `call_patterns`
-//! substring in a `.rs` file's own module and does not resolve `use ... as`
-//! renames or macro expansion, nor does it exclude a match found inside a
-//! comment or string literal. Most rules match `Type::method(` call syntax;
+//! **Scanning method (the layer-rule ruling, 2026-09-22).** The scan is
+//! textual: it looks for each rule's declared `call_patterns` substring in a
+//! `.rs` file and does not resolve `use ... as` renames or macro expansion.
+//! A `forbidden_patterns` entry is a violation from any module, including an
+//! allowed caller: a spelling that no longer names the rule's symbol at all
+//! (T12-A's `quire_spec_language::replay::`, dead since the facade became
+//! its own crate, QSL-185). Most rules match `Type::method(` call syntax;
 //! T12-B's pattern is the bare path `NodeKey::from_digest`, which also
 //! catches the constructor passed as a value rather than called (see T12-B's
-//! own comment, below). These are stated limitations, not a silent gap: a
-//! caller that imports a rule's symbol under another name, or a comment that
-//! happens to quote a call pattern, is not distinguished from a real call
-//! site by this version of the check. `main.rs`'s printed report states both
-//! limitations.
+//! own comment, below). T12-A and T12-D keep the original, looser posture --
+//! neither excludes a match found inside a comment or string literal, both
+//! stated limitations, not silent gaps. T12-B and T12-C (`Rule::shipped_only`)
+//! additionally parse each file with `syn` to exclude `#[cfg(test)]` items
+//! entirely and to blank out comment text before matching (FR-060 Behavior,
+//! "T12-B and T12-C: shipped code and debt lists"), and to resolve each
+//! mint's enclosing function for the named debt list. A match inside a
+//! string literal remains a known limitation of all four rules. `main.rs`'s
+//! printed report states these limitations.
 //!
 //! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
 //! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
-//! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
-//! call only QSL's `qsl-replay` facade crate), scanned against the CG tree
-//! passed with `--cg` -- never against QSL's own tree, which contains no CG
-//! call sites for the rule to find (#249 review, HIGH-2/MEDIUM-4). A rule
-//! whose role's tree was not supplied reports [`RuleStatus::NeedsRoot`]; the
-//! other rules are still evaluated.
+//! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule
+//! (does CG call only QSL's `qsl-replay` facade crate), scanned against the
+//! CG tree passed with `--cg` -- never against QSL's own tree, which
+//! contains no CG call sites for the rule to find (#249 review,
+//! HIGH-2/MEDIUM-4). A rule whose role's tree was not supplied reports
+//! [`RuleStatus::NeedsRoot`]; the other rules are still evaluated --
+//! `main.rs`'s loop calls `evaluate` once per rule regardless, so one rule's
+//! missing input never hides another rule's report.
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
 
+use syn::{spanned::Spanned, visit::Visit};
+
 use crate::error::{Code, Error, Result};
 
-/// One call site of a rule's symbol, named by the module that contains it.
+/// One call site of a rule's symbol, named by the module and (for a
+/// [`Rule::shipped_only`] rule) the enclosing function that contains it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallSite {
     pub(crate) file: PathBuf,
     pub(crate) line: usize,
     pub(crate) module: String,
+    /// The enclosing function's name (`Type::method` inside an `impl`, or a
+    /// bare function name), for FR-060's named debt-list keying. Empty for
+    /// a rule that does not resolve it (`shipped_only: false`, whose debt
+    /// list is always empty) or when no enclosing function is found.
+    pub(crate) function: String,
 }
 
 /// Whether a rule could be evaluated. A rule the tool cannot evaluate is
@@ -106,6 +124,21 @@ pub(crate) struct Rule {
     /// applies unconditionally, not only while the rule is pending (#249
     /// review round 2 H-1). `None` for a rule with no such gap.
     pub(crate) scope_note: Option<&'static str>,
+    /// Whether this rule scans shipped code only (FR-060 Behavior, "T12-B
+    /// and T12-C: shipped code and debt lists"): `#[cfg(test)]` items and
+    /// comment text are excluded, and each site's enclosing function is
+    /// resolved for `debt_list`. `false` for T12-A/T12-D, which keep the
+    /// original unfiltered textual scan and always carry an empty
+    /// `debt_list`.
+    pub(crate) shipped_only: bool,
+    /// FR-060's named, shrinking debt list: a `(module, function)` pair
+    /// whose mint is reported as debt rather than failing the rule. Keyed
+    /// by function, not by line, so the list only shrinks: an entry leaves
+    /// in the change that removes its last mint, and no entry is added.
+    /// Never consulted for a `forbidden_patterns` match, which fails
+    /// regardless of caller or debt status. `&[]` for a rule with no debt
+    /// (T12-A, T12-D).
+    pub(crate) debt_list: &'static [(&'static str, &'static str)],
 }
 
 /// today's four T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21).
@@ -115,10 +148,12 @@ pub(crate) const RULES: &[Rule] = &[
         description:
             "CG calls the QSL layer-6 `qsl-replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
         role: Role::Cg,
-        // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6).
+        // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6, QSL-185).
         call_patterns: &["qsl_replay::"],
-        // The root crate has no `replay` module, so a call spelled this way
-        // cannot reach the facade; it is a finding, never a pass.
+        // The root crate has no `replay` module any more (QSL-185 moved it
+        // into its own crate), so a call spelled this way cannot reach the
+        // facade; it is a finding, never a pass, from any module including
+        // an allowed one.
         forbidden_patterns: &["quire_spec_language::replay::"],
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
@@ -128,6 +163,8 @@ pub(crate) const RULES: &[Rule] = &[
         pending_reason: "the layer-6 facade crate `qsl-replay/src/lib.rs` is absent from the \
                          --qsl tree",
         scope_note: None,
+        shipped_only: false,
+        debt_list: &[],
     },
     Rule {
         id: "T12-B",
@@ -145,49 +182,50 @@ pub(crate) const RULES: &[Rule] = &[
         // modules' own minting sites (R1, #249 review, review item 7).
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
-        // ADR-011 §1 stage table, S3 row: "QSL check (today: value::expression
-        // check, model::checked_dispatch, value::library)". `model::
-        // checked_dispatch` -> `check::checked_dispatch` (FR-074, ADR-011
-        // §7.3 M-2, QSL-7, 2026-09-21) realised ADR-011:694-697's end state
-        // ("only `check` calls the kernel `NodeKey` constructor") for that
-        // one caller. `check::identity` (QSL-158 S-3b) is also an
-        // allow-listed `check` submodule; its own `from_digest` call today
-        // is test-only (identity.rs:630, inside `#[cfg(test)]`).
+        // The layer-rule ruling (2026-09-22): T12-B's allowed callers are
+        // `check` and every module under it (ADR-013 O-04), replacing the
+        // former fixed three-module list (`value::expression::check`,
+        // `check::checked_dispatch`, `check::identity`) -- each of those was
+        // already a `check` descendant, so the prefix alone covers them,
+        // plus `check::family`'s `mint_declaration_identity`/
+        // `mint_call_identity`, with no allow-list edit needed for a future
+        // `check` descendant. `check::identity`'s own `from_digest` call
+        // today is test-only (`identity.rs`, inside `#[cfg(test)]`, so it is
+        // excluded from the shipped-code scan regardless of the allow-list).
         //
         // `value::node` re-exports the kernel `NodeKey` and is not
-        // allow-listed: `node_key_of`'s own `from_digest` mint and
-        // `NodeIdDocument::key`'s wire-digest-string parse-then-wrap (both
-        // in `src/value/node.rs`) are real production call sites outside
-        // this rule's allow-list (FR-060 T12-B's named-debt list, entry
-        // `value::node::NodeIdDocument::key`), not this rule's sanctioned
-        // path.
-        allowed_caller_prefixes: &[
-            "value::expression::check",
-            "check::checked_dispatch",
-            "check::identity",
-        ],
+        // allow-listed: `node_key_of`'s own mint and `NodeIdDocument::key`'s
+        // wire-digest-string parse-then-wrap (both in `src/value/node.rs`)
+        // are named debt here (FR-060's list, below) rather than this rule's
+        // sanctioned path.
+        allowed_caller_prefixes: &["check"],
         requires_path: Some("src/value/node.rs"),
         // Genuinely unreachable for the same reason as T12-C's, below:
         // `src/value/node.rs` already exists on origin/main as a `pub use
         // quire_exact::NodeKey` re-export rather than a definition, but the
         // marker path's presence is all this check tests.
         pending_reason: "unreachable: src/value/node.rs already exists on origin/main",
-        // ADR-013 O-04/O-05, DA-02 name `NodeKey`/`EffectiveId` minting as a
-        // system-wide, single-constructor invariant, but today (pre-#213
-        // kernel extraction) quire-contract-runtime defines its own,
-        // independent `NodeKey` type (`rt/src/exact/node.rs`), called from
-        // RT's own tests and generated by quire-contract-codegen's own
-        // templates (e.g. `rt::NodeKey::from_bytes(...)` in
-        // `composite_equality.rs`). This rule scans QSL's own tree only
-        // (Role::Qsl); ADR-013 does not name an allowed-caller-module
-        // mapping for RT's or CG's own copies, so scanning them is not
-        // decided here -- escalated to whoever owns #213.
         scope_note: Some(
             "scoped to QSL's own tree only; does not scan quire-contract-runtime's \
              independently defined NodeKey type or quire-contract-codegen's generated call \
              sites -- ADR-013 does not name an allowed-caller mapping for either, not decided \
              here (#213)",
         ),
+        shipped_only: true,
+        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists" --
+        // every shipped mint outside `check` on origin/main, named by
+        // enclosing module and function. This list only shrinks: an entry
+        // leaves in the change that removes its last mint.
+        debt_list: &[
+            ("value::enumeration", "EnumDeclarationPreimage::node_key"),
+            ("value::enumeration", "EnumMemberPreimage::node_key"),
+            ("value::unit", "DimensionPreimage::node_key"),
+            ("value::unit", "UnitPreimage::node_key"),
+            ("value::node", "node_key_of"),
+            ("value::node", "NodeIdDocument::key"),
+            ("value::model_query", "to_object_reference"),
+            ("value::expression::family", "decode_v2"),
+        ],
     },
     Rule {
         id: "T12-C",
@@ -212,6 +250,13 @@ pub(crate) const RULES: &[Rule] = &[
              quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
              name an allowed-caller mapping for either, not decided here (#213)",
         ),
+        shipped_only: true,
+        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists"
+        // (OBS-018).
+        debt_list: &[
+            ("value::model_query", "bridge_lookup_key"),
+            ("value::model_query", "resolve_target"),
+        ],
     },
     Rule {
         id: "T12-D",
@@ -238,6 +283,8 @@ pub(crate) const RULES: &[Rule] = &[
         // makes no claim about either, rather than asserting a copy this
         // scan has not found.
         scope_note: Some("scoped to QSL's own tree only"),
+        shipped_only: false,
+        debt_list: &[],
     },
 ];
 
@@ -276,15 +323,27 @@ pub(crate) fn assert_is_qsl_root(qsl_root: &Path) -> Result<()> {
 pub(crate) struct RuleOutcome {
     pub(crate) rule_id: &'static str,
     pub(crate) status: RuleStatus,
+    /// A mint outside the allowed callers, in a function not on
+    /// `Rule::debt_list`, or a `Rule::forbidden_patterns` match from any
+    /// module -- fails the rule.
     pub(crate) violations: Vec<CallSite>,
+    /// A mint outside the allowed callers, in a function that *is* on
+    /// `Rule::debt_list` -- reported, but does not fail the rule.
+    pub(crate) debt: Vec<CallSite>,
+    /// A `Rule::debt_list` entry with no remaining mint found in this scan
+    /// -- fails the rule, so a fixed site cannot later hide a new mint
+    /// under a stale name.
+    pub(crate) stale_debt_entries: Vec<(&'static str, &'static str)>,
 }
 
 impl RuleOutcome {
     pub(crate) fn passed(&self) -> bool {
         match self.status {
             RuleStatus::Pending(_) => true,
+            // Not a silent pass: the rule's compliance genuinely was not
+            // checked, so the overall run does not report clean.
             RuleStatus::NeedsRoot(_) => false,
-            RuleStatus::Live => self.violations.is_empty(),
+            RuleStatus::Live => self.violations.is_empty() && self.stale_debt_entries.is_empty(),
         }
     }
 }
@@ -313,22 +372,309 @@ fn module_allowed(module: &str, allowed_prefixes: &[&str]) -> bool {
         .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}::")))
 }
 
-/// Every line of `path` that violates `rule`: a forbidden pattern from any
-/// module, or a call pattern from a module outside the allowed callers.
-fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<CallSite>> {
+/// Whether `attrs` includes `#[cfg(test)]` -- FR-060 Behavior, "T12-B and
+/// T12-C: shipped code and debt lists".
+fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        if !attr.path().is_ident("cfg") {
+            return false;
+        }
+        let mut found = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("test") {
+                found = true;
+            }
+            Ok(())
+        });
+        found
+    })
+}
+
+/// Blank out `//`-style line comments (covering `///`/`//!` doc comments)
+/// and `/* ... */` block comments from `source`, one output line per input
+/// line, so a pattern match inside either is never reported for T12-B/T12-C
+/// (FR-060 Behavior). A conservative, line-oriented pass: it does not
+/// distinguish `//`/`/*` text that appears inside a string literal from a
+/// real comment -- a known limitation, the same shape T12-A/T12-D's own
+/// stated textual-scan limitations already have, and not one QSL's own
+/// source style triggers (a constructor name is never written as a string
+/// literal next to a real comment marker).
+fn strip_comments(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_block_comment = false;
+    for line in source.lines() {
+        let mut sanitized = String::with_capacity(line.len());
+        let mut chars = line.char_indices();
+        while let Some((index, ch)) = chars.next() {
+            if in_block_comment {
+                if ch == '*' && line[index..].starts_with("*/") {
+                    in_block_comment = false;
+                    chars.next();
+                }
+                continue;
+            }
+            if ch == '/' && line[index..].starts_with("//") {
+                break;
+            }
+            if ch == '/' && line[index..].starts_with("/*") {
+                in_block_comment = true;
+                chars.next();
+                continue;
+            }
+            sanitized.push(ch);
+        }
+        out.push(sanitized);
+    }
+    out
+}
+
+/// Every source line inside a `#[cfg(test)]`-gated item (`mod`, `fn`, `impl`,
+/// an `impl` method, `struct`, `enum`, `trait`, `static` or `const`), 1-based
+/// and inclusive of the item's own first and last line -- FR-060 Behavior,
+/// "T12-B and T12-C: shipped code and debt lists".
+fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
+    struct CfgTestVisitor {
+        lines: BTreeSet<usize>,
+    }
+    impl CfgTestVisitor {
+        fn mark(&mut self, span: proc_macro2::Span) {
+            for line in span.start().line..=span.end().line {
+                self.lines.insert(line);
+            }
+        }
+    }
+    macro_rules! skip_if_cfg_test {
+        ($visit_fn:ident, $node_ty:ty, $default:path) => {
+            fn $visit_fn(&mut self, node: &'_ $node_ty) {
+                if has_cfg_test(&node.attrs) {
+                    self.mark(node.span());
+                } else {
+                    $default(self, node);
+                }
+            }
+        };
+    }
+    impl<'ast> Visit<'ast> for CfgTestVisitor {
+        skip_if_cfg_test!(visit_item_mod, syn::ItemMod, syn::visit::visit_item_mod);
+        skip_if_cfg_test!(visit_item_fn, syn::ItemFn, syn::visit::visit_item_fn);
+        skip_if_cfg_test!(visit_item_impl, syn::ItemImpl, syn::visit::visit_item_impl);
+        skip_if_cfg_test!(
+            visit_impl_item_fn,
+            syn::ImplItemFn,
+            syn::visit::visit_impl_item_fn
+        );
+        skip_if_cfg_test!(
+            visit_item_struct,
+            syn::ItemStruct,
+            syn::visit::visit_item_struct
+        );
+        skip_if_cfg_test!(visit_item_enum, syn::ItemEnum, syn::visit::visit_item_enum);
+        skip_if_cfg_test!(
+            visit_item_trait,
+            syn::ItemTrait,
+            syn::visit::visit_item_trait
+        );
+        skip_if_cfg_test!(
+            visit_item_static,
+            syn::ItemStatic,
+            syn::visit::visit_item_static
+        );
+        skip_if_cfg_test!(
+            visit_item_const,
+            syn::ItemConst,
+            syn::visit::visit_item_const
+        );
+    }
+    let mut visitor = CfgTestVisitor {
+        lines: BTreeSet::new(),
+    };
+    visitor.visit_file(parsed);
+    visitor.lines
+}
+
+/// The `Self` type name of an `impl` block, for qualifying a method's own
+/// name (`Type::method`) -- `"<impl>"` for a `Self` type this cannot name
+/// (a rare shape none of T12-B/T12-C's debt-list functions use).
+fn impl_self_name(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_else(|| "<impl>".to_owned()),
+        _ => "<impl>".to_owned(),
+    }
+}
+
+/// A `syn` walk finding the innermost `fn` (a bare module-level function, or
+/// an `impl` method qualified `Type::method`) whose span contains a target
+/// line -- FR-060's debt-list keying, "by enclosing module and function,
+/// not by line number."
+struct EnclosingFunction {
+    target_line: usize,
+    current_impl_self: Option<String>,
+    found: Option<(String, usize)>,
+}
+
+impl EnclosingFunction {
+    fn consider(&mut self, span: proc_macro2::Span, name: String) {
+        let start = span.start().line;
+        let end = span.end().line;
+        if start <= self.target_line && self.target_line <= end {
+            let width = end - start;
+            if self.found.as_ref().is_none_or(|(_, best)| width < *best) {
+                self.found = Some((name, width));
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for EnclosingFunction {
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        let previous = self
+            .current_impl_self
+            .replace(impl_self_name(&node.self_ty));
+        syn::visit::visit_item_impl(self, node);
+        self.current_impl_self = previous;
+    }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        self.consider(node.span(), node.sig.ident.to_string());
+        syn::visit::visit_item_fn(self, node);
+    }
+
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        let name = match &self.current_impl_self {
+            Some(self_ty) => format!("{self_ty}::{}", node.sig.ident),
+            None => node.sig.ident.to_string(),
+        };
+        self.consider(node.span(), name);
+        syn::visit::visit_impl_item_fn(self, node);
+    }
+}
+
+/// Resolve a 1-based `line` to its innermost enclosing function's name (see
+/// [`EnclosingFunction`]). Empty when no function's span contains `line`.
+fn enclosing_function(parsed: &syn::File, line: usize) -> String {
+    let mut visitor = EnclosingFunction {
+        target_line: line,
+        current_impl_self: None,
+        found: None,
+    };
+    visitor.visit_file(parsed);
+    visitor.found.map(|(name, _)| name).unwrap_or_default()
+}
+
+/// The source line a bare (no `::`) call pattern's *own* function
+/// definition sits on, if this file defines one -- FR-060 Behavior, "T12-B
+/// also matches calls of `node_key_of`... the helper's own `fn
+/// node_key_of(` definition line is not a mint." `bare_names` is each
+/// pattern with `::` in it filtered out and any trailing `(` trimmed (a
+/// pattern naming an associated function, like `NodeKey::from_digest`,
+/// never collides with a plain `fn`'s own signature text this way).
+fn bare_fn_definition_lines(parsed: &syn::File, bare_names: &[&str]) -> BTreeSet<usize> {
+    struct DefFinder<'a> {
+        names: &'a [&'a str],
+        lines: BTreeSet<usize>,
+    }
+    impl DefFinder<'_> {
+        fn consider(&mut self, ident: &syn::Ident, fn_token_span: proc_macro2::Span) {
+            if self.names.contains(&ident.to_string().as_str()) {
+                self.lines.insert(fn_token_span.start().line);
+            }
+        }
+    }
+    impl<'ast> Visit<'ast> for DefFinder<'_> {
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            self.consider(&node.sig.ident, node.sig.fn_token.span());
+            syn::visit::visit_item_fn(self, node);
+        }
+        fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+            self.consider(&node.sig.ident, node.sig.fn_token.span());
+            syn::visit::visit_impl_item_fn(self, node);
+        }
+    }
+    let mut finder = DefFinder {
+        names: bare_names,
+        lines: BTreeSet::new(),
+    };
+    finder.visit_file(parsed);
+    finder.lines
+}
+
+/// Every line of `path` that violates `rule`: a `forbidden_patterns` match
+/// from any module (tagged `true`), or a `call_patterns` match from a
+/// module outside the allowed callers (tagged `false`, for `evaluate`'s
+/// debt-list lookup).
+fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bool)>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let contains_any = |line: &str, patterns: &[&str]| patterns.iter().any(|p| line.contains(p));
     let caller_allowed = module_allowed(module, rule.allowed_caller_prefixes);
     let mut sites = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        if contains_any(line, rule.forbidden_patterns)
-            || (!caller_allowed && contains_any(line, rule.call_patterns))
-        {
-            sites.push(CallSite {
-                file: path.to_path_buf(),
-                line: index + 1,
-                module: module.to_owned(),
+        let is_forbidden = contains_any(line, rule.forbidden_patterns);
+        let is_call = !caller_allowed && contains_any(line, rule.call_patterns);
+        if is_forbidden || is_call {
+            sites.push((
+                CallSite {
+                    file: path.to_path_buf(),
+                    line: index + 1,
+                    module: module.to_owned(),
+                    function: String::new(),
+                },
+                is_forbidden,
+            ));
+        }
+    }
+    Ok(sites)
+}
+
+/// T12-B/T12-C's scan (`Rule::shipped_only`): excludes `#[cfg(test)]` items
+/// and comment text, and resolves each site's enclosing function. Tags each
+/// site the same way [`scan_file`] does (`forbidden_patterns` vs.
+/// `call_patterns`).
+fn scan_shipped_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bool)>> {
+    let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
+    let parsed = syn::parse_file(&text).map_err(|source| Error::source_parse(path, source))?;
+    let excluded_lines = cfg_test_lines(&parsed);
+    let caller_allowed = module_allowed(module, rule.allowed_caller_prefixes);
+    let bare_patterns: Vec<&str> = rule
+        .call_patterns
+        .iter()
+        .copied()
+        .filter(|pattern| !pattern.contains("::"))
+        .map(|pattern| pattern.trim_end_matches('('))
+        .collect();
+    let bare_definition_lines = bare_fn_definition_lines(&parsed, &bare_patterns);
+    let mut sites = Vec::new();
+    for (index, line) in strip_comments(&text).iter().enumerate() {
+        let line_number = index + 1;
+        if excluded_lines.contains(&line_number) {
+            continue;
+        }
+        let is_forbidden = rule
+            .forbidden_patterns
+            .iter()
+            .any(|pattern| line.contains(pattern));
+        let is_call = !caller_allowed
+            && rule.call_patterns.iter().any(|pattern| {
+                if !line.contains(pattern) {
+                    return false;
+                }
+                let bare = pattern.trim_end_matches('(');
+                !(bare_patterns.contains(&bare) && bare_definition_lines.contains(&line_number))
             });
+        if is_forbidden || is_call {
+            sites.push((
+                CallSite {
+                    file: path.to_path_buf(),
+                    line: line_number,
+                    module: module.to_owned(),
+                    function: enclosing_function(&parsed, line_number),
+                },
+                is_forbidden,
+            ));
         }
     }
     Ok(sites)
@@ -367,6 +713,8 @@ pub(crate) fn evaluate(
                 rule_id: rule.id,
                 status: RuleStatus::Pending(rule.pending_reason),
                 violations: Vec::new(),
+                debt: Vec::new(),
+                stale_debt_entries: Vec::new(),
             });
         }
     }
@@ -375,9 +723,13 @@ pub(crate) fn evaluate(
             rule_id: rule.id,
             status: RuleStatus::NeedsRoot(rule.role),
             violations: Vec::new(),
+            debt: Vec::new(),
+            stale_debt_entries: Vec::new(),
         });
     };
     let mut violations = Vec::new();
+    let mut debt = Vec::new();
+    let mut debt_seen: BTreeSet<(&'static str, &'static str)> = BTreeSet::new();
     for src_root in qsl_scan_src_roots(rule.role, scan_root) {
         if !src_root.exists() {
             // Every listed root is required, the primary root
@@ -402,14 +754,46 @@ pub(crate) fn evaluate(
                 .expect("walked file is under src_root")
                 .to_path_buf();
             let module = module_path_of(&relative);
-            violations.extend(scan_file(&file, &module, rule)?);
+            let sites = if rule.shipped_only {
+                scan_shipped_file(&file, &module, rule)?
+            } else {
+                scan_file(&file, &module, rule)?
+            };
+            for (site, is_forbidden) in sites {
+                if is_forbidden {
+                    violations.push(site);
+                    continue;
+                }
+                if module_allowed(&site.module, rule.allowed_caller_prefixes) {
+                    continue;
+                }
+                let debt_entry = rule.debt_list.iter().find(|(module, function)| {
+                    *module == site.module && *function == site.function
+                });
+                match debt_entry {
+                    Some(entry) => {
+                        debt_seen.insert(*entry);
+                        debt.push(site);
+                    }
+                    None => violations.push(site),
+                }
+            }
         }
     }
     violations.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+    debt.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+    let stale_debt_entries: Vec<(&'static str, &'static str)> = rule
+        .debt_list
+        .iter()
+        .copied()
+        .filter(|entry| !debt_seen.contains(entry))
+        .collect();
     Ok(RuleOutcome {
         rule_id: rule.id,
         status: RuleStatus::Live,
         violations,
+        debt,
+        stale_debt_entries,
     })
 }
 
@@ -420,20 +804,25 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3) and `qsl-replay` (X-10). Each later
-/// layer crate joins this list when it is extracted. `quire-exact` and `qsl-attrs` are
-/// excluded: `quire-exact` is the kernel these rules' constructors are
-/// defined *in*, never a caller of them (T12-B/T12-C/T12-D's own scope notes
-/// already exclude checking a copy of the constructor elsewhere; the crate
-/// that defines a constructor calling its own inherent `impl` is not a
-/// "caller"), and `qsl-attrs` is a proc-macro crate with no dependency on
-/// `quire-exact` at all.
+/// layer crate joins this list when it is extracted. `quire-exact` and
+/// `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
+/// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
+/// own scope notes already exclude checking a copy of the constructor
+/// elsewhere; the crate that defines a constructor calling its own inherent
+/// `impl` is not a "caller"), and `qsl-attrs` is a proc-macro crate with no
+/// dependency on `quire-exact` at all.
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"]
-            .into_iter()
-            .map(|relative| scan_root.join(relative))
-            .collect(),
+        Role::Qsl => [
+            "src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-replay/src",
+        ]
+        .into_iter()
+        .map(|relative| scan_root.join(relative))
+        .collect(),
     }
 }
 
@@ -452,12 +841,44 @@ mod tests {
     /// Every `Role::Qsl` scan root now has to exist (QSL-178 review F4): a
     /// missing one is an error, not a silently skipped tree. Tests that
     /// exercise `Role::Qsl` rules but are not themselves about a missing
-    /// root (every one below except tc_arch_lint_api_surface_015, which
-    /// tests exactly that) call this first so the extracted-crate roots
-    /// they don't care about are present, but empty.
+    /// root (every one below except tc_arch_lint_api_surface_015/019, which
+    /// test exactly that) call this first so the extracted-crate roots they
+    /// don't care about are present, but empty.
     fn ensure_qsl_roots(root: &Path) {
-        for relative in ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"] {
+        for relative in [
+            "src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-replay/src",
+        ] {
             fs::create_dir_all(root.join(relative)).unwrap();
+        }
+    }
+
+    /// Writes one real mint (`mint_expr`, e.g. `"let _ = NodeKey::from_digest(x);"`)
+    /// for every entry on `rule.debt_list`, grouped one file per module.
+    /// FR-060 Behavior treats a debt-list entry with no remaining mint as
+    /// stale (a failure) -- correct against the real, whole-tree scan, but
+    /// a fixture test that plants only the one scenario it cares about would
+    /// otherwise see every *other* entry the debt list names as spuriously
+    /// stale, since its own narrow tree never touches them. Tests that are
+    /// not themselves about staleness call this first so the debt list
+    /// starts fully satisfied, then plant their own scenario on top.
+    fn seed_debt_list_baseline(root: &Path, rule: &Rule, mint_expr: &str) {
+        let mut by_module: std::collections::BTreeMap<&str, String> =
+            std::collections::BTreeMap::new();
+        for (module, function) in rule.debt_list {
+            let block = match function.split_once("::") {
+                Some((type_name, method)) => format!(
+                    "pub struct {type_name};\nimpl {type_name} {{\n    pub fn {method}(&self) {{ {mint_expr} }}\n}}\n"
+                ),
+                None => format!("pub fn {function}() {{ {mint_expr} }}\n"),
+            };
+            by_module.entry(module).or_default().push_str(&block);
+        }
+        for (module, body) in by_module {
+            let relative = format!("src/{}.rs", module.replace("::", "/"));
+            write(root, &relative, &body);
         }
     }
 
@@ -515,15 +936,16 @@ mod tests {
         );
         write(
             dir.path(),
-            "src/value/model_query.rs",
+            "src/library/mod.rs",
             "fn f() {\n    let k = NodeKey::from_digest(bytes);\n}\n",
         );
         let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert_eq!(outcome.violations.len(), 1);
-        assert_eq!(outcome.violations[0].module, "value::model_query");
+        assert_eq!(outcome.violations[0].module, "library");
         assert_eq!(outcome.violations[0].line, 2);
+        assert_eq!(outcome.violations[0].function, "f");
         assert!(!outcome.passed());
     }
 
@@ -534,16 +956,23 @@ mod tests {
     fn tc_arch_lint_api_surface_004_allowed_caller_is_not_a_violation() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
+        let rule = &RULES[2]; // T12-C: allowed prefix "model"
+        seed_debt_list_baseline(dir.path(), rule, "let _ = EffectiveId::from_digest(x);");
         write(dir.path(), "src/model/key.rs", "impl EffectiveId {}\n");
         write(
             dir.path(),
             "src/model/normalize.rs",
             "fn f() {\n    let id = EffectiveId::from_digest(bytes);\n}\n",
         );
-        let rule = &RULES[2]; // T12-C: allowed prefix "model"
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty());
+        assert_eq!(
+            outcome.debt.len(),
+            rule.debt_list.len(),
+            "{:?}",
+            outcome.debt
+        );
         assert!(outcome.passed());
     }
 
@@ -575,63 +1004,75 @@ mod tests {
     /// `value::enumeration` and `value::unit`'s real minting sites, which a
     /// scan for the constructor pattern alone would miss (they call the
     /// helper, not the constructor, directly). `value::node`'s own
-    /// `node_key_of` definition line is a second violation
-    /// (tc_arch_lint_api_surface_007): `value::node` is not allow-listed, so
-    /// its own mint is a reported site like any other caller.
+    /// `node_key_of` mint is separately named debt (FR-060's list, tested by
+    /// tc_arch_lint_api_surface_007), so this fixture's own caller -- an
+    /// ordinary function, not one of the named debt functions -- is the one
+    /// real violation here.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_006_node_key_of_helper_call_is_a_violation() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        write(
-            dir.path(),
-            "src/value/node.rs",
-            "pub(crate) fn node_key_of() { NodeKey::from_digest([0; 32]); }\n",
-        );
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
         write(
             dir.path(),
             "src/value/enumeration.rs",
-            "fn f() {\n    node_key_of(&decl);\n}\n",
+            "fn an_unlisted_caller() {\n    node_key_of(&decl);\n}\n",
         );
-        let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
-        assert_eq!(outcome.violations.len(), 2);
-        assert!(outcome
-            .violations
-            .iter()
-            .any(|site| site.module == "value::node"));
-        assert!(outcome
-            .violations
-            .iter()
-            .any(|site| site.module == "value::enumeration"));
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "value::enumeration");
+        assert_eq!(outcome.violations[0].function, "an_unlisted_caller");
+        assert!(!outcome.passed());
     }
 
     /// tc_arch_lint_api_surface_007: `value::node` re-exports the kernel
     /// `NodeKey` type and is not allow-listed, so its own `node_key_of` mint
-    /// is a real, reported violation like any other disallowed caller
-    /// (FR-060 T12-B's named-debt list).
-    #[trace("TC-157", "FR-060-AC-3")]
+    /// would be a violation like any other disallowed caller -- except that
+    /// `node_key_of` is itself one of FR-060 T12-B's named debt-list
+    /// functions, so it is reported as debt, not a failure.
+    #[trace("TC-157", "FR-060-AC-4")]
     #[test]
-    fn tc_arch_lint_api_surface_007_value_node_is_a_reported_caller() {
+    fn tc_arch_lint_api_surface_007_value_node_mint_is_named_debt() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        // Overwrite the seeded `value::node` baseline with a
+        // shaped-like-the-real-thing mint for `node_key_of` specifically,
+        // keeping `NodeIdDocument::key`'s own seeded mint alongside it so
+        // both of this module's debt-list entries stay satisfied.
         write(
             dir.path(),
             "src/value/node.rs",
-            "pub(crate) fn node_key_of() { NodeKey::from_digest([0; 32]); }\n",
+            "pub(crate) fn node_key_of() { let _ = NodeKey::from_digest([0; 32]); }\n\
+             pub struct NodeIdDocument;\n\
+             impl NodeIdDocument {\n    pub fn key(&self) { let _ = NodeKey::from_digest([0; 32]); }\n}\n",
         );
-        let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
-        assert_eq!(outcome.violations.len(), 1);
-        assert_eq!(outcome.violations[0].module, "value::node");
-        assert!(!outcome.passed());
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(
+            outcome
+                .debt
+                .iter()
+                .any(|site| site.module == "value::node" && site.function == "node_key_of"),
+            "{:?}",
+            outcome.debt
+        );
+        assert!(
+            outcome.stale_debt_entries.is_empty(),
+            "{:?}",
+            outcome.stale_debt_entries
+        );
+        assert!(outcome.passed());
     }
 
     /// tc_arch_lint_api_surface_008 (negative control, #249 review HIGH-2): a
     /// CG-shaped consumer tree, given as T12-A's `--cg` scan root, that calls
-    /// the `replay` facade from a disallowed module is a real, failing
+    /// the `qsl-replay` facade from a disallowed module is a real, failing
     /// violation -- T12-A must scan the CG tree, not the QSL tree, once its
     /// `requires_path` gate (QSL's own `qsl-replay/src/lib.rs`, QSL-185) is
     /// satisfied.
@@ -651,6 +1092,46 @@ mod tests {
         assert_eq!(outcome.status, RuleStatus::Live);
         assert_eq!(outcome.violations.len(), 1);
         assert_eq!(outcome.violations[0].module, "oracle");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_009: a rule whose target exists but whose
+    /// role's tree was not supplied reports `NeedsRoot` naming that role, and
+    /// does not pass -- `Pending` is reserved for a target that does not
+    /// exist yet, never for "no one told this tool where to look."
+    #[trace("TC-157", "FR-060-AC-1")]
+    #[test]
+    fn tc_arch_lint_api_surface_009_live_rule_with_no_scan_root_needs_root() {
+        let qsl_dir = tempfile::tempdir().unwrap();
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let rule = &RULES[0]; // T12-A: live (qsl-replay/src/lib.rs exists).
+        let outcome = evaluate(rule, qsl_dir.path(), None).unwrap();
+        assert_eq!(outcome.status, RuleStatus::NeedsRoot(Role::Cg));
+        assert!(outcome.violations.is_empty());
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_020 (negative control): a CG call spelled
+    /// `quire_spec_language::replay::` is a T12-A violation even from the
+    /// allowed `replay` module -- the root crate has no `replay` module, so
+    /// that spelling can never be a pass.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_020_root_crate_replay_path_is_a_violation() {
+        let qsl_dir = tempfile::tempdir().unwrap();
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let cg_dir = tempfile::tempdir().unwrap();
+        write(
+            cg_dir.path(),
+            "src/replay.rs",
+            "fn f() {\n    quire_spec_language::replay::run();\n    qsl_replay::run();\n}\n",
+        );
+        let rule = &RULES[0]; // T12-A
+        let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "replay");
+        assert_eq!(outcome.violations[0].line, 2);
         assert!(!outcome.passed());
     }
 
@@ -694,46 +1175,6 @@ mod tests {
             "[package]\nname = \"quire-spec-language\"\nversion = \"0.2.0\"\n",
         );
         assert_is_qsl_root(dir.path()).unwrap();
-    }
-
-    /// tc_arch_lint_api_surface_009: a rule whose target exists but whose
-    /// role's tree was not supplied reports `NeedsRoot` naming that role, and
-    /// does not pass -- `Pending` is reserved for a target that does not
-    /// exist yet, never for "no one told this tool where to look."
-    #[trace("TC-157", "FR-060-AC-1")]
-    #[test]
-    fn tc_arch_lint_api_surface_009_live_rule_with_no_scan_root_needs_root() {
-        let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
-        let rule = &RULES[0]; // T12-A: live (qsl-replay/src/lib.rs exists).
-        let outcome = evaluate(rule, qsl_dir.path(), None).unwrap();
-        assert_eq!(outcome.status, RuleStatus::NeedsRoot(Role::Cg));
-        assert!(outcome.violations.is_empty());
-        assert!(!outcome.passed());
-    }
-
-    /// tc_arch_lint_api_surface_020 (negative control): a CG call spelled
-    /// `quire_spec_language::replay::` is a T12-A violation even from the
-    /// allowed `replay` module -- the root crate has no `replay` module, so
-    /// that spelling can never be a pass.
-    #[trace("TC-157", "FR-060-AC-3")]
-    #[test]
-    fn tc_arch_lint_api_surface_020_root_crate_replay_path_is_a_violation() {
-        let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
-        let cg_dir = tempfile::tempdir().unwrap();
-        write(
-            cg_dir.path(),
-            "src/replay.rs",
-            "fn f() {\n    quire_spec_language::replay::run();\n    qsl_replay::run();\n}\n",
-        );
-        let rule = &RULES[0]; // T12-A
-        let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
-        assert_eq!(outcome.status, RuleStatus::Live);
-        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
-        assert_eq!(outcome.violations[0].module, "replay");
-        assert_eq!(outcome.violations[0].line, 2);
-        assert!(!outcome.passed());
     }
 
     /// tc_arch_lint_api_surface_012 (negative control, ADR-013 QC-21): a call
@@ -818,10 +1259,10 @@ mod tests {
     /// `qsl-foundation/` directory at all is an error, the same as the root
     /// crate's own `src/` being absent (tc_arch_lint_api_surface_009). Every
     /// listed root is required precisely so a crate rename or move this
-    /// scanner's root list has not caught up with fails loudly instead of
-    /// silently scanning nothing there -- previously this case passed with
-    /// zero violations and zero coverage, indistinguishable from a clean
-    /// tree.
+    /// scanner's own root list has not caught up with fails loudly instead
+    /// of silently scanning nothing there -- previously this case passed
+    /// with zero violations and zero coverage, indistinguishable from a
+    /// clean tree.
     #[trace("TC-157", "FR-060-AC-2")]
     #[test]
     fn tc_arch_lint_api_surface_015_missing_qsl_foundation_crate_is_an_error() {
@@ -867,10 +1308,11 @@ mod tests {
     /// tc_arch_lint_api_surface_017 (R-1, review-335-v2): T12-B's pattern
     /// matches the bare path `NodeKey::from_digest`, not only the call form
     /// `NodeKey::from_digest(`, so the constructor passed as a value --
-    /// `.map(NodeKey::from_digest)`, the shape at `src/value/node.rs:198`'s
+    /// `.map(NodeKey::from_digest)`, the shape at `src/value/node.rs`'s
     /// `NodeIdDocument::key` -- is caught the same as an ordinary call from
-    /// a disallowed module. Both spellings are planted in the same disallowed
-    /// module to prove neither is missed.
+    /// a disallowed module. Both spellings are planted in the same
+    /// disallowed module (`value::reference`, not on T12-B's debt list) to
+    /// prove neither is missed.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_017_path_form_call_is_a_violation() {
@@ -890,7 +1332,7 @@ mod tests {
         let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
-        assert_eq!(outcome.violations.len(), 2);
+        assert_eq!(outcome.violations.len(), 2, "{:?}", outcome.violations);
         assert_eq!(outcome.violations[0].module, "value::reference");
         assert_eq!(outcome.violations[0].line, 2);
         assert_eq!(outcome.violations[1].module, "value::reference");
@@ -946,5 +1388,216 @@ mod tests {
         let rule = &RULES[3]; // T12-D
         let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
         assert!(error.to_string().contains("qsl-replay/src"), "{error}");
+    }
+
+    // -------------------------------------------------------------------
+    // FR-060 T12-B/T12-C (the layer-rule ruling, 2026-09-22): the named,
+    // shrinking debt list, `#[cfg(test)]`/comment exclusion, and the
+    // function-value-reference patterns (TC-157 step 6/7).
+    // -------------------------------------------------------------------
+
+    /// TC-157 step 6: a shipped `NodeKey::from_digest(` call in a `check`
+    /// submodule is not reported at all.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_check_submodule_mint_is_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/check/family.rs",
+            "fn mint_declaration_identity(bytes: &[u8]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        // Only the seeded baseline's own debt, none of it from `check`.
+        assert!(
+            outcome
+                .debt
+                .iter()
+                .all(|site| site.module.starts_with("value::")),
+            "{:?}",
+            outcome.debt
+        );
+        assert_eq!(
+            outcome.debt.len(),
+            rule.debt_list.len(),
+            "{:?}",
+            outcome.debt
+        );
+        assert!(outcome.passed());
+    }
+
+    /// TC-157 step 6: a shipped `.map(NodeKey::from_digest)` -- the
+    /// constructor passed as a function value, no trailing `(` in the
+    /// matched text -- in a module outside `check`, in a function not on
+    /// the debt list, fails T12-B and is named.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_function_value_mint_outside_check_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/value/node.rs", "pub struct NodeKey;\n");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "fn f(bytes: Option<[u8; 32]>) -> Option<NodeKey> {\n    bytes.map(NodeKey::from_digest)\n}\n",
+        );
+        let rule = &RULES[1]; // T12-B
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "library");
+        assert_eq!(outcome.violations[0].function, "f");
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 6: a shipped mint in a function on the debt list is
+    /// reported as debt and does not fail T12-B.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_debt_list_mint_is_reported_as_debt() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B: debt list has (value::model_query, to_object_reference)
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        // Overwrite `value::model_query`'s seeded baseline with a
+        // shaped-like-the-real-thing mint -- T12-B's debt list has exactly
+        // one entry in this module, so nothing else to preserve.
+        write(
+            dir.path(),
+            "src/value/model_query.rs",
+            "fn to_object_reference(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(
+            outcome
+                .debt
+                .iter()
+                .any(|site| site.module == "value::model_query"
+                    && site.function == "to_object_reference"),
+            "{:?}",
+            outcome.debt
+        );
+        assert!(
+            outcome.stale_debt_entries.is_empty(),
+            "{:?}",
+            outcome.stale_debt_entries
+        );
+        assert!(outcome.passed());
+    }
+
+    /// TC-157 step 6: a debt-list entry whose function no longer mints
+    /// fails T12-B and names the stale entry, so a fixed site cannot later
+    /// hide a new mint under a name the list still carries.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_stale_debt_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/value/node.rs", "pub struct NodeKey;\n");
+        write(
+            dir.path(),
+            "src/value/model_query.rs",
+            "fn to_object_reference() -> u8 {\n    0\n}\n",
+        );
+        let rule = &RULES[1]; // T12-B
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert!(outcome.violations.is_empty());
+        assert!(outcome.debt.is_empty());
+        assert!(outcome
+            .stale_debt_entries
+            .contains(&("value::model_query", "to_object_reference")));
+        assert!(!outcome.passed());
+    }
+
+    /// TC-157 step 6: a `NodeKey::from_digest(` call inside a `#[cfg(test)]`
+    /// item outside `check` is not reported.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_cfg_test_mint_is_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "#[cfg(test)]\nmod tests {\n    use super::*;\n    fn f(bytes: [u8; 32]) -> NodeKey {\n        NodeKey::from_digest(bytes)\n    }\n}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(
+            outcome
+                .debt
+                .iter()
+                .all(|site| site.module.starts_with("value::")),
+            "{:?}",
+            outcome.debt
+        );
+        assert_eq!(
+            outcome.debt.len(),
+            rule.debt_list.len(),
+            "{:?}",
+            outcome.debt
+        );
+        assert!(outcome.passed());
+    }
+
+    /// TC-157 step 6: a doc comment naming `NodeKey::from_digest` in a
+    /// module outside `check` is not reported.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_doc_comment_mention_is_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/library/mod.rs",
+            "/// Mints via `NodeKey::from_digest` in the real implementation.\npub fn f() {}\n",
+        );
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(
+            outcome
+                .debt
+                .iter()
+                .all(|site| site.module.starts_with("value::")),
+            "{:?}",
+            outcome.debt
+        );
+        assert_eq!(
+            outcome.debt.len(),
+            rule.debt_list.len(),
+            "{:?}",
+            outcome.debt
+        );
+        assert!(outcome.passed());
+    }
+
+    /// TC-157 step 7: a shipped `EffectiveId::from_digest(` call in
+    /// `value::model_query`, in a function not on T12-C's debt list, fails
+    /// and is named with file, line, module and function.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_157_t12c_mint_outside_debt_list_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(dir.path(), "src/model/key.rs", "pub struct EffectiveId;\n");
+        write(
+            dir.path(),
+            "src/value/model_query.rs",
+            "fn a_new_function(bytes: [u8; 32]) -> EffectiveId {\n    EffectiveId::from_digest(bytes)\n}\n",
+        );
+        let rule = &RULES[2]; // T12-C
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "value::model_query");
+        assert_eq!(outcome.violations[0].function, "a_new_function");
+        assert!(!outcome.passed());
     }
 }

@@ -182,9 +182,11 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
     summary.push_str(
         "  Note: this is a textual scan. It does not resolve `use ... as` renamed \
-         imports or macro-expanded call sites, and it does not skip a call pattern \
-         found inside a comment or string literal -- both are stated limitations of \
-         this check, not silent gaps.\n",
+         imports or macro-expanded call sites, and a match inside a string literal is \
+         never excluded -- stated limitations of this check, not silent gaps. T12-A and \
+         T12-D also do not exclude a match found inside a comment. T12-B and T12-C \
+         additionally exclude `#[cfg(test)]` items and comment text, and resolve each \
+         mint's enclosing function against a named, shrinking debt list.\n",
     );
     let mut all_passed = true;
     // Flags a rule needed but was not given. Every rule is still evaluated,
@@ -217,7 +219,7 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                     missing_flags.push(flag);
                 }
             }
-            api_surface::RuleStatus::Live if outcome.violations.is_empty() => {
+            api_surface::RuleStatus::Live if passed => {
                 summary.push_str(&format!(
                     "  {} [{}]: PASS\n",
                     outcome.rule_id, rule.description
@@ -230,13 +232,32 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                 ));
                 for site in &outcome.violations {
                     summary.push_str(&format!(
-                        "    {}:{} (module {})\n",
+                        "    {}:{} (module {}{})\n",
                         site.file.display(),
                         site.line,
-                        site.module
+                        site.module,
+                        if site.function.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", fn {}", site.function)
+                        }
+                    ));
+                }
+                for (module, function) in &outcome.stale_debt_entries {
+                    summary.push_str(&format!(
+                        "    stale debt entry, no remaining mint: {module}, fn {function}\n"
                     ));
                 }
             }
+        }
+        for site in &outcome.debt {
+            summary.push_str(&format!(
+                "    debt: {}:{} (module {}, fn {})\n",
+                site.file.display(),
+                site.line,
+                site.module,
+                site.function
+            ));
         }
         if let Some(note) = rule.scope_note {
             summary.push_str(&format!("    (not evaluated for every role: {note})\n"));

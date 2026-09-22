@@ -1338,6 +1338,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "proc-macro2",
  "qsl-attrs",
  "qsl-cst",
  "qsl-foundation",
@@ -2303,6 +2304,7 @@ dependencies = [
  "qsl-attrs",
  "serde_json",
  "syn 2.0.119",
+ "tempfile",
  "thiserror",
 ]
 

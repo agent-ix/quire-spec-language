@@ -1418,13 +1418,10 @@ mod tests {
     // `value::expression::family` (PR #282 review F4) and its own doc
     // deliberately exercises `ValueType::Text` as part of the fixture's
     // grammar coverage -- a real, pre-existing dependency this move makes
-    // visible under `check` for the first time. This import is
-    // `#[cfg(test)]`-gated (this whole `mod tests` block is), so it is not
-    // part of `check`'s shipped dependency graph and needs no FR-068-AC-6
-    // tier-2 admission: `xtask::import_graph::value_import_edges` excludes
-    // `#[cfg(test)]`-only imports from that bound by design (owner ruling,
-    // PR #282 review, post-rebase) precisely so a test fixture's own needs
-    // cannot silently widen a bound that governs shipped code.
+    // visible under `check` for the first time. FR-068-AC-6's layer rule
+    // (the layer-rule ruling, 2026-09-22) permits any item of `value::text`,
+    // a K-copy module, so this import needs no special admission at all,
+    // in shipped code or here.
     use crate::value::text::TextType;
 
     /// PR #262 review, round 2 (moved here from `value::expression::family`
