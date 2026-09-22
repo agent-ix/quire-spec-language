@@ -338,8 +338,9 @@ pub enum ScalarShape {
 }
 
 /// One declared member of a sum-type checked node: its own name, which
-/// [`mint_variant_id`] combines with the declaring sum's node id to compute
-/// the member's `VariantId` (ADR-013 O-14 "Sum types", QC-15).
+/// `mint_variant_id` (`pub(super)`, so not doc-linked from here) combines
+/// with the declaring sum's node id to compute the member's `VariantId`
+/// (ADR-013 O-14 "Sum types", QC-15).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SumVariant {
     name: Identifier,
@@ -412,8 +413,9 @@ impl SumVariants {
 /// node id alone (FR-143-AC-6): [`Self::Composite`] carries no further
 /// shape, since the kernel `ValueType::Composite(NodeKey)` needs none (the
 /// node's own id, minted from the full declared shape by
-/// [`mint_type_declaration_identity`], already carries that content -- see
-/// [`DeclaredShape::Composite`]).
+/// `mint_type_declaration_identity`, already carries that content -- see
+/// `DeclaredShape::Composite` (both `pub(super)`, so not doc-linked from
+/// here)).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedTypeNode {
     /// A `scalar_type` node.
@@ -466,8 +468,9 @@ impl CheckedTypeNode {
 /// form, the source node's own id is never re-minted (it simply is not read
 /// into the kernel shape at all, so there is nothing here that could
 /// re-mint it), and each variant's `VariantId` is computed by
-/// [`mint_variant_id`] from the declaring sum and that variant's own
-/// member, never from its position in `variants` (FR-088-AC-10).
+/// `mint_variant_id` (`pub(super)`, so not doc-linked from here) from the
+/// declaring sum and that variant's own member, never from its position in
+/// `variants` (FR-088-AC-10).
 // PR #300 review finding 11: a checked-in `deny`, not only ADR-011 §5's
 // documented convention -- adding a `CheckedTypeNode` form without a
 // matching arm below now fails `cargo clippy` (and `-D warnings` promotes
