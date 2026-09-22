@@ -26,12 +26,12 @@
 //! layer-5-depends-on-layer-3 edge -- not routed through this module, and
 //! outside this module's own one-item `check`-core import count.
 //!
-//! `EmittedPackage` gains no constructor here: the v2 emitter
-//! (`CheckedPackage` -> these bytes, C-03) is ADR-011 T-8 (M-4,
-//! QSL-6/#242), out of this requirement's own scope (FR-087-CON-1). This
-//! type carries only the shape M-4 builds against; M-4's own emitter code,
-//! landing inside `package`, adds the sanctioned private constructor when it
-//! lands.
+//! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
+//! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
+//! QSL-6/#242, slice S1a): [`crate::package::emit`], a sibling module of
+//! this one, so it stays within `package`'s own `pub(super)` reach without
+//! being reachable from outside `package` (ADR-013 O-02: `package_id` is
+//! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
 
@@ -115,6 +115,19 @@ impl CheckedPackage {
 /// separate module paths, with no shared field, method or re-export, and
 /// with no `pub use`/glob anywhere that would place both names in one import
 /// scope.
+///
+/// A caller cannot supply a `package_id`: both fields are private, and this
+/// type's own (`pub(super)`, so not documented on this public page)
+/// constructor takes no `package_id` parameter to forge one through --
+/// naming this struct's private fields directly from outside `package`
+/// (ADR-013 O-02) does not compile:
+/// ```compile_fail,E0451
+/// use quire_spec_language::package::EmittedPackage;
+/// let forged = EmittedPackage {
+///     bytes: Vec::new(),
+///     package_id: todo!(),
+/// };
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmittedPackage {
     bytes: Vec<u8>,
@@ -122,6 +135,41 @@ pub struct EmittedPackage {
 }
 
 impl EmittedPackage {
+    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4, QSL-6/#242,
+    /// slice S1a). `identity_preimage` is IR's own typed
+    /// `CheckedPackageIdentityPreimageV2`, JCS-encoded inside this
+    /// constructor before `package_id` is minted from those bytes
+    /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
+    /// through which a caller could instead supply arbitrary preimage
+    /// bytes, let alone an arbitrary `package_id` directly. `pub(super)`:
+    /// reachable from anywhere in `package` (in particular,
+    /// `package::emit`), never from outside it.
+    #[allow(
+        dead_code,
+        reason = "no caller yet: package::emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
+    )]
+    pub(super) fn new(
+        identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
+        bytes: Vec<u8>,
+    ) -> Self {
+        // Matches IR's own `digest_json` procedure: re-serialize through
+        // `serde_json::Value` (whose `Map` sorts keys lexicographically
+        // without this crate's `preserve_order` feature) before hashing,
+        // rather than hashing the typed struct's own `Serialize` output
+        // directly, which would emit fields in declaration order, not RFC
+        // 8785 order.
+        let preimage_value = serde_json::to_value(identity_preimage).expect(
+            "CheckedPackageIdentityPreimageV2 is composed only of owned strings and vecs, \
+             which always serialize",
+        );
+        let preimage_bytes = serde_json::to_vec(&preimage_value)
+            .expect("a serde_json::Value re-serializes without error");
+        Self {
+            bytes,
+            package_id: PackageId::of_preimage(&preimage_bytes),
+        }
+    }
+
     /// The emitted `quire.checked-package/v2` bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes

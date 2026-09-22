@@ -59,7 +59,10 @@ pub enum Code {
     InvalidIdentifier,
     /// A typed command result could not be serialized.
     OutputFailure,
-    /// Checked native expressions are outside the selected executable projection.
+    /// A real, admitted capability this build does not implement yet:
+    /// checked native expressions outside the selected executable
+    /// projection (`lowering`), or a `quire.checked-package/v2` emission
+    /// path (`package::emit`) not yet built.
     UnsupportedProjection,
     /// The existing IR rejected an executable derivation.
     ProjectionBinding,

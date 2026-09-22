@@ -15,6 +15,7 @@
 
 mod checked;
 mod checked_v2;
+mod emit;
 mod encoding;
 mod features;
 mod intake;
