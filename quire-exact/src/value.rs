@@ -726,11 +726,9 @@ mod tests {
         assert!(!ValueType::Boolean.admits(&Value::Integer(Integer::one())));
     }
 
-    // TODO(FR-089): trace to the new AC (kernel `admits` refuses a
-    // population pair; see this module's doc comment and PR #295 review
-    // finding 2/3) once the spec agent adds it -- FR-089-AC-5 does not cover
-    // this, since it is about resolving a binding, which is QSL's job, not
-    // the kernel's.
+    /// TC-297 (FR-089-AC-6): kernel `admits` refuses every population pair;
+    /// the declared-maximum comparison is the QSL layer's (FR-089-AC-5).
+    #[trace("TC-297", "FR-089-AC-6")]
     #[test]
     fn admits_refuses_a_population_pair() {
         assert!(!ValueType::Population(5)

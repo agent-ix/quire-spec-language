@@ -59,13 +59,16 @@
 //! dependency's own fixture `Cargo.toml`. Building the gate is tracked
 //! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 //!
-//! **H-9: no acceptance criterion exists for this crate's own test suite.**
-//! Every `#[trace("TC-3NN")]` tag here is the bare one-argument form,
+//! **H-9: no acceptance criterion exists for most of this crate's own test
+//! suite.** The exception is FR-089-AC-6 (TC-297): the three kernel
+//! population-pair refusal tests in `value`, `equality` and `key` carry the
+//! two-argument `#[trace("TC-297", "FR-089-AC-6")]` form. Every other
+//! `#[trace("TC-3NN")]` tag here is the bare one-argument form,
 //! against the repo's two-argument `#[trace("TC-NNN", "FR-NNN-AC-n")]`
 //! convention, because there is no `FR-NNN-AC-n` to name: no `spec/`
 //! functional requirement or acceptance criterion, no `spec/test-cases/
 //! TC-3NN-*.md` file and no `spec/tests.md`/subsystem `tests.md` test
-//! matrix row exists for `quire-exact`'s value-kernel behavior as of this
+//! matrix row exists for the rest of `quire-exact`'s value-kernel behavior as of this
 //! PR. This is stated here rather than left silent, and rather than bound
 //! to an approximate existing FR (every FR found under `spec/functional/`
 //! that mentions ADR-011/ADR-013 is about package/capability admission,

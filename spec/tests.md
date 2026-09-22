@@ -152,8 +152,9 @@ operational validation remains outside this audit-only plan.
 | TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
 | TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | 🚧 Planned; QSL-131 |
 | TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | 🚧 Planned; QSL-131 |
-| TC-295 | ValueType::Population admits a Value::Population identity by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | 🚧 Planned; QSL-131 |
+| TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | 🚧 Planned; QSL-131 |
 | TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
+| TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally; QSL-131 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -346,14 +347,17 @@ the selected scope; they are not full compiler or semantic qualification.
 carries ADR-013 O-13's Population row (QC-21), authored under QSL-172 to
 close an AD-016 kernel-row gap. QSL-131 Slice B (kernel side) landed the
 opaque `PopulationId` type and `Value::Population(PopulationId)` in
-`quire-exact`. `ValueType::admits` does not pair `ValueType::Population(u64)`
-with `Value::Population(PopulationId)`: every such pair falls through to
-`admits`'s existing catch-all and returns `false`, since comparing the
-declared `u64` against a resolved binding's declared maximum needs a
-resolution step this crate does not have. `crate::equality` and `crate::key`
-likewise give `Value::Population` no comparison and no key, matching QSL's
-own `value::equality`/`value::key`, which already refuse a population as an
-equality operand or key participant. TC-292 is `✅ Inspected locally`:
+`quire-exact`. Kernel `ValueType::admits` returns `false` for every
+`(ValueType::Population(_), Value::Population(_))` pair, `plan_pairs` refuses
+a population pair with `Refusal::CheckedInvariant`, and `compare_keys` yields
+no key for one (FR-089-AC-6), matching QSL's own
+`value::equality`/`value::key`. TC-297 is `✅ Passed locally`, backed by
+`value::tests::admits_refuses_a_population_pair`,
+`equality::tests::plan_pairs_refuses_a_population_pair` and
+`key::tests::compare_keys_yields_no_key_for_a_population_pair`. The
+declared-maximum comparison is a QSL-layer check (FR-089-AC-5, TC-295): QSL
+`model`/the evaluator resolves the binding, then compares its declared
+maximum. TC-292 is `✅ Inspected locally`:
 the payload type is `PopulationId`, and the crate-DAG direction (ADR-011
 §6.1) makes a `PopulationBinding` import structurally impossible, not merely
 absent from a scan.

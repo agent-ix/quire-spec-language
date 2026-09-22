@@ -172,9 +172,8 @@ mod tests {
         assert_eq!(compare_keys(&boolean, &integer), None);
     }
 
-    // TODO(FR-089): trace to the new AC (kernel `compare_keys` yields no key
-    // for a population; see PR #295 review finding 2/3) once the spec agent
-    // adds it.
+    /// TC-297 (FR-089-AC-6): a population pair has no key in the kernel.
+    #[trace("TC-297", "FR-089-AC-6")]
     #[test]
     fn compare_keys_yields_no_key_for_a_population_pair() {
         use crate::identity::PopulationId;

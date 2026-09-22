@@ -16,8 +16,8 @@ disallowed call site as `passing`, reports a rule with a disallowed call site
 as `failing` with file, line and module named, respects `::`-segment module
 matching (a textual prefix that is not a segment boundary, such as
 `model_query` under a `model` allow-list, is not treated as allowed), and
-reproduces the real, currently pending/failing state of T12-A/T12-B/T12-C
-against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
+reproduces the real, current pending/failing/passing state of
+T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
 
 ## Test Procedure
 
@@ -54,7 +54,8 @@ against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
   the check reports the helper's five real external callers rather than the
   helper's own internal call to the constructor it wraps). None of these five
   are among the three modules ADR-011 §1's S3 "today" mapping names for the
-  `check` stage. This output is captured for the PR body as real, not
+  `check` stage. T12-D reports `PASS` with zero call sites: no module outside
+  `model` calls `PopulationId::from_digest(`. This output is captured for the PR body as real, not
   synthetic, evidence -- the check is not tuned to exclude any finding,
   including the four beyond OBS-018's documented set, and not widened beyond
   R1's stated exemption to admit them either.

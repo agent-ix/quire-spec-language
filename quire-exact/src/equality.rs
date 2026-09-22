@@ -275,9 +275,9 @@ mod tests {
         assert!(plan.equal);
     }
 
-    // TODO(FR-089): trace to the new AC (kernel `plan_pairs` refuses a
-    // population pair; see PR #295 review finding 2/3) once the spec agent
-    // adds it.
+    /// TC-297 (FR-089-AC-6): a population pair is not an equality operand
+    /// pair in the kernel.
+    #[trace("TC-297", "FR-089-AC-6")]
     #[test]
     fn plan_pairs_refuses_a_population_pair() {
         use crate::identity::PopulationId;
