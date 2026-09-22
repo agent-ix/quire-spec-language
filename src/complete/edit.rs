@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use super::{parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, ParsedSource};
-use crate::{Limits, Phase, SourceIdentity, Span};
+use super::{
+    parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
+};
+use crate::{Phase, SourceIdentity, Span};
 
 /// One UTF-8-boundary-preserving source replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]

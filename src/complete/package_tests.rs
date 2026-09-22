@@ -3,10 +3,11 @@ use std::collections::BTreeSet;
 
 use crate::complete::{
     self, resolve_source_package, CapabilityId, CompleteCause, CompleteCode, Definition,
-    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet, ModelArtifact,
-    ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority, SourceDigest,
+    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet, Limits,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
+    SourceDigest,
 };
-use crate::{Limits, SourceIdentity};
+use crate::SourceIdentity;
 use ix_trace_rs::trace;
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [

@@ -3,9 +3,9 @@
 use ix_trace_rs::trace;
 use quire_spec_language::complete::{
     self, analyze_document, format_document, CompleteCause, CompleteCode, DefinitionDigest,
-    DefinitionRef, DocumentBinding, HostCause, ProfileCatalog, SourceEdit, TokenClass,
+    DefinitionRef, DocumentBinding, HostCause, Limits, ProfileCatalog, SourceEdit, TokenClass,
 };
-use quire_spec_language::{Limits, SourceIdentity, Span};
+use quire_spec_language::{SourceIdentity, Span};
 
 fn ugly(profile: &DefinitionRef) -> String {
     format!(

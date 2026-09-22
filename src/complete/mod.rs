@@ -16,8 +16,9 @@ mod package_tests;
 mod parser;
 
 pub use cst::{
-    CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, Production, Recovery, RecoveryKind,
-    StableNodeId, TokenClass, TokenKind,
+    CstElement, CstNode, CstToken, DefinitionDigest, DefinitionRef, ImportSelection, LosslessCst,
+    ModelDigest, ModelRef, ModelSelection, NodeIdentity, Production, ProfileSelection, Recovery,
+    RecoveryKind, SourceSelections, StableNodeId, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use edit::{
@@ -32,12 +33,10 @@ pub use package::{
     DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
     ReaderAuthority, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
 };
-pub use package::{
-    CapabilityId, DefinitionDigest, DefinitionRef, ImportSelection, ModelDigest, ModelRef,
-    ModelSelection, PackageError, ProfileCatalog, ProfileSelection, SourceDigest, SourceSelections,
-};
+pub use package::{CapabilityId, PackageError, ProfileCatalog, SourceDigest};
 
-use crate::{Limits, Source, SourceIdentity};
+pub use crate::lexer::Limits;
+use crate::{Source, SourceIdentity};
 
 /// A version-bound source artifact and its lossless parse evidence.
 #[derive(Clone, Debug)]
@@ -89,7 +88,8 @@ impl ParsedSource {
 ///
 /// ```compile_fail
 /// use std::collections::BTreeSet;
-/// use quire_spec_language::{complete, Limits, SourceIdentity};
+/// use quire_spec_language::complete::{self, Limits};
+/// use quire_spec_language::SourceIdentity;
 /// let installed_backends = BTreeSet::from(["solver:x"]);
 /// let _ = complete::parse(
 ///     SourceIdentity { identity: "doc".into(), revision: "1".into() },

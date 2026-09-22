@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Revision-bound formatter and editor snapshot over the lossless CST.
-use crate::{Limits, Phase, SourceIdentity, Span};
+use crate::{Phase, SourceIdentity, Span};
 use std::collections::BTreeSet;
 
 use super::package::{ProfileStatus, StaleProfile};
 use super::{
-    CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionRef, HostCause, NodeIdentity,
-    ParsedSource, Production, ProfileCatalog, SourceEdit, TokenClass, TokenKind,
+    CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionRef, HostCause, Limits,
+    NodeIdentity, ParsedSource, Production, ProfileCatalog, SourceEdit, TokenClass, TokenKind,
 };
 
 /// Exact document/profile tuple carried by every editor request and response.
