@@ -83,7 +83,7 @@ pub(crate) use contract::{
     CheckContext, DiagnosticSink, EvaluateFailure, EvaluateRefusal, FamilyContract,
     ReferenceEvaluation, ScopeStack, StageLimits,
 };
-pub(crate) use outcome::{CheckOutcome, StageFailure, StageLimitKind, Staged};
+pub(crate) use outcome::{CheckOutcome, LimitExceeded, StageFailure, StageLimitKind, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at

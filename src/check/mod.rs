@@ -73,18 +73,26 @@ use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use crate::value::composite::ValueType;
 
 pub(crate) use check::Scope;
-pub(crate) use family::{ValueFunctionFamily, SCALAR_LIMITS_UNLIMITED};
-// `mint_declaration_identity`, `OccurrenceMap` and `DEFAULT_PACKAGE_IDENTITY`
-// are consumed only by `value::expression::family`'s `#[cfg(test)]` modules
-// (layer 5 depending on layer 3 is permitted), so this re-export is itself
-// `#[cfg(test)]`-gated rather than plain: a plain `pub(crate) use` here is
-// genuinely unused in a non-test build (`cargo check`/`cargo build`/`cargo
-// clippy` without `--all-targets`), and `-D warnings` promotes that to a
-// hard compile error before cargo ever reaches the test binaries where it
-// would be used -- gating on `cfg(test)` keeps both builds clean instead of
-// papering over the non-test one with `#[allow(unused_imports)]`.
+pub(crate) use family::ValueFunctionFamily;
+// `mint_declaration_identity`, `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
+// and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
+// family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
+// permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
+// plain: a plain `pub(crate) use` here is genuinely unused in a non-test
+// build (`cargo check`/`cargo build`/`cargo clippy` without
+// `--all-targets`), and `-D warnings` promotes that to a hard compile error
+// before cargo ever reaches the test binaries where it would be used --
+// gating on `cfg(test)` keeps both builds clean instead of papering over
+// the non-test one with `#[allow(unused_imports)]`. `SCALAR_LIMITS_UNLIMITED`
+// joined this list in PR #302 review (finding 2): `CheckedPackage::call`'s
+// `contract_meter` used to be an unconditionally unlimited `Meter` built
+// from it, a real (non-test) production use; it is now built from the
+// caller's own configured limits (`*meter.limits()`) instead, so this
+// constant has no production reader left.
 #[cfg(test)]
-pub(crate) use family::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
+pub(crate) use family::{
+    mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use check::{
@@ -432,22 +440,35 @@ impl PackageDeclarations {
         // production entry point. Reading `limits.depth()` here (the same
         // `CheckingLimits` the unchanged `Typer` below already honors)
         // makes the contract's own resource bound live.
-        // QSL-153: `input_bytes`/`node_count`/`work_budget` are unlimited
-        // here -- this method's own `CheckingLimits` parameter has no
-        // dedicated knob for a preimage byte/node/write-count bound, the
-        // same real-default-until-configured shape `nesting_depth` itself
-        // had before this exact fix wired it to `limits.depth()`
-        // (`StageLimits`'s own doc). The mechanism is real (`CheckContext::
-        // check_input_bytes`/`check_node_count`/`check_work_budget`) and is
-        // exercised directly against tight fixtures in
+        // QSL-153: `node_count` reads the same `CheckingLimits.nodes()` the
+        // unchanged `Typer` below already honors -- the contract's own
+        // per-declaration node-count check now runs before the Typer's, so
+        // a package that would have exhausted the Typer's node limit
+        // refuses through the contract first (naming the same
+        // `CheckingLimitKind::Nodes`, since the two visits count the same
+        // `Expression` nodes). `input_bytes` reads `CheckingLimits`' own
+        // dedicated knob (`with_input_bytes`), unlimited unless a caller
+        // configures it -- the same real-default-until-configured shape
+        // `nesting_depth` itself had before this exact fix wired it to
+        // `limits.depth()` (`StageLimits`'s own doc). `work_budget` has no
+        // `StageLimits` field at all (PR #302 review finding 3): it is
+        // charged against `contract_meter`'s own `work_units` bound
+        // instead, read from `CheckingLimits::work_budget` (also unlimited
+        // unless a caller configures it via `with_work_budget`) -- the same
+        // unbounded-by-default shape. The mechanism is real (`CheckContext::
+        // check_input_bytes`/`check_node_count`, and a `cx.meter` charge for
+        // `work_budget`) and is exercised directly against tight fixtures in
         // `src/value/expression/family.rs`'s `family_contract_tests`.
         let contract_limits = crate::family::StageLimits {
             nesting_depth: limits.depth(),
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-            work_budget: u64::MAX,
+            input_bytes: limits.input_bytes(),
+            node_count: limits.nodes(),
         };
-        let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let contract_meter_limits = quire_exact::ScalarLimits {
+            work_units: limits.work_budget(),
+            ..family::SCALAR_LIMITS_UNLIMITED
+        };
+        let mut contract_meter = quire_exact::Meter::new(contract_meter_limits);
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         for (index, function) in self.functions.into_iter().enumerate() {

@@ -72,47 +72,59 @@ impl ScopeStack {
 /// (ADR-011 §2.3) and bounds its own recursion by `nesting_depth`, checked
 /// before each recursive step -- never by the native call stack.
 ///
-/// **`input_bytes`, `node_count` and `work_budget` restored (QSL-153).**
-/// PR #262 review deleted these three: nothing in #214's one migrated stage
-/// entry produced or read them. QSL-153 restores all three together, each
-/// with a real producer and a real consumer that changes behaviour
-/// (ADR-012 §14.1's own row for this ticket), matching the shape
-/// [`CheckContext::enter_nesting`] already established for `nesting_depth`:
+/// **`input_bytes` and `node_count` restored (QSL-153).** PR #262 review
+/// deleted these, along with `work_budget`: nothing in #214's one migrated
+/// stage entry produced or read them. QSL-153 restores them with a real
+/// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
+/// row for this ticket), matching the shape [`CheckContext::enter_nesting`]
+/// already established for `nesting_depth`:
 ///
 /// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
 ///   preimage pass already builds a length-prefixed byte buffer
 ///   over the declaration's structure and walks every [`crate::forms::
 ///   Expression`] node in it to do so -- real work this contract already
 ///   does, not a synthetic counter added only to satisfy this struct.
-///   `input_bytes` is that buffer's own byte length; `node_count` is the
-///   number of `Expression` nodes the same pass visits; `work_budget` is
-///   the number of individual preimage field-writes the same pass performs
-///   (a finer-grained count than `node_count`: encoding one `Expression`
-///   node writes several fields -- a tag plus each of its operands/labels).
-///   All three are genuine byproducts of one real traversal, not three
-///   independent fabricated readers.
-/// - **Consumer**: [`CheckContext::check_input_bytes`],
-///   [`CheckContext::check_node_count`] and
-///   [`CheckContext::check_work_budget`] each compare their metric against
+///   `input_bytes` is that buffer's own logical byte length (accumulated as
+///   the pass writes, not read back from the buffer afterward -- see
+///   `Preimage`'s own doc for why); `node_count` is the number of
+///   `Expression` nodes the same pass visits.
+/// - **Consumer**: [`CheckContext::check_input_bytes`] and
+///   [`CheckContext::check_node_count`] each compare their metric against
 ///   this struct's matching field and return
 ///   [`StageLimitKind`](super::outcome::StageLimitKind)'s matching variant
 ///   on the first one exceeded, exactly like `enter_nesting`'s own
 ///   `NestingDepth` case -- `ValueFunctionFamily::check`
-///   (`crate::check::family`) calls all three before minting succeeds, so a
-///   declaration whose preimage is too large, has too many nodes, or costs
-///   too many field-writes is refused with a `Limit` outcome naming the
-///   exhausted kind, not admitted silently.
+///   (`crate::check::family`) calls both before minting succeeds, so a
+///   declaration whose preimage is too large or has too many nodes is
+///   refused with a `Limit` outcome naming the exhausted kind, not admitted
+///   silently.
 ///
-/// This ticket's one production call site
-/// (`crate::check::mod::PackageDeclarations::check`) configures all three
-/// as unlimited (`u64::MAX`), the same real-default shape `nesting_depth`
-/// itself carried before a caller-configurable knob existed for it
-/// (`CheckingLimits::default()`, `crate::check::check`) -- the mechanism is
-/// real and exercised directly against tight fixtures
-/// (`src/value/expression/family.rs`'s `family_contract_tests`), not
-/// reachable through today's one unlimited-by-default production caller,
-/// the same status `nesting_depth` itself had before its own follow-up
-/// widened `CheckingLimits` to carry it.
+/// **`work_budget` is not a field here (PR #302 review finding 3).** An
+/// earlier version of this struct also carried `work_budget: u64`, compared
+/// against the same preimage pass's own field-write count -- but "how many
+/// times the encoder wrote" is not a caller-configured budget in any
+/// meaningful sense; two declarations of equal real complexity could differ
+/// in write count for reasons internal to the encoding, not to any resource
+/// a caller actually wants to bound. `StageLimitKind::WorkBudget` is
+/// restored instead through [`CheckContext::meter`] -- the *shared kernel*
+/// budget every family's `check` already receives (FR-062 "checked input"):
+/// `ValueFunctionFamily::check` charges it one `ChargePoint::
+/// DeclarationCheck`, sized by the same preimage pass's field-write count,
+/// and maps a denied charge to `Limit{WorkBudget}` naming the meter's own
+/// configured `work_units` bound. This is a real, cumulative budget across
+/// every declaration `check` runs against one `meter` instance, not a
+/// per-declaration high-water field re-read from scratch each time --
+/// `nesting_depth`/`input_bytes`/`node_count` bound one declaration's own
+/// shape; `work_budget` bounds the checking stage's total spend.
+///
+/// `input_bytes`/`node_count`'s one production call site
+/// (`crate::check::mod::PackageDeclarations::check`) configures both as
+/// unlimited (`u64::MAX`) by default, the same real-default shape
+/// `nesting_depth` itself carried before a caller-configurable knob existed
+/// for it (`CheckingLimits::default()`, `crate::check::check`) --
+/// `input_bytes` now has one (`CheckingLimits::with_input_bytes`); the
+/// mechanism is real and exercised directly against tight fixtures
+/// (`src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct StageLimits {
     pub(crate) nesting_depth: u64,
@@ -121,8 +133,6 @@ pub(crate) struct StageLimits {
     pub(crate) input_bytes: u64,
     /// Maximum `Expression` node count for one checked declaration.
     pub(crate) node_count: u64,
-    /// Maximum preimage field-write count for one checked declaration.
-    pub(crate) work_budget: u64,
 }
 
 /// The mutable typing context every family's `check` receives (ADR-012 §2,
@@ -223,20 +233,6 @@ impl<'a, D> CheckContext<'a, D> {
         Ok(())
     }
 
-    /// Refuse `amount` (a declaration's own preimage field-write count)
-    /// once it exceeds `limits.work_budget` (QSL-153).
-    pub(crate) fn check_work_budget(
-        &self,
-        amount: u64,
-    ) -> Result<(), super::outcome::LimitExceeded> {
-        if amount > self.limits.work_budget {
-            return Err(super::outcome::LimitExceeded::new(
-                super::outcome::StageLimitKind::WorkBudget,
-                self.limits.work_budget,
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// ADR-012 §2's design-level `FamilyContract`, narrowed to the one part

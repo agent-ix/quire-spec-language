@@ -68,6 +68,19 @@ pub const MAX_CHECKING_DEPTH: u64 = 128;
 pub struct CheckingLimits {
     nodes: u64,
     depth: u64,
+    /// The checked-family contract's own preimage byte-length bound
+    /// (QSL-153; `crate::family::StageLimits::input_bytes`'s one
+    /// caller-configurable knob). Unlimited (`u64::MAX`) unless
+    /// [`Self::with_input_bytes`] narrows it -- the current, unbounded
+    /// behavior every existing caller keeps by default.
+    input_bytes: u64,
+    /// The checked-family contract's own shared-meter `work_units` bound
+    /// (QSL-153; PR #302 review finding 3 -- `StageLimitKind::WorkBudget`'s
+    /// one caller-configurable knob, since that kind is produced by a
+    /// denied charge against the contract meter, not a `StageLimits`
+    /// field). Unlimited (`u64::MAX`) unless [`Self::with_work_budget`]
+    /// narrows it.
+    work_budget: u64,
 }
 
 /// A declared checking depth above [`MAX_CHECKING_DEPTH`].
@@ -85,7 +98,12 @@ impl CheckingLimits {
         if depth > MAX_CHECKING_DEPTH {
             return Err(DepthAboveMaximum { depth });
         }
-        Ok(Self { nodes, depth })
+        Ok(Self {
+            nodes,
+            depth,
+            input_bytes: u64::MAX,
+            work_budget: u64::MAX,
+        })
     }
 
     /// The declared node limit.
@@ -97,14 +115,48 @@ impl CheckingLimits {
     pub fn depth(self) -> u64 {
         self.depth
     }
+
+    /// The checked-family contract's own preimage byte-length bound
+    /// (QSL-153).
+    pub fn input_bytes(self) -> u64 {
+        self.input_bytes
+    }
+
+    /// Bound the checked-family contract's own preimage byte length
+    /// (QSL-153): a declaration whose parsed structure encodes to more than
+    /// `input_bytes` refuses with a `Limit` outcome naming
+    /// `CheckingLimitKind::InputBytes`, before the identity it would have
+    /// minted is ever used.
+    pub fn with_input_bytes(mut self, input_bytes: u64) -> Self {
+        self.input_bytes = input_bytes;
+        self
+    }
+
+    /// The checked-family contract's own shared-meter `work_units` bound
+    /// (QSL-153).
+    pub fn work_budget(self) -> u64 {
+        self.work_budget
+    }
+
+    /// Bound the checked-family contract's own shared-meter `work_units`
+    /// spend: once every declaration checked so far has together charged
+    /// more than `work_budget` work units, the next declaration refuses
+    /// with a `Limit` outcome naming `CheckingLimitKind::WorkBudget`, before
+    /// the identity it would have minted is ever used.
+    pub fn with_work_budget(mut self, work_budget: u64) -> Self {
+        self.work_budget = work_budget;
+        self
+    }
 }
 
 impl Default for CheckingLimits {
-    /// Unlimited nodes at the maximum depth.
+    /// Unlimited nodes, input bytes and work budget, at the maximum depth.
     fn default() -> Self {
         Self {
             nodes: u64::MAX,
             depth: MAX_CHECKING_DEPTH,
+            input_bytes: u64::MAX,
+            work_budget: u64::MAX,
         }
     }
 }

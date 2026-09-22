@@ -263,11 +263,21 @@ pub enum ChargePoint {
     /// `dispatch.select`: one dispatched `receiver.member(args)` call
     /// (FR-151, TC-196 D06).
     DispatchSelect,
+    /// `declaration.check`: one checked-family declaration's own checking
+    /// work (QSL-153, PR #302 review finding 3) -- distinct from
+    /// `FunctionCall`, which charges one *evaluated* call, not one
+    /// *checked* declaration. Sized by the declaration's own preimage
+    /// field-write count (`crate::check::family::IdentityPreimageMetrics::
+    /// work_budget` in `quire-spec-language`); denied into a `Limit`
+    /// outcome naming `StageLimitKind::WorkBudget`, never `Incomplete`
+    /// (`check` never returns `Incomplete`, ADR-012 §2's structured-outcome
+    /// row).
+    DeclarationCheck,
 }
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 56] = [
+    pub const ALL: [Self; 57] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -324,6 +334,7 @@ impl ChargePoint {
         Self::LookupResultRetain,
         Self::PopulationVisit,
         Self::DispatchSelect,
+        Self::DeclarationCheck,
     ];
 
     /// Normative identifier.
@@ -385,6 +396,7 @@ impl ChargePoint {
             Self::LookupResultRetain => "lookup.result-retain",
             Self::PopulationVisit => "population.visit",
             Self::DispatchSelect => "dispatch.select",
+            Self::DeclarationCheck => "declaration.check",
         }
     }
 

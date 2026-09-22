@@ -227,12 +227,23 @@ they exist in the delivered code today:
 - FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
   migrates carries an FR-057 capability kind (`src/family/mod.rs`'s module
   doc). Owner: QSL-152.
-- FR-062-AC-5: backed (`TC-160`, `src/value/expression/family.rs`):
-  `quire_exact::Meter::charge`/`charge_plan` are `pub` (QSL-166), which
-  QSL-153 uses as `ValueFunctionFamily::evaluate`'s real call site to tag
-  the `Limit` half, implement the `Incomplete` half, and restore
-  `StageLimits`' `input_bytes`/`node_count`/`work_budget` fields, each with
-  a real producer and consumer.
+- FR-062-AC-5: backed at the hook level (`TC-160`, `src/value/expression/
+  family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
+  (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
+  `::evaluate`'s real call sites to tag the `Limit` half, implement the
+  `Incomplete` half, and restore `StageLimits`' `input_bytes`/`node_count`
+  fields plus a denied `CheckContext::meter` charge for the work-budget
+  kind (`crate::family::contract::StageLimits`'s own doc names each
+  field's real producer and consumer). This backs the criterion's first
+  two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
+  returning `Incomplete` on an exhausted meter -- for the one family
+  (`ValueFunctionFamily`) with a `check` hook in #214. The criterion's
+  third clause -- a test asserting neither `check` nor `package` ever
+  returns `Incomplete` across the same fixture set -- is untestable as
+  written: `FamilyContract::package` has no implementation in #214 (see
+  AC-9's own note on why it was deleted rather than wired up
+  speculatively), so there is no `package` outcome to assert anything
+  about. Owner: QSL-152 restores that clause once `package` exists.
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
   in #214; there is nothing to invoke this criterion's hook against yet.
   Owner: QSL-152.
