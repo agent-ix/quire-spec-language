@@ -304,18 +304,57 @@ delivered code today:
   `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
   deleted as self-corrupting in the PR #262 review round, finding F6, and
   not replaced). Owner: QSL-154.
-- FR-065-AC-4: unbacked. Untagged, and unmeetable as worded while the
-  checking decision stays in `Typer`: the arm's one call reaches
-  `Self::call`, not "family check code" (see `check.rs`'s corrected doc).
-  Owner: QSL-148 (named explicitly, not only implied by AC-5's row).
-- FR-065-AC-5: unbacked, by the rescoping decision on #262. The composed
-  checker's pre-migration entry points for both forms are not absent --
-  `Typer`'s declaration-typing pass and `Self::call` are exactly those
-  entry points, unchanged and still the only checker either form has. This
-  criterion is intentionally not narrowed to match; it names the real
-  target (move the checking into `ValueFunctionFamily::check` and delete it
-  from `Typer`), which is filed as its own, separate ticket rather than
-  attempted as part of #214. Owner: QSL-148.
+- FR-065-AC-4: **true by inspection, not backed** (PR #303 review, finding
+  3). The fact AC-4 states is true of the delivered code:
+  `infer_form`'s `Call` arm is exactly one call into
+  `super::family::check_application` (`Value`'s function family's own
+  checking code, `src/check/family.rs`) and holds no other conditional,
+  lookup or loop. But AC-4 is itself a code-shape criterion ("a code-shape
+  test... fails if a future change reintroduces branching logic directly in
+  either arm"), and no test in the delivered code checks that shape:
+  `check_application_accepts_a_well_typed_call`,
+  `check_application_refuses_wrong_arity`,
+  `check_application_refuses_an_unknown_name` and
+  `check_application_refuses_a_type_mismatched_argument`
+  (`#[trace("TC-376")]`, untagged for this criterion -- PR #303 review,
+  finding N2) verify `check_application`'s own
+  accept/refuse behavior, per the testing-policy ruling recorded on
+  [QSL-148's Linear thread](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+  (Peter, 2026-09-22, relayed by the QSL team lead: test what the family
+  check accepts and refuses, not the arm's code shape) -- but a future
+  change that reintroduces a conditional directly into `infer_form`'s `Call`
+  arm, while leaving `check_application` itself unchanged, would still pass
+  every one of those tests. TC-163's step 6 (the actual code-shape/AST
+  check) is not implemented as a test either (see TC-163's own Status
+  section) -- so nothing in the delivered code would catch that regression,
+  and "backed" overstates what these tests demonstrate.
+- FR-065-AC-5: **unbacked** (PR #303 review, finding 2; reverted from an
+  earlier "backed" claim in this round). AC-5 requires that, once this
+  requirement lands, "the composed checker's input form-kind enum carries
+  neither a function-declaration nor a function-application variant," and
+  states plainly that a variant left in place "with or without an arm for
+  it, does not satisfy this criterion." `Expression::Call` is that variant,
+  and it is still present in `Expression` (`src/forms/`) -- checking moved
+  (`Typer::call` is deleted, and `check_declaration_body`/
+  `check_application`, `src/check/family.rs`, are the real entry points
+  `check::family::ValueFunctionFamily::check` now calls internally), but
+  the variant itself was never removed, and QSL-148 does not add or claim a
+  removal. `check_declaration_body_accepts_a_well_typed_declaration_and_
+  reports_its_calls`, `check_declaration_body_refuses_an_ill_typed_body` and
+  `check_declaration_body_refuses_an_undefined_body`
+  (`#[trace("TC-377")]`, untagged for this criterion -- PR #303 review,
+  finding N2) verify that entry point's real
+  accept/refuse behavior and its call-reporting, per the same
+  [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+  -- real, valuable coverage of the checking-decision half of this
+  migration -- but they verify behavior, not AC-5's own enum-shape
+  condition, and that condition is not met. See `TC-164`'s own Status
+  section. Termination checking is explicitly excluded from this move --
+  see `check_declaration_body`'s doc comment (`src/check/family.rs`) and
+  this ticket's report for why a whole-package, cross-declaration
+  call-graph analysis cannot become a per-declaration `FamilyContract`-style
+  check; `check::termination::check` remains an unchanged, separate
+  whole-package pass.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
@@ -324,7 +363,11 @@ delivered code today:
   written against this criterion; recorded here now.
 
 One of this requirement's six Acceptance Criteria is backed (AC-2,
-identity/provenance); the other five are unbacked, for the reasons above.
-`TC-164`, `TC-165` and `TC-166` -- the test cases FR-065-AC-5, the
-migration-recipe completeness check, and FR-065-AC-6 verify against -- have
-zero tests each in the delivered code.
+identity/provenance); AC-4 is true by inspection but not backed by a test
+that could catch its own regression; the other four (AC-1, AC-3, AC-5, AC-6)
+are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
+migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
+in the delivered code. `TC-164` keeps its own zero-test procedure (see its
+Status section); the criterion it targets, AC-5, stays unbacked (see the
+AC-5 row above), though `TC-377`'s real accept/refuse tests are genuine
+coverage of the checking-decision half of this migration.

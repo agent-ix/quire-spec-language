@@ -53,3 +53,25 @@ FR-065-AC-4.
 - Step 6: each arm contains exactly one call into `Value`'s family check
   code and no other conditional, lookup or loop; a code-shape check against a
   fixed budget fails if either arm regains inline branching.
+
+## Status
+
+Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
+`identity_survives_v2_round_trip` and
+`function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
+(`tests/dispatch_calls.rs`) -- see FR-065's own Status section for the
+current per-AC accounting; AC-1 and AC-3 remain unbacked (owner QSL-154).
+
+Step 6 (FR-065-AC-4) is not implemented by a code-shape/AST test in the
+delivered code, per the [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+(Peter, QSL-148, 2026-09-22, relayed by the QSL team lead: test what the
+family check accepts and refuses, not the arm's code shape or placement).
+The fact step 6 would verify is true of the delivered code --
+`infer_form`'s `Call` arm (`src/check/check.rs`) is exactly one call into
+`super::family::check_application` and holds no other conditional, lookup
+or loop -- but AC-4 is **true by inspection, not backed**: `TC-376`'s
+behavioral tests of `check_application` itself would keep passing even if
+a future change reintroduced a conditional directly into `infer_form`'s
+`Call` arm, since none of them examine the arm's shape. See FR-065's
+Status section, AC-4 row, for the full reasoning (PR #303 review,
+finding 3).

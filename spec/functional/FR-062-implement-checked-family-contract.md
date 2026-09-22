@@ -247,19 +247,42 @@ they exist in the delivered code today:
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
   in #214; there is nothing to invoke this criterion's hook against yet.
   Owner: QSL-152.
-- FR-062-AC-7: unbacked (untagged; PR #262 review round 4; previously
-  misrecorded as backed). The tagged test varied only the nesting-depth
-  limit (0 vs 1) against `check`, which calls `enter_nesting` exactly once
-  per top-level declaration -- `check` performs no recursive descent of
-  its own, so `depth` never exceeds 1 and the predicate the test exercised
-  reduces to `0 >= nesting_depth`. Confirmed by mutation: deleting `self.
-  depth += 1` from `CheckContext::enter_nesting` (removing the nesting
-  bound entirely) left that test passing unchanged. This criterion needs a
-  fixture nested to a real depth D, which does not exist against today's
-  non-recursive `check`. Owner: QSL-148 -- unbackable until real recursive
-  checking (typing/definedness/termination) moves into
-  `ValueFunctionFamily::check`, which is the same move QSL-148 already
-  owns for AC-4/AC-5.
+- FR-062-AC-7: **unbacked** (PR #303 review, findings 4/5; reverted from an
+  earlier "backed" claim in this round). That earlier claim rested on
+  `check::family::charge_recursive_nesting`, a side-walk added purely to
+  charge `CheckContext`'s nesting counter once per expression-tree node --
+  it re-walked the already-checked form afterward, charging nesting for
+  nodes `Typer` had already finished checking, rather than charging nesting
+  *at* real recursive descent as AC-7 requires. It also silently dropped
+  the real walk's own source location and its early-return-on-first-error
+  behavior (findings 4/5), so it was a regression as well as a
+  mischaracterization; it has been deleted, not repaired, and
+  `real_recursive_descent_is_nesting_depth_bounded` (the test that claimed
+  to demonstrate it) is deleted with it.
+  There are two distinct depth-limiting mechanisms in this codebase, and
+  AC-7 is about the second one: `CheckContext::enter_nesting`
+  (`src/family/`) is charged once per top-level declaration by
+  `ValueFunctionFamily::check`, bounding how many declarations' worth of
+  contract-level nesting are in flight -- it does not walk into a
+  declaration's body. `Typer`'s own `CheckingLimits.depth`
+  (`src/check/check.rs`) is charged once per real recursive `infer`/
+  `check_as` call and is what actually bounds a function body's real
+  recursive descent today; `real_checker_depth_limit_is_the_proximate_cause`
+  (`src/value/expression/family.rs`, untagged) demonstrates that bound
+  through `ValueFunctionFamily::check` end-to-end (a body nested 4 deep,
+  limit 3 refuses via `CheckCause::ResourceExhausted{kind: Depth}`, limit 4
+  admits). But that refusal surfaces as `StageFailure::Refused`, not the
+  `StageFailure::Limit` outcome AC-7's wording names, and `Typer`'s depth
+  counter is not `CheckContext`'s nesting-depth limit -- they are
+  configured, charged and reported independently. Making AC-7 literally
+  true would require threading `&mut CheckContext` through every recursive
+  arm of `Typer::infer_form` (not just the `Call` arm this ticket touches),
+  so real descent charges the *contract's* counter and reports through the
+  contract's `Limit` outcome. That is real, load-bearing `Typer`
+  entanglement -- the same entanglement QSL-148's own ticket asked to be
+  reported rather than worked around -- and it is out of scope for this PR.
+  Reported to the requirement owner as an open scoping question, not
+  decided here. Owner: QSL-148 follow-up (untracked as of this report).
 - FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
   own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
   no cause-bearing family to probe yet. Owner: QSL-152.
@@ -275,5 +298,12 @@ they exist in the delivered code today:
   `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
 
-Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-5);
-the other eight are unbacked, for the reasons above -- not silently.
+Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-5;
+PR #303 review round 3, finding F3 -- corrected back from an intervening
+"one... (AC-2)" summary that briefly contradicted AC-5's own row and its
+two `FR-062-AC-5`-tagged tests, both still real and passing:
+`stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
+`evaluate_returns_incomplete_when_the_meter_is_exhausted`,
+`src/value/expression/family.rs`); the other eight are unbacked, for the
+reasons above -- not silently. AC-7 in particular stays unbacked pending a
+scoping decision on the `Typer` entanglement described in its row above.
