@@ -51,9 +51,9 @@ FR-066-AC-2's three categories, per family:
    `quire.checked-package/v2` bytes (ADR-013 O-17).
 2. **The evaluator**: the family's `evaluate` hook (`ReferenceEvaluation`),
    converting a checked node plus its typing-context `Env` into the
-   family's `Observed` outcome, or the family's `Refused` reason (or, for
-   `Relation`, the explicit `FamilyOutcome::Refused(FamilyRefusal::
-   FamilyNotNativelyEvaluable)` non-evaluability arm ADR-012 §3 names).
+   family's `Observed` outcome, or the family's `Refused` reason. `Relation`
+   has no evaluator: S6a's input type has no `Relation` variant (ADR-012 §2,
+   FR-090-AC-4).
 3. **Requirement derivation**: the family's pure `requirements()` function
    from a checked node to zero or one `Requirements` value (FR-062-AC-4);
    see this document's own note below on when this function has anything

@@ -67,7 +67,7 @@ ADR's summary sentence as if it were itself testable.
   constructor from a digest, no dependency on `check` or `model`).
 - The layer-3 `check` core module ADR-011 §6.1 places the clause-kind enum
   in (`CheckContext`, family checker trait, shared checked types,
-  `FamilyOutcome`, `FamilyRefusal`).
+  `FamilyOutcome`, `FamilyResult`, `EvalOutcome`).
 
 ## Outputs
 

@@ -45,14 +45,14 @@ Tag the test `#[trace("FR-090-AC-10", "TC-391")]`.
 - Steps 2 and 3 each return `Err(CallFailure::Input(_))`, and the meter
   records no charge.
 - Step 4 returns `Err(fault)` for both arguments, with
-  `fault.category() == Category::InternalFailure`. It never returns
-  `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))` or
-  `Ok(FamilyOutcome::Refused(_))`, and it does not panic.
+  `fault.category() == Category::InternalFailure`. It never returns an
+  `Ok(e)` whose `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(_))`
+  or a `FamilyOutcome::FamilyEvaluated`, and it does not panic.
 
 ## Status
 
-Backed, in two parts (`FamilyOutcome`/`FamilyRefusal` are not yet built --
-FR-090-OQ-2, OQ-3 remain open -- so the S6a-internal half asserts today's
+Backed, in two parts (`FamilyOutcome` is not yet built, so the S6a-internal
+half asserts today's
 real `EvaluateFailure`/`InternalFault` types rather than the literal
 `FamilyOutcome`/kernel-`Refused` spelling above):
 

@@ -104,7 +104,7 @@ pub enum CallFailure {
     #[error(transparent)]
     Input(#[from] InputRefusal),
     /// An S6a invariant broke (ADR-013 T-4): never a caller-input refusal,
-    /// and never surfaced as `Ok(FamilyOutcome::Refused(_))`/
+    /// and never surfaced as a `FamilyResult` or as
     /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(qsl_foundation::diagnostic::InternalFault),

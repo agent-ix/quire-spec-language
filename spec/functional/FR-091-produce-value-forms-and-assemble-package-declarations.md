@@ -432,7 +432,7 @@ which AC-2 and AC-11 do not allow. `Expression` nodes carry no span.
   O-17 requires a code from the catalog revision FR-322 selects and forbids
   inventing one. No existing `qsl-foundation` code clearly names a cyclic
   type alias. A catalog entry is needed from
-  `ix://agent-ix/quire-specification`, as in FR-090-OQ-2.
+  `ix://agent-ix/quire-specification` (ADR-013 O-17).
 - **FR-091-OQ-8: May layer 2 depend on K?** Against: ADR-011 §6.1 gives layer
   2 "1, F" in an exhaustive allow-list; the crate-map rule limits a layer
   crate's `[dependencies]` to its "Depends on" cell; and the §7.1 graph gives

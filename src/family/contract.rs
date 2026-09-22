@@ -307,9 +307,9 @@ pub(crate) trait FamilyContract {
 }
 
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
-/// implements except `Relation` (which has no native evaluation -- ADR-012
-/// §2's `FamilyNotNativelyEvaluable` arm covers that case at the S6a seam,
-/// not through this trait).
+/// implements except `Relation` (which has no native evaluation: S6a's input
+/// type admits no `Relation`, ADR-012 §2 and FR-090-AC-4, so no S6a arm or
+/// refusal exists for it).
 ///
 /// `Env` is a GAT (`type Env<'a>`), not a plain associated type: a family's
 /// real evaluation environment (for `Value`, the checked package it
@@ -341,7 +341,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported).
     /// FR-090-AC-3 (ADR-013 T-4) is the other failure shape this hook
     /// returns: a broken S6a invariant, [`EvaluateFailure::Fault`], never a
-    /// `FamilyRefusal` or a kernel-shaped refusal.
+    /// `FamilyResult` or a kernel-shaped refusal.
     fn evaluate<'a>(
         checked: &Self::Key,
         env: &mut Self::Env<'a>,
@@ -394,7 +394,7 @@ pub(crate) enum EvaluateFailure {
     #[error("evaluate exhausted the kernel meter budget: {0:?}")]
     Incomplete(quire_exact::Incomplete),
     /// FR-090-AC-3/AC-10 (ADR-013 T-4): a broken S6a invariant -- never a
-    /// `FamilyRefusal`/kernel `Refused`. `Value`'s own `evaluate` hook
+    /// `FamilyResult`/kernel `Refused`. `Value`'s own `evaluate` hook
     /// (`value::expression::family::ValueFunctionFamily::evaluate`) raises
     /// this directly for its own two invariants (an unresolved identity, or
     /// a second call on one `EvaluationEnv`), and forwards it unchanged from

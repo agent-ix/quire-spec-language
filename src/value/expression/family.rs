@@ -540,7 +540,7 @@ mod family_contract_tests {
     /// whose `arguments` the first call already consumed via `.take()` --
     /// is a broken S6a invariant, `Err(EvaluateFailure::Fault(_))` naming
     /// stage `"S6a"`, never a silent zero-argument evaluation and never a
-    /// `FamilyRefusal`/kernel-shaped refusal. `EvaluationEnv`'s one real
+    /// `FamilyResult`/kernel-shaped refusal. `EvaluationEnv`'s one real
     /// (non-test) constructor (`CheckedPackage::call`) never reaches this:
     /// it always builds a fresh env with `Some(arguments)` and calls
     /// `evaluate` exactly once, so the guard is unreached through that

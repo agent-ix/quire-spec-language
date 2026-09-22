@@ -73,10 +73,11 @@ The contract's six parts (ADR-012 §2):
    ADR-013 O-11), and SHALL NOT select it by a bare string compared against
    a display name.
 
-A family that does not evaluate natively (`Relation`) SHALL return a named
-refusal at the evaluation hook rather than omitting the hook silently, so
-every family has an entry at every stage its contract lists, distinguishing
-"this family sits out this stage" from "this family has no hook."
+A family that does not evaluate natively (`Relation`) SHALL have no
+evaluation hook and SHALL NOT be an input to S6a evaluation: S6a's family
+kind has no `Relation` variant (FR-090-AC-4). At a lowering or proof stage,
+a family that sits out the stage SHALL have an explicit arm that returns
+`unsupported` with a catalog code (ADR-012 §2).
 
 ## Inputs
 
@@ -95,8 +96,8 @@ every family has an entry at every stage its contract lists, distinguishing
 - A structured outcome: the checked node, a typed refusal, a limit outcome
   naming the exhausted budget, or an internal fault distinct from both.
 - For evaluation, on every family except `Relation`: an evaluated result or
-  a typed refusal built only from checked input. On `Relation`: a named
-  refusal stating that the family is not natively evaluable.
+  a typed refusal built only from checked input. `Relation` has no
+  evaluation hook and is not an input to evaluation (FR-090-AC-4).
 
 ## Behavior
 
@@ -175,7 +176,7 @@ outcome.
 | FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
 | FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and a claim form with a kind yields exactly one `Requirements` value naming that kind; calling the requirements function twice on the same checked node yields equal values. | Test (TC-160) |
 | FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts neither `check` nor `package` ever returns `Incomplete` across the same fixture set. | Test (TC-160) |
-| FR-062-AC-6 | The `Relation` family's evaluation hook, invoked on a checked `Relation` node, returns a named refusal stating non-native evaluability rather than a panic, a silently omitted call, or a successful evaluated result. Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
+| FR-062-AC-6 | The `Relation` family has no evaluation hook, and S6a's input type admits no `Relation` node, so a `Relation` node never reaches evaluation and yields neither a panic, a silently omitted call, nor a successful evaluated result (FR-090-AC-4). Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
 | FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-160) |
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
@@ -219,7 +220,7 @@ function-declaration form) can back with a real, non-fabricated
 construction site: `check`, the checked-input parameter, and the
 stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely),
 `package` (AC-1's mention, AC-9 entirely) and the `Relation`
-non-native-evaluability case (AC-6's second sentence) are deleted or never
+non-native-evaluability case (AC-6's first sentence) are deleted or never
 implemented, not stubbed -- see `src/family/mod.rs`'s and
 `src/family/contract.rs`'s own module docs for why each is a real deferral
 rather than an oversight. By Acceptance Criterion, with real trace tags as
@@ -259,8 +260,8 @@ they exist in the delivered code today:
   speculatively), so there is no `package` outcome to assert anything
   about. Owner: QSL-152 restores that clause once `package` exists.
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
-  in #214; there is nothing to invoke this criterion's hook against yet.
-  Owner: QSL-152.
+  in #214, and S6a has no family-kind dispatch yet; FR-090-AC-4 (TC-385) is
+  the precise form of the `Relation` half. Owner: QSL-152.
 - FR-062-AC-7: **unbacked** (PR #303 review, findings 4/5; reverted from an
   earlier "backed" claim in this round). That earlier claim rested on
   `check::family::charge_recursive_nesting`, a side-walk added purely to

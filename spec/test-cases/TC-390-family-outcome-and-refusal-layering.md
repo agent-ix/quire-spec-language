@@ -1,20 +1,20 @@
 ---
 id: TC-390
-title: "FamilyOutcome, FamilyRefusal, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause"
+title: "FamilyOutcome, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
 ---
-# TC-390: FamilyOutcome, FamilyRefusal, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause
+# TC-390: FamilyOutcome, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause
 
 ## Description
 
-Verify FR-090-AC-9. `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and
-`EvalOutcome` are each defined once, in the layer-3 `check` core (ADR-011
+Verify FR-090-AC-9. `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are
+each defined once, in the layer-3 `check` core (ADR-011
 §6.1). Layer 1 (`qsl-cst`), layer 2 `forms` and the layer-3 modules below the
 `check` core (`semantic_value`, `model`, `library`) never reach any of the
-four. K (`quire-exact`) and F (`qsl-foundation`) cannot reach them, because
+three. K (`quire-exact`) and F (`qsl-foundation`) cannot reach them, because
 of the crate DAG. The `check` core names no family cause type: it holds the
 `ProtocolClause` snapshot cause, `ModelRefusal` and the `StateModel`
 undefined cause only through `CatalogCoded` and `UndefinedCoded` (ADR-013
@@ -23,13 +23,13 @@ O-16, O-17). Scope: FR-090-AC-9.
 The test uses the same resolved-import and definition-scan approach as
 TC-256, TC-170 and TC-176 (`xtask/src/import_graph.rs`,
 `xtask/src/definition_scan.rs`). A `use` scan alone is not enough, because a
-fully-qualified inline path such as `crate::family::FamilyRefusal` with no
+fully-qualified inline path such as `crate::family::FamilyResult` with no
 `use` line would pass it.
 
 This catches five faults: a second definition, such as a copy under
 `value::expression`; a `model` or `library` module that imports the family
 outcome to report a query result, which is an upward edge inside layer 3;
-F growing a `FamilyRefusal`-aware category map; the kernel gaining a
+F growing a `check`-core-aware category map; the kernel gaining a
 family variant; and a `check`-core item that names a family cause type,
 which turns `FamilyResult` back into a shared cause list.
 
@@ -37,14 +37,14 @@ which turns `FamilyResult` back into a shared cause list.
 
 1. Scan every `.rs` file under `src/`, `quire-exact/src/` and
    `qsl-foundation/src/` for an item definition named `FamilyOutcome`,
-   `FamilyRefusal`, `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
+   `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
 2. Resolve every `use` edge and every inline path under `src/forms/`,
    `src/model/`, `src/library/`, the `semantic_value` modules
    (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
    ADR-011 §6.2) and `qsl-cst/src/`, and check whether any of them names one
-   of the four types.
+   of the three types.
 3. Resolve every `use` edge and every inline path under the `check` core, and
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.
@@ -61,7 +61,7 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 - Step 2 finds no edge.
 - Step 3 finds no edge.
 - Step 4 finds that none of the three manifests names the crate that defines
-  the four types, or any crate at layer 3 or above. `qsl-foundation` may name
+  the three types, or any crate at layer 3 or above. `qsl-foundation` may name
   `quire-exact`, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
   (ADR-011 §6.1).
 

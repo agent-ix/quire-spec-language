@@ -20,9 +20,9 @@ a reached limit is distinct from both a refusal and `Incomplete`, that
 `Incomplete` is returned only by `evaluate`, that a nesting-depth limit is
 the proximate cause of a deeply-nested form's refusal (not the form's
 absolute size or the host's available stack), that `package` is
-all-or-nothing, and that the `Relation` family's evaluation hook returns a
-named
-non-native-evaluability refusal rather than a panic or a silent success.
+all-or-nothing, and that every evaluation hook reads only checked input.
+The `Relation` half of FR-062-AC-6 (no `Relation` hook and no `Relation`
+S6a input) is verified by TC-385.
 Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
 
 ## Test Procedure
@@ -62,10 +62,9 @@ Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
 8. Given a checked item requiring more than one v2 node, inject a fault
    partway through `package`'s emission for that item (after the first node
    is written, before the last); read whatever v2 bytes resulted.
-9. Invoke the `Relation` family's evaluation hook on a checked `Relation`
-   node built only from checked input. Instrument every other family's
-   evaluation hook with a test double that panics if a CST, token or display
-   string is touched, then invoke each on a checked node.
+9. Instrument every family's evaluation hook with a test double that
+   panics if a CST, token or display string is touched, then invoke each on
+   a checked node.
 
 ## Expected Results
 
@@ -92,7 +91,5 @@ Scope: FR-062-AC-1 through FR-062-AC-7 and FR-062-AC-9.
 - Step 8: the result is either a refusal with no v2 bytes for the item, or a
   complete v2 node set for the item; no reading finds a partial node set (for
   example, a declaration node with no body).
-- Step 9: the `Relation` invocation returns a named refusal stating
-  non-native evaluability, never a panic and never a successful evaluated
-  result; every other family's evaluation hook completes without the test
-  double panicking, showing no CST, token or display string was read.
+- Step 9: every family's evaluation hook completes without the test double
+  panicking, showing no CST, token or display string was read.
