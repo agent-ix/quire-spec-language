@@ -114,14 +114,15 @@ mod value;
 // H-5: every submodule above is private and its public surface is exposed
 // only through this curated facade, mirroring `src/value/mod.rs`'s pattern
 // (private `mod`s behind selective `pub use` re-exports) rather than
-// `pub mod` wholesale. `crate::key::compare_keys` and the two functions this
-// PR's own REVISE round demoted to `pub(crate)` out of the five flagged
-// (`rational::divided_by_power_of_ten`, `decimal::DecimalRepresentation::
-// to_rational`) are deliberately absent below: they are reachable only from
-// inside this crate. The other three flagged functions
-// (`quantity::compare_quantity`, `decimal::DecimalLoss::exact`/
-// `exact_denominator`, `equality::plan_equality`) stayed `pub` -- see their
-// own doc comments for why -- and are exported below as before.
+// `pub mod` wholesale. `crate::key::compare_keys` is deliberately absent
+// below: it is reachable only from inside this crate. `rational::
+// divided_by_power_of_ten`/`divided_by_power_of_two`, `decimal::
+// DecimalRepresentation::to_rational`, `decimal::compare_shifted`,
+// `decimal::power_of_ten_bits`/`sbits`/`sdigits`, `decimal::DecimalLoss::
+// exact`/`exact_denominator` and `equality::plan_equality` are all `pub`
+// and exported below: each is unmetered exact arithmetic or comparison --
+// the same discipline `Integer`'s own arithmetic carries -- so a caller
+// charges or bounds its inputs before calling any of them.
 //
 // QSL-146 moves the ledger the other direction: 17 `Integer`/
 // `IntegerInterval` inherent methods (`integer.rs`'s own module doc names
@@ -146,8 +147,8 @@ pub use collection::{
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{
-    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult,
-    DecimalType, RoundingMode,
+    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal, DecimalLoss,
+    DecimalOperation, DecimalRepresentation, DecimalResult, DecimalType, RoundingMode,
 };
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};

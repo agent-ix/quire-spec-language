@@ -66,11 +66,11 @@ impl DecimalRepresentation {
         Self::new(coefficient, scale)
     }
 
-    /// The exact mathematical value. `pub(crate)`, not `pub` (H-5): `scale`
-    /// is caller-supplied and unmetered, and `Decimal::new(Integer::one(),
-    /// u32::MAX).to_rational()` builds a roughly 1.8GB `BigInt` through two
-    /// otherwise-`pub` constructors with no meter in between.
-    pub(crate) fn to_rational(&self) -> Rational {
+    /// The exact mathematical value. `scale` is caller-supplied and
+    /// unmetered: a caller charges or bounds it before calling, the same
+    /// discipline [`crate::rational::Rational::divided_by_power_of_ten`]
+    /// documents for its own caller-supplied exponent.
+    pub fn to_rational(&self) -> Rational {
         Rational::from_integer(self.coefficient.clone())
             .divided_by_power_of_ten(u64::from(self.scale))
     }
@@ -293,35 +293,16 @@ impl DecimalLoss {
     /// materializes the denominator, including any power of ten contributed by
     /// a large working scale.
     ///
-    /// **H-5, judgment call: stays `pub`, not `pub(crate)`.** The scale
-    /// driving `self.exact.fives`/`self.exact.twos` is bounded only by
-    /// `DecimalType::new`'s `smax <= u32::MAX`, so this is a real unmetered
-    /// materialization risk, the same class as `rational::
-    /// divided_by_power_of_ten` and `DecimalRepresentation::to_rational`.
-    /// Those two became `pub(crate)`: each already has a real in-crate
-    /// caller. This one and [`DecimalLoss::exact`] do not -- per this
-    /// module's own doc comment, evaluation deliberately never charges this
-    /// materialization, deferring it to "consumer-side accessors" for QSL to
-    /// report a loss's exact pre-rounding value, which is this method's
-    /// entire reason to exist. Demoting it to `pub(crate)` would either
-    /// delete that not-yet-wired consumer capability or produce dead code
-    /// (confirmed: a `#[cfg(test)]`-only caller does not satisfy `cargo
-    /// build`'s dead-code check). Metering it would need a new
-    /// `quire.value.accounting/v1` charge point, which is ADR-governed
-    /// product vocabulary, not something to mint at this call site (the same
-    /// reasoning `identity.rs`'s module doc gives for not inventing digest
-    /// domains). Left `pub` and documented, tracked for a real fix once a
-    /// consumer exists to say which of pub(crate)/metering it actually needs.
-    ///
-    /// **Round 2 characterization:** the meter already mitigates this in
-    /// practice. `evaluate_decimal` charges `decimal.scale-expansion` and
-    /// `decimal.arithmetic`'s `decimal_digits` amount on the same scale
-    /// expansion that produces a `DecimalLoss` in the first place, so any
-    /// realistic meter refuses the operation long before a loss with a
-    /// dangerous `max_scale` could exist -- this accessor is reachable with
-    /// an actually-large denominator only under a meter with every counter
-    /// at `u64::MAX`, under which nothing else in this crate is bounded
-    /// either. No new charge point is warranted for this alone.
+    /// The scale driving `self.exact.fives`/`self.exact.twos` is bounded
+    /// only by `DecimalType::new`'s `smax <= u32::MAX`, so this is the same
+    /// class of unmetered materialization as
+    /// [`Rational::divided_by_power_of_ten`](crate::rational::Rational::divided_by_power_of_ten)
+    /// and [`DecimalRepresentation::to_rational`]: a caller charges or
+    /// bounds the scale before calling. `evaluate_decimal` itself already
+    /// charges `decimal.scale-expansion` and `decimal.arithmetic`'s
+    /// `decimal_digits` amount on the same scale expansion that produces a
+    /// `DecimalLoss` in the first place, so a realistic meter refuses the
+    /// operation long before a loss with a dangerous `max_scale` could exist.
     pub fn exact_denominator(&self) -> Integer {
         let fives = Integer::from(5_i64).pow(&Integer::from(self.exact.fives));
         self.exact
@@ -331,8 +312,8 @@ impl DecimalLoss {
     }
 
     /// The exact mathematical value, materialized as for
-    /// [`DecimalLoss::exact_denominator`], including that method's same H-5
-    /// judgment call.
+    /// [`DecimalLoss::exact_denominator`]: a caller charges or bounds the
+    /// scale before calling.
     pub fn exact(&self) -> Rational {
         Rational::new(self.exact.numerator.clone(), self.exact_denominator())
             .expect("a loss denominator is a product of positive factors")
@@ -436,7 +417,7 @@ impl DecimalType {
 }
 
 /// Compare `value × 10^shift` with `bound` without materializing the power.
-pub(crate) fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
+pub fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
     let sign = |integer: &Integer| {
         if integer.is_zero() {
             Ordering::Equal
@@ -934,7 +915,7 @@ fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
 }
 
 /// `bits(10^k)`, derived without allocating the power of ten.
-pub(crate) fn power_of_ten_bits(shift: u64) -> Integer {
+pub fn power_of_ten_bits(shift: u64) -> Integer {
     Integer::power_product_bits(
         &Integer::one(),
         &Integer::from(10_i64),
@@ -945,7 +926,7 @@ pub(crate) fn power_of_ten_bits(shift: u64) -> Integer {
 /// `sbits(c,k)` from `quire.value.accounting/v1`: `bits(c)` when `k = 0` and
 /// `bits(c) + bits(10^k)` otherwise, from the unshifted coefficient. Every
 /// shifted-coefficient `integer_bits` amount routes through this function.
-pub(crate) fn sbits(coefficient: &Integer, shift: u64) -> Integer {
+pub fn sbits(coefficient: &Integer, shift: u64) -> Integer {
     let bits = Integer::from(coefficient.magnitude_bits());
     if shift == 0 {
         bits
@@ -956,7 +937,7 @@ pub(crate) fn sbits(coefficient: &Integer, shift: u64) -> Integer {
 
 /// `sdigits(c,k)` from `quire.value.accounting/v1`: `digits(c) + k`. Every
 /// shifted-coefficient `decimal_digits` amount routes through this function.
-pub(crate) fn sdigits(coefficient: &Integer, shift: u64) -> Integer {
+pub fn sdigits(coefficient: &Integer, shift: u64) -> Integer {
     Integer::from(coefficient.decimal_digits()).add(&Integer::from(shift))
 }
 

@@ -4,177 +4,39 @@
 //!
 //! Every intermediate is an exact integer or reduced rational; no binary
 //! floating-point value exists anywhere on this path.
+//!
+//! [`DecimalRepresentation`], [`Decimal`], [`RoundingMode`],
+//! [`DecimalOperation`], [`DecimalRepresentation::to_rational`],
+//! `compare_shifted`, `sbits`, `sdigits` and `power_of_ten_bits` are
+//! `quire_exact`'s own canonical items, re-exported below rather than
+//! duplicated: every method and function these carry is reachable straight
+//! off the re-exported type or name; none of it is duplicated here.
+//!
+//! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
+//! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
+//! evaluation engine and `Placement`/`DecimalType::placement`/
+//! `round_at_target` for `super::quantity`'s unit-graph decimal targets)
+//! stay local. `DecimalType::new` and `evaluate_decimal` return this crate's
+//! own `IllTyped` (`value::comparison`) and `Outcome`/`Refusal`
+//! (`value::outcome`), a strict superset of `quire_exact`'s kernel
+//! `IllTyped`/`Outcome`/`Refusal` -- out of scope here, blocked on QSL-166
+//! and QSL-174 -- and `DecimalResult`/`DecimalLoss` are constructed only
+//! through their own private struct literals inside that engine;
+//! `quire_exact` exposes neither type with a public constructor (only
+//! accessors), so even once the `Outcome`/`Refusal` coupling above is
+//! resolved, this crate's engine could not build a
+//! `quire_exact::DecimalResult`/`DecimalLoss` without one.
 
 use std::cmp::Ordering;
 
 use super::comparison::{IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::Rational;
+pub use quire_exact::{
+    compare_shifted, power_of_ten_bits, sbits, sdigits, Decimal, DecimalOperation,
+    DecimalRepresentation, RoundingMode,
+};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
-
-/// An authored or computed `(coefficient, scale)` pair denoting
-/// `coefficient × 10^-scale`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct DecimalRepresentation {
-    coefficient: Integer,
-    scale: u32,
-}
-
-impl DecimalRepresentation {
-    /// The exact pair.
-    pub fn new(coefficient: Integer, scale: u32) -> Self {
-        Self { coefficient, scale }
-    }
-
-    /// Signed coefficient.
-    pub fn coefficient(&self) -> &Integer {
-        &self.coefficient
-    }
-
-    /// Nonnegative scale.
-    pub fn scale(&self) -> u32 {
-        self.scale
-    }
-
-    /// Remove trailing decimal zeros while `scale > 0`; zero becomes `(0, 0)`.
-    pub fn normalized(&self) -> Self {
-        if self.coefficient.is_zero() {
-            return Self::new(Integer::zero(), 0);
-        }
-        let ten = Integer::from(10_i64);
-        let mut coefficient = self.coefficient.clone();
-        let mut scale = self.scale;
-        while scale > 0 {
-            let (quotient, remainder) = coefficient.div_rem_truncating(&ten);
-            if !remainder.is_zero() {
-                break;
-            }
-            coefficient = quotient;
-            scale -= 1;
-        }
-        Self::new(coefficient, scale)
-    }
-
-    /// The exact mathematical value.
-    pub fn to_rational(&self) -> Rational {
-        Rational::from_integer(self.coefficient.clone())
-            .divided_by_power_of_ten(u64::from(self.scale))
-    }
-}
-
-/// A decimal value retaining its pre-normalized representation provenance.
-///
-/// Equality and ordering are mathematical and use [`Decimal::normalized`];
-/// the type deliberately has no structural `PartialEq`.
-#[derive(Clone, Debug)]
-pub struct Decimal {
-    representation: DecimalRepresentation,
-    normalized: DecimalRepresentation,
-}
-
-impl Decimal {
-    /// A decimal with this exact representation.
-    pub fn new(coefficient: Integer, scale: u32) -> Self {
-        Self::from_representation(DecimalRepresentation::new(coefficient, scale))
-    }
-
-    /// A decimal retaining `representation` as provenance.
-    pub fn from_representation(representation: DecimalRepresentation) -> Self {
-        let normalized = representation.normalized();
-        Self {
-            representation,
-            normalized,
-        }
-    }
-
-    /// Pre-normalized provenance.
-    pub fn representation(&self) -> &DecimalRepresentation {
-        &self.representation
-    }
-
-    /// Canonical mathematical representation.
-    pub fn normalized(&self) -> &DecimalRepresentation {
-        &self.normalized
-    }
-
-    /// Mathematical ordering. This is the unmetered scalar primitive consumed
-    /// by the metered equality matrix; it is not itself an evaluator result.
-    ///
-    /// Signs decide first; equal signs compare the magnitudes aligned to the
-    /// larger scale without materializing a power of ten larger than the
-    /// operands (see `compare_shifted`).
-    pub fn compare(&self, other: &Self) -> Ordering {
-        let (left, right) = (&self.normalized, &other.normalized);
-        let (left_scale, right_scale) = (u64::from(left.scale), u64::from(right.scale));
-        // `l / 10^ls` against `r / 10^rs`, both sides multiplied by `10^max(ls, rs)`.
-        if left_scale >= right_scale {
-            compare_shifted(
-                &right.coefficient,
-                left_scale - right_scale,
-                &left.coefficient,
-            )
-            .reverse()
-        } else {
-            compare_shifted(
-                &left.coefficient,
-                right_scale - left_scale,
-                &right.coefficient,
-            )
-        }
-    }
-
-    /// Mathematical equality over normalized values.
-    pub fn numerically_equal(&self, other: &Self) -> bool {
-        self.normalized == other.normalized
-    }
-}
-
-/// A rounding spelling; an omitted spelling is strict [`RoundingMode::Exact`].
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RoundingMode {
-    /// Refuse any discarded nonzero digit.
-    #[default]
-    Exact,
-    /// Round toward zero.
-    TowardZero,
-    /// Round toward positive infinity.
-    TowardPositive,
-    /// Round toward negative infinity.
-    TowardNegative,
-    /// Nearest; ties choose the even coefficient.
-    NearestEven,
-    /// Nearest; ties choose the greater absolute coefficient.
-    NearestAway,
-}
-
-impl RoundingMode {
-    /// Every spelling in grammar order.
-    pub const ALL: [Self; 6] = [
-        Self::Exact,
-        Self::TowardZero,
-        Self::TowardPositive,
-        Self::TowardNegative,
-        Self::NearestEven,
-        Self::NearestAway,
-    ];
-
-    /// Source spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Exact => "exact",
-            Self::TowardZero => "toward-zero",
-            Self::TowardPositive => "toward-positive",
-            Self::TowardNegative => "toward-negative",
-            Self::NearestEven => "nearest-even",
-            Self::NearestAway => "nearest-away",
-        }
-    }
-
-    /// Resolve a source spelling.
-    pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.as_str() == code)
-    }
-}
 
 /// `DecimalLoss { exact_numerator, exact_denominator, rounded_coefficient,
 /// rounded_scale, mode }`. The exact value is a canonical rational.
@@ -390,56 +252,6 @@ impl DecimalType {
     }
 }
 
-/// Compare `value × 10^shift` with `bound` without materializing the power.
-pub(crate) fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
-    let sign = |integer: &Integer| {
-        if integer.is_zero() {
-            Ordering::Equal
-        } else if integer.is_negative() {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    };
-    match sign(value).cmp(&sign(bound)) {
-        Ordering::Equal if value.is_zero() => Ordering::Equal,
-        Ordering::Equal => {
-            let magnitude = shifted_digits(value, shift)
-                .cmp(&bound.decimal_digits())
-                .then_with(|| {
-                    // Equal digit counts bound `shift` by the materialized bound.
-                    value
-                        .abs()
-                        .mul(&Integer::power_of_ten(shift))
-                        .cmp(&bound.abs())
-                });
-            if value.is_negative() {
-                magnitude.reverse()
-            } else {
-                magnitude
-            }
-        }
-        unequal => unequal,
-    }
-}
-
-/// One FR-140 decimal operation.
-#[derive(Clone, Copy, Debug)]
-pub enum DecimalOperation<'a> {
-    /// `a + b`.
-    Add(&'a Decimal, &'a Decimal),
-    /// `a - b`.
-    Subtract(&'a Decimal, &'a Decimal),
-    /// `a * b`.
-    Multiply(&'a Decimal, &'a Decimal),
-    /// `-a`.
-    Negate(&'a Decimal),
-    /// `a / b`.
-    Divide(&'a Decimal, &'a Decimal),
-    /// Explicit conversion of `a` into the target type.
-    Round(&'a Decimal),
-}
-
 /// A completed decimal result.
 #[derive(Clone, Debug)]
 pub struct DecimalResult {
@@ -450,7 +262,7 @@ pub struct DecimalResult {
 /// Result identity is the exact retained representation and loss record.
 impl PartialEq for DecimalResult {
     fn eq(&self, other: &Self) -> bool {
-        self.value.representation == other.value.representation && self.loss == other.loss
+        self.value.representation() == other.value.representation() && self.loss == other.loss
     }
 }
 
@@ -515,7 +327,7 @@ fn expanded_side(sides: [Shifted<'_>; 2]) -> (u64, Option<Shifted<'_>>) {
 }
 
 fn retained_parts(value: &Decimal) -> Shifted<'_> {
-    let representation = &value.representation;
+    let representation = value.representation();
     (
         representation.coefficient(),
         u64::from(representation.scale()),
@@ -784,10 +596,10 @@ impl DecimalType {
     /// loss. The caller has charged or bounded its size.
     fn round_at_target(&self, value: &Rational) -> Result<Placed, Refusal> {
         let (numerator, denominator) = (value.numerator(), value.denominator());
+        // A reduced denominator is positive, so the division exists.
         let units = Rational::from_integer(
             numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
         )
-        // A reduced denominator is positive, so the division exists.
         .div(&Rational::from_integer(denominator.clone()))
         .ok_or(Refusal::InexactDecimal)?;
         let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
@@ -977,42 +789,6 @@ fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
         coefficient.clone()
     } else {
         coefficient.mul(&Integer::power_of_ten(shift))
-    }
-}
-
-/// `bits(10^k)`, derived without allocating the power of ten.
-pub(crate) fn power_of_ten_bits(shift: u64) -> Integer {
-    Integer::power_product_bits(
-        &Integer::one(),
-        &Integer::from(10_i64),
-        &Integer::from(shift),
-    )
-}
-
-/// `sbits(c,k)` from `quire.value.accounting/v1`: `bits(c)` when `k = 0` and
-/// `bits(c) + bits(10^k)` otherwise, from the unshifted coefficient. Every
-/// shifted-coefficient `integer_bits` amount routes through this function.
-pub(crate) fn sbits(coefficient: &Integer, shift: u64) -> Integer {
-    let bits = Integer::from(coefficient.magnitude_bits());
-    if shift == 0 {
-        bits
-    } else {
-        bits.add(&power_of_ten_bits(shift))
-    }
-}
-
-/// `sdigits(c,k)` from `quire.value.accounting/v1`: `digits(c) + k`. Every
-/// shifted-coefficient `decimal_digits` amount routes through this function.
-pub(crate) fn sdigits(coefficient: &Integer, shift: u64) -> Integer {
-    Integer::from(coefficient.decimal_digits()).add(&Integer::from(shift))
-}
-
-/// `digits(c × 10^shift)` of a membership comparison, which zero keeps at one.
-fn shifted_digits(value: &Integer, shift: u64) -> u64 {
-    if value.is_zero() {
-        1
-    } else {
-        value.decimal_digits().saturating_add(shift)
     }
 }
 

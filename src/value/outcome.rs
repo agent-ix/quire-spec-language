@@ -175,10 +175,10 @@ pub enum Refusal {
     /// FR-089-AC-4: a consumed `Value::Population(population_id)`
     /// (`evaluate.rs`'s `allInstances`/`lookup` sites) names no binding in
     /// this evaluation's own recorded correspondence. Distinguished from
-    /// [`Self::PopulationMaximumMismatch`] (PR #326 review finding S1: a
-    /// caller cannot otherwise tell "not recorded" from "recorded, wrong
-    /// maximum" apart, though the spec names no code for either case to
-    /// keep separate -- see this variant's own `code`/`cause`). Never
+    /// [`Self::PopulationMaximumMismatch`]: a caller cannot otherwise tell
+    /// "not recorded" from "recorded, wrong maximum" apart, though the spec
+    /// names no code for either case to keep separate -- see this variant's
+    /// own `code`/`cause`. Never
     /// [`Self::CheckedInvariant`]: `check::check::bind_parameters`'s own
     /// doc records that a `Population<T>[N]` parameter bypasses
     /// `Typer::check_declared_type`, so the checker never verifies a
@@ -200,12 +200,12 @@ pub enum Refusal {
     /// FR-089-AC-5: a consumed `Value::Population(population_id)` resolves
     /// to a recorded binding, but that binding's own declared maximum
     /// differs from the parameter's checked `Population<T>[maximum]`
-    /// maximum. Split from [`Self::UnresolvedPopulation`] (PR #326 review
-    /// finding S1) so a caller can distinguish "not recorded" from
-    /// "recorded, wrong maximum"; see that variant's own doc for why this
-    /// is otherwise identical (never [`Self::CheckedInvariant`],
-    /// unreachable defence in depth once `validate` performs the same
-    /// check at admission, `code()`/`cause()` return `None`).
+    /// maximum. Split from [`Self::UnresolvedPopulation`] so a caller can
+    /// distinguish "not recorded" from "recorded, wrong maximum"; see that
+    /// variant's own doc for why this is otherwise identical (never
+    /// [`Self::CheckedInvariant`], unreachable defence in depth once
+    /// `validate` performs the same check at admission, `code()`/`cause()`
+    /// return `None`).
     PopulationMaximumMismatch(PopulationId),
 }
 
