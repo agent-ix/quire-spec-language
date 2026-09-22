@@ -28,8 +28,9 @@
 //!    [`BooleanConnective`] operands — all under `quire.value.accounting/v1`
 //!    (QSL #119);
 //! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
-//!    and [`Incomplete`] reasons;
-//! 6. `quire.value.accounting/v1` metering through [`Meter`].
+//!    and [`Incomplete`](quire_exact::Incomplete) reasons;
+//! 6. `quire.value.accounting/v1` metering through
+//!    [`Meter`](quire_exact::Meter).
 //!
 //! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
 //! operate on exact bit patterns with soft-float arithmetic over big integers.
