@@ -68,15 +68,17 @@ impl SourceMap {
         segments: Vec<Segment>,
         layout: Layout,
         segment_limit: usize,
-    ) -> Result<Self, SourceMapError> {
-        let fail = |cause, message: &str| SourceMapError {
-            cause,
-            source: original.identity().clone(),
-            path: original.path().into(),
-            span: original
-                .locate(Span { start: 0, end: 0 })
-                .expect("internal offsets are UTF-8 boundaries"),
-            message: message.into(),
+    ) -> Result<Self, Box<SourceMapError>> {
+        let fail = |cause, message: &str| {
+            Box::new(SourceMapError {
+                cause,
+                source: original.identity().clone(),
+                path: original.path().into(),
+                span: original
+                    .locate(Span { start: 0, end: 0 })
+                    .expect("internal offsets are UTF-8 boundaries"),
+                message: message.into(),
+            })
         };
         if segments.len() > segment_limit.min(MAX_SEGMENTS) {
             return Err(fail(
@@ -192,16 +194,18 @@ impl SourceMap {
         &self,
         source: &Source,
         span: Span,
-    ) -> Result<Vec<LocatedSpan>, SourceMapError> {
-        let fail = |message: &str| SourceMapError {
-            cause: SourceMapErrorCause::InvalidMap,
-            source: self.body.identity().clone(),
-            path: self.body.path().into(),
-            span: self
-                .body
-                .locate(Span { start: 0, end: 0 })
-                .expect("internal offsets are UTF-8 boundaries"),
-            message: message.into(),
+    ) -> Result<Vec<LocatedSpan>, Box<SourceMapError>> {
+        let fail = |message: &str| {
+            Box::new(SourceMapError {
+                cause: SourceMapErrorCause::InvalidMap,
+                source: self.body.identity().clone(),
+                path: self.body.path().into(),
+                span: self
+                    .body
+                    .locate(Span { start: 0, end: 0 })
+                    .expect("internal offsets are UTF-8 boundaries"),
+                message: message.into(),
+            })
         };
         if source.identity() != self.body.identity()
             || source.path() != self.body.path()

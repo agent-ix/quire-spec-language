@@ -396,7 +396,7 @@ impl crate::source::Source {
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
         Self::read_typed(identity, path, bytes, byte_limit)
-            .map_err(|refusal| Box::new(Diagnostic::from(refusal)))
+            .map_err(|refusal| Box::new(Diagnostic::from(*refusal)))
     }
 
     /// Verify an independently supplied byte digest before constructing a mapped subject.
@@ -454,7 +454,7 @@ impl crate::source_map::SourceMap {
         segment_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
         Self::verify_typed(original, body, region, segments, layout, segment_limit)
-            .map_err(|error| Box::new(Diagnostic::from(error)))
+            .map_err(|error| Box::new(Diagnostic::from(*error)))
     }
 
     /// Map a span from the exact body source. Discontiguous regions stay separate;
@@ -466,7 +466,7 @@ impl crate::source_map::SourceMap {
         span: crate::source::Span,
     ) -> Result<Vec<LocatedSpan>, Box<Diagnostic>> {
         self.map_span_typed(source, span)
-            .map_err(|error| Box::new(Diagnostic::from(error)))
+            .map_err(|error| Box::new(Diagnostic::from(*error)))
     }
 }
 

@@ -109,7 +109,7 @@ impl Source {
         path: impl Into<String>,
         bytes: &[u8],
         byte_limit: usize,
-    ) -> Result<Self, SourceReadRefusal> {
+    ) -> Result<Self, Box<SourceReadRefusal>> {
         let path = path.into();
         let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
         let point = Position {
@@ -134,20 +134,20 @@ impl Source {
             || identity.revision.trim().is_empty()
             || path.is_empty()
         {
-            return Err(refusal(
+            return Err(Box::new(refusal(
                 SourceReadCause::UnnamedSource,
                 identity,
                 path,
                 "source identity, revision and path must be explicit",
-            ));
+            )));
         }
         if bytes.len() > byte_limit {
-            return Err(refusal(
+            return Err(Box::new(refusal(
                 SourceReadCause::ByteBudget,
                 identity,
                 path,
                 "source byte budget exhausted",
-            ));
+            )));
         }
         let text = match std::str::from_utf8(bytes) {
             Ok(text) => text,
@@ -167,7 +167,7 @@ impl Source {
                         end: prefix.len(),
                     })
                     .expect("prefix EOF");
-                return Err(refused);
+                return Err(Box::new(refused));
             }
         };
         let source = Source::new(identity, path, text);
@@ -178,7 +178,7 @@ impl Source {
                     end: at + 1,
                 })
                 .expect("internal offsets are UTF-8 boundaries");
-            return Err(SourceReadRefusal {
+            return Err(Box::new(SourceReadRefusal {
                 cause: SourceReadCause::Nul,
                 error: SourceReadError {
                     source: source.identity().clone(),
@@ -186,7 +186,7 @@ impl Source {
                     span,
                     message: "NUL is forbidden in source bytes".into(),
                 },
-            });
+            }));
         }
         Ok(source)
     }
