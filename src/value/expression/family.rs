@@ -273,12 +273,22 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
     /// `ChargePoint::FunctionCall` -- "one checked function call"'s own
     /// documented meaning, matching what this hook is about to run -- per
     /// call, denied into `EvaluateFailure::Incomplete` exactly when the
-    /// caller-configured `meter` cannot afford it. `Value`'s own value-level
-    /// evaluation still charges `env.local_meter` (its pre-existing
-    /// accounting meter, `quire_exact::Meter` since QSL-166 -- the same
-    /// type as `meter`, a separate instance) separately, unchanged by this
-    /// contract; the two meters bound two different things (this hook's own
-    /// admission to run, versus the value operations its body performs).
+    /// caller-configured `meter` cannot afford it.
+    ///
+    /// **This is the top-level call's one and only `function.call` charge
+    /// (PR #302 review finding 2).** An earlier version *also* charged
+    /// `function.call` a second time, against `env.local_meter`, inside
+    /// `Machine::run` itself (a `call: bool` flag charged once up front
+    /// whenever the root was a function body) -- the same named point,
+    /// charged twice for one logical call, against two different meter
+    /// instances. `Machine::run` no longer takes that flag; see its own doc.
+    /// `Value`'s own value-level evaluation still charges `env.local_meter`
+    /// (its pre-existing accounting meter, `quire_exact::Meter` since
+    /// QSL-166 -- the same type as `meter`, a separate instance) for every
+    /// *nested* call and value operation the body performs, unchanged by
+    /// this contract; the two meters bound two different things (this
+    /// hook's own admission to run at all, versus the work its body does
+    /// once running), and neither restates the other's charge.
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
@@ -320,7 +330,7 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
             env.local_meter,
             env.package.dispatch_tables(),
         )
-        .run(function.body, function.slots, arguments, true))
+        .run(function.body, function.slots, arguments))
     }
 }
 
@@ -375,7 +385,6 @@ mod family_contract_tests {
             nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
-            work_budget: u64::MAX,
         }
     }
 
@@ -408,7 +417,7 @@ mod family_contract_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (expected, _) = mint_declaration_identity(&package_identity, &form);
+        let (expected, _) = mint_declaration_identity(&package_identity, &form, u64::MAX);
         let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(staged.value, expected);
         assert_eq!(diagnostics.entries().len(), 1);
@@ -468,6 +477,21 @@ mod family_contract_tests {
     /// return type (`CheckOutcome`/`StageFailure`) has no `Incomplete`
     /// variant to return in the first place, so the two hooks cannot be
     /// confused by construction, not merely by this test's assertions.
+    ///
+    /// **Strengthened (PR #302 review finding 7).** An earlier version only
+    /// asserted the outer `Err(EvaluateFailure::Incomplete(_))` shape, which
+    /// a mismatched-point or mismatched-counter denial would also satisfy.
+    /// This asserts the denied record's own fields -- `charge_point` is
+    /// exactly `FunctionCall` (not some other point this meter happened to
+    /// deny), `limit_kind` is `WorkUnits` (the counter `work_units: 0`
+    /// actually bounds, not `TextInputBytes` or another counter this fixture
+    /// never touches) and `limit` is `0` (the exact configured bound, not
+    /// merely "some limit") -- and that `env.arguments` is still `Some`:
+    /// `evaluate` charges `meter` *before* `env.arguments.take()`
+    /// (`ValueFunctionFamily::evaluate`'s own body), so a denied charge must
+    /// never have consumed them. A version that charged `meter` after
+    /// `take()` would leave `arguments` `None` here while still returning
+    /// `Incomplete` -- this assertion is what would catch that reordering.
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
@@ -494,7 +518,70 @@ mod family_contract_tests {
         };
         let mut contract_meter = Meter::new(exhausted_limits);
         let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter);
-        assert!(matches!(outcome, Err(EvaluateFailure::Incomplete(_))));
+        match outcome {
+            Err(EvaluateFailure::Incomplete(record)) => {
+                assert_eq!(record.charge_point, quire_exact::ChargePoint::FunctionCall);
+                assert_eq!(record.limit_kind, quire_exact::LimitKind::WorkUnits);
+                assert_eq!(record.limit, 0);
+            }
+            other => panic!("expected EvaluateFailure::Incomplete, got {other:?}"),
+        }
+        assert!(
+            env.arguments.is_some(),
+            "a denied charge must not have consumed env.arguments"
+        );
+    }
+
+    /// PR #302 review finding 2: a *nested* nested call denies against
+    /// `env.local_meter` (real production behaviour, not the contract-level
+    /// `meter` parameter's own admission charge exercised above) surfaces as
+    /// the pre-existing kernel `Outcome::Incomplete`, inside a successful
+    /// `Evaluation`, from `Machine::run`'s own `charge_call` -- never
+    /// `EvaluateFailure::Incomplete`. `caller`'s body calls `callee`; with
+    /// `local_meter`'s `work_units` already exhausted, the nested call
+    /// inside `caller`'s own body (not the top-level call to `caller`
+    /// itself, which the unlimited `contract_meter` here admits) is what is
+    /// denied.
+    #[test]
+    fn evaluate_returns_incomplete_when_a_nested_calls_local_meter_is_exhausted() {
+        let package = PackageDeclarations {
+            functions: vec![
+                declaration("callee", Expression::Boolean(true)),
+                declaration(
+                    "caller",
+                    Expression::Call {
+                        name: "callee".to_owned(),
+                        arguments: Vec::new(),
+                    },
+                ),
+            ],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("callee and caller both check cleanly");
+        let identity = package
+            .function_identity("caller")
+            .expect("caller is declared in this package");
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let exhausted_limits = quire_exact::ScalarLimits {
+            work_units: 0,
+            ..SCALAR_LIMITS_UNLIMITED
+        };
+        let mut local_meter = Meter::new(exhausted_limits);
+        let mut env = EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(Vec::new()),
+            local_meter: &mut local_meter,
+        };
+        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+            .expect("the top-level call's own admission charge is against contract_meter, unlimited here");
+        assert!(
+            matches!(outcome.outcome, crate::value::Outcome::Incomplete(_)),
+            "expected kernel Outcome::Incomplete from the nested call's own denied charge, got {:?}",
+            outcome.outcome
+        );
     }
 
     /// Two independently constructed contexts each observe exactly one
@@ -583,7 +670,6 @@ mod family_contract_tests {
             nesting_depth: 0,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
-            work_budget: u64::MAX,
         };
         let mut cx = CheckContext::new(
             &package_identity,
@@ -611,28 +697,30 @@ mod family_contract_tests {
         assert!(admitted.is_ok());
     }
 
-    /// QSL-153: `StageLimits`' restored `input_bytes`/`node_count`/
-    /// `work_budget` each have a real producer
-    /// (`mint_declaration_identity`'s own preimage pass) and a real
-    /// consumer (`CheckContext::check_input_bytes`/`check_node_count`/
-    /// `check_work_budget`, called from `ValueFunctionFamily::check`) that
+    /// QSL-153: `StageLimits`' restored `input_bytes`/`node_count` each have
+    /// a real producer (`mint_declaration_identity`'s own preimage pass) and
+    /// a real consumer (`CheckContext::check_input_bytes`/
+    /// `check_node_count`, called from `ValueFunctionFamily::check`) that
     /// changes behaviour: a limit configured one below the real, measured
     /// metric refuses with `Limit` naming that exact kind; the same limit
     /// at the metric itself admits -- the same "varies by exactly one"
     /// shape `nesting_depth`'s own test uses, so the limit (not the
-    /// fixture) is shown to be the proximate cause.
+    /// fixture) is shown to be the proximate cause. `work_budget` is a real
+    /// producer and consumer too, but through the shared kernel meter's own
+    /// `work_units` charge (PR #302 review finding 3), not a `StageLimits`
+    /// field -- see `work_budget_kind_refuses_from_a_denied_meter_charge`.
+    #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn stage_limits_restored_kinds_refuse_one_below_the_real_metric() {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let form = declaration("f", Expression::Boolean(true));
-        let (_, metrics) = mint_declaration_identity(&package_identity, &form);
-        assert!(metrics.input_bytes > 0 && metrics.node_count > 0 && metrics.work_budget > 0);
+        let (_, metrics) = mint_declaration_identity(&package_identity, &form, u64::MAX);
+        assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
         let base = StageLimits {
             nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
-            work_budget: u64::MAX,
         };
         let check_kind = |limits: StageLimits, expected_kind: crate::family::StageLimitKind| {
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -689,18 +777,59 @@ mod family_contract_tests {
             node_count: metrics.node_count,
             ..base
         });
+    }
 
-        check_kind(
-            StageLimits {
-                work_budget: metrics.work_budget - 1,
-                ..base
-            },
-            crate::family::StageLimitKind::WorkBudget,
+    /// PR #302 review finding 3: `WorkBudget` is a real `Limit` outcome
+    /// produced by a *denied `cx.meter` charge* in `check` -- not by
+    /// comparing the preimage's own write count against a `StageLimits`
+    /// field (that field's own meaning was "how many times the encoder
+    /// wrote," never a caller-configured budget). A `cx.meter` whose
+    /// `work_units` limit is already exhausted denies `check`'s own
+    /// `ChargePoint::DeclarationCheck` charge on the first checked
+    /// declaration, mapped to `StageLimitKind::WorkBudget`; the same
+    /// declaration against a meter with real headroom admits.
+    #[test]
+    fn work_budget_kind_refuses_from_a_denied_meter_charge() {
+        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
+        let form = declaration("f", Expression::Boolean(true));
+        let limits = StageLimits {
+            nesting_depth: 128,
+            input_bytes: u64::MAX,
+            node_count: u64::MAX,
+        };
+
+        let exhausted_limits = quire_exact::ScalarLimits {
+            work_units: 0,
+            ..SCALAR_LIMITS_UNLIMITED
+        };
+        let mut meter = Meter::new(exhausted_limits);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            &package_identity,
+            limits,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
         );
-        admits(StageLimits {
-            work_budget: metrics.work_budget,
-            ..base
-        });
+        match ValueFunctionFamily::check(&form, &mut cx) {
+            Err(crate::family::StageFailure::Limit(exceeded)) => {
+                assert_eq!(exceeded.kind, crate::family::StageLimitKind::WorkBudget);
+            }
+            other => panic!("expected a Limit outcome naming WorkBudget, got {other:?}"),
+        }
+
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            &package_identity,
+            limits,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        assert!(ValueFunctionFamily::check(&form, &mut cx).is_ok());
     }
 }
 
@@ -725,12 +854,12 @@ mod tests {
         let b = declaration("f", Expression::Boolean(true));
         let c = declaration("g", Expression::Boolean(true));
         assert_eq!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &b).0
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
         );
         assert_ne!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &c).0
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
         );
     }
 
@@ -783,7 +912,8 @@ mod tests {
     #[test]
     fn identity_survives_v2_round_trip() {
         let declaration = declaration("f", Expression::Boolean(true));
-        let (after_check, _) = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        let (after_check, _) =
+            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
         let name = QualifiedName::unqualified("f").unwrap();
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();

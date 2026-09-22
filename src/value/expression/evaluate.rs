@@ -242,23 +242,26 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    /// Evaluate `root` with `arguments` in its first slots. With `call`, the
-    /// root is a function body and `function.call` is charged first.
-    pub(crate) fn run(
-        mut self,
-        root: &'a Node,
-        slots: usize,
-        arguments: Vec<Value>,
-        call: bool,
-    ) -> Evaluation {
+    /// Evaluate `root` with `arguments` in its first slots.
+    ///
+    /// **No entry-level `function.call` charge here (PR #302 review finding
+    /// 2).** An earlier version took a `call: bool` and charged
+    /// `function.call` against `self.meter` (`env.local_meter`) once, up
+    /// front, whenever the root was a function body -- the exact same named
+    /// charge `ValueFunctionFamily::evaluate` (`family.rs`) now charges
+    /// against its own contract-level `meter` parameter for that same
+    /// top-level call, against a *different* meter instance. Charging the
+    /// same point twice for one logical call, even against two different
+    /// meters, is not two real facts -- it is one fact restated twice.
+    /// `evaluate`'s own charge is the top-level call's sole admission
+    /// charge now; every *nested* `NodeKind::Call`/dispatch site this
+    /// method's own task loop reaches still charges `function.call` against
+    /// `self.meter` (`charge_call`, called directly at those sites) --
+    /// those are genuinely separate calls, not a restatement of this one.
+    pub(crate) fn run(mut self, root: &'a Node, slots: usize, arguments: Vec<Value>) -> Evaluation {
         let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
         frame.resize(slots.max(frame.len()), None);
         self.frames.push(frame);
-        if call {
-            if let Err(stop) = charge_call(self.meter) {
-                return Self::stopped(stop, &root.location);
-            }
-        }
         self.tasks.push(Task::Eval(root));
         while let Some(task) = self.tasks.pop() {
             let location = match &task {
