@@ -1237,11 +1237,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
         let declarations = cx.declarations();
-        let (identity, metrics) = mint_declaration_identity(
-            declarations.package_identity,
-            form,
-            cx.limits().input_bytes,
-        );
+        let (identity, metrics) =
+            mint_declaration_identity(declarations.package_identity, form, cx.limits().input_bytes);
         // PR #262 review (F7): an earlier version of this function
         // recomputed `mint_declaration_identity` a second time here and
         // returned `StageFailure::Fault` on a mismatch, framed as a
@@ -1341,7 +1338,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 cx.meter.admitted_charges().len(),
             ),
         );
-        Ok(crate::family::Staged::new(CheckedDeclaration { identity, body }))
+        Ok(crate::family::Staged::new(CheckedDeclaration {
+            identity,
+            body,
+        }))
     }
 }
 

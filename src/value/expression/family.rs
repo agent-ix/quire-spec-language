@@ -383,8 +383,8 @@ mod family_contract_tests {
     };
     use crate::forms::{Expression, FunctionDeclaration};
     use crate::value::composite::{TypeEnvironment, ValueType};
-    use ix_trace_rs::trace;
     use crate::value::reference::ObjectEnvironment;
+    use ix_trace_rs::trace;
     use quire_exact::Meter;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
