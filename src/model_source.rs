@@ -6,7 +6,9 @@ mod lower;
 mod wire;
 
 use crate::formal_source::FormalSource;
-use crate::native_model::{ModelLimits, NativeModel, NativeModelError, NativeModelProfile, NativeRoles};
+use crate::native_model::{
+    ModelLimits, NativeModel, NativeModelError, NativeModelProfile, NativeRoles,
+};
 use crate::{located_json, Code};
 use decode::decode_model;
 use lower::lower_model;

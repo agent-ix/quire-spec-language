@@ -789,7 +789,12 @@ impl<'u, 'a> Resolver<'u, 'a> {
         self.shape(environment, value.value_type())
     }
 
-    fn value(&mut self, id: ExprId, name: &str, span: Span) -> Result<Shape<'a>, Box<LinkingError>> {
+    fn value(
+        &mut self,
+        id: ExprId,
+        name: &str,
+        span: Span,
+    ) -> Result<Shape<'a>, Box<LinkingError>> {
         let value = self.lookup_value(name, span)?;
         self.check_input_scope(value, span)?;
         Ok(self.bind_value(id, span, value))

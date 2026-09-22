@@ -346,9 +346,21 @@ impl<'a> CheckedPackage<'a> {
     }
 }
 
-fn failure(source: &Source, code: Code, span: Span, message: impl Into<String>) -> Box<CheckingError> {
+fn failure(
+    source: &Source,
+    code: Code,
+    span: Span,
+    message: impl Into<String>,
+) -> Box<CheckingError> {
     Box::new(CheckingError {
-        diagnostic: crate::diagnostic::error(source, code, Phase::Check, span.start, span.end, message),
+        diagnostic: crate::diagnostic::error(
+            source,
+            code,
+            Phase::Check,
+            span.start,
+            span.end,
+            message,
+        ),
         upstream: None,
     })
 }

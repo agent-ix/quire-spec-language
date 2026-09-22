@@ -6,7 +6,9 @@ use std::io::{self, Write};
 use quire_contract_ir as ir;
 use serde::Serialize;
 
-use super::{failure, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit};
+use super::{
+    failure, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit,
+};
 use crate::{formal_source::FormalSource, Code};
 
 type Result<T> = std::result::Result<T, Box<NativeModelError>>;
@@ -268,11 +270,7 @@ pub(super) fn encode(
             } else {
                 Code::InvalidModelBinding
             };
-            let mut error = failure(
-                source,
-                code,
-                "formal declaration canonicalization failed",
-            );
+            let mut error = failure(source, code, "formal declaration canonicalization failed");
             error.upstream = Some(Box::new(upstream));
             error
         })?;

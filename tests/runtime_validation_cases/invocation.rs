@@ -98,8 +98,7 @@ fn precondition_can_record_permitted_self_deletion_and_pre_captured_parameter() 
                 .diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == Code::DanglingReference
-                    && diagnostic.runtime.observation
-                        == Some(ir::StateObservation::Post)));
+                    && diagnostic.runtime.observation == Some(ir::StateObservation::Post)));
         }
     }
 }

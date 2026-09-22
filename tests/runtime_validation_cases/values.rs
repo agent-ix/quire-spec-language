@@ -329,12 +329,11 @@ fn every_native_shape_is_checked_at_fields_state_parameters_and_results() {
                     _ => unreachable!(),
                 };
                 assert!(
-                    report.diagnostics.iter().any(|diagnostic| diagnostic.code
-                        == Code::InvalidRuntimeInput
-                        && diagnostic
-                            .runtime
-                            .path
-                            .contains(&expected)),
+                    report
+                        .diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput
+                            && diagnostic.runtime.path.contains(&expected)),
                     "{shape:?} at {site}"
                 );
             }
@@ -489,9 +488,13 @@ fn nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_va
             assert!(report.terminal.is_none());
             assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
                 == Code::InvalidRuntimeInput
-                && diagnostic.runtime.path.contains(
-                    &RuntimePathSegment::State(qualified(model, "payload_state"))
-                )));
+                && diagnostic
+                    .runtime
+                    .path
+                    .contains(&RuntimePathSegment::State(qualified(
+                        model,
+                        "payload_state"
+                    )))));
         }
     }
 }
