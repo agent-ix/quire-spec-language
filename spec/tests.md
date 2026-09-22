@@ -344,13 +344,19 @@ the selected scope; they are not full compiler or semantic qualification.
 
 [FR-089](../spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md)
 carries ADR-013 O-13's Population row (QC-21), authored under QSL-172 to
-close an AD-016 kernel-row gap. TC-291 through TC-295 all state `🚧 Planned;
+close an AD-016 kernel-row gap. TC-291 through TC-296 all state `🚧 Planned;
 QSL-131` honestly: the kernel `quire-exact::Value` has no `Population`
 variant today (`quire-exact/src/value.rs:26-27,115-116`), and the evaluator
 still matches `Value::Population(binding)` directly
 (`src/value/expression/evaluate.rs:921,934`) rather than through a resolved
 `PopulationId`. Each TC's own "Known gap" note names the exact absence.
-None of the five rows claims existing passing coverage; this section
-records the target behavior QSL-131 Slice B implements against, in the same
+TC-296 backs FR-089-AC-1's admission-role discriminator half specifically:
+a `Direct` (standalone `admit_binding`) admission and an
+`admit_invocation`-attached `Post` binding over the same domain package and
+`population_key` mint distinct `PopulationId`s under the closed three-state
+discriminator (`Direct`, `Pre`, `Post`), rather than colliding under a
+`pre`/`post`-only reading. None of the six rows claims existing passing
+coverage; this section records the target behavior QSL-131 Slice B
+implements against, in the same
 sense TC-214, TC-216, TC-217, TC-220, TC-225, TC-227 and TC-230 through
 TC-234 above already do for FR-081 through FR-086.

@@ -60,13 +60,22 @@ carries an opaque identity, and `model` keeps the binding.
 
 `model` SHALL compute a binding's `PopulationId` as a 32-byte digest over the
 binding's own preimage: the domain package identity it was admitted against,
-the `population_key` declaring it, and, when `admit_invocation` attaches the
-binding as a pre anchor, which anchor side (`pre` or `post`) it occupies.
-Two admissions inside one evaluation that share every one of these facts
-SHALL share a `PopulationId`; two admissions that differ in any of them
-SHALL NOT collide. `PopulationId` SHALL have exactly one public constructor,
-taking this preimage digest, defined in `quire-exact` and callable only from
-QSL `model` -- mirroring `EffectiveId`'s O-05 constructor discipline.
+the `population_key` declaring it, and a closed three-state admission-role
+discriminator applied to every admission, not only the ones
+`admit_invocation` attaches: `Direct` for a binding `admit_binding` mints
+standalone, and `Pre`/`Post` for the two bindings `admit_invocation`
+attaches to one invocation frame. `admit_invocation` SHALL tag its own two
+constituent bindings `Pre` and `Post`; a directly-called `admit_binding`
+SHALL mint `Direct`. Two admissions inside one evaluation that share every
+one of these facts SHALL share a `PopulationId`; two admissions that differ
+in any of them SHALL NOT collide -- including a standalone `Direct`
+admission and an invocation's `Post` binding that share the same domain
+package and `population_key`, which would otherwise carry an identical
+preimage under a two-state (`pre`/`post`-only) discriminator.
+`PopulationId` SHALL have exactly one public constructor, taking this
+preimage digest, defined in `quire-exact` and callable only from QSL
+`model` -- mirroring `EffectiveId`'s O-05 constructor discipline (ADR-011
+T-12's API-surface check enforces both).
 
 ### Kernel `Value::Population` carries the identity only
 
@@ -101,7 +110,7 @@ kernel equivalent.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-089-AC-1 | Given two admissions of the same `PopulationDocument` against the same `population_key` and domain package identity, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or pre/post anchor side, the minted `PopulationId` differs from the first. | Test (TC-291) |
+| FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key` and domain package identity, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
 | FR-089-AC-2 | The kernel `Value::Population` variant's payload type is `PopulationId`; no kernel source file imports `PopulationBinding` or any other `model::population` type to define, construct or match this variant. | Test (TC-292) |
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
