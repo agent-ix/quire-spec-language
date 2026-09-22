@@ -1,21 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Checking-stage identity minting for `Value`'s function-declaration family
-//! (FR-062, FR-065), split out of `value::expression::family` by ADR-011
-//! §7.3 M-5.
+//! `Value`'s function-declaration family (FR-062, FR-065): identity minting,
+//! split out of `value::expression::family` by ADR-011 §7.3 M-5, **and**
+//! (QSL-148) the real typing, coercion and static-definedness checking for
+//! both a function declaration and a function application.
 //!
-//! **Amended, PR #282 review F4:** FR-068's move surface now names
-//! `family.rs` explicitly, alongside `check`, `evaluate`, `facts`, `ir`,
-//! `refusal`, `termination` and `mod.rs` -- an omission in the requirement's
-//! original text, not a deliberate exclusion. `check.rs`'s own `Typer::call`
-//! already called `super::family::mint_call_identity` and
-//! `super::family::DEFAULT_PACKAGE_IDENTITY` directly before this move (an
-//! intra-module dependency that predates this ticket) -- moving `check.rs`
-//! without this identity-minting content would leave `check`'s real import
-//! graph reaching back into `value::expression::family`, exactly the reverse
-//! edge FR-068-AC-3 forbids. This module carries the minimum needed to keep
-//! that edge from opening: everything `PackageDeclarations::check` (via
-//! [`ValueFunctionFamily`]'s [`crate::family::FamilyContract`] half) and
-//! `check.rs`'s own `Typer::call` need to mint a checked identity.
+//! **QSL-148 widens this module's role.** Before this ticket,
+//! `ValueFunctionFamily::check` (below) only minted a declaration's identity
+//! and charged the contract's own nesting-depth limit once; the real typing
+//! and definedness verdict was made separately, by a `Typer` `check::mod`'s
+//! per-declaration loop constructed and drove directly (a parallel path
+//! alongside the contract, not through it) -- so calling the contract's own
+//! `check` on an ill-typed declaration returned `Ok` regardless. `check` now
+//! calls [`check_declaration_body`] itself, inside the one `FamilyContract`
+//! entry point, and returns the crate's real, located [`CheckRefusal`]
+//! through [`crate::family::StageFailure::Refused`] when the body or measure
+//! does not type or is not statically defined; `PackageDeclarations::check`
+//! reaches that verdict only by calling the contract, not by a second,
+//! parallel call of its own. [`check_application`] is `Value`'s
+//! function-application family check code the same way, relocated from
+//! `check.rs`'s deleted `Typer::call`; it is reached transitively through
+//! `check_declaration_body`'s own `Typer` pass (a call nested anywhere in a
+//! checked body recurses back into `infer_form`'s `Call` arm, which is
+//! exactly one call into `check_application`), not through a second,
+//! separate `CheckContext`-driven entry -- see [`check_application`]'s own
+//! doc for why threading `CheckContext` into every recursive step of the
+//! general `Typer` engine (not just `Call`) is out of this ticket's scope.
+//!
+//! **Amended, PR #282 review F4:** FR-068's move surface names `family.rs`
+//! explicitly, alongside `check`, `evaluate`, `facts`, `ir`, `refusal`,
+//! `termination` and `mod.rs` -- an omission in the requirement's original
+//! text, not a deliberate exclusion. This module carries the minimum needed
+//! to keep `check`'s real import graph from reaching back into
+//! `value::expression::family`, the reverse edge FR-068-AC-3 forbids:
+//! everything `PackageDeclarations::check` (via [`ValueFunctionFamily`]'s
+//! [`crate::family::FamilyContract`] half) needs to mint a checked identity
+//! and check a declaration's body and applications.
 //!
 //! `value::expression::family` keeps `QualifiedName`, S4 linking and the v2
 //! emit/decode codec: `CheckedPackage::call`'s public signature and the v2
@@ -748,30 +767,54 @@ pub(crate) fn mint_call_identity(
 /// match, do the arguments type) needs exactly what `Typer` already carries
 /// -- the package's `Scope` and every declared `Signature`, for a call
 /// possibly nested arbitrarily deep inside the declaration currently being
-/// typed -- not the contract's identity/diagnostic/nesting-limit machinery,
-/// which stays scoped to one call per top-level declaration (see
-/// [`ValueFunctionFamily::check`]'s own doc on why termination and the
-/// contract's `StageLimits.nesting_depth` charge cannot be pushed down here
-/// too without threading `CheckContext` through every other `Value` form
-/// `Typer` also checks -- forbidden by FR-065-CON-1).
+/// typed. A call is reached from `infer_form`, which recurses through every
+/// other `Value` expression form (`Let`, `If`, `Binary`, ... ), so this is
+/// itself already reached, transitively, through the one
+/// [`ValueFunctionFamily::check`] call that starts a declaration's real
+/// typing (QSL-148: `check` now calls [`check_declaration_body`], which
+/// drives the same `Typer`) -- an application inside a declaration's own
+/// body is checked "through the contract" in that sense already.
+///
+/// **An application inside a clause expression is not (PR #303 review,
+/// finding N4).** `PackageDeclarations::check_clause_expression`
+/// (`check/mod.rs`) -- the entry every precondition, postcondition and
+/// operation body clause checks through -- builds its own `Typer` directly,
+/// with its own declaration-local `nodes` counter, and never constructs a
+/// `CheckContext` at all; it is a standalone public entry point on
+/// `PackageDeclarations`, not something `ValueFunctionFamily::check` (or
+/// anything else reached from it) calls. An `Expression::Call` inside such a
+/// clause still reaches this same `check_application`, through that
+/// `Typer`'s own `infer_form` -- the algorithm is identical either way --
+/// but that call is not, today, reached "through the contract" the way a
+/// declaration body's own application is; only the `PackageDeclarations`
+/// caller that invoked `check_clause_expression` knows it happened at all.
+///
+/// What this function does *not* do, on either path, is charge the
+/// contract's own `CheckContext`/`StageLimits.nesting_depth` once
+/// per real recursive step the way [`ValueFunctionFamily::check`]'s
+/// top-level entry charge does: that would mean threading `&mut
+/// CheckContext` through every recursive arm of `Typer::infer_form`, not
+/// just `Call` (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so
+/// on all recurse too) -- reworking the general engine's own recursion
+/// signature for every form it checks, which is the reimplementation-scale
+/// change FR-065-CON-1 rules out here, not a small addition to this one
+/// function. That is real, reported `Typer` entanglement (QSL-148's own open
+/// question), not a gap this function papers over: `Typer`'s pre-existing,
+/// separate [`super::CheckingLimits`] depth bound (unchanged, checked at
+/// every real recursive step already) is what actually keeps a call's own
+/// nesting off the host stack today.
 pub(crate) fn check_application(
     typer: &mut Typer<'_>,
     name: &str,
     arguments: &[Expression],
     location: &CheckLocation,
 ) -> Result<Node, CheckRefusal> {
-    let functions: Vec<usize> = typer
-        .signatures()
+    let signatures = typer.signatures();
+    if let Some(function) = signatures
         .iter()
-        .enumerate()
-        .filter(|(_, signature)| signature.name == name && signature.callable_by_name)
-        .map(|(index, _)| index)
-        .collect();
-    if let Some(&function) = functions.first() {
-        let signature = typer
-            .signatures()
-            .get(function)
-            .ok_or_else(|| CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch))?;
+        .position(|signature| signature.name == name && signature.callable_by_name)
+    {
+        let signature = &signatures[function];
         if signature.parameters.len() != arguments.len() {
             return Err(CheckRefusal::ill_typed(
                 location,
@@ -915,21 +958,45 @@ pub(crate) struct CheckedDeclarationBody {
 /// impossible under the per-node contract ADR-012 §2 defines (each `check`
 /// call sees one form and one `Declarations`, never every sibling
 /// declaration at once).
-#[allow(clippy::too_many_arguments)]
+///
+/// Takes `input: &ValueDeclarations<'_>` rather than its five constituent
+/// fields spelled out as separate parameters (PR #303 review, finding 12):
+/// this is [`ValueFunctionFamily`]'s own `FamilyContract::Declarations`, the
+/// same bundle `check` reads via `cx.declarations()`, reused here rather
+/// than unpacked into a `#[allow(clippy::too_many_arguments)]` signature.
+///
+/// **`Typer`'s own node-budget counter is declaration-local here (PR #303
+/// review, finding N3), not threaded in from a caller.** `Typer::new` still
+/// wants its own `&mut u64`, unchanged (this function does not touch
+/// `Typer`'s internals), but that counter no longer needs to accumulate
+/// *across* declarations the way `check::mod`'s pre-QSL-148 loop shared one
+/// `&mut u64` across every `Typer` it built in turn: [`ValueFunctionFamily::
+/// check`], this function's one caller, already runs QSL-153's real,
+/// package-wide resource governance for the same underlying concern one
+/// step earlier -- `CheckContext::check_node_count` against this same
+/// declaration's own preimage node count, and a cumulative `cx.meter`
+/// `WorkBudget` charge -- both through channels `cx` legitimately owns, and
+/// both *before* this function is ever called. A fresh, non-shared local
+/// counter here (matching `CheckedPackage::check_clause_expression`'s own
+/// established pattern, `check::mod`, for exactly this reason) is therefore
+/// not a narrowing: the real bound is enforced upstream, and this counter
+/// only ever supplies `Typer`'s own constructor with the `&mut u64` it
+/// requires.
 pub(crate) fn check_declaration_body(
-    scope: &Scope,
-    signatures: &[Signature],
-    dispatch_tables: &[DispatchTable],
-    limits: CheckingLimits,
-    nodes: &mut u64,
+    input: &ValueDeclarations<'_>,
     form: &FunctionDeclaration,
-    location: &CheckLocation,
-    measure_location: &CheckLocation,
 ) -> Result<CheckedDeclarationBody, CheckRefusal> {
-    let mut typer = Typer::new(scope, signatures, limits, nodes, form.clause_kind);
-    bind_parameters(&mut typer, &form.parameters, location)?;
-    typer.check_declared_type(&form.result, location)?;
-    let body = typer.check_as(&form.body, &form.result, location)?;
+    let mut nodes = 0_u64;
+    let mut typer = Typer::new(
+        input.scope,
+        input.signatures,
+        input.checking_limits,
+        &mut nodes,
+        form.clause_kind,
+    );
+    bind_parameters(&mut typer, &form.parameters, input.location)?;
+    typer.check_declared_type(&form.result, input.location)?;
+    let body = typer.check_as(&form.body, &form.result, input.location)?;
     let slots = typer.slots();
     let measure = match &form.measure {
         Some(measure) => {
@@ -939,16 +1006,22 @@ pub(crate) fn check_declaration_body(
             // FR-151's dispatch-call restriction gates on the *body's*
             // context, and a measure is its own, always-`Body` context
             // regardless of what the declaration's own body is checked as.
-            let mut measure_typer = Typer::new(scope, signatures, limits, nodes, ClauseKind::Body);
-            bind_parameters(&mut measure_typer, &form.parameters, measure_location)?;
-            Some(measure_typer.infer(measure, None, measure_location)?)
+            let mut measure_typer = Typer::new(
+                input.scope,
+                input.signatures,
+                input.checking_limits,
+                &mut nodes,
+                ClauseKind::Body,
+            );
+            bind_parameters(&mut measure_typer, &form.parameters, input.measure_location)?;
+            Some(measure_typer.infer(measure, None, input.measure_location)?)
         }
         None => None,
     };
     let mut definedness = Definedness::new(
         form.parameters.len(),
-        dispatch_tables,
-        &scope.dispatch_operations,
+        input.dispatch_tables,
+        &input.scope.dispatch_operations,
     );
     definedness.check(&body)?;
     // The measure's own definedness is checked, but (unchanged from the
@@ -958,8 +1031,8 @@ pub(crate) fn check_declaration_body(
     if let Some(measure) = &measure {
         Definedness::new(
             form.parameters.len(),
-            dispatch_tables,
-            &scope.dispatch_operations,
+            input.dispatch_tables,
+            &input.scope.dispatch_operations,
         )
         .check(measure)?;
     }
@@ -1048,6 +1121,73 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
     }
 }
 
+/// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Declarations`]:
+/// the package-wide, read-only state one declaration's `check` call needs to
+/// run [`check_declaration_body`] for real (QSL-148) -- `Scope`, every
+/// declared `Signature` and the checked package's dispatch tables, none of
+/// which the shared `CheckContext`/`StageLimits` carry, since those are
+/// generic across every family -- plus the two per-declaration locations
+/// (`location`, `measure_location`) `check::mod`'s per-declaration loop
+/// already computes fresh each iteration.
+///
+/// **No interior mutability (PR #303 review, finding N3).** An earlier
+/// version of this struct also carried `nodes: &'a Cell<u64>` and
+/// `body: &'a Cell<Option<CheckedDeclarationBody>>` -- output/threading
+/// slots reached through `Cell` because [`crate::family::CheckContext`]
+/// only ever hands back `declarations()` as `&D`. That is exactly the "no
+/// side door" FR-062-AC-3 forbids: `cx.declarations()` looks read-only at
+/// the type level while actually being a mutable channel underneath. Both
+/// are gone:
+///
+/// - The real checked body is no longer smuggled out through a side slot;
+///   [`ValueFunctionFamily::Checked`] itself now carries it (see
+///   [`CheckedDeclaration`]), returned the ordinary way, through `check`'s
+///   own `Ok`.
+/// - The package-wide node-budget accumulator `Typer` used to charge
+///   against (threaded in through `nodes`) is not carried across
+///   declarations at all any more: [`check_declaration_body`] gives
+///   `Typer` a fresh, declaration-local counter (matching
+///   `CheckedPackage::check_clause_expression`'s own established,
+///   non-shared pattern, `check::mod`), because the *real*, package-wide
+///   resource governance for this same quantity already runs one step
+///   earlier, in [`ValueFunctionFamily::check`] itself, through channels
+///   `cx` legitimately owns: `CheckContext::check_node_count` (QSL-153,
+///   compared against this same declaration's own preimage node count
+///   before `check_declaration_body` is ever called) and the cumulative
+///   `cx.meter` `WorkBudget` charge. Keeping a second, Cell-threaded
+///   package-wide counter alongside those was redundant bookkeeping for
+///   the same underlying concern, not a distinct guarantee (finding N7a,
+///   "double counter") -- removing it loses no real coverage.
+pub(crate) struct ValueDeclarations<'a> {
+    pub(crate) package_identity: &'a str,
+    pub(crate) scope: &'a Scope,
+    pub(crate) signatures: &'a [Signature],
+    pub(crate) dispatch_tables: &'a [DispatchTable],
+    pub(crate) checking_limits: CheckingLimits,
+    pub(crate) location: &'a CheckLocation,
+    pub(crate) measure_location: &'a CheckLocation,
+}
+
+/// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Checked`]
+/// (QSL-148; PR #303 review, finding N3): the minted identity together with
+/// the real checked body [`check_declaration_body`] produces, returned
+/// through `check`'s own `Ok` rather than a side channel.
+///
+/// This is distinct from [`crate::family::ReferenceEvaluation::Key`], the
+/// type `evaluate` is looked up and called by at runtime: `evaluate`'s one
+/// real caller (`CheckedPackage::call`, `value::expression::mod.rs`) only
+/// ever has a bare identity, resolved out of `CheckedPackage`'s own,
+/// separately stored `CheckedFunction` list -- it never has a
+/// [`CheckedDeclarationBody`] at that point, only what `check` minted for
+/// it. Splitting the two associated types apart is what lets `Checked`
+/// carry the richer, check-time-only payload without breaking `evaluate`'s
+/// existing calling convention.
+#[derive(Debug)]
+pub(crate) struct CheckedDeclaration {
+    pub(crate) identity: NodeKey,
+    pub(crate) body: CheckedDeclarationBody,
+}
+
 /// `Value`'s checked-package producer for the function-declaration form
 /// (FR-062, FR-065): the one family slice migrated onto the
 /// `crate::family` contract. A marker type -- every method is a bare
@@ -1061,25 +1201,34 @@ pub(crate) struct ValueFunctionFamily;
 
 impl crate::family::FamilyContract for ValueFunctionFamily {
     type Form = FunctionDeclaration;
-    /// The minted identity is this contract's checked payload for a
-    /// declaration: everything an `evaluate` caller needs to re-find the
-    /// declaration's own checked body is already in `CheckedFunction`
-    /// (unchanged by this contract); what `check` adds is the identity, so
-    /// that is what it hands back.
-    type Checked = NodeKey;
-    /// The declaring package's `name@version` (see
-    /// [`mint_declaration_identity`]'s doc for why Complete-V1 has no real
-    /// one of its own yet).
-    type Declarations = String;
+    /// See [`CheckedDeclaration`]'s own doc (PR #303 review, finding N3):
+    /// the minted identity together with the real checked body, returned
+    /// through `check`'s ordinary `Ok`, not a side channel.
+    type Checked = CheckedDeclaration;
+    /// The crate's own located refusal vocabulary (QSL-148): `check` can now
+    /// genuinely refuse (an ill-typed or undefined body), and `CheckRefusal`
+    /// already carries a closed cause and `catalog_code()` mapping
+    /// (`check::CheckCause::code`/`cause`) -- ADR-012 §5.1 S4's "family
+    /// `Cause` enum" for this family, not a shape invented to fill this
+    /// associated type.
+    type Cause = CheckRefusal;
+    /// See [`ValueDeclarations`]'s own doc.
+    type Declarations<'a> = ValueDeclarations<'a>;
 
-    fn check(
+    fn check<'a>(
         form: &Self::Form,
-        cx: &mut crate::family::CheckContext<'_, String>,
-    ) -> crate::family::CheckOutcome<NodeKey> {
+        cx: &mut crate::family::CheckContext<'a, ValueDeclarations<'a>>,
+    ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
         // FR-062 "Explicit limits bound every stage entry, including
         // recursion": `check` charges one nesting-entry before minting,
         // and refuses with a `Limit` outcome rather than reading `form` at
-        // all once the configured depth is reached (FR-062-AC-7).
+        // all once the configured depth is reached. This is the contract's
+        // own per-declaration entry charge, unrelated to (and not a
+        // replacement for) `Typer`'s own separate, pre-existing
+        // `CheckingLimits.depth` bound that `check_declaration_body`'s real
+        // recursive descent below is charged against -- see
+        // `check_application`'s own doc for why the two are not unified in
+        // this change.
         cx.enter_nesting()
             .map_err(crate::family::StageFailure::Limit)?;
         // FR-062-AC-3 "no side door": the scope stack is pushed and popped
@@ -1087,8 +1236,12 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // read.
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
-        let (identity, metrics) =
-            mint_declaration_identity(cx.declarations(), form, cx.limits().input_bytes);
+        let declarations = cx.declarations();
+        let (identity, metrics) = mint_declaration_identity(
+            declarations.package_identity,
+            form,
+            cx.limits().input_bytes,
+        );
         // PR #262 review (F7): an earlier version of this function
         // recomputed `mint_declaration_identity` a second time here and
         // returned `StageFailure::Fault` on a mismatch, framed as a
@@ -1103,7 +1256,11 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // are checked against `cx`'s restored `StageLimits` fields before
         // this declaration is admitted -- the first one exceeded refuses
         // with a `Limit` outcome naming it, matching `enter_nesting`'s own
-        // `NestingDepth` case above.
+        // `NestingDepth` case above. PR #303 review, finding N1: these
+        // checks (and the meter charge below) run *before*
+        // `check_declaration_body` -- the real typing/definedness pass --
+        // ever starts, since they are what guards the work that pass is
+        // about to do, not a check on its output.
         if let Err(exceeded) = cx
             .check_input_bytes(metrics.input_bytes)
             .and_then(|()| cx.check_node_count(metrics.node_count))
@@ -1122,7 +1279,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // the same preimage pass's field-write count, charged cumulatively
         // against `cx.meter`'s own `work_units` bound (`StageLimits`'s own
         // doc: this is the checking stage's total spend, not one
-        // declaration's own shape).
+        // declaration's own shape). This same cumulative, package-wide
+        // charge is also what stands in for a separate, Cell-threaded
+        // package-wide node-budget counter (PR #303 review, finding N3/N7a
+        // "double counter"): see [`check_declaration_body`]'s own doc.
         if let Err(incomplete) = cx.meter.charge(
             quire_exact::Charge::new(quire_exact::ChargePoint::DeclarationCheck)
                 .work(quire_exact::Integer::from(metrics.work_budget)),
@@ -1136,6 +1296,41 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 ),
             ));
         }
+        // QSL-148: the real typing and static-definedness verdict, made
+        // here -- inside the contract's own `check` -- rather than by a
+        // second, parallel call `check::mod`'s loop used to make on the
+        // side after calling this function. `PackageDeclarations::check`
+        // now reaches this verdict only through this one `FamilyContract`
+        // entry point (`Self::Checked` itself carries it -- PR #303 review,
+        // finding N3 -- not a side-channel `Cell` `cx.declarations()`
+        // would otherwise have to expose).
+        let checked_body = check_declaration_body(declarations, form);
+        cx.scopes.leave();
+        // PR #262 review (coordinator round 3): an earlier version of this
+        // function also asserted `cx.scopes.depth() == depth_before` here.
+        // In this straight-line body, one `enter` several lines above is
+        // followed by exactly one `leave`, with nothing between them that
+        // could push or pop again -- the assertion restated what the two
+        // calls already guarantee by construction, not something a broken
+        // implementation could trip. `ScopeStack::depth`, that assertion's
+        // only reader, is deleted with it.
+        cx.leave_nesting();
+        // Both cleanup calls above run before this `?` (PR #303 review,
+        // finding 12): an earlier version of this function's redundant
+        // nesting-charge walk returned through `?` from inside a recursive
+        // step, before its own `leave_nesting()` ran on that step's error
+        // path. Structuring `check_declaration_body`'s call to happen
+        // between the paired `enter`/`leave` calls, with the `?` moved
+        // after both, means every return path -- success or refusal --
+        // balances the scope stack and the nesting depth identically.
+        let body = checked_body.map_err(crate::family::StageFailure::Refused)?;
+        // PR #303 review, finding 11: this diagnostic is recorded only
+        // once `check_declaration_body` has actually succeeded, not
+        // beforehand -- an earlier version logged "checked function
+        // declaration" right after minting identity, before the real
+        // typing/definedness pass ran, so a declaration that the very next
+        // line refused (or that a reached limit stopped) had already been
+        // diagnosed as checked.
         cx.diagnostics.record(
             cx.scopes,
             format!(
@@ -1146,53 +1341,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 cx.meter.admitted_charges().len(),
             ),
         );
-        cx.scopes.leave();
-        // PR #262 review (coordinator round 3): an earlier version of this
-        // function also asserted `cx.scopes.depth() == depth_before` here.
-        // In this straight-line body, one `enter` four lines above is
-        // followed by exactly one `leave`, with nothing between them that
-        // could push or pop again -- the assertion restated what the two
-        // calls already guarantee by construction, not something a broken
-        // implementation could trip. `ScopeStack::depth`, that assertion's
-        // only reader, is deleted with it.
-        cx.leave_nesting();
-        // FR-062-AC-7 (QSL-148): charge one nesting-entry per level of the
-        // declaration's own body (and measure, when written), so the
-        // configured limit bounds real recursive descent -- e.g. a fixture
-        // nested to depth `D` (`D` levels of nested function application) --
-        // rather than only this one top-level entry, which is `>=`-checked
-        // against a depth that can never exceed 1 (see
-        // `nesting_depth_limit_is_the_proximate_cause`'s own doc, below,
-        // before this change). This is a second, deliberately redundant
-        // walk purely for the contract's own limit accounting: it does not
-        // duplicate `check_declaration_body`'s real typing decision (run
-        // separately, by `check::mod`, through the unchanged `Typer`) --
-        // only the node count that decision's own recursion already
-        // enforces through `CheckingLimits.depth()`, a distinct, pre-existing
-        // limit this contract-level charge does not read or affect.
-        charge_recursive_nesting(&form.body, cx)?;
-        if let Some(measure) = &form.measure {
-            charge_recursive_nesting(measure, cx)?;
-        }
-        Ok(crate::family::Staged::new(identity))
+        Ok(crate::family::Staged::new(CheckedDeclaration { identity, body }))
     }
-}
-
-/// See [`ValueFunctionFamily::check`]'s own doc: a redundant recursive walk
-/// that charges the contract's `StageLimits.nesting_depth` limit once per
-/// expression-tree level, so FR-062-AC-7 bounds real recursion instead of
-/// the single top-level charge #214 shipped.
-fn charge_recursive_nesting(
-    expression: &Expression,
-    cx: &mut crate::family::CheckContext<'_, String>,
-) -> Result<(), crate::family::StageFailure> {
-    cx.enter_nesting()
-        .map_err(crate::family::StageFailure::Limit)?;
-    for child in expression.children() {
-        charge_recursive_nesting(child, cx)?;
-    }
-    cx.leave_nesting();
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1289,17 +1439,24 @@ mod tests {
 }
 
 #[cfg(test)]
-mod checking_tests {
+pub(crate) mod checking_tests {
     //! QSL-148: behavioral coverage of what `Value`'s relocated family check
     //! code (`check_application`, `check_declaration_body`) accepts and
-    //! refuses, per team-lead policy -- these tests exercise real accept/
-    //! refuse outcomes over real fixtures, not the code's shape or where it
-    //! lives.
+    //! refuses, per the testing-policy ruling at
+    //! <https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837>
+    //! (Peter, 2026-09-22, relayed by the QSL team lead) -- these tests
+    //! exercise real accept/refuse outcomes over real fixtures, not the
+    //! code's shape or where it lives.
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
     use ix_trace_rs::trace;
 
-    fn root_location() -> CheckLocation {
+    /// PR #303 review, finding N7b: `pub(crate)`, not private -- this is
+    /// the one real definition `check::mod`'s own `#[cfg(test)]`-gated
+    /// re-export hands to `value::expression::family`'s
+    /// `family_contract_tests` module, which used to keep a second,
+    /// byte-for-byte copy of this same fixture instead of importing it.
+    pub(crate) fn root_location() -> CheckLocation {
         CheckLocation {
             origin: CheckOrigin::Expression,
             path: Vec::new(),
@@ -1317,6 +1474,19 @@ mod checking_tests {
         }
     }
 
+    /// See [`root_location`]'s own doc (PR #303 review, finding N7b): the
+    /// one real definition, re-exported rather than duplicated.
+    pub(crate) fn empty_scope() -> Scope {
+        Scope {
+            types: crate::value::composite::TypeEnvironment::default(),
+            enums: Vec::new(),
+            aliases: Vec::new(),
+            model_operations: Vec::new(),
+            ieee_profile: None,
+            dispatch_operations: Vec::new(),
+        }
+    }
+
     /// TC-376/FR-065-AC-4: a well-typed call to a one-argument Boolean
     /// function is admitted through `check_application` -- `Value`'s
     /// relocated family check code, not `Typer::call` (deleted) -- and
@@ -1324,14 +1494,7 @@ mod checking_tests {
     #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_accepts_a_well_typed_call() {
-        let scope = Scope {
-            types: crate::value::composite::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
-        };
+        let scope = empty_scope();
         let signatures = vec![boolean_signature("f", 1)];
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
@@ -1358,14 +1521,7 @@ mod checking_tests {
     #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_refuses_wrong_arity() {
-        let scope = Scope {
-            types: crate::value::composite::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
-        };
+        let scope = empty_scope();
         let signatures = vec![boolean_signature("f", 1)];
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
@@ -1391,14 +1547,7 @@ mod checking_tests {
     #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_refuses_an_unknown_name() {
-        let scope = Scope {
-            types: crate::value::composite::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
-        };
+        let scope = empty_scope();
         let signatures: Vec<Signature> = Vec::new();
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
@@ -1417,14 +1566,51 @@ mod checking_tests {
         ));
     }
 
-    fn empty_scope() -> Scope {
-        Scope {
-            types: crate::value::composite::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
+    /// TC-376 step 4: a call whose argument type disagrees with the
+    /// declared parameter type -- arity matches, the callee resolves, but
+    /// `typer.check_as` refuses the mismatched argument -- is refused
+    /// `ill_typed`/`type-mismatch` by `check_application` itself, the same
+    /// path `check_application_refuses_wrong_arity` exercises for the
+    /// arity case above.
+    #[trace("TC-376", "FR-065-AC-4")]
+    #[test]
+    fn check_application_refuses_a_type_mismatched_argument() {
+        let scope = empty_scope();
+        let signatures = vec![boolean_signature("f", 1)];
+        let mut nodes = 0_u64;
+        let mut typer = Typer::new(
+            &scope,
+            &signatures,
+            CheckingLimits::default(),
+            &mut nodes,
+            ClauseKind::Body,
+        );
+        let location = root_location();
+        let arguments = vec![Expression::Integer(quire_exact::Integer::from(1_i64))];
+        let refusal = check_application(&mut typer, "f", &arguments, &location)
+            .expect_err("an Integer argument against a declared Boolean parameter must refuse");
+        assert!(matches!(
+            refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        ));
+    }
+
+    /// A [`ValueDeclarations`] for tests exercising [`check_declaration_body`]
+    /// directly.
+    fn declarations_for<'a>(
+        scope: &'a Scope,
+        signatures: &'a [Signature],
+        dispatch_tables: &'a [DispatchTable],
+        location: &'a CheckLocation,
+    ) -> ValueDeclarations<'a> {
+        ValueDeclarations {
+            package_identity: DEFAULT_PACKAGE_IDENTITY,
+            scope,
+            signatures,
+            dispatch_tables,
+            checking_limits: CheckingLimits::default(),
+            location,
+            measure_location: location,
         }
     }
 
@@ -1468,19 +1654,10 @@ mod checking_tests {
             },
         ];
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
-        let mut nodes = 0_u64;
         let location = root_location();
-        let checked = check_declaration_body(
-            &scope,
-            &signatures,
-            &dispatch_tables,
-            CheckingLimits::default(),
-            &mut nodes,
-            &caller,
-            &location,
-            &location,
-        )
-        .expect("g's body -- a well-typed call to f -- admits");
+        let input = declarations_for(&scope, &signatures, &dispatch_tables, &location);
+        let checked = check_declaration_body(&input, &caller)
+            .expect("g's body -- a well-typed call to f -- admits");
         assert_eq!(checked.slots, 0);
         assert_eq!(checked.calls.len(), 1);
         assert_eq!(
@@ -1497,7 +1674,6 @@ mod checking_tests {
         let scope = empty_scope();
         let signatures: Vec<Signature> = Vec::new();
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
-        let mut nodes = 0_u64;
         let location = root_location();
         let form = FunctionDeclaration::new(
             "g",
@@ -1506,20 +1682,45 @@ mod checking_tests {
             None,
             Expression::Integer(quire_exact::Integer::from(1_i64)),
         );
-        let refusal = check_declaration_body(
-            &scope,
-            &signatures,
-            &dispatch_tables,
-            CheckingLimits::default(),
-            &mut nodes,
-            &form,
-            &location,
-            &location,
-        )
-        .expect_err("an Integer body against a declared Boolean result must refuse");
+        let input = declarations_for(&scope, &signatures, &dispatch_tables, &location);
+        let refusal = check_declaration_body(&input, &form)
+            .expect_err("an Integer body against a declared Boolean result must refuse");
         assert!(matches!(
             refusal.cause,
             CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        ));
+    }
+
+    /// TC-377: `check_declaration_body` refuses a well-*typed* body that is
+    /// statically undefined -- `value(o)` on an `Option[Integer]` parameter
+    /// with no proved `present(o)` guarding it -- via the same
+    /// `Definedness` pass `check_declaration_body` runs after typing, not
+    /// only a type mismatch. Distinct from
+    /// `check_declaration_body_refuses_an_ill_typed_body` above: this body
+    /// types cleanly (`value(o)` on an `Option[Integer]` is `Integer`,
+    /// matching the declared result) and is refused only because the
+    /// obligation `present(o)` proves is unproved.
+    #[trace("TC-377", "FR-065-AC-5")]
+    #[test]
+    fn check_declaration_body_refuses_an_undefined_body() {
+        let scope = empty_scope();
+        let signatures: Vec<Signature> = Vec::new();
+        let dispatch_tables: Vec<DispatchTable> = Vec::new();
+        let location = root_location();
+        let form = FunctionDeclaration::new(
+            "v",
+            vec![("o".to_owned(), ValueType::option(ValueType::Integer))],
+            ValueType::Integer,
+            None,
+            Expression::Value(Box::new(Expression::Name("o".to_owned()))),
+        );
+        let input = declarations_for(&scope, &signatures, &dispatch_tables, &location);
+        let refusal = check_declaration_body(&input, &form).expect_err(
+            "value(o) with no proved present(o) is statically undefined, not ill-typed",
+        );
+        assert!(matches!(
+            refusal.cause,
+            CheckCause::Unproved(crate::check::refusal::Obligation::Presence)
         ));
     }
 }

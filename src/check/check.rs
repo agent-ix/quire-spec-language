@@ -804,13 +804,21 @@ impl<'a> Typer<'a> {
     /// method that used to hold that logic, is deleted; `check_application`
     /// is its relocated replacement, reached through `Typer`'s own
     /// `scope`/`signatures`/`type_named`/`check_as` accessors (see this
-    /// module's own doc). `Expression::Call` itself is not deleted from
-    /// [`Expression`] -- a call remains an ordinary, nestable operand of
-    /// every other `Value` form, and `infer_form`'s match must stay
-    /// exhaustive over every variant the enum actually carries -- what
-    /// FR-065-AC-5 requires absent is the composed checker's *own*
-    /// pre-migration checking entry point (`Self::call`), not the syntax
-    /// variant every parsed call still needs.
+    /// module's own doc).
+    ///
+    /// **`Expression::Call` itself is still present in [`Expression`]
+    /// (FR-065-AC-5 remains unmet for this reason).** FR-065-AC-5 requires
+    /// the composed checker's input form-kind enum to carry neither a
+    /// function-declaration nor a function-application variant once this
+    /// requirement lands; `Expression::Call` is that variant, and it has not
+    /// been removed. An earlier version of this doc argued a call should
+    /// stay because it is "an ordinary, nestable operand of every other
+    /// `Value` form" -- that argument reasons about a migration that has
+    /// not happened, not about one AC-5 already excuses, and FR-065-AC-5's
+    /// own text says plainly that a variant left in place "with or without
+    /// an arm for it, does not satisfy this criterion." See FR-065's own
+    /// Status section for why AC-5 stays recorded unbacked rather than
+    /// retagged onto what this arm's own shape does satisfy.
     ///
     /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
     /// QSL-25 implementation by owner ruling): a future change that wants

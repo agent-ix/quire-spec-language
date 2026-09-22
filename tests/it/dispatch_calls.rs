@@ -666,12 +666,22 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
 /// `0 >= 128` never holds and this package checks cleanly instead, failing
 /// this test.
 ///
-/// **Untagged.** `check`'s contract-level nesting bound still has no real
-/// recursive-descent fixture behind it (`ValueFunctionFamily::check`'s own
-/// `nesting_depth_limit_is_the_proximate_cause` test doc, `value::
-/// expression::family`, explains why: QSL-148 owns moving real recursive
-/// checking there). This test proves the *wiring* is live through the
-/// public API, not FR-062-AC-7's own fixture-at-depth-D requirement.
+/// **Untagged.** This test's zero-depth `CheckingLimits` refuses before
+/// `ValueFunctionFamily::check` ever reaches `check_declaration_body`,
+/// because `check`'s contract-level `StageLimits.nesting_depth` is derived
+/// from the same caller-supplied `CheckingLimits.depth()`
+/// (`PackageDeclarations::check`, `src/check/mod.rs`) and is charged once
+/// per top-level declaration -- it proves that wiring is live through the
+/// public API, not real recursive descent. QSL-148 has since moved real
+/// recursive checking into `check_declaration_body`, reached from
+/// `ValueFunctionFamily::check`, and `Typer`'s own separate
+/// `CheckingLimits.depth` bound on that real descent is demonstrated by
+/// `real_checker_depth_limit_is_the_proximate_cause`
+/// (`value::expression::family`, also untagged) -- but neither test backs
+/// FR-062-AC-7 itself: that criterion's own `Limit`-outcome-on-real-descent
+/// requirement would need `CheckContext` threaded through `Typer`'s
+/// recursive engine, which is out of scope here. See FR-062's own Status
+/// section, AC-7 row, for the full reasoning.
 #[test]
 fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     let declaration = |name: &str| {

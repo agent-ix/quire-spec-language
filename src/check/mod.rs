@@ -107,8 +107,17 @@ pub(crate) use family::ValueFunctionFamily;
 // constant has no production reader left.
 #[cfg(test)]
 pub(crate) use family::{
-    mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+    mint_declaration_identity, OccurrenceMap, ValueDeclarations, DEFAULT_PACKAGE_IDENTITY,
+    SCALAR_LIMITS_UNLIMITED,
 };
+// PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
+// defined twice -- once here (`check::family`'s own `checking_tests`
+// module) and once more, byte-for-byte, in `value::expression::family`'s
+// `family_contract_tests` module. Both build the same `Scope`/`Location`
+// this crate already defines once; re-exporting the one real definition
+// removes the second copy instead of letting it drift.
+#[cfg(test)]
+pub(crate) use family::checking_tests::{empty_scope, root_location};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use capability::{Capability, UnknownCapabilityLabel};
@@ -448,19 +457,18 @@ impl PackageDeclarations {
                 callable_by_name: function.callable_by_name,
             })
             .collect();
-        let mut nodes = 0_u64;
         let mut functions = Vec::with_capacity(self.functions.len());
         let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(self.functions.len());
-        // QSL-148: identity is minted, and one diagnostic logged, through
-        // the checked-family contract's own `check` hook
-        // (`family::ValueFunctionFamily::check`) -- unchanged from #214.
-        // What changed: the typing and static-definedness verdict is no
-        // longer made by a `Typer` this loop constructs and drives
-        // directly. `family::check_declaration_body` (`check::family`, this
-        // migration's own function) is the only place that now constructs a
-        // `Typer` for a function declaration's body or measure; this loop
-        // calls it once per declaration, immediately after the contract's
-        // own `check`. Termination stays below, over every declaration's
+        // QSL-148: identity, the real typing/definedness verdict and one
+        // success diagnostic are all produced through one call into the
+        // checked-family contract's own `check` hook
+        // (`family::ValueFunctionFamily::check`) -- not, as before this
+        // ticket, identity alone through the contract with the real
+        // typing/definedness verdict made separately by a `Typer` this loop
+        // constructed and drove directly on the side. `check` itself now
+        // calls `family::check_declaration_body`; this loop calls the
+        // contract exactly once per declaration and reaches that verdict
+        // only through it. Termination stays below, over every declaration's
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
@@ -507,15 +515,49 @@ impl PackageDeclarations {
         let mut contract_scopes = crate::family::ScopeStack::default();
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
+            let measure_location = root(Origin::Measure {
+                function: function.name.clone(),
+                index,
+            });
+            let declarations = family::ValueDeclarations {
+                package_identity: &package_identity,
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                checking_limits: limits,
+                location: &location,
+                measure_location: &measure_location,
+            };
             let mut contract_cx = crate::family::CheckContext::new(
-                &package_identity,
+                &declarations,
                 contract_limits,
                 &mut contract_meter,
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            let identity = match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
-                Ok(staged) => staged.value,
+            match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
+                Ok(staged) => {
+                    // The real typing/definedness verdict travels out
+                    // through `Staged::value` itself (a `CheckedDeclaration`
+                    // carrying both the minted identity and the real checked
+                    // body -- PR #303 review, finding N3), not a side
+                    // channel: no `.expect(...)` unwrap of a slot `check`
+                    // might not have filled.
+                    let checked = staged.value;
+                    functions.push(CheckedFunction {
+                        identity: checked.identity,
+                        signature: Signature {
+                            name: function.name,
+                            parameters: function.parameters,
+                            result: function.result,
+                            callable_by_name: function.callable_by_name,
+                        },
+                        body: checked.body.body,
+                        measure: checked.body.measure,
+                        slots: checked.body.slots,
+                    });
+                    calls.push(checked.body.calls);
+                }
                 Err(crate::family::StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
                     // `limit.kind` is matched, not read past into a
@@ -541,45 +583,8 @@ impl PackageDeclarations {
                             limit: limit.configured_bound,
                         },
                     });
-                    continue;
                 }
-            };
-            let measure_location = root(Origin::Measure {
-                function: function.name.clone(),
-                index,
-            });
-            // QSL-148: the real typing and static-definedness verdict, made
-            // by `family::check_declaration_body` (not this loop, and not a
-            // `Typer` this loop constructs directly any more -- see this
-            // method's own doc above and `check_declaration_body`'s doc for
-            // why termination stays below instead of moving in too).
-            let checked = family::check_declaration_body(
-                &scope,
-                &signatures,
-                &dispatch_tables,
-                limits,
-                &mut nodes,
-                &function,
-                &location,
-                &measure_location,
-            );
-            match checked {
-                Ok(checked) => {
-                    functions.push(CheckedFunction {
-                        identity,
-                        signature: Signature {
-                            name: function.name,
-                            parameters: function.parameters,
-                            result: function.result,
-                            callable_by_name: function.callable_by_name,
-                        },
-                        body: checked.body,
-                        measure: checked.measure,
-                        slots: checked.slots,
-                    });
-                    calls.push(checked.calls);
-                }
-                Err(refusal) => {
+                Err(crate::family::StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted { .. });
                     refusals.push(refusal);
                     if exhausted {

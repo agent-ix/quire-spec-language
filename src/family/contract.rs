@@ -270,25 +270,39 @@ pub(crate) trait FamilyContract {
     type Form;
     /// This family's checked payload, carrying identity and provenance.
     type Checked;
+    /// This family's typed refusal cause (ADR-012 §5.1 S4), returned through
+    /// [`super::outcome::StageFailure::Refused`] -- see that variant's own
+    /// doc for why #214 shipped with no way to construct one and QSL-148
+    /// (`Value`'s function family) is the first real instance.
+    type Cause;
     /// This family's read-only resolved declarations and type environment.
-    type Declarations;
+    /// A GAT (`Declarations<'a>`, not a plain associated type): a family
+    /// whose declarations genuinely borrow from the caller's own package
+    /// state for the one `check` call (`Value`'s does -- scope, signatures
+    /// and dispatch tables it does not own) ties that borrow to `check`'s
+    /// own `'a`, the same way [`ReferenceEvaluation::Env`] already does for
+    /// `evaluate`.
+    type Declarations<'a>;
 
-    /// Check `form` against `cx`, returning the checked node or a limit
-    /// outcome (FR-062 "structured outcome", narrowed per this trait's own
-    /// doc and [`super::outcome::StageFailure`]'s). `check` reads nothing
-    /// outside `cx` and `form`, and mutates nothing but `cx`'s meter,
-    /// diagnostic sink and scope stack.
+    /// Check `form` against `cx`, returning the checked node, a typed
+    /// refusal or a limit outcome (FR-062 "structured outcome", per
+    /// [`super::outcome::StageFailure`]'s own doc). `check` reads nothing
+    /// outside `cx` and `form`, and is given no way to mutate anything except
+    /// `cx`'s meter, diagnostic sink and scope stack (FR-062-AC-3, PR #303
+    /// review finding N3) -- `Self::Declarations` is read-only through
+    /// `cx.declarations()`, with no interior-mutability side door for a
+    /// family to reach past that.
     ///
     /// `form` is a reference (PR #262 review, finding F9): `check` and
     /// everything it calls only ever read `form`, never need to own or move
     /// out of it, and the caller (`PackageDeclarations::check`) needs its
-    /// own copy afterward for the unchanged `Typer`-based typing pass --
-    /// taking `Self::Form` by value forced that caller to `.clone()` a deep
-    /// AST purely to satisfy this signature.
-    fn check(
+    /// own copy afterward for provenance bookkeeping -- taking `Self::Form`
+    /// by value forced that caller to `.clone()` a deep AST purely to
+    /// satisfy this signature.
+    fn check<'a>(
         form: &Self::Form,
-        cx: &mut CheckContext<'_, Self::Declarations>,
-    ) -> CheckOutcome<Self::Checked>;
+        cx: &mut CheckContext<'a, Self::Declarations<'a>>,
+    ) -> CheckOutcome<Self::Checked, Self::Cause>;
 }
 
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
@@ -307,6 +321,18 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     type Observed;
     /// The evaluation environment every family's `evaluate` reads.
     type Env<'a>;
+    /// What a runtime caller actually has in hand to look `evaluate` up by
+    /// (PR #303 review, finding N3): always a bare identity at call sites
+    /// like `CheckedPackage::call`, which only ever stores the minted
+    /// identity a checked declaration resolved to, not the full
+    /// `Self::Checked` payload `check` produced it alongside. Distinct from
+    /// `Self::Checked` on purpose -- QSL-148 makes `Checked` a richer struct
+    /// (the minted identity together with the real checked body, so `check`
+    /// can return both through its ordinary `Ok` rather than a side
+    /// channel); `evaluate` still only ever needs the identity half, so it
+    /// keeps its own narrower type instead of forcing every caller to carry
+    /// a full checked payload just to look up an evaluation.
+    type Key;
 
     /// Evaluate `checked` under `env` and `meter`. ADR-012 §2 reserves this
     /// hook alone for returning a meter-budget `Incomplete` outcome (`check`
@@ -314,7 +340,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported --
     /// `EvaluateRefusal`'s own doc explains why #214 could not add it).
     fn evaluate<'a>(
-        checked: &Self::Checked,
+        checked: &Self::Key,
         env: &mut Self::Env<'a>,
         meter: &mut Meter,
     ) -> Result<Self::Observed, EvaluateFailure>;

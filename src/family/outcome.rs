@@ -103,31 +103,38 @@ impl LimitExceeded {
 /// genuine internal-fault outcome reaches for that one, not a revived copy
 /// here.
 ///
-/// **No `Refused` variant.** ADR-013 T-4's own design also names a
-/// family-typed-cause refusal (`Refused { causes: Vec<C> }`), and ADR-012
-/// §5.1 S4 separately requires each family's own `Cause` enum and its
-/// `catalog_code()` mapping to exist as a closed seam -- but `Value`'s
-/// function-declaration/application family has no real typed refusal cause
-/// distinct from its existing checking refusals (`CheckCause`), so #214
-/// does not add a `Cause` enum for it (a `DeclarationCause` with zero real
-/// variants was tried and deleted: a probe over it would test only its own
-/// `catalog_code()` mapping, not a seam). Nothing in this ticket's one
-/// migrated family ever produces a typed refusal cause through this
-/// outcome type: `Value`'s function-declaration/application
-/// `check` mints identity unconditionally past its one limit check, so nothing
-/// here constructs a `Refused`. Worse, `Vec<C>` over an uninhabited `C` is
-/// still constructible *empty* -- `Refused { causes: Vec::new() }` compiles
-/// and asserts nothing, a causeless refusal. Rather than ship a variant only
-/// reachable via that hazard, `#214` narrows `StageFailure` to the one way
-/// this ticket's family can genuinely fail; QSL-152 owns adding `Refused`
-/// back, parameterised over a real, inhabited `Cause` type, alongside the
-/// rest of the contract's deferred parts (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9).
+/// **`Refused` is generic over the family's own `Cause` (QSL-148).** ADR-013
+/// T-4's own design names a family-typed-cause refusal (`Refused { causes:
+/// Vec<C> }`), and ADR-012 §5.1 S4 separately requires each family's own
+/// `Cause` enum and its `catalog_code()` mapping to exist as a closed seam.
+/// #214 shipped `StageFailure` with no `Refused` variant at all, because
+/// `Value`'s function-declaration/application family had, at the time, no
+/// real typed refusal cause: `check` minted identity unconditionally past
+/// its one limit check, so nothing constructed one, and a zero-variant
+/// `DeclarationCause` invented just to fill the shape would have been the
+/// same fabricated-surface hazard as the deleted `Requirements`.
+///
+/// QSL-148 gives `Value`'s function family a genuine one:
+/// `ValueFunctionFamily::check` now runs the declaration's real typing and
+/// definedness pass (`check::family::check_declaration_body`) inside the
+/// contract's own `check` entry point, and an ill-typed or undefined body is
+/// refused with the crate's real, already-catalogued `check::CheckRefusal`
+/// (`FamilyContract::Cause = CheckRefusal` for that family) -- not a shape
+/// invented to satisfy this enum. `Refused(C)` carries exactly one cause
+/// (not `Vec<C>`): a single `check` call examines one form and produces at
+/// most one refusal, so the `Vec` (and the causeless-`Refused{causes: vec![]}`
+/// hazard it invited) is not reproduced here. `catalog_code()` for
+/// `CheckRefusal` already exists (`CheckCause::code`/`CheckCause::cause`,
+/// `src/check/refusal.rs`), so this is not a second, competing mapping --
+/// QSL-152's remaining scope is a per-family `Cause` enum for the *other*
+/// five families, once they migrate, not this one.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum StageFailure {
+pub(crate) enum StageFailure<C> {
     Limit(LimitExceeded),
+    Refused(C),
 }
 
-/// ADR-013 T-4's `Result<Staged<T>, StageFailure>`: every S1-S4 stage hook's
-/// return shape (FR-062 "structured outcome"), narrowed per
-/// [`StageFailure`]'s own doc.
-pub(crate) type CheckOutcome<T> = Result<Staged<T>, StageFailure>;
+/// ADR-013 T-4's `Result<Staged<T>, StageFailure<C>>`: every S1-S4 stage
+/// hook's return shape (FR-062 "structured outcome"), generic over the
+/// family's own refusal cause `C` (see [`StageFailure`]'s own doc).
+pub(crate) type CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>>;
