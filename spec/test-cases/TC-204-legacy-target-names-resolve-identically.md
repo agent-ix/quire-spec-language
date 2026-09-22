@@ -41,3 +41,10 @@ implementation, producing an asymmetric round-trip that a `Display`-only or
 All three names parse, round-trip, and appear in the published target list
 identically before and after the swap. The rejection behavior for an
 unknown name in step 4 is unchanged by the swap.
+
+## Status
+
+Steps 1 and 4 (before the swap) are backed by
+`legacy_target_names_parse_round_trip_and_list_identically`
+(`tests/it/lowering_registry_isolation.rs`). The same test runs steps 3 and
+4 after #217's catalog replacement lands.

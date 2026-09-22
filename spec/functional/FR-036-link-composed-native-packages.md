@@ -184,24 +184,29 @@ compile configuration separately, so a resource-only change is visible there and
 in no static component.
 
 `linking::composed::requests` records a typed disposition for every requested
-clause/capability pair against a caller-declared backend and the supplied
-assessment inputs. Unsupported capability, unsupported family, inapplicable
-capability, refused subject, unfinished subject and unknown subject are distinct
-outcomes; none is dropped or merged, and a required non-admitted request makes
-complete aggregate success unavailable. `admitted_bodies` exposes only admitted
-family-check subjects, so an unsupported family body is never represented as
-checked. Assessment selections and backend support are retained as provenance and
+clause/capability pair from the binding report and the supplied assessment
+inputs. A request's capability is the canonical `crate::check::Capability`
+(FR-057's ten FR-290 kinds). Admitted, inapplicable capability, refused
+subject, unfinished subject and unknown subject are distinct outcomes; none is
+dropped or merged, and a required non-admitted request makes complete aggregate
+success unavailable. `report` reads no backend: candidate sets and routing are
+the layer-R `route` registry's (FR-075), and backend-dependent dispositions are
+settled downstream by `negotiate_*` (FR-077). `admitted_bodies` is every
+declaration whose names resolved, independent of the requests, so a refused or
+unfinished subject's body is never represented as checked (FR-057,
+"Family-body admission"). Assessment selections are retained as provenance and
 are never written back into the static subject.
+
+A request is inapplicable when its capability kind is not defined for the
+requested declaration's family. The kind-to-family mapping `report` applies
+(`requests::families`) is provisional and not normative: it is inferred from
+FR-057's admitted-vocabulary table, and the question of which family records
+which capability kind is open under QSL-29.
 
 The requested capability vocabulary, its version, its refusals and the split
 between admission, registration and negotiation are specified in
 [FR-057](FR-057-admit-shared-capability-kinds.md), aligned with
 [quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md).
-`linking::composed::requests::Capability` declares a four-member request
-vocabulary, and `requests::report` reads a caller-declared backend's support.
-Remaining work: #213 for FR-057's canonical `Capability` and backend-free
-admission; #185 for registration and routing; TC-115 over FR-057 kinds after
-both.
 
 `NamesResolved` precedes expression/type/profile checking and complete typed
 runtime requirements. TC-114 exercises common nominal types across state,

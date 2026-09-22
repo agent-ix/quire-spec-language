@@ -53,3 +53,9 @@ fixture was updated alongside the implementation change; the comparison is
 against the independently captured, committed pre-swap recording. Step 5
 confirms the recording is pinned to a pre-swap commit and could not have
 been silently re-captured from the post-swap tree.
+
+## Status
+
+Planned. The registry swap in step 2 is #217's catalog replacement (FR-079
+Description; ADR-011 §7.3 M-6b). Step 1's snapshot is captured on the last
+commit before #217's replacement lands.

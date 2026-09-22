@@ -429,7 +429,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
 | [FR-055](functional/FR-055-govern-complete-v1-lane.md) | FR | Implemented; audited in the complete-v1 test matrix |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131; the compiled-protocol `Model` naming this admits directly is specified under #132 (FR-042-AC-11, FR-042-AC-12) |
-| [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies; canonical `Capability` type implemented (QSL-173, TC-153 partial); admission, family-body handoff, registration and routing remain under #213/#185 |
+| [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies; canonical `Capability` type implemented (QSL-173, TC-153 partial); requests carry it and `report` reads no backend, registration and candidate sets are in `route` (QSL-46, PR #305); carrier-version refusal and admission remain under #213, the post-E7 routing step under #185; the kind-to-family mapping is provisional (QSL-29) |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
 | [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | Implemented current-head cross-repository integration lane; #215 |
@@ -450,11 +450,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-072](functional/FR-072-implement-typed-replay-result.md) | FR | Implemented under #231 (QSL-88); TC-189–191 pass locally, TC-192 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
 | [FR-073](functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) | FR | Implemented under #231 (QSL-88); TC-209–211 pass locally — see `spec/tests.md` |
 | [FR-074](functional/FR-074-move-model-below-check.md) | FR | Specified and implemented under QSL-7 (ADR-011 §7.3 M-2), GitHub #241; TC-261/262 pass locally — see `spec/tests.md` |
-| [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185 (QSL-185); not yet implemented; consumes the canonical `Capability` type implemented under QSL-173 |
+| [FR-075](functional/FR-075-compute-candidates-from-registered-backends.md) | FR | Specified under #185 (QSL-185); implemented under QSL-46 (PR #305) as `src/route.rs` over the canonical `Capability` type (QSL-173); AC-1..AC-5 backed (TC-193..TC-196); the lowering-target catalog replacement is #217's |
 | [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185 (QSL-185); not yet implemented; exit waits on quire-contract-codegen#86 |
 | [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Implemented under QSL-131 (PR #290) — see TC-201, TC-202 |
-| [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); not yet implemented |
+| [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); the catalog replacement it guards is #217's; AC-2 backed for the current catalog (TC-204); AC-1 unbacked until #217 (TC-203) |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
 | [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
