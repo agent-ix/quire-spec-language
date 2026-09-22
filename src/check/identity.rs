@@ -30,6 +30,28 @@
 //! the model correspondence ([`CheckedGraph::resolve_declaration`]), never a
 //! name-keyed one, matching R-06's "no name -> identity lookup exists after
 //! the check stage" (FR-088-AC-5).
+//!
+//! # PR #300 review: wiring (findings 1-11)
+//!
+//! This module's minters and [`to_kernel_value_type`] are now called from
+//! real `check` production code (`super::PackageDeclarations::check`), not
+//! only from this module's own unit tests (finding 1): every admitted
+//! composite and enum declaration in a checked package's `TypeEnvironment`
+//! becomes a real [`CheckedTypeNode`], minted through
+//! [`mint_type_declaration_identity`] from its own declared shape (finding
+//! 3), and `CheckedGraph` exposes them by node id
+//! (`CheckedGraph::checked_type_node`). The model correspondence
+//! ([`ModelCorrespondence`]) is populated from `PackageDeclarations`' own
+//! new `model_correspondence` field (`check/check.rs`), matching this
+//! file's own pre-existing `dispatch_operations`/`dispatch_tables`
+//! precedent of "built by the caller (the `model` bridge); the checker only
+//! records/resolves against it" -- see that field's doc for why no such
+//! domain-declaration bridge exists in production yet, and
+//! `mod.rs`'s test module for a test that goes through
+//! `CheckedPackage::graph().resolve_declaration`, not a hand-built
+//! `ModelCorrespondence` (finding 1's own "not hand-built correspondences").
+//! The remaining findings (4-11) are visibility, encoding and totality
+//! fixes on these same types, noted at each site below.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,35 +62,13 @@ use quire_exact::{
     ValueType, VariantId,
 };
 
+use super::family::{encode_value_type, Preimage};
 use crate::model::key::DeclarationKey;
+use crate::value::composite::{CompositeShape, Presence};
 use crate::value::Identifier;
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
-}
-
-/// A length-prefixed byte writer for identity preimages, mirroring
-/// `check::family::Preimage`'s own rationale (that struct is private to
-/// `family.rs`, so this module carries its own copy rather than reaching
-/// into a sibling's private state): every write is length-prefixed, so two
-/// distinct sequences of writes can never collide into the same combined
-/// bytes.
-struct Preimage(Vec<u8>);
-
-impl Preimage {
-    fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    fn write_bytes(&mut self, bytes: &[u8]) {
-        self.0
-            .extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        self.0.extend_from_slice(bytes);
-    }
-
-    fn write_str(&mut self, text: &str) {
-        self.write_bytes(text.as_bytes());
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -93,8 +93,20 @@ pub enum CheckedClauseKind {
 
 impl CheckedClauseKind {
     /// Every variant, for a totality/injectivity scan over the whole
-    /// vocabulary.
+    /// vocabulary. PR #300 review finding 8: derived through an exhaustive
+    /// match over `Self` itself (no `_` arm), not only a hand-maintained
+    /// array literal -- adding a fifth variant fails this match to compile
+    /// until the array below is extended to match, so `all()` cannot
+    /// silently under-cover TC-250's totality scan the way a plain literal
+    /// with no compiler backstop could.
     pub fn all() -> [Self; 4] {
+        #[allow(
+            clippy::match_same_arms,
+            reason = "the exhaustiveness check is the point, not the arm bodies"
+        )]
+        match Self::Claim {
+            Self::Claim | Self::Temporal | Self::Protocol | Self::StateTransition => {}
+        }
         [
             Self::Claim,
             Self::Temporal,
@@ -148,8 +160,14 @@ pub struct ModelCorrespondence {
 
 impl ModelCorrespondence {
     /// Record one checked node's own domain declaration. The S3 checker is
-    /// the only writer (ADR-013 O-04).
-    pub fn record(&mut self, node: NodeKey, declaration: DeclarationKey) {
+    /// the only writer (ADR-013 O-04). PR #300 review finding 4:
+    /// `pub(super)`, not `pub` -- only `super::PackageDeclarations::check`
+    /// (this module's parent, `check`) ever records a correspondence entry;
+    /// no other module has a legitimate reason to construct one directly,
+    /// so this is not part of `crate::check`'s public re-export surface
+    /// (`check/mod.rs`'s `pub use identity::{...}` list carries the type,
+    /// never this method).
+    pub(super) fn record(&mut self, node: NodeKey, declaration: DeclarationKey) {
         self.entries.insert(node, declaration);
     }
 
@@ -248,6 +266,16 @@ impl Frame {
 // needs a declared name sequence (`mint_type_declaration_identity` below)
 // takes a plain `&[Identifier]` instead -- the sequence itself, not a
 // wrapper claiming the O-11 name.
+//
+// PR #300 review finding 2: the checker's own name -> node id resolution
+// function already exists and is exercised in production --
+// `CheckedGraph::function`/`function_identity`/`callable` (`check/mod.rs`),
+// reached from outside `check` only through
+// `value::expression::CheckedPackage::call`'s `QualifiedName` lookup (the
+// one O-11/R-06 lookup this crate builds outside `replay`'s own E9
+// exception). TC-251 and TC-257 (`tests/name_resolution_confinement.rs`,
+// `tests/clause_kind_canonical.rs`) are the whole-crate scans that verify
+// that confinement and this module's own single-canonical-enum claim.
 
 // ---------------------------------------------------------------------
 // O-14/C-26: checked type descriptors and the kernel `ValueType` conversion
@@ -292,11 +320,60 @@ impl SumVariant {
     }
 }
 
+/// [`CheckedTypeNode::Sum`]'s own declared variants (PR #300 review finding
+/// 6). Private field: the only way to build one is [`Self::new`], which
+/// refuses two variants sharing one declared name rather than silently
+/// admitting both (a duplicate would make two different `VariantId`s answer
+/// to the same case name, or -- worse -- collapse under some future
+/// name-keyed lookup; O-06 member identity is declared, `(declaring node
+/// id, name)`, so a name collision within one declaring sum is exactly the
+/// case that identity rule cannot resolve).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SumVariants(Vec<SumVariant>);
+
+/// [`SumVariants::new`]'s refusal: two variants declared the same name.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("duplicate sum variant name: {0}")]
+pub struct DuplicateSumVariant(String);
+
+impl SumVariants {
+    /// Admit `variants` as one sum's declared members, in declaration
+    /// order, refusing a duplicate declared name.
+    pub fn new(variants: Vec<SumVariant>) -> Result<Self, DuplicateSumVariant> {
+        let mut seen = BTreeSet::new();
+        for variant in &variants {
+            if !seen.insert(variant.name().as_str()) {
+                return Err(DuplicateSumVariant(variant.name().as_str().to_owned()));
+            }
+        }
+        Ok(Self(variants))
+    }
+
+    /// The declared variants, in declaration order.
+    pub fn iter(&self) -> impl Iterator<Item = &SumVariant> {
+        self.0.iter()
+    }
+
+    /// The declared variant count.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether this sum declares no variant (never a real sum in practice,
+    /// but not this type's own concern to refuse).
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// ADR-013 O-14: a package type declaration, identified by its checked node
 /// id -- one checked graph node per `scalar_type`, `composite_type`,
 /// `bounded_domain` or sum form. Record, tuple and union identity is that
 /// node id alone (FR-143-AC-6): [`Self::Composite`] carries no further
-/// shape, since the kernel `ValueType::Composite(NodeKey)` needs none.
+/// shape, since the kernel `ValueType::Composite(NodeKey)` needs none (the
+/// node's own id, minted from the full declared shape by
+/// [`mint_type_declaration_identity`], already carries that content -- see
+/// [`DeclaredShape::Composite`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedTypeNode {
     /// A `scalar_type` node.
@@ -325,7 +402,7 @@ pub enum CheckedTypeNode {
         node: NodeKey,
         /// The declared variants, in source order (their `VariantId`s are
         /// position-independent regardless, ADR-013 O-14/QC-15).
-        variants: Vec<SumVariant>,
+        variants: SumVariants,
     },
 }
 
@@ -344,12 +421,18 @@ impl CheckedTypeNode {
 /// ADR-013 C-26: the total conversion, checked type node -> kernel
 /// `ValueType`, over every checked type-node form with no `_` arm
 /// (FR-088-AC-9): a checked type-node form added without a corresponding
-/// arm here fails to compile. For the sum form, the source node's own id is
-/// never re-minted (it simply is not read into the kernel shape at all, so
-/// there is nothing here that could re-mint it), and each variant's
-/// `VariantId` is computed by [`mint_variant_id`] from the declaring sum and
-/// that variant's own member, never from its position in `variants`
-/// (FR-088-AC-10).
+/// arm here fails to compile -- enforced at compile time, not only by
+/// convention, by PR #300 review finding 11's `#[deny]` below. For the sum
+/// form, the source node's own id is never re-minted (it simply is not read
+/// into the kernel shape at all, so there is nothing here that could
+/// re-mint it), and each variant's `VariantId` is computed by
+/// [`mint_variant_id`] from the declaring sum and that variant's own
+/// member, never from its position in `variants` (FR-088-AC-10).
+// PR #300 review finding 11: a checked-in `deny`, not only ADR-011 §5's
+// documented convention -- adding a `CheckedTypeNode` form without a
+// matching arm below now fails `cargo clippy` (and `-D warnings` promotes
+// that to a build failure), not only a human reviewer's attention.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
     match type_node {
         CheckedTypeNode::Scalar { shape, .. } => match shape {
@@ -371,37 +454,165 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
     }
 }
 
+/// [`mint_type_declaration_identity`]'s own declared-shape parameter (PR
+/// #300 review findings 3 and 9): closed to exactly the four checked
+/// type-node forms O-14 names, replacing a bare `shape_tag: &str`. A caller
+/// could pass an inconsistent tag string against a bare `&str` (for example
+/// `"composite_type"` for a value that is really a bounded domain); this
+/// enum forecloses that by construction, and every arm both fixes its own
+/// tag internally and writes its own real declared content into the
+/// preimage, so two declarations that differ only in shape -- not in name
+/// or package -- now mint different node ids too (closing the O-04 "equal
+/// ids mean structurally identical nodes" gap a name-only preimage left
+/// open).
+pub(super) enum DeclaredShape<'a> {
+    /// A `scalar_type` node's own declared domain. Not yet constructed by
+    /// `check()` itself: no production caller admits a standalone
+    /// `scalar_type`/`bounded_domain` declaration today (complete-V1's own
+    /// `TypeEnvironment` carries only composite and enum declarations;
+    /// `type Name = T;` aliases "create no declaration identity" per
+    /// `check.rs`'s own doc) -- that intake is `model`'s bridge work, not
+    /// yet built, and out of FR-088/S-3b's own scope. The variant stays
+    /// real, not deleted: O-14/FR-088-AC-9 name `scalar_type` as one of the
+    /// four checked type-node forms C-26 must convert, and this crate's own
+    /// unit tests construct it (`#[cfg_attr(not(test), allow(dead_code))]`
+    /// below says exactly that, rather than a bare, unexplained `allow`).
+    #[cfg_attr(not(test), allow(dead_code))]
+    Scalar(&'a ScalarShape),
+    /// A `composite_type` node's own declared fields or tuple positions
+    /// (native-v1's own `value::composite::CompositeShape`), encoded
+    /// through [`encode_value_type`] exactly as a function declaration's
+    /// own parameter and result types already are (`family.rs`'s
+    /// `mint_declaration_identity`) -- the same encoding, not a second one.
+    Composite(&'a CompositeShape),
+    /// A `bounded_domain` node's own declared `Int[lo, hi]` bound. See
+    /// [`Self::Scalar`]'s own doc: not yet constructed by `check()` either,
+    /// for the same reason.
+    #[cfg_attr(not(test), allow(dead_code))]
+    BoundedDomain(&'a IntegerInterval),
+    /// The sum form's own declared variants, in declaration order. Unlike a
+    /// member's own `VariantId` (position-independent, ADR-013 O-14/QC-15),
+    /// this declaration-level node id is allowed to depend on declaration
+    /// order: reordering a sum's declared variants is a real textual edit
+    /// to the declaration, not a value the kernel treats as interchangeable
+    /// the way it treats a resolved member.
+    Sum(&'a SumVariants),
+}
+
+fn encode_scalar_shape(out: &mut Preimage, shape: &ScalarShape) {
+    match shape {
+        ScalarShape::Boolean => out.write_str("boolean"),
+        ScalarShape::Integer => out.write_str("integer"),
+        ScalarShape::Rational(domain) => {
+            out.write_str("rational");
+            out.write_str(&domain.numerator().lower().to_string());
+            out.write_str(&domain.numerator().upper().to_string());
+            out.write_str(&domain.denominator().lower().to_string());
+            out.write_str(&domain.denominator().upper().to_string());
+        }
+        ScalarShape::Decimal(decimal) => {
+            out.write_str("decimal");
+            out.write_str(&decimal.lower().to_string());
+            out.write_str(&decimal.upper().to_string());
+            out.write_str(&decimal.min_scale().to_string());
+            out.write_str(&decimal.max_scale().to_string());
+        }
+        ScalarShape::Float(width) => {
+            out.write_str("float");
+            out.write_str(match width {
+                IeeeWidth::Binary32 => "binary32",
+                IeeeWidth::Binary64 => "binary64",
+            });
+        }
+        ScalarShape::Quantity(unit) => {
+            out.write_str("quantity");
+            out.write_bytes(unit.as_bytes());
+        }
+        ScalarShape::Text(text) => {
+            out.write_str("text");
+            out.write_str(&text.min().to_string());
+            out.write_str(&text.max().to_string());
+        }
+    }
+}
+
+fn encode_composite_shape(out: &mut Preimage, shape: &CompositeShape) {
+    match shape {
+        CompositeShape::Record(fields) => {
+            out.write_str("record");
+            for field in fields {
+                out.write_str(field.name());
+                encode_value_type(out, field.value_type());
+                out.write_str(match field.presence() {
+                    Presence::Required => "required",
+                    Presence::Optional => "optional",
+                });
+            }
+        }
+        CompositeShape::Tuple(elements) => {
+            out.write_str("tuple");
+            for element in elements {
+                encode_value_type(out, element);
+            }
+        }
+    }
+}
+
 /// ADR-013 O-04/QC-18's package-scoped preimage, applied to a package type
 /// declaration (O-14): the declaring package's `name@version`, this
 /// declaration's own qualified name segments (a declared preimage
 /// component, O-11 -- never an identity by itself, FR-088-AC-6) and its
-/// declared shape tag. Two declarations differing in any of the three mint
-/// different node ids; the same three facts always mint the same node id
-/// (deterministic, content-addressed, FR-088-AC-7).
-pub fn mint_type_declaration_identity(
+/// declared shape (PR #300 review finding 3). Two declarations differing in
+/// package, name, or declared shape mint different node ids; the same
+/// three facts always mint the same node id (deterministic,
+/// content-addressed, FR-088-AC-7/TC-259).
+pub(super) fn mint_type_declaration_identity(
     package_identity: &str,
     name: &[Identifier],
-    shape_tag: &str,
+    shape: DeclaredShape<'_>,
 ) -> NodeKey {
-    let mut preimage = Preimage::new();
+    // `u64::MAX`: this minter has no `StageLimits` budget to report
+    // against, unlike `ValueFunctionFamily::check` (see `Preimage::new`'s
+    // own doc).
+    let mut preimage = Preimage::new(u64::MAX);
     preimage.write_str("checked-type-declaration");
     preimage.write_str(package_identity);
-    preimage.write_str(shape_tag);
     for segment in name {
         preimage.write_str(segment.as_str());
     }
-    NodeKey::from_digest(sha256(&preimage.0))
+    match shape {
+        DeclaredShape::Scalar(scalar) => {
+            preimage.write_str("scalar_type");
+            encode_scalar_shape(&mut preimage, scalar);
+        }
+        DeclaredShape::Composite(shape) => {
+            preimage.write_str("composite_type");
+            encode_composite_shape(&mut preimage, shape);
+        }
+        DeclaredShape::BoundedDomain(bound) => {
+            preimage.write_str("bounded_domain");
+            preimage.write_str(&bound.lower().to_string());
+            preimage.write_str(&bound.upper().to_string());
+        }
+        DeclaredShape::Sum(variants) => {
+            preimage.write_str("sum");
+            for variant in variants.iter() {
+                preimage.write_str(variant.name().as_str());
+            }
+        }
+    }
+    NodeKey::from_digest(sha256(&preimage.finish()))
 }
 
 /// ADR-013 O-14/QC-15: a sum variant's `VariantId`, computed from the
 /// declaring sum's own node id and the variant's own name -- never from its
 /// position in a declared list (FR-088-AC-10).
-pub fn mint_variant_id(sum: NodeKey, member_name: &Identifier) -> VariantId {
-    let mut preimage = Preimage::new();
+pub(super) fn mint_variant_id(sum: NodeKey, member_name: &Identifier) -> VariantId {
+    let mut preimage = Preimage::new(u64::MAX);
     preimage.write_str("sum-variant-member");
     preimage.write_bytes(sum.as_bytes());
     preimage.write_str(member_name.as_str());
-    VariantId::from_digest(sha256(&preimage.0))
+    VariantId::from_digest(sha256(&preimage.finish()))
 }
 
 #[cfg(test)]
@@ -411,11 +622,25 @@ mod tests {
 
     use super::*;
     use crate::check::family::OccurrenceMap;
+    use crate::value::composite::FieldDeclaration;
+    // This module's own `ValueType` (from `use super::*`) is the kernel
+    // `quire_exact::ValueType` C-26 converts *into*; `CompositeShape`'s
+    // field/element types are the native, pre-existing
+    // `value::composite::ValueType` C-26 converts *from* nothing of the
+    // sort (composite fields are never converted by C-26 at all -- see
+    // `CheckedTypeNode::Composite`'s own doc) -- these two same-named,
+    // unrelated types collide in one `use super::*` scope, so this alias
+    // disambiguates the native one wherever a `CompositeShape` is built.
+    use crate::value::composite::ValueType as NativeValueType;
 
     fn node_key(fill: u8) -> NodeKey {
         let mut bytes = [0_u8; 32];
         bytes[31] = fill;
         NodeKey::from_digest(bytes)
+    }
+
+    fn identifier(name: &str) -> Identifier {
+        Identifier::new(name).unwrap()
     }
 
     // -- O-10: clause kind ------------------------------------------------
@@ -531,7 +756,13 @@ mod tests {
     /// id; its subject sets resolve to `DeclarationKey`s only by reading
     /// the recorded model correspondence, and a subject removed from that
     /// correspondence resolves to `None` rather than being re-derived by
-    /// any other means.
+    /// any other means. See `super::super::tests` (`check/mod.rs`) for the
+    /// companion test that builds this same correspondence through a real
+    /// `PackageDeclarations::check` run rather than the hand-built one
+    /// below (PR #300 review finding 1) -- this unit test is retained for
+    /// the frame-subject *resolution mechanics* themselves, which have no
+    /// real source syntax to check from yet (FR-340 frame semantics are
+    /// #210's, FR-088-CON-2).
     #[trace("TC-248", "FR-088-AC-2")]
     #[test]
     fn frame_subjects_resolve_only_through_the_recorded_correspondence() {
@@ -595,6 +826,14 @@ mod tests {
     /// occurrence keys; a lookup keyed on (node id, occurrence key)
     /// distinguishes them where node id alone cannot, and neither
     /// occurrence's identity depends on the order the pair is iterated in.
+    /// See `check::mod::tests::call_occurrences_of_the_same_callee_share_an_identity_and_disambiguate_by_occurrence_key`
+    /// (PR #300 review finding 7) for the real-checker adverse case this
+    /// unit test's own mechanics feed into: this crate has no `claim`/
+    /// `temporal`/`protocol` clause syntax yet (FR-088-CON-1 scopes this
+    /// requirement to the identity and occurrence-key mechanism only), so
+    /// the closest *real*, checker-produced case of "one identity, two
+    /// occurrences" is a repeated call to the same function -- both use the
+    /// same real `OccurrenceMap` this test exercises directly.
     #[trace("TC-249", "FR-088-AC-3")]
     #[test]
     fn clause_occurrence_keys_disambiguate_structurally_identical_clauses() {
@@ -638,12 +877,18 @@ mod tests {
     #[trace("TC-258", "FR-088-AC-6")]
     #[test]
     fn equal_qualified_names_do_not_make_two_declarations_the_same_identity() {
-        let name = [
-            Identifier::new("Order").unwrap(),
-            Identifier::new("status").unwrap(),
-        ];
-        let first = mint_type_declaration_identity("test/orders@1.0.0", &name, "composite_type");
-        let second = mint_type_declaration_identity("test/billing@1.0.0", &name, "composite_type");
+        let name = [identifier("Order"), identifier("status")];
+        let shape = CompositeShape::Tuple(vec![NativeValueType::Boolean]);
+        let first = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
+        let second = mint_type_declaration_identity(
+            "test/billing@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
         assert_ne!(
             first, second,
             "equal qualified names must not collapse distinct declarations"
@@ -660,13 +905,139 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn package_type_identity_is_scoped_to_its_declaring_package() {
-        let name = [Identifier::new("Order").unwrap()];
-        let a = mint_type_declaration_identity("test/orders@1.0.0", &name, "composite_type");
-        let b = mint_type_declaration_identity("test/billing@1.0.0", &name, "composite_type");
+        let name = [identifier("Order")];
+        let shape = CompositeShape::Tuple(vec![NativeValueType::Boolean]);
+        let a = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
+        let b = mint_type_declaration_identity(
+            "test/billing@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
         assert_ne!(a, b);
 
-        let a_again = mint_type_declaration_identity("test/orders@1.0.0", &name, "composite_type");
+        let a_again = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
         assert_eq!(a, a_again);
+    }
+
+    /// PR #300 review finding 3: two declarations that share every fact
+    /// except their declared shape must not collapse onto one node id --
+    /// the gap a bare `shape_tag: &str` (able to lie about what shape it
+    /// named) left open. This is the adverse case that closes O-04's
+    /// "equal ids mean structurally identical nodes" for this preimage.
+    #[trace("TC-259", "FR-088-AC-7")]
+    #[test]
+    fn differently_shaped_declarations_under_the_same_name_mint_different_ids() {
+        let name = [identifier("Order")];
+        let tuple_of_one = CompositeShape::Tuple(vec![NativeValueType::Boolean]);
+        let tuple_of_two =
+            CompositeShape::Tuple(vec![NativeValueType::Boolean, NativeValueType::Integer]);
+        let record = CompositeShape::Record(vec![FieldDeclaration::new(
+            "flag",
+            NativeValueType::Boolean,
+            Presence::Required,
+        )]);
+
+        let a = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&tuple_of_one),
+        );
+        let b = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&tuple_of_two),
+        );
+        let c = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&record),
+        );
+        assert_ne!(a, b, "a differing tuple arity must mint a different id");
+        assert_ne!(a, c, "a tuple and a record must mint different ids");
+        assert_ne!(b, c);
+
+        // A `bounded_domain` and a `scalar_type` with unrelated content,
+        // under the very same name, likewise never collide with either of
+        // the above or each other.
+        let bound = IntegerInterval::new(Integer::zero(), Integer::from(10_i64)).unwrap();
+        let bounded =
+            mint_type_declaration_identity("test/orders@1.0.0", &name, DeclaredShape::BoundedDomain(&bound));
+        let scalar = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Scalar(&ScalarShape::Integer),
+        );
+        for other in [a, b, c] {
+            assert_ne!(bounded, other);
+            assert_ne!(scalar, other);
+        }
+        assert_ne!(bounded, scalar);
+    }
+
+    /// PR #300 review finding 5: a golden digest vector for
+    /// `mint_type_declaration_identity`, the same convention
+    /// `check::family::mint_declaration_identity_matches_a_checked_in_digest`
+    /// establishes -- this catches a reordered `write_str` or a renamed tag
+    /// in either this function or `encode_scalar_shape`/
+    /// `encode_composite_shape`, which an equality-only test (comparing two
+    /// identities minted in the same process) cannot: both sides would move
+    /// together and every such test would stay green. Regenerate the
+    /// constant only when the preimage grammar change is the one actually
+    /// intended, and say so in the commit (this repository's own
+    /// digest-freshness rule, `CLAUDE.md`), never to make a red test green.
+    #[trace("TC-259", "FR-088-AC-7")]
+    #[test]
+    fn mint_type_declaration_identity_matches_a_checked_in_digest() {
+        let name = [identifier("Order"), identifier("Status")];
+        let shape = CompositeShape::Record(vec![
+            FieldDeclaration::new("id", NativeValueType::Integer, Presence::Required),
+            FieldDeclaration::new(
+                "label",
+                NativeValueType::Text(
+                    crate::value::text::TextType::new(
+                        1,
+                        40,
+                        crate::value::text::TextProfile::UnicodeScalars,
+                    )
+                    .unwrap(),
+                ),
+                Presence::Optional,
+            ),
+        ]);
+        let identity = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::Composite(&shape),
+        );
+        assert_eq!(
+            identity.to_string(),
+            "8782013256cdbacff29780ca85ab7a41cf4540bf7601141f1d82567bf6ab1630",
+            "the preimage byte grammar changed -- see this test's own doc \
+             before regenerating this constant"
+        );
+    }
+
+    /// PR #300 review finding 5: a golden digest vector for
+    /// `mint_variant_id`, mirroring the same rationale.
+    #[trace("TC-259", "FR-088-AC-10")]
+    #[test]
+    fn mint_variant_id_matches_a_checked_in_digest() {
+        let sum = node_key(7);
+        let variant_id = mint_variant_id(sum, &identifier("Active"));
+        assert_eq!(
+            variant_id.to_string(),
+            "25f808ee82e3446d65360b5e87ef36350a58cc6085f3bf3d2200cab7c0998030",
+            "the preimage byte grammar changed -- see this test's own doc \
+             before regenerating this constant"
+        );
     }
 
     /// TC-252 (FR-088-AC-9): every non-sum checked type-node form converts
@@ -703,11 +1074,11 @@ mod tests {
     #[test]
     fn c26_sum_preserves_node_id_and_mints_position_independent_variant_ids() {
         let sum_node = node_key(4);
-        let active = SumVariant::new(Identifier::new("Active").unwrap());
-        let closed = SumVariant::new(Identifier::new("Closed").unwrap());
+        let active = SumVariant::new(identifier("Active"));
+        let closed = SumVariant::new(identifier("Closed"));
         let sum = CheckedTypeNode::Sum {
             node: sum_node,
-            variants: vec![active.clone(), closed.clone()],
+            variants: SumVariants::new(vec![active.clone(), closed.clone()]).unwrap(),
         };
 
         let converted = to_kernel_value_type(&sum);
@@ -727,11 +1098,22 @@ mod tests {
         // (a digest over sum + member, never an index).
         let reordered = CheckedTypeNode::Sum {
             node: sum_node,
-            variants: vec![closed, active],
+            variants: SumVariants::new(vec![closed, active]).unwrap(),
         };
         assert_eq!(to_kernel_value_type(&reordered), converted);
 
         // A sum value carries its VariantId, never a bare index.
         assert!(converted.admits(&Value::Enum(active_id)));
+    }
+
+    /// PR #300 review finding 6: two variants sharing one declared name
+    /// refuse at construction rather than silently collapsing.
+    #[trace("TC-252", "FR-088-AC-10")]
+    #[test]
+    fn sum_variants_refuses_a_duplicate_declared_name() {
+        let first = SumVariant::new(identifier("Active"));
+        let duplicate = SumVariant::new(identifier("Active"));
+        let refusal = SumVariants::new(vec![first, duplicate]).unwrap_err();
+        assert_eq!(refusal, DuplicateSumVariant("Active".to_owned()));
     }
 }
