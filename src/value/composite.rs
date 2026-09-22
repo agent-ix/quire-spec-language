@@ -61,9 +61,11 @@ pub enum ValueType {
     /// `Reference<T>` to an object of the model object type with this key.
     Reference(NodeKey),
     /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
-    /// maximum an admitted [`PopulationBinding`] must carry (never `T`
-    /// itself, which `allInstances<T>(p)`/`lookup<T>(p, r)` name separately
-    /// at each call, per FR-153's own table).
+    /// maximum an admitted
+    /// [`PopulationBinding`](crate::model::population::PopulationBinding)
+    /// must carry (never `T` itself, which
+    /// `allInstances<T>(p)`/`lookup<T>(p, r)` name separately at each call,
+    /// per FR-153's own table).
     Population(u64),
 }
 
