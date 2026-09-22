@@ -1,25 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-174 (FR-068-AC-5), QSL-183 edge cut: the three
-//! `CheckedPackage::call`/refusal fixtures formerly in
-//! `value::expression::mod`'s own `#[cfg(test)] mod tests` reach only the
-//! crate's public API (`PackageDeclarations::check`, `CheckedPackage::call`,
-//! and the public refusal types) -- unlike
-//! `function_slots_are_stable_across_declaration_order` (kept in
-//! `value::expression::mod`, which still needs that module's same-crate
-//! read of `check::CheckedGraph`'s `pub(crate)` `function_states()`
-//! accessor), so these three belong in this crate's own `tests/it`
-//! integration binary, which is allowed to reach both the `forms`-owned
-//! fixture types (`FunctionDeclaration`, `Expression`, `BinaryOperator`)
-//! and the `check`/`value::expression` checking-and-evaluation pipeline in
-//! the same test (QSL-183's own audit: "an integration test under
-//! tests/it/ that is allowed to use both layers").
+//! TC-174 (FR-068-AC-5): `CheckedPackage::call` and `CheckedPackage::evaluate`,
+//! this crate's public runtime entry points, exercised together with the
+//! checking pipeline that produces their `CheckedPackage`/`CheckedExpression`
+//! inputs (`PackageDeclarations::check`, `CheckedGraph::check_expression`,
+//! `CheckedPackage::link`) -- an integration test, allowed to reach both the
+//! `forms`-owned fixture types (`FunctionDeclaration`, `Expression`,
+//! `BinaryOperator`) and this crate's checking/evaluation pipeline in the
+//! same file.
+//!
+//! `evaluated_call_slots_are_stable_across_declaration_order` checks that a
+//! standalone expression calling into a declared function resolves to the
+//! correct result regardless of the package's declaration order:
+//! `evaluate`'s `Machine` resizes each callee's frame from that function's
+//! own evaluation-slot count (`evaluate.rs`'s `frame.resize(callable.
+//! slots.max(frame.len()), None)`), so a count that leaked from a different
+//! function surfaces here as a wrong or undefined result. `two`'s body needs
+//! a `let`-bound local beyond its two parameters, discriminating it from
+//! `one`'s smaller slot count.
 
 use ix_trace_rs::trace;
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckRefusal, CheckedGraph, CheckedPackage, CheckingLimits,
-    Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome, PackageDeclarations,
-    QualifiedName, Value, ValueType,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    CheckingLimits, Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome,
+    PackageDeclarations, QualifiedName, Value, ValueType,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -129,6 +133,79 @@ fn call_resolves_by_name_regardless_of_declaration_order() {
                 &objects,
                 &mut meter,
             )
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", two.outcome),
+            format!(
+                "{:?}",
+                Outcome::Completed(Value::Integer(Integer::from(7_i64)))
+            )
+        );
+    }
+}
+
+/// TC-174 steps 1-4: a standalone expression that calls into a declared
+/// function, checked and evaluated through the public
+/// `CheckedGraph::check_expression`/`CheckedPackage::evaluate` pair,
+/// resolves to the correct result regardless of the package's declaration
+/// order. `two`'s body needs a `let`-bound local beyond its two parameters,
+/// so a declaration-order bug that hands it `one`'s (smaller) slot count
+/// produces a wrong or undefined result here, not a passing one.
+#[trace("TC-174", "FR-068-AC-5")]
+#[test]
+fn evaluated_call_slots_are_stable_across_declaration_order() {
+    let objects = ObjectEnvironment::default();
+    for functions in [
+        vec![function_one(), function_two()],
+        vec![function_two(), function_one()],
+    ] {
+        let graph = declarations(functions)
+            .check(CheckingLimits::default())
+            .unwrap();
+        let call_one = graph
+            .check_expression(
+                Vec::new(),
+                &Expression::Call {
+                    name: "one".to_owned(),
+                    arguments: vec![Expression::Integer(Integer::from(5_i64))],
+                },
+                Some(&ValueType::Integer),
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let call_two = graph
+            .check_expression(
+                Vec::new(),
+                &Expression::Call {
+                    name: "two".to_owned(),
+                    arguments: vec![
+                        Expression::Integer(Integer::from(3_i64)),
+                        Expression::Integer(Integer::from(4_i64)),
+                    ],
+                },
+                Some(&ValueType::Integer),
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let package = link(graph);
+
+        let mut meter = Meter::new(UNLIMITED);
+        let one = package
+            .evaluate(&call_one, Vec::new(), &objects, &mut meter)
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", one.outcome),
+            format!(
+                "{:?}",
+                Outcome::Completed(Value::Integer(Integer::from(5_i64)))
+            )
+        );
+
+        let mut meter = Meter::new(UNLIMITED);
+        let two = package
+            .evaluate(&call_two, Vec::new(), &objects, &mut meter)
             .unwrap();
         assert_eq!(
             format!("{:?}", two.outcome),
