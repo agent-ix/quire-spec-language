@@ -519,9 +519,18 @@ fn p06_each_call_charges_function_call() {
         format!("{:?}", evaluation.outcome),
         format!("{:?}", Outcome::Completed(int(3)))
     );
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
+    // PR #302 review finding 2: 2, not 3 -- one `function.call` charge per
+    // *nested* self-call inside `last`'s own body (a 3-node chain recurses
+    // twice before reaching the end of the chain), never a third charge for
+    // the top-level call itself. `CheckedPackage::call` charges the
+    // top-level call's own admission against a separate contract-level
+    // meter now (`ValueFunctionFamily::evaluate`'s own doc), not against
+    // this `meter` (`env.local_meter`) -- an earlier version charged
+    // `function.call` against `local_meter` for the top-level call too,
+    // restating the same named charge a second time for one logical call.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
 
-    let mut meter = Meter::new(work_limit(2));
+    let mut meter = Meter::new(work_limit(1));
     let evaluation = package
         .call(
             &QualifiedName::unqualified("last").unwrap(),
@@ -536,8 +545,8 @@ fn p06_each_call_charges_function_call() {
             "{:?}",
             Outcome::<Value>::Incomplete(Incomplete {
                 limit_kind: LimitKind::WorkUnits,
-                limit: 2,
-                consumed: 2,
+                limit: 1,
+                consumed: 1,
                 next_charge: integer(1),
                 charge_point: ChargePoint::FunctionCall,
             })
@@ -974,6 +983,71 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     );
 }
 
+/// PR #302 review finding 1: `CheckingLimits::with_input_bytes` is a real,
+/// caller-configurable knob on the public entry point, not just the
+/// `ValueFunctionFamily::check`-level mechanism `family_contract_tests`
+/// exercises directly -- one byte of budget cannot afford even the
+/// declaration's own package-identity/name/parameter preimage, so `check`
+/// refuses through `PackageDeclarations::check` naming
+/// `CheckingLimitKind::InputBytes`, and the unconfigured (unlimited)
+/// default admits the identical package.
+#[test]
+fn p_input_bytes_limit_refuses_through_package_declarations_check() {
+    let limited = PackageDeclarations {
+        functions: vec![down()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default().with_input_bytes(1));
+    let exhausted = refusal(limited);
+    assert_eq!(
+        exhausted.cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::InputBytes,
+            limit: 1,
+        }
+    );
+
+    PackageDeclarations {
+        functions: vec![down()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("the unconfigured default is unlimited, so the same package admits");
+}
+
+/// PR #302 review finding 1/3: `CheckingLimits::with_work_budget` is a
+/// real, caller-configurable knob reaching the shared kernel meter
+/// `ValueFunctionFamily::check` charges `ChargePoint::DeclarationCheck`
+/// against (finding 3's own fix) -- zero work units cannot afford even one
+/// checked declaration, so `check` refuses through
+/// `PackageDeclarations::check` naming `CheckingLimitKind::WorkBudget`, and
+/// the unconfigured (unlimited) default admits the identical package.
+#[test]
+fn p_work_budget_limit_refuses_through_package_declarations_check() {
+    let limited = PackageDeclarations {
+        functions: vec![down()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default().with_work_budget(0));
+    let exhausted = refusal(limited);
+    assert_eq!(
+        exhausted.cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: 0,
+        }
+    );
+
+    PackageDeclarations {
+        functions: vec![down()],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("the unconfigured default is unlimited, so the same package admits");
+}
+
 #[trace("TC-191", "FR-146-AC-5")]
 #[trace("TC-191", "FR-146-AC-6")]
 #[test]
@@ -1017,18 +1091,26 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )
     };
 
+    // PR #302 review finding 2: every total/threshold below is one less
+    // than before -- `package.call`'s own top-level admission charge is
+    // against a separate contract-level meter now (`ValueFunctionFamily::
+    // evaluate`'s own doc), never against this `meter` (`env.local_meter`,
+    // what `invoke` reports); an earlier version charged `function.call`
+    // against `local_meter` for the top-level call too, ahead of every
+    // charge below, so every later charge's own position -- and so the
+    // `work_limit` that exhausts exactly at it -- shifts down by one.
     assert_eq!(
         invoke("down", vec![int(2)], UNLIMITED),
-        (format!("{:?}", Outcome::Completed(int(0))), 18, 5)
+        (format!("{:?}", Outcome::Completed(int(0))), 17, 5)
     );
     assert_eq!(
-        invoke("down", vec![int(2)], work_limit(17)).0,
-        incomplete(17, ChargePoint::OrderingResultRetain)
+        invoke("down", vec![int(2)], work_limit(16)).0,
+        incomplete(16, ChargePoint::OrderingResultRetain)
     );
     let half = Value::Rational(Rational::new(integer(3), integer(2)).unwrap());
     assert_eq!(
         invoke("q", vec![int(3), int(2)], UNLIMITED),
-        (format!("{:?}", Outcome::Completed(half)), 10, 2)
+        (format!("{:?}", Outcome::Completed(half)), 9, 2)
     );
     // `rational-arithmetic.arithmetic` for `3/1` and `2/1`: `N = bits(3) +
     // bits(1) = 3`, `D = bits(1) + bits(2) = 3`, so `integer_bits` 3; the
@@ -1072,8 +1154,8 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )
     );
     assert_eq!(
-        invoke("q", vec![int(3), int(2)], work_limit(9)).0,
-        incomplete(9, ChargePoint::RationalArithmeticResultRetain)
+        invoke("q", vec![int(3), int(2)], work_limit(8)).0,
+        incomplete(8, ChargePoint::RationalArithmeticResultRetain)
     );
 
     let implication = binary(
