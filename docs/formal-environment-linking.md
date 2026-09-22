@@ -104,7 +104,9 @@ invalid_model_binding. Structured related formal declaration locations and a
 canonicalization upstream diagnostic, when it fails, are retained as typed
 sibling fields on `LinkingError` (ADR-011 §6.1: the foundation-layer
 `Diagnostic` does not import `crate::linking` or IR types), not on
-`Diagnostic` itself. Legacy diagnostics initialize related locations empty.
+`Diagnostic` itself. Most refusals leave `LinkingError.related` empty; only
+`ambiguous_declaration` populates it, with every matching formal declaration
+location, sorted.
 Resource exhaustion maps to native resource_exhausted, not a syntax error or Boolean.
 CLI parse/format behavior remains its existing contract; no new CLI reader is
 introduced by this library milestone.
