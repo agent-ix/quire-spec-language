@@ -306,16 +306,20 @@ native diagnostic or package path; the API does not manufacture source wrappers
 or change extraction availability. Run `cargo test --test it mapped::` for the
 mapped parent workflow and stage refusals.
 
-With `quire-extraction`, `quire_source::compile(original, context, selection,
-models, limits)` calls Quire's actual pinned Rust extractor and compiles the
-selected native body. Supply a digest-verified original Source, a loaded Quire
-SemanticContext and explicit authored/body/formal identities. The consumer checks
-source coordinates and exact bytes, including Quire's omitted final LF on CRLF
-input, before using the existing source map. It retains Quire's original clause
-population, availability and diagnostics on both success and refusal. Input is
-bounded to 1 MiB and 4096 lines before extraction. Actual healthy/violating/refused
-cases run with `cargo test --features quire-extraction --test it quire_source::`;
-[the tests](tests/quire_source.rs) show context and identity construction.
+With `quire-extraction`, `quire_source::extract(original, context, selection,
+limits)` calls Quire's actual pinned Rust extractor and returns an
+`ExtractedSource`: the verified native body in its document source map, the
+clause's declared language and Quire's unchanged result. Supply a digest-verified
+original Source, a loaded Quire SemanticContext and a `Selection` of the authored
+clause ID, package and body identity. The adapter checks source coordinates and
+exact bytes, including Quire's omitted final LF on CRLF input, before building
+the source map. It does not compile. The `run` command's extraction path
+(`command::extraction`) compiles the extracted body with `mapped::compile`. Both
+retain Quire's original clause population, availability and diagnostics on
+success and on refusal. Input is bounded to 1 MiB and 4096 lines before
+extraction. Extraction cases run with
+`cargo test --features quire-extraction --test it quire_source::`;
+[the tests](tests/it/quire_source.rs) show context and selection construction.
 C's existing-repository CLI/wire adoption remains separate from this working
 compiler-side Rust integration.
 

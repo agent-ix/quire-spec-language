@@ -4,10 +4,10 @@
 //! and schema ownership. This adapter never reaches the native compiler; the join lives
 //! at the SEAM-1 caller (`command::extraction`). Enabled by `quire-extraction`.
 
-use quire_rs::semantic::{extract_clauses, AvailabilityState, ClauseRef, SourceLocus};
+use quire_rs::semantic::{extract_clauses, ClauseRef, SourceLocus};
 /// Pinned Quire-owned input/result contracts deliberately exposed by this feature.
 /// Changes to their upstream shape require consumer compatibility review.
-pub use quire_rs::semantic::{ClausesOutcome, SemanticContext};
+pub use quire_rs::semantic::{AvailabilityState, ClausesOutcome, SemanticContext};
 
 mod preflight;
 pub use preflight::PreflightFailure;
@@ -58,8 +58,10 @@ impl Default for Limits {
 }
 
 /// Actual failed extraction stage, without parsing display messages.
+///
+/// Exhaustive: the SEAM-1 caller matches every arm, so a new cause is a compile
+/// error there rather than something a catch-all arm absorbs.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum Cause {
     /// Input limits, profile selection or original-context mismatch before extraction.
     #[error("{0}")]
@@ -73,9 +75,9 @@ pub enum Cause {
 #[derive(Debug, thiserror::Error)]
 #[error("{cause}")]
 pub struct Error {
-    pub(crate) original: Source,
-    pub(crate) selection: Selection,
-    pub(crate) extraction: Option<ClausesOutcome>,
+    original: Source,
+    selection: Selection,
+    extraction: Option<ClausesOutcome>,
     /// Actual failure with no partial extraction.
     #[source]
     pub cause: Cause,
@@ -104,22 +106,46 @@ impl Error {
             Cause::Join(error) => error.code,
         }
     }
+
+    /// Moves out the original document, selection, any completed extraction and cause.
+    pub fn into_parts(self) -> (Source, Selection, Option<ClausesOutcome>, Cause) {
+        (self.original, self.selection, self.extraction, self.cause)
+    }
 }
 
 /// Verified S0 bytes, their document `SourceMap`, and the unchanged upstream Quire result.
 ///
-/// ADR-011 §2.1 I3 row: extraction stops here. The SEAM-1 caller feeds `body`/`map`/
-/// `language` into the native compiler; this adapter never does.
+/// ADR-011 §2.1 I3 row: extraction stops here. The SEAM-1 caller feeds the map's body
+/// and the declared language into the native compiler; this adapter never does.
+/// Only [`extract`] constructs one, so the map, language and extraction always describe
+/// the same verified clause.
 #[derive(Debug)]
 pub struct ExtractedSource {
-    /// Verified native body bytes, ready for the S1 parser.
-    pub body: Source,
-    /// Exact original/body byte correspondence.
-    pub map: SourceMap,
+    map: SourceMap,
+    language: String,
+    extraction: ClausesOutcome,
+}
+
+impl ExtractedSource {
+    /// Exact original/body byte correspondence; `map().body()` is the verified native body.
+    pub fn map(&self) -> &SourceMap {
+        &self.map
+    }
+
     /// The selected clause's declared language, from the unchanged upstream result.
-    pub language: String,
+    pub fn language(&self) -> &str {
+        &self.language
+    }
+
     /// Unchanged upstream clause population, availability and diagnostics.
-    pub extraction: ClausesOutcome,
+    pub fn extraction(&self) -> &ClausesOutcome {
+        &self.extraction
+    }
+
+    /// Moves out the map, declared language and unchanged upstream result.
+    pub fn into_parts(self) -> (SourceMap, String, ClausesOutcome) {
+        (self.map, self.language, self.extraction)
+    }
 }
 
 fn failure(source: &Source, code: Code, message: &str) -> Box<Diagnostic> {
@@ -236,13 +262,14 @@ fn build_map(
     selection: &Selection,
     region: Span,
     text: &str,
-    byte_limit: usize,
 ) -> Result<SourceMap, Box<Diagnostic>> {
+    // The body is a verified subslice of the already bounded original, so it adds no
+    // byte budget here; the native compiler applies its own source-byte limit.
     let body = Source::read(
         selection.body.clone(),
         format!("{}#{}", original.path(), clause.clause_id),
         text.as_bytes(),
-        byte_limit,
+        text.len(),
     )?;
     let segments = if text.is_empty() {
         Vec::new()
@@ -277,7 +304,6 @@ fn body_map<'a>(
     original: &Source,
     extraction: &'a ClausesOutcome,
     selection: &Selection,
-    byte_limit: usize,
 ) -> Result<(SourceMap, &'a str), Box<Diagnostic>> {
     let invalid = |message| failure(original, Code::InvalidSourceMap, message);
     let clause = selected_clause(original, extraction, selection)?;
@@ -292,7 +318,7 @@ fn body_map<'a>(
     let region = locate_fence(original, locus)?;
     let text = verify_body_bytes(original, region, extracted)?;
     Ok((
-        build_map(original, clause, selection, region, text, byte_limit)?,
+        build_map(original, clause, selection, region, text)?,
         &clause.language,
     ))
 }
@@ -318,17 +344,12 @@ pub fn extract(
         }));
     }
     let extraction = extract_clauses(original.text(), context);
-    match body_map(&original, &extraction, &selection, limits.source_bytes) {
-        Ok((map, language)) => {
-            let language = language.to_owned();
-            let body = map.body().clone();
-            Ok(ExtractedSource {
-                body,
-                map,
-                language,
-                extraction,
-            })
-        }
+    match body_map(&original, &extraction, &selection) {
+        Ok((map, language)) => Ok(ExtractedSource {
+            map,
+            language: language.to_owned(),
+            extraction,
+        }),
         Err(cause) => Err(Box::new(Error {
             original,
             selection,

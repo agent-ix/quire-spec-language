@@ -2,8 +2,8 @@
 //! FR-031: typed extraction provenance inside native command output.
 
 use super::{diagnostic, diagnostic_with_upstream, source, types};
-use crate::command::extraction::{JoinCause, JoinFailure};
-use crate::command::{compilation::RunPackage, ExtractionError, ExtractionMode};
+use crate::command::compilation::RunPackage;
+use crate::command::extraction::{ExtractionError, ExtractionMode, JoinCause, JoinFailure};
 use crate::quire_source::{self, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity, Span};
 use quire_contract_ir as ir;

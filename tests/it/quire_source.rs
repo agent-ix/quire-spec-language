@@ -63,7 +63,7 @@ fn document(model: &NativeModel, expression: &str, crlf: bool) -> Source {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-3", "FR-011-AC-3")]
+#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3")]
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let models = [setup::native_rule_model::parts().model()];
     let original = document(&models[0], "true", false);
@@ -124,12 +124,12 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
             lines: original.position(original.text().len()).unwrap().line,
         };
         let extracted = extract(original.clone(), &ctx, selection(), exact).unwrap();
-        assert_eq!(extracted.extraction, upstream);
-        let body_end = extracted.body.text().len();
-        let eof = extracted
-            .map
+        assert_eq!(extracted.extraction(), &upstream);
+        let map = extracted.map();
+        let body_end = map.body().text().len();
+        let eof = map
             .map_span(
-                &extracted.body,
+                map.body(),
                 Span {
                     start: body_end,
                     end: body_end,
@@ -142,15 +142,14 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
             original
                 .slice(Span {
                     start: eof[0].end.byte,
-                    end: extracted.map.region().end
+                    end: map.region().end
                 })
                 .unwrap(),
             if crlf { "\r\n" } else { "\n" }
         );
-        assert!(extracted
-            .map
+        assert!(map
             .map_span(
-                &extracted.body,
+                map.body(),
                 Span {
                     start: 0,
                     end: usize::MAX

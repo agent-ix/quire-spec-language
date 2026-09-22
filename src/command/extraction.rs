@@ -172,6 +172,15 @@ impl<'model> ExtractedPackage<'model> {
     }
 }
 
+/// The I3 selection for an authored binding and its caller-assigned native body identity.
+fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> quire_source::Selection {
+    quire_source::Selection {
+        clause_id: binding.clause.as_str().to_owned(),
+        package: binding.requirement.package().as_str().to_owned(),
+        body: body.native.clone(),
+    }
+}
+
 /// Extract through the I3 adapter, then compile the extracted native body.
 ///
 /// The native join lives here (SEAM-1), not in `quire_source` (ADR-011 §2.1 I3 row;
@@ -184,51 +193,44 @@ fn extract_and_compile<'model>(
     models: &'model [NativeModel],
     limits: Limits,
 ) -> std::result::Result<ExtractedPackage<'model>, Box<JoinFailure>> {
-    let extracted = quire_source::extract(
+    let extracted = match quire_source::extract(
         original.clone(),
         context,
-        quire_source::Selection {
-            clause_id: binding.clause.as_str().to_owned(),
-            package: binding.requirement.package().as_str().to_owned(),
-            body: body.native.clone(),
-        },
+        selection(&binding, &body),
         quire_source::Limits {
             source_bytes: limits.source_bytes,
             lines: limits.lines,
         },
-    );
-    let extracted = match extracted {
+    ) {
         Ok(extracted) => extracted,
         Err(error) => {
-            let error = *error;
-            let cause = match error.cause {
+            let (original, _, extraction, cause) = error.into_parts();
+            let cause = match cause {
                 quire_source::Cause::Preflight(error) => JoinCause::Preflight(error),
                 quire_source::Cause::Join(error) => JoinCause::Join(error),
             };
             return Err(Box::new(JoinFailure {
-                original: error.original,
+                original,
                 binding,
-                extraction: error.extraction,
+                extraction,
                 cause,
             }));
         }
     };
+    let (map, language, extraction) = extracted.into_parts();
     match mapped::compile(
-        extracted.map,
-        &extracted.language,
+        map,
+        &language,
         binding.clone(),
-        body.formal.clone(),
+        body.formal,
         models,
         limits.compiler,
     ) {
-        Ok(mapped) => Ok(ExtractedPackage {
-            mapped,
-            extraction: extracted.extraction,
-        }),
+        Ok(mapped) => Ok(ExtractedPackage { mapped, extraction }),
         Err(error) => Err(Box::new(JoinFailure {
             original,
             binding,
-            extraction: Some(extracted.extraction),
+            extraction: Some(extraction),
             cause: JoinCause::Compile(error),
         })),
     }
@@ -301,17 +303,17 @@ impl Selected<'_> {
 
 #[cfg(test)]
 mod tests {
-    //! FR-030-AC-1 ("reaches mapped compilation") and native-compile-failure coverage.
-    //! Moved here from `tests/it/quire_source.rs`: these exercise the join this module
-    //! now owns (ADR-011 §2.1 I3 row; §6.2 `quire_source` row). Pure I3 extraction
-    //! (preflight, fence location, byte boundaries) stays tested at `tests/it/quire_source.rs`.
+    //! FR-030-AC-1 ("reaches mapped compilation") and native-compile-failure coverage
+    //! for the join this module owns (ADR-011 §2.1 I3 row; §6.2 `quire_source` row).
+    //! Pure I3 extraction (preflight, fence location, byte boundaries) is tested at
+    //! `tests/it/quire_source.rs`.
     use super::*;
+    use crate::quire_source::{AvailabilityState, ExtractedSource};
     use crate::runtime::{execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode};
     use crate::runtime_test_setup as setup;
     use ix_trace_rs::trace;
     use qsl_foundation::{SourceIdentity, Span};
     use quire_contract_ir as ir;
-    use quire_rs::semantic::{extract_clauses, AvailabilityState};
 
     fn identity() -> SourceIdentity {
         SourceIdentity {
@@ -359,6 +361,18 @@ mod tests {
         }
     }
 
+    /// The I3 adapter's own verified extraction, which the join must pass through
+    /// unchanged. `tests/it/quire_source.rs` pins it to Quire's upstream result.
+    fn extracted(original: &Source, ctx: &SemanticContext) -> ExtractedSource {
+        quire_source::extract(
+            original.clone(),
+            ctx,
+            selection(&binding(), &body_identities()),
+            quire_source::Limits::default(),
+        )
+        .unwrap()
+    }
+
     fn document(model: &NativeModel, expression: &str, crlf: bool) -> Source {
         // Authored input fixture. Only the production Quire extractor selects its body.
         let text = format!(
@@ -384,7 +398,8 @@ mod tests {
             true,
         );
         let ctx = context();
-        let expected = extract_clauses(original.text(), &ctx);
+        let upstream = extracted(&original, &ctx);
+        let expected = upstream.extraction();
         let program = extract_and_compile(
             original.clone(),
             &ctx,
@@ -394,7 +409,7 @@ mod tests {
             Limits::default(),
         )
         .unwrap();
-        assert_eq!(program.extraction(), &expected);
+        assert_eq!(program.extraction(), expected);
         assert_eq!(
             program.extraction().availability.state,
             AvailabilityState::Available
@@ -500,7 +515,8 @@ mod tests {
             ("collect(self.items)", Code::UnsupportedConstruct),
         ] {
             let original = document(&models[0], expression, true);
-            let expected = extract_clauses(original.text(), &ctx);
+            let upstream = extracted(&original, &ctx);
+            let expected = upstream.extraction();
             assert_eq!(expected.availability.state, AvailabilityState::Available);
             let error = extract_and_compile(
                 original.clone(),
@@ -512,7 +528,7 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(error.code(), code);
-            assert_eq!(error.extraction(), Some(&expected));
+            assert_eq!(error.extraction(), Some(expected));
             assert_eq!(error.original().digest(), original.digest());
             assert_eq!(error.binding(), &binding());
             let JoinCause::Compile(native) = &error.cause else {
@@ -534,7 +550,7 @@ mod tests {
         }
         let original = document(&models[0], "true", false);
         let wrong_language = source(&original.text().replacen("```ix:native", "```ocl", 1));
-        let expected = extract_clauses(wrong_language.text(), &ctx);
+        let upstream = extracted(&wrong_language, &ctx);
         let error = extract_and_compile(
             wrong_language,
             &ctx,
@@ -545,37 +561,65 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code(), Code::UnknownLanguage);
-        assert_eq!(error.extraction(), Some(&expected));
+        assert_eq!(error.extraction(), Some(upstream.extraction()));
     }
 
     #[test]
-    #[trace("TC-108", "FR-030-AC-4", "FR-030-AC-5")]
-    fn native_package_limit_reaches_compile_after_a_successful_extraction() {
+    #[trace("TC-108", "FR-030-AC-5")]
+    fn native_stage_limits_reach_compile_after_a_successful_extraction() {
         let models = [setup::native_rule_model::parts().model()];
         let ctx = context();
-        let original = document(&models[0], "true", false);
-        let mut limits = Limits::default();
-        limits.compiler.package.artifact_bytes = 0;
-        let error = extract_and_compile(
-            original.clone(),
-            &ctx,
-            binding(),
-            body_identities(),
-            &models,
-            limits,
-        )
-        .unwrap_err();
-        assert_eq!(error.code(), Code::ResourceExhausted);
-        assert!(error.extraction().is_some());
-        assert!(matches!(error.cause, JoinCause::Compile(_)));
-        assert!(extract_and_compile(
-            original,
-            &ctx,
-            binding(),
-            body_identities(),
-            &models,
-            Limits::default(),
-        )
-        .is_ok());
+        for crlf in [false, true] {
+            let original = document(&models[0], "true", crlf);
+            // Quire's byte column and native scalar columns differ for this valid
+            // closing fence. Its trailing Unicode whitespace must remain accepted.
+            let (closing, spaced) = if crlf {
+                ("  ```\r\n", "  ```\u{a0}\r\n")
+            } else {
+                ("  ```\n", "  ```\u{a0}\n")
+            };
+            let original = source(&original.text().replacen(closing, spaced, 1));
+            let upstream = extracted(&original, &ctx);
+            let body_bytes = upstream.map().body().text().len();
+            let exact = Limits {
+                source_bytes: original.text().len(),
+                lines: original.position(original.text().len()).unwrap().line,
+                ..Limits::default()
+            };
+            let mut body_exact = exact;
+            body_exact.compiler.syntax.source_bytes = body_bytes;
+            let mut body_stop = body_exact;
+            body_stop.compiler.syntax.source_bytes -= 1;
+            let mut package_stop = exact;
+            package_stop.compiler.package.artifact_bytes = 0;
+            for limits in [body_stop, package_stop] {
+                let error = extract_and_compile(
+                    original.clone(),
+                    &ctx,
+                    binding(),
+                    body_identities(),
+                    &models,
+                    limits,
+                )
+                .unwrap_err();
+                assert_eq!(error.code(), Code::ResourceExhausted);
+                assert_eq!(error.extraction(), Some(upstream.extraction()));
+                let JoinCause::Compile(native) = &error.cause else {
+                    panic!("a native stage limit must refuse at compile, after extraction");
+                };
+                assert_eq!(native.code(), Code::ResourceExhausted);
+            }
+            for limits in [body_exact, exact] {
+                assert!(extract_and_compile(
+                    original.clone(),
+                    &ctx,
+                    binding(),
+                    body_identities(),
+                    &models,
+                    limits,
+                )
+                .is_ok());
+            }
+        }
     }
 }
