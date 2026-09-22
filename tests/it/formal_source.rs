@@ -4,8 +4,9 @@
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
 use quire_spec_language::{
-    formal_source::FormalSource, source::MAX_SOURCE_BYTES, ByteDigest, Code, Diagnostic, Phase,
-    Source, SourceIdentity, Span,
+    formal_source::{FormalSource, FormalSourceError},
+    source::MAX_SOURCE_BYTES,
+    ByteDigest, Code, Phase, Source, SourceIdentity, Span,
 };
 
 fn source(text: &str) -> Source {
@@ -37,7 +38,7 @@ fn coordinates(location: &ir::SourceLocation) -> (u64, u32, u32) {
     (location.byte_offset(), location.line(), location.column())
 }
 
-fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<Diagnostic>>, source: &Source) {
+fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<FormalSourceError>>, source: &Source) {
     let diagnostic = result.unwrap_err();
     assert_eq!(diagnostic.code, Code::InvalidSourceMap);
     assert_eq!(diagnostic.phase, Phase::SourceMap);
@@ -47,7 +48,6 @@ fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<Diagnostic>>, source
         diagnostic.span,
         source.locate(Span { start: 0, end: 0 }).unwrap()
     );
-    assert!(diagnostic.related.is_empty());
     assert!(diagnostic.upstream.is_none());
     assert!(!diagnostic.is_incomplete());
 }
