@@ -328,6 +328,48 @@ pub(crate) fn is_identifier(text: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
+/// A `node-identity-preimage.schema.json` `$defs.Identifier`
+/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the shared identifier-shaped single name
+/// segment every checked-member name/operator field and `check`'s own
+/// name-segment uses carry, so an invalid identifier is refused at
+/// construction rather than reaching a schema-invalid wire shape (ADR-013
+/// O-06) or a second, parallel copy of this same check (QSL-186). Lives here,
+/// in this K-designated `node` module, rather than in `value::member` (not
+/// K-designated) or as a `check`-lane-private newtype, because FR-068-AC-6
+/// bounds `check`'s imports from `value` to the nine K-designated siblings
+/// (`node` among them) plus a small declared-interim allow-list -- `member`
+/// is in neither. QSL-186 deleted `check::identity`'s own lane-private
+/// `Identifier` newtype (`crate::value::member::Identifier`'s predecessor
+/// duplicate) so `value::member` and `check` share this one type. Reuses
+/// [`is_identifier`], the same character-class check every other
+/// identifier-shaped field in this crate already uses ("one fact, one
+/// place"), rather than a second copy of the schema's character class.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Identifier(String);
+
+/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[error("an identifier is `^[A-Za-z_][A-Za-z0-9_]*$`")]
+pub struct InvalidIdentifier;
+
+impl Identifier {
+    /// `value` as an identifier, or [`InvalidIdentifier`] if it is not
+    /// `^[A-Za-z_][A-Za-z0-9_]*$`.
+    pub fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
+        let value = value.into();
+        if is_identifier(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidIdentifier)
+        }
+    }
+
+    /// The identifier's own text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// A schema `QualifiedName`: one or more identifiers.
 pub(crate) fn is_qualified_name(segments: &[String]) -> bool {
     !segments.is_empty() && segments.iter().all(|segment| is_identifier(segment))

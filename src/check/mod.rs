@@ -567,7 +567,7 @@ impl PackageDeclarations {
                 .members
                 .iter()
                 .map(|member| {
-                    identity::Identifier::new(member.case().to_owned())
+                    crate::value::node::Identifier::new(member.case().to_owned())
                         .map(identity::SumVariant::new)
                         .expect(
                             "an EnumBinding's own EnumDeclaration/EnumMemberPreimage \

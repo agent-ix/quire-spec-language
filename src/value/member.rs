@@ -20,47 +20,18 @@
 
 use serde_json::{json, Value};
 
-use super::node::{is_identifier, NodeKey};
+use super::node::{Identifier, NodeKey};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
 // tests below still assert the wire shape against the domain's own constant.
+// `InvalidIdentifier` (QSL-186: moved to `value::node` along with
+// `Identifier`) is likewise test-only here now that `Identifier::new`'s
+// `Result::Err` type is no longer constructed anywhere in this file's own
+// production code -- only the refusal tests below name it directly.
 #[cfg(test)]
-use super::node::NODE_KEY_DOMAIN;
-
-/// A `node-identity-preimage.schema.json` `$defs.Identifier`
-/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the type every `Member` name/operator field
-/// carries, so an invalid identifier is refused at construction instead of
-/// being serialized as a schema-invalid `OperationMember` (ADR-013 O-06).
-/// Reuses `is_identifier`, the same character-class check this crate's
-/// other identifier-shaped fields already use ("one fact, one place"),
-/// rather than a second copy of the schema's character class.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Identifier(String);
-
-/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("a member identifier is `^[A-Za-z_][A-Za-z0-9_]*$`")]
-pub struct InvalidIdentifier;
-
-impl Identifier {
-    /// `value` as a member identifier, or [`InvalidIdentifier`] if it is not
-    /// `^[A-Za-z_][A-Za-z0-9_]*$`.
-    pub fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
-        let value = value.into();
-        if is_identifier(&value) {
-            Ok(Self(value))
-        } else {
-            Err(InvalidIdentifier)
-        }
-    }
-
-    /// The identifier's own text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+use super::node::{InvalidIdentifier, NODE_KEY_DOMAIN};
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
