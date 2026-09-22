@@ -309,21 +309,22 @@ treating the whole slice as unbuilt.
 ## Canonical `Capability` value type (FR-057 item 1, QSL-173) coverage
 
 ADR-013 O-19's canonical `Capability` value type and its C-24 total wire
-conversion are implemented in `src/capability.rs`, backing three of the five
-[FR-057](../spec/functional/FR-057-admit-shared-capability-kinds.md) ACs
+conversion are implemented in `src/check/capability.rs`, backing three of the
+five [FR-057](../spec/functional/FR-057-admit-shared-capability-kinds.md) ACs
 that TC-153 traces to:
 
-- TC-153 (FR-057-AC-1): `src/capability.rs::tests::every_fr_290_label_round_trips_to_a_byte_identical_string`
+- TC-153 (FR-057-AC-1): `src/check/capability.rs::tests::every_fr_290_label_names_its_specific_variant_and_round_trips`
   — walks all ten FR-290 labels (restated independently of the
-  implementation, as the test's own doc comment states) and asserts
-  `from_wire` then `to_wire` reproduces the original string, and that the
-  admitted set is exactly those ten, no more and no fewer.
-- TC-153 (FR-057-AC-2): `src/capability.rs::tests::a_label_outside_the_vocabulary_refuses_and_names_the_received_bytes`
+  implementation, as the test's own doc comment states) and asserts each
+  label names its specific `Capability` variant in both directions
+  (`to_wire` and `from_wire`), and that the admitted set is exactly those
+  ten, no more and no fewer.
+- TC-153 (FR-057-AC-2): `src/check/capability.rs::tests::a_label_outside_the_vocabulary_refuses_and_names_the_received_bytes`
   — asserts refusal, naming the exact received bytes, for the empty string,
   a case variant, a separator variant, a display form, a padded label, a
   Rust variant name, and each of the four OBS-003 request-vocabulary labels
   (`FamilyCheck`, `StateOperation`, `FiniteReplay`, `TemporalProjection`).
-- TC-153 (FR-057-AC-4): `src/capability.rs::tests::equality_is_label_equality_and_the_ten_values_are_pairwise_distinct`
+- TC-153 (FR-057-AC-4): `src/check/capability.rs::tests::equality_is_label_equality_and_the_ten_values_are_pairwise_distinct`
   — asserts the ten values are pairwise distinct and each equals only
   itself.
 

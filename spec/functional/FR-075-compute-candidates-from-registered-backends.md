@@ -176,5 +176,5 @@ Specified under
 Not yet implemented. `src/lowering/target.rs` still declares the fixed
 three-variant `targets!` catalog this requirement replaces. The canonical
 `Capability` type this requirement consumes is implemented (QSL-173,
-`src/capability.rs`); implementation of the registry itself still waits on
+`src/check/capability.rs`); implementation of the registry itself still waits on
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).

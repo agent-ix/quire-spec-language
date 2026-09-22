@@ -348,7 +348,7 @@ checker's definition permissions. Their ownership is decided in #211.
 Specified under
 [#229](https://github.com/agent-ix/quire-spec-language/issues/229). The
 canonical `Capability` value type and its total FR-290 wire conversion
-(ADR-013 C-24) are implemented (QSL-173, `src/capability.rs`), backing
+(ADR-013 C-24) are implemented (QSL-173, `src/check/capability.rs`), backing
 FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 under TC-153. `linking::composed::
 requests::Capability` still declares its own, different four-member request
 vocabulary (`src/linking/composed/requests.rs:36`; OBS-003/FR-077 removes
