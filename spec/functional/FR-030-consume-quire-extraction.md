@@ -12,13 +12,16 @@ relationships:
 ---
 ## Description
 
-When a caller selects an authored clause in an original document, the optional Quire consumer shall invoke the pinned Quire Rust extractor and compile its verified body through the existing mapped native compiler.
+When a caller selects an authored clause in an original document, the optional Quire consumer shall invoke the pinned Quire Rust extractor and yield the verified body with its document source map, and the extracted-command caller shall compile that body through the existing mapped native compiler.
 
 ## Inputs
 
-An immutable original Source, a caller-loaded Quire SemanticContext, one
-ClauseBinding, an explicit SourceIdentities pair for the body/native and formal identities, admitted models and
-caller-lowered limits. The caller selects and verifies the original document's
+An immutable original Source, a caller-loaded Quire SemanticContext, a Selection
+of the authored clause ID, the authored requirement's package and the
+caller-assigned native body identity, and caller-lowered original byte and line
+limits. The extracted-command caller holds the one authored ClauseBinding, the
+formal body identity, admitted models and the native compiler stage limits.
+The caller selects and verifies the original document's
 digest before admission. The selected Quire heading ID equals the authored
 binding's clause ID; the body contains a complete single-clause native unit.
 The context explicitly names the original source identity/path and authored
@@ -26,10 +29,15 @@ package. The consumer selects Quire contract 1.0.0 / semantic-core 0.1.0.
 
 ## Outputs
 
-A mapped native package and the unchanged complete ClausesOutcome, or a typed
-failure retaining original source, selection, any completed extraction outcome
-and the actual native/mapped compiler cause. Quire's unchecked-language advisory
-and lossy availability remain observable after successful native compilation.
+The consumer yields an ExtractedSource: the verified body in its document
+SourceMap, the selected clause's declared language and the unchanged complete
+ClausesOutcome. Otherwise it yields a typed failure retaining original source,
+selection, any completed extraction outcome and the actual preflight or
+correspondence cause. The extracted-command caller yields a mapped native package
+with the unchanged ClausesOutcome, or a typed failure retaining original source,
+authored binding, any completed extraction outcome and the actual preflight,
+correspondence or native/mapped compiler cause. Quire's unchecked-language
+advisory and lossy availability remain observable after successful native compilation.
 No extraction status is rewritten into a parsing or runtime result.
 Preflight failures distinguish byte and line ceilings, contract and semantic-core
 version skew, and source identity, path and authored-package mismatches with
@@ -53,14 +61,15 @@ LF of an original CRLF pair, the compiler body also drops the remaining terminal
 CR. Indentation and interior CR bytes stay intact; the source map admits only
 the resulting final LF or CRLF deletion. Quire's raw body remains in its unchanged
 extraction outcome. No header, import or newline is inserted.
-The consumer shall invoke mapped::compile with the extracted language and supplied identities.
-If extraction, correspondence or native compilation fails, then the consumer shall return no partial package and retain the actual failure.
+The extracted-command caller shall invoke mapped::compile with the extracted source map, the declared language, the authored binding and the formal body identity.
+If extraction, correspondence or native compilation fails, then the extracted-command caller shall return no partial package and retain the actual failure.
 
 The original byte ceiling is 1 MiB and the line ceiling is 4096, including a
 trailing empty line. Caller limits may only lower these ceilings. The line bound
 limits work in the existing extractor before it builds its clause population;
-it is not a new Quire-wide performance guarantee. Existing compiler stage limits
-remain independent and fresh for each request.
+it is not a new Quire-wide performance guarantee. Existing compiler stage limits,
+including the native source-byte limit on the extracted body, remain independent
+and fresh for each request and apply at compilation.
 The quire-extraction Cargo feature is optional; default native builds do not
 require Quire. C retains changes to existing repositories, schemas, CLI/wire
 adoption and broader integration. This is A's native compiler consumer.

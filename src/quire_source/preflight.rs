@@ -125,10 +125,10 @@ pub(super) fn check(
             expected: original.path().into(),
         }));
     }
-    if context.identity_package() != selection.binding.requirement.package().as_str() {
+    if context.identity_package() != selection.package {
         return Err(Box::new(PreflightFailure::Package {
             actual: context.identity_package().into(),
-            expected: selection.binding.requirement.package().as_str().into(),
+            expected: selection.package.clone(),
         }));
     }
     Ok(())

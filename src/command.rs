@@ -3,13 +3,11 @@
 
 mod compilation;
 #[cfg(feature = "quire-extraction")]
-mod extraction;
+pub mod extraction;
 mod output;
 mod projection_error;
 mod wire;
 
-#[cfg(feature = "quire-extraction")]
-pub use extraction::{ExtractionError, ExtractionMode};
 pub use output::NativeResult;
 pub use projection_error::{ProjectionLocation, ProjectionSource};
 
@@ -141,7 +139,7 @@ pub enum RunCause {
     /// Extraction selection, context or actual Quire/native compilation failure.
     #[cfg(feature = "quire-extraction")]
     #[error("{0}")]
-    Extraction(#[from] Box<ExtractionError>),
+    Extraction(#[from] Box<extraction::ExtractionError>),
     /// A command intake ceiling stopped the request.
     #[error("{0} limit exceeded")]
     Limit(LimitKind),

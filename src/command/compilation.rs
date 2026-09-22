@@ -15,7 +15,7 @@ pub(super) fn source_only(_program: &wire::Program) -> Result<()> {
     // A minimal build's closed Program decoder already rejects extraction fields.
     #[cfg(feature = "quire-extraction")]
     if _program.extraction.is_some() {
-        return Err(super::ExtractionMode::CompileCommand.into());
+        return Err(super::extraction::ExtractionMode::CompileCommand.into());
     }
     Ok(())
 }
@@ -31,7 +31,7 @@ impl<'a> RunSelection<'a> {
         #[cfg(feature = "quire-extraction")]
         if let Some(descriptor) = &request.program.extraction {
             if request.package.is_some() {
-                return Err(super::ExtractionMode::PackageSelected.into());
+                return Err(super::extraction::ExtractionMode::PackageSelected.into());
             }
             return Ok(Self::Extracted(super::extraction::select(
                 &request.program,
