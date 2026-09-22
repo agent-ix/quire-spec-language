@@ -9,6 +9,35 @@
 //! precision integers (a truncated integer square root plus a sticky bit for
 //! `sqrt`) and rounds exactly once. No host floating-point value or operation
 //! exists anywhere on this path.
+//!
+//! QSL-131 (ieee cut): [`IeeeWidth`], [`IeeeValue`], [`IeeeFlag`],
+//! [`IeeeFlags`], [`IeeeComparison`], [`IeeeOperationKind`],
+//! [`ieee_intrinsic_identities`], [`IeeeExactLoss`], the generic
+//! [`IeeeOperation`] shape and [`IEEE_DEFINITION`] are `quire_exact`'s own
+//! canonical items, re-exported below rather than duplicated -- diffed
+//! byte-identical against `quire-exact/src/ieee.rs` before the cut. Because
+//! those types become foreign to this module, a few purely private helpers
+//! below (`format_of`, `flags_with`, `make_ieee_value`, `try_map_operation`,
+//! `operation_arity`, `operation_operands`) replace what were inherent
+//! methods or direct field/tuple access on the old local types (private
+//! fields/methods on a foreign type, and new inherent impls for a foreign
+//! type, are both unreachable under Rust's own visibility and orphan rules);
+//! each is a mechanical wrapper over the surviving public accessor with no
+//! behavior change.
+//!
+//! Everything else below still carries its own definition: `ExactScalar`,
+//! `IeeeOperand`, `IeeeProvenance`, `IeeeResult`, `IeeeExact`,
+//! `IeeeExactTarget` and the five profile-checked entry points
+//! (`evaluate_ieee`/`compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/
+//! `exact_to_ieee`) are parameterized over this crate's own `RoundingMode`
+//! (`value::decimal`), `Decimal`/`Rational` (`value::decimal`/
+//! `value::rational`) and `IllTyped`/`Outcome`/`Refusal`/`Undefined`
+//! (`value::comparison`/`value::outcome`) -- none of which `quire_exact`'s
+//! same-named items use -- and by `AdmittedIeeeProfile`, a QSL-only
+//! package-admission witness `quire_exact` deliberately excludes (it depends
+//! on this crate's own package-catalog module, not a kernel type). The
+//! classification and the exact per-item difference are recorded in the
+//! QSL-131 PR body, not here.
 
 use std::cmp::Ordering;
 
@@ -24,199 +53,11 @@ use super::definition::{
 };
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
+pub use quire_exact::{
+    ieee_intrinsic_identities, IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeFlags, IeeeOperation,
+    IeeeOperationKind, IeeeValue, IeeeWidth, IEEE_DEFINITION,
+};
 use quire_exact::{Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter};
-
-/// The IEEE profile definition identity.
-pub const IEEE_DEFINITION: &str = "quire.value.ieee754-2019-default/v1";
-
-/// An IEEE 754-2019 binary interchange width.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IeeeWidth {
-    /// `binary32` (`float32`).
-    Binary32,
-    /// `binary64` (`float64`).
-    Binary64,
-}
-
-impl IeeeWidth {
-    /// Both widths.
-    pub const ALL: [Self; 2] = [Self::Binary32, Self::Binary64];
-
-    /// Total bit width.
-    pub fn bits(self) -> u32 {
-        match self {
-            Self::Binary32 => 32,
-            Self::Binary64 => 64,
-        }
-    }
-
-    /// Normative spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Binary32 => "binary32",
-            Self::Binary64 => "binary64",
-        }
-    }
-
-    fn format(self) -> Format {
-        match self {
-            Self::Binary32 => Format {
-                exponent_bits: 8,
-                fraction_bits: 23,
-            },
-            Self::Binary64 => Format {
-                exponent_bits: 11,
-                fraction_bits: 52,
-            },
-        }
-    }
-}
-
-/// An IEEE value: an exact bit pattern of one width. Every pattern, including
-/// every NaN sign and payload, is representable.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct IeeeValue {
-    width: IeeeWidth,
-    bits: u64,
-}
-
-impl IeeeValue {
-    /// A binary32 value from its exact bits.
-    pub fn binary32(bits: u32) -> Self {
-        Self {
-            width: IeeeWidth::Binary32,
-            bits: u64::from(bits),
-        }
-    }
-
-    /// A binary64 value from its exact bits.
-    pub fn binary64(bits: u64) -> Self {
-        Self {
-            width: IeeeWidth::Binary64,
-            bits,
-        }
-    }
-
-    /// The width.
-    pub fn width(self) -> IeeeWidth {
-        self.width
-    }
-
-    /// The exact bits, zero-extended to `u64` for binary32.
-    pub fn bits(self) -> u64 {
-        self.bits
-    }
-
-    /// Whether the value is any NaN.
-    pub fn is_nan(self) -> bool {
-        matches!(decode(self), Class::Nan { .. })
-    }
-
-    /// Whether the value is a signaling NaN.
-    pub fn is_signaling_nan(self) -> bool {
-        matches!(
-            decode(self),
-            Class::Nan {
-                signaling: true,
-                ..
-            }
-        )
-    }
-
-    /// The `totalOrder` key: `not(b)` when the sign bit is one, otherwise
-    /// `b xor sign_mask`, within the value's width.
-    pub fn total_order_key(self) -> u64 {
-        let format = self.width.format();
-        if self.bits & format.sign_mask() != 0 {
-            !self.bits & format.all_mask()
-        } else {
-            self.bits ^ format.sign_mask()
-        }
-    }
-}
-
-/// One member of the closed IEEE exception flag vocabulary.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IeeeFlag {
-    /// `invalid`.
-    Invalid,
-    /// `divide_by_zero`.
-    DivideByZero,
-    /// `overflow`.
-    Overflow,
-    /// `underflow`.
-    Underflow,
-    /// `inexact`.
-    Inexact,
-}
-
-impl IeeeFlag {
-    /// Every flag in vocabulary order.
-    pub const ALL: [Self; 5] = [
-        Self::Invalid,
-        Self::DivideByZero,
-        Self::Overflow,
-        Self::Underflow,
-        Self::Inexact,
-    ];
-
-    /// Normative spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Invalid => "invalid",
-            Self::DivideByZero => "divide_by_zero",
-            Self::Overflow => "overflow",
-            Self::Underflow => "underflow",
-            Self::Inexact => "inexact",
-        }
-    }
-
-    fn mask(self) -> u8 {
-        match self {
-            Self::Invalid => 1,
-            Self::DivideByZero => 2,
-            Self::Overflow => 4,
-            Self::Underflow => 8,
-            Self::Inexact => 16,
-        }
-    }
-}
-
-/// A fresh, operation-local flag set. There is no sticky global state.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct IeeeFlags(u8);
-
-impl IeeeFlags {
-    /// The empty set.
-    pub const EMPTY: Self = Self(0);
-
-    /// Whether `flag` is raised.
-    pub fn contains(self, flag: IeeeFlag) -> bool {
-        self.0 & flag.mask() != 0
-    }
-
-    /// Whether no flag is raised.
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    /// The raised flags in vocabulary order.
-    pub fn iter(self) -> impl Iterator<Item = IeeeFlag> {
-        IeeeFlag::ALL
-            .into_iter()
-            .filter(move |flag| self.contains(*flag))
-    }
-
-    fn with(self, flag: IeeeFlag) -> Self {
-        Self(self.0 | flag.mask())
-    }
-}
-
-impl FromIterator<IeeeFlag> for IeeeFlags {
-    fn from_iter<I: IntoIterator<Item = IeeeFlag>>(flags: I) -> Self {
-        flags.into_iter().fold(Self::EMPTY, Self::with)
-    }
-}
 
 /// An exact integer, rational or decimal scalar where IEEE values meet exact
 /// values: an explicit conversion source, or an operand type checking refuses.
@@ -301,49 +142,6 @@ impl<'a> From<ExactScalar<'a>> for IeeeOperand<'a> {
     }
 }
 
-/// An arithmetic operation. Operands default to [`IeeeValue`]; any operand
-/// convertible to [`IeeeOperand`] is accepted and type-checked.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IeeeOperation<O = IeeeValue> {
-    /// `a + b`.
-    Add(O, O),
-    /// `a - b`.
-    Subtract(O, O),
-    /// `a * b`.
-    Multiply(O, O),
-    /// `a / b`.
-    Divide(O, O),
-    /// `quire::value::ieee::sqrt(a)`.
-    SquareRoot(O),
-    /// `quire::value::ieee::fma(a, b, c)`: `a * b + c` with one rounding.
-    FusedMultiplyAdd(O, O, O),
-}
-
-impl<O> IeeeOperation<O> {
-    /// The operation's kind.
-    pub fn kind(&self) -> IeeeOperationKind {
-        match self {
-            Self::Add(..) => IeeeOperationKind::Add,
-            Self::Subtract(..) => IeeeOperationKind::Subtract,
-            Self::Multiply(..) => IeeeOperationKind::Multiply,
-            Self::Divide(..) => IeeeOperationKind::Divide,
-            Self::SquareRoot(..) => IeeeOperationKind::SquareRoot,
-            Self::FusedMultiplyAdd(..) => IeeeOperationKind::FusedMultiplyAdd,
-        }
-    }
-
-    fn try_map<P, E>(self, mut f: impl FnMut(O) -> Result<P, E>) -> Result<IeeeOperation<P>, E> {
-        Ok(match self {
-            Self::Add(a, b) => IeeeOperation::Add(f(a)?, f(b)?),
-            Self::Subtract(a, b) => IeeeOperation::Subtract(f(a)?, f(b)?),
-            Self::Multiply(a, b) => IeeeOperation::Multiply(f(a)?, f(b)?),
-            Self::Divide(a, b) => IeeeOperation::Divide(f(a)?, f(b)?),
-            Self::SquareRoot(a) => IeeeOperation::SquareRoot(f(a)?),
-            Self::FusedMultiplyAdd(a, b, c) => IeeeOperation::FusedMultiplyAdd(f(a)?, f(b)?, f(c)?),
-        })
-    }
-}
-
 /// The IEEE value of a written operand; an exact operand is `ill_typed`.
 fn ieee_operand<'a>(operand: impl Into<IeeeOperand<'a>>) -> Result<IeeeValue, IllTyped> {
     match operand.into() {
@@ -354,137 +152,48 @@ fn ieee_operand<'a>(operand: impl Into<IeeeOperand<'a>>) -> Result<IeeeValue, Il
     }
 }
 
-impl IeeeOperation {
-    fn arity(self) -> u64 {
-        match self {
-            Self::Add(..) | Self::Subtract(..) | Self::Multiply(..) | Self::Divide(..) => 2,
-            Self::SquareRoot(..) => 1,
-            Self::FusedMultiplyAdd(..) => 3,
+/// [`IeeeOperation::try_map`] is private upstream (unreachable on the
+/// re-exported foreign type), so this ports its identical match verbatim as
+/// a free function.
+fn try_map_operation<O, P, E>(
+    operation: IeeeOperation<O>,
+    mut f: impl FnMut(O) -> Result<P, E>,
+) -> Result<IeeeOperation<P>, E> {
+    Ok(match operation {
+        IeeeOperation::Add(a, b) => IeeeOperation::Add(f(a)?, f(b)?),
+        IeeeOperation::Subtract(a, b) => IeeeOperation::Subtract(f(a)?, f(b)?),
+        IeeeOperation::Multiply(a, b) => IeeeOperation::Multiply(f(a)?, f(b)?),
+        IeeeOperation::Divide(a, b) => IeeeOperation::Divide(f(a)?, f(b)?),
+        IeeeOperation::SquareRoot(a) => IeeeOperation::SquareRoot(f(a)?),
+        IeeeOperation::FusedMultiplyAdd(a, b, c) => {
+            IeeeOperation::FusedMultiplyAdd(f(a)?, f(b)?, f(c)?)
         }
-    }
-
-    /// The first operand and the rest, for the width check.
-    fn operands(self) -> (IeeeValue, Vec<IeeeValue>) {
-        match self {
-            Self::Add(a, b) | Self::Subtract(a, b) | Self::Multiply(a, b) | Self::Divide(a, b) => {
-                (a, vec![b])
-            }
-            Self::SquareRoot(a) => (a, Vec::new()),
-            Self::FusedMultiplyAdd(a, b, c) => (a, vec![b, c]),
-        }
-    }
+    })
 }
 
-/// A comparison intrinsic. The three are distinct selected operations.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IeeeComparison {
-    /// `quire::value::ieee::numericEqual`.
-    NumericEqual,
-    /// `quire::value::ieee::totalOrder(a, b)`: `a` precedes or equals `b`.
-    TotalOrder,
-    /// `quire::value::ieee::bitIdentical`.
-    BitIdentical,
-}
-
-impl IeeeComparison {
-    /// Every comparison.
-    pub const ALL: [Self; 3] = [Self::NumericEqual, Self::TotalOrder, Self::BitIdentical];
-
-    /// The operation's kind.
-    pub fn kind(self) -> IeeeOperationKind {
-        match self {
-            Self::NumericEqual => IeeeOperationKind::NumericEqual,
-            Self::TotalOrder => IeeeOperationKind::TotalOrder,
-            Self::BitIdentical => IeeeOperationKind::BitIdentical,
-        }
+/// [`IeeeOperation::arity`] is private upstream; ported as a free function.
+fn operation_arity(operation: IeeeOperation) -> u64 {
+    match operation {
+        IeeeOperation::Add(..)
+        | IeeeOperation::Subtract(..)
+        | IeeeOperation::Multiply(..)
+        | IeeeOperation::Divide(..) => 2,
+        IeeeOperation::SquareRoot(..) => 1,
+        IeeeOperation::FusedMultiplyAdd(..) => 3,
     }
 }
 
-/// Every IEEE operation a package item may require of a backend.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum IeeeOperationKind {
-    /// Addition.
-    Add,
-    /// Subtraction.
-    Subtract,
-    /// Multiplication.
-    Multiply,
-    /// Division.
-    Divide,
-    /// Square root.
-    SquareRoot,
-    /// Fused multiply-add.
-    FusedMultiplyAdd,
-    /// Numeric equality.
-    NumericEqual,
-    /// IEEE `totalOrder`.
-    TotalOrder,
-    /// Bit identity.
-    BitIdentical,
-    /// Explicit cross-width conversion.
-    ConvertWidth,
-    /// Explicit conversion to an exact rational.
-    ToExact,
-    /// Explicit conversion from an exact rational.
-    FromExact,
-}
-
-impl IeeeOperationKind {
-    /// Every kind.
-    pub const ALL: [Self; 12] = [
-        Self::Add,
-        Self::Subtract,
-        Self::Multiply,
-        Self::Divide,
-        Self::SquareRoot,
-        Self::FusedMultiplyAdd,
-        Self::NumericEqual,
-        Self::TotalOrder,
-        Self::BitIdentical,
-        Self::ConvertWidth,
-        Self::ToExact,
-        Self::FromExact,
-    ];
-
-    /// The reserved qualified intrinsic identity, for the five FR-148 intrinsics.
-    pub fn intrinsic_identity(self) -> Option<&'static str> {
-        match self {
-            Self::SquareRoot => Some("quire::value::ieee::sqrt"),
-            Self::FusedMultiplyAdd => Some("quire::value::ieee::fma"),
-            Self::NumericEqual => Some("quire::value::ieee::numericEqual"),
-            Self::TotalOrder => Some("quire::value::ieee::totalOrder"),
-            Self::BitIdentical => Some("quire::value::ieee::bitIdentical"),
-            Self::Add
-            | Self::Subtract
-            | Self::Multiply
-            | Self::Divide
-            | Self::ConvertWidth
-            | Self::ToExact
-            | Self::FromExact => None,
-        }
+/// [`IeeeOperation::operands`] is private upstream; ported as a free
+/// function. The first operand and the rest, for the width check.
+fn operation_operands(operation: IeeeOperation) -> (IeeeValue, Vec<IeeeValue>) {
+    match operation {
+        IeeeOperation::Add(a, b)
+        | IeeeOperation::Subtract(a, b)
+        | IeeeOperation::Multiply(a, b)
+        | IeeeOperation::Divide(a, b) => (a, vec![b]),
+        IeeeOperation::SquareRoot(a) => (a, Vec::new()),
+        IeeeOperation::FusedMultiplyAdd(a, b, c) => (a, vec![b, c]),
     }
-
-    /// Whether the operation applies a rounding direction.
-    pub fn rounds(self) -> bool {
-        match self {
-            Self::Add
-            | Self::Subtract
-            | Self::Multiply
-            | Self::Divide
-            | Self::SquareRoot
-            | Self::FusedMultiplyAdd
-            | Self::ConvertWidth
-            | Self::FromExact => true,
-            Self::NumericEqual | Self::TotalOrder | Self::BitIdentical | Self::ToExact => false,
-        }
-    }
-}
-
-/// Every reserved qualified intrinsic identity.
-pub fn ieee_intrinsic_identities() -> impl Iterator<Item = &'static str> {
-    IeeeOperationKind::ALL
-        .into_iter()
-        .filter_map(IeeeOperationKind::intrinsic_identity)
 }
 
 /// The run provenance of one IEEE result.
@@ -534,13 +243,6 @@ impl IeeeResult {
     pub fn provenance(&self) -> IeeeProvenance {
         self.provenance
     }
-}
-
-/// Information an IEEE-to-exact conversion discards.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IeeeExactLoss {
-    /// The source was `-0`, whose sign has no rational representation.
-    NegativeZeroSign,
 }
 
 /// The exact value of a finite IEEE operand.
@@ -645,8 +347,8 @@ pub fn evaluate_ieee<'a, O: Into<IeeeOperand<'a>>>(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<Outcome<IeeeResult>, IllTyped> {
-    let operation = operation.try_map(ieee_operand)?;
-    let (first, rest) = operation.operands();
+    let operation = try_map_operation(operation, ieee_operand)?;
+    let (first, rest) = operation_operands(operation);
     let width = same_width(first, &rest)?;
     Ok(Outcome::from_stop(arithmetic(
         operation, width, rounding, meter,
@@ -684,11 +386,11 @@ fn compare(
             (Class::Nan { .. }, _) | (_, Class::Nan { .. }) => false,
             (Class::Zero { .. }, Class::Zero { .. }) => true,
             (Class::Infinite { .. } | Class::Zero { .. } | Class::Finite(_), _) => {
-                left.bits == right.bits
+                left.bits() == right.bits()
             }
         },
         IeeeComparison::TotalOrder => left.total_order_key() <= right.total_order_key(),
-        IeeeComparison::BitIdentical => left.bits == right.bits,
+        IeeeComparison::BitIdentical => left.bits() == right.bits(),
     };
     charge_result(meter)?;
     Ok(result)
@@ -753,7 +455,7 @@ fn to_exact(
     // `value-accounting.md`: `ieee.operands` at the source width, then for a
     // finite value `ieee.exact-intermediate` at the result's `maxparts`, then
     // uncharged `Rational[..]` membership, then `ieee.result-retain`.
-    charge_operands(meter, value.width, 1)?;
+    charge_operands(meter, value.width(), 1)?;
     let exact = match decode(value) {
         Class::Nan { .. } | Class::Infinite { .. } => {
             return Err(Stop::Undefined(Undefined::IeeeNotFinite))
@@ -815,7 +517,7 @@ fn from_exact(
         let denominator = value.denominator().as_big().magnitude().clone();
         Exact::Real {
             negative,
-            approximation: approximate(&magnitude, &denominator, 0, width.format()),
+            approximation: approximate(&magnitude, &denominator, 0, format_of(width)),
         }
     };
     finish_rounding(meter, exact, width, rounding)
@@ -853,10 +555,6 @@ impl Format {
 
     fn sign_mask(self) -> u64 {
         1_u64 << (self.exponent_bits + self.fraction_bits)
-    }
-
-    fn all_mask(self) -> u64 {
-        (self.sign_mask() - 1) | self.sign_mask()
     }
 
     fn exponent_ones(self) -> u64 {
@@ -900,6 +598,38 @@ impl Format {
     fn canonical_nan(self) -> u64 {
         self.exponent_mask() | self.quiet_bit()
     }
+}
+
+/// `IeeeWidth::format` is private upstream; ported as a free function since
+/// `IeeeWidth` is a re-exported foreign type (no new inherent impl is
+/// reachable for it here).
+fn format_of(width: IeeeWidth) -> Format {
+    match width {
+        IeeeWidth::Binary32 => Format {
+            exponent_bits: 8,
+            fraction_bits: 23,
+        },
+        IeeeWidth::Binary64 => Format {
+            exponent_bits: 11,
+            fraction_bits: 52,
+        },
+    }
+}
+
+/// Build an [`IeeeValue`] from a computed width and bit pattern. Only the
+/// public `binary32`/`binary64` constructors are reachable on the
+/// re-exported foreign type, so the width selects which one narrows `bits`.
+fn make_ieee_value(width: IeeeWidth, bits: u64) -> IeeeValue {
+    match width {
+        IeeeWidth::Binary32 => IeeeValue::binary32(bits as u32),
+        IeeeWidth::Binary64 => IeeeValue::binary64(bits),
+    }
+}
+
+/// `IeeeFlags::with` is private upstream; ported as a free function using
+/// only the surviving public `iter`/`FromIterator` API.
+fn flags_with(flags: IeeeFlags, flag: IeeeFlag) -> IeeeFlags {
+    flags.iter().chain(std::iter::once(flag)).collect()
 }
 
 /// A finite nonzero operand `(-1)^negative × significand × 2^exponent`.
@@ -947,14 +677,14 @@ enum Class {
 }
 
 fn decode(value: IeeeValue) -> Class {
-    let format = value.width.format();
-    let negative = value.bits & format.sign_mask() != 0;
+    let format = format_of(value.width());
+    let negative = value.bits() & format.sign_mask() != 0;
     // The mask leaves at most eleven bits, so the low two bytes hold the whole
     // field and the projection to `u16` is exact.
     let [.., high, low] =
-        ((value.bits >> format.fraction_bits) & format.exponent_ones()).to_be_bytes();
+        ((value.bits() >> format.fraction_bits) & format.exponent_ones()).to_be_bytes();
     let biased = u16::from_be_bytes([high, low]);
-    let fraction = value.bits & format.fraction_mask();
+    let fraction = value.bits() & format.fraction_mask();
     if u64::from(biased) == format.exponent_ones() {
         if fraction == 0 {
             Class::Infinite { negative }
@@ -984,8 +714,8 @@ fn decode(value: IeeeValue) -> Class {
 }
 
 fn same_width(first: IeeeValue, rest: &[IeeeValue]) -> Result<IeeeWidth, IllTyped> {
-    if rest.iter().all(|operand| operand.width == first.width) {
-        Ok(first.width)
+    if rest.iter().all(|operand| operand.width() == first.width()) {
+        Ok(first.width())
     } else {
         Err(IllTyped {
             cause: IllTypedCause::DistinctIeeeWidths,
@@ -1048,7 +778,7 @@ impl Classified {
     fn invalid(format: Format) -> Self {
         Self {
             bits: format.canonical_nan(),
-            flags: IeeeFlags::EMPTY.with(IeeeFlag::Invalid),
+            flags: flags_with(IeeeFlags::EMPTY, IeeeFlag::Invalid),
         }
     }
 }
@@ -1092,8 +822,8 @@ fn arithmetic(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<IeeeResult, Stop> {
-    let format = width.format();
-    charge_operands(meter, width, operation.arity())?;
+    let format = format_of(width);
+    charge_operands(meter, width, operation_arity(operation))?;
     let provenance = IeeeProvenance { width, rounding };
     let plan = match operation {
         IeeeOperation::Add(a, b) => classify(format, [a, b]).map(|[a, b]| plan_add(format, a, b)),
@@ -1136,7 +866,7 @@ fn classify<const N: usize>(
     for (slot, value) in operands.iter_mut().zip(values) {
         match decode(value) {
             Class::Nan { signaling, .. } => {
-                let leftmost = nan.get_or_insert((value.bits, false));
+                let leftmost = nan.get_or_insert((value.bits(), false));
                 leftmost.1 |= signaling;
             }
             Class::Infinite { negative } => *slot = Operand::Infinite { negative },
@@ -1148,7 +878,7 @@ fn classify<const N: usize>(
         Some((bits, signaling)) => Err(Classified {
             bits: bits | format.quiet_bit(),
             flags: if signaling {
-                IeeeFlags::EMPTY.with(IeeeFlag::Invalid)
+                flags_with(IeeeFlags::EMPTY, IeeeFlag::Invalid)
             } else {
                 IeeeFlags::EMPTY
             },
@@ -1165,10 +895,7 @@ fn retain_classified(
 ) -> Result<IeeeResult, Stop> {
     charge_result(meter)?;
     Ok(IeeeResult {
-        value: IeeeValue {
-            width,
-            bits: classified.bits,
-        },
+        value: make_ieee_value(width, classified.bits),
         flags: classified.flags,
         provenance,
     })
@@ -1182,7 +909,7 @@ fn finish_rounding(
     rounding: RoundingMode,
 ) -> Result<IeeeResult, Stop> {
     charge_width(meter, ChargePoint::IeeeRound, width)?;
-    let (bits, flags) = round(width.format(), exact, rounding);
+    let (bits, flags) = round(format_of(width), exact, rounding);
     // `value-accounting.md`: strict `exact` refuses after `ieee.round` and
     // before `ieee.result-retain`.
     if rounding == RoundingMode::Exact && !flags.is_empty() {
@@ -1190,7 +917,7 @@ fn finish_rounding(
     }
     charge_result(meter)?;
     Ok(IeeeResult {
-        value: IeeeValue { width, bits },
+        value: make_ieee_value(width, bits),
         flags,
         provenance: IeeeProvenance { width, rounding },
     })
@@ -1255,7 +982,7 @@ fn plan_divide(format: Format, a: Operand, b: Operand) -> Plan {
         (_, Operand::Infinite { .. }) => Plan::Classified(Classified::exact(format.zero(negative))),
         (Operand::Finite(_), Operand::Zero { .. }) => Plan::Classified(Classified {
             bits: format.infinity(negative),
-            flags: IeeeFlags::EMPTY.with(IeeeFlag::DivideByZero),
+            flags: flags_with(IeeeFlags::EMPTY, IeeeFlag::DivideByZero),
         }),
         (_, Operand::Finite(divisor)) => Plan::Finite(FiniteOperation::Divide(a, divisor)),
     }
@@ -1642,7 +1369,7 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
     }
     let mut flags = IeeeFlags::EMPTY;
     if inexact {
-        flags = flags.with(IeeeFlag::Inexact);
+        flags = flags_with(flags, IeeeFlag::Inexact);
     }
     // A normal result's biased exponent is `index + 1`; the all-ones field is
     // reserved, so reaching it overflows.
@@ -1658,7 +1385,10 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
         } else {
             format.max_finite(negative)
         };
-        return (bits, flags.with(IeeeFlag::Overflow).with(IeeeFlag::Inexact));
+        return (
+            bits,
+            flags_with(flags_with(flags, IeeeFlag::Overflow), IeeeFlag::Inexact),
+        );
     }
     // Tininess after rounding: the result rounded with an unbounded exponent
     // range lies strictly below the least normal magnitude `2^emin`.
@@ -1669,7 +1399,7 @@ fn round(format: Format, exact: Exact, rounding: RoundingMode) -> (u64, IeeeFlag
             && bit_length(round_at(&approximation, Guard::One, negative, direction).0)
                 > precision + 1);
     if tiny && inexact {
-        flags = flags.with(IeeeFlag::Underflow);
+        flags = flags_with(flags, IeeeFlag::Underflow);
     }
     // A normal `kept` carries the implicit leading bit `2^p`, which adds the
     // final `1` to the biased exponent `index + 1`. A subnormal `kept` below
@@ -1684,8 +1414,8 @@ fn convert_width(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Result<IeeeResult, Stop> {
-    charge_operands(meter, value.width, 1)?;
-    let (source, format) = (value.width.format(), target.format());
+    charge_operands(meter, value.width(), 1)?;
+    let (source, format) = (format_of(value.width()), format_of(target));
     let provenance = IeeeProvenance {
         width: target,
         rounding,
@@ -1698,14 +1428,14 @@ fn convert_width(
             // FR-148: the payload is the integer below the quiet bit, kept
             // unchanged; one not smaller than the target's quiet bit is refused
             // with no flags, before the NaN is consumed.
-            let payload = value.bits & (source.quiet_bit() - 1);
+            let payload = value.bits() & (source.quiet_bit() - 1);
             if payload >= format.quiet_bit() {
                 return Err(Stop::Refused(Refusal::IeeeNanPayloadNotRepresentable));
             }
             Classified {
                 bits: format.sign(negative) | format.canonical_nan() | payload,
                 flags: if signaling {
-                    IeeeFlags::EMPTY.with(IeeeFlag::Invalid)
+                    flags_with(IeeeFlags::EMPTY, IeeeFlag::Invalid)
                 } else {
                     IeeeFlags::EMPTY
                 },
