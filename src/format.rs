@@ -15,7 +15,7 @@ use qsl_cst::{
 use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Phase, Span};
 
-/// The implementation's output-byte ceiling: 1 MiB. [`format`] applies it,
+/// The implementation's output-byte ceiling: 1 MiB. [`format()`] applies it,
 /// and [`format_with_limit`] clamps every selected ceiling to it.
 pub const OUTPUT_BYTE_CEILING: usize = MAX_SOURCE_BYTES;
 
