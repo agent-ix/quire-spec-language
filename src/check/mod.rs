@@ -19,15 +19,13 @@
 //! checker's stage output, produced by [`PackageDeclarations::check`].
 //! `CheckedPackage` (the S4 in-process link step's output, `CheckedGraph`
 //! plus the checked dependency closure) is a *different*, canonical type,
-//! defined in layer-4 [`crate::package`], not here -- `check` names no
-//! `CheckedPackage` type, method or field (FR-087-AC-9/TC-256): the
-//! `CheckedPackage::call`/`CheckedPackage::evaluate` references in this
-//! module's own doc comments name `value::expression`'s re-export of
-//! `package::CheckedPackage`, reached only through `package`'s own
-//! `CheckedGraph`-typed field and its `graph()` accessor, never by `check`
-//! importing anything from `package` (closing the `check` -> `package`
-//! reverse edge the pre-FR-087 tree had, per the QSL-158 owner ruling,
-//! 2026-09-21).
+//! defined in layer-4 [`crate::package`], not here -- `check` defines no
+//! `CheckedPackage` type, method or field, and imports nothing from
+//! `package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
+//! `CheckedPackage::evaluate` references in this module's own doc comments
+//! name `value::expression`'s re-export of `package::CheckedPackage`,
+//! reached only through `package`'s own `CheckedGraph`-typed field and its
+//! `graph()` accessor.
 //!
 //! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2, QSL-7)
 //!
