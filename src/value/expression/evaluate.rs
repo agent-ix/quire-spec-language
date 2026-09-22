@@ -219,15 +219,6 @@ pub(crate) struct Machine<'a, 'm> {
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
     /// it for its operand and `Task::RestoreAnchor` restores it after.
     anchor: Anchor,
-    /// FR-090-AC-10 (ADR-013 T-4): set by [`Self::resolve_population`] when a
-    /// `Value::Population` argument reaches this machine unresolved, or with
-    /// a mismatched declared maximum -- a condition `CheckedPackage::call`'s
-    /// own `validate` already admits against before S6a runs, so meeting it
-    /// here means this checked program was driven straight into the S6a
-    /// seam, bypassing admission. [`Self::run`] checks this before ever
-    /// converting the [`Stop`] that carried it into an [`Outcome`]: an
-    /// internal fault is never reported as a kernel `Refused` outcome.
-    fault: Option<InternalFault>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -249,7 +240,6 @@ impl<'a, 'm> Machine<'a, 'm> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
-            fault: None,
         }
     }
 
@@ -271,14 +261,15 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// those are genuinely separate calls, not a restatement of this one.
     ///
     /// **`Err(InternalFault)` (FR-090-AC-10).** [`Self::resolve_population`]
-    /// sets `self.fault` rather than returning a `Refusal` when a
+    /// returns `Err(Stop::Fault(_))` rather than a `Refusal` when a
     /// `Value::Population` argument reaches it unresolved or with a
     /// mismatched declared maximum -- a condition admission already rules
     /// out for any checked program reached through `CheckedPackage::call` or
-    /// `CheckedPackage::evaluate`. This loop checks `self.fault` the moment a
-    /// task fails, before `Self::stopped` ever converts the carried `Stop`
-    /// into an `Outcome`, so that broken invariant surfaces as `Err`, never
-    /// as `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
+    /// `CheckedPackage::evaluate`. This loop matches `Stop::Fault` out the
+    /// moment a task fails, before `Self::stopped` ever converts the
+    /// remaining `Stop` shapes into an `Outcome`, so that broken invariant
+    /// surfaces as `Err`, never as `Ok(Evaluation { outcome:
+    /// Outcome::Refused(_), .. })`.
     pub(crate) fn run(
         mut self,
         root: &'a Node,
@@ -304,10 +295,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
             if let Err(stop) = self.step(task) {
-                if let Some(fault) = self.fault {
-                    return Err(fault);
-                }
-                return Ok(Self::stopped(stop, &location));
+                return match stop {
+                    Stop::Fault(fault) => Err(fault),
+                    other => Ok(Self::stopped(other, &location)),
+                };
             }
         }
         match (self.values.pop(), self.values.is_empty()) {
@@ -457,33 +448,26 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// consumption site -- meeting an unresolved identity or a mismatched
     /// maximum here means this checked program reached S6a without going
     /// through admission at all, an internal fault rather than caller
-    /// input. Sets `self.fault` (read back by [`Self::run`]) and returns the
-    /// pre-existing [`invariant`] stop to unwind this evaluation the same
-    /// way any other broken evaluator invariant does -- it no longer
-    /// constructs [`Refusal::UnresolvedPopulation`]/
-    /// [`Refusal::PopulationMaximumMismatch`] (QSL-131 owns removing those
-    /// two variants; this was their one production call site).
+    /// input. Returns `Err(Stop::Fault(_))`, read back by [`Self::run`]
+    /// before anything converts a `Stop` into an `Outcome` -- this was the
+    /// one production call site of the kernel-shaped `Refusal::
+    /// UnresolvedPopulation`/`Refusal::PopulationMaximumMismatch` variants
+    /// this method used to construct; both are deleted along with it.
     fn resolve_population(
-        &mut self,
+        &self,
         population_id: PopulationId,
         maximum: u64,
     ) -> Result<&'a PopulationBinding, Stop> {
         match self.objects.resolve_population(population_id) {
             Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
-            Some(_) => {
-                self.fault = Some(InternalFault::new(
-                    "S6a",
-                    "population-argument-maximum-mismatch-past-admission",
-                ));
-                Err(invariant())
-            }
-            None => {
-                self.fault = Some(InternalFault::new(
-                    "S6a",
-                    "population-argument-unresolved-past-admission",
-                ));
-                Err(invariant())
-            }
+            Some(_) => Err(Stop::Fault(InternalFault::new(
+                "S6a",
+                "population-argument-maximum-mismatch-past-admission",
+            ))),
+            None => Err(Stop::Fault(InternalFault::new(
+                "S6a",
+                "population-argument-unresolved-past-admission",
+            ))),
         }
     }
 
@@ -1360,6 +1344,9 @@ impl<'a, 'm> Machine<'a, 'm> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::check::{CheckingLimits, PackageDeclarations};
+    use crate::family::ReferenceEvaluation;
+    use crate::forms::{Expression, FunctionDeclaration};
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::dispatch::GeneralizationClosure;
     use crate::model::domain_package::{
@@ -1425,102 +1412,156 @@ mod tests {
         }
     }
 
-    fn machine<'a, 'm>(
-        scope: &'a Scope,
-        objects: &'a ObjectEnvironment,
-        meter: &'m mut Meter,
-    ) -> Machine<'a, 'm> {
-        Machine::new(scope, &[], objects, meter, &[])
+    /// A checked package declaring one `Value` function,
+    /// `F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p))`,
+    /// over a minimal one-type, one-population domain model -- TC-391's own
+    /// fixture, over the same domain-model machinery [`population_binding`]
+    /// uses (deliberately not `tests/it/model_reference_queries.rs`'s
+    /// richer `fixture_f1`; see that function's own doc). Returns the
+    /// linked package and `F`'s checked identity, so a test can call
+    /// [`crate::check::ValueFunctionFamily::evaluate`] directly -- the S6a
+    /// seam itself, bypassing `CheckedPackage::call`'s admission.
+    fn population_function_package(
+    ) -> (crate::checked_package::CheckedPackage, quire_exact::NodeKey) {
+        let domain_package = DomainPackage::new(
+            DomainPackageRef::fixture("bundle.qsl174-ac10-seam"),
+            vec![
+                DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                    key: DeclarationKey::fixture("model.A"),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.pop.p1"),
+                    member_types: vec![DeclarationKey::fixture("model.A")],
+                    extent: Extent::Closed,
+                }),
+            ],
+        );
+        let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let a = view
+            .declarations()
+            .iter()
+            .find(|entry| {
+                entry.preimage.owner_effective_type.is_none()
+                    && entry.preimage.original == DeclarationKey::fixture("model.A")
+            })
+            .map(|entry| entry.effective_id)
+            .expect("model.A has a type-level effective declaration");
+        let node_a = crate::value::node::NodeKey::from_hex(&a.to_string())
+            .expect("an EffectiveId's Display is 64 hex digits");
+        let types = crate::value::composite::TypeEnvironment::new(
+            [],
+            [crate::value::composite::ObjectTypeDeclaration::new(
+                node_a,
+                "M::A",
+                Vec::new(),
+            )],
+        )
+        .expect("one object type admits cleanly");
+        let graph = PackageDeclarations {
+            types,
+            functions: vec![FunctionDeclaration::new(
+                "F",
+                vec![("p".to_owned(), ValueType::Population(3))],
+                ValueType::Integer,
+                None,
+                Expression::Size(Box::new(Expression::AllInstances {
+                    target: ValueType::Reference(node_a),
+                    population: Box::new(Expression::Name("p".to_owned())),
+                })),
+            )],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");
+        let identity = graph
+            .function_identity("F")
+            .expect("F is declared in this package");
+        (
+            crate::checked_package::CheckedPackage::link(graph),
+            identity,
+        )
     }
 
-    /// TC-391 (FR-090-AC-10): a `Value::Population` identity
-    /// [`Machine::resolve_population`] cannot resolve at all -- the
-    /// condition `CheckedPackage::call`'s own `validate` already refuses at
-    /// admission (`InputRefusal::WrongValueKind`, TC-294/FR-089-AC-4) --
-    /// raises an `InternalFault` naming stage S6a when met here directly,
-    /// bypassing admission; it does not panic, and `resolve_population`'s
-    /// own `Result` is `Err`, never a value a caller could mistake for a
-    /// kernel `Refused` outcome.
+    /// TC-391 (FR-090-AC-10): a `Value::Population` argument whose id names
+    /// no recorded binding, passed directly to the S6a seam
+    /// (`ValueFunctionFamily::evaluate`) rather than through
+    /// `CheckedPackage::call` -- the condition `call`'s own `validate`
+    /// already refuses at admission (`InputRefusal::WrongValueKind`,
+    /// TC-294/FR-089-AC-4) -- raises `Err(EvaluateFailure::Fault(_))`
+    /// naming stage `"S6a"` and this fault's own literal invariant
+    /// identifier, never a panic and never `Ok(Evaluation { outcome:
+    /// Outcome::Refused(_), .. })`.
     #[trace("FR-090-AC-10", "TC-391")]
     #[test]
-    fn resolve_population_bypassing_admission_with_an_unresolved_id_is_an_internal_fault() {
-        let scope = crate::check::empty_scope();
+    fn evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault() {
+        let (package, identity) = population_function_package();
         let objects = ObjectEnvironment::default();
-        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut machine = machine(&scope, &objects, &mut meter);
         let unresolved_id = PopulationId::from_digest([7; 32]);
-
-        assert!(
-            machine.resolve_population(unresolved_id, 3).is_err(),
-            "an id no binding was ever recorded under must not resolve"
-        );
-        let fault = machine
-            .fault
-            .expect("resolve_population must record an InternalFault for an unresolved id");
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.category(), Category::InternalFailure);
-        assert_eq!(
-            fault.invariant(),
-            "population-argument-unresolved-past-admission"
-        );
+        let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut env = crate::value::expression::family::EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(vec![Value::Population(unresolved_id)]),
+            local_meter: &mut local_meter,
+        };
+        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let failure =
+            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+                .expect_err("an unresolved population id must fault, never evaluate");
+        match failure {
+            crate::family::EvaluateFailure::Fault(fault) => {
+                assert_eq!(fault.stage(), "S6a");
+                assert_eq!(fault.category(), Category::InternalFailure);
+                assert_eq!(
+                    fault.invariant(),
+                    "population-argument-unresolved-past-admission"
+                );
+            }
+            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
+        }
     }
 
-    /// TC-391 (FR-090-AC-10): a `Value::Population` identity that resolves,
-    /// but whose binding's declared maximum differs from the checked
-    /// parameter's -- the condition `validate` already refuses at admission
-    /// (`InputRefusal::WrongValueKind`, TC-295/FR-089-AC-5) -- is the same
-    /// kind of invariant break when met directly, with its own distinct
-    /// invariant identifier (never the unresolved-id case's).
+    /// TC-391 (FR-090-AC-10): the companion case, a `Value::Population`
+    /// argument that resolves but whose binding's declared maximum (2)
+    /// differs from `F`'s declared `Population<3>` -- also
+    /// `Err(EvaluateFailure::Fault(_))` from the S6a seam directly, with
+    /// its own distinct literal invariant identifier.
     #[trace("FR-090-AC-10", "TC-391")]
     #[test]
-    fn resolve_population_bypassing_admission_with_a_mismatched_maximum_is_an_internal_fault() {
-        let scope = crate::check::empty_scope();
-        let binding = population_binding(Some(5));
-        let id = binding.population_id();
-        let objects = ObjectEnvironment::default()
-            .with_population(binding)
-            .unwrap();
-        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut machine = machine(&scope, &objects, &mut meter);
-
-        assert!(
-            machine.resolve_population(id, 6).is_err(),
-            "a binding declared with maximum 5 must not resolve under a checked maximum of 6"
-        );
-        let fault = machine
-            .fault
-            .expect("resolve_population must record an InternalFault for a mismatched maximum");
-        assert_eq!(fault.stage(), "S6a");
-        assert_eq!(fault.category(), Category::InternalFailure);
-        assert_eq!(
-            fault.invariant(),
-            "population-argument-maximum-mismatch-past-admission"
-        );
-    }
-
-    /// The two invariant identifiers above are distinct (mirrors TC-384's
-    /// own "the two steps' invariant identifiers differ" requirement for
-    /// FR-090-AC-3's pair).
-    #[test]
-    fn the_two_population_invariant_identifiers_differ() {
-        let scope = crate::check::empty_scope();
-
-        let objects = ObjectEnvironment::default();
-        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut unresolved_machine = machine(&scope, &objects, &mut meter);
-        let _ = unresolved_machine.resolve_population(PopulationId::from_digest([9; 32]), 3);
-        let unresolved_invariant = unresolved_machine.fault.unwrap().invariant();
-
+    fn evaluate_bypassing_admission_with_a_population_maximum_mismatch_is_an_internal_fault() {
+        let (package, identity) = population_function_package();
         let binding = population_binding(Some(2));
         let id = binding.population_id();
         let objects = ObjectEnvironment::default()
             .with_population(binding)
             .unwrap();
-        let mut meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut mismatched_machine = machine(&scope, &objects, &mut meter);
-        let _ = mismatched_machine.resolve_population(id, 3);
-        let mismatched_invariant = mismatched_machine.fault.unwrap().invariant();
-
-        assert_ne!(unresolved_invariant, mismatched_invariant);
+        let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut env = crate::value::expression::family::EvaluationEnv {
+            package: &package,
+            objects: &objects,
+            arguments: Some(vec![Value::Population(id)]),
+            local_meter: &mut local_meter,
+        };
+        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let failure =
+            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+                .expect_err("a mismatched declared maximum must fault, never evaluate");
+        match failure {
+            crate::family::EvaluateFailure::Fault(fault) => {
+                assert_eq!(fault.stage(), "S6a");
+                assert_eq!(fault.category(), Category::InternalFailure);
+                assert_eq!(
+                    fault.invariant(),
+                    "population-argument-maximum-mismatch-past-admission"
+                );
+            }
+            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
+        }
     }
 }

@@ -106,7 +106,7 @@ pub enum CallFailure {
     /// An S6a invariant broke (ADR-013 T-4): never a caller-input refusal,
     /// and never surfaced as `Ok(FamilyOutcome::Refused(_))`/
     /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
-    #[error("S6a invariant broke: {0:?}")]
+    #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(qsl_foundation::diagnostic::InternalFault),
 }
 
@@ -346,47 +346,18 @@ impl CheckedPackage {
     }
 }
 
-/// FR-090-AC-3 (ADR-013 T-4): maps `ValueFunctionFamily::evaluate`'s
-/// failure onto [`CheckedPackage::call`]'s own public error shape. `call`
-/// has already resolved `function` against this package's declarations and
-/// built a fresh `family::EvaluationEnv` before calling `evaluate`
-/// (`CheckedPackage::call`'s own body), so both `EvaluateRefusal`
-/// variants name a broken S6a invariant here, never a caller-input
-/// refusal:
-///
-/// - `UnknownIdentity` means the identity `call` just resolved from this
-///   same package's declarations is not one `evaluate` can find -- the two
-///   lookups disagreed;
-/// - `EnvironmentAlreadyConsumed` means the fresh environment `call` built
-///   for this one invocation was somehow read twice.
-///
-/// Folding either into `InputRefusal::UnknownFunction` (the previous
-/// behaviour) reported a purely internal invariant violation as an ordinary
-/// "no such function" input error to a caller who supplied nothing wrong;
-/// treating `EnvironmentAlreadyConsumed` as `unreachable!()` turned that
-/// same broken invariant into a panic instead of a typed result. Neither
-/// survives FR-090-AC-3: both are `Err(CallFailure::Fault(_))`, naming
-/// stage `"S6a"` and their own stable invariant identifier.
+/// Maps `ValueFunctionFamily::evaluate`'s failure onto [`CheckedPackage::
+/// call`]'s own public error shape. FR-090-AC-3 (ADR-013 T-4): `evaluate`
+/// itself is the S6a seam and already raises `EvaluateFailure::Fault`
+/// directly for its own two invariants (an unresolved identity, or a
+/// second call on one `EvaluationEnv`) and forwards it unchanged from
+/// `Machine::run`'s own population-argument invariant (FR-090-AC-10); this
+/// adapter's only job is the shared `Incomplete` case, never re-deriving a
+/// fault from a refusal (there is none left to derive one from).
 fn map_evaluate_failure(
     failure: crate::family::EvaluateFailure,
 ) -> Result<Evaluation, CallFailure> {
-    use qsl_foundation::diagnostic::InternalFault;
     match failure {
-        crate::family::EvaluateFailure::Refused(
-            crate::family::EvaluateRefusal::UnknownIdentity { .. },
-        ) => Err(CallFailure::Fault(InternalFault::new(
-            "S6a",
-            "checked-identity-not-resolved-by-package",
-        ))),
-        crate::family::EvaluateFailure::Refused(
-            crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed,
-        ) => Err(CallFailure::Fault(InternalFault::new(
-            "S6a",
-            "evaluation-environment-arguments-already-consumed",
-        ))),
-        // FR-090-AC-10: `Machine::run` (`evaluate.rs`) raises this the same
-        // way, for the population-argument invariant break; propagated here
-        // unchanged rather than re-wrapped with a second identifier.
         crate::family::EvaluateFailure::Fault(fault) => Err(CallFailure::Fault(fault)),
         // PR #302 review finding 2: no `unreachable!()` here. Denying this
         // call's own admission charge is a real, reachable outcome now that
@@ -411,31 +382,36 @@ mod tests {
     use crate::forms::{Expression, FunctionDeclaration};
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::Category;
-    use quire_exact::{Integer, NodeKey};
+    use quire_exact::{Integer, IntegerInterval, NodeKey};
 
+    /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
     fn identity_function() -> FunctionDeclaration {
+        let bound = IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64))
+            .expect("[0, 10] is a non-empty interval");
         FunctionDeclaration::new(
             "id",
-            vec![("x".to_owned(), ValueType::Integer)],
-            ValueType::Integer,
+            vec![("x".to_owned(), ValueType::Int(bound.clone()))],
+            ValueType::Int(bound),
             None,
             Expression::Name("x".to_owned()),
         )
     }
 
-    /// TC-384 (FR-090-AC-3): the two S6a invariant breaks
-    /// `map_evaluate_failure` maps -- a consumed evaluation environment,
-    /// and a checked identity the package does not resolve -- return
-    /// `Err(CallFailure::Fault(_))`, name stage `"S6a"`, carry category
-    /// `Category::InternalFailure`, and never share one invariant
-    /// identifier. Exercises the real production mapping
-    /// (`ValueFunctionFamily::evaluate` -> `map_evaluate_failure`), not a
-    /// stub: `EvaluationEnv`'s one real (non-test) constructor is
-    /// `CheckedPackage::call`, which always builds a fresh one and calls
-    /// `evaluate` exactly once, so reaching the consumed-environment and
-    /// unknown-identity conditions here bypasses `call` the same way
-    /// `family.rs`'s own `evaluate_refuses_a_second_call_on_the_same_env`
-    /// does.
+    /// TC-384 (FR-090-AC-3): the two S6a invariant breaks -- a consumed
+    /// evaluation environment, and a checked identity the package does not
+    /// resolve -- return `Err(EvaluateFailure::Fault(_))` from the S6a seam
+    /// itself (`ValueFunctionFamily::evaluate`), name stage `"S6a"`, carry
+    /// category `Category::InternalFailure`, and never share one invariant
+    /// identifier. Asserts `evaluate`'s own result directly, not
+    /// `map_evaluate_failure(evaluate(..))`: `map_evaluate_failure` only
+    /// forwards `Fault` unchanged into `CallFailure::Fault` (see its own
+    /// doc), so the fault this test is about is produced entirely inside
+    /// the seam, not by `CheckedPackage::call`'s adapter. `EvaluationEnv`'s
+    /// one real (non-test) constructor is `CheckedPackage::call`, which
+    /// always builds a fresh one and calls `evaluate` exactly once, so
+    /// reaching the consumed-environment and unknown-identity conditions
+    /// here bypasses `call` the same way `family.rs`'s own
+    /// `evaluate_refuses_a_second_call_on_the_same_env` does.
     ///
     /// Previously: the consumed-environment case ended `CheckedPackage::
     /// call` in `unreachable!()`, and the unknown-identity case was folded
@@ -450,7 +426,7 @@ mod tests {
             ..PackageDeclarations::default()
         }
         .check(CheckingLimits::default())
-        .expect("id(x: Integer): Integer = x checks cleanly");
+        .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
         let identity = graph
             .function_identity("id")
             .expect("id is declared in this package");
@@ -484,14 +460,18 @@ mod tests {
         let second =
             crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
                 .expect_err(
-                    "a second call on the same env, arguments already consumed, must refuse",
+                    "a second call on the same env, arguments already consumed, must fault",
                 );
-        let consumed_fault = match map_evaluate_failure(second) {
-            Err(CallFailure::Fault(fault)) => fault,
-            other => panic!("expected Err(CallFailure::Fault(_)), got {other:?}"),
+        let consumed_fault = match second {
+            crate::family::EvaluateFailure::Fault(fault) => fault,
+            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
         };
         assert_eq!(consumed_fault.stage(), "S6a");
         assert_eq!(consumed_fault.category(), Category::InternalFailure);
+        assert_eq!(
+            consumed_fault.invariant(),
+            "evaluation-environment-arguments-already-consumed"
+        );
 
         // Step 5: a fresh environment, called with a NodeKey naming no
         // function in this package.
@@ -509,13 +489,17 @@ mod tests {
             &mut fresh_env,
             &mut fresh_contract_meter,
         )
-        .expect_err("an identity this package never declared must refuse");
-        let unknown_fault = match map_evaluate_failure(unknown) {
-            Err(CallFailure::Fault(fault)) => fault,
-            other => panic!("expected Err(CallFailure::Fault(_)), got {other:?}"),
+        .expect_err("an identity this package never declared must fault");
+        let unknown_fault = match unknown {
+            crate::family::EvaluateFailure::Fault(fault) => fault,
+            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
         };
         assert_eq!(unknown_fault.stage(), "S6a");
         assert_eq!(unknown_fault.category(), Category::InternalFailure);
+        assert_eq!(
+            unknown_fault.invariant(),
+            "checked-identity-not-resolved-by-package"
+        );
 
         assert_ne!(
             consumed_fault.invariant(),
