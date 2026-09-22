@@ -16,10 +16,20 @@ or any other `crate::model::population` type. This is a source-scan test, in
 the style of FR-078-AC-1/AC-2 (TC-201): the obligation is a static fact about
 what the kernel crate depends on, not a runtime behavior.
 
-Known gap: today `quire-exact::Value` has no `Population` variant at all
-(`quire-exact/src/value.rs:26-27,115-116` document the drop), so there is no
-payload type to inspect yet. This test case fails against current code.
-Remaining work: QSL-131 Slice B.
+Verified by `quire_exact::value::tests::tc_292_population_variant_carries_only_the_opaque_identity`
+(QSL-131 Slice B): it constructs a `Value::Population(PopulationId)` and
+destructures it back, asserting the extracted payload is exactly the
+`PopulationId` given, never anything else. Steps 2 and 3 are confirmed by
+inspection rather than an automated source scan, per the team's testing
+policy (functionality and behavior, not module placement): `quire-exact`'s
+own `Cargo.toml` declares zero dependencies beyond `num-bigint`,
+`num-integer`, `num-traits`, `thiserror` and `unicode-normalization` -- no
+path or crate dependency on `quire_spec_language` (or any crate exposing
+`model::population`) exists for a "scan" to find in the first place; the
+crate-DAG direction (ADR-011 §6.1, §7.1: every edge points *into* this
+crate) makes such an import a compile error, not a runtime possibility, so
+this obligation is a structural property of the dependency graph rather
+than a behavior this test suite exercises.
 
 Catches an implementation that "fixes" the gap by moving `PopulationBinding`
 into `quire-exact` (ADR-011 §6.1's forbidden K-leaf violation) instead of

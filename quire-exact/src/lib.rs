@@ -3,7 +3,7 @@
 //! S-1).
 //!
 //! This crate is the AD-016/ADR-011 module-DAG leaf layer `K`: checked
-//! identity ([`NodeKey`] and the six opaque digest identities, such as
+//! identity ([`NodeKey`] and the seven opaque digest identities, such as
 //! [`EffectiveId`]), provenance ([`Location`]), kernel outcomes and refusals
 //! ([`Outcome`], [`Refusal`]), bounds and accounting ([`Meter`],
 //! [`BoundedInteger`], [`CardinalityBound`]), and the exact semantic value
@@ -18,23 +18,30 @@
 //! It depends on nothing else in the `quire-spec-language` workspace (ADR-011
 //! §6.1, §7.1: every crate-DAG edge points *into* this crate, never out of
 //! it), and on no wire format, hashing or JCS canonicalization crate: every
-//! digest identity here ([`NodeKey`] and the six digest identities,
+//! digest identity here ([`NodeKey`] and the seven digest identities,
 //! [`EffectiveId`], [`UniverseId`], [`ObjectId`], [`UnitId`], [`VariantId`],
-//! [`MemberId`]) is minted by wrapping an already-computed digest through
-//! its one public `from_digest` constructor (ADR-013 T-6), never by hashing
-//! internally.
+//! [`MemberId`], [`PopulationId`]) is minted by wrapping an already-computed
+//! digest through its one public `from_digest` constructor (ADR-013 T-6),
+//! never by hashing internally.
 //!
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
-//! - [`Value`]/[`ValueType`]: `Value::Population` has no kernel payload at
-//!   all (the `ValueType::Enum` shape, by contrast, carries its variant set
-//!   inline per ADR-013 O-14, so it needs no declaration lookup and is not a
+//! - [`Value`]/[`ValueType`]: `Value::Population(PopulationId)` pairs with
+//!   `ValueType::Population(u64)` at the presence level only -- the kernel
+//!   has no `model` correspondence to resolve `PopulationId` through, so
+//!   `ValueType::admits` cannot compare the declared `u64` against a
+//!   resolved binding's own declared maximum (ADR-013 O-13 Population row,
+//!   QC-21, FR-089); that comparison is the QSL evaluator's job (the
+//!   `ValueType::Enum` shape, by contrast, carries its variant set inline
+//!   per ADR-013 O-14, so it needs no declaration lookup and is not a
 //!   capability loss).
-//! - the `key` and `equality` modules: an enum pair keys and compares equal
-//!   by raw digest, with no declaration-aware ordering. (A same-enum check
-//!   is *not* a loss here: `ValueType::Enum(EnumShape)`'s admission already
-//!   guarantees both operands share one enum's variant set before either
-//!   module ever runs, per ADR-013 O-14.)
+//! - the `key` and `equality` modules: an enum or population pair keys and
+//!   compares equal by raw digest, with no declaration-aware ordering or
+//!   resolution. (A same-enum check is *not* a loss here: `ValueType::
+//!   Enum(EnumShape)`'s admission already guarantees both operands share
+//!   one enum's variant set before either module ever runs, per ADR-013
+//!   O-14; no equivalent admission-time guarantee exists for population
+//!   identities, which this crate cannot resolve at all.)
 //! - [`Quantity`]: no cross-unit arithmetic, comparison or equality; only
 //!   same-unit operations.
 //! - the `equality` module: the top-level text/enum/quantity schedule
@@ -139,8 +146,9 @@ pub use decimal::{
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};
 pub use identity::{
-    EffectiveId, MemberId, ObjectId, UnitId, UniverseId, VariantId, EFFECTIVE_ID_DOMAIN,
-    MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, UNIT_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
+    EffectiveId, MemberId, ObjectId, PopulationId, UnitId, UniverseId, VariantId,
+    EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, POPULATION_ID_DOMAIN, UNIT_ID_DOMAIN,
+    UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

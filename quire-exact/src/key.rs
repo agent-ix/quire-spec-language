@@ -101,6 +101,11 @@ fn leaf<'a>(
             left.retained().as_bytes().cmp(right.retained().as_bytes())
         }
         (Value::Enum(left), Value::Enum(right)) => left.cmp(right),
+        // Raw digest order, same as `Value::Enum` above and for the same
+        // reason (ADR-013 O-13 Population row, QC-21, FR-089): the kernel
+        // holds no declaration-aware ordering for a population, only the
+        // opaque identity.
+        (Value::Population(left), Value::Population(right)) => left.cmp(right),
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {
@@ -133,6 +138,7 @@ fn leaf<'a>(
             | Value::Quantity(_)
             | Value::Text(_)
             | Value::Enum(_)
+            | Value::Population(_)
             | Value::Reference(_)
             | Value::Option(_)
             | Value::Composite(_)
@@ -181,5 +187,26 @@ mod tests {
         let left = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
         let right = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
         assert_eq!(compare_keys(&left, &right), None);
+    }
+
+    /// TC-297: `Value::Population` keys and orders purely by its
+    /// `PopulationId` digest bytes -- the same rule `Value::Enum` uses --
+    /// with no resolution to any binding (ADR-013 O-13 Population row,
+    /// QC-21, FR-089).
+    #[trace("TC-297", "FR-089-AC-5")]
+    #[test]
+    fn tc_297_population_keys_order_by_digest() {
+        use crate::identity::PopulationId;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let low = Value::Population(PopulationId::from_digest(digest(1)));
+        let high = Value::Population(PopulationId::from_digest(digest(2)));
+        assert_eq!(compare_keys(&low, &high), Some(Ordering::Less));
+        assert_eq!(compare_keys(&low, &low), Some(Ordering::Equal));
     }
 }
