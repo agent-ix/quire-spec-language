@@ -80,16 +80,15 @@ fn skipped_invalid_field_refuses_with_actual_native_and_model_loci() {
         diagnostic.source,
         *checked.linked().unit().source().identity()
     );
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", *models[0].environment().owner())));
-    assert!(diagnostic.message.contains(&format!(
-        "{:?}",
-        DeclarationKey::Field {
-            record: symbol("Node"),
-            field: symbol("n"),
-        }
-    )));
+    assert!(diagnostic.runtime.is_some());
+    assert!(diagnostic.related.iter().any(|location| {
+        location.identity.owner == *models[0].environment().owner()
+            && location.identity.key
+                == DeclarationKey::Field {
+                    record: symbol("Node"),
+                    field: symbol("n"),
+                }
+    }));
     assert!(!diagnostic.is_incomplete());
 }
 
@@ -217,19 +216,16 @@ fn conflicting_population_order_preserves_defects_and_actual_byte_provenance() {
         )
         .unwrap_err();
         assert_eq!(report.status, ValidationStatus::Refused);
-        let expected_repr = format!(
-            "{:?}",
-            quire_spec_language::runtime::RuntimeReference::Snapshot(expected.clone())
-        );
-        let baseline_repr = format!(
-            "{:?}",
-            quire_spec_language::runtime::RuntimeReference::Snapshot(baseline.clone())
-        );
         for diagnostic in &mut report.diagnostics {
-            assert!(diagnostic.message.contains(&expected_repr));
+            let runtime = diagnostic.runtime.as_mut().unwrap();
+            assert_eq!(
+                runtime.artifact,
+                quire_spec_language::runtime::RuntimeReference::Snapshot(expected.clone())
+            );
             // Compare logical defects under each permutation's exact artifact
             // correspondence; the byte-significant reordered payload has a new digest.
-            diagnostic.message = diagnostic.message.replace(&expected_repr, &baseline_repr);
+            runtime.artifact =
+                quire_spec_language::runtime::RuntimeReference::Snapshot(baseline.clone());
         }
         reports.push(report.diagnostics);
     }
@@ -270,18 +266,15 @@ fn foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_
         .iter()
         .find(|diagnostic| diagnostic.code == Code::InvalidModelBinding)
         .unwrap();
-    assert!(diagnostic.message.contains(&format!(
-        "{:?}",
+    let runtime = diagnostic.runtime.as_ref().unwrap();
+    assert_eq!(
+        runtime.artifact,
         quire_spec_language::runtime::RuntimeReference::Snapshot(artifact.reference())
-    )));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selected.clause)));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selected.requirement)));
-    assert!(diagnostic.message.contains("path: []"));
-    assert!(diagnostic.message.contains("observation: None"));
+    );
+    assert_eq!(runtime.clause, selected.clause);
+    assert_eq!(runtime.requirement, selected.requirement);
+    assert!(runtime.path.is_empty());
+    assert!(runtime.observation.is_none());
     assert_eq!(diagnostic.span.start.byte, 0);
     assert_eq!(diagnostic.span.end.byte, 0);
 }

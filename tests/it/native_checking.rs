@@ -160,8 +160,9 @@ fn refused(
         );
     }
     if code == Code::UndefinedExpression {
-        assert!(error.message.contains("potentially_undefined"));
-        assert!(error.message.contains("upstream span: Some("));
+        let upstream = error.upstream.as_ref().expect("actual IR proof refusal");
+        assert_eq!(upstream.code, ir::DiagnosticCode::PotentiallyUndefined);
+        assert!(upstream.span.is_some());
     }
 }
 
@@ -527,7 +528,10 @@ fn tc_053_native_presence_facts_are_sound_against_independent_boolean_assignment
                     "{expression}: {error:?}"
                 );
                 assert_eq!(error.phase, Phase::Check);
-                assert!(error.message.contains("potentially_undefined"));
+                assert_eq!(
+                    error.upstream.as_ref().unwrap().code,
+                    ir::DiagnosticCode::PotentiallyUndefined
+                );
             }
         }
     }

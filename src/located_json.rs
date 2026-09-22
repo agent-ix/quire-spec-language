@@ -78,7 +78,9 @@ pub fn decode<'de, T: Deserialize<'de>>(
     if original.get(start..end) != Some(selected) {
         return Err(Error::ForeignOccurrence);
     }
-    let span = source.to_ir(source.source(), Span { start, end })?;
+    let span = source
+        .to_ir(source.source(), Span { start, end })
+        .map_err(|error| Box::new(Diagnostic::from(*error)))?;
     Ok(Located {
         value: serde_json::from_str(selected)?,
         source: span,

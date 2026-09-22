@@ -733,16 +733,13 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
         .iter()
         .find(|d| d.code == quire_spec_language::Code::UnavailableObservation)
         .expect("missing selected invocation is a validation failure");
-    assert!(diagnostic.message.contains(&format!(
-        "{:?}",
+    let location = diagnostic.runtime.as_ref().unwrap();
+    assert_eq!(
+        location.artifact,
         RuntimeReference::Invocation(context.invocation().unwrap().reference())
-    )));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selection.requirement)));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selection.clause)));
+    );
+    assert_eq!(location.requirement, selection.requirement);
+    assert_eq!(location.clause, selection.clause);
 
     let snapshot = setup::snapshot(setup::draft(&models[0]));
     let current_selection = setup::selection(&models[0], snapshot.reference());
@@ -771,29 +768,23 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     )
     .unwrap_err();
     assert_eq!(parameter.status, runtime::ValidationStatus::Refused);
-    let expected_path = format!(
-        "{:?}",
-        [runtime::RuntimePathSegment::Parameter(setup::qualified(
-            &models[0], "flag",
-        ))]
-    );
     let diagnostic = parameter
         .diagnostics
         .iter()
         .find(|d| {
             d.code == quire_spec_language::Code::InvalidRuntimeInput
-                && d.message.contains(&expected_path)
+                && d.runtime.as_ref().is_some_and(|location| {
+                    location.path
+                        == [runtime::RuntimePathSegment::Parameter(setup::qualified(
+                            &models[0], "flag",
+                        ))]
+                })
         })
         .expect("missing declared parameter remains a typed, located validation failure");
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", RuntimeReference::Invocation(invocation))));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selection.requirement)));
-    assert!(diagnostic
-        .message
-        .contains(&format!("{:?}", selection.clause)));
+    let location = diagnostic.runtime.as_ref().unwrap();
+    assert_eq!(location.artifact, RuntimeReference::Invocation(invocation));
+    assert_eq!(location.requirement, selection.requirement);
+    assert_eq!(location.clause, selection.clause);
     // None of these failed public validations yields a context to pass to inputs().
 }
 

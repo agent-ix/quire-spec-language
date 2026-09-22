@@ -204,7 +204,7 @@ impl<'a> LinkedPackage<'a> {
         }
     }
     /// Historical checking validates actual model selections, not a display label.
-    pub(crate) fn require_historical_native(&self) -> Result<(), Box<Diagnostic>> {
+    pub(crate) fn require_historical_native(&self) -> Result<(), Box<LinkingError>> {
         match self.profile {
             BindingProfile::Native => native::check_selected_profiles(&self.unit, &self.models),
             // A strict equality check against one admitted profile, not a
@@ -258,29 +258,75 @@ fn failure(
     code: Code,
     span: Span,
     message: impl Into<String>,
-) -> Box<Diagnostic> {
-    crate::diagnostic::error(
-        unit.source(),
-        code,
-        Phase::Link,
-        span.start,
-        span.end,
-        message,
-    )
+) -> Box<LinkingError> {
+    Box::new(LinkingError {
+        diagnostic: crate::diagnostic::error(
+            unit.source(),
+            code,
+            Phase::Link,
+            span.start,
+            span.end,
+            message,
+        ),
+        related: Vec::new(),
+        upstream: None,
+    })
 }
 
 fn ambiguous(
     unit: &ParsedUnit,
     span: Span,
     mut related: Vec<DeclarationLocation>,
-) -> Box<Diagnostic> {
+) -> Box<LinkingError> {
     related.sort();
-    failure(
+    let mut error = failure(
         unit,
         Code::AmbiguousDeclaration,
         span,
-        format!("multiple formal declarations match: {related:?}"),
-    )
+        "multiple formal declarations match",
+    );
+    error.related = related;
+    error
+}
+
+/// A linking refusal, keeping related formal declarations and an original IR
+/// canonicalization refusal separate from the reusable [`Diagnostic`] shape
+/// (ADR-011 §6.1: `diagnostic` does not import `crate::linking` or IR types).
+#[derive(Clone, Debug)]
+pub struct LinkingError {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// Related formal declarations, sorted by identity and source location.
+    pub related: Vec<DeclarationLocation>,
+    /// Structured upstream formal diagnostic, when canonicalization failed.
+    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+}
+
+impl std::ops::Deref for LinkingError {
+    type Target = Diagnostic;
+    fn deref(&self) -> &Diagnostic {
+        &self.diagnostic
+    }
+}
+
+impl std::ops::DerefMut for LinkingError {
+    fn deref_mut(&mut self) -> &mut Diagnostic {
+        &mut self.diagnostic
+    }
+}
+
+impl std::fmt::Display for LinkingError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for LinkingError {}
+
+impl From<LinkingError> for Diagnostic {
+    fn from(error: LinkingError) -> Self {
+        *error.diagnostic
+    }
 }
 
 /// Link native names using the native-formal-environment/1 binding profile.
@@ -294,7 +340,7 @@ pub fn link(
     unit: ParsedUnit,
     environments: &[DeclarationEnvironment],
     limits: LinkLimits,
-) -> Result<LinkedPackage<'_>, Box<Diagnostic>> {
+) -> Result<LinkedPackage<'_>, Box<LinkingError>> {
     let limits = limits.bounded();
     preflight(&unit, environments.len(), limits)?;
     let catalog = formal_catalog(&unit, environments, limits)?;
@@ -318,7 +364,7 @@ pub fn link_native(
     unit: ParsedUnit,
     models: &[NativeModel],
     limits: LinkLimits,
-) -> Result<LinkedPackage<'_>, Box<Diagnostic>> {
+) -> Result<LinkedPackage<'_>, Box<LinkingError>> {
     let limits = limits.bounded();
     preflight(&unit, models.len(), limits)?;
     let catalog = native::catalog(&unit, models, limits)?;
@@ -337,7 +383,7 @@ fn preflight(
     unit: &ParsedUnit,
     model_count: usize,
     limits: LinkLimits,
-) -> Result<(), Box<Diagnostic>> {
+) -> Result<(), Box<LinkingError>> {
     for (count, limit, dimension) in [
         (model_count, limits.models, "formal environments"),
         (unit.imports().len(), limits.imports, "native imports"),
@@ -360,7 +406,7 @@ fn formal_catalog<'a>(
     unit: &ParsedUnit,
     environments: &'a [DeclarationEnvironment],
     limits: LinkLimits,
-) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
+) -> Result<Vec<LinkedModel<'a>>, Box<LinkingError>> {
     let mut catalog = Vec::with_capacity(environments.len());
     let mut emitted = 0;
     for environment in environments {
@@ -377,12 +423,14 @@ fn formal_catalog<'a>(
                 } else {
                     Code::InvalidModelBinding
                 };
-                failure(
+                let mut error = failure(
                     unit,
                     code,
                     Span { start: 0, end: 0 },
-                    format!("formal declaration canonicalization failed: {upstream}"),
-                )
+                    "formal declaration canonicalization failed",
+                );
+                error.upstream = Some(Box::new(upstream));
+                error
             })?;
         emitted += output.bytes().as_slice().len();
         catalog.push(LinkedModel {
@@ -399,7 +447,7 @@ fn formal_catalog<'a>(
 fn select_models<'a>(
     unit: &ParsedUnit,
     catalog: &[LinkedModel<'a>],
-) -> Result<Vec<LinkedModel<'a>>, Box<Diagnostic>> {
+) -> Result<Vec<LinkedModel<'a>>, Box<LinkingError>> {
     let mut models = Vec::with_capacity(unit.imports().len());
     for import in unit.imports() {
         let expected: ByteDigest = import.digest.value.parse().map_err(|_| {
@@ -467,7 +515,7 @@ fn resolve_clauses(
     models: &[LinkedModel<'_>],
     limits: LinkLimits,
     profile: BindingProfile,
-) -> Result<Vec<LinkedClause>, Box<Diagnostic>> {
+) -> Result<Vec<LinkedClause>, Box<LinkingError>> {
     let mut names = BTreeSet::new();
     let mut clauses = Vec::with_capacity(unit.clauses().len());
     for clause in unit.clauses() {
@@ -550,7 +598,7 @@ fn resolve_context<'a>(
     models: &[LinkedModel<'a>],
     clause: &Clause,
     profile: BindingProfile,
-) -> Result<(usize, &'a RecordDeclaration), Box<Diagnostic>> {
+) -> Result<(usize, &'a RecordDeclaration), Box<LinkingError>> {
     let (model, declaration) = exported(
         unit,
         models,
@@ -651,7 +699,7 @@ fn exported<'a>(
     alias: &str,
     name: &str,
     span: Span,
-) -> Result<(usize, &'a TypeDeclaration), Box<Diagnostic>> {
+) -> Result<(usize, &'a TypeDeclaration), Box<LinkingError>> {
     let mut candidates = Vec::new();
     let mut alias_exists = false;
     for (index, (import, model)) in unit.imports().iter().zip(models).enumerate() {
@@ -706,7 +754,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         &self,
         name: &str,
         span: Span,
-    ) -> Result<&'a quire_contract_ir::ValueDeclaration, Box<Diagnostic>> {
+    ) -> Result<&'a quire_contract_ir::ValueDeclaration, Box<LinkingError>> {
         self.models[self.current]
             .environment
             .values()
@@ -741,7 +789,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         self.shape(environment, value.value_type())
     }
 
-    fn value(&mut self, id: ExprId, name: &str, span: Span) -> Result<Shape<'a>, Box<Diagnostic>> {
+    fn value(&mut self, id: ExprId, name: &str, span: Span) -> Result<Shape<'a>, Box<LinkingError>> {
         let value = self.lookup_value(name, span)?;
         self.check_input_scope(value, span)?;
         Ok(self.bind_value(id, span, value))
@@ -752,7 +800,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         id: ExprId,
         name: &crate::Spanned<String>,
         shape: Shape<'a>,
-    ) -> Result<Shape<'a>, Box<Diagnostic>> {
+    ) -> Result<Shape<'a>, Box<LinkingError>> {
         let (environment, record_name) = match shape {
             Shape::Formal(environment, ValueType::Record { name })
             | Shape::Object(environment, name) => (environment, name),
@@ -808,7 +856,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         Ok(self.shape(environment, field.value_type()))
     }
 
-    fn visit(&mut self, id: ExprId, depth: usize) -> Result<Shape<'a>, Box<Diagnostic>> {
+    fn visit(&mut self, id: ExprId, depth: usize) -> Result<Shape<'a>, Box<LinkingError>> {
         let unit = self.unit;
         let expression = unit
             .expression(id)

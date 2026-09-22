@@ -47,6 +47,8 @@ fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<Diagnostic>>, source
         diagnostic.span,
         source.locate(Span { start: 0, end: 0 }).unwrap()
     );
+    assert!(diagnostic.related.is_empty());
+    assert!(diagnostic.upstream.is_none());
     assert!(!diagnostic.is_incomplete());
 }
 

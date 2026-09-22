@@ -417,7 +417,7 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
         assert_eq!(error.phase, Phase::Link);
         assert_eq!(error.source, *inventory[1].source().source().identity());
         assert_eq!(error.span.start.byte, 0);
-        assert!(error.message.contains("DeclarationLocation"));
+        assert!(!error.related.is_empty());
     }
     let duplicates = [original.clone(), original.clone()];
     let error = link_native(
@@ -427,7 +427,7 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
     )
     .unwrap_err();
     assert_eq!(error.code, Code::AmbiguousDeclaration);
-    assert!(error.message.contains("DeclarationLocation"));
+    assert!(!error.related.is_empty());
     let mut independent = parts();
     reowner(&mut independent, "IndependentRule");
     let inventory = [original, independent.model()];

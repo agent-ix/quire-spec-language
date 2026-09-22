@@ -94,11 +94,12 @@ fn precondition_can_record_permitted_self_deletion_and_pre_captured_parameter() 
         } else {
             let report = result.unwrap_err();
             assert_eq!(report.status, ValidationStatus::Refused);
-            let expected_observation = format!("{:?}", Some(ir::StateObservation::Post));
-            assert!(report.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == Code::DanglingReference
-                    && diagnostic.message.contains(&expected_observation)
-            }));
+            assert!(report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == Code::DanglingReference
+                    && diagnostic.runtime.as_ref().unwrap().observation
+                        == Some(ir::StateObservation::Post)));
         }
     }
 }
@@ -330,10 +331,12 @@ fn unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes() {
             1,
             "unrelated duplicate object: {duplicate_object}"
         );
-        assert!(frame[0].message.contains(&format!(
-            "{:?}",
-            quire_spec_language::runtime::RuntimePathSegment::Field(symbol("count"))
-        )));
+        assert_eq!(
+            frame[0].runtime.as_ref().unwrap().path.last(),
+            Some(&quire_spec_language::runtime::RuntimePathSegment::Field(
+                symbol("count")
+            ))
+        );
     }
 }
 
