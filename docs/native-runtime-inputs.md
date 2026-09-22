@@ -279,12 +279,15 @@ would require a versioned native model-role extension rather than runtime input.
 
 ## Diagnostics and atomicity
 
-The existing Diagnostic envelope gains optional structured runtime location,
-without altering the source span's meaning. The primary source/span remains the
-authored native clause or evaluated expression. RuntimeLocation names an exact
-input artifact ref, observation and optional population/object/value/field path;
-it does not invent a byte offset for a programmatically constructed value.
-Related locations identify original model declarations where relevant.
+Runtime diagnostics pair the existing Diagnostic envelope with a structured
+runtime location, without altering the source span's meaning: `ValidationDiagnostic`
+(ADR-011 §6.1: `diagnostic`'s own type does not import `crate::runtime`) owns a
+`Box<Diagnostic>` alongside a non-optional `runtime: RuntimeLocation` sibling
+field and `related`. The primary source/span remains the authored native clause
+or evaluated expression. RuntimeLocation names an exact input artifact ref,
+observation and optional population/object/value/field path; it does not invent
+a byte offset for a programmatically constructed value. Related locations
+identify original model declarations where relevant.
 
 New phases are validate and evaluate. New codes are invalid_runtime_input,
 dangling_reference, incomplete_population, unavailable_observation,

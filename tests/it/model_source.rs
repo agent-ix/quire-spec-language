@@ -101,8 +101,8 @@ fn source_sequence_maxima_are_checked_at_native_admission() {
                 let ModelSourceCause::Admission(cause) = error.cause else {
                     panic!("native admission must own the sequence refusal");
                 };
-                assert_eq!(cause.code, Code::UnrepresentableConstraint);
-                assert_eq!(cause.source, *binding.source().identity());
+                assert_eq!(cause.diagnostic.code, Code::UnrepresentableConstraint);
+                assert_eq!(cause.diagnostic.source, *binding.source().identity());
             }
         }
     }
@@ -398,7 +398,7 @@ fn public_model_source_reaches_real_aggregate_and_operation_execution() {
         if bad_frame {
             assert_eq!(report.truth(), None);
             assert!(
-                matches!(report.outcome(), ExecutionOutcome::ValidationFailed(f) if f.diagnostics.iter().any(|d| d.code == Code::FrameViolation))
+                matches!(report.outcome(), ExecutionOutcome::ValidationFailed(f) if f.diagnostics.iter().any(|d| d.diagnostic.code == Code::FrameViolation))
             );
         } else {
             assert_eq!(report.truth(), Some(true));

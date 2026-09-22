@@ -10,9 +10,10 @@ use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::runtime::{
     EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
-    RuntimeReference, ValidationStatus,
+    RuntimeReference, ValidationDiagnostic, ValidationStatus,
 };
 use crate::{ByteDigest, Diagnostic};
+use quire_contract_ir as ir;
 use serde_json::Value;
 
 /// Immutable JSON produced from the typed native result schema.
@@ -73,17 +74,34 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         source: &value.source,
         path: &value.path,
         span: value.span,
-        upstream: value.upstream.as_deref(),
-        runtime: value
-            .runtime
-            .as_ref()
-            .map(|location| types::RuntimeLocation {
-                artifact: reference(&location.artifact),
-                observation: location.observation,
-                requirement: &location.requirement,
-                clause: &location.clause,
-                path: location.path.iter().map(runtime_path).collect(),
-            }),
+        upstream: None,
+        runtime: None,
+    }
+}
+
+/// A native diagnostic retained by a higher-layer wrapper (`LinkingError`,
+/// `CheckingError`), carrying its own structured upstream refusal separate
+/// from the shared [`Diagnostic`] shape (ADR-011 §6.1).
+fn diagnostic_with_upstream<'a>(
+    value: &'a Diagnostic,
+    upstream: Option<&'a ir::Diagnostic>,
+) -> types::Diagnostic<'a> {
+    types::Diagnostic {
+        upstream,
+        ..diagnostic(value)
+    }
+}
+
+fn validation_diagnostic(value: &ValidationDiagnostic) -> types::Diagnostic<'_> {
+    types::Diagnostic {
+        runtime: Some(types::RuntimeLocation {
+            artifact: reference(&value.runtime.artifact),
+            observation: value.runtime.observation,
+            requirement: &value.runtime.requirement,
+            clause: &value.runtime.clause,
+            path: value.runtime.path.iter().map(runtime_path).collect(),
+        }),
+        ..diagnostic(&value.diagnostic)
     }
 }
 
@@ -99,6 +117,12 @@ fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_
         crate::package::PackageCause::Native(value) => {
             types::PackageCause::Native(diagnostic(value))
         }
+        crate::package::PackageCause::Linking(value) => types::PackageCause::Native(
+            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
+        ),
+        crate::package::PackageCause::Checking(value) => types::PackageCause::Native(
+            diagnostic_with_upstream(&value.diagnostic, value.upstream.as_deref()),
+        ),
         crate::package::PackageCause::Json(value) => types::PackageCause::Json {
             line: value.line(),
             column: value.column(),
@@ -168,6 +192,20 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         RunCause::Native(error) => (
             types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
+        ),
+        RunCause::Linking(error) => (
+            types::Stage::Native(error.diagnostic.phase),
+            types::Details::Native(diagnostic_with_upstream(
+                &error.diagnostic,
+                error.upstream.as_deref(),
+            )),
+        ),
+        RunCause::Checking(error) => (
+            types::Stage::Native(error.diagnostic.phase),
+            types::Details::Native(diagnostic_with_upstream(
+                &error.diagnostic,
+                error.upstream.as_deref(),
+            )),
         ),
         RunCause::Model(error) => (
             types::Stage::Model,
@@ -279,7 +317,7 @@ pub(super) fn report(
                 .diagnostics
                 .iter()
                 .chain(failure.terminal.as_deref())
-                .map(Diagnostic::exit_code)
+                .map(|diagnostic| diagnostic.diagnostic.exit_code())
                 .min()
                 .unwrap_or(match failure.status {
                     ValidationStatus::Incomplete => 22,
@@ -289,8 +327,12 @@ pub(super) fn report(
                 code,
                 types::Outcome::Validate {
                     status,
-                    diagnostics: failure.diagnostics.iter().map(diagnostic).collect(),
-                    terminal: failure.terminal.as_deref().map(diagnostic),
+                    diagnostics: failure
+                        .diagnostics
+                        .iter()
+                        .map(validation_diagnostic)
+                        .collect(),
+                    terminal: failure.terminal.as_deref().map(validation_diagnostic),
                 },
             )
         }

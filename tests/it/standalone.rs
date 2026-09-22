@@ -239,6 +239,36 @@ fn selected_package_failures_preserve_reader_details_without_compilation_fallbac
 }
 
 #[test]
+#[trace("TC-106", "FR-016-AC-1")]
+fn definedness_proof_refusal_retains_its_structured_upstream_diagnostic() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();
+    let original = std::fs::read_to_string(directory.path().join("program.native")).unwrap();
+    let mutated = original.replace(
+        "true implies forall(item in self.items: item < self.n)",
+        "self.signed div self.den = self.signed",
+    );
+    assert_ne!(mutated, original, "fixture changes the actual expression");
+    std::fs::write(directory.path().join("program.native"), &mutated).unwrap();
+    job["request"]["program"]["source"]["digest"] =
+        json!(ByteDigest::of(mutated.as_bytes()).to_string());
+    save(directory.path(), &job);
+    let (exit, result, stdout) = invoke(directory.path());
+    assert_eq!(exit, 20, "{result}");
+    assert!(!stdout);
+    assert_eq!(result["stage"], "check");
+    assert_eq!(result["code"], "undefined_expression");
+    // FR-020: an upstream native refusal retains its original diagnostic;
+    // the actual IR prover's own refusal survives to the CLI boundary
+    // through `CheckingError.upstream` rather than being folded away.
+    assert_eq!(
+        result["details"]["upstream"]["code"],
+        "potentially_undefined"
+    );
+    assert!(result["details"]["runtime"].is_null());
+}
+
+#[test]
 #[trace("TC-106", "FR-028-AC-3")]
 fn malformed_package_selections_refuse_at_request_intake() {
     let directory = tempfile::tempdir().unwrap();

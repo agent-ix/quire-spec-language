@@ -216,7 +216,7 @@ fn mapped_parent_workflow_preserves_authorship_and_runtime_results() {
             assert!(error
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::DanglingReference));
+                .any(|diagnostic| diagnostic.diagnostic.code == Code::DanglingReference));
         } else {
             let context = result.unwrap();
             assert_eq!(

@@ -280,7 +280,7 @@ fn concrete_config_update_binds_and_materializes_actual_pre_post_values() {
     assert!(failure
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == quire_spec_language::Code::FrameViolation));
+        .any(|diagnostic| diagnostic.diagnostic.code == quire_spec_language::Code::FrameViolation));
 }
 
 #[test]
@@ -731,9 +731,9 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     let diagnostic = missing
         .diagnostics
         .iter()
-        .find(|d| d.code == quire_spec_language::Code::UnavailableObservation)
+        .find(|d| d.diagnostic.code == quire_spec_language::Code::UnavailableObservation)
         .expect("missing selected invocation is a validation failure");
-    let location = diagnostic.runtime.as_ref().unwrap();
+    let location = &diagnostic.runtime;
     assert_eq!(
         location.artifact,
         RuntimeReference::Invocation(context.invocation().unwrap().reference())
@@ -755,7 +755,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
     assert!(current
         .diagnostics
         .iter()
-        .any(|d| d.code == quire_spec_language::Code::WrongSnapshot));
+        .any(|d| d.diagnostic.code == quire_spec_language::Code::WrongSnapshot));
 
     let (input, selection) = recorded(false);
     let invocation = input.invocations[0].reference();
@@ -772,16 +772,14 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
         .diagnostics
         .iter()
         .find(|d| {
-            d.code == quire_spec_language::Code::InvalidRuntimeInput
-                && d.runtime.as_ref().is_some_and(|location| {
-                    location.path
-                        == [runtime::RuntimePathSegment::Parameter(setup::qualified(
-                            &models[0], "flag",
-                        ))]
-                })
+            d.diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
+                && d.runtime.path
+                    == [runtime::RuntimePathSegment::Parameter(setup::qualified(
+                        &models[0], "flag",
+                    ))]
         })
         .expect("missing declared parameter remains a typed, located validation failure");
-    let location = diagnostic.runtime.as_ref().unwrap();
+    let location = &diagnostic.runtime;
     assert_eq!(location.artifact, RuntimeReference::Invocation(invocation));
     assert_eq!(location.requirement, selection.requirement);
     assert_eq!(location.clause, selection.clause);

@@ -71,7 +71,7 @@ fn each_model_operation_and_observation_binding_is_exact() {
             report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == expected),
+                .any(|diagnostic| diagnostic.diagnostic.code == expected),
             "binding mutation {variant}: {report:?}"
         );
     }
@@ -111,7 +111,7 @@ fn object_identity_uses_exact_unicode_keys_and_complete_membership() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+                .any(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput));
         } else {
             let context = result.unwrap();
             assert_eq!(
@@ -163,7 +163,7 @@ fn object_identity_uses_exact_unicode_keys_and_complete_membership() {
             report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == expected),
+                .any(|diagnostic| diagnostic.diagnostic.code == expected),
             "reference mutation {variant}"
         );
     }
@@ -223,9 +223,11 @@ fn missing_required_state_and_operation_capture_correspondence_are_diagnosed() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::UnavailableObservation
-                    && diagnostic.runtime.as_ref().unwrap().path
-                        == [RuntimePathSegment::State(qualified(&models[0], "other"))]));
+                .any(
+                    |diagnostic| diagnostic.diagnostic.code == Code::UnavailableObservation
+                        && diagnostic.runtime.path
+                            == [RuntimePathSegment::State(qualified(&models[0], "other"))]
+                ));
         } else {
             assert_eq!(
                 report.status,
@@ -235,7 +237,7 @@ fn missing_required_state_and_operation_capture_correspondence_are_diagnosed() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+                .any(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput));
         }
     }
 }
@@ -272,7 +274,7 @@ fn conflicting_field_permutations_retain_the_same_sorted_diagnostics() {
         assert_eq!(report.status, ValidationStatus::Refused);
         assert!(report.terminal.is_none());
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
+            let runtime = &mut diagnostic.runtime;
             assert_eq!(runtime.artifact, RuntimeReference::Snapshot(actual.clone()));
             runtime.artifact = RuntimeReference::Snapshot(baseline.clone());
         }

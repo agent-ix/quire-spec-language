@@ -28,9 +28,15 @@ pub struct CompileLimits {
 /// Original stage failure, preserved without parsing human-readable messages.
 #[derive(Debug, thiserror::Error)]
 pub enum CompileCause {
-    /// Original syntax, profile, linking or checking diagnostic.
+    /// Original syntax or profile diagnostic with no linking or checking context.
     #[error("{0}")]
     Native(#[from] Box<Diagnostic>),
+    /// Original formal-environment linking failure.
+    #[error("{0}")]
+    Linking(#[from] Box<crate::linking::LinkingError>),
+    /// Original native constraint/proof checking failure.
+    #[error("{0}")]
+    Checking(#[from] Box<crate::checking::CheckingError>),
     /// Original package stage, path, counters and nested cause.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
@@ -62,6 +68,8 @@ impl CompileError {
     pub fn code(&self) -> Code {
         match &self.cause {
             CompileCause::Native(error) => error.code,
+            CompileCause::Linking(error) => error.diagnostic.code,
+            CompileCause::Checking(error) => error.diagnostic.code,
             CompileCause::Package(error) => error.code,
         }
     }
@@ -70,8 +78,27 @@ impl CompileError {
     pub fn native_diagnostic(&self) -> Option<&Diagnostic> {
         match &self.cause {
             CompileCause::Native(error) => Some(error),
+            CompileCause::Linking(error) => Some(&error.diagnostic),
+            CompileCause::Checking(error) => Some(&error.diagnostic),
             CompileCause::Package(error) => match &error.cause {
                 Some(PackageCause::Native(error)) => Some(error),
+                Some(PackageCause::Linking(error)) => Some(&error.diagnostic),
+                Some(PackageCause::Checking(error)) => Some(&error.diagnostic),
+                _ => None,
+            },
+        }
+    }
+
+    /// Structured upstream diagnostic retained by the failed stage (FR-020: an
+    /// upstream native refusal retains its original diagnostic), when there was one.
+    pub fn upstream_diagnostic(&self) -> Option<&ir::Diagnostic> {
+        match &self.cause {
+            CompileCause::Native(_) => None,
+            CompileCause::Linking(error) => error.upstream.as_deref(),
+            CompileCause::Checking(error) => error.upstream.as_deref(),
+            CompileCause::Package(error) => match &error.cause {
+                Some(PackageCause::Linking(error)) => error.upstream.as_deref(),
+                Some(PackageCause::Checking(error)) => error.upstream.as_deref(),
                 _ => None,
             },
         }

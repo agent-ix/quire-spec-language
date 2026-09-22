@@ -8,13 +8,14 @@ use quire_contract_ir::{
 };
 
 use super::{
-    failure, location, DeclarationKey, LinkLimits, LinkedModel, ResolutionTarget, Resolver, Shape,
+    failure, location, DeclarationKey, LinkLimits, LinkedModel, LinkingError, ResolutionTarget,
+    Resolver, Shape,
 };
 use crate::native_model::{NativeModel, NativeModelProfile, OperationRole};
 use crate::syntax::{Clause, ExprId};
-use crate::{Code, Diagnostic, ParsedUnit, Span, Spanned};
+use crate::{Code, ParsedUnit, Span, Spanned};
 
-type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+type Result<T> = std::result::Result<T, Box<LinkingError>>;
 
 /// FR-041: only selected artifacts cross the historical semantic boundary.
 pub(super) fn check_selected_profiles(unit: &ParsedUnit, models: &[LinkedModel<'_>]) -> Result<()> {
@@ -115,15 +116,19 @@ pub(super) fn catalog<'a>(
     Ok(catalog)
 }
 
-fn conflict(model: &NativeModel, previous: &NativeModel, message: &str) -> Box<Diagnostic> {
-    let mut error = crate::diagnostic::error(
-        model.source().source(),
-        Code::InvalidModelBinding,
-        crate::Phase::Link,
-        0,
-        0,
-        message,
-    );
+fn conflict(model: &NativeModel, previous: &NativeModel, message: &str) -> Box<LinkingError> {
+    let mut error = Box::new(LinkingError {
+        diagnostic: crate::diagnostic::error(
+            model.source().source(),
+            Code::InvalidModelBinding,
+            crate::Phase::Link,
+            0,
+            0,
+            message,
+        ),
+        related: Vec::new(),
+        upstream: None,
+    });
     error.related = [previous, model]
         .into_iter()
         .flat_map(|model| {

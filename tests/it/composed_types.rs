@@ -556,16 +556,19 @@ fn aggregate_domain_checks_are_distinct_from_pending_prefix_proofs() {
         panic!("native admission must own the sequence refusal: {excess}")
     };
     assert_eq!(
-        cause.code,
+        cause.diagnostic.code,
         quire_spec_language::Code::UnrepresentableConstraint
     );
-    assert_eq!(cause.phase, quire_spec_language::Phase::Link);
-    assert_eq!(cause.source.identity, "model:ExcessTypeMaximum");
-    assert_eq!(cause.source.revision, "authored");
-    assert_eq!(cause.path, "ExcessTypeMaximum.json");
-    assert_eq!(&cause.source, excess.source().source().identity());
+    assert_eq!(cause.diagnostic.phase, quire_spec_language::Phase::Link);
+    assert_eq!(cause.diagnostic.source.identity, "model:ExcessTypeMaximum");
+    assert_eq!(cause.diagnostic.source.revision, "authored");
+    assert_eq!(cause.diagnostic.path, "ExcessTypeMaximum.json");
     assert_eq!(
-        cause.span,
+        &cause.diagnostic.source,
+        excess.source().source().identity()
+    );
+    assert_eq!(
+        cause.diagnostic.span,
         excess
             .source()
             .source()

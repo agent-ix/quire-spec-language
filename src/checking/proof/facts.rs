@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use super::{Meter, ValueKey};
+use crate::checking::CheckingError;
 use crate::syntax::ExprId;
 use crate::Span;
 
@@ -24,7 +25,7 @@ pub(in crate::checking) trait FactMeter {
 }
 
 impl FactMeter for Meter<'_> {
-    type Error = Box<crate::Diagnostic>;
+    type Error = Box<CheckingError>;
     fn facts(&mut self, count: usize, span: Span) -> Result<(), Self::Error> {
         Meter::facts(self, count, span)
     }

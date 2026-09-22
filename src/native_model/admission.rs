@@ -6,13 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_contract_ir as ir;
 
 use super::{
-    failure, ModelLimits, NativeModelProfile, NativeRoles, ScalarKind, ScalarRole, ScalarSite,
+    failure, ModelLimits, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind,
+    ScalarRole, ScalarSite,
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation};
-use crate::{Code, Diagnostic};
+use crate::Code;
 
-type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+type Result<T> = std::result::Result<T, Box<NativeModelError>>;
 
 const MAX_SEQUENCE_ITEMS: u32 = 10_000;
 

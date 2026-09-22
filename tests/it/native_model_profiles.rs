@@ -236,7 +236,7 @@ fn replacing_public_draft_payloads_cannot_retag_the_selected_profile() {
     let ModelSourceCause::Admission(cause) = &error.cause else {
         panic!("historical admission must refuse rational payload: {error:?}")
     };
-    assert_eq!(cause.code, Code::UnsupportedConstruct);
+    assert_eq!(cause.diagnostic.code, Code::UnsupportedConstruct);
     assert_eq!(error.source().source().text(), rational_text);
 
     let admitted = selected.admit(ModelLimits::default()).unwrap();
@@ -262,7 +262,7 @@ fn historical_entrypoints_refuse_rational_declarations_and_roles() {
         ModelLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::UnsupportedConstruct);
+    assert_eq!(error.diagnostic.code, Code::UnsupportedConstruct);
     let mut input = draft(&text);
     input.roles.scalars.clear();
     let error = NativeModel::new(
@@ -273,7 +273,7 @@ fn historical_entrypoints_refuse_rational_declarations_and_roles() {
     )
     .unwrap_err();
     assert_eq!(
-        error.code,
+        error.diagnostic.code,
         Code::UnsupportedConstruct,
         "unmapped rational declarations cannot enter /1 either"
     );
@@ -607,7 +607,7 @@ fn every_rational_site_requires_one_consistent_role() {
             panic!("{description}: expected native admission refusal, got {error:?}")
         };
         assert_eq!(
-            &cause.source,
+            &cause.diagnostic.source,
             error.source().source().identity(),
             "{description}"
         );
@@ -752,9 +752,12 @@ fn historical_linking_refuses_only_selected_v2_artifacts() {
         let span = unit.imports()[0].span;
         let error =
             link_native(unit, std::slice::from_ref(selected), LinkLimits::default()).unwrap_err();
-        assert_eq!(error.code, Code::UnsupportedConstruct);
+        assert_eq!(error.diagnostic.code, Code::UnsupportedConstruct);
         assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
+            (
+                error.diagnostic.span.start.byte,
+                error.diagnostic.span.end.byte
+            ),
             (span.start, span.end)
         );
     }

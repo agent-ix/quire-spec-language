@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-017/025: typed JSON values with checked provenance from Serde's original borrow.
 
-use crate::{formal_source::FormalSource, Diagnostic, Span};
+use crate::formal_source::{FormalSource, FormalSourceError};
+use crate::Span;
 use quire_contract_ir::SourceSpan;
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -25,7 +26,7 @@ pub enum Error {
     ForeignOccurrence,
     /// The native-to-formal source mapping rejected the occurrence.
     #[error("invalid JSON source correspondence: {0}")]
-    Source(#[from] Box<Diagnostic>),
+    Source(#[from] Box<FormalSourceError>),
 }
 
 /// A decoded source value and its complete original JSON occurrence.

@@ -205,5 +205,6 @@ fn scalar_comparison_truth_tables_and_invalid_runtime_integer_stage() {
     assert!(refused
         .diagnostics
         .iter()
-        .any(|d| d.phase == Phase::Validate && d.code == Code::InvalidRuntimeInput));
+        .any(|d| d.diagnostic.phase == Phase::Validate
+            && d.diagnostic.code == Code::InvalidRuntimeInput));
 }

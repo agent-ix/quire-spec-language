@@ -322,7 +322,7 @@ fn operation_reports_preserve_invocation_captures_and_frame_refusals() {
             assert!(failure
                 .diagnostics
                 .iter()
-                .any(|d| d.code == Code::FrameViolation));
+                .any(|d| d.diagnostic.code == Code::FrameViolation));
         } else {
             assert_eq!(report.truth(), Some(result));
         }

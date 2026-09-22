@@ -206,6 +206,31 @@ mod enabled {
     }
 
     #[test]
+    #[trace("TC-109", "FR-031-AC-2")]
+    fn extraction_native_check_failure_retains_the_actual_ir_proof_diagnostic() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
+        let original = std::fs::read_to_string(directory.path().join("rules.md")).unwrap();
+        let text = original.replace(
+            "true implies forall(item in self.items: item < self.n)",
+            "self.signed div self.den = self.signed",
+        );
+        replace(directory.path(), &mut job, &text);
+        let (exit, result, stdout) = invoke(directory.path(), "run", &job);
+        assert_eq!(exit, 20, "{result}");
+        assert!(!stdout);
+        assert_eq!(result["code"], "undefined_expression");
+        // FR-020/FR-031: the checking stage's own upstream IR proof refusal
+        // survives extraction through `CompileError::upstream_diagnostic()`
+        // to the CLI boundary, the same way it does for a source-only run.
+        assert_eq!(
+            result["details"]["cause"]["diagnostic"]["upstream"]["code"],
+            "potentially_undefined"
+        );
+    }
+
+    #[test]
     #[trace("TC-109", "FR-031-AC-3")]
     fn closed_descriptors_and_shared_identity_fields_refuse_malformed_input() {
         let directory = tempfile::tempdir().unwrap();

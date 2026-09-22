@@ -109,7 +109,7 @@ pub(in crate::checking) fn materialize<'a, C: Context<'a>>(
 }
 
 impl<'u, 'a> Context<'a> for Builder<'u, 'a> {
-    type Error = Box<crate::Diagnostic>;
+    type Error = Box<CheckingError>;
     fn graph_node(&self, id: GraphId) -> &Node<'a> {
         &self.graph[id.0]
     }

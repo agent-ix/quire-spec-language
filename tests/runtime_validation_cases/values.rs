@@ -329,14 +329,13 @@ fn every_native_shape_is_checked_at_fields_state_parameters_and_results() {
                     _ => unreachable!(),
                 };
                 assert!(
-                    report.diagnostics.iter().any(|diagnostic| diagnostic.code
-                        == Code::InvalidRuntimeInput
-                        && diagnostic
-                            .runtime
-                            .as_ref()
-                            .unwrap()
-                            .path
-                            .contains(&expected)),
+                    report
+                        .diagnostics
+                        .iter()
+                        .any(
+                            |diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput
+                                && diagnostic.runtime.path.contains(&expected)
+                        ),
                     "{shape:?} at {site}"
                 );
             }
@@ -405,7 +404,7 @@ fn storage_frames_detect_each_value_kind_and_ignore_record_field_order() {
                 assert!(report
                     .diagnostics
                     .iter()
-                    .all(|diagnostic| diagnostic.code == Code::FrameViolation));
+                    .all(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation));
             } else {
                 let context = result.unwrap_or_else(|report| panic!("equal {shape:?}: {report:?}"));
                 assert!(context
@@ -489,11 +488,19 @@ fn nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_va
                 "{shape:?} mutation {variant}, value {root:?}"
             );
             assert!(report.terminal.is_none());
-            assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
-                == Code::InvalidRuntimeInput
-                && diagnostic.runtime.as_ref().unwrap().path.contains(
-                    &RuntimePathSegment::State(qualified(model, "payload_state"))
-                )));
+            assert!(report
+                .diagnostics
+                .iter()
+                .any(
+                    |diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput
+                        && diagnostic
+                            .runtime
+                            .path
+                            .contains(&RuntimePathSegment::State(qualified(
+                                model,
+                                "payload_state"
+                            )))
+                ));
         }
     }
 }
@@ -587,7 +594,7 @@ fn mixed_defects_preserve_diagnostics_under_inventory_population_object_and_fiel
                 report
                     .diagnostics
                     .iter()
-                    .any(|diagnostic| diagnostic.code == code),
+                    .any(|diagnostic| diagnostic.diagnostic.code == code),
                 "mask {mask}, code {code:?}"
             );
         }
@@ -595,7 +602,7 @@ fn mixed_defects_preserve_diagnostics_under_inventory_population_object_and_fiel
             baseline_references = actual.clone();
         }
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
+            let runtime = &mut diagnostic.runtime;
             assert!(
                 actual.contains(&runtime.artifact),
                 "diagnostics bind this permutation's actual bytes"
@@ -694,12 +701,12 @@ fn ambiguous_sequence_element_does_not_hide_changed_available_elements() {
     assert!(report
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+        .any(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput));
     assert_eq!(
         report
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == Code::FrameViolation)
+            .filter(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation)
             .count(),
         2,
         "the known second-element change affects both the object field and State root"

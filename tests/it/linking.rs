@@ -233,8 +233,8 @@ fn exact_source_owner_field_and_digest_domains() {
             LinkLimits::default(),
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::StaleDependency);
-        assert_eq!(error.phase, Phase::Link);
+        assert_eq!(error.diagnostic.code, Code::StaleDependency);
+        assert_eq!(error.diagnostic.phase, Phase::Link);
     }
 }
 
@@ -244,15 +244,16 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
     let original = environment("FR-001", 1, 10);
     let source = unit(&original, "self.count").source().clone();
     let missing = link(read(source.text()), &[], LinkLimits::default()).unwrap_err();
-    assert_eq!(missing.code, Code::MissingImport);
+    assert_eq!(missing.diagnostic.code, Code::MissingImport);
     assert_eq!(
-        missing.span.start.byte,
+        missing.diagnostic.span.start.byte,
         source.text().find("\"example/model\"").unwrap()
     );
     for changed in [environment("FR-001", 2, 10), environment("FR-001", 1, 11)] {
         assert_eq!(
             link(read(source.text()), &[changed], LinkLimits::default())
                 .unwrap_err()
+                .diagnostic
                 .code,
             Code::StaleDependency
         );
@@ -265,6 +266,7 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
             LinkLimits::default()
         )
         .unwrap_err()
+        .diagnostic
         .code,
         Code::StaleDependency
     );
@@ -276,8 +278,11 @@ fn missing_stale_unused_declaration_and_malformed_digest() {
         LinkLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::InvalidModelBinding);
-    assert_eq!(error.span.start.byte, parsed.imports()[0].digest.span.start);
+    assert_eq!(error.diagnostic.code, Code::InvalidModelBinding);
+    assert_eq!(
+        error.diagnostic.span.start.byte,
+        parsed.imports()[0].digest.span.start
+    );
 }
 
 #[trace("TC-022", "TC-034", "FR-005-AC-3", "FR-013-AC-6", "FR-017-AC-3")]
@@ -293,9 +298,9 @@ fn ambiguity_retains_all_sorted_loci_in_every_order() {
         ] {
             let text = document(&imports, &clause("P", "self.count"));
             let error = link(read(&text), &envs, LinkLimits::default()).unwrap_err();
-            assert_eq!(error.code, Code::AmbiguousDeclaration);
+            assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
             assert_eq!(
-                &text[error.span.start.byte..error.span.end.byte],
+                &text[error.diagnostic.span.start.byte..error.diagnostic.span.end.byte],
                 "BoundedCounter"
             );
             assert_eq!(error.related.len(), 2);
@@ -315,7 +320,7 @@ fn ambiguity_retains_all_sorted_loci_in_every_order() {
         LinkLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::AmbiguousDeclaration);
+    assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
     assert_eq!(error.related.len(), 2 * a.types().len());
     assert!(error.related.windows(2).all(|pair| pair[0] <= pair[1]));
 }
@@ -352,7 +357,7 @@ fn failed_import_permutations_never_reuse_successful_state() {
             )
             .unwrap_err();
             assert!(matches!(
-                error.code,
+                error.diagnostic.code,
                 Code::MissingImport | Code::StaleDependency | Code::AmbiguousDeclaration
             ));
             assert_eq!(
@@ -449,7 +454,10 @@ fn lexical_scope_and_formal_shapes_preserve_exact_targets() {
     ] {
         let error = link(unit(&envs[0], expression), &envs, LinkLimits::default()).unwrap_err();
         assert!(
-            matches!(error.code, Code::MissingDeclaration | Code::MissingImport),
+            matches!(
+                error.diagnostic.code,
+                Code::MissingDeclaration | Code::MissingImport
+            ),
             "{expression}: {error}"
         );
     }
@@ -466,9 +474,9 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
             .unwrap()
             .span;
         let error = link(parsed, &envs, LinkLimits::default()).unwrap_err();
-        assert_eq!(error.code, Code::InvalidModelBinding);
-        assert_eq!(error.span.start.byte, expected.start);
-        assert_eq!(error.span.end.byte, expected.end);
+        assert_eq!(error.diagnostic.code, Code::InvalidModelBinding);
+        assert_eq!(error.diagnostic.span.start.byte, expected.start);
+        assert_eq!(error.diagnostic.span.end.byte, expected.end);
     }
     for kind in ["pre", "post"] {
         let text = document(
@@ -478,6 +486,7 @@ fn unmapped_forms_refuse_while_linking_makes_no_type_judgment() {
         assert_eq!(
             link(read(&text), &envs, LinkLimits::default())
                 .unwrap_err()
+                .diagnostic
                 .code,
             Code::InvalidModelBinding
         );
@@ -534,8 +543,12 @@ fn inclusive_lowered_and_zero_limits_are_enforced_independently() {
             let mut limits = exact;
             *field(&mut limits) = if zero { 0 } else { *field(&mut limits) - 1 };
             let error = link(read(&text), &envs, limits).unwrap_err();
-            assert_eq!(error.code, Code::ResourceExhausted, "dimension {dimension}");
-            assert!(error.is_incomplete());
+            assert_eq!(
+                error.diagnostic.code,
+                Code::ResourceExhausted,
+                "dimension {dimension}"
+            );
+            assert!(error.diagnostic.is_incomplete());
             if dimension >= 5 {
                 assert_eq!(
                     error.upstream.unwrap().code,
@@ -566,6 +579,7 @@ fn hard_count_and_traversal_ceilings_cannot_be_raised() {
     assert_eq!(
         link(unit(&env, "true"), &vec![env.clone(); 65], high)
             .unwrap_err()
+            .diagnostic
             .code,
         Code::ResourceExhausted
     );
@@ -577,6 +591,7 @@ fn hard_count_and_traversal_ceilings_cannot_be_raised() {
             high
         )
         .unwrap_err()
+        .diagnostic
         .code,
         Code::ResourceExhausted
     );
@@ -588,6 +603,7 @@ fn hard_count_and_traversal_ceilings_cannot_be_raised() {
             high
         )
         .unwrap_err()
+        .diagnostic
         .code,
         Code::ResourceExhausted
     );
@@ -597,8 +613,8 @@ fn hard_count_and_traversal_ceilings_cannot_be_raised() {
             .join(" and ");
         let parsed = unit(&env, &expression);
         let error = link(parsed, std::slice::from_ref(&env), high).unwrap_err();
-        assert_eq!(error.code, Code::ResourceExhausted);
-        assert!(error.is_incomplete());
+        assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
+        assert!(error.diagnostic.is_incomplete());
     }
     let envs = [env];
     assert_eq!(
@@ -639,6 +655,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
         assert_eq!(
             link(unit(&envs[0], "true"), &envs, LinkLimits::default())
                 .unwrap_err()
+                .diagnostic
                 .code,
             Code::InvalidModelBinding
         );
@@ -655,6 +672,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
         assert_eq!(
             link(read(&text), &envs, LinkLimits::default())
                 .unwrap_err()
+                .diagnostic
                 .code,
             expected
         );
@@ -666,6 +684,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
     assert_eq!(
         link(read(&duplicate), &envs, LinkLimits::default())
             .unwrap_err()
+            .diagnostic
             .code,
         Code::InvalidModelBinding
     );
@@ -690,7 +709,7 @@ fn explicit_context_and_neighboring_clauses_cannot_be_guessed() {
             LinkLimits::default(),
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::AmbiguousDeclaration);
+        assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
         assert_eq!(error.related.len(), 2);
         assert_eq!(error.related[0].identity.owner, *envs[0].owner());
         assert_eq!(error.related[1].identity.owner, *envs[1].owner());
@@ -755,7 +774,7 @@ fn hard_canonical_byte_budgets_admit_equality_and_refuse_one_more() {
     assert_eq!(linked.clauses().len(), 1);
     let oversized = padded_environment("FR-000", hard.model_bytes + 1);
     let error = link(read(original.text()), &[oversized], raised).unwrap_err();
-    assert_eq!(error.code, Code::ResourceExhausted);
+    assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
     assert_eq!(
         error.upstream.unwrap().code,
         ir::DiagnosticCode::CanonicalizationResourceExhausted
@@ -763,8 +782,8 @@ fn hard_canonical_byte_budgets_admit_equality_and_refuse_one_more() {
     let mut aggregate = envs.clone();
     aggregate.push(padded_environment("FR-008", 1024));
     let error = link(read(original.text()), &aggregate, raised).unwrap_err();
-    assert_eq!(error.code, Code::ResourceExhausted);
-    assert!(error.is_incomplete());
+    assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
+    assert!(error.diagnostic.is_incomplete());
     assert_eq!(
         link(read(original.text()), &envs, raised)
             .unwrap()

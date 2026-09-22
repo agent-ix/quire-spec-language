@@ -42,7 +42,7 @@ impl FormalSource {
 
     /// Map an exact-source span into IR coordinates using the existing source index.
     /// Foreign labels, path or digest and invalid UTF-8 ranges refuse without a locus.
-    pub fn to_ir(&self, source: &Source, span: Span) -> Result<SourceSpan, Box<Diagnostic>> {
+    pub fn to_ir(&self, source: &Source, span: Span) -> Result<SourceSpan, Box<FormalSourceError>> {
         if source.identity() != self.source.identity()
             || source.path() != self.source.path()
             || source.digest() != self.source.digest()
@@ -59,7 +59,7 @@ impl FormalSource {
 
     /// Validate all formal endpoint coordinates against bytes before returning a span.
     /// Structurally valid IR spans with foreign identities or false coordinates refuse.
-    pub fn to_native(&self, span: &SourceSpan) -> Result<Span, Box<Diagnostic>> {
+    pub fn to_native(&self, span: &SourceSpan) -> Result<Span, Box<FormalSourceError>> {
         if span.source() != self.identity() {
             return Err(self.failure("formal span belongs to a different source identity"));
         }
@@ -77,7 +77,7 @@ impl FormalSource {
         Ok(native)
     }
 
-    fn location(&self, position: Position) -> Result<SourceLocation, Box<Diagnostic>> {
+    fn location(&self, position: Position) -> Result<SourceLocation, Box<FormalSourceError>> {
         let line = u32::try_from(position.line)
             .map_err(|_| self.failure("native line is not representable in IR"))?;
         let column = u32::try_from(position.column)
@@ -88,20 +88,42 @@ impl FormalSource {
             .map_err(|upstream| self.upstream_failure(upstream))
     }
 
-    fn failure(&self, message: &str) -> Box<Diagnostic> {
-        crate::diagnostic::error(
-            &self.source,
-            Code::InvalidSourceMap,
-            Phase::SourceMap,
-            0,
-            0,
-            message,
-        )
+    fn failure(&self, message: &str) -> Box<FormalSourceError> {
+        Box::new(FormalSourceError {
+            diagnostic: crate::diagnostic::error(
+                &self.source,
+                Code::InvalidSourceMap,
+                Phase::SourceMap,
+                0,
+                0,
+                message,
+            ),
+            upstream: None,
+        })
     }
 
-    fn upstream_failure(&self, upstream: quire_contract_ir::Diagnostic) -> Box<Diagnostic> {
-        let mut diagnostic = self.failure("formal source constructor rejected mapped coordinates");
-        diagnostic.upstream = Some(Box::new(upstream));
-        diagnostic
+    fn upstream_failure(&self, upstream: quire_contract_ir::Diagnostic) -> Box<FormalSourceError> {
+        let mut error = self.failure("formal source constructor rejected mapped coordinates");
+        error.upstream = Some(Box::new(upstream));
+        error
     }
 }
+
+/// A [`FormalSource`] coordinate-mapping refusal. `diagnostic` (ADR-011 §6.1) does not
+/// import `quire_contract_ir`, so the exact IR constructor refusal that caused this
+/// failure, when there was one, is carried here rather than inside [`Diagnostic`].
+#[derive(Clone, Debug)]
+pub struct FormalSourceError {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// The IR coordinate constructor's own refusal, when that specific step failed.
+    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+}
+
+impl std::fmt::Display for FormalSourceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for FormalSourceError {}

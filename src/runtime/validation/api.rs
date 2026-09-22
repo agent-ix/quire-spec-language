@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-007: exact validation requests, immutable contexts and classified reports.
 
-use std::cmp::Ordering;
-
 use quire_contract_ir as ir;
+use std::cmp::Ordering;
 
 use super::super::{
     Invocation, InvocationRef, ObjectIdentity, QualifiedName, Snapshot, SnapshotRef,
 };
 use crate::checking::{CheckedClause, CheckedPackage};
+use crate::linking::DeclarationLocation;
 use crate::{ByteDigest, Diagnostic, SourceIdentity};
 
 #[cfg(test)]
@@ -219,6 +219,26 @@ pub enum ValidationStatus {
     Incomplete,
 }
 
+/// A validation defect, owning the runtime locus and related declarations
+/// that a foundation-layer `Diagnostic` cannot carry directly.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidationDiagnostic {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// Runtime provenance the foundation layer cannot express.
+    pub runtime: RuntimeLocation,
+    /// Other formal declarations implicated by this defect.
+    pub related: Vec<DeclarationLocation>,
+}
+
+impl std::fmt::Display for ValidationDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for ValidationDiagnostic {}
+
 /// Retained actual defects and the optional reason traversal stopped.
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("native runtime validation: {status:?}")]
@@ -226,9 +246,9 @@ pub struct ValidationReport {
     /// Overall classification; known invalid input takes precedence.
     pub status: ValidationStatus,
     /// Deterministically ordered observed details, possibly only a stopped prefix.
-    pub diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<ValidationDiagnostic>,
     /// Separate resource/cancellation stop reason, without a duplicate detail entry.
-    pub terminal: Option<Box<Diagnostic>>,
+    pub terminal: Option<Box<ValidationDiagnostic>>,
     /// Actual work admitted before the report.
     pub usage: ValidationUsage,
 }

@@ -596,16 +596,19 @@ fn empty_results_and_maximal_declared_domains_keep_their_actual_admission_bounda
         panic!("native admission must own the sequence refusal: {excess}")
     };
     assert_eq!(
-        cause.code,
+        cause.diagnostic.code,
         quire_spec_language::Code::UnrepresentableConstraint
     );
-    assert_eq!(cause.phase, quire_spec_language::Phase::Link);
-    assert_eq!(cause.source.identity, "model:ExcessQueryMaximum");
-    assert_eq!(cause.source.revision, "authored");
-    assert_eq!(cause.path, "ExcessQueryMaximum.json");
-    assert_eq!(&cause.source, excess.source().source().identity());
+    assert_eq!(cause.diagnostic.phase, quire_spec_language::Phase::Link);
+    assert_eq!(cause.diagnostic.source.identity, "model:ExcessQueryMaximum");
+    assert_eq!(cause.diagnostic.source.revision, "authored");
+    assert_eq!(cause.diagnostic.path, "ExcessQueryMaximum.json");
     assert_eq!(
-        cause.span,
+        &cause.diagnostic.source,
+        excess.source().source().identity()
+    );
+    assert_eq!(
+        cause.diagnostic.span,
         excess
             .source()
             .source()

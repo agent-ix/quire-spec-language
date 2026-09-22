@@ -189,7 +189,7 @@ fn actual_quire_body_reaches_native_truth_and_refusal_with_unchanged_extraction(
             assert!(failure
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::DanglingReference));
+                .any(|diagnostic| diagnostic.diagnostic.code == Code::DanglingReference));
         }
     }
 }

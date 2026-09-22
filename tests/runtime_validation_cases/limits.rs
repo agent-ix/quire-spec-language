@@ -107,7 +107,7 @@ fn unselected_artifact_bytes_count_but_their_objects_are_not_inspected() {
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert!(report.diagnostics.is_empty());
     assert_eq!(
-        report.terminal.as_ref().unwrap().code,
+        report.terminal.as_ref().unwrap().diagnostic.code,
         Code::ResourceExhausted
     );
     assert_eq!(
@@ -173,7 +173,7 @@ fn measured_required_counters_accept_exact_and_stop_one_below_or_zero() {
                     "{counter:?} at {maximum}"
                 );
                 assert_eq!(
-                    report.terminal.as_ref().unwrap().code,
+                    report.terminal.as_ref().unwrap().diagnostic.code,
                     Code::ResourceExhausted
                 );
                 assert!(report.diagnostics.is_empty());
@@ -231,7 +231,7 @@ fn detail_capacity_retains_invalid_classification_even_at_zero() {
         assert_eq!(report.diagnostics.len(), maximum);
         if maximum < count {
             assert_eq!(
-                report.terminal.as_ref().unwrap().code,
+                report.terminal.as_ref().unwrap().diagnostic.code,
                 Code::ResourceExhausted
             );
         } else {
@@ -254,7 +254,7 @@ fn detail_capacity_retains_invalid_classification_even_at_zero() {
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.usage.diagnostics, 0);
     assert_eq!(
-        report.terminal.as_ref().unwrap().code,
+        report.terminal.as_ref().unwrap().diagnostic.code,
         Code::ResourceExhausted
     );
 }
@@ -313,7 +313,10 @@ fn cancellation_at_each_observed_poll_is_repeatable_and_preserves_known_defects(
                     )
                     .unwrap_err();
                     assert_eq!(polls.get(), stop, "no callback after a true poll");
-                    assert_eq!(report.terminal.as_ref().unwrap().code, Code::Cancelled);
+                    assert_eq!(
+                        report.terminal.as_ref().unwrap().diagnostic.code,
+                        Code::Cancelled
+                    );
                     report
                 };
                 let report = run();
@@ -369,6 +372,7 @@ fn fresh_requests_preserve_success_after_refusal_exhaustion_cancellation_and_pan
             .terminal
             .as_ref()
             .unwrap()
+            .diagnostic
             .code,
         Code::Cancelled
     );
@@ -438,7 +442,7 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert_eq!(report.usage, ValidationUsage::default());
     assert_eq!(
-        report.terminal.as_ref().unwrap().message,
+        report.terminal.as_ref().unwrap().diagnostic.message,
         "validation inventory count limit"
     );
 
@@ -463,7 +467,7 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     assert_eq!(report.status, ValidationStatus::Incomplete);
     assert_eq!(report.usage.objects, 0);
     assert_eq!(
-        report.terminal.as_ref().unwrap().message,
+        report.terminal.as_ref().unwrap().diagnostic.message,
         "validation selected object limit"
     );
 
@@ -489,7 +493,7 @@ fn elevated_options_still_enforce_inventory_object_and_detail_hard_ceilings() {
     assert_eq!(report.usage.diagnostics, 256);
     assert_eq!(report.diagnostics.len(), 256);
     assert_eq!(
-        report.terminal.as_ref().unwrap().message,
+        report.terminal.as_ref().unwrap().diagnostic.message,
         "validation detail diagnostic limit"
     );
 }
@@ -545,11 +549,11 @@ fn shared_values_cannot_raise_hard_work_or_unicode_limits() {
         assert_eq!(report.status, ValidationStatus::Incomplete);
         assert!(report.diagnostics.is_empty());
         let terminal = report.terminal.as_ref().unwrap();
-        assert_eq!(terminal.code, Code::ResourceExhausted);
+        assert_eq!(terminal.diagnostic.code, Code::ResourceExhausted);
         let hard = if text { 8_388_608 } else { 1_000_000 };
         assert_eq!(counter.usage(report.usage), hard);
         assert_eq!(
-            terminal.message,
+            terminal.diagnostic.message,
             if text {
                 "validation Unicode inspection limit"
             } else {
@@ -615,7 +619,7 @@ fn exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing() {
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.usage.objects, 0);
     assert_eq!(
-        report.terminal.as_ref().unwrap().message,
+        report.terminal.as_ref().unwrap().diagnostic.message,
         "validation inventory content limit"
     );
 }
@@ -731,7 +735,7 @@ fn maximum_detail_count_is_complete_until_an_additional_defect_needs_storage() {
         assert!(report
             .diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+            .all(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput));
         if count == 256 {
             assert!(
                 report.terminal.is_none(),
@@ -739,7 +743,7 @@ fn maximum_detail_count_is_complete_until_an_additional_defect_needs_storage() {
             );
         } else {
             assert_eq!(
-                report.terminal.as_ref().unwrap().code,
+                report.terminal.as_ref().unwrap().diagnostic.code,
                 Code::ResourceExhausted
             );
         }

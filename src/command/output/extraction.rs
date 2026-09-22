@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: typed extraction provenance inside native command output.
 
-use super::{diagnostic, source, types};
+use super::{diagnostic, diagnostic_with_upstream, source, types};
 use crate::command::{compilation::RunPackage, ExtractionError, ExtractionMode};
 use crate::quire_source::{self, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use crate::{Diagnostic, LocatedSpan, SourceIdentity, Span};
@@ -154,7 +154,9 @@ fn consumer_failure(value: &quire_source::Error) -> ConsumerFailure<'_> {
         quire_source::Cause::Preflight(error) => Cause::Preflight { preflight: error },
         quire_source::Cause::Join(error) => Cause::Join(diagnostic(error)),
         quire_source::Cause::Compile(error) => Cause::Compile {
-            diagnostic: error.native_diagnostic().map(diagnostic),
+            diagnostic: error
+                .native_diagnostic()
+                .map(|value| diagnostic_with_upstream(value, error.upstream_diagnostic())),
             original_spans: MappedSpans(error.original_spans()),
         },
     };

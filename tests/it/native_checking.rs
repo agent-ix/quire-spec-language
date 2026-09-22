@@ -14,15 +14,13 @@ mod types;
 use ix_trace_rs::trace;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::{
-    check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding, NativeType,
+    check, CheckBindings, CheckLimits, CheckedPackage, CheckingError, ClauseBinding, NativeType,
 };
 use quire_spec_language::formal_source::FormalSource;
-use quire_spec_language::linking::LinkedPackage;
+use quire_spec_language::linking::{LinkedPackage, LinkingError};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::syntax::ClauseKind;
-use quire_spec_language::{
-    link_native, parse, Code, Diagnostic, Limits, LinkLimits, Phase, SourceIdentity,
-};
+use quire_spec_language::{link_native, parse, Code, Limits, LinkLimits, Phase, SourceIdentity};
 
 fn authored_owner() -> ir::RequirementRef {
     ir::RequirementRef::new(
@@ -36,7 +34,7 @@ fn request<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,
-) -> Result<CheckedPackage<'a>, Box<Diagnostic>> {
+) -> Result<CheckedPackage<'a>, Box<CheckingError>> {
     let (linked, bindings) = prepared(models, expression, kind)?;
     check(linked, bindings, CheckLimits::default())
 }
@@ -45,7 +43,7 @@ fn prepared<'a>(
     models: &'a [NativeModel],
     expression: &str,
     kind: ClauseKind,
-) -> Result<(LinkedPackage<'a>, CheckBindings), Box<Diagnostic>> {
+) -> Result<(LinkedPackage<'a>, CheckBindings), Box<LinkingError>> {
     let (clause, execution_point) = match kind {
         ClauseKind::Invariant => (
             format!("invariant Rule on M::Node at current {{ {expression} }}"),
@@ -84,7 +82,7 @@ fn prepared<'a>(
 fn program<'a>(
     models: &'a [NativeModel],
     clauses: &str,
-) -> Result<(LinkedPackage<'a>, FormalSource), Box<Diagnostic>> {
+) -> Result<(LinkedPackage<'a>, FormalSource), Box<LinkingError>> {
     let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clauses}\n", models[0].digest());
     let unit = parse(
         SourceIdentity {
@@ -141,9 +139,9 @@ fn refused(
     locus: Option<&str>,
 ) {
     let error = request(models, expression, kind).unwrap_err();
-    assert_eq!(error.code, code, "{expression}: {error:?}");
-    assert_eq!(error.phase, Phase::Check, "{expression}");
-    assert!(!error.is_incomplete());
+    assert_eq!(error.diagnostic.code, code, "{expression}: {error:?}");
+    assert_eq!(error.diagnostic.phase, Phase::Check, "{expression}");
+    assert!(!error.diagnostic.is_incomplete());
     if let Some(locus) = locus {
         let clause_text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n", models[0].digest());
         // Locate against the authored test expression, independently of the AST.
@@ -154,8 +152,8 @@ fn refused(
                 ClauseKind::Postcondition => "post Rule on M::Node::step { ".len(),
             };
         assert_eq!(
-            &expression
-                [error.span.start.byte - expression_start..error.span.end.byte - expression_start],
+            &expression[error.diagnostic.span.start.byte - expression_start
+                ..error.diagnostic.span.end.byte - expression_start],
             locus
         );
     }
@@ -523,11 +521,11 @@ fn tc_053_native_presence_facts_are_sound_against_independent_boolean_assignment
             }
             Err(error) => {
                 assert_eq!(
-                    error.code,
+                    error.diagnostic.code,
                     Code::UndefinedExpression,
                     "{expression}: {error:?}"
                 );
-                assert_eq!(error.phase, Phase::Check);
+                assert_eq!(error.diagnostic.phase, Phase::Check);
                 assert_eq!(
                     error.upstream.as_ref().unwrap().code,
                     ir::DiagnosticCode::PotentiallyUndefined

@@ -8,11 +8,11 @@ fn invalid(linked: LinkedPackage<'_>, bindings: CheckBindings) {
     let source = linked.unit().source().clone();
     let error = check(linked, bindings, CheckLimits::default()).unwrap_err();
     assert_eq!(
-        (error.phase, error.code),
+        (error.diagnostic.phase, error.diagnostic.code),
         (Phase::Check, Code::InvalidModelBinding)
     );
-    assert_eq!(error.source, *source.identity());
-    assert!(!error.is_incomplete());
+    assert_eq!(error.diagnostic.source, *source.identity());
+    assert!(!error.diagnostic.is_incomplete());
 }
 
 #[test]

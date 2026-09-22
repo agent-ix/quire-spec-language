@@ -88,6 +88,24 @@ impl Request {
         error.cause = Some(PackageCause::Native(cause));
         error
     }
+    fn linking(&self, cause: Box<crate::linking::LinkingError>) -> Box<PackageError> {
+        let mut error = self.error(
+            cause.diagnostic.code,
+            Vec::new(),
+            "native compiler reconstruction refused",
+        );
+        error.cause = Some(PackageCause::Linking(cause));
+        error
+    }
+    fn checking(&self, cause: Box<crate::checking::CheckingError>) -> Box<PackageError> {
+        let mut error = self.error(
+            cause.diagnostic.code,
+            Vec::new(),
+            "native compiler reconstruction refused",
+        );
+        error.cause = Some(PackageCause::Checking(cause));
+        error
+    }
     fn decoded<T>(
         &mut self,
         result: Result<(T, super::PackagePassUsage), intake::Failure>,
@@ -417,8 +435,8 @@ pub(super) fn read<'model>(
         limits.syntax,
     )
     .map_err(|cause| request.native(cause))?;
-    let linked = link_native(unit, models, limits.link).map_err(|cause| request.native(cause))?;
-    let checked = check(linked, bindings, limits.check).map_err(|cause| request.native(cause))?;
+    let linked = link_native(unit, models, limits.link).map_err(|cause| request.linking(cause))?;
+    let checked = check(linked, bindings, limits.check).map_err(|cause| request.checking(cause))?;
     request.usage.checking = Some(*checked.usage());
     request.stage = PackageStage::Compare;
     let mut reconstructed = NativePackage::new(checked, package_limits).map_err(|mut error| {

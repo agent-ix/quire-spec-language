@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_contract_ir as ir;
 
 use super::types::Catalog;
-use super::{failure, Result, UniverseRequirement};
+use super::{failure, CheckingError, Result, UniverseRequirement};
 use crate::native_model::{NativeModel, ObjectRole};
 use crate::{Code, Source, Span};
 
@@ -40,7 +40,7 @@ impl<'u, 'a> Populations<'u, 'a> {
         }
     }
 
-    fn invalid(&self) -> Box<crate::Diagnostic> {
+    fn invalid(&self) -> Box<CheckingError> {
         failure(
             self.source,
             Code::InvalidModelBinding,

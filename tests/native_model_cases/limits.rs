@@ -4,7 +4,7 @@
 use super::*;
 use ix_trace_rs::trace;
 
-fn admit(input: Parts, limits: ModelLimits) -> Result<NativeModel, Box<Diagnostic>> {
+fn admit(input: Parts, limits: ModelLimits) -> Result<NativeModel, Box<NativeModelError>> {
     NativeModel::new(input.source, input.environment, input.roles, limits)
 }
 
@@ -67,8 +67,12 @@ fn tc_045_every_model_dimension_has_an_inclusive_small_boundary() {
             let result = admit(parts(), limits);
             if maximum < required {
                 let error = result.unwrap_err();
-                assert_eq!(error.code, Code::ResourceExhausted, "{name}/{maximum}");
-                assert!(error.is_incomplete());
+                assert_eq!(
+                    error.diagnostic.code,
+                    Code::ResourceExhausted,
+                    "{name}/{maximum}"
+                );
+                assert!(error.diagnostic.is_incomplete());
             } else {
                 assert_eq!(result.unwrap().artifact_bytes().len(), bytes);
             }
@@ -87,7 +91,7 @@ fn tc_045_every_model_dimension_has_an_inclusive_small_boundary() {
         if maximum == 18 {
             assert_eq!(result.unwrap().roles().operations.len(), 2);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
 }
@@ -117,7 +121,7 @@ fn tc_045_formal_depth_cannot_be_elevated_past_64() {
         if levels == 64 {
             assert_eq!(result.unwrap().environment().values().len(), 4);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
 }
@@ -165,8 +169,8 @@ fn tc_045_formal_node_ceiling_is_reachable_within_artifact_limit() {
             assert!(model.artifact_bytes().len() < 1_048_576);
         } else {
             let error = result.unwrap_err();
-            assert_eq!(error.code, Code::ResourceExhausted);
-            assert_eq!(error.message, "model nodes limit exceeded");
+            assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
+            assert_eq!(error.diagnostic.message, "model nodes limit exceeded");
         }
     }
 }
@@ -211,8 +215,8 @@ fn tc_045_entry_ceiling_counts_frames_across_operations() {
             assert_eq!(result.unwrap().roles().operations.len(), 100);
         } else {
             let error = result.unwrap_err();
-            assert_eq!(error.code, Code::ResourceExhausted);
-            assert_eq!(error.message, "model entries limit exceeded");
+            assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
+            assert_eq!(error.diagnostic.message, "model entries limit exceeded");
         }
     }
 }
@@ -239,14 +243,14 @@ fn tc_045_role_hard_ceiling_precedes_the_coupled_artifact_ceiling() {
             },
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::ResourceExhausted);
+        assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
         if count == 10_001 {
-            assert_eq!(error.message, "model roles limit exceeded");
+            assert_eq!(error.diagnostic.message, "model roles limit exceeded");
         } else {
             // 10,000 full source-bearing roles cannot fit this artifact ceiling.
             // This is a coupled-limit refusal, not a fabricated valid exact case;
             // the small 9-role test supplies the inclusive success control.
-            assert!(error.message.contains("artifact"), "{error:?}");
+            assert!(error.diagnostic.message.contains("artifact"), "{error:?}");
         }
     }
 }

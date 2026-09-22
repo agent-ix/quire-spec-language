@@ -13,8 +13,8 @@ use quire_contract_ir as ir;
 use super::constraints::NodeType;
 use super::types::Catalog;
 use super::{
-    failure, CheckLimits, CheckUsage, ClauseBinding, NativeType, Observation, PresencePremise,
-    ProofGoal, ProofValue, Result,
+    failure, CheckLimits, CheckUsage, CheckingError, ClauseBinding, NativeType, Observation,
+    PresencePremise, ProofGoal, ProofValue, Result,
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
@@ -197,7 +197,7 @@ impl From<ir::Diagnostic> for RepresentationError {
 }
 
 impl RepresentationError {
-    fn into_native(self, source: &Source, span: Span, message: &str) -> Box<crate::Diagnostic> {
+    fn into_native(self, source: &Source, span: Span, message: &str) -> Box<CheckingError> {
         match self {
             Self::Unsupported => failure(source, Code::InvalidModelBinding, span, message),
             Self::Ir(diagnostic) => upstream(source, span, vec![diagnostic], message),
@@ -283,6 +283,7 @@ impl<'u, 'a> Builder<'u, 'a> {
     fn source(&self, id: ExprId) -> Result<ir::SourceSpan> {
         self.formal
             .to_ir(self.linked.unit().source(), self.span(id))
+            .map_err(Into::into)
     }
     fn ty(&self, id: ExprId) -> Result<&'u NodeType<'a>> {
         self.types
@@ -690,7 +691,7 @@ fn upstream(
     span: Span,
     diagnostics: Vec<ir::Diagnostic>,
     message: &str,
-) -> Box<crate::Diagnostic> {
+) -> Box<CheckingError> {
     let cause = diagnostics.into_iter().next();
     let code = match cause.as_ref().map(|diagnostic| diagnostic.code) {
         Some(

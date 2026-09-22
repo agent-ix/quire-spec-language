@@ -20,7 +20,48 @@ use crate::{Code, Diagnostic, Phase, Source, Span};
 pub use types::NativeType;
 pub(crate) use types::{Catalog, FrameIndex};
 
-type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+type Result<T> = std::result::Result<T, Box<CheckingError>>;
+
+/// A checking refusal, keeping an original upstream IR proof refusal separate
+/// from the reusable [`Diagnostic`] shape (ADR-011 §6.1: `diagnostic` does not
+/// import IR types).
+#[derive(Clone, Debug)]
+pub struct CheckingError {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// Related formal declarations, sorted by identity and source location.
+    pub related: Vec<DeclarationLocation>,
+    /// Structured upstream IR proof refusal, when the proof engine rejected it.
+    pub upstream: Option<Box<ir::Diagnostic>>,
+}
+
+impl std::fmt::Display for CheckingError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for CheckingError {}
+
+impl From<Box<crate::linking::LinkingError>> for Box<CheckingError> {
+    fn from(error: Box<crate::linking::LinkingError>) -> Self {
+        Box::new(CheckingError {
+            diagnostic: error.diagnostic,
+            related: error.related,
+            upstream: error.upstream,
+        })
+    }
+}
+
+impl From<Box<crate::formal_source::FormalSourceError>> for Box<CheckingError> {
+    fn from(error: Box<crate::formal_source::FormalSourceError>) -> Self {
+        Box::new(CheckingError {
+            diagnostic: error.diagnostic,
+            related: Vec::new(),
+            upstream: error.upstream,
+        })
+    }
+}
 
 /// Authored correspondence for one native clause, supplied rather than minted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -290,8 +331,24 @@ impl<'a> CheckedPackage<'a> {
     }
 }
 
-fn failure(source: &Source, code: Code, span: Span, message: impl Into<String>) -> Box<Diagnostic> {
-    crate::diagnostic::error(source, code, Phase::Check, span.start, span.end, message)
+fn failure(
+    source: &Source,
+    code: Code,
+    span: Span,
+    message: impl Into<String>,
+) -> Box<CheckingError> {
+    Box::new(CheckingError {
+        diagnostic: crate::diagnostic::error(
+            source,
+            code,
+            Phase::Check,
+            span.start,
+            span.end,
+            message,
+        ),
+        related: Vec::new(),
+        upstream: None,
+    })
 }
 
 /// Establish native types and guarded definedness under explicit input obligations.

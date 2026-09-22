@@ -242,11 +242,11 @@ pub(crate) fn read_source(
             phase,
             code,
             cause,
-            source: refusal.diagnostic.source,
-            path: refusal.diagnostic.path,
-            span: refusal.diagnostic.span,
+            source: refusal.error.source,
+            path: refusal.error.path,
+            span: refusal.error.span,
             related: Vec::new(),
-            message: refusal.diagnostic.message,
+            message: refusal.error.message,
         })
     })
 }

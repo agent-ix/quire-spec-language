@@ -9,9 +9,9 @@ FormalSource::new(source: Source, identity: quire_contract_ir::SourceIdentity) -
 FormalSource::source(&self) -> &Source
 FormalSource::identity(&self) -> &quire_contract_ir::SourceIdentity
 FormalSource::to_ir(&self, source: &Source, span: Span)
-    -> Result<quire_contract_ir::SourceSpan, Box<Diagnostic>>
+    -> Result<quire_contract_ir::SourceSpan, Box<FormalSourceError>>
 FormalSource::to_native(&self, span: &quire_contract_ir::SourceSpan)
-    -> Result<Span, Box<Diagnostic>>
+    -> Result<Span, Box<FormalSourceError>>
 ```
 
 `new` is an explicit assignment made by the caller. Both inputs already have
@@ -37,9 +37,12 @@ validate its coordinates against bytes it does not own. This bridge supplies
 that check. Invalid spans never become a guessed or clamped source position.
 
 Both directions return `invalid_source_map` in phase `source_map` on a mapping
-failure, with native diagnostic coordinates at bound byte zero, no related
-declarations and no Boolean result. If an IR constructor returns a diagnostic,
-that structured diagnostic remains available in `upstream`. The existing source
+failure, with native diagnostic coordinates at bound byte zero and no Boolean
+result, wrapped in `FormalSourceError` (ADR-011 §6.1: `diagnostic` does not
+import `quire_contract_ir`, so `FormalSourceError` pairs the shared
+`Box<Diagnostic>` with its own `upstream` sibling field; there is no
+`related` field here). If an IR constructor returns a diagnostic, that
+structured diagnostic remains available in `FormalSourceError::upstream`. The existing source
 ceiling bounds reachable coordinates well within the IR numeric widths; checked
 conversions also reject oversized incoming IR offsets. Mapping does not allocate
 in proportion to the source or start threads, processes, callbacks or filesystem

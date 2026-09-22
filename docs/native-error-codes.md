@@ -63,12 +63,25 @@ reused; prose may change without changing classification.
 | ambiguous_dispatch | FR-151 dispatch linking found no, or several undominated, applicable candidates for a closed subtype. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
-source_map, link, check or validate. Related formal declaration locations are structured fields;
-an upstream IR canonicalization or proof failure is retained in the optional upstream
-field. Runtime diagnostics additionally retain the exact actual/expected artifact,
-authored clause, observation and typed value path in `runtime`. Earlier phases
-leave that field empty. These fields do not change the
-existing syntax CLI output. Resource exhaustion is incomplete, never false. This
+source_map, link, check or validate. `Diagnostic` itself carries only the
+phase, code, source locus and message (ADR-011 §6.1: the foundation layer
+does not import `crate::linking` or IR types). Related formal declaration
+locations and an upstream IR canonicalization or proof failure are retained
+as typed sibling fields on the owning stage's own error type instead —
+`LinkingError`, `CheckingError`, `FormalSourceError` and `NativeModelError`
+each pair a `Box<Diagnostic>` with `related`/`upstream` as applicable.
+Runtime validation diagnostics pair a `Box<Diagnostic>` with `runtime` (the
+exact actual/expected artifact, authored clause, observation and typed value
+path) and `related` instead. The CLI's `native-run-result/1` output carries
+both `upstream` and `runtime` on every diagnostic view: a `link`- or
+`check`-stage diagnostic populates `upstream` from its `LinkingError`/
+`CheckingError` wrapper (null when there was no upstream refusal) and leaves
+`runtime` null; a `validate`-stage diagnostic populates `runtime` from its
+`ValidationDiagnostic` wrapper and leaves `upstream` null. A `CheckingError`
+built from a `FormalSourceError` (a `to_ir` coordinate-mapping failure) keeps
+the `source_map` phase from its origin and can still populate `upstream`, so
+`source_map` is not one of the phases that always leaves both fields null.
+Resource exhaustion is incomplete, never false. This
 six-code contract is carried by the `quire-spec` binary; the separate
 `fixture-audit` target keeps its own [audit codes](audit-error-codes.md) and is
 not on this contract. On FR-301's six-code contract, `quire-spec` exits 0 for a
