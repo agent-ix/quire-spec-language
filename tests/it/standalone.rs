@@ -239,7 +239,7 @@ fn selected_package_failures_preserve_reader_details_without_compilation_fallbac
 }
 
 #[test]
-#[trace("TC-106", "FR-020-AC-8", "FR-028-AC-3")]
+#[trace("TC-106", "FR-016-AC-1")]
 fn definedness_proof_refusal_retains_its_structured_upstream_diagnostic() {
     let directory = tempfile::tempdir().unwrap();
     let (mut job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();

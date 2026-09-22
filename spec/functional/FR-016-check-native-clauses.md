@@ -86,7 +86,7 @@ and contains no healthy/violating assessment of an unsupplied population.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-016-AC-1 | Real rule-model cases distinguish unguarded/right-guard/alternative-join unwraps from implication and conditional guards, preserving exact refusal loci and upstream proof diagnostics. | Test (TC-025, TC-053) |
+| FR-016-AC-1 | Real rule-model cases distinguish unguarded/right-guard/alternative-join unwraps from implication and conditional guards, preserving exact refusal loci and upstream proof diagnostics. | Test (TC-025, TC-053, TC-106) |
 | FR-016-AC-2 | Actual postcondition cases distinguish pre/post presence and preserve captured aliases; result/pre outside their admitted observations refuse wrong_snapshot. | Test (TC-026, TC-046) |
 | FR-016-AC-3 | Guarded Version addition discharges through the actual IR prover; absent/weakened guards, possible zero divisors and signed-minimum/-1 fail definedness, while specified signed division/remainder constants are accepted. | Test (TC-027, TC-047) |
 | FR-016-AC-4 | Ambiguous literals and context-free size refuse; an explicit Count context and unambiguous contextual literal constraints are accepted without nominal or unit coercion. | Test (TC-028, TC-048) |

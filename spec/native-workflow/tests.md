@@ -91,7 +91,7 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | TC-103 | Standalone native execution | Integration | P1 | FR-026 | ✅ Tested |
 | TC-104 | Standalone native refusals | Integration | P1 | FR-026 | ✅ Tested |
 | TC-105 | Standalone package export | Integration | P1 | FR-027 | ✅ Tested |
-| TC-106 | Selected package execution | Integration | P1 | FR-028 | ✅ Tested |
+| TC-106 | Selected package execution | Integration | P1 | FR-028, FR-016 | ✅ Tested |
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ Tested |
 | TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ Tested |
 | TC-109 | Standalone Markdown execution | Integration | P1 | FR-031 | ✅ Tested |

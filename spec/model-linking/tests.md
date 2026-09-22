@@ -71,7 +71,7 @@ per-group counts before moving this row to Passed.
 | FR-015 | FR-015-AC-4 | TC-043 | ✅ Passed |
 | FR-015 | FR-015-AC-5 | TC-044 | ✅ Passed |
 | FR-015 | FR-015-AC-6 | TC-045 | ✅ Passed |
-| FR-016 | FR-016-AC-1 | TC-025, TC-053 | ✅ Passed |
+| FR-016 | FR-016-AC-1 | TC-025, TC-053, TC-106 | ✅ Passed |
 | FR-016 | FR-016-AC-2 | TC-026, TC-046 | ✅ Passed |
 | FR-016 | FR-016-AC-3 | TC-027, TC-047 | ✅ Passed |
 | FR-016 | FR-016-AC-4 | TC-028, TC-048 | ✅ Passed |
