@@ -45,8 +45,8 @@
 //! FR-153's own Outputs clause promises "a typed reference, option, or
 //! bounded collection", never a bare, unbounded container. [`all_instances`]
 //! returns a [`ReferenceSet`] (its element type `T` plus a
-//! [`CardinalityBound`] `[0, N]`, reusing `crate::value`'s own FR-144 bound
-//! type rather than a plain comparison) and [`lookup`] returns a
+//! [`CardinalityBound`] `[0, N]`, reusing `quire_exact`'s own FR-144 kernel
+//! bound type rather than a plain comparison) and [`lookup`] returns a
 //! [`TypedReference`] (the queried type `T` alongside the realized key).
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components

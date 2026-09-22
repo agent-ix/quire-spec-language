@@ -26,13 +26,15 @@ use quire_exact::{
     length_amount, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter,
 };
 
-// QSL-131 (S-1b): `CardinalityBound` and `EmptyCardinalityBound` duplicated
-// `quire-exact/src/collection.rs` byte-for-byte and are deleted; every
-// consumer now imports `quire_exact::{CardinalityBound, EmptyCardinalityBound}`
-// directly. `CardinalityBound::violation` stayed `pub(crate)` to that crate
-// (it is not part of the exported facade), so `bound_and_retain` below
-// recomputes the same three-way comparison from the public `minimum()`/
-// `maximum()` accessors instead of porting a copy of that method.
+// `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own FR-144
+// kernel types (QSL-131 S-1b). `bound_and_retain` below recomputes the
+// three-way bound comparison from their public `minimum()`/`maximum()`
+// accessors rather than calling `quire_exact`'s own `violation` fn: that fn
+// is `pub(crate)` there, but the real reason is its return type,
+// `quire_exact::BoundViolation`, is not QSL's own duplicate
+// `value::outcome::BoundViolation` (`outcome.rs:236`) -- the two stay
+// distinct until the Outcome/Refusal cut later in QSL-131 merges them, and
+// no `From` conversion shims between them meanwhile.
 
 /// A collection type `K<T>[min, max]`. Two collection types are the same type
 /// exactly when kind, element type and bound are all equal.
