@@ -232,7 +232,6 @@ impl<'a, D> CheckContext<'a, D> {
         }
         Ok(())
     }
-
 }
 
 /// ADR-012 §2's design-level `FamilyContract`, narrowed to the one part

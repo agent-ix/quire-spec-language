@@ -576,7 +576,9 @@ mod family_contract_tests {
         };
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-            .expect("the top-level call's own admission charge is against contract_meter, unlimited here");
+            .expect(
+            "the top-level call's own admission charge is against contract_meter, unlimited here",
+        );
         assert!(
             matches!(outcome.outcome, crate::value::Outcome::Incomplete(_)),
             "expected kernel Outcome::Incomplete from the nested call's own denied charge, got {:?}",
