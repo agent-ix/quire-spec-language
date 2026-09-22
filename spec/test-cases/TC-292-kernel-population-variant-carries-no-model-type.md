@@ -37,8 +37,12 @@ a population value" cannot distinguish from the correct shape.
 
 Step 1 shows `Value::Population(PopulationId)`, never
 `Value::Population(Arc<PopulationBinding>)` or an inline reproduction of
-`PopulationBinding`'s fields. Step 2 confirms `quire-exact`'s only
-dependencies are `num-bigint`, `num-integer`, `num-traits`, `thiserror` and
-`unicode-normalization` -- none of which exposes `model::population` -- so
-the crate-DAG direction alone makes a `PopulationBinding` import a compile
-error, not a possibility this inspection needs to search source text for.
+`PopulationBinding`'s fields defined locally inside `quire-exact` -- the
+check that catches a `PopulationBinding` shape recreated by hand rather than
+imported from `model`, which Step 2's dependency check alone cannot catch.
+Step 2 confirms that no entry in `quire-exact/Cargo.toml`'s `[dependencies]`
+table is a workspace member or a path dependency, so the crate-DAG direction
+alone makes *importing* `PopulationBinding` (or any other `model::population`
+type) from `model` a compile error -- this is a property of the dependency
+graph, not a fact about the exact current dependency list, which this
+inspection does not need to enumerate.

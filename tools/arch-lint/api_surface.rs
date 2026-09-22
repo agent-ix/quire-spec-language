@@ -19,9 +19,9 @@
 //! quote a call pattern, is not distinguished from a real call site by this
 //! version of the check. `main.rs`'s printed report states both limitations.
 //!
-//! Each rule scans one *role*'s source tree (see [`Role`]): T12-B and T12-C
-//! are QSL-side rules (which QSL module calls the kernel constructor), scanned
-//! against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
+//! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
+//! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
+//! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
 //! call only QSL's `replay` facade), scanned against the CG tree passed with
 //! `--cg` -- never against QSL's own tree, which the rule's call pattern
 //! (`quire_spec_language::replay::`, a fully-qualified external-caller path)
@@ -87,8 +87,9 @@ pub(crate) struct Rule {
     pub(crate) allowed_caller_prefixes: &'static [&'static str],
     /// A file path, relative to the QSL tree, whose presence the rule needs
     /// before it is live. `None` means the rule is always live once a root is
-    /// given (the constructor rules below: the files that define `NodeKey`
-    /// and `EffectiveId` already exist on origin/main).
+    /// given (the constructor rules below: the files that define `NodeKey`,
+    /// `EffectiveId` and `PopulationId`'s minting site already exist on
+    /// origin/main).
     pub(crate) requires_path: Option<&'static str>,
     pub(crate) pending_reason: &'static str,
     /// A fixed note on scope this rule does not evaluate, printed alongside
@@ -222,11 +223,12 @@ pub(crate) const RULES: &[Rule] = &[
         // `admit_binding`/`admit_invocation`), so the marker path's presence
         // is all this check tests.
         pending_reason: "unreachable: src/model/population.rs already exists on origin/main",
-        scope_note: Some(
-            "scoped to QSL's own tree only; does not scan quire-contract-runtime's or \
-             quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
-             name an allowed-caller mapping for either, not decided here (#213)",
-        ),
+        // Unlike T12-B/T12-C's `NodeKey`/`EffectiveId`, no cross-repo
+        // `PopulationId` shape is known to exist in quire-contract-runtime or
+        // quire-contract-codegen today (#295 review finding 8): this rule
+        // makes no claim about either, rather than asserting a copy this
+        // scan has not found.
+        scope_note: Some("scoped to QSL's own tree only"),
     },
 ];
 
@@ -252,8 +254,8 @@ pub(crate) fn assert_is_qsl_root(qsl_root: &Path) -> Result<()> {
             format!(
                 "{} is not a quire-spec-language checkout (its Cargo.toml does not declare \
                  name = \"quire-spec-language\"); --qsl must point at quire-spec-language \
-                 itself. T12-B and T12-C scan QSL's own tree only; see each rule's scope note \
-                 for what they do not evaluate",
+                 itself. T12-B, T12-C and T12-D scan QSL's own tree only; see each rule's scope \
+                 note for what they do not evaluate",
                 qsl_root.display()
             ),
         ));

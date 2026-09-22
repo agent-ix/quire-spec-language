@@ -733,9 +733,8 @@ mod tests {
     // the kernel's.
     #[test]
     fn admits_refuses_a_population_pair() {
-        assert!(!ValueType::Population(5).admits(&Value::Population(PopulationId::from_digest(
-            digest(1)
-        ))));
+        assert!(!ValueType::Population(5)
+            .admits(&Value::Population(PopulationId::from_digest(digest(1)))));
     }
 
     /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it
