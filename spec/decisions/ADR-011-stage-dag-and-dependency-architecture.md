@@ -785,7 +785,7 @@ Module table:
 | `protocol_artifact` | SEAM-3 | |
 | `simulation` | 5 `simulation` | finite exploration engine for S6a; its implementer arrives through #220 |
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
-| none today | 6 `replay` | new: the CG-facing replay facade (§6.1), landed with the skeleton spine (T-2) and widened per family by each family's implementation ticket |
+| crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
 | none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: `capability_report` is recorded at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
 
@@ -961,7 +961,7 @@ is unstaffed**, blocking QSL-165.
 | X-7 | Extract crate `qsl-package` (QSL-182) | 4 | the layer-4 modules' public items | after X-6, on the same condition | none: no root-crate re-export (§7.2) |
 | X-8 | Extract crate `qsl-eval` (QSL-183) | 5 | the layer-5 modules' public items | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
 | X-9 | Extract crate `qsl-route` (QSL-184) | R | `route` | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
-| X-10 | Extract crate `qsl-replay` (QSL-185). **Extracted**: `bounds`, `identity`, `proof_result`, `request`, `result` and `witness` moved, unchanged, out of the root crate's `replay` module (which no longer exists there). Landed ahead of X-4/X-8 in this table's original order: today's `replay` code depends only on `quire-exact` and `qsl-foundation` (the #231 envelopes and their provisional local types), not on `qsl-source` or the layer-5 evaluator, so neither prerequisite was load-bearing for this slice. | 6 | the `replay` facade, including the #231 envelopes | after X-4 and X-8, on the same condition | none: no root-crate re-export (§7.2) |
+| X-10 | Extract crate `qsl-replay` (QSL-185). **Extracted**: `bounds`, `identity`, `proof_result`, `request`, `result` and `witness` are in the crate `qsl-replay`, which depends only on `quire-exact` (K) and `qsl-foundation` (F). | 6 | the `replay` facade, including the #231 envelopes | none | none: no root-crate re-export (§7.2) |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
 a working path is removed before its replacement, and no window in which an

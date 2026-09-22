@@ -40,10 +40,8 @@ use std::fmt;
 pub const NODE_KEY_DOMAIN: &str = "quire.checked-semantic-node/v1";
 
 /// Whether `text` is `^[A-Za-z_][A-Za-z0-9_]*$`: the one definition of this
-/// character class every identifier-shaped field that carries an
-/// [`Identifier`] validates against. QSL's own `value::node`, `value::member`
-/// and `check` each used to define this same class independently; this is
-/// the single copy all of them call now ("one fact, one place").
+/// character class, which every identifier-shaped field and [`Identifier`]
+/// validate against.
 pub fn is_identifier(text: &str) -> bool {
     let mut bytes = text.bytes();
     bytes
@@ -53,13 +51,9 @@ pub fn is_identifier(text: &str) -> bool {
 }
 
 /// A `node-identity-preimage.schema.json` `$defs.Identifier`
-/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the shared identifier-shaped single name
-/// segment every checked-member name/operator field, `check`'s own
-/// name-segment use and the layer-6 `replay` facade's `QualifiedName`
-/// carry, so an invalid identifier is refused at construction rather than
-/// reaching a schema-invalid wire shape (ADR-013 O-06) or a second copy of
-/// this same check. `value::member` and `check` import this type directly
-/// from this crate; no other crate defines or re-exports it.
+/// (`^[A-Za-z_][A-Za-z0-9_]*$`): one identifier-shaped name segment. An
+/// invalid identifier is refused at construction rather than reaching a
+/// schema-invalid wire shape (ADR-013 O-06).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Identifier(String);
 

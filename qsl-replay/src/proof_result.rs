@@ -347,21 +347,26 @@ impl ProofResultEnvelope {
     /// (FR-069-AC-3's construct -> serialize -> read round trip). Every
     /// envelope this reader ever produces shares one `backend`/`tool_pin`
     /// (they all come from the one source it read), so the first envelope's
-    /// is representative.
-    pub fn to_source(envelopes: &[Self]) -> BackendProviderSource {
-        let first = envelopes
-            .first()
-            .expect("at least one envelope to serialize");
-        BackendProviderSource {
+    /// is representative. An empty slice has no `backend` to serialize and
+    /// is refused with [`EmptyEnvelopeSet`].
+    pub fn to_source(envelopes: &[Self]) -> Result<BackendProviderSource, EmptyEnvelopeSet> {
+        let first = envelopes.first().ok_or(EmptyEnvelopeSet)?;
+        Ok(BackendProviderSource {
             contract_version: CONTRACT_VERSION.to_owned(),
             capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             backend_identity: first.backend.identity().to_owned(),
             manifest_digest: first.backend.manifest_digest(),
             tool_pin: first.tool_pin.as_str().to_owned(),
             items: envelopes.iter().map(|e| e.record.clone()).collect(),
-        }
+        })
     }
 }
+
+/// [`ProofResultEnvelope::to_source`]'s refusal: there is no envelope to
+/// take the source's `backend` and tool pin from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("no proof-result envelope to serialize")]
+pub struct EmptyEnvelopeSet;
 
 #[cfg(test)]
 mod tests {
@@ -543,7 +548,7 @@ mod tests {
         ];
         let original = source(items);
         let first = read_backend_provider_envelope(&original).unwrap();
-        let serialized = ProofResultEnvelope::to_source(&first);
+        let serialized = ProofResultEnvelope::to_source(&first).unwrap();
         let second = read_backend_provider_envelope(&serialized).unwrap();
         assert_eq!(first, second);
         for envelope in &first {
@@ -562,6 +567,16 @@ mod tests {
         assert_ne!(
             mutated_envelopes[0].backend().manifest_digest(),
             first[0].backend().manifest_digest()
+        );
+    }
+
+    /// `to_source` on an empty slice returns [`EmptyEnvelopeSet`] instead of
+    /// panicking: there is no envelope to take the `backend` from.
+    #[test]
+    fn to_source_refuses_an_empty_envelope_set() {
+        assert_eq!(
+            ProofResultEnvelope::to_source(&[]).unwrap_err(),
+            EmptyEnvelopeSet
         );
     }
 }

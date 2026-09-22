@@ -112,7 +112,8 @@ pub(crate) struct Rule {
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
-        description: "CG calls the QSL layer-6 `qsl-replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
+        description:
+            "CG calls the QSL layer-6 `qsl-replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
         role: Role::Cg,
         // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6).
         call_patterns: &["qsl_replay::"],

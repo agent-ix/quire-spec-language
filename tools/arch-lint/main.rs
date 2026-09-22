@@ -353,11 +353,15 @@ mod tests {
         write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");
         write(root, "src/value/node.rs", "pub struct NodeKey;\n");
         write(root, "src/model/key.rs", "pub struct EffectiveId;\n");
-        write(root, "src/model/population.rs", "pub struct PopulationId;\n");
+        write(
+            root,
+            "src/model/population.rs",
+            "pub struct PopulationId;\n",
+        );
         write(
             root,
             "src/value/model_query.rs",
-            "fn f() {\n    NodeKey::of(&b);\n    EffectiveId::from_digest(d);\n}\n",
+            "fn f() {\n    NodeKey::from_digest(k);\n    EffectiveId::from_digest(d);\n}\n",
         );
 
         let arguments: Vec<OsString> = ["api-surface", "--qsl"]

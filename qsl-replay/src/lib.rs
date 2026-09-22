@@ -39,9 +39,9 @@ pub use identity::{
     ProfileSelection, QualifiedName, RawSourceRef, TracePosition,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, IncompleteCause, InconclusiveCause,
-    ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, TerminalRecord,
-    TerminalValue, ToolPin, UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
+    InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
 pub use request::{
     ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,
