@@ -526,7 +526,7 @@ impl PackageDeclarations {
             // name is not itself a valid `Identifier` simply gets no
             // `CheckedTypeNode` yet, rather than a panic; it is not a
             // reachable refusal this stage owns today.
-            let Ok(name) = crate::value::Identifier::new(composite.name().to_owned()) else {
+            let Ok(name) = identity::Identifier::new(composite.name().to_owned()) else {
                 continue;
             };
             let node = identity::mint_type_declaration_identity(
@@ -537,14 +537,14 @@ impl PackageDeclarations {
             type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
         }
         for enum_binding in &scope.enums {
-            let Ok(name) = crate::value::Identifier::new(enum_binding.name.clone()) else {
+            let Ok(name) = identity::Identifier::new(enum_binding.name.clone()) else {
                 continue;
             };
             let variants: Option<Vec<identity::SumVariant>> = enum_binding
                 .members
                 .iter()
                 .map(|member| {
-                    crate::value::Identifier::new(member.case().to_owned())
+                    identity::Identifier::new(member.case().to_owned())
                         .ok()
                         .map(identity::SumVariant::new)
                 })

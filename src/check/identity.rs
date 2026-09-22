@@ -65,10 +65,47 @@ use quire_exact::{
 use super::family::{encode_value_type, Preimage};
 use crate::model::key::DeclarationKey;
 use crate::value::composite::{CompositeShape, Presence};
-use crate::value::Identifier;
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
+}
+
+/// `check`'s own identifier-shaped name-segment type for O-11 qualified
+/// names (ADR-013 R-09, lane-private types) -- not `value::member::
+/// Identifier`. FR-068-AC-6 bounds `check`'s imports from `value` to nine
+/// K-designated modules plus a small declared-interim allow-list, and
+/// `member` (where `value::Identifier` actually lives) is in neither;
+/// `xtask`'s own `import_graph::value_import_edges` scan enforces this over
+/// `check`'s shipped dependency graph (this type's own predecessor,
+/// `crate::value::Identifier`, tripped it). Reuses `value::node::
+/// is_identifier` (`node` *is* K-designated, tier 1) for the same
+/// `^[A-Za-z_][A-Za-z0-9_]*$` character-class check `value::member::
+/// Identifier` itself is built on ("one fact, one place"), rather than a
+/// second copy of the regex.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Identifier(String);
+
+/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[error("a checked name segment is `^[A-Za-z_][A-Za-z0-9_]*$`")]
+pub(super) struct InvalidIdentifier;
+
+impl Identifier {
+    /// `value` as a checked name segment, or [`InvalidIdentifier`] if it is
+    /// not `^[A-Za-z_][A-Za-z0-9_]*$`.
+    pub(super) fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
+        let value = value.into();
+        if crate::value::node::is_identifier(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidIdentifier)
+        }
+    }
+
+    /// The identifier's own text.
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -310,13 +347,16 @@ pub struct SumVariant {
 
 impl SumVariant {
     /// Declare a sum variant by its own name.
-    pub fn new(name: Identifier) -> Self {
+    pub(super) fn new(name: Identifier) -> Self {
         Self { name }
     }
 
-    /// This variant's own declared name.
-    pub fn name(&self) -> &Identifier {
-        &self.name
+    /// This variant's own declared name. `&str`, not `&Identifier`
+    /// (`Identifier` is `pub(super)`, `check`-private, per its own doc --
+    /// `SumVariant` is `pub`, exported crate-wide, so its own public
+    /// accessor surface cannot name a type more private than itself).
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 }
 
@@ -342,8 +382,8 @@ impl SumVariants {
     pub fn new(variants: Vec<SumVariant>) -> Result<Self, DuplicateSumVariant> {
         let mut seen = BTreeSet::new();
         for variant in &variants {
-            if !seen.insert(variant.name().as_str()) {
-                return Err(DuplicateSumVariant(variant.name().as_str().to_owned()));
+            if !seen.insert(variant.name()) {
+                return Err(DuplicateSumVariant(variant.name().to_owned()));
             }
         }
         Ok(Self(variants))
@@ -597,7 +637,7 @@ pub(super) fn mint_type_declaration_identity(
         DeclaredShape::Sum(variants) => {
             preimage.write_str("sum");
             for variant in variants.iter() {
-                preimage.write_str(variant.name().as_str());
+                preimage.write_str(variant.name());
             }
         }
     }
@@ -607,11 +647,11 @@ pub(super) fn mint_type_declaration_identity(
 /// ADR-013 O-14/QC-15: a sum variant's `VariantId`, computed from the
 /// declaring sum's own node id and the variant's own name -- never from its
 /// position in a declared list (FR-088-AC-10).
-pub(super) fn mint_variant_id(sum: NodeKey, member_name: &Identifier) -> VariantId {
+pub(super) fn mint_variant_id(sum: NodeKey, member_name: &str) -> VariantId {
     let mut preimage = Preimage::new(u64::MAX);
     preimage.write_str("sum-variant-member");
     preimage.write_bytes(sum.as_bytes());
-    preimage.write_str(member_name.as_str());
+    preimage.write_str(member_name);
     VariantId::from_digest(sha256(&preimage.finish()))
 }
 
@@ -1034,7 +1074,7 @@ mod tests {
     #[test]
     fn mint_variant_id_matches_a_checked_in_digest() {
         let sum = node_key(7);
-        let variant_id = mint_variant_id(sum, &identifier("Active"));
+        let variant_id = mint_variant_id(sum, "Active");
         assert_eq!(
             variant_id.to_string(),
             "25f808ee82e3446d65360b5e87ef36350a58cc6085f3bf3d2200cab7c0998030",
