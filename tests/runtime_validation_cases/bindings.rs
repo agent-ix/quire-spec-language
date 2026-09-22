@@ -224,7 +224,7 @@ fn missing_required_state_and_operation_capture_correspondence_are_diagnosed() {
                 .diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == Code::UnavailableObservation
-                    && diagnostic.runtime.as_ref().unwrap().path
+                    && diagnostic.runtime.path
                         == [RuntimePathSegment::State(qualified(&models[0], "other"))]));
         } else {
             assert_eq!(
@@ -272,7 +272,7 @@ fn conflicting_field_permutations_retain_the_same_sorted_diagnostics() {
         assert_eq!(report.status, ValidationStatus::Refused);
         assert!(report.terminal.is_none());
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
+            let runtime = &mut diagnostic.runtime;
             assert_eq!(runtime.artifact, RuntimeReference::Snapshot(actual.clone()));
             runtime.artifact = RuntimeReference::Snapshot(baseline.clone());
         }

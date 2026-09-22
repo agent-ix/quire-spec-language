@@ -80,7 +80,6 @@ fn skipped_invalid_field_refuses_with_actual_native_and_model_loci() {
         diagnostic.source,
         *checked.linked().unit().source().identity()
     );
-    assert!(diagnostic.runtime.is_some());
     assert!(diagnostic.related.iter().any(|location| {
         location.identity.owner == *models[0].environment().owner()
             && location.identity.key
@@ -217,7 +216,7 @@ fn conflicting_population_order_preserves_defects_and_actual_byte_provenance() {
         .unwrap_err();
         assert_eq!(report.status, ValidationStatus::Refused);
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
+            let runtime = &mut diagnostic.runtime;
             assert_eq!(
                 runtime.artifact,
                 quire_spec_language::runtime::RuntimeReference::Snapshot(expected.clone())
@@ -266,7 +265,7 @@ fn foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_
         .iter()
         .find(|diagnostic| diagnostic.code == Code::InvalidModelBinding)
         .unwrap();
-    let runtime = diagnostic.runtime.as_ref().unwrap();
+    let runtime = &diagnostic.runtime;
     assert_eq!(
         runtime.artifact,
         quire_spec_language::runtime::RuntimeReference::Snapshot(artifact.reference())

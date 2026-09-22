@@ -18,8 +18,8 @@ pub use evaluation::{
 
 pub use validation::{
     validate, ExecutionSelection, ObservationSelection, RuntimeInput, RuntimeLocation,
-    RuntimePathSegment, RuntimeReference, ValidatedContext, ValidationLimits, ValidationReport,
-    ValidationStatus, ValidationUsage,
+    RuntimePathSegment, RuntimeReference, ValidatedContext, ValidationDiagnostic, ValidationLimits,
+    ValidationReport, ValidationStatus, ValidationUsage,
 };
 
 pub use input::{

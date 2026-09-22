@@ -98,7 +98,7 @@ fn precondition_can_record_permitted_self_deletion_and_pre_captured_parameter() 
                 .diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == Code::DanglingReference
-                    && diagnostic.runtime.as_ref().unwrap().observation
+                    && diagnostic.runtime.observation
                         == Some(ir::StateObservation::Post)));
         }
     }
@@ -332,7 +332,7 @@ fn unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes() {
             "unrelated duplicate object: {duplicate_object}"
         );
         assert_eq!(
-            frame[0].runtime.as_ref().unwrap().path.last(),
+            frame[0].runtime.path.last(),
             Some(&quire_spec_language::runtime::RuntimePathSegment::Field(
                 symbol("count")
             ))

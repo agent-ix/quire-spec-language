@@ -2,9 +2,10 @@
 //! NFR-006 / FR-007: fresh charge-before-work accounting and retained error facts.
 
 use super::{
-    RuntimeLocation, ValidationLimits, ValidationReport, ValidationStatus, ValidationUsage,
+    RuntimeLocation, ValidationDiagnostic, ValidationLimits, ValidationReport, ValidationStatus,
+    ValidationUsage,
 };
-use crate::{Code, Diagnostic, Phase, Source, Span};
+use crate::{Code, Phase, Source, Span};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Stage {
@@ -28,8 +29,8 @@ pub(super) struct Budget<'a, F> {
     pub span: Span,
     source: &'a Source,
     poll: F,
-    details: Vec<(Stage, Diagnostic)>,
-    terminal: Option<Box<Diagnostic>>,
+    details: Vec<(Stage, ValidationDiagnostic)>,
+    terminal: Option<Box<ValidationDiagnostic>>,
     invalid: bool,
     incomplete: bool,
 }
@@ -55,15 +56,20 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
         }
     }
 
-    pub fn diagnostic(&self, code: Code, message: impl Into<String>) -> Box<Diagnostic> {
-        crate::diagnostic::error(
+    pub fn diagnostic(&self, code: Code, message: &'static str) -> Box<ValidationDiagnostic> {
+        let diagnostic = crate::diagnostic::error(
             self.source,
             code,
             Phase::Validate,
             self.span.start,
             self.span.end,
-            format!("{} (runtime location: {:?})", message.into(), self.location),
-        )
+            message,
+        );
+        Box::new(ValidationDiagnostic {
+            diagnostic,
+            runtime: self.location.clone(),
+            related: Vec::new(),
+        })
     }
 
     fn stop(&mut self, code: Code, message: &'static str) -> Stopped {
@@ -162,7 +168,7 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
         }
     }
 
-    pub fn observe(&mut self, stage: Stage, diagnostic: Diagnostic) -> Result<()> {
+    pub fn observe(&mut self, stage: Stage, diagnostic: ValidationDiagnostic) -> Result<()> {
         if diagnostic.is_incomplete() {
             self.incomplete = true;
         } else {
@@ -192,15 +198,14 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
         self.details.sort_by(|(a_stage, a), (b_stage, b)| {
             a_stage
                 .cmp(b_stage)
+                .then_with(|| a.runtime.compare(&b.runtime))
                 .then_with(|| {
                     (a.span.start.byte, a.span.end.byte).cmp(&(b.span.start.byte, b.span.end.byte))
                 })
                 .then_with(|| a.code.as_str().cmp(b.code.as_str()))
                 // Several independent defects can share the prescribed key.
                 // Break those ties by retained content, never discovery order.
-                // The runtime location and any related declarations are part
-                // of `message` (`Budget::diagnostic`, `Validator::related`),
-                // so comparing `message` already covers them.
+                .then_with(|| a.related.cmp(&b.related))
                 .then_with(|| a.message.cmp(&b.message))
         });
         Box::new(ValidationReport {

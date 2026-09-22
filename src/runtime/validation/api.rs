@@ -2,11 +2,13 @@
 //! FR-007: exact validation requests, immutable contexts and classified reports.
 
 use quire_contract_ir as ir;
+use std::cmp::Ordering;
 
 use super::super::{
     Invocation, InvocationRef, ObjectIdentity, QualifiedName, Snapshot, SnapshotRef,
 };
 use crate::checking::{CheckedClause, CheckedPackage};
+use crate::linking::DeclarationLocation;
 use crate::{ByteDigest, Diagnostic, SourceIdentity};
 
 #[cfg(test)]
@@ -75,6 +77,24 @@ impl RuntimeReference {
             Self::Invocation(value) => value.digest(),
         }
     }
+
+    pub(super) fn compare(&self, other: &Self) -> Ordering {
+        let kind = |value: &Self| match value {
+            Self::Snapshot(_) => 0,
+            Self::Invocation(_) => 1,
+        };
+        (
+            kind(self),
+            &self.identity().identity,
+            &self.identity().revision,
+        )
+            .cmp(&(
+                kind(other),
+                &other.identity().identity,
+                &other.identity().revision,
+            ))
+            .then_with(|| self.digest().to_string().cmp(&other.digest().to_string()))
+    }
 }
 
 /// Typed location within a population or recorded invocation.
@@ -116,6 +136,17 @@ pub struct RuntimeLocation {
     pub clause: ir::ClauseId,
     /// Model/population/object/value/field/sequence components.
     pub path: Vec<RuntimePathSegment>,
+}
+
+impl RuntimeLocation {
+    pub(super) fn compare(&self, other: &Self) -> Ordering {
+        self.artifact
+            .compare(&other.artifact)
+            .then_with(|| self.observation.cmp(&other.observation))
+            .then_with(|| self.requirement.cmp(&other.requirement))
+            .then_with(|| self.clause.cmp(&other.clause))
+            .then_with(|| self.path.cmp(&other.path))
+    }
 }
 
 /// Caller-lowered inclusive validation ceilings; larger options clamp to defaults.
@@ -188,6 +219,45 @@ pub enum ValidationStatus {
     Incomplete,
 }
 
+/// A validation defect, owning the runtime locus and related declarations
+/// that a foundation-layer `Diagnostic` cannot carry directly.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidationDiagnostic {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// Runtime provenance the foundation layer cannot express.
+    pub runtime: RuntimeLocation,
+    /// Other formal declarations implicated by this defect.
+    pub related: Vec<DeclarationLocation>,
+}
+
+impl std::ops::Deref for ValidationDiagnostic {
+    type Target = Diagnostic;
+    fn deref(&self) -> &Diagnostic {
+        &self.diagnostic
+    }
+}
+
+impl std::ops::DerefMut for ValidationDiagnostic {
+    fn deref_mut(&mut self) -> &mut Diagnostic {
+        &mut self.diagnostic
+    }
+}
+
+impl std::fmt::Display for ValidationDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for ValidationDiagnostic {}
+
+impl From<ValidationDiagnostic> for Diagnostic {
+    fn from(error: ValidationDiagnostic) -> Self {
+        *error.diagnostic
+    }
+}
+
 /// Retained actual defects and the optional reason traversal stopped.
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("native runtime validation: {status:?}")]
@@ -195,9 +265,9 @@ pub struct ValidationReport {
     /// Overall classification; known invalid input takes precedence.
     pub status: ValidationStatus,
     /// Deterministically ordered observed details, possibly only a stopped prefix.
-    pub diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<ValidationDiagnostic>,
     /// Separate resource/cancellation stop reason, without a duplicate detail entry.
-    pub terminal: Option<Box<Diagnostic>>,
+    pub terminal: Option<Box<ValidationDiagnostic>>,
     /// Actual work admitted before the report.
     pub usage: ValidationUsage,
 }

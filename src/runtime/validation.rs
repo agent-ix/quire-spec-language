@@ -16,8 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use api::{
     ExecutionSelection, ObservationSelection, RuntimeInput, RuntimeLocation, RuntimePathSegment,
-    RuntimeReference, ValidatedContext, ValidationLimits, ValidationReport, ValidationStatus,
-    ValidationUsage,
+    RuntimeReference, ValidatedContext, ValidationDiagnostic, ValidationLimits, ValidationReport,
+    ValidationStatus, ValidationUsage,
 };
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

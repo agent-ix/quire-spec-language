@@ -79,9 +79,8 @@ impl<'model, F: FnMut() -> bool> Validator<'_, 'model, F> {
         message: &'static str,
         locus: &DeclarationLocation,
     ) -> Result<()> {
-        let diagnostic = self
-            .budget
-            .diagnostic(code, format!("{message} (related declaration: {locus:?})"));
+        let mut diagnostic = self.budget.diagnostic(code, message);
+        diagnostic.related.push(locus.clone());
         self.budget.observe(stage, *diagnostic)
     }
 

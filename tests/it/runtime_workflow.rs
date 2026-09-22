@@ -126,10 +126,7 @@ fn assert_validation_failure(
         diagnostic.source,
         *checked.linked().unit().source().identity()
     );
-    let runtime = diagnostic
-        .runtime
-        .as_ref()
-        .expect("runtime provenance accompanies validation refusal");
+    let runtime = &diagnostic.runtime;
     assert_eq!(runtime.requirement, authored_owner());
     assert_eq!(runtime.clause.as_str(), "population_rule");
     assert!(report.usage.work > 0);

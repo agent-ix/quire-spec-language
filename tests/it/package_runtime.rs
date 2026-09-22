@@ -267,10 +267,7 @@ fn reconstructed_validation_and_exhaustion_preserve_refusal_and_fresh_retries() 
             diagnostic.source,
             *package.checked().bindings().source.source().identity()
         );
-        assert_eq!(
-            diagnostic.runtime.as_ref().unwrap().requirement,
-            authored_owner()
-        );
+        assert_eq!(diagnostic.runtime.requirement, authored_owner());
     }
     let artifact = snapshot(parent_data(&models[0], 1, false));
     let selected = selection(&models[0], artifact.reference());

@@ -333,8 +333,6 @@ fn every_native_shape_is_checked_at_fields_state_parameters_and_results() {
                         == Code::InvalidRuntimeInput
                         && diagnostic
                             .runtime
-                            .as_ref()
-                            .unwrap()
                             .path
                             .contains(&expected)),
                     "{shape:?} at {site}"
@@ -491,7 +489,7 @@ fn nominal_owners_record_shapes_and_signed_lower_bounds_are_not_inferred_from_va
             assert!(report.terminal.is_none());
             assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
                 == Code::InvalidRuntimeInput
-                && diagnostic.runtime.as_ref().unwrap().path.contains(
+                && diagnostic.runtime.path.contains(
                     &RuntimePathSegment::State(qualified(model, "payload_state"))
                 )));
         }
@@ -595,7 +593,7 @@ fn mixed_defects_preserve_diagnostics_under_inventory_population_object_and_fiel
             baseline_references = actual.clone();
         }
         for diagnostic in &mut report.diagnostics {
-            let runtime = diagnostic.runtime.as_mut().unwrap();
+            let runtime = &mut diagnostic.runtime;
             assert!(
                 actual.contains(&runtime.artifact),
                 "diagnostics bind this permutation's actual bytes"

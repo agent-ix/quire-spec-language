@@ -733,7 +733,7 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
         .iter()
         .find(|d| d.code == quire_spec_language::Code::UnavailableObservation)
         .expect("missing selected invocation is a validation failure");
-    let location = diagnostic.runtime.as_ref().unwrap();
+    let location = &diagnostic.runtime;
     assert_eq!(
         location.artifact,
         RuntimeReference::Invocation(context.invocation().unwrap().reference())
@@ -773,15 +773,13 @@ fn captured_input_refusals_happen_before_a_validated_context_can_be_projected() 
         .iter()
         .find(|d| {
             d.code == quire_spec_language::Code::InvalidRuntimeInput
-                && d.runtime.as_ref().is_some_and(|location| {
-                    location.path
-                        == [runtime::RuntimePathSegment::Parameter(setup::qualified(
-                            &models[0], "flag",
-                        ))]
-                })
+                && d.runtime.path
+                    == [runtime::RuntimePathSegment::Parameter(setup::qualified(
+                        &models[0], "flag",
+                    ))]
         })
         .expect("missing declared parameter remains a typed, located validation failure");
-    let location = diagnostic.runtime.as_ref().unwrap();
+    let location = &diagnostic.runtime;
     assert_eq!(location.artifact, RuntimeReference::Invocation(invocation));
     assert_eq!(location.requirement, selection.requirement);
     assert_eq!(location.clause, selection.clause);
