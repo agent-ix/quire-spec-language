@@ -15,11 +15,11 @@ use quire_exact::Integer;
 
 // `NodeKey` and `NODE_KEY_DOMAIN` are `quire_exact`'s own types: the kernel
 // type's sole public constructor is `from_digest`, which wraps an
-// already-computed digest and performs no hashing. This module keeps the
-// hex parsing (`NodeIdDocument::key`) and the SHA-256/JCS hashing
-// (`node_key_of`) that QSL's own preimage checking needs, then wraps the
-// resulting bytes with `NodeKey::from_digest` -- the kernel type never
-// parses or hashes on QSL's behalf.
+// already-computed digest and performs no hashing. Wire-digest hex parsing
+// (`NodeIdDocument::key`) lives in `qsl_foundation::digest::parse_lower_hex32`;
+// this module does the SHA-256/JCS hashing (`node_key_of`) that QSL's own
+// preimage checking needs, then wraps the resulting bytes with the kernel
+// constructor -- the kernel type never parses or hashes on QSL's behalf.
 pub use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// The stable subject projection of the exact admitted owner of a nominal
@@ -184,14 +184,14 @@ pub(crate) struct NodeIdDocument {
 impl NodeIdDocument {
     /// The referenced key when the domain and digest spelling are canonical.
     ///
-    /// Known non-conforming site (ADR-011 FB-13/SR-508; ADR-013 OBS-018):
-    /// `NodeIdDocument` is read from caller-supplied JSON through the public
+    /// Named debt (FR-060 T12-B's named-debt list, entry
+    /// `value::node::NodeIdDocument::key`): `NodeIdDocument` is read from
+    /// caller-supplied JSON through the public
     /// `DimensionPreimage`/`UnitPreimage`/`EnumMemberPreimage::from_json`, so
     /// this is a wire-read node id. ADR-013 O-04 says a wire-read node id
     /// becomes a `NodeKey` only by lookup in a checked package, never by
     /// parsing a digest string directly; this wraps the parsed bytes into a
-    /// `NodeKey` directly instead. Tracked debt, not this design's
-    /// sanctioned path.
+    /// `NodeKey` directly instead, not this design's sanctioned path.
     pub(crate) fn key(&self) -> Option<NodeKey> {
         qsl_foundation::digest::parse_lower_hex32(&self.digest)
             .filter(|_| self.domain == NODE_KEY_DOMAIN)

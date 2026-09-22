@@ -3,21 +3,22 @@
 //! API-surface check.
 //!
 //! Each rule names a symbol (a constructor or a facade module) and the
-//! module prefixes allowed to call it. The `quire-exact` crate (#213 S-1)
-//! now exists and defines the kernel `EffectiveId`/`NodeKey` types; T12-C's
-//! call pattern was updated in #213 S-2 to match the kernel's real
-//! `from_digest` constructor name. T12-B's pattern was updated the same way
-//! by QSL-131, which retired QSL's own `NodeKey::of`/`from_bytes` in favor
-//! of `quire_exact::NodeKey::from_digest` and deleted QSL's own `NodeKey`
-//! type (`src/value/node.rs` now re-exports the kernel one).
+//! module prefixes allowed to call it. The `quire-exact` crate defines the
+//! kernel `EffectiveId`/`NodeKey` types; T12-B, T12-C and T12-D each match
+//! that type's `from_digest` constructor, and `src/value/node.rs` re-exports
+//! the kernel `NodeKey` type rather than defining its own.
 //!
-//! The scan is textual: it looks for `Type::method(` call syntax in a `.rs`
-//! file's own module and does not resolve `use ... as` renames or macro
-//! expansion, nor does it exclude a match found inside a comment or string
-//! literal. Both are stated limitations, not a silent gap: a caller that
-//! imports a rule's symbol under another name, or a comment that happens to
-//! quote a call pattern, is not distinguished from a real call site by this
-//! version of the check. `main.rs`'s printed report states both limitations.
+//! The scan is textual: it looks for each rule's declared `call_patterns`
+//! substring in a `.rs` file's own module and does not resolve `use ... as`
+//! renames or macro expansion, nor does it exclude a match found inside a
+//! comment or string literal. Most rules match `Type::method(` call syntax;
+//! T12-B's pattern is the bare path `NodeKey::from_digest`, which also
+//! catches the constructor passed as a value rather than called (see T12-B's
+//! own comment, below). These are stated limitations, not a silent gap: a
+//! caller that imports a rule's symbol under another name, or a comment that
+//! happens to quote a call pattern, is not distinguished from a real call
+//! site by this version of the check. `main.rs`'s printed report states both
+//! limitations.
 //!
 //! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
 //! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
@@ -122,33 +123,33 @@ pub(crate) const RULES: &[Rule] = &[
         id: "T12-B",
         description: "only `check` calls the kernel `NodeKey` constructor (ADR-013 O-04)",
         role: Role::Qsl,
-        // `quire_exact::NodeKey::from_digest` (QSL-131) is the kernel
-        // `NodeKey`'s one public constructor; QSL's own `NodeKey::of` and
-        // `from_bytes` are gone. `node_key_of` is the crate-internal helper
-        // both `value::enumeration` and `value::unit` mint through, calling
-        // `from_digest` in turn -- scanning for it directly, rather than
-        // only its callee, is what surfaces those two modules' own minting
-        // sites (R1, #249 review, review item 7).
-        call_patterns: &["NodeKey::from_digest(", "node_key_of("],
+        // `quire_exact::NodeKey::from_digest` is the kernel `NodeKey`'s one
+        // public constructor. The pattern is the bare path
+        // `NodeKey::from_digest`, not the call form `NodeKey::from_digest(`:
+        // a bare-path match also catches the constructor passed as a value
+        // (`.map(NodeKey::from_digest)`, `value::node::NodeIdDocument::key`),
+        // which a call-form-only pattern misses. `node_key_of` is the
+        // crate-internal helper both `value::enumeration` and `value::unit`
+        // mint through, calling `from_digest` in turn -- scanning for it
+        // directly, rather than only its callee, is what surfaces those two
+        // modules' own minting sites (R1, #249 review, review item 7).
+        call_patterns: &["NodeKey::from_digest", "node_key_of("],
         // ADR-011 §1 stage table, S3 row: "QSL check (today: value::expression
         // check, model::checked_dispatch, value::library)". `model::
         // checked_dispatch` -> `check::checked_dispatch` (FR-074, ADR-011
         // §7.3 M-2, QSL-7, 2026-09-21) realised ADR-011:694-697's end state
         // ("only `check` calls the kernel `NodeKey` constructor") for that
-        // one caller. `check::identity` (QSL-158 S-3b) is also a genuine
-        // `check` submodule caller.
+        // one caller. `check::identity` (QSL-158 S-3b) is also an
+        // allow-listed `check` submodule; its own `from_digest` call today
+        // is test-only (identity.rs:630, inside `#[cfg(test)]`).
         //
-        // `value::node` is deliberately not allow-listed. Before QSL-131 it
-        // was `NodeKey`'s own defining module, so its internal `of`
-        // implementation was not counted as a "caller" this rule's boundary
-        // is about (R1, #249 review). QSL-131 made `value::node::NodeKey` a
-        // `pub use` of the kernel type, so that reason no longer holds:
-        // `node_key_of`'s own `from_digest` mint and `NodeIdDocument::key`'s
-        // wire-digest-string parse-then-wrap (both in `src/value/node.rs`)
-        // are real, known non-conforming production call sites (ADR-011
-        // FB-13/SR-508; ADR-013 OBS-018), not this rule's sanctioned path --
-        // this rule now correctly reports them rather than hiding them
-        // behind the old defining-module exemption.
+        // `value::node` re-exports the kernel `NodeKey` and is not
+        // allow-listed: `node_key_of`'s own `from_digest` mint and
+        // `NodeIdDocument::key`'s wire-digest-string parse-then-wrap (both
+        // in `src/value/node.rs`) are real production call sites outside
+        // this rule's allow-list (FR-060 T12-B's named-debt list, entry
+        // `value::node::NodeIdDocument::key`), not this rule's sanctioned
+        // path.
         allowed_caller_prefixes: &[
             "value::expression::check",
             "check::checked_dispatch",
@@ -156,10 +157,9 @@ pub(crate) const RULES: &[Rule] = &[
         ],
         requires_path: Some("src/value/node.rs"),
         // Genuinely unreachable for the same reason as T12-C's, below:
-        // `src/value/node.rs` already exists on origin/main -- QSL-131 made
-        // it a `pub use quire_exact::NodeKey` re-export rather than a
-        // definition, but the marker path's presence is all this check
-        // tests.
+        // `src/value/node.rs` already exists on origin/main as a `pub use
+        // quire_exact::NodeKey` re-export rather than a definition, but the
+        // marker path's presence is all this check tests.
         pending_reason: "unreachable: src/value/node.rs already exists on origin/main",
         // ADR-013 O-04/O-05, DA-02 name `NodeKey`/`EffectiveId` minting as a
         // system-wide, single-constructor invariant, but today (pre-#213
@@ -560,11 +560,11 @@ mod tests {
     /// T12-B's allowed list is a violation, the same as a direct
     /// `NodeKey::from_digest` call -- this is what surfaces
     /// `value::enumeration` and `value::unit`'s real minting sites, which a
-    /// scan for `NodeKey::from_digest(` alone would miss (they call the
+    /// scan for the constructor pattern alone would miss (they call the
     /// helper, not the constructor, directly). `value::node`'s own
-    /// `node_key_of` definition line is a second violation (QSL-131
-    /// correction, tc_arch_lint_api_surface_007): it is no longer exempt as
-    /// the constructor's defining module.
+    /// `node_key_of` definition line is a second violation
+    /// (tc_arch_lint_api_surface_007): `value::node` is not allow-listed, so
+    /// its own mint is a reported site like any other caller.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_006_node_key_of_helper_call_is_a_violation() {
@@ -594,15 +594,13 @@ mod tests {
             .any(|site| site.module == "value::enumeration"));
     }
 
-    /// tc_arch_lint_api_surface_007 (QSL-131 correction): `NodeKey`'s former
-    /// defining module (`value::node`) is no longer exempt. QSL-131 made
-    /// `value::node::NodeKey` a `pub use` of the kernel type, so `value::node`
-    /// is not the constructor's defining module any more: its own
-    /// `node_key_of` mint is a real, reported violation like any other
-    /// disallowed caller (ADR-011 FB-13/SR-508, ADR-013 OBS-018).
+    /// tc_arch_lint_api_surface_007: `value::node` re-exports the kernel
+    /// `NodeKey` type and is not allow-listed, so its own `node_key_of` mint
+    /// is a real, reported violation like any other disallowed caller
+    /// (FR-060 T12-B's named-debt list).
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
-    fn tc_arch_lint_api_surface_007_former_defining_module_is_no_longer_exempt() {
+    fn tc_arch_lint_api_surface_007_value_node_is_a_reported_caller() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
         write(
@@ -823,6 +821,40 @@ mod tests {
         assert_eq!(outcome.status, RuleStatus::Live);
         assert_eq!(outcome.violations.len(), 1);
         assert_eq!(outcome.violations[0].module, "token");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_017 (R-1, review-335-v2): T12-B's pattern
+    /// matches the bare path `NodeKey::from_digest`, not only the call form
+    /// `NodeKey::from_digest(`, so the constructor passed as a value --
+    /// `.map(NodeKey::from_digest)`, the shape at `src/value/node.rs:198`'s
+    /// `NodeIdDocument::key` -- is caught the same as an ordinary call from
+    /// a disallowed module. Both spellings are planted in the same disallowed
+    /// module to prove neither is missed.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_017_path_form_call_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "src/value/node.rs",
+            "pub use quire_exact::NodeKey;\n",
+        );
+        write(
+            dir.path(),
+            "src/value/reference.rs",
+            "fn f() {\n    NodeKey::from_digest([0; 32]);\n}\n\
+             fn g(digest: Option<[u8; 32]>) -> Option<NodeKey> {\n    digest.map(NodeKey::from_digest)\n}\n",
+        );
+        let rule = &RULES[1]; // T12-B
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 2);
+        assert_eq!(outcome.violations[0].module, "value::reference");
+        assert_eq!(outcome.violations[0].line, 2);
+        assert_eq!(outcome.violations[1].module, "value::reference");
+        assert_eq!(outcome.violations[1].line, 5);
         assert!(!outcome.passed());
     }
 }

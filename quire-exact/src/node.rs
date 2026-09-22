@@ -21,21 +21,18 @@
 //! another digest type's bytes into a `NodeKey` has no canonical role
 //! either (ADR-013 O-05, OBS-018).
 //!
-//! `NodeKey::from_bytes` and the public `NodeKey::from_hex` are retired:
-//! every QSL call site is rerouted onto `from_digest`. Two of QSL's
-//! rerouted sites do not conform to the rule above and are known, tracked
-//! debt (ADR-011 FB-13/SR-508; ADR-013 OBS-018), not this design's
-//! sanctioned path: `value::node::NodeIdDocument::key` parses a wire
-//! digest string and wraps it in a `NodeKey` directly, and
-//! `value::model_query::to_object_reference` bridges an `EffectiveId`'s
-//! bytes into a `NodeKey`.
+//! Two QSL call sites built on `from_digest` do not conform to the minting
+//! rule above and are named debt (FR-060 T12-B's named-debt list), not this
+//! design's sanctioned path:
+//! `value::node::NodeIdDocument::key` parses a wire digest string and wraps
+//! it in a `NodeKey` directly, and `value::model_query::to_object_reference`
+//! bridges an `EffectiveId`'s bytes into a `NodeKey`.
 //!
-//! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`,
-//! ADR-011 T-12) scans for `NodeKey::from_digest(` and the crate-internal
-//! `node_key_of` helper QSL mints through, and reports every call site
-//! outside `check`'s own submodules -- including the two named above.
-//! `arch-lint` is not part of `make ci` (Makefile), so it is advisory, not
-//! gating, today.
+//! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`)
+//! scans for the kernel constructor and reports every call site outside
+//! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`) -- including
+//! the two named above. `arch-lint` is not part of `make ci` (Makefile), so
+//! it is advisory, not gating, today.
 
 use std::fmt;
 
