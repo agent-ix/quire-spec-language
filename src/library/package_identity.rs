@@ -411,3 +411,106 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     }
     Ok(ProjectedDeclarations(declarations))
 }
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use serde_json::json;
+    use sha2::{Digest, Sha256};
+
+    use super::*;
+
+    fn hex(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    /// A single-node identity preimage: one nominal declaration node,
+    /// digested from `node_seed`, declaring `qualified_name`.
+    fn one_node_preimage(node_seed: &[u8], qualified_name: &[&str]) -> Vec<u8> {
+        let reference =
+            json!({"digest": hex(node_seed), "domain": "quire.checked-semantic-node/v1"});
+        let node = json!({
+            "body": {"members": [], "term": "aggregate"},
+            "dependencies": [],
+            "node_id": reference,
+            "node_tag": "scalar_type",
+            "schema_version": "quire.checked-semantic-graph/v2",
+            "semantic_form": "enum",
+            "semantic_type": reference,
+            "nominal_identity_preimage": {
+                "members": ["READY"],
+                "ordered": true,
+                "owner": {"authority": "agent-ix", "identity": "library", "kind": "definition"},
+                "qualified_declaration": qualified_name,
+                "version": "quire.enum-declaration-node/v1",
+            },
+            "declaration": {"qualified_name": qualified_name},
+        });
+        let preimage = json!({
+            "definition_selections": [],
+            "dependency_selections": [],
+            "edition": {
+                "definition": {
+                    "authority": "agent-ix",
+                    "digest": hex(b"quire-edition"),
+                    "digest_domain": "quire.definition.bytes/v1",
+                    "identity": "quire-edition",
+                    "revision": {"namespace": "semver", "value": "1"},
+                },
+                "role": "edition",
+            },
+            "identity_projection": [node],
+            "model_selections": [],
+            "profile_selections": [],
+            "required_features": ["quire.value.complete/v1"],
+            "version": "quire.checked-package-id/v2",
+        });
+        serde_json::to_vec(&preimage).unwrap()
+    }
+
+    /// FR-307: the wire node id `library::package_identity` derives for a
+    /// nominal declaration is the projection node's own `node_id` digest.
+    /// `tests/library_resolution.rs`'s l01/l09 vectors used to prove this
+    /// through the now-deleted `resolve_name`/`ExportIdentity` path
+    /// (FR-087 removed per-name lookup from `library`'s external surface);
+    /// this in-crate unit test restores the specific-node-id check using
+    /// the pub(crate) accessor that survives the removal.
+    #[trace("TC-227", "FR-307-AC-1")]
+    #[test]
+    fn project_declarations_derives_the_declaring_nodes_own_wire_id() {
+        let bytes = one_node_preimage(b"Example::Length", &["Example", "Length"]);
+        let expected = WireNodeId::from_hex(&hex(b"Example::Length")).unwrap();
+        let declarations = project_declarations(&bytes).unwrap();
+        assert_eq!(declarations.node("Example::Length"), Some(expected));
+        assert_eq!(declarations.node("Example::Width"), None);
+    }
+
+    /// A migrated identity's nodes are never relabelled onto the
+    /// predecessor's evidence (FR-307-AC-3): two preimages that both
+    /// declare the same qualified name, from different node content, derive
+    /// two different wire node ids for that name -- `tests/
+    /// library_resolution.rs`'s l07 makes this same claim at the
+    /// `resolve_libraries`/`LibraryLock` level; this unit test pins it at
+    /// the node-id-derivation level `l07` can no longer reach directly
+    /// after FR-087 removed `library`'s per-name lookup.
+    #[trace("TC-227", "FR-307-AC-3")]
+    #[test]
+    fn migrated_identity_derives_a_different_node_id_for_the_same_name() {
+        let old_bytes = one_node_preimage(b"L::R (old)", &["L", "R"]);
+        let new_bytes = one_node_preimage(b"L::R (new)", &["L", "R"]);
+        let old_id = project_declarations(&old_bytes)
+            .unwrap()
+            .node("L::R")
+            .unwrap();
+        let new_id = project_declarations(&new_bytes)
+            .unwrap()
+            .node("L::R")
+            .unwrap();
+        assert_ne!(old_id, new_id);
+        assert_eq!(old_id, WireNodeId::from_hex(&hex(b"L::R (old)")).unwrap());
+        assert_eq!(new_id, WireNodeId::from_hex(&hex(b"L::R (new)")).unwrap());
+    }
+}
