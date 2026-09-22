@@ -70,47 +70,20 @@ path = "tools/fixture-audit/main.rs"
 name = "arch-lint"
 path = "tools/arch-lint/main.rs"
 
-# These integration tests call the `test-support`-gated fixture constructors
-# (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
-# `DomainPackageRef::fixture_with_version`) documented above `test-support`.
-# Declaring `required-features` here — rather
-# than gating the calls inside each test file — keeps a default-feature
-# `cargo clippy --all-targets`/`cargo test` build (no `test-support`) skipping
-# these targets outright instead of failing to compile them (#154).
+# QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
+# `mod` of this one `tests/it/main.rs` binary (see that file's own doc for
+# the full rationale). The seven modules that call the `test-support`-gated
+# fixture constructors (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
+# `DomainPackageRef::fixture_with_version`) are gated with
+# `#[cfg(feature = "test-support")]` on their own `mod` lines in
+# `tests/it/main.rs` instead of `required-features` here, so this single
+# target needs none: a default-feature `cargo clippy --all-targets`/`cargo
+# test` build (no `test-support`) compiles `it` with those seven modules
+# `cfg`'d out, matching the previous per-file behavior (#154) without
+# skipping the whole binary.
 [[test]]
-name = "model_conformance"
-path = "tests/model_conformance.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "model_dispatch"
-path = "tests/model_dispatch.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "model_normalization"
-path = "tests/model_normalization.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "model_population"
-path = "tests/model_population.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "model_systems"
-path = "tests/model_systems.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "model_reference_queries"
-path = "tests/model_reference_queries.rs"
-required-features = ["test-support"]
-
-[[test]]
-name = "dispatch_calls"
-path = "tests/dispatch_calls.rs"
-required-features = ["test-support"]
+name = "it"
+path = "tests/it/main.rs"
 
 [lints.rust]
 unsafe_code = "forbid"

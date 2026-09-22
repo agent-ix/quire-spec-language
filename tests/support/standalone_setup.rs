@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026–029, FR-031/033: example setup through public native APIs.
 
-// The shared fixture module also serves other runtime test targets.
+// File-relative #[path], not `crate::support::runtime_setup` -- this file is
+// also compiled directly into `examples/standalone_fixtures.rs` (its own,
+// separate crate, pre-dating and outside this ticket's scope), where no
+// `crate::support` exists. A self-relative `mod` resolves identically in
+// both hosts. `tests/support/mod.rs` re-exports this same nested copy as
+// `crate::support::runtime_setup` rather than declaring its own, so the file
+// is not loaded twice within the `it` crate (`clippy::duplicate_mod`).
 #[allow(dead_code)]
 #[path = "runtime_setup.rs"]
 pub(crate) mod runtime;

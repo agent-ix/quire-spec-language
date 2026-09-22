@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real native inputs and fixture-authored external selections for emission tests.
 
-#[path = "../composed_types/mod.rs"]
-mod composed_inputs;
+use crate::support::composed_types as composed_inputs;
 
 use std::collections::BTreeMap;
 
