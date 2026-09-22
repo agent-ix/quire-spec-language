@@ -403,8 +403,8 @@ mod tests {
         assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
         assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
         assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
-        assert!(report.contains("model_query.rs:2 (module value::model_query)"));
-        assert!(report.contains("model_query.rs:3 (module value::model_query)"));
+        assert!(report.contains("model_query.rs:2 (module value::model_query, fn f)"));
+        assert!(report.contains("model_query.rs:3 (module value::model_query, fn f)"));
         assert!(report.ends_with("missing input: pass --cg to evaluate every rule"));
     }
 }

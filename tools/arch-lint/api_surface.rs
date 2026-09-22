@@ -814,15 +814,10 @@ pub(crate) fn evaluate(
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => [
-            "src",
-            "qsl-foundation/src",
-            "qsl-cst/src",
-            "qsl-replay/src",
-        ]
-        .into_iter()
-        .map(|relative| scan_root.join(relative))
-        .collect(),
+        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"]
+            .into_iter()
+            .map(|relative| scan_root.join(relative))
+            .collect(),
     }
 }
 
@@ -845,12 +840,7 @@ mod tests {
     /// test exactly that) call this first so the extracted-crate roots they
     /// don't care about are present, but empty.
     fn ensure_qsl_roots(root: &Path) {
-        for relative in [
-            "src",
-            "qsl-foundation/src",
-            "qsl-cst/src",
-            "qsl-replay/src",
-        ] {
+        for relative in ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
     }
