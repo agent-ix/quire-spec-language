@@ -199,8 +199,10 @@ are never written back into the static subject.
 
 A request is inapplicable when its capability kind is not defined for the
 requested declaration's family. The kind-to-family mapping `report` applies
-(`requests::families`) is provisional and not normative: it is inferred from
-FR-057's admitted-vocabulary table, and the question of which family records
+(`requests::families`) is provisional and not normative. It follows FR-057's
+admitted-vocabulary table for every kind except `finite-replay`, which it maps
+to the protocol family as the retired four-member request enum did, and the
+question of which family records
 which capability kind is open under QSL-29.
 
 The requested capability vocabulary, its version, its refusals and the split

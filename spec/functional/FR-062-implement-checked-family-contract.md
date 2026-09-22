@@ -143,14 +143,18 @@ called on an arbitrarily deeply nested form (for example, nested function
 application) SHALL refuse with a limit outcome naming the nesting-depth
 limit once that limit is reached, rather than exhaust the native stack.
 
-The expression-node limit a caller configures for checking a package
+The expression-node budget a caller configures for checking a package
 (`CheckingLimits::new(nodes, depth)`) bounds the package as a whole: the
 expression nodes of every declaration in the package count against that one
-budget. When the package's declarations together exceed it, package checking
-SHALL refuse with `resource_exhausted`, naming the typing stage, the node
-limit kind and the caller's configured limit value
+budget. It is separate from the per-declaration stage-entry node-count limit
+(`StageLimits::node_count`), whose exhaustion is the `Limit` outcome of
+FR-062-AC-5. When the package's declarations together exceed the package
+budget, package checking SHALL refuse the package with a check refusal
+whose cause is `resource_exhausted` (the contract's `check` returns it as
+`StageFailure::Refused`, not `StageFailure::Limit`), naming the typing
+stage, the node limit kind and the caller's configured limit value
 (`ResourceExhausted{Typing, Nodes, <configured limit>}`), including when
-each declaration alone is within the limit.
+each declaration alone is within the budget.
 
 ### Packaging is all-or-nothing
 
@@ -176,7 +180,7 @@ outcome.
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
-| FR-062-AC-11 | Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it refuses the package holding both with `ResourceExhausted{stage: Typing, kind: Nodes, limit: 4}`. | Test (TC-381) |
+| FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a refusal (`Refused{ResourceExhausted}`), not a `Limit` outcome. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it refuses the package holding both with `ResourceExhausted{stage: Typing, kind: Nodes, limit: 4}`. | Test (TC-381) |
 
 ## Dependencies
 

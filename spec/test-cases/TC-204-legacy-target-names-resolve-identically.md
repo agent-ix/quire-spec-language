@@ -44,7 +44,7 @@ unknown name in step 4 is unchanged by the swap.
 
 ## Status
 
-Steps 1 and 4 (before the swap) are backed by
+Steps 1 and 4 are backed for the current catalog by
 `legacy_target_names_parse_round_trip_and_list_identically`
-(`tests/it/lowering_registry_isolation.rs`). The same test runs steps 3 and
-4 after #217's catalog replacement lands.
+(`tests/it/lowering_registry_isolation.rs`). Steps 2 and 3 are subject to
+ADR-011-OQ-1.

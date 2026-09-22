@@ -19,12 +19,13 @@ when it replaces the fixed `ProjectionTarget` catalog with the registry
 `integer-ir/v1`, `state-scalar-ir/v1`), or their parsing, display and
 CLI-selection behavior, as part of that replacement.
 
-The replacement is
-[#217](https://github.com/agent-ix/quire-spec-language/issues/217)'s work,
-with SEAM-1 (ADR-011 §6.2, the `lowering` row; §7.3 M-6b): #217 routes
-lowering-target selection through the registry and deletes the fixed
-catalog. Until then the registry sits alongside the catalog, the catalog
+Today the registry (FR-075) sits alongside the fixed catalog, the catalog
 selects the lowering target, and lowering takes no registry input.
+ADR-011 §6.2 (the `lowering` row) and §7.3 M-6b assign #217 the deletion of
+the `lowering` targets, `ProjectionTarget` and `--target`, with the backend
+chosen only by `BackendId`. How that deletion relates to this requirement's
+preserved target names is an open question for the owner (ADR-011, "Open
+questions for the owner", ADR-011-OQ-1).
 
 ## Inputs
 
@@ -81,22 +82,19 @@ would still pass without showing the output is unchanged.
   registry this requirement's non-regression check runs against.
 - Ticket exit condition: "existing Kani lowering corpora unchanged"
   ([quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)).
-- [#217](https://github.com/agent-ix/quire-spec-language/issues/217)
-  performs the catalog replacement this requirement's non-regression checks
-  run across (ADR-011 §6.2, §7.3 M-6b).
+- [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
+  §6.2 and §7.3 M-6b, and ADR-011-OQ-1, which records their open question
+  against FR-079-AC-1 and FR-079-AC-2.
 
 ## Status
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-The registry landed under QSL-46 (PR #305) alongside the unchanged catalog;
-the catalog replacement is #217's.
+The registry landed under QSL-46 (PR #305) alongside the unchanged catalog.
 
 By Acceptance Criterion:
-- FR-079-AC-1: unbacked. Its pre/post comparison runs across #217's catalog
-  replacement, which has not happened, so no test can compare across it yet.
-  Owner: #217.
+- FR-079-AC-1: unbacked. No test compares corpus output across a catalog
+  replacement. Open question: ADR-011-OQ-1.
 - FR-079-AC-2: backed for the current catalog (`TC-204`):
   `legacy_target_names_parse_round_trip_and_list_identically`
-  (`tests/it/lowering_registry_isolation.rs`). The same test is the
-  after-replacement check when #217 lands.
+  (`tests/it/lowering_registry_isolation.rs`). Open question: ADR-011-OQ-1.

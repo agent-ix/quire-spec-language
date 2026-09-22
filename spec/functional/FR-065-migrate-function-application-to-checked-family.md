@@ -281,13 +281,12 @@ forms mint exclusively through the checked-family contract
 (`mint_declaration_identity`/`mint_call_identity`, reached only from
 `ValueFunctionFamily::check` for declarations and from `Self::call` for
 applications) and nowhere else -- that part is real. The checking decision
-itself -- typing, definedness and termination -- does not: it is made
-entirely by the unchanged `Typer`, unconditionally, for every declaration
-and every call, exactly as before this ticket. `ValueFunctionFamily::check`
-only ever refuses on the nesting-depth limit; `Expression::Call` never
-calls any `FamilyContract` method at all. (QSL-148, PR #303, later moved the
-declaration typing verdict into `ValueFunctionFamily::check`; see the AC-7
-entry below.)
+is split. A declaration's typing and definedness verdict is made inside
+`ValueFunctionFamily::check` (QSL-148, PR #303; AC-7). A call is checked by
+`check::family::check_application`, which `infer_form`'s `Call` arm calls
+directly, not through a `FamilyContract` method. Termination is a separate
+whole-package pass (`check::termination::check`) after every declaration is
+checked.
 
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:

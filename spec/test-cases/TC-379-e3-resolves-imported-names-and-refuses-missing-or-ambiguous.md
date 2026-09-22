@@ -23,6 +23,8 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
    uses `a::R` twice.
 3. Package `P` imports `L@1` `as l`. Check a `P` body that references
    `l::R`, and one that references `l::Q` (`L@1` exports no `Q`).
+4. Package `P` imports `L@1` `as l`. Check a `P` body that references
+   `l::R` against a library lock that holds no selection for `L`.
 
 ## Expected Results
 
@@ -34,12 +36,8 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
 - Step 3: `l::R` resolves to `PackageNodeKey{package: <L@1's package_id>,
   node: <R's WireNodeId>}`; `l::Q` is refused `missing_declaration` /
   `missing-name`.
+- Step 4: `l::R` is refused `missing_declaration` / `missing-name`.
 
 ## Status
 
-Planned; no test backs this case. The importing package's checker does not
-yet resolve a name through import qualifiers. Steps 1 and 2 are the vectors
-`l02_an_import_without_a_qualifier_binds_no_name` and
-`l03_a_shared_qualifier_is_ambiguous_at_each_use` exercised against
-`library`'s former `resolve_name`, which PR #299 removed from `library`
-(FR-087 Description, item 3, owner ruling (b)).
+Planned; no test backs this case.

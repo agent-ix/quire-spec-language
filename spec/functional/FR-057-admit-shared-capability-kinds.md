@@ -362,8 +362,11 @@ registry computes candidate sets over the same type (FR-075). `admitted_bodies`
 is every declaration whose names resolved, independent of capability requests,
 as "Family-body admission" states. `report` marks a request inapplicable when
 its kind is not defined for the requested declaration's family, using a
-provisional, non-normative kind-to-family mapping (`requests::families`); which
-family records which capability kind is open under QSL-29.
+provisional, non-normative kind-to-family mapping (`requests::families`). It
+follows this requirement's admitted-vocabulary table for every kind except
+`finite-replay`, which it maps to the protocol family as the retired
+four-member request enum did. Which family records which capability kind is
+open under QSL-29.
 
 FR-057-AC-3 and FR-057-AC-5 through FR-057-AC-10 are not yet backed by
 tests traced to them. Remaining work: #213 lands the carrier-version refusal

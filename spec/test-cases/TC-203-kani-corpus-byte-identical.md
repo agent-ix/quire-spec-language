@@ -56,6 +56,5 @@ been silently re-captured from the post-swap tree.
 
 ## Status
 
-Planned. The registry swap in step 2 is #217's catalog replacement (FR-079
-Description; ADR-011 §7.3 M-6b). Step 1's snapshot is captured on the last
-commit before #217's replacement lands.
+Planned; no test backs this case. Which change step 2 names is open under
+ADR-011-OQ-1.
