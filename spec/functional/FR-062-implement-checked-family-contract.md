@@ -227,14 +227,12 @@ they exist in the delivered code today:
 - FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
   migrates carries an FR-057 capability kind (`src/family/mod.rs`'s module
   doc). Owner: QSL-152.
-- FR-062-AC-5: unbacked (untagged). `package` (one of the two hooks this
-  criterion names) is deleted entirely (F1/F2 below), so "package never
-  returns `Incomplete`" holds only because `package` no longer exists to
-  return anything; `StageLimits`' `input_bytes`/`node_count` fields (this
-  criterion's other two named limit kinds) are likewise deleted (PR #262
-  review, coordinator round 3, finding 4) rather than kept write-only --
-  see `contract.rs`'s own doc on `StageLimits`. Owner: QSL-153 (the `Limit`
-  tag and `Incomplete` half).
+- FR-062-AC-5: backed (`TC-160`, `src/value/expression/family.rs`):
+  `quire_exact::Meter::charge`/`charge_plan` are `pub` (QSL-166), which
+  QSL-153 uses as `ValueFunctionFamily::evaluate`'s real call site to tag
+  the `Limit` half, implement the `Incomplete` half, and restore
+  `StageLimits`' `input_bytes`/`node_count`/`work_budget` fields, each with
+  a real producer and consumer.
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
   in #214; there is nothing to invoke this criterion's hook against yet.
   Owner: QSL-152.
@@ -266,5 +264,5 @@ they exist in the delivered code today:
   `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
 
-One of this requirement's ten Acceptance Criteria is backed (AC-2); the
-other nine are unbacked, for the reasons above -- not silently.
+Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-5);
+the other eight are unbacked, for the reasons above -- not silently.

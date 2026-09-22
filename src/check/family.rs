@@ -116,13 +116,36 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// `mint_declaration_identity_matches_a_checked_in_digest`
 /// (`value::expression::family`'s `tests` module) for the golden-digest test
 /// that closes that gap.
-struct Preimage(Vec<u8>);
+///
+/// **`nodes`/`writes` (QSL-153).** Two running counters alongside the byte
+/// buffer, read back only by [`mint_declaration_identity`] as
+/// [`IdentityPreimageMetrics`] -- never written into the buffer itself, so
+/// they cannot change a minted digest. `nodes` counts each
+/// [`encode_expression`] call (one per visited `Expression` node); `writes`
+/// counts each base write (`write_bytes`/`write_u64`/`write_bool` --
+/// `write_str` is `write_bytes`, not counted twice), a finer-grained count
+/// than `nodes` because encoding one node writes several fields (a tag plus
+/// its operands/labels).
+struct Preimage {
+    bytes: Vec<u8>,
+    nodes: u64,
+    writes: u64,
+}
 
 impl Preimage {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::new(),
+            nodes: 0,
+            writes: 0,
+        }
+    }
+
     fn write_bytes(&mut self, bytes: &[u8]) {
-        self.0
+        self.writes += 1;
+        self.bytes
             .extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        self.0.extend_from_slice(bytes);
+        self.bytes.extend_from_slice(bytes);
     }
 
     fn write_str(&mut self, text: &str) {
@@ -130,11 +153,18 @@ impl Preimage {
     }
 
     fn write_u64(&mut self, value: u64) {
-        self.0.extend_from_slice(&value.to_le_bytes());
+        self.writes += 1;
+        self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
     fn write_bool(&mut self, value: bool) {
-        self.0.push(u8::from(value));
+        self.writes += 1;
+        self.bytes.push(u8::from(value));
+    }
+
+    /// One [`encode_expression`] visit of an `Expression` node.
+    fn enter_node(&mut self) {
+        self.nodes += 1;
     }
 }
 
@@ -334,6 +364,7 @@ fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) 
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
 fn encode_expression(out: &mut Preimage, expr: &Expression) {
+    out.enter_node();
     match expr {
         Expression::Boolean(value) => {
             out.write_str("boolean");
@@ -570,8 +601,8 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
 pub(crate) fn mint_declaration_identity(
     package_identity: &str,
     declaration: &FunctionDeclaration,
-) -> NodeKey {
-    let mut preimage = Preimage(Vec::new());
+) -> (NodeKey, IdentityPreimageMetrics) {
+    let mut preimage = Preimage::new();
     preimage.write_str("value.function-declaration");
     preimage.write_str(package_identity);
     preimage.write_str(&declaration.name);
@@ -586,7 +617,27 @@ pub(crate) fn mint_declaration_identity(
         encode_expression(&mut preimage, measure);
     }
     encode_expression(&mut preimage, &declaration.body);
-    NodeKey::from_digest(sha256(&preimage.0))
+    let metrics = IdentityPreimageMetrics {
+        input_bytes: preimage.bytes.len() as u64,
+        node_count: preimage.nodes,
+        work_budget: preimage.writes,
+    };
+    let identity = NodeKey::from_digest(sha256(&preimage.bytes));
+    (identity, metrics)
+}
+
+/// [`StageLimits`](crate::family::StageLimits)'s three restored real
+/// producer values (QSL-153), read back from one real
+/// [`mint_declaration_identity`] pass rather than a second, parallel
+/// traversal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IdentityPreimageMetrics {
+    /// The minted preimage's own byte length.
+    pub(crate) input_bytes: u64,
+    /// The number of `Expression` nodes [`encode_expression`] visited.
+    pub(crate) node_count: u64,
+    /// The number of base preimage writes performed.
+    pub(crate) work_budget: u64,
 }
 
 /// Mint a function-application occurrence's identity, from the call's own
@@ -599,7 +650,7 @@ pub(crate) fn mint_call_identity(
     callee_name: &str,
     arguments: &[Expression],
 ) -> NodeKey {
-    let mut preimage = Preimage(Vec::new());
+    let mut preimage = Preimage::new();
     preimage.write_str("value.function-application");
     preimage.write_str(package_identity);
     preimage.write_str(callee_name);
@@ -607,7 +658,7 @@ pub(crate) fn mint_call_identity(
     for argument in arguments {
         encode_expression(&mut preimage, argument);
     }
-    NodeKey::from_digest(sha256(&preimage.0))
+    NodeKey::from_digest(sha256(&preimage.bytes))
 }
 
 /// One source occurrence of a migrated form, keyed by (identity, role,
@@ -726,7 +777,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // read.
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
-        let identity = mint_declaration_identity(cx.declarations(), form);
+        let (identity, metrics) = mint_declaration_identity(cx.declarations(), form);
         // PR #262 review (F7): an earlier version of this function
         // recomputed `mint_declaration_identity` a second time here and
         // returned `StageFailure::Fault` on a mismatch, framed as a
@@ -736,6 +787,21 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // equal, not equal because anything was verified. Deleted along
         // with `StageFailure::Fault`/`InternalFault` themselves (see
         // `crate::family::outcome::StageFailure`'s own doc).
+        //
+        // QSL-153: the same preimage pass's own byte length, node count and
+        // write count are checked against `cx`'s restored `StageLimits`
+        // fields before this declaration is admitted -- the first one
+        // exceeded refuses with a `Limit` outcome naming it, matching
+        // `enter_nesting`'s own `NestingDepth` case above.
+        if let Err(exceeded) = cx
+            .check_input_bytes(metrics.input_bytes)
+            .and_then(|()| cx.check_node_count(metrics.node_count))
+            .and_then(|()| cx.check_work_budget(metrics.work_budget))
+        {
+            cx.scopes.leave();
+            cx.leave_nesting();
+            return Err(crate::family::StageFailure::Limit(exceeded));
+        }
         cx.diagnostics.record(
             cx.scopes,
             format!(
@@ -841,7 +907,7 @@ mod tests {
             }),
         };
         let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
-        let identity = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
+        let (identity, _) = mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration);
         assert_eq!(
             identity.to_string(),
             "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",

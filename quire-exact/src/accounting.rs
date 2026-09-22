@@ -568,6 +568,10 @@ impl Meter {
     /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`: QSL's own
     /// `value::accounting::Meter::charge` call sites in `quire-spec-language`
     /// now call this one directly, across the crate boundary, after `value::accounting` was deleted as a duplicate.
+    /// This closes FR-062-AC-5's `Incomplete`-half export gap (QSL-153):
+    /// `ValueFunctionFamily::evaluate` (`src/value/expression/family.rs`)
+    /// charges its own `meter` parameter through this method, its one real
+    /// cross-crate caller for that purpose.
     pub fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
         self.check_injected(point, charge.work_units.clone())?;

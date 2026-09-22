@@ -432,8 +432,20 @@ impl PackageDeclarations {
         // production entry point. Reading `limits.depth()` here (the same
         // `CheckingLimits` the unchanged `Typer` below already honors)
         // makes the contract's own resource bound live.
+        // QSL-153: `input_bytes`/`node_count`/`work_budget` are unlimited
+        // here -- this method's own `CheckingLimits` parameter has no
+        // dedicated knob for a preimage byte/node/write-count bound, the
+        // same real-default-until-configured shape `nesting_depth` itself
+        // had before this exact fix wired it to `limits.depth()`
+        // (`StageLimits`'s own doc). The mechanism is real (`CheckContext::
+        // check_input_bytes`/`check_node_count`/`check_work_budget`) and is
+        // exercised directly against tight fixtures in
+        // `src/value/expression/family.rs`'s `family_contract_tests`.
         let contract_limits = crate::family::StageLimits {
             nesting_depth: limits.depth(),
+            input_bytes: u64::MAX,
+            node_count: u64::MAX,
+            work_budget: u64::MAX,
         };
         let mut contract_meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
@@ -452,13 +464,19 @@ impl PackageDeclarations {
                 Err(crate::family::StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
                     // `limit.kind` is matched, not read past into a
-                    // hardcoded `CheckingLimitKind::Depth` -- `StageLimitKind`
-                    // has exactly one variant today, but this exhaustive
+                    // hardcoded `CheckingLimitKind::Depth` -- this exhaustive
                     // match (not a `_` catch-all) is what forces a real
-                    // decision here, not a guess, the day a second
-                    // `StageLimitKind` variant is added.
+                    // decision here, not a guess, now that `StageLimitKind`
+                    // has grown three more variants (QSL-153). `NodeCount`
+                    // maps onto the pre-existing `CheckingLimitKind::Nodes`
+                    // (both name "how many expression nodes"); `InputBytes`
+                    // and `WorkBudget` have no pre-existing counterpart in
+                    // this older `Typer`-era enum, so QSL-153 adds one each.
                     let kind = match limit.kind {
                         crate::family::StageLimitKind::NestingDepth => CheckingLimitKind::Depth,
+                        crate::family::StageLimitKind::NodeCount => CheckingLimitKind::Nodes,
+                        crate::family::StageLimitKind::InputBytes => CheckingLimitKind::InputBytes,
+                        crate::family::StageLimitKind::WorkBudget => CheckingLimitKind::WorkBudget,
                     };
                     refusals.push(CheckRefusal {
                         location: location.clone(),
