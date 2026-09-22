@@ -55,22 +55,13 @@ use crate::value::PackageId;
 /// };
 /// ```
 ///
-/// TC-244 row 6 (FR-087-AC-2): the same struct-literal privacy also
-/// forecloses the other forbidden path R-10 names -- decoding
+/// TC-244 row 6 (FR-087-AC-2) names a second forbidden path -- decoding
 /// `EmittedPackage`'s wire bytes and forcing the result directly into a
 /// `CheckedPackage`, bypassing the verified binding and the S1-S4 recompile
 /// `replay`'s own E9 uses instead (ADR-013 T-2). No constructor accepting
 /// decoded bytes is exposed at all; the only way to attempt it is the same
-/// private struct literal row 2 already forecloses:
-/// ```compile_fail,E0451
-/// use quire_spec_language::package::CheckedPackage;
-/// fn from_decoded_bytes(decoded_graph: quire_spec_language::check::CheckedGraph) -> CheckedPackage {
-///     CheckedPackage {
-///         graph: decoded_graph,
-///         dependencies: Default::default(),
-///     }
-/// }
-/// ```
+/// private struct literal row 2's doctest already forecloses, so row 6 is
+/// covered by row 2 rather than carrying its own separate doctest.
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: CheckedGraph,
@@ -91,12 +82,15 @@ pub struct CheckedPackage {
 impl CheckedPackage {
     /// The S4 link step (ADR-013 T-1): the sole conversion from
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked
-    /// typestate -- a `CheckedGraph` and other `CheckedPackage`s -- never by
-    /// an unchecked or wire-admitted value (R-10).
-    pub fn link(graph: CheckedGraph, dependencies: BTreeMap<PackageId, CheckedPackage>) -> Self {
+    /// typestate -- a `CheckedGraph` -- never by an unchecked or
+    /// wire-admitted value (R-10). The dependency closure starts empty:
+    /// no #213 slice before S-3a gives the checker an import syntax to
+    /// populate it from. M-4 adds the dependency-bearing step
+    /// (`pub(crate)`, with verification) when it lands.
+    pub fn link(graph: CheckedGraph) -> Self {
         Self {
             graph,
-            dependencies,
+            dependencies: BTreeMap::new(),
         }
     }
 

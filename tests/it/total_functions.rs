@@ -507,7 +507,7 @@ fn p06_each_call_charges_function_call() {
         .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
-    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
+    let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::default();
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
@@ -915,7 +915,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     // dependency closure -- this fixture declares no import. `converted`
     // above is checked against `admitted` (S3, `CheckedGraph`) directly;
     // evaluation needs the S4 `CheckedPackage` `admitted` links into.
-    let admitted = CheckedPackage::link(admitted, std::collections::BTreeMap::new());
+    let admitted = CheckedPackage::link(admitted);
     let convert = |bits: u64| {
         let mut meter = Meter::new(UNLIMITED);
         let evaluation = admitted
@@ -1071,7 +1071,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
-    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
+    let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::default();
     let invoke = |function: &str, arguments: Vec<Value>, limits| {
         let mut meter = Meter::new(limits);

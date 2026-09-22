@@ -426,7 +426,7 @@ mod tests {
     /// never has a real dependency to populate (see [`CheckedPackage`]'s own
     /// `dependencies` field doc).
     fn link(graph: crate::check::CheckedGraph) -> CheckedPackage {
-        CheckedPackage::link(graph, std::collections::BTreeMap::new())
+        CheckedPackage::link(graph)
     }
 
     /// TC-174 steps 1-4: each function's own `slots` count, read directly,

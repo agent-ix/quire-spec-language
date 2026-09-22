@@ -302,7 +302,7 @@ fn package(scenario: &Scenario) -> CheckedPackage {
     }
     .check(CheckingLimits::default())
     .unwrap();
-    CheckedPackage::link(graph, std::collections::BTreeMap::new())
+    CheckedPackage::link(graph)
 }
 
 /// Like [`package`], plus one declared function `F(p: Population<M::A>[3]):
@@ -329,7 +329,7 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
     }
     .check(CheckingLimits::default())
     .unwrap();
-    CheckedPackage::link(graph, std::collections::BTreeMap::new())
+    CheckedPackage::link(graph)
 }
 
 /// Like [`package`], plus one declared function `F2(elements:
@@ -362,7 +362,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
     }
     .check(CheckingLimits::default())
     .unwrap();
-    CheckedPackage::link(graph, std::collections::BTreeMap::new())
+    CheckedPackage::link(graph)
 }
 
 /// A real object world containing every object these tests pass as a
@@ -1072,7 +1072,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     }
     .check(CheckingLimits::default())
     .unwrap();
-    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
+    let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(foreign_key));
 

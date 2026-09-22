@@ -1683,7 +1683,7 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
     .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
-    CheckedPackage::link(graph, std::collections::BTreeMap::new())
+    CheckedPackage::link(graph)
 }
 
 fn plain_package() -> CheckedPackage {
@@ -2161,7 +2161,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
-    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
+    let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Integer)];
     // `eA = pick(p)` refuses its `Int[0,1]` argument before `function.call`;
     // `eB = p + 1` charges and is incomplete under the zero tuple.

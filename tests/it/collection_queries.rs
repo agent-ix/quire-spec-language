@@ -148,7 +148,7 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
     .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
-    CheckedPackage::link(graph, std::collections::BTreeMap::new())
+    CheckedPackage::link(graph)
 }
 
 fn plain() -> CheckedPackage {
