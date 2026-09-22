@@ -42,9 +42,10 @@
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
 use quire_spec_language::check::Capability;
+use quire_spec_language::checked_package::PackageLimits;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::package::{NativePackage, PackageLimits};
+use quire_spec_language::package::NativePackage;
 use quire_spec_language::route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
 use quire_spec_language::syntax::ClauseKind;
 use serde_json::json;

@@ -9,6 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use quire_contract_ir as ir;
 use quire_spec_language::{
+    checked_package::PackageLimits,
     checking::{check, CheckBindings, CheckLimits, ClauseBinding},
     formal_source::FormalSource,
     link_native,
@@ -17,7 +18,7 @@ use quire_spec_language::{
         PrimitiveValue, ProjectedReadOrigin, ProjectionTarget,
     },
     native_model::NativeModel,
-    package::{NativePackage, PackageLimits},
+    package::NativePackage,
     parse,
     runtime::{
         self, ArtifactLimits, ExecutionSelection, Invocation, ObservationSelection, RuntimeInput,

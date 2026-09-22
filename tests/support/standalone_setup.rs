@@ -13,8 +13,9 @@
 pub(crate) mod runtime;
 
 use quire_spec_language::{
+    checked_package::PackageLimits,
     formal_source::FormalSource,
-    package::{NativePackage, PackageLimits},
+    package::NativePackage,
     runtime::{ObservationSelection, ValueBinding, ValueId, ValueNode},
     syntax::ClauseKind,
 };

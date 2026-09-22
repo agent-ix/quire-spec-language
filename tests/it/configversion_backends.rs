@@ -11,12 +11,13 @@ use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
 use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
+    checked_package::PackageLimits,
     checking::{check, CheckBindings, CheckLimits, ClauseBinding},
     formal_source::FormalSource,
     link_native,
     lowering::{lower_for, LoweringCode, LoweringLimits, ProjectionTarget},
     native_model::NativeModel,
-    package::{NativePackage, PackageLimits},
+    package::NativePackage,
     parse,
     runtime::{
         self, ArtifactLimits, ExecutionLimits, ExecutionSelection, FieldBinding, Invocation,

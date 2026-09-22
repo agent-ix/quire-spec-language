@@ -7,11 +7,10 @@ use setup::*;
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Phase};
 use quire_contract_ir as ir;
+use quire_spec_language::checked_package::PackageLimits;
 use quire_spec_language::checking::CheckedPackage;
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::package::{
-    NativePackage, PackageLimits, PackageReadLimits, PackageSupport,
-};
+use quire_spec_language::package::{NativePackage, PackageReadLimits, PackageSupport};
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ImplicationEventKind, SnapshotDraft,
     SnapshotRef, ValidationLimits, ValidationStatus, ValueBinding, ValueId, ValueNode,

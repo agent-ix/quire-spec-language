@@ -2,13 +2,12 @@
 //! FR-026/027: source-model admission and the shared static compiler pipeline.
 
 use super::{wire, Intake, Result, RunCause};
+use crate::checked_package::PackageLimits;
 use crate::checking::{check, CheckBindings, CheckLimits};
 use crate::formal_source::FormalSource;
 use crate::model_source::{self, ModelSourceLimits};
 use crate::native_model::{ModelLimits, NativeModel};
-use crate::package::{
-    NativePackage, NativePackageRef, PackageLimits, PackageReadLimits, PackageSupport,
-};
+use crate::package::{NativePackage, NativePackageRef, PackageReadLimits, PackageSupport};
 use crate::Limits;
 
 pub(super) fn source_only(_program: &wire::Program) -> Result<()> {

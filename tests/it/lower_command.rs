@@ -9,8 +9,9 @@ use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
 use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
+    checked_package::PackageLimits,
     lowering::{lower, LoweringLimits},
-    package::{NativePackage, PackageLimits},
+    package::NativePackage,
     syntax::ClauseKind,
 };
 use serde_json::{json, Value};

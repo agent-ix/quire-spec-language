@@ -9,8 +9,9 @@ use std::{fs, path::Path, path::PathBuf, process::Command};
 use ix_trace_rs::trace;
 use quire_contract_codegen as codegen;
 use quire_contract_ir_historical as backend_ir;
+use quire_spec_language::checked_package::PackageLimits;
 use quire_spec_language::lowering::{lower, LoweringLimits};
-use quire_spec_language::package::{NativePackage, PackageLimits};
+use quire_spec_language::package::NativePackage;
 use quire_spec_language::runtime::{
     evaluate, validate, EvaluationLimits, EvaluationOutcome, ImplicationEventKind, QualifiedName,
     ValidationLimits, ValueBinding, ValueId, ValueNode,

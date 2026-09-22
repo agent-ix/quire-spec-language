@@ -31,17 +31,7 @@ use sha2::{Digest, Sha256};
 
 use qsl_foundation::{ByteDigest, Code, Diagnostic};
 
-// QSL-182 prep: `PackageLimits` now lives in the sibling `checked_package`
-// module (needed there by the I2 `checked_v2` byte reader) and is
-// re-exported here at its pre-existing public path, since this module's own
-// native v1 encode path (`encoding`, `intake`) and every existing SEAM-1
-// caller (`NativePackage::new` below, `mapped`, `command::compilation`, and
-// this crate's own tests) still construct it as `package::PackageLimits`.
-// This is not a compatibility shim for anything QSL-182 moved out of this
-// file's own public surface: `PackageLimits` was never named among the
-// items this ticket moves, it is a real, ongoing dependency in both
-// directions, and it has exactly one definition.
-pub use crate::checked_package::PackageLimits;
+use crate::checked_package::PackageLimits;
 
 /// Actual admitted work in one package pass; inapplicable fields are zero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
