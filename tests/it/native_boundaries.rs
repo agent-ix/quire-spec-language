@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parse/format round-trip boundaries and diagnostics for native syntax.
 use ix_trace_rs::trace;
+use qsl_cst::ParsedSource;
 use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity};
-use quire_spec_language::format::{format, format_with_limit};
+use quire_spec_language::format::{format, format_with_limit, FormatRefusal, OUTPUT_BYTE_CEILING};
 use quire_spec_language::{parse, Limits};
 
 fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnostic>> {
@@ -17,26 +18,52 @@ fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnos
     )
 }
 
+fn parse_complete(text: &str) -> ParsedSource {
+    qsl_cst::parse(
+        SourceIdentity {
+            identity: "test:boundary".into(),
+            revision: "fixture:1".into(),
+        },
+        "boundary.quire",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap()
+}
+
+const COMPLETE: &str = concat!(
+    "language \"ix:native\" edition \"1-draft\";\n",
+    "// café: a multibyte comment counts in bytes\n",
+    "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+    "type Digit = Int[0, 9];\n",
+    "function inc using v(x: Digit): Int[0, 10] pure { x + 1 }\n",
+);
+
 #[trace("TC-016", "FR-003-AC-4", "FR-003-AC-5", "FR-003-AC-6")]
 #[test]
 fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
-    let unit = parse_text(include_str!("../fixtures/parent.native")).unwrap();
-    let expected = format(&unit).unwrap();
+    let parsed = parse_complete(COMPLETE);
+    let expected = format(&parsed).unwrap();
     assert!(expected.ends_with('\n'));
     for limit in 0..expected.len() {
-        let error = format_with_limit(&unit, limit).unwrap_err();
-        assert_eq!(error.code, Code::ResourceExhausted, "limit {limit}");
-        assert_eq!(error.phase, Phase::Format);
-        assert_eq!(&error.source, unit.source().identity());
-        assert!(error.span.end.byte <= unit.source().text().len());
+        let refusal = format_with_limit(&parsed, limit).unwrap_err();
+        assert!(
+            matches!(refusal, FormatRefusal::OutputBudgetExhausted(_)),
+            "limit {limit}"
+        );
+        assert_eq!(refusal.code(), Code::ResourceExhausted, "limit {limit}");
+        let diagnostic = refusal.diagnostic();
+        assert_eq!(diagnostic.phase, Phase::Format);
+        assert_eq!(&diagnostic.source, parsed.source().identity());
+        assert!(diagnostic.span.end.byte <= parsed.source().text().len());
     }
     for limit in [
         expected.len(),
         expected.len() + 1,
-        Limits::default().source_bytes,
+        OUTPUT_BYTE_CEILING,
         usize::MAX,
     ] {
-        assert_eq!(format_with_limit(&unit, limit).unwrap(), expected);
+        assert_eq!(format_with_limit(&parsed, limit).unwrap(), expected);
     }
 }
 
@@ -44,21 +71,147 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
 #[test]
 fn formatter_cannot_raise_the_hard_content_ceiling() {
     let header = concat!(
-        "language\"ix:native\"edition\"0-draft\";profile\"state-finite/0-draft\";",
-        "model M=\"test/model\"version\"1\"digest\"unresolved\";",
-        "invariant Test on M::Thing at current{true}"
+        "language\"ix:native\"edition\"1-draft\";",
+        "profile v=\"quire.value.complete/v1\"version\"1\"digest\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";",
+        "type Digit=Int[0,9];"
     );
-    let ceiling = Limits::default().source_bytes;
+    assert_eq!(OUTPUT_BYTE_CEILING, 1_048_576);
     // Whitespace inserted around header tokens expands an exactly admitted source.
-    let text = format!("{header}//{}", "x".repeat(ceiling - header.len() - 2));
-    let unit = parse_text(&text).unwrap();
-    assert_eq!(unit.source().text().len(), ceiling);
-    for limit in [ceiling, usize::MAX] {
-        let error = format_with_limit(&unit, limit).unwrap_err();
-        assert_eq!(error.code, Code::ResourceExhausted);
-        assert_eq!(error.phase, Phase::Format);
+    let text = format!(
+        "{header}//{}",
+        "x".repeat(OUTPUT_BYTE_CEILING - header.len() - 2)
+    );
+    let parsed = parse_complete(&text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(parsed.source().text().len(), OUTPUT_BYTE_CEILING);
+    for limit in [OUTPUT_BYTE_CEILING, usize::MAX] {
+        let refusal = format_with_limit(&parsed, limit).unwrap_err();
+        assert_eq!(refusal.code(), Code::ResourceExhausted);
+        assert_eq!(refusal.diagnostic().phase, Phase::Format);
     }
-    assert_eq!(format(&unit).unwrap_err().code, Code::ResourceExhausted);
+    assert_eq!(format(&parsed).unwrap_err().code(), Code::ResourceExhausted);
+}
+
+/// The non-test half of `src/format.rs`, for the TC-404 step-1 edge scan.
+fn format_module_production_text() -> &'static str {
+    let text = include_str!("../../src/format.rs");
+    text.split_once("#[cfg(test)]")
+        .map_or(text, |(production, _)| production)
+}
+
+#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]
+#[test]
+fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
+    // The signature is the CST's parse type; this fails to compile otherwise.
+    let _: fn(&ParsedSource) -> Result<String, FormatRefusal> = format;
+    let _: fn(&ParsedSource, usize) -> Result<String, FormatRefusal> = format_with_limit;
+    let production = format_module_production_text();
+    let uses: Vec<&str> = production
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("use "))
+        .collect();
+    assert!(!uses.is_empty());
+    for line in &uses {
+        assert!(
+            ["use qsl_cst", "use qsl_foundation", "use std"]
+                .iter()
+                .any(|allowed| line.starts_with(allowed)),
+            "{line}"
+        );
+    }
+    let code: String = production
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for forbidden in [
+        "crate::",
+        "super::",
+        "quire_spec_language",
+        "ParsedUnit",
+        "syntax::",
+        "parser::",
+    ] {
+        assert!(!code.contains(forbidden), "src/format.rs names {forbidden}");
+    }
+}
+
+#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]
+#[test]
+fn format_formats_complete_v1_source_the_arena_parser_refuses() {
+    let text = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+        "record Point { x: Int[0, 9]; y: Int[0, 9]; }\n",
+        "function px using v(p: Point): Int[0, 9] pure {\n",
+        "  // the nested block keeps this comment\n",
+        "  if p.x > p.y then p.x else p.y }\n",
+    );
+    assert!(parse_text(text).is_err());
+    let parsed = parse_complete(text);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let formatted = format(&parsed).unwrap();
+    assert!(formatted.contains("// the nested block keeps this comment"));
+    let reparsed = parse_complete(&formatted);
+    assert!(reparsed.is_admissible(), "{formatted}");
+    let significant = |parsed: &ParsedSource| -> Vec<Vec<u8>> {
+        parsed
+            .cst()
+            .tokens()
+            .iter()
+            .filter(|token| token.class() != qsl_cst::TokenClass::Whitespace)
+            .map(|token| token.spelling().to_vec())
+            .collect()
+    };
+    assert_eq!(significant(&parsed), significant(&reparsed));
+    assert_eq!(format(&reparsed).unwrap(), formatted);
+}
+
+#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]
+#[test]
+fn format_refuses_a_recovering_or_diagnosed_parse_without_output() {
+    let recovering = parse_complete(concat!(
+        "language \"ix:native\" edition \"1-draft\"; ",
+        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"; ",
+        "record Broken { value: Integer }"
+    ));
+    assert!(!recovering.cst().recoveries().is_empty());
+    let first = recovering.diagnostics()[0].clone();
+    for refusal in [
+        format(&recovering).unwrap_err(),
+        format_with_limit(&recovering, usize::MAX).unwrap_err(),
+    ] {
+        let FormatRefusal::RecoveringCst(diagnostic) = refusal else {
+            panic!("expected RecoveringCst, got {refusal:?}");
+        };
+        assert_eq!(*diagnostic, first);
+        assert_eq!(diagnostic.code, Code::InvalidSyntax);
+    }
+
+    let mut diagnosed = parse_complete(COMPLETE);
+    assert!(diagnosed.is_admissible());
+    let profile_refusal = qsl_cst::diagnostic::error(
+        diagnosed.source(),
+        Code::UnknownProfile,
+        qsl_cst::CompleteCause::UnsupportedSelection,
+        Phase::Profile,
+        0,
+        0,
+        "profile is not in the selected catalog",
+    );
+    diagnosed.prepend_diagnostic(*profile_refusal.clone());
+    assert!(diagnosed.cst().recoveries().is_empty());
+    for refusal in [
+        format(&diagnosed).unwrap_err(),
+        format_with_limit(&diagnosed, usize::MAX).unwrap_err(),
+    ] {
+        let FormatRefusal::DiagnosedSource(diagnostic) = refusal else {
+            panic!("expected DiagnosedSource, got {refusal:?}");
+        };
+        assert_eq!(diagnostic, profile_refusal);
+        assert_eq!(diagnostic.code, Code::UnknownProfile);
+    }
 }
 
 #[trace("TC-018", "FR-010-AC-8")]

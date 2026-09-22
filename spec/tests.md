@@ -182,7 +182,7 @@ operational validation remains outside this audit-only plan.
 | TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; source owner needs QSL-159 |
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
-| TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | 🚧 Planned; QSL-8 |
+| TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
 | TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23 | 🚧 Planned; QSL-141 |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | 🚧 Planned; QSL-174 |

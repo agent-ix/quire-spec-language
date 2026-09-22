@@ -3,7 +3,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, SourceIdentity, Span};
 use quire_spec_language::syntax::{BinaryOp as B, ExprId, ExprKind as E};
-use quire_spec_language::{format::format, parse, Limits, ParsedUnit};
+use quire_spec_language::{parse, Limits, ParsedUnit};
 
 fn document(expression: &str) -> String {
     format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n")
@@ -111,36 +111,6 @@ fn grouping_and_identifier_spans_are_original_bytes() {
             && u.source().slice(node.span) == Some("((self.parent))")));
 }
 
-#[trace("TC-013", "FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3")]
-#[test]
-fn all_admitted_constructs_roundtrip_with_comments() {
-    for expression in [
-        "let p = self.parent in if present(p) then deref(value(p)).n > 0 else true",
-        "forall(x in self.items: exists(y in self.items: x = y))",
-        "not reaches(self, self, parent)",
-        "M::Color::Red = M::Color::Blue",
-        "-7 rem 3 = -1 and 7 div 3 = 2",
-        "result = pre(self.n)",
-        "\"caf\\u00e9\\n\\uD83D\\uDE00\" = \"café\\n😀\"",
-        "not not false",
-        "(if true then 2 else 3) + (let x = 4 in x)",
-        "true // retained café comment  \n and false",
-    ] {
-        let a = unit(expression);
-        let text = format(&a).unwrap();
-        let b = read(text.as_bytes(), Limits::default()).unwrap();
-        assert_eq!(syntax_kinds(&a), syntax_kinds(&b));
-        assert_eq!(format(&b).unwrap(), text);
-        if expression.contains("//") {
-            assert!(text.contains("// retained café comment  \n"));
-        }
-        if expression.starts_with('"') {
-            // Literal escape spellings survive even when decoded values agree.
-            assert!(text.contains(expression));
-        }
-    }
-}
-
 #[trace("TC-012")]
 #[test]
 fn declaration_forms_and_keyword_boundaries() {
@@ -153,14 +123,6 @@ fn declaration_forms_and_keyword_boundaries() {
     ) + "post Done on M::Thing::doIt { result = pre(self.n) }";
     let u = read(text.as_bytes(), Limits::default()).unwrap();
     assert_eq!(u.clauses().len(), 2);
-    let formatted = format(&u).unwrap();
-    assert_eq!(
-        read(formatted.as_bytes(), Limits::default())
-            .unwrap()
-            .clauses()
-            .len(),
-        2
-    );
     assert!(read(
         document("true")
             .replace("invariant Test", "invariant if")
@@ -333,7 +295,7 @@ fn resource_limits_never_become_boolean_results() {
 
 #[trace("TC-012")]
 #[test]
-fn long_flat_chains_parse_format_and_drop_on_a_bounded_stack() {
+fn long_flat_chains_parse_and_drop_on_a_bounded_stack() {
     std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(|| {
@@ -344,9 +306,7 @@ fn long_flat_chains_parse_format_and_drop_on_a_bounded_stack() {
                 "not ".repeat(20_000) + "true",
             ] {
                 let a = unit(&expression);
-                let formatted = format(&a).unwrap();
-                let b = read(formatted.as_bytes(), Limits::default()).unwrap();
-                assert_eq!(a.expressions().len(), b.expressions().len());
+                assert!(!a.expressions().is_empty());
             }
         })
         .unwrap()
@@ -383,36 +343,6 @@ fn deterministic_malformed_corpus_does_not_panic() {
             }
         }
     }
-}
-
-fn syntax_kinds(unit: &ParsedUnit) -> Vec<E> {
-    unit.expressions()
-        .iter()
-        .map(|expression| {
-            let mut kind = expression.kind.clone();
-            let reset = |value: &mut qsl_foundation::Spanned<String>| {
-                value.span = Span { start: 0, end: 0 }
-            };
-            match &mut kind {
-                E::Name(name)
-                | E::Field { name, .. }
-                | E::Let { name, .. }
-                | E::Quantifier { name, .. } => reset(name),
-                E::EnumValue {
-                    model,
-                    name,
-                    variant,
-                } => {
-                    reset(model);
-                    reset(name);
-                    reset(variant);
-                }
-                E::Reaches { field, .. } => reset(field),
-                _ => {}
-            }
-            kind
-        })
-        .collect()
 }
 
 #[trace("TC-012")]

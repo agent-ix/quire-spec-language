@@ -1,112 +1,274 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-003: format validated source by rewriting whitespace, preserving every token and
-//! comment. Syntax formatting does not need a second expression printer/grammar.
-use crate::{Limits, ParsedUnit};
-use logos::Logos;
-use qsl_cst::token::Kind;
-use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
+//! FR-003: format validated complete-V1 source over the S1 lossless CST
+//! (ADR-011 §6.1 tool layer, depending on layer 1 and F only; §6.2 `format`
+//! row). Formatting rewrites whitespace between the CST's own tokens and
+//! keeps every token spelling and comment in order. It admits only a
+//! `ParsedSource` that `is_admissible()`; a recovering or diagnosed parse
+//! refuses with a typed cause and no output.
+//!
+//! This module owns the one CST token walk; `complete::editor`'s
+//! `format_document` calls [`format_with_limit`] rather than keeping a
+//! second walk.
+use qsl_cst::{
+    CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, TokenClass, TokenKind,
+};
+use qsl_foundation::source::MAX_SOURCE_BYTES;
+use qsl_foundation::{Phase, Span};
 
-/// Format tokens/comments using the default 1 MiB output-byte ceiling.
-pub fn format(unit: &ParsedUnit) -> Result<String, Box<Diagnostic>> {
-    format_with_limit(unit, Limits::default().source_bytes)
+/// The implementation's output-byte ceiling: 1 MiB. [`format`] applies it,
+/// and [`format_with_limit`] clamps every selected ceiling to it.
+pub const OUTPUT_BYTE_CEILING: usize = MAX_SOURCE_BYTES;
+
+/// Why `format` returned no output. Each arm holds the diagnostic that
+/// carries its code, cause and source location.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FormatRefusal {
+    /// The CST carries a recovery. The diagnostic is the input's first
+    /// diagnostic, whose code the refusal keeps.
+    RecoveringCst(Box<CompleteDiagnostic>),
+    /// The parse carries a diagnostic and no recovery, for example a
+    /// profile refusal added through `ParsedSource::prepend_diagnostic`.
+    /// The diagnostic is the input's first diagnostic.
+    DiagnosedSource(Box<CompleteDiagnostic>),
+    /// The formatted text would exceed the selected output-byte ceiling
+    /// (`resource_exhausted`).
+    OutputBudgetExhausted(Box<CompleteDiagnostic>),
+    /// An established S1 invariant does not hold: a recovery with no
+    /// diagnostic, or a token span that is not a UTF-8 slice of the source
+    /// (`runtime_invariant`).
+    BrokenInvariant(Box<CompleteDiagnostic>),
 }
 
-/// Format with an inclusive selected byte ceiling, clamped to 1 MiB.
-/// Every append is checked before growth; failure returns no partial string.
+impl FormatRefusal {
+    /// The diagnostic this refusal carries.
+    pub fn diagnostic(&self) -> &CompleteDiagnostic {
+        match self {
+            Self::RecoveringCst(diagnostic)
+            | Self::DiagnosedSource(diagnostic)
+            | Self::OutputBudgetExhausted(diagnostic)
+            | Self::BrokenInvariant(diagnostic) => diagnostic,
+        }
+    }
+
+    /// The refusal's catalog code.
+    pub fn code(&self) -> CompleteCode {
+        self.diagnostic().code
+    }
+
+    /// The diagnostic this refusal carries, by value.
+    pub fn into_diagnostic(self) -> Box<CompleteDiagnostic> {
+        match self {
+            Self::RecoveringCst(diagnostic)
+            | Self::DiagnosedSource(diagnostic)
+            | Self::OutputBudgetExhausted(diagnostic)
+            | Self::BrokenInvariant(diagnostic) => diagnostic,
+        }
+    }
+}
+
+impl std::fmt::Display for FormatRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.diagnostic().fmt(formatter)
+    }
+}
+
+impl std::error::Error for FormatRefusal {}
+
+/// Format admissible complete-V1 source under the 1 MiB output ceiling.
+pub fn format(parsed: &ParsedSource) -> Result<String, FormatRefusal> {
+    format_with_limit(parsed, OUTPUT_BYTE_CEILING)
+}
+
+/// Format admissible complete-V1 source under an inclusive selected
+/// output-byte ceiling, clamped to [`OUTPUT_BYTE_CEILING`]. Every append is
+/// checked before it grows the output, and a refusal returns no partial
+/// string.
 pub fn format_with_limit(
-    unit: &ParsedUnit,
+    parsed: &ParsedSource,
     output_bytes: usize,
-) -> Result<String, Box<Diagnostic>> {
+) -> Result<String, FormatRefusal> {
+    admit(parsed)?;
     let mut output = Output {
+        parsed,
         text: String::new(),
-        source: unit.source(),
-        limit: output_bytes.min(Limits::default().source_bytes),
+        limit: output_bytes.min(OUTPUT_BYTE_CEILING),
     };
-    let mut previous: Option<Kind> = None;
-    let mut indent = 0;
-    for (token, range) in Kind::lexer(unit.source().text()).spanned() {
-        let kind = token.expect("ParsedUnit contains validated source");
-        let spelling = &unit.source().text()[range.clone()];
-        let span = Span {
-            start: range.start,
-            end: range.end,
-        };
-        if kind == Kind::CloseBrace {
-            indent -= 1;
+    let mut indent = 0_usize;
+    let mut previous: Option<&CstToken> = None;
+    for token in parsed
+        .cst()
+        .tokens()
+        .iter()
+        .filter(|token| token.class() != TokenClass::Whitespace)
+    {
+        let span = token.span();
+        let text = output.token_text(token)?;
+        if token.class() == TokenClass::Comment {
+            output.begin_line(indent, span)?;
+            output.push(text, span)?;
             output.newline(span)?;
+            previous = None;
+            continue;
         }
-        if output.text.ends_with('\n') && indent > 0 {
-            output.push("  ", span)?;
+        let spelling = token.spelling();
+        if spelling == b"}" {
+            indent = indent.saturating_sub(1);
+            output.newline(span)?;
+            output.begin_line(indent, span)?;
+        } else if follows_block(previous, spelling) {
+            output.newline(span)?;
+            output.begin_line(indent, span)?;
+        } else if output.text.ends_with('\n') {
+            output.begin_line(indent, span)?;
         }
-        let no_space = output.text.is_empty()
-            || output.text.ends_with([' ', '\n'])
-            || matches!(
-                kind,
-                Kind::Dot | Kind::Qualify | Kind::CloseParen | Kind::Comma | Kind::Semicolon
-            )
-            || matches!(previous, Some(Kind::Dot | Kind::Qualify | Kind::OpenParen))
-            || (kind == Kind::OpenParen
-                && matches!(
-                    previous,
-                    Some(
-                        Kind::Present
-                            | Kind::Value
-                            | Kind::Deref
-                            | Kind::Size
-                            | Kind::Pre
-                            | Kind::Forall
-                            | Kind::Exists
-                            | Kind::Reaches
-                    )
-                ));
-        if !no_space {
+        if needs_space(previous, token, &output.text) {
             output.push(" ", span)?;
         }
-        output.push(spelling, span)?;
-        match kind {
-            Kind::OpenBrace => {
-                indent += 1;
-                output.newline(span)?;
-            }
-            Kind::CloseBrace | Kind::Semicolon | Kind::Comment => output.newline(span)?,
-            _ => {}
+        output.push(text, span)?;
+        if spelling == b"{" {
+            indent = indent.saturating_add(1);
+            output.newline(span)?;
+        } else if spelling == b";" {
+            output.newline(span)?;
         }
-        previous = Some(kind);
+        previous = Some(token);
     }
-    let end = unit.source().text().len();
-    output.newline(Span { start: end, end })?;
+    if !output.text.ends_with('\n') {
+        let end = parsed.source().text().len();
+        output.push("\n", Span { start: end, end })?;
+    }
     Ok(output.text)
 }
 
+/// Admit only an unrecovered, diagnostic-free parse (FR-003 Behavior).
+fn admit(parsed: &ParsedSource) -> Result<(), FormatRefusal> {
+    let recovering = !parsed.cst().recoveries().is_empty();
+    match (parsed.diagnostics().first(), recovering) {
+        (None, false) => Ok(()),
+        (Some(first), true) => Err(FormatRefusal::RecoveringCst(Box::new(first.clone()))),
+        (Some(first), false) => Err(FormatRefusal::DiagnosedSource(Box::new(first.clone()))),
+        (None, true) => Err(FormatRefusal::BrokenInvariant(whole_source_error(
+            parsed,
+            CompleteCode::RuntimeInvariant,
+            CompleteCause::EstablishedInvariantBroken,
+            "the CST carries a recovery with no diagnostic",
+        ))),
+    }
+}
+
+fn whole_source_error(
+    parsed: &ParsedSource,
+    code: CompleteCode,
+    cause: CompleteCause,
+    message: &str,
+) -> Box<CompleteDiagnostic> {
+    qsl_cst::diagnostic::error(
+        parsed.source(),
+        code,
+        cause,
+        Phase::Format,
+        0,
+        parsed.source().text().len(),
+        message,
+    )
+}
+
+/// Whether `current` starts a new line because it follows a closing brace.
+/// Punctuation that completes the braced construct stays on its line.
+fn follows_block(previous: Option<&CstToken>, current: &[u8]) -> bool {
+    previous.is_some_and(|previous| previous.spelling() == b"}")
+        && !matches!(current, b";" | b"," | b")" | b"]")
+}
+
+/// Whether a space separates `current` from the previous significant token.
+fn needs_space(previous: Option<&CstToken>, current: &CstToken, output: &str) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    if output.ends_with([' ', '\n']) {
+        return false;
+    }
+    if previous.span().end == current.span().start
+        && matches!(
+            (previous.kind(), current.kind()),
+            (
+                TokenKind::HexPrefix | TokenKind::HexDigit,
+                TokenKind::HexDigit
+            )
+        )
+    {
+        return false;
+    }
+    if matches!(
+        current.spelling(),
+        b")" | b"]" | b"," | b";" | b"." | b"::" | b"?"
+    ) {
+        return false;
+    }
+    !matches!(previous.spelling(), b"(" | b"[" | b"." | b"::" | b"^")
+}
+
+/// The output under construction and its inclusive byte ceiling.
 struct Output<'a> {
+    parsed: &'a ParsedSource,
     text: String,
-    source: &'a Source,
     limit: usize,
 }
 
-impl Output<'_> {
-    fn push(&mut self, text: &str, span: Span) -> Result<(), Box<Diagnostic>> {
+impl<'a> Output<'a> {
+    /// A token's exact text, sliced from the source by the token's span.
+    fn token_text(&self, token: &CstToken) -> Result<&'a str, FormatRefusal> {
+        let span = token.span();
+        self.parsed
+            .source()
+            .text()
+            .get(span.start..span.end)
+            .ok_or_else(|| {
+                FormatRefusal::BrokenInvariant(whole_source_error(
+                    self.parsed,
+                    CompleteCode::RuntimeInvariant,
+                    CompleteCause::EstablishedInvariantBroken,
+                    "a lossless CST token span is not a UTF-8 slice of its source",
+                ))
+            })
+    }
+
+    fn push(&mut self, value: &str, span: Span) -> Result<(), FormatRefusal> {
         if self
             .text
             .len()
-            .checked_add(text.len())
+            .checked_add(value.len())
             .is_none_or(|length| length > self.limit)
         {
-            return Err(qsl_foundation::diagnostic::error(
-                self.source,
-                Code::ResourceExhausted,
-                Phase::Format,
-                span.start,
-                span.end,
-                "formatted source byte budget exhausted",
+            return Err(FormatRefusal::OutputBudgetExhausted(
+                qsl_cst::diagnostic::error(
+                    self.parsed.source(),
+                    CompleteCode::ResourceExhausted,
+                    CompleteCause::InsufficientNextCharge,
+                    Phase::Format,
+                    span.start,
+                    span.end,
+                    "formatted output byte budget exhausted",
+                ),
             ));
         }
-        self.text.push_str(text);
+        self.text.push_str(value);
         Ok(())
     }
 
-    fn newline(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
-        if !self.text.ends_with('\n') {
+    fn begin_line(&mut self, indent: usize, span: Span) -> Result<(), FormatRefusal> {
+        if self.text.is_empty() || self.text.ends_with('\n') {
+            for _ in 0..indent {
+                self.push("  ", span)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// End the current line. A comment's own trailing spaces are part of its
+    /// spelling and stay.
+    fn newline(&mut self, span: Span) -> Result<(), FormatRefusal> {
+        if !self.text.is_empty() && !self.text.ends_with('\n') {
             self.push("\n", span)?;
         }
         Ok(())
@@ -117,55 +279,56 @@ impl Output<'_> {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
 
-    fn spellings(text: &str) -> Vec<&str> {
-        Kind::lexer(text)
-            .spanned()
-            .map(|(token, span)| {
-                token.unwrap();
-                &text[span]
-            })
+    fn parse(text: &str) -> ParsedSource {
+        qsl_cst::parse(
+            SourceIdentity {
+                identity: "test:format".into(),
+                revision: "1".into(),
+            },
+            "format.quire",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("the source reads")
+    }
+
+    fn significant(parsed: &ParsedSource) -> Vec<(TokenClass, Vec<u8>)> {
+        parsed
+            .cst()
+            .tokens()
+            .iter()
+            .filter(|token| token.class() != TokenClass::Whitespace)
+            .map(|token| (token.class(), token.spelling().to_vec()))
             .collect()
     }
+
+    const HEADER: &str = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+    );
 
     #[trace("TC-013", "FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3")]
     #[test]
     fn formatter_preserves_ordered_token_and_comment_spellings() {
-        for expression in [
-            "let p = self.parent in if present(p) then deref(value(p)).n > 0 else true",
-            "forall(x in self.items: exists(y in self.items: x = y))",
-            "not reaches(self, self, parent)",
-            "M::Color::Red = M::Color::Blue",
-            "-7 rem 3 = -1 and 7 div 3 = 2",
-            "result = pre(self.n)",
-            "\"caf\\u00e9\\n\\uD83D\\uDE00\" = \"café\\n😀\"",
-            "not not false",
-            "(if true then 2 else 3) + (let x = 4 in x)",
-            "true // retained café comment  \n and false",
+        for declarations in [
+            "function f using v(x: Int[0, 9]): Int[0, 10] pure { let y = x in if y > 0 then y + 1 else 0 }",
+            "function g using v(xs: Sequence<Int[0, 9]>[0, 4]): Boolean pure { forall(x in xs: exists(y in xs: x = y)) }",
+            "record Point { x: Int[0, 9]; y: Text[0, 4; nfc]?; }\ntuple Pair(Int[0, 9], Boolean);",
+            "type Digit = Int[0, 9];\nfunction h using v(p: Point): Int[0, 9] pure { p.x }",
+            "function k using v(): Boolean pure { not not (true // retained café comment  \n and false) }",
+            "function m using v(): Rational[0, 1; 1, 4] pure { rational(1, 2) }",
         ] {
-            let source = format!(
-                "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant Test on M::Thing at current {{ {expression} }}\n"
-            );
-            let unit = crate::parse(
-                qsl_foundation::SourceIdentity {
-                    identity: "test:format".into(),
-                    revision: "1".into(),
-                },
-                "format.native",
-                source.as_bytes(),
-                Limits::default(),
-            )
-            .unwrap();
-            let formatted = format(&unit).unwrap();
-            assert_eq!(spellings(&source), spellings(&formatted));
-            let reparsed = crate::parse(
-                unit.source().identity().clone(),
-                "format.native",
-                formatted.as_bytes(),
-                Limits::default(),
-            )
-            .unwrap();
-            assert_eq!(format(&reparsed).unwrap(), formatted);
+            let source = format!("// leading comment\n{HEADER}{declarations}\n");
+            let parsed = parse(&source);
+            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+            let formatted = format(&parsed).expect("admissible source formats");
+            let reparsed = parse(&formatted);
+            assert!(reparsed.is_admissible(), "{formatted}");
+            assert_eq!(significant(&parsed), significant(&reparsed), "{formatted}");
+            assert!(formatted.contains("// leading comment"));
+            assert_eq!(format(&reparsed).expect("formats again"), formatted);
         }
     }
 }
