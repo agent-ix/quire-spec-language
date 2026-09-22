@@ -96,6 +96,16 @@ impl PackageId {
     pub fn of_preimage(preimage: &[u8]) -> Self {
         Self(Sha256::digest(preimage).into())
     }
+
+    /// Lowercase hex spelling of an already-constructed `PackageId`, for
+    /// comparing against a wire's own hex-spelled digest (e.g. IR's
+    /// already-verified `package_id.digest`). Never a second constructor:
+    /// `of_preimage` remains the only way to produce a `PackageId` that
+    /// flows anywhere as an actual identity; this only formats one that
+    /// already exists, for reporting or cross-checking.
+    pub(crate) fn hex(&self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
 }
 
 /// A cross-package node reference (ADR-013 T-3): the sole cross-package node
@@ -307,6 +317,24 @@ pub enum LibraryRefusal {
     /// at [`PACKAGE_ID_PATH`].
     #[error("duplicate package_id")]
     DuplicatePackageId(PackageId),
+    /// A wire-read candidate's own recompute of `package_id` from its
+    /// identity preimage disagrees with IR's already-verified
+    /// `package_id.digest` for the same preimage bytes, refused at
+    /// [`PACKAGE_ID_PATH`]. Distinct from [`Self::PackageIdMismatch`]: that
+    /// variant compares two values this crate itself derives from the same
+    /// bytes by the same procedure (tautological on the wire-read path);
+    /// this one compares against a digest IR derived independently, so it
+    /// is the check that actually catches this crate's own canonicalization
+    /// ever diverging from IR's (QSL-6 L2).
+    #[error("package_id digest disagrees with IR's own already-verified recompute")]
+    IdentityDivergedFromIr {
+        /// The package's identity.
+        library: LibraryName,
+        /// IR's own already-verified hex digest.
+        ir_digest: Box<str>,
+        /// This crate's own recompute, as lowercase hex.
+        recomputed_hex: String,
+    },
 }
 
 impl LibraryRefusal {
@@ -326,6 +354,7 @@ impl LibraryRefusal {
             | Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
+            | Self::IdentityDivergedFromIr { .. }
             | Self::InvalidQualifier { .. }
             | Self::ConflictingDefinition { .. }
             | Self::ImportCycle { .. } => Code::InvalidPackage,
@@ -347,6 +376,7 @@ impl LibraryRefusal {
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
             | Self::DuplicatePackageId(_)
+            | Self::IdentityDivergedFromIr { .. }
             | Self::InvalidQualifier { .. } => LibraryCause::InvalidValue,
             Self::UndeclaredExport { .. } => LibraryCause::UndeclaredExport,
             Self::ConflictingDefinition { .. } => LibraryCause::ConflictingDefinition,
@@ -366,7 +396,9 @@ impl LibraryRefusal {
     /// The refused member path, for a refusal located at one.
     pub fn member_path(&self) -> Option<&'static str> {
         match self {
-            Self::PackageIdMismatch { .. } | Self::DuplicatePackageId(_) => Some(PACKAGE_ID_PATH),
+            Self::PackageIdMismatch { .. }
+            | Self::DuplicatePackageId(_)
+            | Self::IdentityDivergedFromIr { .. } => Some(PACKAGE_ID_PATH),
             Self::InvalidPreimage { .. } => Some(IDENTITY_PREIMAGE_PATH),
             Self::InvalidQualifier { .. }
             | Self::UndeclaredExport { .. }
@@ -390,6 +422,7 @@ impl LibraryRefusal {
             // already completed).
             Self::PackageIdMismatch { .. }
             | Self::InvalidPreimage { .. }
+            | Self::IdentityDivergedFromIr { .. }
             | Self::UndeclaredExport { .. } => RefusalClass::BindingCondition(2),
             // The §4 binding's condition 3: the identity is present: only
             // the lock-recorded version disagrees.
@@ -442,11 +475,19 @@ pub enum RefusalClass {
 /// Recompute `package`'s `package_id` from its identity preimage, then
 /// validate the preimage and derive the package's export node keys from it.
 ///
-/// ADR-011 §4's I2 verified binding, checks 1-2 for the wire case: a
-/// `quire.checked-package/v2` reader (the layer-4 `package` module) parses
-/// the wire envelope, checks the contract version itself, and hands the
-/// resulting candidate here to check that the declared `package_id`
-/// recomputes from `identity_preimage`'s exact JCS bytes and that the
+/// ADR-011 §4's I2 verified binding, checks 1-2: `package.package_id` must
+/// equal `PackageId::of_preimage(&package.identity_preimage)` for every
+/// `LibraryPackage` this crate ever admits, since `of_preimage` is
+/// [`PackageId`]'s only constructor (ADR-013 O-02). What that equality
+/// actually proves depends on the caller. On the wire path (the layer-4
+/// `package` module's `checked_v2` reader), the candidate's `package_id` is
+/// minted from these same `identity_preimage` bytes one call earlier, so
+/// this function's own recompute is a structural invariant, not a fresh
+/// test of the wire's claim -- `checked_v2` has already cross-checked that
+/// mint against IR's own independently-verified `package_id.digest` before
+/// ever constructing the candidate (QSL-6 L2), and that comparison, not
+/// this one, is what actually catches the wire path's condition 2. What
+/// this function performs freshly on every path is validating that the
 /// preimage itself is well-formed. Check 3 -- the identity is listed in the
 /// consumer's library lock or pinned request -- is the caller's:
 /// [`resolve_libraries`] applies it when the package is offered as a

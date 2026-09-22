@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use quire_contract_ir::{
     CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageLimit, CheckedPackageRefusalCode,
-    CHECKED_PACKAGE_V2,
+    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -147,7 +147,7 @@ fn package_id_member(preimage: &Value) -> Value {
     json!({
         "algorithm": "sha256",
         "digest": package_id_digest(preimage),
-        "domain": "quire.package.semantic/v2",
+        "domain": PACKAGE_DOMAIN_V2,
     })
 }
 
@@ -361,7 +361,10 @@ fn refuses_digest_domain_mismatch() {
     );
 }
 
-#[trace("TC-253", "FR-087-AC-3")]
+// No `#[trace]` tag: TC-253 step 3 requires a named digest-mismatch cause,
+// which this outcome does not carry (IR-238 item 3, M3) -- crediting
+// FR-087-AC-3 coverage to a `StaleDependency` outcome would claim step 3 is
+// backed when it is not.
 #[test]
 fn refuses_package_id_that_does_not_recompute() {
     let preimage = identity_preimage(vec![]);
@@ -511,27 +514,35 @@ fn exact_selected_limits_admit_the_boundary() {
     assert!(matches!(outcome, V2ReadOutcome::Candidate(_)));
 }
 
-/// Mirrors IR's own `checked_package::common::json_depth`: a container's
-/// depth is one more than its deepest child, and a scalar leaf costs depth
-/// 1 even when entered from zero containers -- unlike `PackageLimits::depth`,
-/// which counts only entered containers (N1; see this module's own doc).
-fn json_depth(value: &Value) -> u64 {
-    match value {
-        Value::Array(items) => items.iter().map(json_depth).max().unwrap_or(0) + 1,
-        Value::Object(fields) => fields.values().map(json_depth).max().unwrap_or(0) + 1,
-        _ => 1,
-    }
-}
-
 #[test]
 fn exact_depth_ceiling_admits_the_boundary() {
     let preimage = identity_preimage(vec![]);
-    let envelope = valid_envelope(&preimage);
-    let bytes = jcs(&envelope);
-    let actual_depth = json_depth(&envelope);
+    let bytes = jcs(&valid_envelope(&preimage));
+
+    // Measure the envelope's actual IR-reported depth with the engine under
+    // test itself, rather than a second, drifting reimplementation of IR's
+    // own `json_depth` (L5): an unreachably low ceiling forces
+    // `Incomplete(Limit(Depth))`, whose `consumed` is IR's own count.
+    let actual_depth = match read_checked_package_v2(
+        &bytes,
+        identity("pkg"),
+        "1".to_owned(),
+        PackageLimits {
+            depth: 0,
+            ..PackageLimits::default()
+        },
+        &evidence(None),
+    ) {
+        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
+            kind: CheckedPackageLimit::Depth,
+            consumed,
+            ..
+        }) => consumed,
+        other => panic!("expected Incomplete(Limit(Depth)) at depth 0, got {other:?}"),
+    };
 
     let admits = PackageLimits {
-        depth: (actual_depth - 1) as usize,
+        depth: actual_depth as usize,
         ..PackageLimits::default()
     };
     let outcome = read_checked_package_v2(
@@ -547,7 +558,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
     );
 
     let refuses = PackageLimits {
-        depth: (actual_depth - 2) as usize,
+        depth: (actual_depth - 1) as usize,
         ..PackageLimits::default()
     };
     match read_checked_package_v2(
@@ -563,4 +574,98 @@ fn exact_depth_ceiling_admits_the_boundary() {
         }) => {}
         other => panic!("expected Incomplete(Limit(Depth)) one below the boundary, got {other:?}"),
     }
+}
+
+/// Wraps `leaf` in `wraps` nested one-element JSON arrays, e.g.
+/// `nested_array(2, json!(1))` is `[[1]]`.
+fn nested_array(wraps: usize, leaf: Value) -> Value {
+    let mut value = leaf;
+    for _ in 0..wraps {
+        value = Value::Array(vec![value]);
+    }
+    value
+}
+
+#[test]
+fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete() {
+    // IR-238 item 1 (M1): IR's `strict_json_value` parses with
+    // `serde_json::Deserializer` and never disables its recursion limit, so
+    // serde_json's own fixed 128-container recursion cap fires before IR's
+    // own `json_depth` resource meter ever runs. Pins the module doc's
+    // "Ceilings" section: a wire this far past the default limit is
+    // refused, not reported `Incomplete`, however `PackageLimits::depth` is
+    // configured. Bare bytes, not a valid envelope: the depth check runs
+    // before schema decode, on any well-formed JSON document.
+    let bytes = jcs(&nested_array(200, json!(1)));
+    let outcome = read_checked_package_v2(
+        &bytes,
+        identity("pkg"),
+        "1".to_owned(),
+        PackageLimits::default(),
+        &evidence(None),
+    );
+    assert!(
+        matches!(
+            &outcome,
+            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+                if refusal.code == CheckedPackageRefusalCode::MalformedWire
+        ),
+        "expected Refused(Envelope(MalformedWire)) once nesting passes serde's recursion cap, got {outcome:?}"
+    );
+}
+
+#[test]
+fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
+    // QSL-6 M2 (decided fail-closed): `PackageLimits::depth` is passed to
+    // IR unchanged, in entered-container units. IR's own `json_depth`
+    // counts a scalar leaf as one further unit beyond the containers
+    // entered to reach it, but counts an empty container as exactly the
+    // containers entered including itself -- so at one shared limit the two
+    // kinds of deepest path disagree by one (module doc, IR-238 item 1).
+    // Bare bytes, not a valid envelope: the depth check runs before schema
+    // decode, on any well-formed JSON document.
+    let limits = PackageLimits {
+        depth: 3,
+        ..PackageLimits::default()
+    };
+    let is_depth_incomplete = |bytes: &[u8]| {
+        matches!(
+            read_checked_package_v2(
+                bytes,
+                identity("pkg"),
+                "1".to_owned(),
+                limits,
+                &evidence(None)
+            ),
+            V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
+                kind: CheckedPackageLimit::Depth,
+                ..
+            })
+        )
+    };
+
+    // Three entered containers, terminal empty container: exactly at the
+    // limit, not refused for depth (fail-closed does not over-refuse).
+    let empty_terminated_at_limit = jcs(&nested_array(2, json!([])));
+    assert!(
+        !is_depth_incomplete(&empty_terminated_at_limit),
+        "an empty-container-terminated path exactly at the depth boundary must not be Incomplete(Limit(Depth))"
+    );
+
+    // Three entered containers, terminal scalar: one IR unit past the same
+    // limit -- refused fail-closed, the accepted cost of removing `+ 1`.
+    let scalar_terminated_at_limit = jcs(&nested_array(3, json!(1)));
+    assert!(
+        is_depth_incomplete(&scalar_terminated_at_limit),
+        "a scalar-terminated path exactly at the depth boundary must be Incomplete(Limit(Depth))"
+    );
+
+    // Four entered containers, terminal empty container: one container past
+    // the limit -- refused fail-closed. Under the old `+ 1` conversion this
+    // was wrongly admitted (the M2 over-admission finding).
+    let empty_terminated_past_limit = jcs(&nested_array(3, json!([])));
+    assert!(
+        is_depth_incomplete(&empty_terminated_past_limit),
+        "an empty-container-terminated path one past the depth boundary must be Incomplete(Limit(Depth))"
+    );
 }

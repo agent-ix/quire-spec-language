@@ -44,6 +44,13 @@ use sha2::{Digest, Sha256};
 use crate::{ByteDigest, Code, Diagnostic};
 
 /// Inclusive per-pass ceilings; elevated options clamp to the defaults.
+///
+/// Not every reader in this module enforces every field. The
+/// `quire.checked-package/v2` byte reader (`checked_v2`, ADR-011 §4 I2)
+/// honors only `artifact_bytes` and `depth`: IR's own I04 reader has no
+/// decode-time meter for `string_bytes` or aggregate `entries` at all
+/// (IR-238 item 2), so a caller of that reader who sets either of those two
+/// fields gets no enforcement of them.
 #[derive(Clone, Copy, Debug)]
 pub struct PackageLimits {
     /// Offered or emitted bytes, at most 16 MiB.

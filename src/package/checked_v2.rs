@@ -8,10 +8,14 @@
 //! no wire member set, digest domain or contract-version spelling of its
 //! own, and never mints a `NodeKey` or `PackageId` from wire text (R-10,
 //! ADR-013 O-02). ADR-011 §4 condition 2 (`package_id` recompute-and-match)
-//! is IR's own job, enforced before it ever admits a wire; this reader does
-//! not check it a second time, only mints its own typed `PackageId` (never
-//! trusting the wire's raw hex) from the same already-admitted preimage.
-//! What remains this layer's own job:
+//! is primarily IR's own job, enforced before it ever admits a wire; this
+//! reader additionally mints its own typed `PackageId` (never trusting the
+//! wire's raw hex) from the same already-admitted preimage and asserts that
+//! mint agrees with IR's own already-verified `package_id.digest`, refusing
+//! if it does not (QSL-6 M-4 L2: defense against this reader's own
+//! canonicalization ever diverging from IR's -- e.g. if IR's `digest_json`
+//! were to switch to a real JCS encoder -- not a second, independent
+//! admission decision). What remains this layer's own job:
 //!
 //! - minting the package's own typed `PackageId` from the admitted identity
 //!   preimage via [`crate::library::PackageId::of_preimage`] -- the only
@@ -40,19 +44,39 @@
 //! reader does not meter decoded string bytes or aggregate entries at all,
 //! only [`quire_contract_ir::CheckedPackageReadLimits`]'s seven ceilings
 //! (`bytes`, `depth`, `nodes`, `edges`, `occurrences`, `diagnostics`,
-//! `work`). This reader passes `artifact_bytes`/`depth` through (with the
-//! depth conversion below) and leaves the other five at IR's own bounded
-//! defaults; every one of the seven a caller can hit is still reported,
-//! verbatim, as [`V2ReadIncomplete::Limit`]'s
-//! [`quire_contract_ir::CheckedPackageLimit`].
+//! `work`). This reader passes `artifact_bytes`/`depth` through unchanged
+//! (see below) and leaves the other five at IR's own bounded defaults;
+//! every one of the seven a caller can hit is reported, verbatim, as
+//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_ir::CheckedPackageLimit`]
+//! -- except `depth` itself, which two IR-side facts (both raised as
+//! IR-238, not papered over here) keep from being a clean refused/
+//! incomplete split at every depth:
 //!
-//! IR's `json_depth` counts a scalar leaf as depth 1 even at zero entered
-//! containers, while [`PackageLimits::depth`] counts only entered
-//! containers; `+ 1` below converts this reader's ceiling into IR's units
-//! so a wire this reader's own boundary would admit is not refused
-//! `Incomplete` one level early. (This asymmetry belongs to `json_depth`'s
-//! own definition; raised with IR as a ticket, not something to paper over
-//! there.)
+//! - **Above serde_json's parse-time recursion cap, refused, not
+//!   `Incomplete`.** IR's `strict_json_value` parses with
+//!   `serde_json::Deserializer` and never calls `disable_recursion_limit`,
+//!   so serde_json's own fixed 128-container recursion cap fires *before*
+//!   IR's own `json_depth` resource meter ever runs. A wire nested past
+//!   128 containers is reported `Refused(Envelope(MalformedWire))`, not
+//!   `Incomplete(Limit(Depth))`, regardless of `PackageLimits::depth`
+//!   (IR-238 item 1; pinned by this module's own
+//!   `depth_far_past_the_default_limit_is_refused_as_malformed_wire`
+//!   test).
+//! - **Fail-closed at the boundary, for a scalar-terminated path.** IR's
+//!   `json_depth` counts a scalar leaf as depth 1 even at zero entered
+//!   containers, while [`PackageLimits::depth`] counts only entered
+//!   containers, so e.g. `{"a":1}` is depth 2 in IR's units but depth 1
+//!   here. This reader passes `PackageLimits::depth` to IR *unchanged* --
+//!   no `+ 1` conversion (QSL-6 M2, decided fail-closed): no wire deeper
+//!   than `PackageLimits::depth` containers is ever admitted, for either
+//!   kind of deepest path. The cost is one-sided: a wire whose deepest
+//!   path ends in a scalar exactly at the configured boundary is refused
+//!   `Incomplete` one level early (IR counts its terminal scalar as an
+//!   extra unit), while a wire whose deepest path ends in an empty
+//!   container is admitted exactly at the boundary (IR's count and this
+//!   reader's agree there). A caller that needs exact-boundary admission
+//!   for scalar-terminated documents must widen its own configured limit
+//!   by one; this reader does not guess which kind of path is deepest.
 use quire_contract_ir::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal,
@@ -97,6 +121,17 @@ pub(crate) enum V2ReadRefusal {
     /// names, never its already-IR-checked `package_id`).
     #[error(transparent)]
     Structural(#[from] LibraryRefusal),
+    /// This reader's own re-serialization of an admitted wire's identity
+    /// preimage failed. Practically unreachable: IR has already decoded
+    /// the preimage into typed Rust structs it itself just re-serialized
+    /// without error one line earlier (`admit_value`'s own lossless-decode
+    /// check). Kept as its own honest QSL-side variant rather than a
+    /// fabricated `Envelope(CheckedPackageRefusal{MalformedWire, ..})`: IR
+    /// never actually reported this, and blaming IR's own wire vocabulary
+    /// for this crate's own serialization defect would misattribute the
+    /// fault to the wrong layer (QSL-6 L3).
+    #[error("identity preimage re-serialization failed: {0}")]
+    Preimage(String),
 }
 
 impl V2ReadRefusal {
@@ -110,6 +145,7 @@ impl V2ReadRefusal {
             Self::Envelope(refusal) => map_refusal_code(refusal.code),
             Self::UnsupportedDependencySelections => Code::UnsupportedDependencySelections,
             Self::Structural(refusal) => refusal.code(),
+            Self::Preimage(_) => Code::InvalidPackage,
         }
     }
 }
@@ -226,11 +262,12 @@ pub(crate) fn read_checked_package_v2(
         });
     }
     let ir_limits = CheckedPackageReadLimits {
-        bytes: limits.artifact_bytes as u64,
-        // See the module doc: IR's `json_depth` counts a scalar leaf as
-        // depth 1 even at zero entered containers; `PackageLimits::depth`
-        // counts only entered containers.
-        depth: limits.depth as u64 + 1,
+        bytes: u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),
+        // Fail-closed (QSL-6 M2, see the module doc's "Ceilings" section):
+        // passed through unchanged, never widened by one for IR's
+        // scalar-counts-as-depth-1 convention, so no wire deeper than
+        // `PackageLimits::depth` containers is ever admitted.
+        depth: u64::try_from(limits.depth).unwrap_or(u64::MAX),
         ..CheckedPackageReadLimits::bounded()
     };
     match read_checked_package(bytes, ir_limits, evidence) {
@@ -238,13 +275,11 @@ pub(crate) fn read_checked_package_v2(
             if !package.lock().dependency_selections.is_empty() {
                 return V2ReadOutcome::Refused(V2ReadRefusal::UnsupportedDependencySelections);
             }
-            let Ok(preimage_value) = serde_json::to_value(package.identity_preimage()) else {
-                return V2ReadOutcome::Refused(V2ReadRefusal::Envelope(CheckedPackageRefusal {
-                    code: CheckedPackageRefusalCode::MalformedWire,
-                    path: "identity_preimage".into(),
-                    cause: None,
-                    locus: None,
-                }));
+            let preimage_value = match serde_json::to_value(package.identity_preimage()) {
+                Ok(value) => value,
+                Err(error) => {
+                    return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(error.to_string()))
+                }
             };
             // `preimage_value` is a `serde_json::Value` decoded from bytes
             // IR already verified are the whole wire's exact canonical form
@@ -257,15 +292,30 @@ pub(crate) fn read_checked_package_v2(
             // recompute already hashed -- not a fresh, independent claim
             // about RFC 8785 in general, only about bytes IR itself already
             // certified.
-            let Ok(preimage_bytes) = serde_json::to_vec(&preimage_value) else {
-                return V2ReadOutcome::Refused(V2ReadRefusal::Envelope(CheckedPackageRefusal {
-                    code: CheckedPackageRefusalCode::MalformedWire,
-                    path: "identity_preimage".into(),
-                    cause: None,
-                    locus: None,
-                }));
+            let preimage_bytes = match serde_json::to_vec(&preimage_value) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(error.to_string()))
+                }
             };
             let package_id = PackageId::of_preimage(&preimage_bytes);
+            // L2: cross-check this reader's own recompute against IR's
+            // already-verified `package_id.digest` (see the module doc).
+            // `verify_package` below re-recomputes from the same
+            // `preimage_bytes` this `package_id` was itself minted from, so
+            // it cannot by itself catch this reader's canonicalization ever
+            // diverging from IR's own -- only this comparison, against a
+            // value IR derived independently, can.
+            let ir_digest = package.package_id().digest.as_ref();
+            if package_id.hex() != ir_digest {
+                return V2ReadOutcome::Refused(V2ReadRefusal::Structural(
+                    LibraryRefusal::IdentityDivergedFromIr {
+                        library: identity.clone(),
+                        ir_digest: ir_digest.into(),
+                        recomputed_hex: package_id.hex(),
+                    },
+                ));
+            }
             let exports = match declared_exports(&preimage_bytes) {
                 Ok(exports) => exports,
                 Err(defect) => {
