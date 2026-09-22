@@ -446,27 +446,38 @@ undefined cause type.
 
 Specified under QSL-174 (ADR-013 O-16, O-17, T-4, T-6). `FamilyOutcome`,
 `FamilyRefusal` and `FamilyNotNativelyEvaluable` still appear under `src/`
-only in doc comments, and the provisional stand-in is still
-`family::EvaluateRefusal`; F `diagnostic` still has no catalog-code-to-
+only in doc comments; the provisional `family::EvaluateRefusal` stand-in
+this ticket introduced first is deleted again (below), since FR-090-AC-3's
+own seam raises `InternalFault` directly and never needed a refusal-shaped
+type of its own. F `diagnostic` still has no catalog-code-to-
 category map, and `model::normalize::ModelRefusal` still has no
 `catalog_code()` (it carries the native-v1 `Code` instead), though O-17
 requires one. `quire_exact::Meter::charge` is public (QSL-153 and QSL-166
 are Done), so FR-090-AC-1's `Incomplete` case is constructible.
 
 FR-090-AC-3 and FR-090-AC-10 implement (TC-384, TC-391; both
-`✅ Passed locally`): `CheckedPackage::call` now returns `Result<Evaluation,
-CallFailure>`, with `CallFailure { Input(InputRefusal), Fault(qsl_foundation
-::diagnostic::InternalFault) }` (`src/value/expression/mod.rs`).
-`EvaluateRefusal::UnknownIdentity`/`EnvironmentAlreadyConsumed` reaching
-`call` and `Machine::resolve_population` (`src/value/expression/
-evaluate.rs`) meeting an unresolved or mismatched-maximum population
-argument past admission both raise `InternalFault` naming stage `"S6a"`
-and their own stable invariant identifier, never a panic and never a
-`FamilyRefusal`/kernel `Refused` outcome; `CheckedPackage::call`'s
-consumed-environment arm no longer ends in `unreachable!`.
-`Refusal::UnresolvedPopulation`/`Refusal::PopulationMaximumMismatch`
-(`src/value/outcome.rs`) have no remaining production constructor after
-this change -- QSL-131 owns their removal, not this ticket.
+`✅ Passed locally`): `CheckedPackage::call` and `CheckedPackage::evaluate`
+return `Result<Evaluation, CallFailure>`, with `CallFailure { Input(
+InputRefusal), Fault(qsl_foundation::diagnostic::InternalFault) }`
+(`src/value/expression/mod.rs`). The seam itself --
+`ValueFunctionFamily::evaluate` (`src/value/expression/family.rs`) -- raises
+`EvaluateFailure::Fault(InternalFault)` directly, naming stage `"S6a"` and a
+stable invariant identifier, for both a consumed evaluation environment and
+a checked identity the package does not resolve; `call`'s `map_evaluate_
+failure` only forwards that `Fault` into `CallFailure::Fault`, deriving
+nothing itself. `Machine::resolve_population` (`src/value/expression/
+evaluate.rs`) raises the same kind of fault for an unresolved or mismatched-
+maximum population argument past admission, carried out of `Machine`'s own
+task loop by a crate-private `Halt` type (never by the shared `Stop` every
+other evaluator computation converts through `Outcome::from_stop`), so
+`Machine::run` is the only place that can ever produce this `Err`. None of
+these three conditions panics, and none is reported as a `FamilyRefusal` or
+a kernel `Refused` outcome. `Refusal::UnresolvedPopulation`/`Refusal::
+PopulationMaximumMismatch` and the provisional `family::EvaluateRefusal`
+this ticket introduced first are deleted (`src/value/outcome.rs`,
+`src/family/contract.rs`): FR-090-AC-10 already places both of admission's
+production call sites at `CheckedPackage::call`'s own `validate`, so neither
+had a reachable production constructor left.
 
 FR-090-AC-4 and FR-090-AC-5 for `FamilyNotNativelyEvaluable` wait on
 FR-090-OQ-2. `FamilyResult`, `EvalOutcome`, `CatalogCoded`, `UndefinedCoded`,

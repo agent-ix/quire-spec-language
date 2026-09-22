@@ -8,7 +8,7 @@
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -36,25 +36,12 @@ impl<T> Outcome<T> {
 }
 
 impl<T> Outcome<T> {
-    /// `Stop::Fault` never reaches this arm (see [`Stop`]'s own doc):
-    /// `Machine::run` is `Stop::Fault`'s only consumer other than the `?`
-    /// propagation inside `Machine`'s own task loop, and it reads the fault
-    /// back out and returns `Err(InternalFault)` before ever calling this
-    /// function. Every other `Stop`-returning computation in `value/*.rs`
-    /// constructs `Undefined`/`Refused`/`Incomplete` only. `unreachable!()`
-    /// here is a real assertion, not a silenced case: were `Machine::run`'s
-    /// own interception ever removed or bypassed, this would panic loudly
-    /// rather than let an internal fault silently reappear as a kernel
-    /// `Outcome::Refused`.
     pub(crate) fn from_stop(result: Result<T, Stop>) -> Self {
         match result {
             Ok(value) => Self::Completed(value),
             Err(Stop::Undefined(reason)) => Self::Undefined(reason),
             Err(Stop::Refused(reason)) => Self::Refused(reason),
             Err(Stop::Incomplete(record)) => Self::Incomplete(record),
-            Err(Stop::Fault(fault)) => {
-                unreachable!("Stop::Fault must be intercepted by Machine::run: {fault:?}")
-            }
         }
     }
 
@@ -273,24 +260,21 @@ impl BoundViolation {
     }
 }
 
-/// Internal early-exit carrier converted into [`Outcome`] -- except
-/// `Fault`, which never is (FR-090-AC-3/AC-10, ADR-013 T-4: an S6a
-/// invariant break is never reported as a kernel `Refused` outcome).
-/// `Machine::resolve_population` (`value::expression::evaluate.rs`) is
-/// `Fault`'s one constructor, and `Machine::run` matches it before ever
-/// calling [`Outcome::from_stop`], so `from_stop` structurally never
-/// receives one -- see its own doc.
+/// Internal early-exit carrier, always converted into an [`Outcome`] by
+/// [`Outcome::from_stop`]. An S6a invariant break (FR-090-AC-3/AC-10,
+/// ADR-013 T-4) is never a `Stop`: this type is shared by roughly two dozen
+/// `value/*.rs` computations that all convert through `from_stop`, so a
+/// fault variant here would be reachable from every one of them with no
+/// compiler-checked guarantee that `Machine::run` intercepts it first (PR
+/// #334 review round 2, finding N1) -- `Machine`'s own crate-private `Halt`
+/// (`value::expression::evaluate.rs`) carries a fault instead, and no
+/// `From<Halt> for Stop`/`Outcome` conversion exists, so a fault is
+/// unrepresentable here by construction, not by convention.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Stop {
     Undefined(Undefined),
     Refused(Refusal),
     Incomplete(Incomplete),
-    /// An S6a invariant break, carried as a `Stop` only so
-    /// `Machine::resolve_population` can still unwind through the ordinary
-    /// `?`-propagating task loop; `Machine::run` reads it back out before
-    /// it can reach anything that converts a `Stop` into a caller-visible
-    /// `Outcome`.
-    Fault(InternalFault),
 }
 
 impl From<Incomplete> for Stop {

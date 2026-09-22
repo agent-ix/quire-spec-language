@@ -411,7 +411,7 @@ mod tests {
     /// always builds a fresh one and calls `evaluate` exactly once, so
     /// reaching the consumed-environment and unknown-identity conditions
     /// here bypasses `call` the same way `family.rs`'s own
-    /// `evaluate_refuses_a_second_call_on_the_same_env` does.
+    /// `evaluate_faults_on_a_second_call_on_the_same_env` does.
     ///
     /// Previously: the consumed-environment case ended `CheckedPackage::
     /// call` in `unreachable!()`, and the unknown-identity case was folded

@@ -26,11 +26,14 @@ to the identity it supplied), whenever the identity does not resolve. This
 holds whether or not the checked body actually reads the parameter (PR #326
 review finding F1). The evaluator's own `Machine::resolve_population`
 (`src/value/expression/evaluate.rs`'s `AllInstances`/`Lookup` sites) performs
-the identical resolution, naming `population_id` directly in
-`Refusal::UnresolvedPopulation`, and is exercised by this test's own
-`tc_294_unresolved_population_id_refuses_typed`; it is unreachable through
-either public entry point for a checked program once `validate` already
-refuses first, and is kept only as defence in depth.
+the identical resolution, but no longer as a kernel refusal: since FR-090-
+AC-10 (QSL-174), an unresolved identity reaching it is an S6a invariant
+break, `Err(InternalFault)` naming stage `"S6a"` (never `Refusal::
+UnresolvedPopulation`, which is deleted along with its one production call
+site). It is unreachable through either public entry point for a checked
+program once `validate` already refuses first, and is kept only as defence
+in depth; `tc_294_unresolved_population_id_refuses_typed` exercises
+`validate`'s own admission refusal, not this now-unreachable fault path.
 
 Catches an implementation that unwraps the correspondence lookup
 unconditionally (panicking on a miss), that treats a lookup miss as

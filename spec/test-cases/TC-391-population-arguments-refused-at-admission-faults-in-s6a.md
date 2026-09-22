@@ -52,8 +52,8 @@ Tag the test `#[trace("FR-090-AC-10", "TC-391")]`.
 ## Status
 
 Backed, in two parts (`FamilyOutcome`/`FamilyRefusal` are not yet built --
-FR-090-OQ-1 to OQ-3 -- so the S6a-internal half asserts today's real
-`CallFailure`/`InternalFault` types rather than the literal
+FR-090-OQ-2, OQ-3 remain open -- so the S6a-internal half asserts today's
+real `EvaluateFailure`/`InternalFault` types rather than the literal
 `FamilyOutcome`/kernel-`Refused` spelling above):
 
 - Steps 1-3 (admission, `CheckedPackage::call`):
@@ -62,12 +62,18 @@ FR-090-OQ-1 to OQ-3 -- so the S6a-internal half asserts today's real
   `tests/it/model_reference_queries.rs`, each tagged
   `#[trace("TC-391", "FR-090-AC-10")]`, asserting `Err(CallFailure::
   Input(InputRefusal::WrongValueKind { .. }))` and an empty meter.
-- Step 4 (bypassing admission, the evaluator's own `Machine::
-  resolve_population`):
-  `resolve_population_bypassing_admission_with_an_unresolved_id_is_an_internal_fault`
+- Step 4 (bypassing admission, called directly against the S6a seam,
+  `ValueFunctionFamily::evaluate`, rather than `Machine::
+  resolve_population` in isolation):
+  `evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault`
   and
-  `resolve_population_bypassing_admission_with_a_mismatched_maximum_is_an_internal_fault`,
+  `evaluate_bypassing_admission_with_a_population_maximum_mismatch_is_an_internal_fault`,
   in `src/value/expression/evaluate.rs`, each tagged
-  `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(fault)` with
-  `fault.category() == Category::InternalFailure` and the two conditions'
-  own distinct invariant identifiers, never a panic.
+  `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(crate::family::
+  EvaluateFailure::Fault(fault))` with `fault.category() ==
+  Category::InternalFailure` and the two conditions' own distinct invariant
+  identifiers, never a panic. Proven by mutation (PR #334 review round 2,
+  finding F2/N1): deleting the interception that keeps a fault out of the
+  shared `Stop`/`Outcome` path makes both tests fail -- by a compile error
+  once the fault can no longer be represented as a `Stop` at all, not by a
+  panic.

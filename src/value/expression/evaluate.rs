@@ -42,7 +42,8 @@ use crate::check::{
 use crate::model::population::PopulationBinding;
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
+    Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
+    PopulationId,
 };
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
@@ -96,8 +97,45 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
     }
 }
 
-fn invariant() -> Stop {
+/// `Machine`'s own early-exit carrier: either a real evaluator [`Stop`], or
+/// an S6a invariant break `Stop` itself cannot represent (PR #334 review
+/// round 2, finding N1). Crate-private to this module alone -- nothing
+/// outside `Machine` ever builds, matches or forwards one. Only
+/// [`Machine::run`] unwraps a `Halt`, and only its `Fault` arm returns
+/// `Err(InternalFault)`; every `Stop` arm still goes through
+/// [`Self::stopped`]/[`Outcome::from_stop`] exactly as before this change.
+/// A future `Stop`-returning helper, or a new site inside `Machine`, cannot
+/// smuggle a fault into `Outcome::from_stop`'s three real arms: there is no
+/// `Stop` variant left to build.
+enum Halt {
+    /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
+    Stop(Stop),
+    /// An S6a invariant break: never converted to an `Outcome`.
+    Fault(InternalFault),
+}
+
+impl From<Stop> for Halt {
+    fn from(stop: Stop) -> Self {
+        Self::Stop(stop)
+    }
+}
+
+impl From<Incomplete> for Halt {
+    fn from(record: Incomplete) -> Self {
+        Self::Stop(Stop::Incomplete(record))
+    }
+}
+
+/// The real `Stop` a checked-invariant break constructs -- shared by
+/// [`invariant`] (for a `Halt`-returning `Machine` method) and
+/// [`Machine::run`]'s own no-value fallback (which calls [`Self::stopped`]
+/// directly, needing a bare `Stop`, never a `Halt`).
+fn checked_invariant() -> Stop {
     Stop::Refused(Refusal::CheckedInvariant)
+}
+
+fn invariant() -> Halt {
+    Halt::Stop(checked_invariant())
 }
 
 /// `function.call`: one work unit per checked call.
@@ -294,10 +332,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             };
             let location = location.cloned().unwrap_or_else(|| root.location.clone());
-            if let Err(stop) = self.step(task) {
-                return match stop {
-                    Stop::Fault(fault) => Err(fault),
-                    other => Ok(Self::stopped(other, &location)),
+            if let Err(halt) = self.step(task) {
+                return match halt {
+                    Halt::Fault(fault) => Err(fault),
+                    Halt::Stop(stop) => Ok(Self::stopped(stop, &location)),
                 };
             }
         }
@@ -307,7 +345,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 location: None,
                 losses: self.losses,
             }),
-            _ => Ok(Self::stopped(invariant(), &root.location)),
+            _ => Ok(Self::stopped(checked_invariant(), &root.location)),
         }
     }
 
@@ -319,44 +357,44 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn pop(&mut self) -> Result<Value, Stop> {
+    fn pop(&mut self) -> Result<Value, Halt> {
         self.values.pop().ok_or_else(invariant)
     }
 
-    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Stop> {
+    fn pop_many(&mut self, count: usize) -> Result<Vec<Value>, Halt> {
         let start = self.values.len().checked_sub(count).ok_or_else(invariant)?;
         Ok(self.values.split_off(start))
     }
 
-    fn pop_integer(&mut self) -> Result<Integer, Stop> {
+    fn pop_integer(&mut self) -> Result<Integer, Halt> {
         match self.pop()? {
             Value::Integer(value) => Ok(value),
             _ => Err(invariant()),
         }
     }
 
-    fn pop_boolean(&mut self) -> Result<bool, Stop> {
+    fn pop_boolean(&mut self) -> Result<bool, Halt> {
         match self.pop()? {
             Value::Boolean(value) => Ok(value),
             _ => Err(invariant()),
         }
     }
 
-    fn pop_collection(&mut self) -> Result<Arc<CollectionValue>, Stop> {
+    fn pop_collection(&mut self) -> Result<Arc<CollectionValue>, Halt> {
         match self.pop()? {
             Value::Collection(collection) => Ok(collection),
             _ => Err(invariant()),
         }
     }
 
-    fn pop_rational(&mut self) -> Result<Rational, Stop> {
+    fn pop_rational(&mut self) -> Result<Rational, Halt> {
         match self.pop()? {
             Value::Rational(value) => Ok(value),
             _ => Err(invariant()),
         }
     }
 
-    fn pop_decimal(&mut self) -> Result<Decimal, Stop> {
+    fn pop_decimal(&mut self) -> Result<Decimal, Halt> {
         match self.pop()? {
             Value::Decimal(value) => Ok(value),
             _ => Err(invariant()),
@@ -384,7 +422,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(Value::Decimal(result.value().clone()))
     }
 
-    fn slot(&mut self, slot: Slot) -> Result<&mut Option<Value>, Stop> {
+    fn slot(&mut self, slot: Slot) -> Result<&mut Option<Value>, Halt> {
         self.frames
             .last_mut()
             .and_then(|frame| frame.get_mut(slot))
@@ -413,14 +451,12 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn select_anchor<'x>(
         &self,
         binding: &'x PopulationBinding,
-    ) -> Result<&'x PopulationBinding, Stop> {
+    ) -> Result<&'x PopulationBinding, Halt> {
         match self.anchor {
             Anchor::Post => Ok(binding),
-            Anchor::Pre => binding
-                .pre_anchor()
-                .ok_or(Stop::Refused(Refusal::WrongSnapshot(
-                    WrongSnapshotCause::WrongAnchor,
-                ))),
+            Anchor::Pre => binding.pre_anchor().ok_or_else(|| {
+                Stop::Refused(Refusal::WrongSnapshot(WrongSnapshotCause::WrongAnchor)).into()
+            }),
         }
     }
 
@@ -448,7 +484,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// consumption site -- meeting an unresolved identity or a mismatched
     /// maximum here means this checked program reached S6a without going
     /// through admission at all, an internal fault rather than caller
-    /// input. Returns `Err(Stop::Fault(_))`, read back by [`Self::run`]
+    /// input. Returns `Err(Halt::Fault(_))`, read back by [`Self::run`]
     /// before anything converts a `Stop` into an `Outcome` -- this was the
     /// one production call site of the kernel-shaped `Refusal::
     /// UnresolvedPopulation`/`Refusal::PopulationMaximumMismatch` variants
@@ -457,21 +493,21 @@ impl<'a, 'm> Machine<'a, 'm> {
         &self,
         population_id: PopulationId,
         maximum: u64,
-    ) -> Result<&'a PopulationBinding, Stop> {
+    ) -> Result<&'a PopulationBinding, Halt> {
         match self.objects.resolve_population(population_id) {
             Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
-            Some(_) => Err(Stop::Fault(InternalFault::new(
+            Some(_) => Err(Halt::Fault(InternalFault::new(
                 "S6a",
                 "population-argument-maximum-mismatch-past-admission",
             ))),
-            None => Err(Stop::Fault(InternalFault::new(
+            None => Err(Halt::Fault(InternalFault::new(
                 "S6a",
                 "population-argument-unresolved-past-admission",
             ))),
         }
     }
 
-    fn step(&mut self, task: Task<'a>) -> Result<(), Stop> {
+    fn step(&mut self, task: Task<'a>) -> Result<(), Halt> {
         match task {
             Task::Eval(node) => self.eval(node),
             Task::Apply(node) => self.apply(node),
@@ -518,7 +554,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 *self.slot(slot)? = Some(value);
                 Ok(())
             }
-            Task::ChargeElement(_) => charge_element(self.meter),
+            Task::ChargeElement(_) => charge_element(self.meter).map_err(Into::into),
             Task::Return => {
                 self.frames.pop().ok_or_else(invariant)?;
                 Ok(())
@@ -532,9 +568,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let holds = self.pop_boolean()?;
                 self.frames.pop().ok_or_else(invariant)?;
                 if !holds {
-                    return Err(Stop::Undefined(Undefined::PreconditionFalse(Box::new(
-                        failure,
-                    ))));
+                    return Err(
+                        Stop::Undefined(Undefined::PreconditionFalse(Box::new(failure))).into(),
+                    );
                 }
                 let callable = self.functions.get(body_function).ok_or_else(invariant)?;
                 charge_call(self.meter)?;
@@ -553,7 +589,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
     }
 
-    fn eval(&mut self, node: &'a Node) -> Result<(), Stop> {
+    fn eval(&mut self, node: &'a Node) -> Result<(), Halt> {
         match &node.kind {
             NodeKind::Literal(value) => {
                 self.values.push(value.clone());
@@ -622,7 +658,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn apply(&mut self, node: &'a Node) -> Result<(), Stop> {
+    fn apply(&mut self, node: &'a Node) -> Result<(), Halt> {
         let value = match &node.kind {
             NodeKind::Literal(_)
             | NodeKind::Local(_)
@@ -633,7 +669,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {
-                    return Err(Stop::Refused(Refusal::IntegerOutOfDomain));
+                    return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
                 }
                 Value::Integer(value)
             }
@@ -1114,7 +1150,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Stop> {
+    fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Halt> {
         match (slot, optional, value_type) {
             (FieldValue::Present(value), false, _) => Ok(value.clone()),
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
@@ -1133,7 +1169,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         kind: OrderedKind,
         left: &Value,
         right: &Value,
-    ) -> Result<bool, Stop> {
+    ) -> Result<bool, Halt> {
         let operands = match (kind, left, right) {
             (OrderedKind::Integers, Value::Integer(l), Value::Integer(r)) => {
                 OrderedOperands::Integers(l, r)
@@ -1147,24 +1183,29 @@ impl<'a, 'm> Machine<'a, 'm> {
             (OrderedKind::Enums, Value::Enum(l), Value::Enum(r)) => {
                 return compare_enum(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
-                    .into_stop();
+                    .into_stop()
+                    .map_err(Into::into);
             }
             (OrderedKind::Texts, Value::Text(l), Value::Text(r)) => {
                 return compare_text(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
-                    .into_stop();
+                    .into_stop()
+                    .map_err(Into::into);
             }
             (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
                 return compare_quantity(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
-                    .into_stop();
+                    .into_stop()
+                    .map_err(Into::into);
             }
             _ => return Err(invariant()),
         };
-        order_numbers(operator, operands, self.meter).into_stop()
+        order_numbers(operator, operands, self.meter)
+            .into_stop()
+            .map_err(Into::into)
     }
 
-    fn start_iteration(&mut self, node: &'a Node) -> Result<(), Stop> {
+    fn start_iteration(&mut self, node: &'a Node) -> Result<(), Halt> {
         let (identity, reduce) = match &node.kind {
             NodeKind::Fold { identity, .. } => (
                 match identity {
@@ -1199,7 +1240,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.iterate(iteration)
     }
 
-    fn iterate(&mut self, mut iteration: Box<Iteration<'a>>) -> Result<(), Stop> {
+    fn iterate(&mut self, mut iteration: Box<Iteration<'a>>) -> Result<(), Halt> {
         let node = iteration.node;
         if iteration.awaiting {
             iteration.awaiting = false;
@@ -1294,7 +1335,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
-    fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Stop> {
+    fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Halt> {
         let node = iteration.node;
         let value = match &node.kind {
             NodeKind::Query { visit, .. } => match visit {
@@ -1317,14 +1358,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                         Some(_) => return Err(invariant()),
                     };
                     if sum_domain(&node.value_type).is_some_and(|domain| !domain.contains(&total)) {
-                        return Err(Stop::Refused(Refusal::IntegerOutOfDomain));
+                        return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
                     }
                     retain_scalar(Value::Integer(total), self.meter)?
                 }
                 Visit::Count => {
                     if let ValueType::Int(domain) = &node.value_type {
                         if !domain.contains(&iteration.count) {
-                            return Err(Stop::Refused(Refusal::IntegerOutOfDomain));
+                            return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
                         }
                     }
                     retain_scalar(Value::Integer(iteration.count), self.meter)?
@@ -1362,15 +1403,18 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::Category;
 
-    /// One admitted binding over a minimal one-type, one-population domain
-    /// package, for [`Machine::resolve_population`]'s own fault tests below
-    /// -- deliberately not `tests/it/model_reference_queries.rs`'s richer
-    /// `fixture_f1` (generalization, two object types), which that file's
-    /// own `allInstances`/`lookup` source-form coverage needs and this
-    /// evaluator-internal test does not.
-    fn population_binding(declared_maximum: Option<u64>) -> PopulationBinding {
-        let domain_package = DomainPackage::new(
-            DomainPackageRef::fixture("bundle.qsl174-ac10"),
+    /// The shared minimal one-type (`model.A`), one-population
+    /// (`model.pop.p1`) domain package [`population_binding`] and
+    /// [`population_function_package`] both normalize below (PR #334 review
+    /// round 2, finding N5) -- deliberately not `tests/it/
+    /// model_reference_queries.rs`'s richer `fixture_f1` (generalization,
+    /// two object types), which that file's own `allInstances`/`lookup`
+    /// source-form coverage needs and these evaluator-internal tests do
+    /// not. `reference` distinguishes the two callers' own
+    /// `DomainPackageRef::fixture` identities.
+    fn domain_package(reference: &str) -> DomainPackage {
+        DomainPackage::new(
+            DomainPackageRef::fixture(reference),
             vec![
                 DomainPackageRecord::ObjectType(ObjectTypeRecord {
                     key: DeclarationKey::fixture("model.A"),
@@ -1384,7 +1428,13 @@ mod tests {
                     extent: Extent::Closed,
                 }),
             ],
-        );
+        )
+    }
+
+    /// One admitted binding over [`domain_package`], for
+    /// [`Machine::resolve_population`]'s own fault tests below.
+    fn population_binding(declared_maximum: Option<u64>) -> PopulationBinding {
+        let domain_package = domain_package("bundle.qsl174-ac10");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
             other => panic!("expected a completed effective view, got {other:?}"),
@@ -1414,31 +1464,13 @@ mod tests {
 
     /// A checked package declaring one `Value` function,
     /// `F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p))`,
-    /// over a minimal one-type, one-population domain model -- TC-391's own
-    /// fixture, over the same domain-model machinery [`population_binding`]
-    /// uses (deliberately not `tests/it/model_reference_queries.rs`'s
-    /// richer `fixture_f1`; see that function's own doc). Returns the
-    /// linked package and `F`'s checked identity, so a test can call
+    /// over [`domain_package`] -- TC-391's own fixture. Returns the linked
+    /// package and `F`'s checked identity, so a test can call
     /// [`crate::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
     fn population_function_package(
     ) -> (crate::checked_package::CheckedPackage, quire_exact::NodeKey) {
-        let domain_package = DomainPackage::new(
-            DomainPackageRef::fixture("bundle.qsl174-ac10-seam"),
-            vec![
-                DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                    key: DeclarationKey::fixture("model.A"),
-                    interface_features: None,
-                    abstract_type: false,
-                    supertypes: Vec::new(),
-                }),
-                DomainPackageRecord::Population(PopulationRecord {
-                    key: DeclarationKey::fixture("model.pop.p1"),
-                    member_types: vec![DeclarationKey::fixture("model.A")],
-                    extent: Extent::Closed,
-                }),
-            ],
-        );
+        let domain_package = domain_package("bundle.qsl174-ac10-seam");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
             other => panic!("expected a completed effective view, got {other:?}"),

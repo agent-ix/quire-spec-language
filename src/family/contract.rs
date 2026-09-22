@@ -384,7 +384,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 /// `call` also never reaches either `Fault` case -- it always resolves the
 /// identity from this same package and builds a fresh `EvaluationEnv` --
 /// so both are exercised directly against `evaluate`, bypassing `call`,
-/// by `family.rs`'s `evaluate_refuses_a_second_call_on_the_same_env` and
+/// by `family.rs`'s `evaluate_faults_on_a_second_call_on_the_same_env` and
 /// `value::expression::mod.rs`'s `s6a_invariant_breaks_are_internal_faults_
 /// not_panics` (FR-090-AC-3, TC-384).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

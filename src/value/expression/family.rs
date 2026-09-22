@@ -401,7 +401,7 @@ mod family_contract_tests {
     // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
     // own `_meter` parameter are both `quire_exact::Meter` since QSL-166
     // (previously two distinct types with the same name in different
-    // crates) -- `evaluate_refuses_a_second_call_on_the_same_env` still
+    // crates) -- `evaluate_faults_on_a_second_call_on_the_same_env` still
     // needs two separate *instances*, one per role.
 
     fn limits() -> StageLimits {
@@ -538,7 +538,7 @@ mod family_contract_tests {
     /// `CheckedPackage::call`'s `map_evaluate_failure` adapter.
     #[trace("FR-090-AC-3", "TC-384")]
     #[test]
-    fn evaluate_refuses_a_second_call_on_the_same_env() {
+    fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
             ..PackageDeclarations::default()

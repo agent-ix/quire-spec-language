@@ -419,9 +419,12 @@ admission boundary (`CheckedPackage::call`/`evaluate`'s own `validate`,
 `AllInstances`/`Lookup` consumption sites: an unresolved identity or a
 mismatched declared maximum refuses whether or not the checked body actually
 consumes the parameter (PR #326 review finding F1), for both `allInstances`
-and `lookup` consumers. `Machine::resolve_population`'s own refusal
-branches remain as defence in depth, unreachable through either public
-entry point for a checked program (see that method's own doc).
+and `lookup` consumers. `Machine::resolve_population`'s own defence-in-depth
+check remains, unreachable through either public entry point for a checked
+program (see that method's own doc), but since FR-090-AC-10 (QSL-174) it is
+no longer a kernel refusal: meeting either condition there is an S6a
+invariant break, `Err(InternalFault)`, not `Refusal::UnresolvedPopulation`/
+`Refusal::PopulationMaximumMismatch`, which are deleted.
 
 FR-089's own admission preimage (domain package selection, `population_key`,
 admission role) does not distinguish two bindings that differ only in
