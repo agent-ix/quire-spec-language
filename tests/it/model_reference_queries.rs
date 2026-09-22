@@ -39,9 +39,10 @@ use quire_spec_language::model::population::{
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
     CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape, DeclarationCause,
-    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence,
-    Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, InputRefusal, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
+    PackageDeclarations, Presence, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -156,11 +157,16 @@ fn p1_population_key() -> DeclarationKey {
 }
 
 /// [`fixture_f1_with_second_population`]'s own second population
-/// declaration key, `model.pop.p2` -- FR-089-AC-1's own distinct-
+/// declaration key, `model.pop.second` -- FR-089-AC-1's own distinct-
 /// `population_key` case (TC-291, TC-293) needs two population
-/// declarations on the *same* domain package.
+/// declarations on the *same* domain package. Same key spelling as
+/// `tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
+/// review finding S4): the two files' `fixture_f1_with_second_population`
+/// helpers build on each file's own separately authored `fixture_f1`, so
+/// they are not merged into one shared helper, but nothing justifies them
+/// naming the same declared population differently.
 fn p2_population_key() -> DeclarationKey {
-    DeclarationKey::fixture("model.pop.p2")
+    DeclarationKey::fixture("model.pop.second")
 }
 
 /// [`fixture_f1`], plus a second `Population` declaration
@@ -413,7 +419,8 @@ fn objects(scenario: &Scenario) -> ObjectEnvironment {
         ],
     )
     .unwrap()
-    .with_population(scenario.binding.population_id(), scenario.binding.clone())
+    .with_population(scenario.binding.clone())
+    .unwrap()
 }
 
 /// FR-089: the `Value::Population` argument a real source expression's `p`
@@ -431,7 +438,8 @@ fn population_argument(scenario: &Scenario) -> Value {
 /// resolve [`population_argument`] through.
 fn population_environment(scenario: &Scenario) -> ObjectEnvironment {
     ObjectEnvironment::default()
-        .with_population(scenario.binding.population_id(), scenario.binding.clone())
+        .with_population(scenario.binding.clone())
+        .unwrap()
 }
 
 fn check(
@@ -1172,7 +1180,8 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
     let object_world =
         ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
             .unwrap()
-            .with_population(scenario.binding.population_id(), scenario.binding.clone());
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (outcome, meter) = run(
         &package,
@@ -1227,7 +1236,8 @@ fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
     let object_world =
         ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
             .unwrap()
-            .with_population(scenario.binding.population_id(), scenario.binding.clone());
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (outcome, _) = run(
         &package,
@@ -1299,7 +1309,8 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
     let object_world =
         ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
             .unwrap()
-            .with_population(scenario.binding.population_id(), scenario.binding.clone());
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (undefined_outcome, _) = run(
         &package,
@@ -1387,7 +1398,8 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
     let object_world =
         ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
             .unwrap()
-            .with_population(scenario.binding.population_id(), scenario.binding.clone());
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     for absence in [
         AbsenceMode::Undefined,
@@ -1520,7 +1532,8 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
             [(well_formed.clone(), vec![]), (other.clone(), vec![])],
         )
         .unwrap()
-        .with_population(scenario.binding.population_id(), scenario.binding.clone());
+        .with_population(scenario.binding.clone())
+        .unwrap();
 
         for absence in [
             AbsenceMode::Undefined,
@@ -1712,7 +1725,8 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
     let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])])
         .unwrap()
-        .with_population(scenario.binding.population_id(), scenario.binding.clone());
+        .with_population(scenario.binding.clone())
+        .unwrap();
 
     let (post_outcome, _) = run(
         &package,
@@ -2476,8 +2490,10 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
         binding: b1_binding.clone(),
     };
     let environment = ObjectEnvironment::default()
-        .with_population(id1, b1_binding)
-        .with_population(id2, b2_binding);
+        .with_population(b1_binding)
+        .unwrap()
+        .with_population(b2_binding)
+        .unwrap();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(node_key(&a)));
@@ -2519,14 +2535,92 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     }
 }
 
+/// PR #326 review finding F2: two admissions that collide on one
+/// `PopulationId` (same domain package, `population_key` and admission
+/// role -- FR-089's own preimage, Linear QSL-131's open question over
+/// whether declared maximum and document content should also distinguish
+/// two bindings) but carry different declared maxima refuse loudly when
+/// the second is recorded under the first's id, rather than the first
+/// silently being overwritten. `ObjectEnvironment::with_population` is
+/// keyed by the binding's own id, so recording an *equal* binding under an
+/// id already bound is `Ok` (idempotent), but a *different* one is
+/// `Err(PopulationConflict)`.
+#[test]
+fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+
+    let mut meter_3 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding_3 = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter_3,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let mut meter_7 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding_7 = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(7),
+        &mut meter_7,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    assert_eq!(
+        binding_3.population_id(),
+        binding_7.population_id(),
+        "same domain package/population_key/role must mint the same id, \
+         even though the two bindings' declared maxima differ"
+    );
+    let id = binding_3.population_id();
+
+    let environment = ObjectEnvironment::default()
+        .with_population(binding_3.clone())
+        .unwrap();
+
+    // Re-recording the identical binding under its own id is idempotent.
+    let environment = environment.with_population(binding_3).unwrap();
+    assert_eq!(
+        environment
+            .resolve_population(id)
+            .and_then(PopulationBinding::declared_maximum),
+        Some(3)
+    );
+
+    // Recording a *different* binding (declared maximum 7) under the same
+    // id refuses, rather than silently overwriting binding_3's own entry.
+    match environment.with_population(binding_7) {
+        Err(conflict) => assert_eq!(conflict.population_id, id),
+        Ok(_) => panic!("expected Err(PopulationConflict), got Ok -- the conflicting binding overwrote the first silently"),
+    }
+}
+
 /// TC-294 (FR-089-AC-4): a `Value::Population(population_id)` whose
 /// `population_id` names no binding recorded in the current evaluation's
-/// correspondence produces a typed `Refusal::UnresolvedPopulation`, naming
-/// the identity -- never a panic and never `Undefined`. `scenario.binding`'s
-/// own minted id is genuine (admitted by a real `admit_binding` call), but
-/// the environment this evaluation actually runs against never recorded it
-/// -- exactly TC-294's "a distinct, independently-admitted identity from a
-/// separate evaluation run".
+/// correspondence refuses at argument admission -- `InputRefusal::
+/// WrongValueKind`, naming the parameter, never a panic and never
+/// `Undefined`. PR #326 review finding F1: this now runs inside
+/// `CheckedPackage::evaluate`'s own `validate` (which already receives
+/// `objects: &ObjectEnvironment` for the analogous `DanglingReference`
+/// check), not only inside the evaluator's `Machine::resolve_population` --
+/// `ValueType::admits` alone cannot perform it, since it has no access to
+/// the recorded correspondence, so admission by presence alone let this
+/// case through whenever nothing in the body consumed the parameter (see
+/// [`tc_294_unresolved_population_id_refuses_even_when_unconsumed`]).
+/// `scenario.binding`'s own minted id is genuine (admitted by a real
+/// `admit_binding` call), but the environment this evaluation actually
+/// runs against never recorded it -- exactly TC-294's "a distinct,
+/// independently-admitted identity from a separate evaluation run".
 #[test]
 #[trace("TC-294", "FR-089-AC-4")]
 fn tc_294_unresolved_population_id_refuses_typed() {
@@ -2536,17 +2630,49 @@ fn tc_294_unresolved_population_id_refuses_typed() {
     let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
     let unresolved_id = scenario.binding.population_id();
 
-    let (outcome, _) = run(
-        &package,
-        &parameters,
-        &expression,
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
         vec![Value::Population(unresolved_id)],
-        SCALAR_UNLIMITED,
         &ObjectEnvironment::default(),
+        &mut meter,
     );
-    match outcome {
-        Outcome::Refused(Refusal::UnresolvedPopulation(id)) => assert_eq!(id, unresolved_id),
-        other => panic!("expected Refused(UnresolvedPopulation), got {other:?}"),
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
+}
+
+/// TC-294 (FR-089-AC-4)/FR-049-AC-2, PR #326 review finding F1: the same
+/// unresolved id refuses at admission even when the checked body never
+/// reads the parameter at all. Before this fix, `ValueType::admits`'s own
+/// presence-only check let an unresolved (or mismatched-maximum, see
+/// [`tc_295_population_maximum_mismatch_refuses_even_when_unconsumed`])
+/// population argument through whenever nothing consumed it, completing
+/// with the body's own unrelated value (the review's own probe: "a
+/// population parameter that is never consumed... `Completed(Boolean(true))`").
+/// A body that ignores `p` entirely still refuses now.
+#[test]
+#[trace("TC-294", "FR-089-AC-4", "FR-049-AC-2")]
+fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = Expression::Boolean(true);
+    let unresolved_id = scenario.binding.population_id();
+
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![Value::Population(unresolved_id)],
+        &ObjectEnvironment::default(),
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
     }
 }
 
@@ -2588,7 +2714,9 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
         b,
         binding: binding.clone(),
     };
-    let environment = ObjectEnvironment::default().with_population(id, binding);
+    let environment = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
     let package = package(&scenario);
     let expression = all_instances(ValueType::Reference(node_key(&a)));
 
@@ -2607,20 +2735,113 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
     }
 
     let parameters_6 = [("p", ValueType::Population(6))];
-    let (outcome_6, _) = run(
-        &package,
-        &parameters_6,
-        &expression,
+    let checked_6 = check(&package, &parameters_6, &expression);
+    let mut meter_6 = Meter::new(SCALAR_UNLIMITED);
+    let result_6 = package.evaluate(
+        &checked_6,
         vec![Value::Population(id)],
-        SCALAR_UNLIMITED,
         &environment,
+        &mut meter_6,
     );
-    match outcome_6 {
-        Outcome::Refused(Refusal::UnresolvedPopulation(refused_id)) => {
-            assert_eq!(refused_id, id);
-        }
+    match result_6 {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
         other => panic!(
-            "expected Refused(UnresolvedPopulation) under a mismatched Population<6>, got {other:?}"
+            "expected Err(InputRefusal::WrongValueKind) under a mismatched Population<6>, got {other:?}"
         ),
+    }
+}
+
+/// TC-295 (FR-089-AC-5)/FR-049-AC-2, PR #326 review finding F1: the same
+/// declared-maximum mismatch refuses at admission even when the checked
+/// body never reads the parameter at all -- companion to
+/// [`tc_294_unresolved_population_id_refuses_even_when_unconsumed`] for the
+/// "resolved, wrong maximum" case rather than "not recorded".
+#[test]
+#[trace("TC-295", "FR-089-AC-5", "FR-049-AC-2")]
+fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(5),
+        &mut meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let id = binding.population_id();
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: binding.clone(),
+    };
+    let environment = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let package = package(&scenario);
+    let expression = Expression::Boolean(true);
+
+    let parameters_6 = [("p", ValueType::Population(6))];
+    let checked = check(&package, &parameters_6, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![Value::Population(id)],
+        &environment,
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
+}
+
+/// TC-294 (FR-089-AC-4)/S3 (PR #326 review): the same unresolved-id
+/// admission refusal holds for `lookup<T>(p, r)`, not only `allInstances`
+/// -- the two consumption sites `evaluate.rs`'s `Machine::resolve_population`
+/// doc names (`:921`/`:934`). `admits_a_valid_reference_but_unresolved_
+/// population` supplies a well-formed `r` (present in the environment, so
+/// `DanglingReference` never fires) alongside an unresolved `p`, isolating
+/// the population check from the reference check.
+#[test]
+#[trace("TC-294", "FR-089-AC-4")]
+fn tc_294_lookup_refuses_an_unresolved_population_id() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.b))),
+    ];
+    let expression = lookup(target, AbsenceMode::Empty);
+    let unresolved_id = scenario.binding.population_id();
+    let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
+    let environment =
+        ObjectEnvironment::new(&types(&scenario), [(present_reference.clone(), vec![])]).unwrap();
+
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![
+            Value::Population(unresolved_id),
+            Value::Reference(present_reference),
+        ],
+        &environment,
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
     }
 }

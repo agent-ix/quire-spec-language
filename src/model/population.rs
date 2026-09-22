@@ -631,13 +631,24 @@ impl AdmissionRole {
 }
 
 /// [`PopulationId`]'s FR-089-AC-1 preimage: `{version,
-/// domain_package_identity, population_key, admission_role}`. Deliberately
-/// excludes the admitted document's own content -- FR-089's Behavior
-/// section states the preimage as exactly these three facts, so two
-/// admissions of *different* documents against the same domain package,
-/// `population_key` and role mint the same identity, and re-admitting the
-/// *same* document against the same package/key/role is idempotent
-/// (TC-291).
+/// domain_package_selection, population_key, admission_role}`, where
+/// `domain_package_selection` is the full `DomainPackageRef` header
+/// (identity, version and digest -- see this function's own body comment)
+/// rather than bare identity. Deliberately excludes the admitted document's
+/// own content -- FR-089's Behavior section states the preimage as exactly
+/// these three facts, so two admissions of *different* documents against
+/// the same domain package, `population_key` and role mint the same
+/// identity, and re-admitting the *same* document against the same
+/// package/key/role is idempotent (TC-291).
+///
+/// FR-089's own preimage names no way to distinguish two bindings that
+/// differ only in document content or declared maximum, admitted under the
+/// same package/key/role within one evaluation -- an open spec question
+/// (Linear QSL-131) recorded, not resolved, here.
+/// [`ObjectEnvironment::with_population`](crate::value::reference::ObjectEnvironment::with_population)
+/// is the interim guard: it refuses a second, unequal binding recorded
+/// under an id already bound to a different one, rather than silently
+/// letting the later admission win.
 fn population_id_preimage(
     domain_package: &DomainPackage,
     population_key: &DeclarationKey,
@@ -745,12 +756,14 @@ pub fn admit_binding(
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
     admit_binding_as(
-        domain_package,
-        view,
+        InvocationContext {
+            domain_package,
+            view,
+            population: population_key,
+            subtype_closure,
+            declared_maximum,
+        },
         document,
-        population_key,
-        subtype_closure,
-        declared_maximum,
         AdmissionRole::Direct,
         meter,
     )
@@ -761,20 +774,26 @@ pub fn admit_binding(
 /// [`PopulationId`] under: [`admit_binding`] itself always calls this with
 /// [`AdmissionRole::Direct`], and [`admit_invocation`] calls it directly
 /// (bypassing the public [`admit_binding`]) with [`AdmissionRole::Pre`]/
-/// [`AdmissionRole::Post`] for its own two constituent bindings.
-#[allow(clippy::too_many_arguments)] // Mirrors `admit_binding`'s own 7-argument
-                                     // admission surface plus the one FR-089-AC-1 `role` discriminator; the whole
-                                     // group is one admission call's own input, not independent knobs to bundle.
+/// [`AdmissionRole::Post`] for its own two constituent bindings. Takes
+/// [`InvocationContext`] rather than its five constituent fields: that type
+/// already exists to bundle exactly this admission surface for
+/// [`admit_invocation`]'s own two calls, so reusing it here (instead of a
+/// separate five-parameter list plus `document`/`role`/`meter`) keeps this
+/// function within the crate's argument-count convention with no
+/// `#[allow(clippy::too_many_arguments)]`.
 fn admit_binding_as(
-    domain_package: &DomainPackage,
-    view: &EffectiveView,
+    context: InvocationContext<'_>,
     document: &PopulationDocument,
-    population_key: &DeclarationKey,
-    subtype_closure: GeneralizationClosure,
-    declared_maximum: Option<u64>,
     role: AdmissionRole,
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
+    let InvocationContext {
+        domain_package,
+        view,
+        population: population_key,
+        subtype_closure,
+        declared_maximum,
+    } = context;
     if *view.model_selection() != domain_package.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
@@ -1248,29 +1267,11 @@ pub fn admit_invocation(
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
-    let pre = match admit_binding_as(
-        context.domain_package,
-        context.view,
-        pre_document,
-        context.population,
-        context.subtype_closure,
-        context.declared_maximum,
-        AdmissionRole::Pre,
-        pre_meter,
-    ) {
+    let pre = match admit_binding_as(context, pre_document, AdmissionRole::Pre, pre_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    let post = match admit_binding_as(
-        context.domain_package,
-        context.view,
-        post_document,
-        context.population,
-        context.subtype_closure,
-        context.declared_maximum,
-        AdmissionRole::Post,
-        post_meter,
-    ) {
+    let post = match admit_binding_as(context, post_document, AdmissionRole::Post, post_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };

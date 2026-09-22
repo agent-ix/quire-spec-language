@@ -219,7 +219,7 @@ pub use quantity::{
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectIdentity, ObjectReference, UniverseIdentity,
+    ObjectIdentity, ObjectReference, PopulationConflict, UniverseIdentity,
 };
 pub use text::{
     admit_text, compare_text, EmptyTextBounds, InvalidTextLiteral, InvalidUtf8, NormalizationForm,

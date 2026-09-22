@@ -411,18 +411,31 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `admit_binding`/`admit_invocation` mint into) recorded it against,
     /// by lookup alone -- never by decoding `population_id`'s own bytes.
     /// Refuses `population_id` when it names no recorded binding at all
-    /// (AC-4), or when its resolved binding's own declared maximum differs
-    /// from `maximum`, the checked `Population<T>[maximum]` parameter type
-    /// this operand's own node declared (AC-5) -- the pairing
-    /// `ValueType::admits` performed directly when `Value::Population`
-    /// still carried the binding itself (`value::composite`'s own doc,
-    /// before this identity replaced it). Never
-    /// [`Refusal::CheckedInvariant`]: `check::check::bind_parameters`'s own
-    /// doc records that a `Population<T>[N]` parameter bypasses
-    /// `Typer::check_declared_type`, so the checker never verifies a
-    /// caller-supplied identity actually names a binding of that declared
-    /// shape -- this is real, caller-input-reachable, exactly like
-    /// [`Refusal::WrongSnapshot`].
+    /// (AC-4, [`Refusal::UnresolvedPopulation`]), or when its resolved
+    /// binding's own declared maximum differs from `maximum`, the checked
+    /// `Population<T>[maximum]` parameter type this operand's own node
+    /// declared (AC-5, [`Refusal::PopulationMaximumMismatch`]) -- the
+    /// pairing `ValueType::admits` performed directly when
+    /// `Value::Population` still carried the binding itself
+    /// (`value::composite`'s own doc, before this identity replaced it).
+    ///
+    /// `CheckedPackage::call`/`evaluate`'s own `validate` (`expression/
+    /// mod.rs`) now performs this identical check at argument-admission
+    /// time, over every top-level `Population<T>[N]` parameter -- the only
+    /// context FR-153 lets one appear in (`check::check::bind_parameters`'s
+    /// own doc), and the same recorded correspondence this method reads --
+    /// so for a checked program reached through either public entry point,
+    /// this method's own refusal branches are unreachable defence in
+    /// depth: nested-call argument types are structurally checked equal to
+    /// their callee's own declared parameter types (never bypassed the way
+    /// `Typer::check_declared_type` is for a *declaration*), so a
+    /// `Value::Population` that admitted at the outer boundary keeps
+    /// resolving, with the same declared maximum, at every nested
+    /// consumption site. Kept, rather than reduced to
+    /// [`Refusal::CheckedInvariant`], because nothing in this module
+    /// enforces that every caller of [`Machine`] necessarily routes through
+    /// `validate` first -- exactly like [`Refusal::WrongSnapshot`]'s own
+    /// precedent.
     fn resolve_population(
         &self,
         population_id: PopulationId,
@@ -430,7 +443,10 @@ impl<'a, 'm> Machine<'a, 'm> {
     ) -> Result<&'a PopulationBinding, Stop> {
         match self.objects.resolve_population(population_id) {
             Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
-            _ => Err(Stop::Refused(Refusal::UnresolvedPopulation(population_id))),
+            Some(_) => Err(Stop::Refused(Refusal::PopulationMaximumMismatch(
+                population_id,
+            ))),
+            None => Err(Stop::Refused(Refusal::UnresolvedPopulation(population_id))),
         }
     }
 

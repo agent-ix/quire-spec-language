@@ -119,6 +119,16 @@ pub enum ObjectEnvironmentCause {
     DanglingReference(Box<ObjectReference>),
 }
 
+/// [`ObjectEnvironment::with_population`]'s refusal: `population_id` is
+/// already recorded under a binding that does not equal the one this call
+/// tried to record.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("population {population_id} is already recorded under a different binding")]
+pub struct PopulationConflict {
+    /// The colliding [`PopulationId`].
+    pub population_id: PopulationId,
+}
+
 /// A closed object environment: every reference held by any attribute
 /// resolves to an object of the environment. Also carries FR-089's
 /// recorded `PopulationId` -> `PopulationBinding` correspondence: `model`
@@ -169,20 +179,40 @@ impl ObjectEnvironment {
         Ok(environment)
     }
 
-    /// Records `binding`'s admission under `population_id` -- FR-089's
-    /// `PopulationId` -> `PopulationBinding` correspondence `model` mints at
-    /// binding-admission time. Consuming builder: call once per minted
-    /// `PopulationId`, before constructing the
-    /// `Value::Population(population_id)` argument that names it, so
-    /// [`Self::resolve_population`] can resolve it.
-    #[must_use]
+    /// Records `binding`'s admission under its own
+    /// [`PopulationBinding::population_id`] -- FR-089's `PopulationId` ->
+    /// `PopulationBinding` correspondence `model` mints at binding-admission
+    /// time. Consuming builder: call once per admitted binding, before
+    /// constructing the `Value::Population(population_id)` argument that
+    /// names it, so [`Self::resolve_population`] can resolve it. Keyed by
+    /// the binding's own id (never a separately supplied one), so a caller
+    /// cannot record a binding under an id it does not carry.
+    ///
+    /// FR-089's own admission preimage (package, `population_key`, role --
+    /// see `model::population::population_id_preimage`'s own doc) does not
+    /// yet include the admitted document's content or its declared maximum,
+    /// an open spec question tracked by Linear QSL-131. Two distinct
+    /// bindings can therefore collide on one id within a single evaluation
+    /// (for example, two invocations of the same population role with
+    /// different declared maxima). This is the interim guard: recording an
+    /// id already bound to an *equal* binding is `Ok` (idempotent
+    /// re-admission, TC-291's own case), but recording a *different*
+    /// binding under an id already bound refuses loudly, with
+    /// [`PopulationConflict`], rather than silently letting the later
+    /// admission overwrite the earlier one.
     pub fn with_population(
         mut self,
-        population_id: PopulationId,
         binding: PopulationBinding,
-    ) -> Self {
+    ) -> Result<Self, PopulationConflict> {
+        let population_id = binding.population_id();
+        if let Some(existing) = self.populations.get(&population_id) {
+            if **existing != binding {
+                return Err(PopulationConflict { population_id });
+            }
+            return Ok(self);
+        }
         self.populations.insert(population_id, Arc::new(binding));
-        self
+        Ok(self)
     }
 
     /// The `PopulationBinding` FR-089's recorded correspondence resolves

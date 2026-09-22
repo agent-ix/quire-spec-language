@@ -16,10 +16,13 @@ evaluation, evaluating an expression that consumes it resolves that same
 `PopulationBinding` by lookup in the recorded correspondence. Scope:
 FR-089-AC-3.
 
-Known gap: the evaluator currently matches `Value::Population(binding)` and
-reads `binding` directly (`src/value/expression/evaluate.rs:921,934`); there
-is no `PopulationId` and no recorded correspondence to resolve through. This
-test case fails against current code. Remaining work: QSL-131 Slice B.
+Implemented (QSL-131 Slice B): the evaluator matches
+`Value::Population(population_id)` and resolves it through
+`ObjectEnvironment::resolve_population`'s recorded correspondence
+(`Machine::resolve_population`, `src/value/expression/evaluate.rs`'s
+`AllInstances`/`Lookup` sites). Backed by
+`tc_293_evaluator_resolves_population_id_through_recorded_correspondence`
+(`tests/it/model_reference_queries.rs`).
 
 Catches an implementation that resolves by re-deriving a binding from the
 identity's own bytes (defeating the point of an opaque digest — a real

@@ -18,11 +18,12 @@ package identity, or the closed three-state admission-role discriminator
 specific `Direct`-versus-`Post` collision case is TC-296's own scope, not
 this one's.
 
-Known gap: `PopulationId` does not exist yet. `admit_binding`/`admit_invocation`
-(`src/model/population.rs:624,1097`) return a `PopulationBinding` with no
-minted identity attached, and the kernel `quire-exact` crate defines no
-`PopulationId` type. This test case fails against current code. Remaining
-work: QSL-131 Slice B.
+Implemented: `model::population::mint_population_id` mints a `PopulationId`
+from the admission preimage (domain package selection, `population_key`,
+admission role), and `admit_binding`/`admit_invocation` attach it to every
+`PopulationBinding` they admit (QSL-131 Slice B). Backed by
+`tc_291_population_id_is_deterministic_over_its_admission_preimage`
+(`tests/it/model_population.rs`).
 
 Catches an implementation that mints `PopulationId` from the document's
 content alone (ignoring which population declaration or domain package it

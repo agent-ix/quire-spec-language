@@ -94,6 +94,28 @@ impl InputRefusal {
 /// Argument admission for [`CheckedPackage::call`] and
 /// [`CheckedPackage::evaluate`]: neither touches `CheckedPackage`'s or
 /// `CheckedExpression`'s private state, so it needs no `check` accessor.
+///
+/// FR-089-AC-5's declared-maximum pairing is checked here, not only inside
+/// the evaluator's own `Machine::resolve_population`
+/// (`evaluate.rs`'s `AllInstances`/`Lookup` sites): `ValueType::admits`
+/// (`composite.rs`) cannot perform it -- it has no access to the recorded
+/// `PopulationId` -> `PopulationBinding` correspondence `objects` carries --
+/// so admitting a `Population` argument by presence alone there would let a
+/// parameter the checked body never reads (no `allInstances`/`lookup` call
+/// on it) through with an unresolved identity or a mismatched declared
+/// maximum, silently, whenever nothing consumes it (PR #326 review finding
+/// F1). This function already receives `objects` (used for the analogous
+/// `DanglingReference` check below), so the real check belongs here, at
+/// admission, mirroring FR-049-AC-2's "wrong-type entries refuse
+/// independently" for this crate's own runtime-input admission boundary.
+/// Every `Population<T>[N]` argument reaching a checked call is, by
+/// construction, a top-level parameter (FR-153's own restriction: it is
+/// never nested, so it always reaches this per-parameter loop directly),
+/// so this one check covers every reachable case; `Machine::
+/// resolve_population`'s own check is kept as defence in depth for a
+/// `Value::Population` the type checker's own structural argument-type
+/// matching would otherwise have already ruled out at every nested call
+/// site.
 fn validate(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
@@ -108,6 +130,16 @@ fn validate(
     for (parameter, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
         if !value_type.admits(argument) {
             return Err(InputRefusal::WrongValueKind { parameter });
+        }
+        if let (ValueType::Population(maximum), Value::Population(population_id)) =
+            (value_type, argument)
+        {
+            let resolved = objects
+                .resolve_population(*population_id)
+                .is_some_and(|binding| binding.declared_maximum() == Some(*maximum));
+            if !resolved {
+                return Err(InputRefusal::WrongValueKind { parameter });
+            }
         }
         let mut pending = vec![argument];
         while let Some(value) = pending.pop() {
