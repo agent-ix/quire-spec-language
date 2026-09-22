@@ -70,8 +70,8 @@ use crate::value::node::is_qualified_name;
 
 mod package_identity;
 
-pub use package_identity::{NodeDefect, PreimageDefect};
 use package_identity::{project_declarations, ProjectedDeclarations};
+pub use package_identity::{NodeDefect, PreimageDefect};
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -639,7 +639,8 @@ mod package_node_key_tests {
     fn equality_holds_iff_both_components_are_lexically_equal() {
         let a = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
         let same = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
-        let different_package = PackageNodeKey::new(package_id(2), WireNodeId::from_digest([9; 32]));
+        let different_package =
+            PackageNodeKey::new(package_id(2), WireNodeId::from_digest([9; 32]));
         let different_node = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([8; 32]));
 
         assert_eq!(a, same);

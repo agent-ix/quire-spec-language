@@ -1070,7 +1070,12 @@ fn undeclared_export_classifies_alongside_4_condition_2() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn invalid_qualifier_classifies_to_e3_name_resolution() {
-    let root = package("P", "1", "P@1", vec![import("L", "1", id("L@1"), Some("1l"))]);
+    let root = package(
+        "P",
+        "1",
+        "P@1",
+        vec![import("L", "1", id("L@1"), Some("1l"))],
+    );
     assert_library_refusal(
         resolve_libraries(&root, &[library_l()]),
         &LibraryRefusal::InvalidQualifier {
@@ -1161,7 +1166,12 @@ fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn missing_import_classifies_to_i2_rule_1() {
-    let root = package("P", "1", "P@1", vec![import("Z", "1", id("Z@1"), Some("z"))]);
+    let root = package(
+        "P",
+        "1",
+        "P@1",
+        vec![import("Z", "1", id("Z@1"), Some("z"))],
+    );
     assert_library_refusal(
         resolve_libraries(&root, &[]),
         &LibraryRefusal::MissingImport {

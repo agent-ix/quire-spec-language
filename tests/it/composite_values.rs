@@ -1191,7 +1191,11 @@ mod library_import {
             .into_iter()
             .filter(|(library, _)| *library == name("L"))
             .collect();
-        assert_eq!(l_selections.len(), 1, "L is selected once despite two import paths");
+        assert_eq!(
+            l_selections.len(),
+            1,
+            "L is selected once despite two import paths"
+        );
         let declaration_key = NodeKey::from_hex(&hex("L")).unwrap();
         let (through_a, through_b) = (declaration_key, declaration_key);
 
