@@ -80,8 +80,10 @@ pub(crate) struct Rule {
     pub(crate) id: &'static str,
     pub(crate) description: &'static str,
     pub(crate) role: Role,
-    /// Call-site substrings that identify a use of the rule's symbol, for
-    /// example `"NodeKey::from_digest("`.
+    /// Call-site substrings that identify a use of the rule's symbol. Most
+    /// rules match call syntax, for example `"EffectiveId::from_digest("`;
+    /// T12-B matches the bare path `"NodeKey::from_digest"` instead (see its
+    /// own comment, below).
     pub(crate) call_patterns: &'static [&'static str],
     /// Module path prefixes allowed to contain a call site (matched as
     /// `module == prefix` or `module.starts_with("{prefix}::")`).
