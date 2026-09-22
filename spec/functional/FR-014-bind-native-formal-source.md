@@ -29,9 +29,12 @@ in [the bridge contract](../../docs/formal-source-binding.md).
 ## Outputs
 
 A formal SourceSpan or a native Span respectively. A rejected request returns
-Box<Diagnostic> with invalid_source_map and source_map phase, located at byte
-zero of the bound native source. The binding exposes both identities and the
-original immutable Source, including its exact byte digest.
+Box<FormalSourceError> (ADR-011 §6.1: `diagnostic` does not import
+`quire_contract_ir`, so `FormalSourceError` pairs the shared `Box<Diagnostic>`
+with its own `upstream` sibling field) with invalid_source_map and
+source_map phase, located at byte zero of the bound native source. The
+binding exposes both identities and the original immutable Source, including
+its exact byte digest.
 
 ## Behavior
 
@@ -50,8 +53,8 @@ advances the line. Neither direction admits reversed, out-of-range or
 split-scalar spans. Reverse mapping compares every line, column and byte offset;
 a constructor-valid IR span is not sufficient evidence of source correspondence.
 All integer conversions are checked. An unexpected IR constructor refusal is
-retained in Diagnostic.upstream; ordinary local refusals have no upstream or
-related declarations.
+retained in FormalSourceError.upstream; ordinary local refusals have no
+upstream. FormalSourceError has no related declarations field at all.
 
 Binding assigns correspondence at the caller's authority; it does not establish
 global identity uniqueness, an authored requirement owner, semantic typing or
