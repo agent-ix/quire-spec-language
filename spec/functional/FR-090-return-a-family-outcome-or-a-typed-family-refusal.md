@@ -21,9 +21,12 @@ relationships:
 ## Description
 
 ADR-011 S6a reference evaluation SHALL return
-`Result<Evaluation, InternalFault>`, where
-`Evaluation { outcome: FamilyOutcome<Value>, location: Option<check::Location>,
-losses: Vec<LocatedLoss> }` is a layer-5 `value::expression` type.
+`Result<Evaluation<T>, InternalFault>`, where
+`Evaluation<T> { outcome: FamilyOutcome<T>, location: Option<check::Location>,
+losses: Vec<LocatedLoss> }` is a layer-5 `value::expression` type and `T` is
+the evaluated family's `ReferenceEvaluation::Observed`. `CheckedPackage::call`
+and `CheckedPackage::evaluate` return `Evaluation<Value>`, written
+`Evaluation`: `FamilyOutcome<Value>` beside the location and the losses.
 `FamilyOutcome` is a QSL layer-3 `check`-core type with exactly two variants:
 `Evaluated(quire_exact::Outcome<T>)`, which carries the kernel evaluation
 outcome unchanged, and `FamilyEvaluated(FamilyResult)`, which carries a
@@ -37,8 +40,11 @@ returns `Result<EvalOutcome<T>, InternalFault>`, where `EvalOutcome` is a
 layer-3 `check`-core type with exactly two variants: `Kernel(Outcome<T>)` and
 `Family(FamilyResult)`.
 
-S6a's input type SHALL admit no `Relation` declaration. The family kind S6a
-dispatches over has no `Relation` variant, so no S6a result exists for a
+S6a's input type SHALL admit no `Relation` declaration. The S6a family kind,
+the closed `check`-core enum the S6a seam dispatches over, has one variant
+per family that implements `ReferenceEvaluation` and no `Relation` variant.
+S6a's other entry, `CheckedPackage::evaluate`, takes a `CheckedExpression`,
+which is not a `Relation` declaration. So no S6a result exists for a
 `Relation` declaration and no family-dispatch refusal is representable.
 
 The evaluation-time `wrong_snapshot` cause (`WrongSnapshotCause`) and the
@@ -113,10 +119,11 @@ This requirement carries testable criteria for decisions already taken:
     `cause.undefined_record()` is the family cause's `UndefinedRecord`: its
     undefined reason and that reason's catalog payload.
 - `e.location`, the `check::Location` of the node at which an evaluation that
-  did not complete stopped, or `None` when the evaluation completed or no
-  node is known.
+  did not complete stopped, or `None` when the evaluation completed or
+  stopped before any node ran (a meter charge denied at call entry).
 - `e.losses`, the loss records of the operations a completed evaluation
-  performed, in evaluation order.
+  performed, in evaluation order; empty unless `e.outcome` is
+  `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
 - `Err(InternalFault)` when an S6a invariant breaks.
 - From `CheckedPackage::call` and `CheckedPackage::evaluate`, S6a's
   `Ok(e)` unchanged, `Err(CallFailure::Input(InputRefusal))` for an argument
@@ -132,9 +139,9 @@ This requirement carries testable criteria for decisions already taken:
 
 ### S6a returns one of three results
 
-The S6a seam SHALL dispatch on a family kind that has one variant per
-family implementing `ReferenceEvaluation` and no `Relation` variant, with one
-hand-written arm per variant and no `_` arm (ADR-012 §5.1 S1). Every family
+The S6a seam SHALL dispatch on the S6a family kind, which has one variant
+per family implementing `ReferenceEvaluation` and no `Relation` variant, with
+one hand-written arm per variant and no `_` arm (ADR-012 §5.1 S1). Every family
 except `Relation` implements `ReferenceEvaluation` (ADR-012 §2); its arm
 SHALL call that family's `evaluate` hook, whose design-level shape is
 
@@ -176,19 +183,24 @@ SHALL return `Ok(e)` with `e.outcome` equal to
 ### `Evaluation` carries the location and the loss records
 
 The S6a seam SHALL return the `FamilyOutcome` inside an `Evaluation`, beside
-the evaluation's `location` and `losses`. The `value::expression` evaluator
-that runs a family's `evaluate` hook records both as it evaluates, and the
-seam SHALL carry them unchanged (ADR-011 §2.2 E6: carried, never
-re-derived). `FamilyOutcome`, `FamilyResult` and `EvalOutcome` hold no
+the evaluation's `location` and `losses`. A family's `evaluate` hook records
+both in the evaluation environment it receives (`EvalEnv`, a layer-5 type;
+for `Value`, `EvaluationEnv`) as it evaluates, and the seam SHALL build the
+`Evaluation` from the hook's result and that environment, carrying both
+unchanged (ADR-011 §2.2 E6: carried, never re-derived). The caller receives
+them only inside the `Evaluation`, so it cannot drop them apart from the
+outcome. `FamilyOutcome`, `FamilyResult` and `EvalOutcome` hold no
 location.
 `location` is `check::Location` (`src/check/refusal.rs`), the declaration
 origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
-not complete stopped, or `None` when the evaluation completed or no node is
-known, which a consumer reports as "unavailable" (`quire.native.diagnostics/v1`
-common context). `losses` holds the loss records of the operations a
-completed evaluation performed, in evaluation order, as QSpec FR-140-AC-3
-requires ("the rounded value plus a canonical-rational loss record").
+not complete stopped, or `None` when the evaluation completed or stopped
+before any node ran (a meter charge denied at call entry). A consumer
+reports `None` as "unavailable" (`quire.native.diagnostics/v1` common
+context). `losses` holds the loss records of the operations a completed
+evaluation performed, in evaluation order, as QSpec FR-140-AC-3 requires
+("the rounded value plus a canonical-rational loss record"); it is empty
+unless the outcome is `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
 `Evaluation` is a layer-5 `value::expression` type because `LocatedLoss`
 holds value-layer types.
 
@@ -228,12 +240,15 @@ through it. `call` is a method of the same trait.
 
 ### `Relation` never enters S6a
 
-S6a's input type SHALL admit no `Relation` declaration: the family kind S6a
-dispatches over has no `Relation` variant (ADR-012 §2, §3). `Relation`
-implements no `ReferenceEvaluation` hook, and a `Relation` claim has no
-FR-057 capability kind (ADR-012 §7.2), so it is never proved by a backend and
-never replayed. No path produces an S6a evaluation of a `Relation`, so
-`FamilyOutcome` has no arm for "the family does not run here". This is the
+S6a's input type SHALL admit no `Relation` declaration: the S6a family kind
+has no `Relation` variant (ADR-012 §2, §3). `Relation` implements no
+`ReferenceEvaluation` hook. The abstraction relation has no FR-057
+capability kind (ADR-012 §7.2), so no backend proves it and no counterexample
+of it exists. The refinement gates' claims have kind `operation-contract`,
+one per clause implication (FR-057); their clauses reach S6a as clause
+expressions through `CheckedPackage::evaluate`, not as a `Relation`
+declaration. No path produces an S6a evaluation of a `Relation` declaration,
+so `FamilyOutcome` has no arm for "the family does not run here". This is the
 precise statement of FR-062-AC-6's non-native evaluability.
 
 Every `FamilyOutcome::FamilyEvaluated` result means "the family ran": a
@@ -439,9 +454,9 @@ undefined cause type.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-090-AC-1 | Given a checked `Value` function `f(x: Float[binary64]): Rational[-9..9 / 1..9] = convert(x)`, which the checker admits (an IEEE-to-rational conversion carries no definedness obligation), S6a returns `Ok(e)` with exactly these `e.outcome` values. For `x = 0.5` with an unlimited meter: `FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2)))`, with `e.location` `None`. For `x = NaN`: `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite))`. For `x = 20.0`: `FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain))`. For `x = 0.5` with a meter whose work limit is zero, the hook's `Ok(EvalOutcome::Kernel(Outcome::Incomplete(i)))` becomes `FamilyOutcome::Evaluated(Outcome::Incomplete(i))`, and `i` names `ChargePoint::FunctionCall`. None of the four is returned as `FamilyOutcome::FamilyEvaluated` or as `Err`. | Test (TC-382) |
+| FR-090-AC-1 | Given a checked `Value` function `f(x: Float[binary64]): Rational[-9..9 / 1..9] = convert(x)`, which the checker admits (an IEEE-to-rational conversion carries no definedness obligation), S6a returns `Ok(e)` with exactly these `e.outcome` values. For `x = 0.5` with an unlimited meter: `FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2)))`, with `e.location` `None` and `e.losses` empty. For `x = NaN`: `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite))`, with `e.location` `Some` and `e.losses` empty. For `x = 20.0`: `FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain))`, with `e.location` `Some` and `e.losses` empty. For `x = 0.5` with a meter whose work limit is zero, the hook's `Ok(EvalOutcome::Kernel(Outcome::Incomplete(i)))` becomes `FamilyOutcome::Evaluated(Outcome::Incomplete(i))`, and `i` names `ChargePoint::FunctionCall`. None of the four is returned as `FamilyOutcome::FamilyEvaluated` or as `Err`. | Test (TC-382) |
 | FR-090-AC-3 | Each S6a invariant break returns `Err(fault)` without panicking. The cases are: a second S6a call on a `Value` evaluation environment whose arguments an earlier S6a call already consumed; and an S6a call with a checked identity the package does not resolve. For each, `fault.stage()` names S6a, `fault.invariant()` is the stable identifier of that invariant (distinct for the two cases), and `fault.category()` is `Category::InternalFailure`. The result is not an `Ok(e)` whose `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(_))` or a `FamilyOutcome::FamilyEvaluated`. | Test (TC-384) |
-| FR-090-AC-4 | S6a's input type admits no `Relation`. The family kind S6a dispatches over has no `Relation` variant, and `FamilyOutcome` has exactly the two variants `Evaluated` and `FamilyEvaluated`: a test holds an exhaustive `match` with no `_` arm over each type whose arms name neither `Relation` nor a third `FamilyOutcome` variant, so a `Relation` variant or a third outcome variant fails to compile. This is the precise form of FR-062-AC-6. | Test (TC-385) |
+| FR-090-AC-4 | S6a's input type admits no `Relation`. The S6a family kind has no `Relation` variant, and the S6a seam's family parameter has that type; `FamilyOutcome` has exactly the two variants `Evaluated` and `FamilyEvaluated`. A test holds an exhaustive `match` with no `_` arm over each type whose arms name neither `Relation` nor a third `FamilyOutcome` variant, so adding either variant fails to compile, and the test passes each S6a family kind variant to the S6a seam's dispatch, which compiles only if the seam takes that type. This is the precise form of FR-062-AC-6. | Test (TC-385) |
 | FR-090-AC-5 | F `diagnostic`'s catalog-code-to-category map returns `Category::Refusal` for every code the `ProtocolClause` snapshot cause's `catalog_code()` returns and for every code `ModelRefusal::catalog_code()` returns; `qsl-foundation` has no dependency on the crate that defines `FamilyOutcome` or on any crate at layer 3 or above. | Test (TC-386) |
 | FR-090-AC-6 | The `ProtocolClause` family cause carrying `WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm that returns `wrong_snapshot`/`wrong-anchor` for `WrongAnchor` and `wrong_snapshot`/`forbidden-pre-read` for `ForbiddenPreRead`. | Test (TC-387) |
 | FR-090-AC-7 | Given a postcondition `pre(allInstances<T>(p))` evaluated through `CheckedPackage::evaluate` with a population argument admitted through `admit_binding` (no pre anchor), the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `wrong_snapshot`/`wrong-anchor`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))` and not `Err(CallFailure::Input(_))`. `quire_exact::Refusal` has no variant naming `WrongSnapshotCause`. | Test (TC-388) |
@@ -454,8 +469,8 @@ undefined cause type.
 ## Dependencies
 
 - **Upstream:** [FR-062](FR-062-implement-checked-family-contract.md) owns
-  `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`, which the S6a
-  seam dispatches over. FR-090-AC-4 is the precise form of FR-062-AC-6.
+  `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`. The S6a family
+  kind is `FamilyKind` without `Relation`. FR-090-AC-4 is the precise form of FR-062-AC-6.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
   `WrongSnapshotCause` in `crate::check` (FR-068-AC-4, AC-8).
   [FR-089](FR-089-carry-population-identity-across-the-kernel-boundary.md)

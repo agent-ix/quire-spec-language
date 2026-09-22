@@ -373,8 +373,9 @@ causes and catalog codes. Stages S1 to S4 and the I2 reader return
 `check` that reaches a limit returns `StageFailure::Limit(LimitExceeded)`.
 `CheckedPackage::call` admits its arguments before S6a and returns
 `Result<Evaluation, CallFailure>`, with `CallFailure { Input(InputRefusal),
-Fault(InternalFault) }`. S6a itself returns `Result<Evaluation,
-InternalFault>`. The layer-5 `Evaluation { outcome: FamilyOutcome<Value>,
+Fault(InternalFault) }`, where `Evaluation` is `Evaluation<Value>`. S6a
+itself returns `Result<Evaluation<T>, InternalFault>`. The layer-5
+`Evaluation<T> { outcome: FamilyOutcome<T>,
 location: Option<check::Location>, losses: Vec<LocatedLoss> }` carries the
 evaluation's one locus and its loss records beside the layer-3 `check`-core
 `FamilyOutcome { Evaluated(kernel::Outcome), FamilyEvaluated(FamilyResult) }`,

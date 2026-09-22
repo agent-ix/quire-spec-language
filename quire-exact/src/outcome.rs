@@ -26,8 +26,8 @@
 //! called member name, the selected redefinition candidate's identity as a
 //! bare `String`, and the receiver reference). Choosing among several
 //! redefinition candidates by the receiver's most-specific runtime type is
-//! family dispatch, and T-6 is explicit that family-dispatch causes are
-//! never kernel causes: resolving *which* candidate linked, and reporting
+//! family dispatch, and T-6 is explicit that family causes are never
+//! kernel causes: resolving *which* candidate linked, and reporting
 //! that its precondition evaluated false, is QSL `model`/`check`'s own
 //! concept, layered on top of this module the same way the category-mapping
 //! table above it is. Retyping `selected` to `EffectiveId` would still leave

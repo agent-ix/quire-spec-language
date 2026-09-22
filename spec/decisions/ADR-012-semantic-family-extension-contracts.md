@@ -266,10 +266,11 @@ The rule for a family that sits out a stage depends on the stage. At an
 evaluation stage, the family is absent from the stage's input type, so no arm
 and no refusal exists for it. This follows the #214 precedent below: a
 contract part that nothing can legitimately construct is left out, not
-stubbed. Nothing produces an S6a evaluation of a `Relation`: a `Relation`
-claim has no FR-057 capability kind (§7.2), so no backend proves it and no
-counterexample of it is replayed (owner ruling on FR-090-OQ-2, ADR-013
-O-16). At a lowering or proof stage, the family has an explicit arm that
+stubbed. Nothing produces an S6a evaluation of a `Relation` declaration:
+the abstraction relation has no FR-057 capability kind (§7.2), so no
+counterexample of it exists, and the refinement gates' `operation-contract`
+claims reach S6a as clause expressions, not as a `Relation` declaration
+(owner ruling on FR-090-OQ-2, ADR-013 O-16). At a lowering or proof stage, the family has an explicit arm that
 returns `unsupported` with a catalog code (§5.1).
 
 `package` is all-or-nothing. A family either emits every v2 node for the item
@@ -503,7 +504,7 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over a family kind with no `Relation` variant, so `Relation` has no evaluation arm (§2). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed `check`-core enum that is `FamilyKind` without `Relation`, matched with one arm per variant and no `_` arm, so `Relation` has no evaluation arm (§2, FR-090-AC-4). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
@@ -746,7 +747,7 @@ The contract spans six stages. The arrow numbers are AD-016's.
 | Lower | 2, 3 | IR `lower` arm per (tag, form); RT op selection | IR, RT | S5, S6 | explicit `unsupported` arm with catalog code |
 | Execute or prove | 4, 5 | candidates and routing (#185, §7.2); CG `negotiate_*` and harness arm per IR form and backend kind; `evaluate` for native execution | #185, CG, QSL | S6, S7, S9 | every disposition from `negotiate_*` (§7.2, §7.3); solver absence after routing (§7.4) |
 | Witness | 6 | the family's witness binding schema, derived from the obligation identity's arguments; the payload is the FR-351 record unchanged | IR (packet, witness and the `WitnessBinding` type); CG builds the family's bindings (AD-016) | S8 | no packet without a counterexample; no placeholder witness |
-| Replay | 7 | the family's `evaluate` hook, reached through the ADR-011 layer-6 `replay` facade, the only CG-facing surface | CG reconstruction; QSL `replay` facade | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause; a `Relation` claim has no FR-057 kind (§7.2), so no counterexample of it exists to replay |
+| Replay | 7 | the family's `evaluate` hook, reached through the ADR-011 layer-6 `replay` facade, the only CG-facing surface | CG reconstruction; QSL `replay` facade | S1, S3 | refused decode yields no verdict; disagreement is `inconclusive` with a typed cause; a `Relation` declaration is not an S6a input (§2): an abstraction relation has no FR-057 kind (§7.2), and a refinement gate's `operation-contract` counterexample replays its clauses as clause expressions |
 
 Two rules apply at every stage.
 

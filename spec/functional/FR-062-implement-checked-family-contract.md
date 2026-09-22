@@ -73,10 +73,11 @@ The contract's six parts (ADR-012 §2):
    ADR-013 O-11), and SHALL NOT select it by a bare string compared against
    a display name.
 
-A family that does not evaluate natively (`Relation`) SHALL return a named
-refusal at the evaluation hook rather than omitting the hook silently, so
-every family has an entry at every stage its contract lists, distinguishing
-"this family sits out this stage" from "this family has no hook."
+A family that does not evaluate natively (`Relation`) SHALL have no
+evaluation hook and SHALL NOT be an input to S6a evaluation: S6a's family
+kind has no `Relation` variant (FR-090-AC-4). At a lowering or proof stage,
+a family that sits out the stage SHALL have an explicit arm that returns
+`unsupported` with a catalog code (ADR-012 §2).
 
 ## Inputs
 
@@ -219,7 +220,7 @@ function-declaration form) can back with a real, non-fabricated
 construction site: `check`, the checked-input parameter, and the
 stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely),
 `package` (AC-1's mention, AC-9 entirely) and the `Relation`
-non-native-evaluability case (AC-6's second sentence) are deleted or never
+non-native-evaluability case (AC-6's first sentence) are deleted or never
 implemented, not stubbed -- see `src/family/mod.rs`'s and
 `src/family/contract.rs`'s own module docs for why each is a real deferral
 rather than an oversight. By Acceptance Criterion, with real trace tags as

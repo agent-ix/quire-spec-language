@@ -55,9 +55,9 @@ of the hook. Each step returns `Ok(e)`. `FamilyOutcome` has no `Eq`, so the
 test matches `e.outcome`'s `Evaluated` arm and compares the kernel `Outcome`
 it holds with `assert_eq!`.
 
-- Step 2: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2)))`, and `e.location` is `None`.
-- Step 3: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite))`.
-- Step 4: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain))`.
+- Step 2: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2)))`, `e.location` is `None`, and `e.losses` is empty.
+- Step 3: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite))`, `e.location` is `Some`, and `e.losses` is empty.
+- Step 4: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain))`, `e.location` is `Some`, and `e.losses` is empty.
 - Step 5: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Incomplete(i))`,
   where `i`'s charge point is `ChargePoint::FunctionCall`.
 - No step returns a `FamilyOutcome::FamilyEvaluated` or `Err(_)`.

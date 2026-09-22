@@ -23,11 +23,13 @@ and a third `FamilyOutcome` arm added for a result nothing produces.
 ## Test Procedure
 
 1. In the test body, write an exhaustive `match` with no `_` arm over the
-   family kind S6a dispatches on. It has one arm per family that implements
+   family kind S6a dispatches on (the S6a family kind). It has one arm per family that implements
    `ReferenceEvaluation`, and no `Relation` arm.
 2. In the test body, write an exhaustive `match` with no `_` arm over a
    `FamilyOutcome<Value>`, with the two arms `Evaluated(_)` and
    `FamilyEvaluated(_)`.
+3. For each variant step 1 names, pass it to the S6a seam's dispatch with a
+   checked package that declares no item of that family, and a meter.
 
 Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 
@@ -38,6 +40,9 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
   variant: adding either variant fails the build with `E0004`.
 - Step 1 has no `Relation` arm, so a build that passes shows S6a's family
   kind has no `Relation` variant.
+- Step 3 compiles, which shows the seam's family parameter is that type.
+  Each call returns `Err(fault)` for the unresolved identity, and none
+  panics.
 
 ## Status
 
