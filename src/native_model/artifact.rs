@@ -6,10 +6,10 @@ use std::io::{self, Write};
 use quire_contract_ir as ir;
 use serde::Serialize;
 
-use super::{failure, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit};
-use crate::{formal_source::FormalSource, Code, Diagnostic};
+use super::{failure, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind, ScalarSite, Unit};
+use crate::{formal_source::FormalSource, Code};
 
-type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+type Result<T> = std::result::Result<T, Box<NativeModelError>>;
 
 struct StringBudget<'a> {
     source: &'a FormalSource,
@@ -268,11 +268,13 @@ pub(super) fn encode(
             } else {
                 Code::InvalidModelBinding
             };
-            failure(
+            let mut error = failure(
                 source,
                 code,
-                format!("formal declaration canonicalization failed: {upstream}"),
-            )
+                "formal declaration canonicalization failed",
+            );
+            error.upstream = Some(Box::new(upstream));
+            error
         })?;
     let declarations = std::str::from_utf8(canonical.bytes().as_slice()).map_err(|_| {
         failure(

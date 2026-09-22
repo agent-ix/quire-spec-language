@@ -6,13 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_contract_ir as ir;
 
 use super::{
-    failure, ModelLimits, NativeModelProfile, NativeRoles, ScalarKind, ScalarRole, ScalarSite,
+    failure, ModelLimits, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind,
+    ScalarRole, ScalarSite,
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation};
-use crate::{Code, Diagnostic};
+use crate::Code;
 
-type Result<T> = std::result::Result<T, Box<Diagnostic>>;
+type Result<T> = std::result::Result<T, Box<NativeModelError>>;
 
 const MAX_SEQUENCE_ITEMS: u32 = 10_000;
 
@@ -230,20 +231,20 @@ fn locus(
     span: &ir::SourceSpan,
 ) -> Result<()> {
     source.to_native(span).map(|_| ()).map_err(|cause| {
-        let location = DeclarationLocation {
+        let mut error = failure(
+            source,
+            Code::InvalidModelBinding,
+            "model declaration locus does not match its exact source",
+        );
+        error.upstream = cause.upstream;
+        error.related.push(DeclarationLocation {
             identity: DeclarationIdentity {
                 owner: environment.owner().clone(),
                 key,
             },
             source: span.clone(),
-        };
-        failure(
-            source,
-            Code::InvalidModelBinding,
-            format!(
-                "model declaration locus does not match its exact source: {cause}; related declaration {location:?}"
-            ),
-        )
+        });
+        error
     })
 }
 
@@ -306,11 +307,13 @@ fn check_loci(
     }
     for object in &roles.objects {
         source.to_native(&object.source).map_err(|cause| {
-            failure(
+            let mut error = failure(
                 source,
                 Code::InvalidModelBinding,
-                format!("object-role locus does not match its exact source: {cause}"),
-            )
+                "object-role locus does not match its exact source",
+            );
+            error.upstream = cause.upstream;
+            error
         })?;
     }
     for operation in &roles.operations {

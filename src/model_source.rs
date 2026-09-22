@@ -6,8 +6,8 @@ mod lower;
 mod wire;
 
 use crate::formal_source::FormalSource;
-use crate::native_model::{ModelLimits, NativeModel, NativeModelProfile, NativeRoles};
-use crate::{located_json, Code, Diagnostic};
+use crate::native_model::{ModelLimits, NativeModel, NativeModelError, NativeModelProfile, NativeRoles};
+use crate::{located_json, Code};
 use decode::decode_model;
 use lower::lower_model;
 use quire_contract_ir as ir;
@@ -124,7 +124,7 @@ pub enum ModelSourceCause {
     UnknownFormat,
     /// Actual native role admission failed.
     #[error("{0}")]
-    Admission(#[from] Box<Diagnostic>),
+    Admission(#[from] Box<NativeModelError>),
 }
 
 impl From<ir::Diagnostic> for ModelSourceCause {
@@ -162,8 +162,8 @@ impl ModelSourceError {
     /// Stable native classification for the actual failing stage.
     pub fn code(&self) -> Code {
         match &self.cause {
-            ModelSourceCause::Decode(located_json::Error::Source(error))
-            | ModelSourceCause::Admission(error) => error.code,
+            ModelSourceCause::Decode(located_json::Error::Source(error)) => error.code,
+            ModelSourceCause::Admission(error) => error.code,
             ModelSourceCause::Decode(located_json::Error::ForeignOccurrence) => {
                 Code::InvalidSourceMap
             }

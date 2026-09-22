@@ -8,6 +8,7 @@ use quire_contract_ir::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolNa
 use serde::Serialize;
 use std::sync::Arc;
 
+use crate::linking::DeclarationLocation;
 use crate::{formal_source::FormalSource, ByteDigest, Code, Diagnostic, Phase};
 
 /// Explicit producer semantics retained in the immutable native artifact.
@@ -239,7 +240,7 @@ impl NativeModel {
         environment: DeclarationEnvironment,
         roles: NativeRoles,
         limits: ModelLimits,
-    ) -> Result<Self, Box<Diagnostic>> {
+    ) -> Result<Self, Box<NativeModelError>> {
         Self::new_with_profile(NativeModelProfile::V1, source, environment, roles, limits)
     }
 
@@ -254,7 +255,7 @@ impl NativeModel {
         environment: DeclarationEnvironment,
         mut roles: NativeRoles,
         limits: ModelLimits,
-    ) -> Result<Self, Box<Diagnostic>> {
+    ) -> Result<Self, Box<NativeModelError>> {
         let limits = limits.bounded();
         admission::check(profile, &source, &environment, &roles, limits)?;
         normalize(&mut roles);
@@ -304,8 +305,53 @@ impl NativeModel {
     }
 }
 
-fn failure(source: &FormalSource, code: Code, message: impl Into<String>) -> Box<Diagnostic> {
-    crate::diagnostic::error(source.source(), code, Phase::Link, 0, 0, message)
+fn failure(source: &FormalSource, code: Code, message: impl Into<String>) -> Box<NativeModelError> {
+    Box::new(NativeModelError {
+        diagnostic: crate::diagnostic::error(source.source(), code, Phase::Link, 0, 0, message),
+        related: Vec::new(),
+        upstream: None,
+    })
+}
+
+/// A native model admission refusal, keeping the related declaration whose
+/// locus disagreed and any upstream `FormalSource` coordinate refusal separate
+/// from the reusable [`Diagnostic`] shape (ADR-011 §6.1: `diagnostic` does not
+/// import `crate::linking` or IR types).
+#[derive(Clone, Debug)]
+pub struct NativeModelError {
+    /// Stable code, native source locus and human-readable explanation.
+    pub diagnostic: Box<Diagnostic>,
+    /// Related formal declarations, sorted by identity and source location.
+    pub related: Vec<DeclarationLocation>,
+    /// Structured upstream `FormalSource` coordinate refusal, when locus checking failed.
+    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+}
+
+impl std::ops::Deref for NativeModelError {
+    type Target = Diagnostic;
+    fn deref(&self) -> &Diagnostic {
+        &self.diagnostic
+    }
+}
+
+impl std::ops::DerefMut for NativeModelError {
+    fn deref_mut(&mut self) -> &mut Diagnostic {
+        &mut self.diagnostic
+    }
+}
+
+impl std::fmt::Display for NativeModelError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.diagnostic, formatter)
+    }
+}
+
+impl std::error::Error for NativeModelError {}
+
+impl From<NativeModelError> for Diagnostic {
+    fn from(error: NativeModelError) -> Self {
+        *error.diagnostic
+    }
 }
 
 fn normalize(roles: &mut NativeRoles) {

@@ -4,7 +4,7 @@
 use super::*;
 use ix_trace_rs::trace;
 
-fn admit(input: Parts, limits: ModelLimits) -> Result<NativeModel, Box<Diagnostic>> {
+fn admit(input: Parts, limits: ModelLimits) -> Result<NativeModel, Box<NativeModelError>> {
     NativeModel::new(input.source, input.environment, input.roles, limits)
 }
 
