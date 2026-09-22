@@ -17,48 +17,26 @@
 //! `missing_declaration` with cause `undeclared-export`, never a guessed node.
 //! A package's local declarations are exactly its exports.
 //!
-//! ## FR-087 relocation (#213 S-3a, owner ruling on QSL-158, 2026-09-21)
+//! ## Module boundary (FR-087, ADR-011 §6.1 layer 3)
 //!
-//! Relocated from `value::library` and `value::package_identity` (ADR-011's
-//! own module-move table, `:744`), which no longer exist. `LibraryLock` and
-//! `resolve_libraries` carry forward unchanged in shape (owner ruling item
-//! 3(a)); `PackageId`, `ImportDeclaration`, `LibraryPackage` and the rest of
-//! `value::library`'s public surface likewise. Two names do not carry
-//! forward in their pre-move shape:
+//! This module owns `LibraryLock`/`resolve_libraries` and the rest of the
+//! FR-307 public surface: identities (`PackageId`, `LibraryName`),
+//! declarations (`ImportDeclaration`, `LibraryPackage`), the resolved lock
+//! (`Selection`, `LibraryLock`) and refusal reporting (`LibraryCause`,
+//! `LibraryRefusal`).
 //!
-//! - `ExportIdentity{package, node: NodeKey}` is gone, not renamed: T-3's
-//!   [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` is the
-//!   module's sole cross-package node reference after relocation (owner
-//!   ruling item 3(c)). It relocates here from its temporary home in
-//!   `package::node_key` (the typestate lane's own stub PR against this
-//!   ticket, landed only so that lane had a stable, already-compiling
-//!   `PackageNodeKey` to build `CheckedGraph`/`CheckedPackage` against
-//!   without waiting on this slice), completing the `ExportIdentity` ->
-//!   `PackageNodeKey` call-site migration this slice owns. `ImportView` is
-//!   the typestate lane's own, separate PR against this same ticket
-//!   (ADR-013 T-1's shell); this module does not define it. `node`'s type,
-//!   `crate::digest::WireNodeId`, is likewise that lane's relocation (from
-//!   `replay::identity`, per ADR-011 `:588`'s `F` foundation-layer
-//!   placement), not this module's.
-//! - `resolve_name` does not relocate (owner ruling item 3(b)): name
-//!   resolution against an imported dependency's exports is E3's own
-//!   resolution over an `ImportView`, performed by the importing package's
-//!   own check stage, never by `library` calling back into itself. Removed,
-//!   not deprecated or aliased (no migration/fallback layer for prerelease
-//!   software):
+//! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
+//! is the sole cross-package node reference this module defines. `node`'s
+//! type, `crate::digest::WireNodeId`, is the `F` foundation layer's own
+//! type (ADR-011 `:588`), not this module's. `ImportView` (ADR-013 T-1) is
+//! a different module's type; this module does not define it.
 //!
-//! ```compile_fail,E0432
-//! use quire_spec_language::library::resolve_name;
-//! ```
-//! ```compile_fail,E0432
-//! use quire_spec_language::library::ExportIdentity;
-//! ```
-//! ```compile_fail,E0432
-//! use quire_spec_language::library::NameReference;
-//! ```
-//! ```compile_fail,E0432
-//! use quire_spec_language::library::NameRefusal;
-//! ```
+//! Name resolution against an imported dependency's exports -- binding a
+//! qualified reference's `a::Name` qualifier, and reporting a missing or
+//! ambiguous name -- is E3's own resolution over an `ImportView`, performed
+//! by the importing package's own check stage (FR-087-AC-4), never by
+//! `library` calling back into itself. This module names none of
+//! `resolve_name`, `ExportIdentity`, `NameReference` or `NameRefusal`.
 
 use std::collections::BTreeMap;
 
@@ -126,14 +104,6 @@ impl PackageId {
 /// package, compiled from its digest-addressed source) or at E9 (`replay`'s
 /// recompiled package) -- never by a conversion function, and none is
 /// defined here.
-///
-/// Relocated from its temporary home in `package::node_key` (the typestate
-/// lane's own stub PR against this ticket, landed so that lane had a
-/// stable, already-compiling `PackageNodeKey` to build `CheckedGraph`/
-/// `CheckedPackage` against without waiting on this relocation slice): this
-/// is that same move into `library` with no shape change, completing the
-/// `ExportIdentity` -> `PackageNodeKey` call-site migration this slice owns
-/// (owner ruling item 3(c)).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PackageNodeKey {
     /// The verified package's own content-addressed identity.
@@ -208,8 +178,6 @@ pub enum LibraryCause {
     ByteDigestMismatch,
     /// No library of the imported identity is supplied.
     MissingSelection,
-    /// A name has no declaration in scope.
-    MissingName,
     /// Two imports bind one qualifier.
     AmbiguousName,
     /// Two dependency paths reach one library with different selections.
@@ -234,7 +202,6 @@ impl LibraryCause {
             Self::RevisionMismatch => "revision-mismatch",
             Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::MissingSelection => "missing-selection",
-            Self::MissingName => "missing-name",
             Self::AmbiguousName => "ambiguous-name",
             Self::ConflictingDefinition => "conflicting-definition",
             Self::DefinitionCycle => "definition-cycle",
@@ -403,6 +370,67 @@ impl LibraryRefusal {
             | Self::MissingImport { .. } => None,
         }
     }
+
+    /// FR-087-AC-12's classification: every variant classifies, honestly,
+    /// to exactly one of an ADR-011 I2 graph rule, the §4 binding's
+    /// condition 2 or 3, or E3 name resolution, or to `DuplicatePackageId`'s
+    /// own named exception outside all four.
+    pub fn class(&self) -> RefusalClass {
+        match self {
+            // The §4 binding's condition 2 itself (the digest recomputation
+            // and comparison), and the two per-package admission checks
+            // `verify_package` raises alongside it (FR-087-AC-3: the same
+            // reused function, after condition 2's own comparison has
+            // already completed).
+            Self::PackageIdMismatch { .. }
+            | Self::InvalidPreimage { .. }
+            | Self::UndeclaredExport { .. } => RefusalClass::BindingCondition(2),
+            // The §4 binding's condition 3: the identity is present: only
+            // the lock-recorded version disagrees.
+            Self::StaleDependency {
+                cause: StaleCause::RevisionMismatch,
+                ..
+            } => RefusalClass::BindingCondition(3),
+            // E3 name resolution: moves conceptually with the removed
+            // `resolve_name` (owner ruling item 3(b)).
+            Self::InvalidQualifier { .. } => RefusalClass::E3NameResolution,
+            // ADR-011 `:203-210`'s first I2 rule: a missing or unlisted
+            // identity.
+            Self::MissingImport { .. }
+            | Self::StaleDependency {
+                cause: StaleCause::ByteDigestMismatch,
+                ..
+            } => RefusalClass::I2Rule(1),
+            // I2's second rule: two dependency paths reach one identity with
+            // different selections.
+            Self::ConflictingDefinition { .. } => RefusalClass::I2Rule(2),
+            // I2's third rule: the import graph has a cycle.
+            Self::ImportCycle { .. } => RefusalClass::I2Rule(3),
+            // The named exception: conflicting metadata over identical
+            // identity content is a precondition on the supplied pool
+            // itself, not an I2/§4/E3 question.
+            Self::DuplicatePackageId(_) => RefusalClass::SuppliedPoolPrecondition,
+        }
+    }
+}
+
+/// FR-087-AC-12's classification of a [`LibraryRefusal`]: exactly one of an
+/// ADR-011 I2 graph rule, the §4 binding's condition 2 or 3, E3 name
+/// resolution, or the one named exception outside all four
+/// (`DuplicatePackageId`, a precondition on the supplied pool itself).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RefusalClass {
+    /// One of ADR-011 `:203-210`'s three I2 graph rules (1, 2 or 3).
+    I2Rule(u8),
+    /// The §4 binding's condition 2 or 3.
+    BindingCondition(u8),
+    /// E3 name resolution (moves conceptually with the removed
+    /// `resolve_name`, owner ruling item 3(b)).
+    E3NameResolution,
+    /// `DuplicatePackageId`'s own reasoning: conflicting metadata over
+    /// identical identity content, a precondition on the supplied pool
+    /// itself, not an I2/§4/E3 question.
+    SuppliedPoolPrecondition,
 }
 
 /// Recompute `package`'s `package_id` from its identity preimage, then
@@ -428,12 +456,10 @@ fn verify_package(package: &LibraryPackage) -> Result<ProjectedDeclarations, Lib
         })
 }
 
-/// One selected package with its derived export node keys and the first
-/// dependency path that reached it.
+/// One selected package and the first dependency path that reached it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Selected {
     package: LibraryPackage,
-    exports: ProjectedDeclarations,
     path: ImportPath,
 }
 
@@ -458,17 +484,17 @@ pub fn resolve_libraries(
     root: &LibraryPackage,
     supplied: &[LibraryPackage],
 ) -> Result<LibraryLock, LibraryRefusal> {
-    let root_exports = verify_package(root)?;
-    let mut by_id: BTreeMap<PackageId, (&LibraryPackage, ProjectedDeclarations)> = BTreeMap::new();
+    verify_package(root)?;
+    let mut by_id: BTreeMap<PackageId, &LibraryPackage> = BTreeMap::new();
     for package in supplied {
-        let exports = verify_package(package)?;
+        verify_package(package)?;
         match by_id.get(&package.package_id) {
-            Some((existing, _)) if *existing != package => {
+            Some(existing) if *existing != package => {
                 return Err(LibraryRefusal::DuplicatePackageId(package.package_id));
             }
             Some(_) => {}
             None => {
-                by_id.insert(package.package_id, (package, exports));
+                by_id.insert(package.package_id, package);
             }
         }
     }
@@ -512,13 +538,13 @@ pub fn resolve_libraries(
                 paths: [existing.path.clone(), path],
             });
         }
-        let found = by_id.get(&import.package_id).filter(|(package, _)| {
+        let found = by_id.get(&import.package_id).filter(|package| {
             package.library == import.library && package.version == import.version
         });
-        let Some((package, exports)) = found else {
+        let Some(package) = found else {
             let same_id = by_id
                 .get(&import.package_id)
-                .is_some_and(|(package, _)| package.library == import.library);
+                .is_some_and(|package| package.library == import.library);
             let same_identity = supplied
                 .iter()
                 .any(|package| package.library == import.library);
@@ -539,7 +565,6 @@ pub fn resolve_libraries(
             import.library.clone(),
             Selected {
                 package: (*package).clone(),
-                exports: exports.clone(),
                 path: path.clone(),
             },
         );
@@ -552,7 +577,6 @@ pub fn resolve_libraries(
     Ok(LibraryLock {
         root: Selected {
             package: root.clone(),
-            exports: root_exports,
             path: vec![root.library.clone()],
         },
         selected,
