@@ -177,7 +177,8 @@ impl CheckedClauseKind {
     }
 
     /// Every variant, for a totality/injectivity scan over the whole
-    /// vocabulary, walked from [`Self::next`]'s own exhaustive chain. The
+    /// vocabulary, walked from `Self::next`'s own exhaustive chain (private,
+    /// so not linked here). The
     /// trailing `debug_assert` closes the one gap `next`'s exhaustiveness
     /// alone cannot: a variant added to the chain but not to this walk
     /// would leave `next(Some(d))` still `Some(_)`, which fails loudly
@@ -497,7 +498,8 @@ impl SumVariants {
 /// shape, since the kernel `ValueType::Composite(NodeKey)` needs none -- the
 /// node's own id carries the declaration's own pre-existing key
 /// (`composite.key()`, `value/composite.rs`) unchanged into this module's
-/// checked-node-id space ([`declaration_node_key`]), the same identity
+/// checked-node-id space (`declaration_node_key`, private -- not linked
+/// here), the same identity
 /// `type_named` and field types already read, reused rather than minted
 /// afresh (PR #300 review round 2, HIGH-1).
 #[derive(Clone, Debug, Eq, PartialEq)]
