@@ -10,7 +10,7 @@ for the full ConfigVersion/parent-graph workflow.
 ## Public API and ownership
 
 `link(unit: ParsedUnit, environments: &[DeclarationEnvironment], limits: LinkLimits)`
-returns `Result<LinkedPackage<'_>, Box<Diagnostic>>`. LinkedPackage owns the exact
+returns `Result<LinkedPackage<'_>, Box<LinkingError>>`. LinkedPackage owns the exact
 parsed source and borrows immutable environments for its lifetime. It exposes
 read-only source/unit, selected models, clauses and resolved occurrence records.
 No borrowed input is mutated or cloned into a second type authority.
@@ -98,12 +98,14 @@ Traversal checks the next node/depth before visiting it. A refused request owns
 no externally observable partially constructed LinkedPackage and caches no
 request state for later calls.
 
-The existing Diagnostic gains a link phase, codes missing_import,
+The existing Diagnostic gains a link phase and codes missing_import,
 stale_dependency, ambiguous_declaration, missing_declaration and
-invalid_model_binding, plus structured related formal declaration locations.
-Legacy diagnostics initialize related locations empty. Canonicalization's
-upstream diagnostic is retained as structured context if it fails; resource
-exhaustion maps to native resource_exhausted, not a syntax error or Boolean.
+invalid_model_binding. Structured related formal declaration locations and a
+canonicalization upstream diagnostic, when it fails, are retained as typed
+sibling fields on `LinkingError` (ADR-011 §6.1: the foundation-layer
+`Diagnostic` does not import `crate::linking` or IR types), not on
+`Diagnostic` itself. Legacy diagnostics initialize related locations empty.
+Resource exhaustion maps to native resource_exhausted, not a syntax error or Boolean.
 CLI parse/format behavior remains its existing contract; no new CLI reader is
 introduced by this library milestone.
 

@@ -261,7 +261,8 @@ source, scoped declarations and typed formal provenance. Ten public linker tests
 qualify TC-020–024/030–034; 48 default tests and three private audit tests pass
 on Rust 1.98.1, alongside strict Clippy and rustdoc. Code::all now includes the
 five specified linkage codes, and the legacy error propagation test checks
-empty related/upstream context. No CLI linking/typing/evaluation is implied.
+the plain `Diagnostic` envelope's code and source identity. No CLI
+linking/typing/evaluation is implied.
 
 Actual Quire coverage reports FR-005 5/5, FR-013 6/6 and TM-003 10/15 backed.
 FR-006's five cases remain planned. Current catalog diagnostics also identify

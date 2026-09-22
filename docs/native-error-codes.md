@@ -63,12 +63,19 @@ reused; prose may change without changing classification.
 | ambiguous_dispatch | FR-151 dispatch linking found no, or several undominated, applicable candidates for a closed subtype. |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
-source_map, link, check or validate. Related formal declaration locations are structured fields;
-an upstream IR canonicalization or proof failure is retained in the optional upstream
-field. Runtime diagnostics additionally retain the exact actual/expected artifact,
-authored clause, observation and typed value path in `runtime`. Earlier phases
-leave that field empty. These fields do not change the
-existing syntax CLI output. Resource exhaustion is incomplete, never false. This
+source_map, link, check or validate. `Diagnostic` itself carries only the
+phase, code, source locus and message (ADR-011 §6.1: the foundation layer
+does not import `crate::linking` or IR types). Related formal declaration
+locations and an upstream IR canonicalization or proof failure are retained
+as typed sibling fields on the owning stage's own error type instead —
+`LinkingError`, `CheckingError`, `FormalSourceError` and `NativeModelError`
+each pair a `Box<Diagnostic>` with `related`/`upstream` as applicable — and
+are internal to that stage, not part of the CLI/JSON output. Runtime
+validation diagnostics are the one exception: `ValidationDiagnostic` pairs
+its `Box<Diagnostic>` with the exact actual/expected artifact, authored
+clause, observation and typed value path in `runtime`, and that field is
+serialized in the CLI's `native-run-result/1` output for `validate`-stage
+diagnostics. Resource exhaustion is incomplete, never false. This
 six-code contract is carried by the `quire-spec` binary; the separate
 `fixture-audit` target keeps its own [audit codes](audit-error-codes.md) and is
 not on this contract. On FR-301's six-code contract, `quire-spec` exits 0 for a

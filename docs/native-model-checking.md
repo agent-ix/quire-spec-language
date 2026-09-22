@@ -13,14 +13,14 @@ ScalarSite, ScalarKind, Unit, ObjectRole, OperationRole, Frame and ModelLimits.
 ```rust
 NativeModel::new(source: FormalSource, environment: DeclarationEnvironment,
                  roles: NativeRoles, limits: ModelLimits)
-    -> Result<NativeModel, Box<Diagnostic>>
+    -> Result<NativeModel, Box<NativeModelError>>
 NativeModel::source(&self) -> &FormalSource
 NativeModel::environment(&self) -> &DeclarationEnvironment
 NativeModel::roles(&self) -> &NativeRoles
 NativeModel::artifact_bytes(&self) -> &[u8]
 NativeModel::digest(&self) -> ByteDigest
 link_native(unit: ParsedUnit, models: &[NativeModel], limits: LinkLimits)
-    -> Result<LinkedPackage<'_>, Box<Diagnostic>>
+    -> Result<LinkedPackage<'_>, Box<LinkingError>>
 ```
 
 The complete environment and every role are validated before constructing a
@@ -133,11 +133,14 @@ the inventory, even if their model source identities differ.
 
 Model metadata/source inconsistency returns invalid_model_binding; a known
 representation outside this binding profile returns unsupported_construct.
-Both use the link phase at the model source's byte-zero locus, with original
-related IR declaration loci where available. Source-coordinate validation
-failures retain their actual structured upstream cause where one exists.
-Existing missing/stale/ambiguous import codes remain distinct. Limits return
-resource_exhausted. None of these refusals exposes a partially admitted model.
+Both use the link phase at the model source's byte-zero locus. Original
+related IR declaration loci, where available, and a source-coordinate
+validation failure's actual structured upstream cause, where one exists, are
+retained as typed sibling fields on `NativeModelError` (ADR-011 §6.1: the
+foundation-layer `Diagnostic` does not import `crate::linking` or IR types),
+not on `Diagnostic` itself. Existing missing/stale/ambiguous import codes
+remain distinct. Limits return resource_exhausted. None of these refusals
+exposes a partially admitted model.
 
 ## Checking interface
 
@@ -146,7 +149,7 @@ CheckedPackage, CheckedClause and native type/proof correspondence views.
 
 ```rust
 check(package: LinkedPackage<'a>, bindings: CheckBindings, limits: CheckLimits)
-    -> Result<CheckedPackage<'a>, Box<Diagnostic>>
+    -> Result<CheckedPackage<'a>, Box<CheckingError>>
 ```
 
 CheckBindings owns the exact native FormalSource and a complete vector of
