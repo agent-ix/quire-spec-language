@@ -604,10 +604,11 @@ and its three checking methods to it, and relocates `CheckedPackage` to
 FR-068-AC-2 for `CheckedPackage` only (unchanged for `CheckedExpression`
 and `CheckedFunction`), narrows FR-068-AC-10 to `CheckedExpression`'s
 re-export alone (FR-087-AC-9 covers `CheckedPackage`'s new re-export from
-`package`), and amends FR-068-AC-6's ten-module forbidden list to move
-`library` (FR-087's own new layer-3 module, ordered before `check` core) to
-a bounded permitted tier (c): exactly `ImportView` and `LibraryLock`
-(read-only), for E3's own name resolution. This closes the
+`package`), and amends FR-068-AC-6's forbidden list (ten modules
+originally; eight after this amendment and FR-074's own removal of `model`
+together) to move `library` (FR-087's own new layer-3 module, ordered
+before `check` core) to a bounded permitted tier (c): exactly `ImportView`
+and `LibraryLock` (read-only), for E3's own name resolution. This closes the
 `CheckedPackage`-placement half of QSL-167;
 its separate §6.2 refusal-row finding is untouched and stays open. TC-171,
 TC-172 and TC-175 (this requirement's own tests) are amended in place by
