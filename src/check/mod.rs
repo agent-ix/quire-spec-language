@@ -77,6 +77,7 @@ mod checked_dispatch;
 mod facts;
 mod family;
 mod field_refinement;
+mod identity;
 mod ir;
 mod refusal;
 mod termination;
@@ -133,6 +134,11 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use identity::{
+    mint_type_declaration_identity, mint_variant_id, to_kernel_value_type, CheckedClauseKind,
+    CheckedTypeNode, EmptyQualifiedName, Frame, FrameSubjects, ModelCorrespondence, QualifiedName,
+    ResolvedFrameSubjects, ScalarShape, SumVariant,
+};
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
@@ -194,6 +200,14 @@ pub struct CheckedGraph {
     /// declaration and function-application occurrence this package
     /// checked.
     occurrences: family::OccurrenceMap<Location>,
+    /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
+    /// checking recorded, read only through [`Self::resolve_declaration`] --
+    /// a node-id-keyed accessor, never a name-keyed one (R-06). Always empty
+    /// today: no #213 slice before S-3b gives the checker a frame/model
+    /// declaration to record one from (FR-088-CON-2 leaves FR-340's frame
+    /// semantics to #210); the field exists now so a consumer already has a
+    /// stable accessor to read it through once that checking exists.
+    model_correspondence: identity::ModelCorrespondence,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -667,11 +681,24 @@ impl PackageDeclarations {
             functions,
             dispatch_tables,
             occurrences,
+            model_correspondence: identity::ModelCorrespondence::default(),
         })
     }
 }
 
 impl CheckedGraph {
+    /// ADR-013 O-04: `node`'s `DeclarationKey`, read only from the model
+    /// correspondence this package's own checking recorded (FR-088-AC-2).
+    /// Node-id-keyed, never name-keyed (R-06/FR-088-AC-5): `CheckedGraph`
+    /// exposes no accessor that takes a name and returns a node id or
+    /// declaration.
+    pub fn resolve_declaration(
+        &self,
+        node: quire_exact::NodeKey,
+    ) -> Option<&crate::model::key::DeclarationKey> {
+        self.model_correspondence.resolve(node)
+    }
+
     /// Check a standalone expression over `parameters`, against `expected`
     /// when given, as a function or operation body (`ClauseKind::Body`).
     /// `pre(...)` refuses `wrong_snapshot`/`wrong-anchor` here: this is not
