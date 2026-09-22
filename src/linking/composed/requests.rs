@@ -8,11 +8,55 @@
 //! unfinished.
 //!
 //! Nothing here checks, proves or executes a clause body. `Admitted` means only
-//! that the request may be handed downstream; the selected backend's declared
-//! support never rewrites the admitted source, profile or model selection.
+//! that the request may be handed downstream for further processing; whether a
+//! backend actually supports the claim is decided elsewhere (the `#185`
+//! registry and `quire-contract-codegen`'s `negotiate_*`), never here.
+//!
+//! ## FR-077: no backend negotiation (ADR-010 OBS-003, ADR-012 §10)
+//!
+//! [`report`] takes no `Backend` parameter and performs no backend
+//! negotiation: it records every requested pair as data
+//! (declaration, capability kind, `required` flag, request index) and
+//! reports only the admission-level dispositions that do not depend on
+//! backend state (`Admitted`, `InapplicableCapability`, `RefusedSubject`,
+//! `UnfinishedSubject`, `UnknownSubject`). The former backend-dependent
+//! dispositions `UnsupportedCapability` and `UnsupportedFamily` are
+//! removed, unconditionally: candidates and routing live only in the
+//! `#185` registry (`crate::route`), and every disposition that depends on
+//! backend support is settled only by `quire-contract-codegen`'s
+//! `negotiate_*` (quire-contract-codegen#86).
+//!
+//! ## One capability type (ADR-010 OBS-012)
+//!
+//! [`Request::capability`] carries [`crate::check::Capability`], the
+//! canonical ten-label FR-290 type (ADR-013 O-19), not a local request-label
+//! enum: OBS-012 records that "the QSL four-variant request label enum is
+//! replaced by the #213 type." [`families`] maps each of the ten kinds onto
+//! the QSL declaration [`Family`] it applies to. This mapping is
+//! **provisional**: it is inferred from FR-057's admitted-vocabulary table
+//! (its "FR-290 family" column) plus the retired four-variant enum's own
+//! `FiniteReplay` -> Protocol case, not itself published by any FR. Which
+//! family records which `Requirements` is decided in #210
+//! (agent-ix/quire-spec-language#210); this mapping should be revisited once
+//! that lands.
+//!
+//! The mapping already has a concrete effect: a *required* capability
+//! request whose kind is not in the requested declaration's `families()` set
+//! becomes [`Disposition::InapplicableCapability`], and a required
+//! inapplicable request makes the whole [`Report`] unavailable. For example,
+//! a required `value-validity` request against a `State` or `Temporal`
+//! declaration is `InapplicableCapability` under the current mapping, since
+//! [`Capability::ValueValidity`] names only [`Family::Predicate`].
+//!
+//! Checking a declaration's body under its semantic family is language
+//! admission, not a capability kind (FR-057, "Family-body admission"): no
+//! capability request selects or withholds a body, so
+//! [`Report::admitted_bodies`] is computed from binding disposition alone,
+//! independent of `requests`.
 
 use super::binding;
 use super::{DeclarationId, SyntaxNamespace};
+use crate::check::Capability;
 use crate::syntax::composed::DeclarationKind;
 
 /// The declared semantic family of a requested declaration.
@@ -28,36 +72,41 @@ pub enum Family {
     Protocol,
 }
 
-/// A requested claim, independent of which declaration it is requested for.
+/// Declaration [`Family`] values for which `capability` is defined at all,
+/// in stable order.
 ///
-/// These are request labels consumed by a later stage. Selecting one grants no
-/// checking, lowering or execution here.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum Capability {
-    /// Static family admission of the declaration's own body.
-    FamilyCheck,
-    /// A state operation evaluated against supplied assessment inputs.
-    StateOperation,
-    /// Finite replay of a choreography declaration.
-    FiniteReplay,
-    /// Independent projection of one temporal obligation over its own window.
-    TemporalProjection,
-}
-
-impl Capability {
-    /// Families for which this claim is defined at all, in stable order.
-    pub fn families(self) -> &'static [Family] {
-        match self {
-            Self::FamilyCheck => &[
-                Family::Predicate,
-                Family::State,
-                Family::Temporal,
-                Family::Protocol,
-            ],
-            Self::StateOperation => &[Family::State],
-            Self::FiniteReplay => &[Family::Protocol],
-            Self::TemporalProjection => &[Family::Temporal],
-        }
+/// **Provisional**, pending #210 (agent-ix/quire-spec-language#210), which
+/// owns which family records which `Requirements`: inferred from FR-057's
+/// admitted-vocabulary table (its "FR-290 family" column) plus the retired
+/// four-variant enum's own `FiniteReplay` -> Protocol case, not itself
+/// published by any FR. `value` -> [`Family::Predicate`] (a predicate is "a
+/// reusable Boolean declaration", exactly a value-validity claim's own
+/// family); `state-model` -> [`Family::State`]; `finite-replay` ->
+/// [`Family::Protocol`] (only a choreography declaration is replayed);
+/// `temporal-trace` -> [`Family::Temporal`]; every other listed family is
+/// `protocol` -> [`Family::Protocol`]. No kind is defined for more than one
+/// [`Family`]: each of the ten [`Capability`] kinds names exactly one
+/// FR-290 family. QSL's [`Family`] has four members where FR-290 has five
+/// (`value`, `state-model`, `finite-replay`, `temporal-trace`, `protocol`
+/// collapse the two protocol-shaped rows into one [`Family::Protocol`]),
+/// so this is not a 1:1 mapping onto FR-290's own family set.
+///
+/// A required request whose [`Capability`] is not in the requested
+/// declaration's `families()` set becomes
+/// [`Disposition::InapplicableCapability`]: for example, a required
+/// `value-validity` request against a `State` or `Temporal` declaration.
+pub fn families(capability: Capability) -> &'static [Family] {
+    match capability {
+        Capability::ValueValidity => &[Family::Predicate],
+        Capability::OperationContract => &[Family::State],
+        Capability::FiniteReplay => &[Family::Protocol],
+        Capability::TemporalSatisfaction => &[Family::Temporal],
+        Capability::GlobalConformance
+        | Capability::Monitorability
+        | Capability::LocalProjection
+        | Capability::Refinement
+        | Capability::Realizability
+        | Capability::Composition => &[Family::Protocol],
     }
 }
 
@@ -72,24 +121,15 @@ pub struct Request {
     pub required: bool,
 }
 
-/// The selected backend's own declaration of what it admits.
-///
-/// This is the caller's statement about a downstream implementation. It selects
-/// dispositions; it never selects or rewrites the static subject.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Backend<'a> {
-    /// Selected backend implementation identity.
-    pub identity: &'a str,
-    /// Claims this backend declares it implements.
-    pub capabilities: &'a [Capability],
-    /// Semantic families whose bodies this backend declares it admits.
-    pub families: &'a [Family],
-}
-
 /// Assessment inputs consumed only by later stages.
 ///
 /// The linker accepts none of these. They are retained as assessment provenance
 /// so that changing one is visible without touching any static component.
+///
+/// FR-077: this type carries no backend-shaped field. A selected backend's
+/// declared support is not an assessment input the composed linker reads;
+/// it is computed downstream by the `#185` registry and settled by
+/// `quire-contract-codegen`'s `negotiate_*`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Assessment<'a> {
     /// Selected finite population, when the caller selected one.
@@ -98,8 +138,6 @@ pub struct Assessment<'a> {
     pub window: Option<&'a str>,
     /// Selected observation trace.
     pub trace: Option<&'a str>,
-    /// Selected backend and its declared support.
-    pub backend: Backend<'a>,
 }
 
 /// Retained assessment provenance, separate from the static subject.
@@ -111,26 +149,23 @@ pub struct AssessmentProvenance {
     pub window: Option<String>,
     /// Selected observation trace.
     pub trace: Option<String>,
-    /// Selected backend implementation identity.
-    pub backend: String,
-    /// Claims the selected backend declared.
-    pub capabilities: Vec<Capability>,
-    /// Families the selected backend declared it admits.
-    pub families: Vec<Family>,
 }
 
 /// One requested pair's typed disposition. Each cause is distinct; none of them
 /// asserts that a clause body was checked, proved or executed.
+///
+/// FR-077 (ADR-010 OBS-003): this type carries no `UnsupportedCapability`
+/// and no `UnsupportedFamily` variant. Whether a backend supports a claim
+/// is not decided here; `Admitted` means only that the pair passed the
+/// admission-level checks this module can make without reading backend
+/// state (the subject bound, and the claim applies to the declaration's
+/// family).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Disposition {
-    /// The subject bound its names and the backend declares this claim and
-    /// family. Downstream checking still applies in full.
+    /// The subject bound its names and the claim applies to this
+    /// declaration's family. Downstream checking, and any backend
+    /// negotiation, still apply in full.
     Admitted,
-    /// The claim is recognized and applicable, but the selected backend does
-    /// not declare it.
-    UnsupportedCapability,
-    /// The backend declares the claim but does not admit this family's bodies.
-    UnsupportedFamily(Family),
     /// The claim is not defined for this declaration's family at all.
     InapplicableCapability(Family),
     /// Static binding refused this declaration; no claim over it can proceed.
@@ -201,6 +236,7 @@ pub struct Report {
     assessment: AssessmentProvenance,
     responses: Vec<Response>,
     aggregate: Aggregate,
+    admitted_bodies: Vec<DeclarationId>,
 }
 
 impl Report {
@@ -239,18 +275,18 @@ impl Report {
         self.aggregate
     }
 
-    /// Declarations whose bodies a downstream checker may receive: exactly the
-    /// admitted family-check requests. An unsupported family never appears
-    /// here, so no unsupported body can be represented as checked.
+    /// Declarations whose bodies a downstream checker may receive: every
+    /// declaration whose names resolved (binding disposition
+    /// `NamesResolved`), independent of `requests` (FR-057, "Family-body
+    /// admission": checking a declaration's body is language admission, not
+    /// a capability kind, and no capability request selects or withholds
+    /// it -- a declaration with no capability request over it at all is
+    /// still an admitted body here, and one whose only requests are
+    /// inapplicable or unrequired is unaffected). A refused or unfinished
+    /// subject never appears here, so no such body can be represented as
+    /// checked.
     pub fn admitted_bodies(&self) -> Vec<DeclarationId> {
-        self.responses
-            .iter()
-            .filter(|response| {
-                response.request.capability == Capability::FamilyCheck
-                    && response.disposition.admitted()
-            })
-            .map(|response| response.request.declaration)
-            .collect()
+        self.admitted_bodies.clone()
     }
 
     /// Check that this report retains exactly the consumer's requested
@@ -288,9 +324,15 @@ pub fn family(namespace: &SyntaxNamespace, declaration: DeclarationId) -> Option
 /// Record a disposition for every requested clause/capability pair.
 ///
 /// Requests are answered in the caller's order and none is dropped or merged.
-/// The selected backend's declared support and the supplied assessment inputs
-/// are retained as provenance; neither is consulted by, or written back into,
-/// the static binding this report reads.
+/// The supplied assessment inputs are retained as provenance; they are not
+/// consulted by, or written back into, the static binding this report reads.
+///
+/// FR-077: this function takes no backend argument and reads no backend
+/// state. It reports each pair's admission-level disposition only
+/// (`Admitted` when the subject bound and the claim applies to the
+/// declaration's family); whether any backend actually supports the claim
+/// is computed downstream by the `#185` registry (`crate::route`) and
+/// settled by `quire-contract-codegen`'s `negotiate_*`.
 pub fn report(
     bound: &binding::Report<'_>,
     assessment: &Assessment<'_>,
@@ -305,16 +347,8 @@ pub fn report(
             (_, Some(binding::Disposition::Refused)) => Disposition::RefusedSubject,
             (_, Some(binding::Disposition::Unfinished)) => Disposition::UnfinishedSubject,
             (Some(family), Some(binding::Disposition::NamesResolved)) => {
-                if !request.capability.families().contains(&family) {
+                if !families(request.capability).contains(&family) {
                     Disposition::InapplicableCapability(family)
-                } else if !assessment
-                    .backend
-                    .capabilities
-                    .contains(&request.capability)
-                {
-                    Disposition::UnsupportedCapability
-                } else if !assessment.backend.families.contains(&family) {
-                    Disposition::UnsupportedFamily(family)
                 } else {
                     Disposition::Admitted
                 }
@@ -332,16 +366,81 @@ pub fn report(
         .map_or(Aggregate::Attainable, |response| Aggregate::Unavailable {
             response,
         });
+    // FR-057 "Family-body admission": every declaration whose names
+    // resolved is an admitted body, unconditionally -- independent of
+    // `requests` above, which may ask for no capability at all over a
+    // given declaration, or only for one that turns out inapplicable.
+    let admitted_bodies = bound
+        .declarations()
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                bound.disposition(declaration.declaration()),
+                Some(binding::Disposition::NamesResolved)
+            )
+        })
+        .map(|declaration| declaration.declaration())
+        .collect();
     Report {
         assessment: AssessmentProvenance {
             population: assessment.population.map(str::to_owned),
             window: assessment.window.map(str::to_owned),
             trace: assessment.trace.map(str::to_owned),
-            backend: assessment.backend.identity.to_owned(),
-            capabilities: assessment.backend.capabilities.to_vec(),
-            families: assessment.backend.families.to_vec(),
         },
         responses,
         aggregate,
+        admitted_bodies,
     }
 }
+
+/// TC-199 (FR-077-AC-1, FR-077-AC-2): `Backend` no longer exists in this
+/// module -- `report` takes no parameter of a `Backend`-shaped type, and no
+/// such value can be constructed to try to pass one in.
+///
+/// ```compile_fail,E0432
+/// use quire_spec_language::linking::composed::requests::Backend;
+/// ```
+///
+/// A positive control: the surviving `Assessment` type still imports
+/// cleanly, so the failure above is the removed name, not a broken module
+/// path.
+///
+/// ```
+/// use quire_spec_language::linking::composed::requests::Assessment;
+/// fn _use(_: Assessment<'_>) {}
+/// ```
+///
+/// TC-199 (FR-077/FR-077-AC-1, FR-077-AC-2): the disposition type carries no
+/// `UnsupportedCapability` and no `UnsupportedFamily` variant.
+///
+/// ```compile_fail,E0599
+/// use quire_spec_language::linking::composed::requests::Disposition;
+/// fn _use() { let _ = Disposition::UnsupportedCapability; }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use quire_spec_language::linking::composed::requests::{Disposition, Family};
+/// fn _use() { let _ = Disposition::UnsupportedFamily(Family::Temporal); }
+/// ```
+//
+// This item carries the doctests above rather than an ordinary `#[test]`
+// function because their evidence is inherently compile-time (FR-077-AC-1/2
+// require that certain code *fails to compile*, not that it panics at
+// runtime) -- a `#[cfg(doctest)]`-gated item is this repository's existing
+// pattern for scoping such doctests out of normal builds (they document no
+// public API and would otherwise pollute rustdoc output).
+//
+// The invented "Tracing: TC-199 / ACs: ..." doc-comment header this item
+// carried before (PR #305 review round 2, finding 6) is not how this
+// repository traces anything: every other traced item uses the real
+// `#[trace(...)]` attribute from `ix-trace-rs`, which quire-rs's FR-051
+// parses statically to mint `verifies` relations regardless of what kind of
+// item it decorates (see `ix_trace_rs::trace`'s own docs -- the marker must
+// be the bare, unqualified `#[trace(...)]` form, imported with `use
+// ix_trace_rs::trace;`, since the path-qualified form binds nothing).
+#[cfg(doctest)]
+use ix_trace_rs::trace;
+
+#[cfg(doctest)]
+#[trace("TC-199", "FR-077-AC-1", "FR-077-AC-2")]
+struct FR077Doctests;

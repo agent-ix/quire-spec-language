@@ -9,13 +9,14 @@ use crate::support::runtime_setup as setup;
 use crate::support::package_vector_setup;
 
 use ix_trace_rs::trace;
+use quire_spec_language::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
 use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
 use quire_spec_language::linking::composed::requests::{
-    self, Aggregate, Assessment, Backend, Capability, Disposition, Family, InventoryGap, Request,
+    self, Aggregate, Assessment, Disposition, Family, InventoryGap, Request,
 };
 use quire_spec_language::linking::composed::subject::{
     BuildProvenance, ComponentKind, StaticSubject,
@@ -177,25 +178,18 @@ fn subject_of(model: &NativeModel, state: R) -> StaticSubject {
     )
 }
 
-fn backend<'a>(
-    identity: &'a str,
-    capabilities: &'a [Capability],
-    families: &'a [Family],
-) -> Backend<'a> {
-    Backend {
-        identity,
-        capabilities,
-        families,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // FR-036-AC-5: static meaning, assessment inputs and resource configuration.
 // ---------------------------------------------------------------------------
 
+/// FR-077: `Assessment` carries no backend field any more -- backend
+/// selection and support are computed downstream, by the `#185` registry
+/// and `quire-contract-codegen`'s `negotiate_*`, never read here. This test
+/// now varies only the assessment inputs `requests::report` still accepts
+/// (population, window, trace).
 #[test]
 #[trace("TC-115", "FR-036-AC-5")]
-fn assessment_and_backend_selections_leave_every_declared_component_unchanged() {
+fn assessment_selections_leave_every_declared_component_unchanged() {
     let model = setup::native_rule_model::parts().model();
     let baseline = subject_of(&model, R::StateGraph);
     assert_eq!(baseline.sources().len(), 3);
@@ -207,43 +201,22 @@ fn assessment_and_backend_selections_leave_every_declared_component_unchanged() 
     assert!(!baseline.dependencies().is_empty());
     assert!(!baseline.roles().is_empty());
 
-    let every = [
-        Capability::FamilyCheck,
-        Capability::StateOperation,
-        Capability::FiniteReplay,
-        Capability::TemporalProjection,
-    ];
-    let families = [
-        Family::Predicate,
-        Family::State,
-        Family::Temporal,
-        Family::Protocol,
-    ];
-    // Population, window, trace and backend each vary independently.
+    // Population, window and trace each vary independently.
     let assessments = [
         Assessment {
             population: Some("orders-q1"),
             window: None,
             trace: None,
-            backend: backend("reference/1", &every, &families),
         },
         Assessment {
             population: None,
             window: Some("2026-01/2026-02"),
             trace: None,
-            backend: backend("reference/1", &every, &families),
         },
         Assessment {
             population: None,
             window: None,
             trace: Some("trace:replay-7"),
-            backend: backend("reference/1", &every, &families),
-        },
-        Assessment {
-            population: None,
-            window: None,
-            trace: None,
-            backend: backend("alternate/2", &every, &families),
         },
     ];
 
@@ -262,7 +235,7 @@ fn assessment_and_backend_selections_leave_every_declared_component_unchanged() 
                 let healthy = report.namespace().lookup("Healthy")[0];
                 let requested = [Request {
                     declaration: healthy,
-                    capability: Capability::StateOperation,
+                    capability: Capability::OperationContract,
                     required: true,
                 }];
                 let requests = requests::report(report, assessment, &requested);
@@ -282,7 +255,6 @@ fn assessment_and_backend_selections_leave_every_declared_component_unchanged() 
     assert_eq!(provenance[0].population.as_deref(), Some("orders-q1"));
     assert_eq!(provenance[1].window.as_deref(), Some("2026-01/2026-02"));
     assert_eq!(provenance[2].trace.as_deref(), Some("trace:replay-7"));
-    assert_eq!(provenance[3].backend, "alternate/2");
 }
 
 #[test]
@@ -446,36 +418,32 @@ fn requested(report: &binding::Report<'_>) -> [Request; 2] {
     [
         Request {
             declaration: namespace.lookup("Healthy")[0],
-            capability: Capability::StateOperation,
+            capability: Capability::OperationContract,
             required: true,
         },
         Request {
             declaration: namespace.lookup("Due")[0],
-            capability: Capability::TemporalProjection,
+            capability: Capability::TemporalSatisfaction,
             required: true,
         },
     ]
 }
 
+/// FR-077 (ADR-010 OBS-003): with no `Backend` parameter, `report` has no
+/// backend state to consult, so both a state and a temporal request over
+/// applicable families are `Admitted` here -- whether a backend actually
+/// supports either is settled downstream (the `#185` registry and
+/// `quire-contract-codegen`'s `negotiate_*`), never by this function.
 #[test]
 #[trace("TC-115", "FR-036-AC-6")]
-fn a_supported_state_request_and_an_unsupported_projection_both_stay_in_the_report() {
+fn two_required_requests_over_different_capability_kinds_both_stay_admitted_in_caller_order() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);
     let models = [ModelInput::Native(&model)];
-    // The backend implements state operations but not temporal projection.
-    let capabilities = [Capability::FamilyCheck, Capability::StateOperation];
-    let families = [
-        Family::Predicate,
-        Family::State,
-        Family::Temporal,
-        Family::Protocol,
-    ];
     let assessment = Assessment {
         population: Some("orders-q1"),
         window: None,
         trace: None,
-        backend: backend("state-only/1", &capabilities, &families),
     };
     with_reports(
         &sources,
@@ -485,8 +453,10 @@ fn a_supported_state_request_and_an_unsupported_projection_both_stay_in_the_repo
         BindingLimits::default(),
         |_, _, report| {
             let namespace = report.namespace();
+            let positive = namespace.lookup("Positive")[0];
             let healthy = namespace.lookup("Healthy")[0];
             let due = namespace.lookup("Due")[0];
+            let flow = namespace.lookup("Flow")[0];
             let asked = requested(report);
             let requests = requests::report(report, &assessment, &asked);
 
@@ -496,22 +466,30 @@ fn a_supported_state_request_and_an_unsupported_projection_both_stay_in_the_repo
             assert_eq!(requests.responses()[0].family, Some(Family::State));
             assert_eq!(requests.responses()[1].family, Some(Family::Temporal));
 
-            // The supported request survives; the unsupported one is explicit.
+            // Both requests -- over different capability kinds -- remain
+            // admitted, in caller order (FR-036-AC-6, FR-077-AC-3).
             assert_eq!(
-                requests.disposition(healthy, Capability::StateOperation),
+                requests.disposition(healthy, Capability::OperationContract),
                 Some(Disposition::Admitted)
             );
             assert_eq!(
-                requests.disposition(due, Capability::TemporalProjection),
-                Some(Disposition::UnsupportedCapability)
+                requests.disposition(due, Capability::TemporalSatisfaction),
+                Some(Disposition::Admitted)
             );
 
-            // Complete aggregate success is unavailable, naming its cause.
-            assert_eq!(requests.aggregate(), Aggregate::Unavailable { response: 1 });
+            // Complete aggregate success is attainable: nothing at this
+            // admission-only layer settled a required pair unavailable.
+            assert_eq!(requests.aggregate(), Aggregate::Attainable);
 
-            // The unsupported obligation is never offered as a checked body.
-            assert_eq!(requests.admitted_bodies(), Vec::new());
-            assert_eq!(requests.assessment().backend, "state-only/1");
+            // FR-057 "Family-body admission": body admission is unconditional
+            // on binding disposition, not on `requests` above -- every
+            // declaration whose names resolved is an admitted body,
+            // including `Positive` and `Flow`, neither of which was asked
+            // about at all.
+            assert_eq!(
+                requests.admitted_bodies(),
+                vec![positive, healthy, due, flow]
+            );
         },
     );
 }
@@ -522,13 +500,10 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);
     let models = [ModelInput::Native(&model)];
-    let capabilities = [Capability::StateOperation];
-    let families = [Family::State, Family::Temporal];
     let assessment = Assessment {
         population: None,
         window: None,
         trace: None,
-        backend: backend("state-only/1", &capabilities, &families),
     };
     with_reports(
         &sources,
@@ -561,26 +536,26 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
     );
 }
 
+/// FR-077: `InapplicableCapability` survives the backend-disposition removal
+/// unchanged -- it is a structural check (does this capability kind apply to
+/// this declaration's family at all, per `requests::families`), independent
+/// of any backend: a kind applicable to a declaration's own family is
+/// `Admitted`, one that is not is `InapplicableCapability`, regardless of
+/// backend support (settled downstream). FR-057's "Family-body admission"
+/// section is a distinct, unconditional rule tested separately below
+/// (`admitted_bodies` does not depend on either disposition here).
 #[test]
 #[trace("TC-115", "FR-036-AC-6")]
-fn an_unsupported_family_leaves_the_body_inspectable_and_never_checked() {
+fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_admitted() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);
     let models = [ModelInput::Native(&model)];
-    let capabilities = [
-        Capability::FamilyCheck,
-        Capability::StateOperation,
-        Capability::TemporalProjection,
-    ];
-    // The backend admits family checking but not temporal family bodies.
-    let families = [Family::Predicate, Family::State, Family::Protocol];
     let assessment = Assessment {
         population: None,
         window: None,
         trace: None,
-        backend: backend("untimed/1", &capabilities, &families),
     };
-    let refused_subject = with_reports(
+    let subject = with_reports(
         &sources,
         &models,
         WorkLimits::default(),
@@ -588,17 +563,19 @@ fn an_unsupported_family_leaves_the_body_inspectable_and_never_checked() {
         BindingLimits::default(),
         |inventory, _, report| {
             let namespace = report.namespace();
+            let positive = namespace.lookup("Positive")[0];
             let due = namespace.lookup("Due")[0];
             let healthy = namespace.lookup("Healthy")[0];
+            let flow = namespace.lookup("Flow")[0];
             let asked = [
                 Request {
                     declaration: due,
-                    capability: Capability::FamilyCheck,
+                    capability: Capability::TemporalSatisfaction,
                     required: true,
                 },
                 Request {
                     declaration: healthy,
-                    capability: Capability::FamilyCheck,
+                    capability: Capability::OperationContract,
                     required: true,
                 },
                 // A claim that is not defined for this family at all.
@@ -610,23 +587,34 @@ fn an_unsupported_family_leaves_the_body_inspectable_and_never_checked() {
             ];
             let requests = requests::report(report, &assessment, &asked);
 
-            // Each refusal is its own typed disposition.
+            // Each kind applicable to its declaration's own family is
+            // admitted; only the structurally inapplicable claim is refused.
             assert_eq!(
-                requests.disposition(due, Capability::FamilyCheck),
-                Some(Disposition::UnsupportedFamily(Family::Temporal))
+                requests.disposition(due, Capability::TemporalSatisfaction),
+                Some(Disposition::Admitted)
             );
             assert_eq!(
-                requests.disposition(healthy, Capability::FamilyCheck),
+                requests.disposition(healthy, Capability::OperationContract),
                 Some(Disposition::Admitted)
             );
             assert_eq!(
                 requests.disposition(healthy, Capability::FiniteReplay),
                 Some(Disposition::InapplicableCapability(Family::State))
             );
-            assert_eq!(requests.aggregate(), Aggregate::Unavailable { response: 0 });
+            // The inapplicable request is not required, so aggregate
+            // success is still attainable.
+            assert_eq!(requests.aggregate(), Aggregate::Attainable);
 
-            // The refused family body is never handed on as checked.
-            assert_eq!(requests.admitted_bodies(), vec![healthy]);
+            // FR-057 "Family-body admission": every declaration whose names
+            // resolved is an admitted body, unconditionally -- `Positive`
+            // and `Flow` are admitted bodies here despite neither being
+            // named in `asked` at all, and `healthy`'s inapplicable,
+            // unrequired `FiniteReplay` request does not withhold its body
+            // either.
+            assert_eq!(
+                requests.admitted_bodies(),
+                vec![positive, healthy, due, flow]
+            );
 
             // Its authored syntax stays inspectable and unrewritten.
             let syntax = namespace.syntax(due).expect("original declaration syntax");
@@ -640,9 +628,9 @@ fn an_unsupported_family_leaves_the_body_inspectable_and_never_checked() {
             StaticSubject::of(inventory, report).unwrap()
         },
     );
-    // A backend refusal rewrites no source, profile or model selection.
-    let supported = subject_of(&model, R::StateGraph);
-    assert_eq!(refused_subject.differences(&supported), Vec::new());
+    // Recording requests rewrites no source, profile or model selection.
+    let baseline = subject_of(&model, R::StateGraph);
+    assert_eq!(subject.differences(&baseline), Vec::new());
 }
 
 #[test]
@@ -652,22 +640,10 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
     let replacement = setup::authored_model(|document| {
         document["requirement"] = Value::from("Replacement");
     });
-    let every = [
-        Capability::FamilyCheck,
-        Capability::StateOperation,
-        Capability::TemporalProjection,
-    ];
-    let families = [
-        Family::Predicate,
-        Family::State,
-        Family::Temporal,
-        Family::Protocol,
-    ];
     let assessment = Assessment {
         population: None,
         window: None,
         trace: None,
-        backend: backend("reference/1", &every, &families),
     };
 
     // A declaration handle from the full three-family namespace.
@@ -701,7 +677,7 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
                 &assessment,
                 &[Request {
                     declaration: outer,
-                    capability: Capability::FamilyCheck,
+                    capability: Capability::FiniteReplay,
                     required: true,
                 }],
             );
@@ -729,7 +705,7 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
                 &assessment,
                 &[Request {
                     declaration: healthy,
-                    capability: Capability::FamilyCheck,
+                    capability: Capability::OperationContract,
                     required: true,
                 }],
             );
@@ -738,6 +714,87 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
                 Disposition::RefusedSubject
             );
             assert_eq!(requests.admitted_bodies(), Vec::new());
+        },
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FR-077: no backend negotiation; requests still fully recorded as data.
+// ---------------------------------------------------------------------------
+
+/// FR-077-AC-3 (TC-200): recording does not depend on the negotiation logic
+/// FR-077 removes. At least four admitted pairs spanning at least three
+/// distinct capability kinds and both `required` values are all present in
+/// the report, each with its original declaration, capability kind,
+/// `required` flag and request index preserved -- none dropped, merged or
+/// reordered.
+#[test]
+#[trace("TC-200", "FR-077-AC-3")]
+fn four_admitted_pairs_across_three_kinds_stay_recorded_as_data() {
+    let model = setup::native_rule_model::parts().model();
+    let sources = ecosystem(&model, R::StateGraph);
+    let models = [ModelInput::Native(&model)];
+    let assessment = Assessment {
+        population: None,
+        window: None,
+        trace: None,
+    };
+    with_reports(
+        &sources,
+        &models,
+        WorkLimits::default(),
+        Limits::default(),
+        BindingLimits::default(),
+        |_, _, report| {
+            let namespace = report.namespace();
+            let positive = namespace.lookup("Positive")[0];
+            let healthy = namespace.lookup("Healthy")[0];
+            let due = namespace.lookup("Due")[0];
+            let flow = namespace.lookup("Flow")[0];
+            let asked = [
+                Request {
+                    declaration: healthy,
+                    capability: Capability::OperationContract,
+                    required: true,
+                },
+                Request {
+                    declaration: due,
+                    capability: Capability::TemporalSatisfaction,
+                    required: true,
+                },
+                Request {
+                    declaration: flow,
+                    capability: Capability::FiniteReplay,
+                    required: false,
+                },
+                Request {
+                    declaration: positive,
+                    capability: Capability::ValueValidity,
+                    required: false,
+                },
+            ];
+            let requests = requests::report(report, &assessment, &asked);
+
+            assert_eq!(requests.responses().len(), asked.len());
+            for (index, (response, request)) in
+                requests.responses().iter().zip(asked.iter()).enumerate()
+            {
+                assert_eq!(
+                    response.request, *request,
+                    "request {index} was dropped, merged or reordered"
+                );
+                assert_eq!(
+                    requests.response(index).map(|response| response.request),
+                    Some(*request),
+                    "request index {index} does not resolve back to its own pair"
+                );
+            }
+            // Every one of the four pairs is admitted: recording does not
+            // depend on the (now-removed) negotiation logic.
+            assert!(requests
+                .responses()
+                .iter()
+                .all(|response| response.disposition == Disposition::Admitted));
         },
     );
 }

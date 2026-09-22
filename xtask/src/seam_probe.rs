@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
-//! seam by building the QSL crate under `RUSTFLAGS=--cfg seam_probe` and
-//! comparing the `E0004` (non-exhaustive match) locations rustc reports
+//! and S7 seams by building the QSL crate under `RUSTFLAGS=--cfg seam_probe`
+//! and comparing the `E0004` (non-exhaustive match) locations rustc reports
 //! against a checked-in list, exactly as FR-063 requires.
 //!
-//! **Scope: S1 only, and one location, not two (PR #262 review, finding
-//! F7).** FR-063-AC-6 names five categories: S1's stage-participation table
-//! and prefix arm, S2, S3, S4. S1 originally had two checked-in `match`es
-//! over `FamilyKind` in `src/family/mod.rs` -- `catalog_code_prefix`'s
-//! prefix arm and `stage_hooks`'s stage-participation table. `stage_hooks`
-//! is deleted: its only non-test callers were three `assert_eq!` call sites
-//! asserting a hand-written `match`'s own literal result against itself, a
-//! fabricated reader manufactured to keep otherwise-dead code alive (see
+//! **Scope: S1 (one location) and S7 (two locations) (PR #262 review,
+//! finding F7; PR #305 review, finding 6).** FR-063-AC-6 names five
+//! categories: S1's stage-participation table and prefix arm, S2, S3, S4.
+//! S1 originally had two checked-in `match`es over `FamilyKind` in
+//! `src/family/mod.rs` -- `catalog_code_prefix`'s prefix arm and
+//! `stage_hooks`'s stage-participation table. `stage_hooks` is deleted: its
+//! only non-test callers were three `assert_eq!` call sites asserting a
+//! hand-written `match`'s own literal result against itself, a fabricated
+//! reader manufactured to keep otherwise-dead code alive (see
 //! `crate::family`'s module doc in the QSL crate). Deleting the fabricated
 //! callers left `stage_hooks` itself with no real reader, so it is gone
 //! too, and with it the second S1 seam this tool could check in. Only
@@ -28,10 +29,21 @@
 //! not own. That is tracked as its own piece of work (Linear QSL-143), not
 //! attempted here. S4 (each family `Cause` enum's `catalog_code()`) has no
 //! cause-bearing family to demonstrate it yet -- see
-//! `crate::family::outcome`'s own doc in the QSL crate. This tool's
-//! checked-in list therefore covers exactly the one S1 location #214
-//! itself adds, and reports that scope honestly rather than as "AC-6
-//! satisfied."
+//! `crate::family::outcome`'s own doc in the QSL crate.
+//!
+//! **S7 (QSL-46/#185, ADR-012 §5.1's row: "requirement derivation per
+//! family; registry advertisement check; CG `negotiate_*` capability arm").**
+//! QSL owns the first two; `#[cfg(seam_probe)]` on
+//! `crate::check::Capability` (defined in `capability.rs` itself, which also
+//! carries its own match's probe arm and so is not a seam-probe location)
+//! makes both non-exhaustive under the probe build: `requests::families`
+//! (requirement derivation per family) and `route.rs`'s `advertises_kind`
+//! helper `same_kind` (registry advertisement check). The CG `negotiate_*`
+//! arm is quire-contract-codegen#86's own seam, not probed here.
+//!
+//! This tool's checked-in list therefore covers exactly the one S1 and two
+//! S7 locations QSL's own code adds, and reports that scope honestly rather
+//! than as "AC-6 satisfied."
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -71,19 +83,41 @@ pub struct SeamLocation {
     pub item: String,
 }
 
-/// FR-063-AC-6's S1 category, checked in: the one `match` over
-/// `FamilyKind` in `src/family/mod.rs` -- `catalog_code_prefix`'s prefix
-/// arm. `stage_hooks`'s stage-participation table match is deleted (this
-/// module's own doc, PR #262 review finding F7), narrowing this list from
-/// two locations to one. Exactly one location because that module has
-/// exactly one `match` over `FamilyKind` today; adding a second real seam
-/// over `FamilyKind` means updating this list in the same change
-/// (FR-063-AC-1/AC-2), or `xtask seam-probe` fails.
+/// FR-063-AC-6's S1 and S7 categories, checked in.
+///
+/// S1: the one `match` over `FamilyKind` in `src/family/mod.rs` --
+/// `catalog_code_prefix`'s prefix arm. `stage_hooks`'s stage-participation
+/// table match is deleted (this module's own doc, PR #262 review finding
+/// F7), narrowing this list from two locations to one. Exactly one location
+/// because that module has exactly one `match` over `FamilyKind` today;
+/// adding a second real seam over `FamilyKind` means updating this list in
+/// the same change (FR-063-AC-1/AC-2), or `xtask seam-probe` fails.
+///
+/// S7 (QSL-46/#185): the two `match`es over `crate::check::Capability`
+/// outside `capability.rs` itself (which owns the probe variant and its
+/// own arm, so is not a seam-probe location) -- `requests::families`
+/// (requirement derivation per family, `src/linking/composed/requests.rs`)
+/// and `route.rs`'s `advertises_kind` helper `same_kind` (registry
+/// advertisement check). Both item names were confirmed empirically by
+/// running this tool under `--cfg seam_probe` and reading the reported
+/// `E0004` locations, not assumed from the source layout: `same_kind` is a
+/// bare `fn` nested inside `advertises_kind`'s body, not an `impl` method,
+/// so it resolves unqualified.
 pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
-    [SeamLocation {
-        file: "src/family/mod.rs".to_owned(),
-        item: "FamilyKind::catalog_code_prefix".to_owned(),
-    }]
+    [
+        SeamLocation {
+            file: "src/family/mod.rs".to_owned(),
+            item: "FamilyKind::catalog_code_prefix".to_owned(),
+        },
+        SeamLocation {
+            file: "src/linking/composed/requests.rs".to_owned(),
+            item: "families".to_owned(),
+        },
+        SeamLocation {
+            file: "src/route.rs".to_owned(),
+            item: "same_kind".to_owned(),
+        },
+    ]
     .into_iter()
     .collect()
 }
@@ -303,7 +337,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         });
     }
     Ok(format!(
-        "seam-probe: {} checked-in S1 location confirmed under RUSTFLAGS=--cfg seam_probe; \
+        "seam-probe: {} checked-in S1/S7 locations confirmed under RUSTFLAGS=--cfg seam_probe; \
          normal build has none. `stage_hooks`'s former second S1 location is deleted (PR #262 \
          review F7). S2/S3 (QSL-143) and S4 (no cause-bearing family yet) are not covered by \
          this checked-in list.\n",
@@ -316,21 +350,35 @@ mod tests {
     use super::*;
 
     /// **Untagged (PR #262 review, coordinator round 3, finding 6).** This
-    /// test asserts `checked_in_locations()` returns the same literal three
-    /// lines above it already hardcodes -- a constant compared to itself,
-    /// which cannot fail regardless of whether AC-6's actual coverage
-    /// requirement holds. It stays as a real guard against an accidental
-    /// edit to the literal (FR-063-AC-1/AC-2's own "update the checked-in
-    /// list in the same change" rule), but is not evidence for AC-6, which
-    /// FR-063's own Status section now records unbacked.
+    /// test asserts `checked_in_locations()` returns the same literal
+    /// entries it already hardcodes -- a constant compared to itself, which
+    /// cannot fail regardless of whether AC-6's actual coverage requirement
+    /// holds. It stays as a real guard against an accidental edit to the
+    /// literal (FR-063-AC-1/AC-2's own "update the checked-in list in the
+    /// same change" rule), but is not evidence for AC-6, which FR-063's own
+    /// Status section now records unbacked.
     #[test]
-    fn checked_in_locations_are_the_one_family_kind_match() {
+    fn checked_in_locations_are_the_s1_and_s7_matches() {
         let locations = checked_in_locations();
-        assert_eq!(locations.len(), 1);
-        assert!(locations
-            .iter()
-            .all(|location| location.file == "src/family/mod.rs"
-                && location.item == "FamilyKind::catalog_code_prefix"));
+        assert_eq!(
+            locations,
+            [
+                SeamLocation {
+                    file: "src/family/mod.rs".to_owned(),
+                    item: "FamilyKind::catalog_code_prefix".to_owned(),
+                },
+                SeamLocation {
+                    file: "src/linking/composed/requests.rs".to_owned(),
+                    item: "families".to_owned(),
+                },
+                SeamLocation {
+                    file: "src/route.rs".to_owned(),
+                    item: "same_kind".to_owned(),
+                },
+            ]
+            .into_iter()
+            .collect()
+        );
     }
 
     /// F14: the checked-in key is the enclosing item, not a line number --

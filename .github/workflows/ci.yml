@@ -7,7 +7,14 @@ permissions:
 jobs:
   syntax:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Raised from 10 (PR #305 review round 2, finding 5): this job now also
+    # installs cargo-deny 0.19.8 from source (a cold-cache release build
+    # measured locally at ~2 minutes with a warm crates.io index; a fresh
+    # runner with a cold index and no local download cache is slower), on
+    # top of installing cargo-llvm-cov, two clippy passes, two test passes,
+    # a docs build and a clean build. 10 minutes did not have margin for
+    # that even before this change.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: No committed binaries
@@ -18,6 +25,8 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
       - name: Install pinned coverage reporter
         run: cargo install cargo-llvm-cov --version 0.9.0 --locked
+      - name: Install pinned cargo-deny
+        run: cargo install cargo-deny --version 0.19.8 --locked
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Lints with minimal features
@@ -36,3 +45,5 @@ jobs:
         run: cargo run --locked --no-default-features --bin fixture-audit -- self-test
       - name: Parse example
         run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
+      - name: Registry bans (cargo-deny)
+        run: cargo deny check bans --config deny.toml

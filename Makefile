@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge ci ci-default-features ci-all-features ci-clean-build ci-docs
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans ci ci-default-features ci-all-features ci-clean-build ci-docs
 
 # QSL-169: fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -49,6 +49,40 @@ seam-probe:
 string-edge:
 	cargo xtask string-edge
 
+# QSL-46 (FR-080-AC-3): scans the #185 registry module (src/route.rs) for a
+# static, OnceLock or thread_local! item -- ADR-012 §5.3's registry evidence
+# requires the registry stay an ordinary value, never ambient state.
+route-lint:
+	cargo xtask route-lint
+
+# QSL-46 (FR-080-AC-2): denies the inventory/linkme/ctor crates outright
+# (deny.toml), so a future contributor cannot repopulate the registry through
+# a link-time/plugin-discovery mechanism instead of the ordinary value FR-075
+# requires. Scoped to `check bans` -- deny.toml configures no license or
+# advisory policy.
+#
+# Install: `cargo install cargo-deny --locked --version 0.19.8` (the same
+# pinned version `.github/workflows/ci.yml` installs). This target FAILS
+# when `cargo-deny` is not on PATH, with that exact install command --
+# `.github/workflows/ci.yml` is `workflow_dispatch`-only, so `make ci` is the
+# gate that actually runs in practice, and a machine without cargo-deny must
+# not be able to report a green `make ci` over a tree that depends on one of
+# the three banned registry-discovery crates (PR #305 review round 2,
+# finding 4). There is no `SKIP_CARGO_DENY`-style opt-out.
+#
+# The `cargo-deny`-backed trigger test in `tests/it/route_registry.rs`
+# (`cargo_deny_bans_the_three_registry_crates`) still skips, rather than
+# fails, when the binary is absent: it is a network/tool test exercising the
+# same binary this target already requires, so this target failing first is
+# what actually enforces the check locally.
+cargo-deny-bans:
+	@if command -v cargo-deny >/dev/null 2>&1; then \
+		cargo deny check bans --config deny.toml; \
+	else \
+		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked --version 0.19.8\` to install it" >&2; \
+		exit 1; \
+	fi
+
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below. `test-support`
 # fixture constructors are reachable with `--features test-support`, not only
@@ -83,7 +117,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe ci-docs
+ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe route-lint cargo-deny-bans ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and

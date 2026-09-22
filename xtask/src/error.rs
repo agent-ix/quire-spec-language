@@ -18,6 +18,9 @@ pub enum Code {
     /// QSL-139 (FR-068) TC-172/TC-176's resolved import-graph scan
     /// (`xtask::import_graph`) could not parse a source file.
     ImportGraph,
+    /// QSL-46 (FR-080-AC-3) `cargo xtask route-lint` found a `static`,
+    /// `OnceLock` or `thread_local!` item in the `#185` registry module.
+    RouteLint,
 }
 
 impl Code {
@@ -28,6 +31,7 @@ impl Code {
             Self::SeamProbe => "seam-probe",
             Self::StringEdge => "string-edge",
             Self::ImportGraph => "import-graph",
+            Self::RouteLint => "route-lint",
         }
     }
 }
@@ -157,6 +161,23 @@ pub enum Error {
         #[source]
         source: syn::Error,
     },
+    /// The registry module could not be parsed as Rust source by
+    /// `xtask::route_lint`.
+    #[error("route-lint: cannot parse {path} as Rust source: {source}")]
+    RouteLintParse {
+        /// The file that failed to parse.
+        path: PathBuf,
+        /// The underlying parse failure.
+        #[source]
+        source: syn::Error,
+    },
+    /// `xtask::route_lint` found one or more `static`, `OnceLock` or
+    /// `thread_local!` items in the registry module; `summary` lists them.
+    #[error("{summary}")]
+    RouteLintFound {
+        /// The findings, formatted for display.
+        summary: String,
+    },
 }
 
 impl Error {
@@ -184,6 +205,7 @@ impl Error {
             | Self::StringEdgeAllowListGatesABranch { .. }
             | Self::StringEdgeFound { .. } => Code::StringEdge,
             Self::ImportGraphParse { .. } => Code::ImportGraph,
+            Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
         }
     }
 
@@ -191,7 +213,7 @@ impl Error {
     /// finding (1).
     pub fn exit_code(&self) -> u8 {
         match self.code() {
-            Code::SeamProbe | Code::StringEdge | Code::ImportGraph => 1,
+            Code::SeamProbe | Code::StringEdge | Code::ImportGraph | Code::RouteLint => 1,
             Code::Usage | Code::Io => 2,
         }
     }

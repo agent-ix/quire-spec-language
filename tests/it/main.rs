@@ -80,6 +80,7 @@ mod library_resolution;
 mod linking;
 mod located_json;
 mod lower_command;
+mod lowering_registry_isolation;
 mod mapped;
 #[cfg(feature = "test-support")]
 mod model_conformance;
@@ -128,6 +129,7 @@ mod protocol_artifact;
 mod protocol_number;
 mod quantities;
 mod quire_source;
+mod route_registry;
 mod runtime_evaluation;
 mod runtime_execution;
 mod runtime_inputs;
