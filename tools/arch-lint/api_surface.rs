@@ -25,8 +25,9 @@
 //! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
 //! call only QSL's `replay` facade), scanned against the CG tree passed with
 //! `--cg` -- never against QSL's own tree, which the rule's call pattern
-//! (`quire_spec_language::replay::`, a fully-qualified external-caller path)
-//! could never match from inside QSL itself. Evaluating a CG-role rule
+//! (`qsl_replay::`, a fully-qualified external-caller path into the
+//! extracted layer-6 crate, QSL-185) could never match from inside QSL
+//! itself. Evaluating a CG-role rule
 //! against the QSL tree would go straight from `Pending` to a vacuous `PASS`
 //! the moment the QSL-side facade module exists, without ever having scanned
 //! the tree the rule actually protects (#249 review, HIGH-2/MEDIUM-4).
@@ -109,16 +110,24 @@ pub(crate) const RULES: &[Rule] = &[
         id: "T12-A",
         description: "CG calls the QSL layer-6 `replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
         role: Role::Cg,
-        call_patterns: &["quire_spec_language::replay::"],
+        // QSL-185 extracted `replay` into its own workspace crate
+        // (`qsl-replay`, ADR-011 §6.1 layer 6): CG's own repoint to import
+        // `qsl_replay::` instead of `quire_spec_language::replay::` is a
+        // separate, QSL-185-filed CG ticket (the root crate never re-exports
+        // the moved facade), so this pattern names the crate CG is meant to
+        // land on, not a change this PR makes to CG itself.
+        call_patterns: &["qsl_replay::"],
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
         // #217/#219 build it). Left as a placeholder for #213/#217 to set.
         allowed_caller_prefixes: &["replay"],
-        requires_path: Some("src/replay.rs"),
-        pending_reason:
-            "the QSL layer-6 `replay` module `src/replay.rs` (ADR-011 §1 S8, §2.1 E9) does not \
-             exist yet on origin/main; it is #217/#219's work. This rule cannot be evaluated \
-             until `src/replay.rs` lands.",
+        requires_path: Some("qsl-replay/src/lib.rs"),
+        // Genuinely unreachable for the same reason as T12-B/T12-C/T12-D's,
+        // below: `qsl-replay/src/lib.rs` already exists on origin/main
+        // (QSL-185), so the marker path's presence is all this check tests.
+        // A `--cg` root is still required to actually evaluate it (test 009's
+        // shape) -- CG's own repoint to `qsl_replay::` is a separate ticket.
+        pending_reason: "unreachable: qsl-replay/src/lib.rs already exists on origin/main",
         scope_note: None,
     },
     Rule {
@@ -409,17 +418,19 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/` -- `qsl-foundation`
 /// (ADR-011 §7.3 X-2, QSL-177) and `qsl-cst` (ADR-011 §7.3 X-3, QSL-178)
-/// today, and each later layer crate as its own extraction PR adds it here.
-/// `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel
-/// these rules' constructors are defined *in*, never a caller of them
-/// (T12-B/T12-C/T12-D's own scope notes already exclude checking a copy of
-/// the constructor elsewhere; the crate that defines a constructor calling
-/// its own inherent `impl` is not a "caller"), and `qsl-attrs` is a
-/// proc-macro crate with no dependency on `quire-exact` at all.
+/// today, and each later layer crate as its own extraction PR adds it here
+/// -- `qsl-replay` (ADR-011 §7.3 X-9, QSL-185) joins the list alongside
+/// `qsl-foundation` and `qsl-cst`. `quire-exact` and `qsl-attrs` are
+/// excluded: `quire-exact` is the kernel these rules' constructors are
+/// defined *in*, never a caller of them (T12-B/T12-C/T12-D's own scope notes
+/// already exclude checking a copy of the constructor elsewhere; the crate
+/// that defines a constructor calling its own inherent `impl` is not a
+/// "caller"), and `qsl-attrs` is a proc-macro crate with no dependency on
+/// `quire-exact` at all.
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src"]
+        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"]
             .into_iter()
             .map(|relative| scan_root.join(relative))
             .collect(),
@@ -445,7 +456,7 @@ mod tests {
     /// tests exactly that) call this first so the extracted-crate roots
     /// they don't care about are present, but empty.
     fn ensure_qsl_roots(root: &Path) {
-        for relative in ["src", "qsl-foundation/src", "qsl-cst/src"] {
+        for relative in ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
     }
@@ -475,12 +486,12 @@ mod tests {
     fn tc_arch_lint_api_surface_002_missing_symbol_is_pending_not_vacuous_pass() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src/lib.rs", "pub mod value;\n");
-        let rule = &RULES[0]; // T12-A: requires src/replay.rs, absent here.
+        let rule = &RULES[0]; // T12-A: requires qsl-replay/src/lib.rs, absent here.
         let outcome = evaluate(rule, dir.path(), None).unwrap();
         assert_eq!(outcome.rule_id, rule.id);
         match &outcome.status {
             RuleStatus::Pending(reason) => assert!(
-                reason.contains("src/replay.rs"),
+                reason.contains("qsl-replay/src/lib.rs"),
                 "pending reason must name the missing path, got: {reason}"
             ),
             other => panic!("expected Pending, got {other:?}"),
@@ -622,17 +633,18 @@ mod tests {
     /// CG-shaped consumer tree, given as T12-A's `--cg` scan root, that calls
     /// the `replay` facade from a disallowed module is a real, failing
     /// violation -- T12-A must scan the CG tree, not the QSL tree, once its
-    /// `requires_path` gate (QSL's own `src/replay.rs`) is satisfied.
+    /// `requires_path` gate (QSL's own `qsl-replay/src/lib.rs`, QSL-185) is
+    /// satisfied.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_008_consumer_tree_violation_is_caught() {
         let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "src/replay.rs", "pub fn run() {}\n");
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
         let cg_dir = tempfile::tempdir().unwrap();
         write(
             cg_dir.path(),
             "src/oracle.rs",
-            "fn f() {\n    quire_spec_language::replay::run();\n}\n",
+            "fn f() {\n    qsl_replay::run();\n}\n",
         );
         let rule = &RULES[0]; // T12-A
         let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
@@ -692,8 +704,8 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_009_live_rule_with_no_scan_root_is_an_error() {
         let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "src/replay.rs", "pub fn run() {}\n");
-        let rule = &RULES[0]; // T12-A: now live (src/replay.rs exists).
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let rule = &RULES[0]; // T12-A: now live (qsl-replay/src/lib.rs exists).
         let error = evaluate(rule, qsl_dir.path(), None).unwrap_err();
         assert!(error.to_string().contains("--cg"), "{error}");
     }
@@ -858,5 +870,55 @@ mod tests {
         assert_eq!(outcome.violations[1].module, "value::reference");
         assert_eq!(outcome.violations[1].line, 5);
         assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-9, QSL-185): a
+    /// `Role::Qsl` rule scans `qsl-replay/src/` too, the same way
+    /// tc_arch_lint_api_surface_014/016 cover `qsl-foundation/src/` and
+    /// `qsl-cst/src/` -- the extracted layer-6 crate is as much "QSL's own
+    /// tree" as the root crate.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_018_qsl_replay_crate_is_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-replay/src/identity.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "identity");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185): a checkout
+    /// with no `qsl-replay/` directory at all is an error, the same as
+    /// tc_arch_lint_api_surface_015 for `qsl-foundation/`. Every listed root
+    /// is required precisely so a crate rename or move this scanner's root
+    /// list has not caught up with fails loudly instead of silently scanning
+    /// nothing there.
+    #[trace("TC-157", "FR-060-AC-2")]
+    #[test]
+    fn tc_arch_lint_api_surface_019_missing_qsl_replay_crate_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        fs::create_dir_all(dir.path().join("qsl-foundation/src")).unwrap();
+        fs::create_dir_all(dir.path().join("qsl-cst/src")).unwrap();
+        let rule = &RULES[3]; // T12-D
+        let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
+        assert!(error.to_string().contains("qsl-replay/src"), "{error}");
     }
 }

@@ -605,8 +605,8 @@ mod tests {
         use crate::replay::witness::{
             origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
         };
-        use crate::value::Identifier;
         use qsl_foundation::digest::WireNodeId;
+        use quire_exact::Identifier;
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {

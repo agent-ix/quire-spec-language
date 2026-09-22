@@ -30,10 +30,8 @@
 //! vocabulary to carry.
 use std::fmt;
 
-use quire_exact::Origin;
-
-use crate::value::Identifier;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use quire_exact::{Identifier, Origin};
 
 /// ADR-013 O-07: an occurrence key -- `(node id, role, ordinal)` -- keeping
 /// two source occurrences of a structurally identical node apart. Reuses

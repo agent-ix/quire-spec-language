@@ -6,8 +6,15 @@
 //! **Scope of what this scans (step 3's own signature criterion, the part
 //! this test can check with `syn` alone -- see the doc below for what step
 //! 1/2's call-graph half is not decided here).** This walks every function
-//! and method definition in `src/`, outside `src/check/` and `src/replay/`,
-//! and fails on any whose signature both (a) takes a parameter naming
+//! and method definition in this crate's own `src/`, outside `src/check/`
+//! (QSL-185 extracted `replay` into the separate `qsl-replay` workspace
+//! crate, so this crate's own tree has no `src/replay/` left to exclude; a
+//! `syn`-only, single-crate scan like this one has no way to also walk
+//! `qsl-replay/src/`, so the `replay` facade's own E9 exception is outside
+//! this test's reach -- it was already the case, before this extraction,
+//! that only a directory-based exclusion, not a positive assertion,
+//! confirmed replay's own exception here), and fails on any whose signature
+//! both (a) takes a parameter naming
 //! `QualifiedName` and (b) returns a type naming `NodeKey`, `DeclarationKey`
 //! or `ExportIdentity` -- exactly AC-5's own literal criterion for that
 //! half, "a function ... accepts a `QualifiedName` ... and returns a node id

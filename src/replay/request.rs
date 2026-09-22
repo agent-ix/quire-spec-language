@@ -454,9 +454,9 @@ impl ReplayRequest {
 mod tests {
     use super::*;
     use crate::replay::bounds::MAX_ENCODED_BYTES;
-    use crate::value::Identifier;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
+    use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
         ScalarLimits {

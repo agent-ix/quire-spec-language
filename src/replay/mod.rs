@@ -65,8 +65,8 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use crate::value::Identifier;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+    use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
         quire_exact::ScalarLimits {

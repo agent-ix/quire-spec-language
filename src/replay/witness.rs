@@ -835,8 +835,8 @@ pub(crate) fn origin(role: &str, ordinal: u64) -> Origin {
 mod envelope_tests {
     use super::*;
     use crate::replay::bounds::MAX_ENCODED_BYTES;
-    use crate::value::Identifier;
     use ix_trace_rs::trace;
+    use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
         [byte; 32]

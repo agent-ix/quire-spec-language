@@ -168,7 +168,7 @@ pub use integer::{
     OutOfDomain,
 };
 pub use location::{Location, Origin, Role};
-pub use node::{NodeKey, NODE_KEY_DOMAIN};
+pub use node::{is_identifier, Identifier, InvalidIdentifier, NodeKey, NODE_KEY_DOMAIN};
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
