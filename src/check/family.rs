@@ -1491,7 +1491,7 @@ pub(crate) mod checking_tests {
     /// function is admitted through `check_application` -- `Value`'s
     /// relocated family check code, not `Typer::call` (deleted) -- and
     /// produces a `NodeKind::Call` node of the declared result type.
-    #[trace("TC-376", "FR-065-AC-4")]
+    #[trace("TC-376")]
     #[test]
     fn check_application_accepts_a_well_typed_call() {
         let scope = empty_scope();
@@ -1518,7 +1518,7 @@ pub(crate) mod checking_tests {
     /// TC-376/FR-065-AC-4: a call with the wrong number of arguments is
     /// refused (`ill_typed`/`type-mismatch`) by `check_application` itself,
     /// not admitted and caught somewhere else.
-    #[trace("TC-376", "FR-065-AC-4")]
+    #[trace("TC-376")]
     #[test]
     fn check_application_refuses_wrong_arity() {
         let scope = empty_scope();
@@ -1544,7 +1544,7 @@ pub(crate) mod checking_tests {
     /// TC-376/FR-065-AC-4: a call naming no declared function and no tuple
     /// constructor is refused `missing-name`, exactly as `Typer::call` (now
     /// deleted) used to refuse it.
-    #[trace("TC-376", "FR-065-AC-4")]
+    #[trace("TC-376")]
     #[test]
     fn check_application_refuses_an_unknown_name() {
         let scope = empty_scope();
@@ -1572,7 +1572,7 @@ pub(crate) mod checking_tests {
     /// `ill_typed`/`type-mismatch` by `check_application` itself, the same
     /// path `check_application_refuses_wrong_arity` exercises for the
     /// arity case above.
-    #[trace("TC-376", "FR-065-AC-4")]
+    #[trace("TC-376")]
     #[test]
     fn check_application_refuses_a_type_mismatched_argument() {
         let scope = empty_scope();
@@ -1618,7 +1618,7 @@ pub(crate) mod checking_tests {
     /// admits a well-typed declaration whose body calls another declared
     /// function, and reports that call in `calls` -- the same `CallSite`
     /// list `check::mod`'s whole-package termination pass reads.
-    #[trace("TC-377", "FR-065-AC-5")]
+    #[trace("TC-377")]
     #[test]
     fn check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls() {
         let scope = empty_scope();
@@ -1668,7 +1668,7 @@ pub(crate) mod checking_tests {
 
     /// TC-377: `check_declaration_body` refuses a declaration whose body
     /// does not have the declared result type.
-    #[trace("TC-377", "FR-065-AC-5")]
+    #[trace("TC-377")]
     #[test]
     fn check_declaration_body_refuses_an_ill_typed_body() {
         let scope = empty_scope();
@@ -1700,7 +1700,7 @@ pub(crate) mod checking_tests {
     /// types cleanly (`value(o)` on an `Option[Integer]` is `Integer`,
     /// matching the declared result) and is refused only because the
     /// obligation `present(o)` proves is unproved.
-    #[trace("TC-377", "FR-065-AC-5")]
+    #[trace("TC-377")]
     #[test]
     fn check_declaration_body_refuses_an_undefined_body() {
         let scope = empty_scope();

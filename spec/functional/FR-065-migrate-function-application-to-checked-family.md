@@ -197,8 +197,8 @@ for the function family.
 | FR-065-AC-1 | Calling the function packaging/lowering public API with a checked node or verified checked-package bytes succeeds; a test that attempts to call it with a raw CST node or a raw source string fails to compile (no accepting overload or conversion exists), not merely at runtime. | Test (TC-163) |
 | FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity is the same value read at three points: immediately after `check`, again after S4 linking, and again after decoding the emitted v2 bytes. Reordering unrelated top-level declarations in the source leaves that identity unchanged at all three points. | Test (TC-163) |
 | FR-065-AC-3 | Given the same source file, the call's source occurrence (identity, role, ordinal) resolves to the same byte span before linking, after linking, and after decoding from v2 bytes; corrupting one byte of the occurrence's region in a hand-built alternate package makes the resolved span differ, showing the test actually reads the region rather than a constant. | Test (TC-163) |
-| FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163, TC-376) |
-| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164, TC-377) |
+| FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
+| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 
 ## Dependencies
@@ -316,7 +316,8 @@ delivered code today:
   `check_application_refuses_wrong_arity`,
   `check_application_refuses_an_unknown_name` and
   `check_application_refuses_a_type_mismatched_argument`
-  (`#[trace("TC-376", "FR-065-AC-4")]`) verify `check_application`'s own
+  (`#[trace("TC-376")]`, untagged for this criterion -- PR #303 review,
+  finding N2) verify `check_application`'s own
   accept/refuse behavior, per the testing-policy ruling recorded on
   [QSL-148's Linear thread](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
   (Peter, 2026-09-22, relayed by the QSL team lead: test what the family
@@ -341,7 +342,8 @@ delivered code today:
   removal. `check_declaration_body_accepts_a_well_typed_declaration_and_
   reports_its_calls`, `check_declaration_body_refuses_an_ill_typed_body` and
   `check_declaration_body_refuses_an_undefined_body`
-  (`#[trace("TC-377", "FR-065-AC-5")]`) verify that entry point's real
+  (`#[trace("TC-377")]`, untagged for this criterion -- PR #303 review,
+  finding N2) verify that entry point's real
   accept/refuse behavior and its call-reporting, per the same
   [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
   -- real, valuable coverage of the checking-decision half of this

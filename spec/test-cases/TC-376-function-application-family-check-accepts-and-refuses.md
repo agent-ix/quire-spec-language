@@ -39,14 +39,14 @@ any symbol; see this test case's own Status section for why.
 
 ## Status
 
-**Backed for behavior; the AC it targets is true by inspection, not
-backed (PR #303 review, finding 3).** All four steps now have a test:
+**Backed for behavior; tagged for this test case only, not for FR-065-AC-4
+(PR #303 review, finding N2).** All four steps now have a test:
 `check_application_accepts_a_well_typed_call`,
 `check_application_refuses_wrong_arity`,
 `check_application_refuses_an_unknown_name` and
 `check_application_refuses_a_type_mismatched_argument` (step 4, added
 this round) (`src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-376", "FR-065-AC-4")]`.
+`#[trace("TC-376")]`.
 
 **Behavioral, not structural, per the
 [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
@@ -64,5 +64,5 @@ arm's one call reaches) directly, showing that call performs real,
 adjudicated checking -- genuine, valuable coverage -- but none of them
 would catch a future change that reintroduced a conditional directly into
 `infer_form`'s `Call` arm while leaving `check_application` unchanged.
-That is why FR-065-AC-4 is recorded as true by inspection rather than
-backed; see FR-065's own Status section, AC-4 row.
+That is why this test case is untagged for FR-065-AC-4 rather than
+claiming to back it; see FR-065's own Status section, AC-4 row.

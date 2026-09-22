@@ -43,13 +43,14 @@ section for why.
 
 ## Status
 
-**Backed for behavior (all three steps); the AC it targets stays unbacked
-(PR #303 review, findings 1/2/8).**
+**Backed for behavior (all three steps); tagged for this test case only,
+not for FR-065-AC-5, which stays unbacked (PR #303 review, findings
+1/2/8/N2).**
 `check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls`,
 `check_declaration_body_refuses_an_ill_typed_body` and
 `check_declaration_body_refuses_an_undefined_body` (step 3, added this
 round) (`src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-377", "FR-065-AC-5")]`.
+`#[trace("TC-377")]`.
 
 **Behavioral, not structural, per the
 [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
