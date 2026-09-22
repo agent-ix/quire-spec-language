@@ -216,7 +216,10 @@ fn conflicting_unselected_inventory_is_not_hidden_by_wire_imports() {
         )
         .unwrap_err();
         assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
-        assert!(matches!(error.cause, Some(PackageCause::Native(_))));
+        assert!(matches!(
+            error.cause,
+            Some(PackageCause::Linking(_)) | Some(PackageCause::Checking(_))
+        ));
     }
 }
 
@@ -283,11 +286,14 @@ fn forged_checked_claims_cannot_bypass_real_parse_link_type_or_definedness_failu
         );
         let error = read(&wire, external, &models).unwrap_err();
         assert_eq!((error.code, error.stage), (code, PackageStage::Rebind));
-        let Some(PackageCause::Native(cause)) = error.cause else {
-            panic!("missing original native cause");
+        let (found_phase, found_span) = match error.cause {
+            Some(PackageCause::Native(cause)) => (cause.phase, cause.span),
+            Some(PackageCause::Linking(cause)) => (cause.diagnostic.phase, cause.diagnostic.span),
+            Some(PackageCause::Checking(cause)) => (cause.diagnostic.phase, cause.diagnostic.span),
+            _ => panic!("missing original native cause"),
         };
-        assert_eq!(cause.phase, phase);
-        assert_eq!(cause.span, direct.span);
+        assert_eq!(found_phase, phase);
+        assert_eq!(found_span, direct.span);
         assert!(error.usage.derive.is_none());
     }
 }

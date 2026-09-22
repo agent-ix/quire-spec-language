@@ -151,9 +151,15 @@ pub enum RunCause {
     /// Existing IR identifier validation failed.
     #[error("invalid request identifier: {0:?}")]
     Identifier(ir::Diagnostic),
-    /// Existing source/parser/linker/checker failure.
+    /// Existing source/parser/profile failure with no linking or checking context.
     #[error("{0}")]
     Native(#[from] Box<Diagnostic>),
+    /// Existing formal-environment linking failure.
+    #[error("{0}")]
+    Linking(#[from] Box<crate::linking::LinkingError>),
+    /// Existing native constraint/proof checking failure.
+    #[error("{0}")]
+    Checking(#[from] Box<crate::checking::CheckingError>),
     /// Existing model frontend/admission failure.
     #[error("{0}")]
     Model(#[from] Box<ModelSourceError>),
@@ -197,18 +203,6 @@ impl From<ir::Diagnostic> for RunCause {
     }
 }
 
-impl From<Box<crate::linking::LinkingError>> for RunCause {
-    fn from(error: Box<crate::linking::LinkingError>) -> Self {
-        Self::Native(Box::new(Diagnostic::from(*error)))
-    }
-}
-
-impl From<Box<crate::checking::CheckingError>> for RunCause {
-    fn from(error: Box<crate::checking::CheckingError>) -> Self {
-        Self::Native(Box::new(Diagnostic::from(*error)))
-    }
-}
-
 impl RunCause {
     /// Stable catalogued code for this cause, independent of its display message.
     pub fn code(&self) -> Code {
@@ -223,6 +217,8 @@ impl RunCause {
             Self::Digest(_) => Code::InvalidDigest,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
+            Self::Linking(error) => error.diagnostic.code,
+            Self::Checking(error) => error.diagnostic.code,
             Self::Model(error) => error.code(),
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,

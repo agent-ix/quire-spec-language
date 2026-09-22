@@ -113,6 +113,12 @@
           ],
           "additionalProperties": false
         },
+        "upstream": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "runtime": {
           "type": [
             "object",
@@ -127,6 +133,7 @@
         "source",
         "path",
         "span",
+        "upstream",
         "runtime"
       ],
       "additionalProperties": false

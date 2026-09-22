@@ -395,10 +395,13 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
                 "external binding count precedes linking"
             );
         } else {
-            let Some(PackageCause::Native(cause)) = error.cause else {
-                panic!("the actual native diagnostic must survive: {dimension}");
+            let code = match error.cause {
+                Some(PackageCause::Native(cause)) => cause.code,
+                Some(PackageCause::Linking(cause)) => cause.diagnostic.code,
+                Some(PackageCause::Checking(cause)) => cause.diagnostic.code,
+                _ => panic!("the actual native diagnostic must survive: {dimension}"),
             };
-            assert_eq!(cause.code, Code::ResourceExhausted);
+            assert_eq!(code, Code::ResourceExhausted);
         }
         assert!(error.usage.decode.is_some());
         assert!(error.usage.derive.is_none());

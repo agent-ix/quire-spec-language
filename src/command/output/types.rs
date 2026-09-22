@@ -102,6 +102,7 @@ pub(super) struct Diagnostic<'a> {
     pub source: &'a SourceIdentity,
     pub path: &'a str,
     pub span: LocatedSpan,
+    pub upstream: Option<&'a ir::Diagnostic>,
     pub runtime: Option<RuntimeLocation<'a>>,
 }
 

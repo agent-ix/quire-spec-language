@@ -143,9 +143,17 @@ pub enum PackageCause {
     /// Original Serde error, retaining its real line and column when decoding.
     #[error("{0}")]
     Json(#[from] serde_json::Error),
-    /// Original native compiler refusal.
+    /// Original native compiler refusal with no linking or checking context.
     #[error("{0}")]
     Native(#[from] Box<Diagnostic>),
+    /// Original formal-environment linking refusal (FR-020: retains its
+    /// original related declarations and upstream formal diagnostic).
+    #[error("{0}")]
+    Linking(#[from] Box<crate::linking::LinkingError>),
+    /// Original native constraint/proof checking refusal (FR-020: retains
+    /// its original upstream IR proof refusal).
+    #[error("{0}")]
+    Checking(#[from] Box<crate::checking::CheckingError>),
 }
 
 /// Atomic package refusal with stable code, actual path and per-pass accounting.
