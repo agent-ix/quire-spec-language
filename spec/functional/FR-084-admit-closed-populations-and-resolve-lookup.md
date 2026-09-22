@@ -150,6 +150,16 @@ seen through supertype and subtype queries has one reference key whose type
 component is its most-specific type," bound to this compiler's own
 `ReferenceKey` type.
 
+### A universe is one connected supertype component
+
+The model checker SHALL compute one object universe per connected component
+of the model's object-type supertype graph, with the identity that
+quire-specification `model-complete.md` ("Object universe") defines, and
+SHALL NOT compute one universe for a whole model or one per root type. A
+reference key SHALL carry the universe of its object type's component, and
+its object component SHALL be the member's authored object identity, never
+a digest of it (ADR-013 O-05, OQ-C and OQ-E rulings).
+
 ### Conflicting identity refuses admission outright
 
 If two runtime member records name the same universe and object identity but
@@ -174,6 +184,7 @@ their content digest are equal.
 | FR-084-AC-4 | Given two runtime member records sharing universe and object identity but differing most-specific type, admission refuses conflicting-identity and admits no binding; given two records with equal key and equal content digest, admission collapses them into one member. | Test (TC-229) |
 | FR-084-AC-5 | `allInstances<T>(p)`'s result is `Set<Reference<T>>[0,N]` when `p` declares maximum `N`, and the unbounded `Set<Reference<T>>` when `p` declares none, admitting every selected count; a selected count above a declared `N` refuses cardinality-out-of-bound; `lookup<T>(p, r)`'s present result is typed to `T` in every absence mode; a foreign-universe key, a non-binding receiver or a non-object-type `T` each refuse with their own named cause. | Test (TC-240) |
 | FR-084-AC-6 | Given an object whose most-specific effective type `C` is a proper subtype of `A`, selecting it through `allInstances<A>` and separately through `allInstances<C>` against the same binding yields the same `ReferenceKey` in both results, whose type component names `C` in both cases, never `A`. | Test (TC-242) |
+| FR-084-AC-7 | Given a model whose object types form three disconnected supertype components, `A` with subtype `B`, `C` and `D` with common subtype `E`, and `X` alone, the reference keys of a `B`, an `E` and an `X` member, each admitted in its own population, carry three different universes: the `quire.model.object-universe/v1` digests over the model selection with root types `[A]`, `[C, D]` and `[X]`. Each key's object component equals the member's authored object identity bytes. | Test (TC-410) |
 
 ## Dependencies
 
@@ -188,6 +199,9 @@ their content digest are equal.
   declares no maximum, rather than returning the unbounded `Set<Reference<T>>`
   this requirement states. FR-084-AC-5's unbounded-`p` clause does not ship
   today. Remaining work: #120.
+- ADR-013 §8 OQ-C and OQ-E, and quire-specification `model-complete.md`
+  and FR-204, fix the universe and object identity (FR-084-AC-7). Remaining
+  work: QSL-131.
 - **Downstream:** [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s
   graph evaluator receives concrete object membership and closure as an
   independently supplied runtime input; this requirement is that input's own

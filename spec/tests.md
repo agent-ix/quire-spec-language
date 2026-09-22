@@ -135,7 +135,7 @@ operational validation remains outside this audit-only plan.
 | TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | ✅ Passed locally; #300 |
 | TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | ✅ Passed locally; #300 |
 | TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | ✅ Passed locally; #300 (the `QualifiedName` half only -- AC-5's "or a bare string" half is investigated, not enforced; see `tests/it/name_resolution_confinement.rs`'s own module doc) |
-| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300 |
+| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300; step 6's from-source reorder is QSL-131 |
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | 🚧 Planned; QSL-158 |
 | TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | 🚧 Planned; QSL-158 |
 | TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
@@ -176,7 +176,7 @@ operational validation remains outside this audit-only plan.
 | TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141; AC-6 cases per FR-091-OQ-1 |
 | TC-396 | S2 refuses unrepresented constructs and constructs owned by another family | Unit | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141; cases per FR-091-OQ-5 and FR-091-OQ-1 |
 | TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
-| TC-398 | The Value form builder depends only on layer 2, layer 1 and F, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Planned; QSL-141; `quire_exact` edge per FR-091-OQ-8 |
+| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Planned; QSL-141 |
 | TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | 🚧 Planned; QSL-141 |
 | TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | 🚧 Planned; QSL-141 |
 | TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; blocked by FR-091-OQ-3 |
@@ -187,6 +187,9 @@ operational validation remains outside this audit-only plan.
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; alias cycle per FR-091-OQ-7 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | 🚧 Planned; QSL-174 |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | 🚧 Planned; QSL-174 |
+| TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | 🚧 Planned; QSL-131 |
+| TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
+| TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | 🚧 Planned; QSL-131 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -231,6 +234,16 @@ condition 3, or E3 name resolution, with `DuplicatePackageId` named as
 lying outside all four (FR-087-AC-12/TC-282; FR-087 Description, item 3).
 `check` reads `ImportView` and `LibraryLock` (read-only) from `library`, a
 permitted layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9/TC-256).
+
+## Kernel value identities (ADR-013 OQ-B to OQ-F) coverage
+
+ADR-013 §8 OQ-B to OQ-F fix the kernel's reference, quantity and enum
+identities. FR-088-AC-11 (TC-409) covers an enum value's FR-141
+`VariantId` and its rank key. FR-088-AC-12 (TC-411) covers the two-domain
+`UnitId`. FR-084-AC-7 (TC-410) covers one object universe per connected
+supertype component and the authored object component of a reference key.
+All three are `🚧 Planned` under QSL-131. OQ-A's layer-2 edge is covered by
+TC-398's allow-list.
 
 ## Typed replay envelopes (FR-069–073) coverage
 
@@ -462,8 +475,8 @@ production and the forms-to-`PackageDeclarations` assembler in the layer-3
 `check` core. TC-392 to TC-403, TC-405 and TC-406 are `🚧 Planned` under
 QSL-141. TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
-source to `CheckedPackage::call`. TC-395's AC-6 cases, TC-396, TC-398's
-`quire_exact` edge, TC-401 and TC-406's alias-cycle code depend on
-FR-091-OQ-1, OQ-5, OQ-8, OQ-3 and OQ-7 as marked. TC-404 backs FR-003-AC-7
+source to `CheckedPackage::call`. TC-395's AC-6 cases, TC-396, TC-401 and
+TC-406's alias-cycle code depend on FR-091-OQ-1, OQ-5, OQ-3 and OQ-7 as
+marked. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
 M-6a), under QSL-8.
