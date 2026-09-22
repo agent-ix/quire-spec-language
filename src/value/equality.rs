@@ -12,6 +12,16 @@
 //!
 //! Plan formation is iterative, so value depth never reaches the host stack,
 //! and it walks the occurrence tree, so DAG sharing never changes the plan.
+//!
+//! `quire_exact::equality` (QSL-131) has its own `plan_pairs`/`plan_equality`/
+//! `planned_equality` over `quire_exact`'s own `Value`, a distinct type from
+//! this module's (`value::composite`'s module doc). Only `EqualityPlan`
+//! itself is `quire_exact`'s type here: it wraps an `Integer` pair count with
+//! no dependency on either crate's `Value`. Everything that walks this
+//! module's own `Value` -- `plan_pairs`, `planned_equality`, and the
+//! type-checked layer above them (`EqualityOperator`, `EqualityOperand`,
+//! `EqualitySchedule`, `CheckedEquality`, `TypeEnvironment::check_equality`)
+//! -- stays local: remaining work, Linear QSL-131.
 
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::composite::{FieldValue, TypeEnvironment, Value, ValueType};
@@ -198,25 +208,19 @@ fn invariant() -> Stop {
     Stop::Refused(Refusal::CheckedInvariant)
 }
 
-/// The complete occurrence-pair plan of one planned equality.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EqualityPlan {
-    pair_events: Integer,
-}
-
-impl EqualityPlan {
-    /// The exact number of planned `equality.pair` events.
-    pub fn pair_events(&self) -> &Integer {
-        &self.pair_events
-    }
-}
+// `EqualityPlan` is `quire_exact`'s own canonical type (QSL-131): it wraps
+// nothing but an `Integer` pair count, so it carries no dependency on the
+// diverged `Value`/`ValueType` kernel types below (QSL-131's 2026-09-21
+// comment: `ValueType::Enum`'s payload and `ValueType::Reference`'s payload
+// differ between this crate and `quire_exact`). `EqualityPlan::new` is
+// `quire_exact`'s own widening (QSL-131) of what was a private struct
+// literal, since the field is unreachable once the type is foreign.
+pub use quire_exact::EqualityPlan;
 
 /// Form the plan of two completed operands of one type, without charge. A
 /// reference pair of different universes refuses with `foreign_reference`.
 pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusal> {
-    plan_pairs(left, right).map(|plan| EqualityPlan {
-        pair_events: plan.pairs,
-    })
+    plan_pairs(left, right).map(|plan| EqualityPlan::new(plan.pairs))
 }
 
 /// The equality schedule over completed operands of one type.

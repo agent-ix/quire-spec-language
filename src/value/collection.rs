@@ -35,6 +35,16 @@ use quire_exact::{
 // `value::outcome::BoundViolation` (`outcome.rs:236`) -- the two stay
 // distinct until the Outcome/Refusal cut later in QSL-131 merges them, and
 // no `From` conversion shims between them meanwhile.
+//
+// `CollectionType` and `CollectionValue` are not cut over (QSL-131,
+// remaining work): `quire_exact::collection` has same-named types, but they
+// are parameterized over `quire_exact`'s own `Value`/`ValueType`, which
+// diverge from this crate's (`ValueType::Enum`'s and `ValueType::Reference`'s
+// payloads differ -- see `value::composite`'s module doc). A `pub use` would
+// not type-check against this crate's own `ValueType`/`Value`, so this
+// crate's own `CollectionType`/`CollectionValue` and the construction
+// functions built on them stay local, the same reason `value::composite`
+// keeps its own `OptionValue`/`FieldValue`/`CompositeValue`.
 
 /// A collection type `K<T>[min, max]`. Two collection types are the same type
 /// exactly when kind, element type and bound are all equal.

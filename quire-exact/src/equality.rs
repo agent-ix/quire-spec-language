@@ -39,6 +39,17 @@ pub struct EqualityPlan {
 }
 
 impl EqualityPlan {
+    /// Wrap an already-computed pair count. `pub`, not merely a private
+    /// struct literal: `EqualityPlan` is a plain data holder with no
+    /// invariant beyond "this many pairs were planned", so it carries no
+    /// accounting charge of its own; QSL's own occurrence-pair walk (over its
+    /// own `Value`, a distinct type from this crate's) needs this to build
+    /// one from a count it computed itself, the same way this module's own
+    /// [`plan_equality`] does internally.
+    pub fn new(pair_events: Integer) -> Self {
+        Self { pair_events }
+    }
+
     /// The exact number of planned `equality.pair` events.
     pub fn pair_events(&self) -> &Integer {
         &self.pair_events
