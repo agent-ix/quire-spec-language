@@ -783,6 +783,7 @@ Module table:
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
 | none today | 6 `replay` | new: the CG-facing replay facade (§6.1), landed with the skeleton spine (T-2) and widened per family by each family's implementation ticket |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
+| none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: `capability_report` is recorded at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
 
 ## 7. Crate DAG and extraction
 

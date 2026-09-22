@@ -55,6 +55,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+mod capability;
 #[allow(clippy::module_inception)]
 mod check;
 mod checked_dispatch;
@@ -87,6 +88,7 @@ pub(crate) use family::{ValueFunctionFamily, SCALAR_LIMITS_UNLIMITED};
 pub(crate) use family::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
+pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     MAX_CHECKING_DEPTH,
