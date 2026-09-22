@@ -515,12 +515,11 @@ impl PackageDeclarations {
         // `TypeEnvironment`/`enums` already carry becomes a real
         // `CheckedTypeNode`, identified by that declaration's own
         // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
-        // carried into this module's own `quire_exact::NodeKey` checked-node
-        // space unchanged, byte for byte, by `identity::declaration_node_key`
-        // (the two are different Rust newtypes -- `value::node::NodeKey` is
-        // I04's pre-check nominal semantic-node identity -- but the same
-        // opaque digest) -- never a second, parallel id minted from the
-        // declared name and shape. This is the same identity `Typer::
+        // carried into this module's own checked-node space unchanged, byte
+        // for byte. `value::node::NodeKey` is `quire_exact::NodeKey` itself
+        // (a `pub use`), so no conversion function is needed -- never a
+        // second, parallel id minted from the declared name and shape. This
+        // is the same identity `Typer::
         // type_named` (`check.rs`) and every field type (`family.rs`)
         // already resolve a reference against, so a checked type node's id
         // is exactly what those other sites already use, once carried into
@@ -546,11 +545,11 @@ impl PackageDeclarations {
         // below).
         let mut type_nodes = BTreeMap::new();
         for composite in scope.types.composites() {
-            let node = identity::declaration_node_key(composite.key());
+            let node = composite.key();
             type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
         }
         for enum_binding in &scope.enums {
-            let node = identity::declaration_node_key(enum_binding.declaration.key());
+            let node = enum_binding.declaration.key();
             // Every case name here was already validated as
             // `^[A-Za-z_][A-Za-z0-9_]*$` and checked distinct from its
             // siblings when this `EnumBinding`'s own `EnumDeclaration`/
@@ -1156,10 +1155,10 @@ mod tests {
         use crate::value::composite::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
         };
-        use crate::value::node::NodeKey as ValueNodeKey;
+        use quire_exact::NodeKey;
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = ValueNodeKey::from_hex(&"11".repeat(32)).expect("64 lowercase hex digits");
+        let key = NodeKey::from_digest([0x11; 32]);
         let composite =
             CompositeDeclaration::new(key, "Flagged", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
@@ -1174,14 +1173,10 @@ mod tests {
         assert_eq!(nodes.len(), 1, "exactly the one declared composite");
         let node = nodes[0].node();
         assert_eq!(
-            node,
-            identity::declaration_node_key(key),
+            node, key,
             "the checked type node's id must be the declaration's own existing key"
         );
-        assert_eq!(
-            graph.checked_type_node(identity::declaration_node_key(key)),
-            Some(nodes[0])
-        );
+        assert_eq!(graph.checked_type_node(key), Some(nodes[0]));
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(node)
@@ -1203,10 +1198,10 @@ mod tests {
         use crate::value::composite::{
             CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
         };
-        use crate::value::node::NodeKey as ValueNodeKey;
+        use quire_exact::NodeKey;
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = ValueNodeKey::from_hex(&"22".repeat(32)).expect("64 lowercase hex digits");
+        let key = NodeKey::from_digest([0x22; 32]);
         let composite = CompositeDeclaration::new(key, "P::R", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
@@ -1222,7 +1217,7 @@ mod tests {
             1,
             "a package-qualified declared name must still get a checked type node"
         );
-        assert_eq!(nodes[0].node(), identity::declaration_node_key(key));
+        assert_eq!(nodes[0].node(), key);
     }
 
     /// PR #300 review round 2 (HIGH-1, L10): the enum/Sum companion to
@@ -1291,24 +1286,20 @@ mod tests {
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
 
-        let checked_declaration_key = identity::declaration_node_key(declaration_key);
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared enum");
         assert_eq!(
             nodes[0].node(),
-            checked_declaration_key,
+            declaration_key,
             "the checked type node's id must be the declaration's own existing key"
         );
-        assert_eq!(
-            graph.checked_type_node(checked_declaration_key),
-            Some(nodes[0])
-        );
+        assert_eq!(graph.checked_type_node(declaration_key), Some(nodes[0]));
 
         let quire_exact::ValueType::Enum(shape) = to_kernel_value_type(nodes[0]) else {
             panic!("the sum form must convert to ValueType::Enum");
         };
         for case in ["Active", "Closed"] {
-            assert!(shape.contains(identity::mint_variant_id(checked_declaration_key, case)));
+            assert!(shape.contains(identity::mint_variant_id(declaration_key, case)));
         }
     }
 

@@ -354,7 +354,7 @@ impl DigestRecord {
 
 /// A single lowercase-hex ASCII digit's value, or `None` for anything else
 /// (including an uppercase hex digit -- FR-201's exact-match rule admits no
-/// case folding). Mirrors `crate::value::node`'s own `lower_hex`.
+/// case folding).
 fn lower_hex_nibble(digit: u8) -> Option<u8> {
     match digit {
         b'0'..=b'9' => Some(digit - b'0'),
@@ -365,9 +365,9 @@ fn lower_hex_nibble(digit: u8) -> Option<u8> {
 
 /// Parse exactly 64 lowercase-hex ASCII digits into 32 bytes (FR-201's
 /// exact-match rule: no case folding, no separators, no other length).
-/// Shared by [`DigestRecord::from_wire`] and [`WireNodeId::from_hex`], the
-/// two wire-digest parsers that both need this exact encoding.
-fn parse_lower_hex32(hex: &str) -> Option<[u8; 32]> {
+/// Shared by [`DigestRecord::from_wire`], [`WireNodeId::from_hex`] and this
+/// crate's downstream wire-digest parsers that need this exact encoding.
+pub fn parse_lower_hex32(hex: &str) -> Option<[u8; 32]> {
     let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
         return None;
     };
@@ -446,11 +446,10 @@ impl InvalidDigestRecord {
 pub struct WireNodeId([u8; 32]);
 
 impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike
-    /// `quire_exact::NodeKey::from_digest`, this constructor carries no
-    /// "only `check` calls this" restriction: a `WireNodeId` is exactly the
-    /// unchecked wire spelling, never a claim that the id resolves to a
-    /// real node.
+    /// Wrap an already-known wire node-id digest. Unlike the kernel
+    /// `NodeKey` constructor, this carries no "only `check` calls this"
+    /// restriction: a `WireNodeId` is exactly the unchecked wire spelling,
+    /// never a claim that the id resolves to a real node.
     pub fn from_digest(digest: [u8; 32]) -> Self {
         Self(digest)
     }

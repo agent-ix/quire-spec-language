@@ -82,11 +82,7 @@ fn jcs(value: &serde_json::Value) -> String {
 }
 
 fn hex(bytes: &[u8]) -> NodeKey {
-    let digest: String = Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    NodeKey::from_hex(&digest).unwrap()
+    NodeKey::from_digest(Sha256::digest(bytes).into())
 }
 
 fn fixture_key(preimage: &serde_json::Value) -> NodeKey {

@@ -14,22 +14,25 @@
 //! bytes in. Only QSL's `check` module is meant to call this constructor in
 //! production; this crate's own tests call it freely to exercise the type.
 //!
-//! **Not yet enforced.** ADR-011 T-12's `arch-lint api-surface` check names
-//! this rule, but as of this crate's own addition `tools/arch-lint/
-//! api_surface.rs` still targets the pre-extraction call patterns
-//! (`NodeKey::of(`, `NodeKey::from_bytes(`, `node_key_of(`) against
-//! `src/value/node.rs` on `origin/main`, with its own
-//! `pending_reason: "unreachable: NodeKey is defined in src/value/node.rs on
-//! origin/main"`. It does not yet name `quire_exact::node::NodeKey`,
-//! `from_digest`, or this crate at all, so nothing today actually fails a
-//! caller of this constructor outside QSL `check`. Updating the check to
-//! this crate's real constructor is follow-on work, not part of this slice.
+//! A wire-read node id becomes a `NodeKey` only by lookup in a checked
+//! package (ADR-013 O-04), never by parsing a digest string directly:
+//! parsing a wire digest stays QSL's own concern
+//! (`qsl_foundation::digest::WireNodeId`), not this constructor's. Bridging
+//! another digest type's bytes into a `NodeKey` has no canonical role
+//! either (ADR-013 O-05, OBS-018).
 //!
-//! `NodeKey::from_bytes` (the QSL `value/node.rs:49` internal escape hatch)
-//! and the public `NodeKey::from_hex` (`value/node.rs:25`) are both retired by
-//! this cut: hex parsing is a wire-string concern that stays with QSL's
-//! `WireNodeId`, which becomes a `NodeKey` only by lookup in a checked
-//! package (ADR-013 O-04), never by parsing a digest string directly.
+//! Two QSL call sites built on `from_digest` do not conform to the minting
+//! rule above and are named debt (FR-060 T12-B's named-debt list), not this
+//! design's sanctioned path:
+//! `value::node::NodeIdDocument::key` parses a wire digest string and wraps
+//! it in a `NodeKey` directly, and `value::model_query::to_object_reference`
+//! bridges an `EffectiveId`'s bytes into a `NodeKey`.
+//!
+//! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`)
+//! scans for the kernel constructor and reports every call site outside
+//! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`) -- including
+//! the two named above. `arch-lint` is not part of `make ci` (Makefile), so
+//! it is advisory, not gating, today.
 
 use std::fmt;
 

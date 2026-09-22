@@ -40,11 +40,7 @@ fn work_limit(work_units: u64) -> ScalarLimits {
 }
 
 fn key(label: &str) -> NodeKey {
-    let digest: String = Sha256::digest(label.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    NodeKey::from_hex(&digest).unwrap()
+    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn integer(value: i64) -> Integer {

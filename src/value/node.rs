@@ -7,90 +7,20 @@
 //! `invalid_semantic_graph`.
 
 use std::collections::BTreeSet;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use quire_exact::Integer;
 
-// `NODE_KEY_DOMAIN` is `quire_exact`'s own canonical constant (QSL-131):
-// byte-identical, and independent of `NodeKey` itself, which stays local
-// (see this module's own [`NodeKey`] doc).
-pub use quire_exact::NODE_KEY_DOMAIN;
-
-/// An opaque `quire.checked-semantic-node/v1` node key.
-///
-/// `quire_exact::node::NodeKey` (QSL-131) is a stripped kernel copy of this
-/// type: same 32-byte wrapper and `Display`/`Debug`, but its own module doc
-/// states it retires hex parsing and hashing from the kernel by design
-/// (`from_digest` is its one public constructor, wrapping an
-/// already-computed digest; QSL's own hex parsing and SHA-256 hashing stay
-/// here). This type's `from_hex`, `from_bytes` and `of` are exactly the
-/// retired capability, still load-bearing here
-/// (production callers in `value::model_query`/`value::member`, and every
-/// `it` fixture that builds a `NodeKey` from a literal digest), so widening
-/// `quire_exact::node::NodeKey` back out to cover them would undo that
-/// design rather than cut a duplicate. Cutting this type over to
-/// `quire_exact::node::NodeKey` needs its callers rerouted through a
-/// `WireNodeId`-style lookup first; that is remaining work, not part of this
-/// slice (Linear QSL-131).
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NodeKey([u8; 32]);
-
-impl NodeKey {
-    /// Parse 64 lowercase hexadecimal digits.
-    pub fn from_hex(digest: &str) -> Option<Self> {
-        let (pairs, []) = digest.as_bytes().as_chunks::<2>() else {
-            return None;
-        };
-        if pairs.len() != 32 {
-            return None;
-        }
-        let mut key = [0_u8; 32];
-        for (slot, [high, low]) in key.iter_mut().zip(pairs) {
-            *slot = (lower_hex(*high)? << 4) | lower_hex(*low)?;
-        }
-        Some(Self(key))
-    }
-
-    /// The raw digest.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
-    /// A key from its raw 32-byte digest, with no domain check: the caller
-    /// already knows the bytes are a node key (for example, a same-domain
-    /// identity bridged from another 32-byte digest type). Mirrors
-    /// [`quire_exact::EffectiveId::from_digest`].
-    pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    pub(crate) fn of(canonical: &[u8]) -> Self {
-        Self(Sha256::digest(canonical).into())
-    }
-}
-
-fn lower_hex(digit: u8) -> Option<u8> {
-    match digit {
-        b'0'..=b'9' => Some(digit - b'0'),
-        b'a'..=b'f' => Some(digit - b'a' + 10),
-        _ => None,
-    }
-}
-
-impl fmt::Display for NodeKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for NodeKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "NodeKey({self})")
-    }
-}
+// `NodeKey` and `NODE_KEY_DOMAIN` are `quire_exact`'s own types: the kernel
+// type's sole public constructor is `from_digest`, which wraps an
+// already-computed digest and performs no hashing. Wire-digest hex parsing
+// (`NodeIdDocument::key`) lives in `qsl_foundation::digest::parse_lower_hex32`;
+// this module does the SHA-256/JCS hashing (`node_key_of`) that QSL's own
+// preimage checking needs, then wraps the resulting bytes with the kernel
+// constructor -- the kernel type never parses or hashes on QSL's behalf.
+pub use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// The stable subject projection of the exact admitted owner of a nominal
 /// declaration.
@@ -253,8 +183,19 @@ pub(crate) struct NodeIdDocument {
 
 impl NodeIdDocument {
     /// The referenced key when the domain and digest spelling are canonical.
+    ///
+    /// Named debt (FR-060 T12-B's named-debt list, entry
+    /// `value::node::NodeIdDocument::key`): `NodeIdDocument` is read from
+    /// caller-supplied JSON through the public
+    /// `DimensionPreimage`/`UnitPreimage`/`EnumMemberPreimage::from_json`, so
+    /// this is a wire-read node id. ADR-013 O-04 says a wire-read node id
+    /// becomes a `NodeKey` only by lookup in a checked package, never by
+    /// parsing a digest string directly; this wraps the parsed bytes into a
+    /// `NodeKey` directly instead, not this design's sanctioned path.
     pub(crate) fn key(&self) -> Option<NodeKey> {
-        NodeKey::from_hex(&self.digest).filter(|_| self.domain == NODE_KEY_DOMAIN)
+        qsl_foundation::digest::parse_lower_hex32(&self.digest)
+            .filter(|_| self.domain == NODE_KEY_DOMAIN)
+            .map(NodeKey::from_digest)
     }
 }
 
@@ -372,10 +313,12 @@ pub(crate) fn is_qualified_name(segments: &[String]) -> bool {
     !segments.is_empty() && segments.iter().all(|segment| is_identifier(segment))
 }
 
-/// The node key of a canonical (JCS field-ordered) preimage.
+/// The node key of a canonical (JCS field-ordered) preimage. QSL computes
+/// the SHA-256 digest itself; the kernel `NodeKey` only wraps the finished
+/// bytes (`from_digest`), never hashes.
 pub(crate) fn node_key_of(value: &impl Serialize) -> Result<NodeKey, InvalidSemanticGraph> {
     serde_json::to_vec(value)
-        .map(|bytes| NodeKey::of(&bytes))
+        .map(|bytes| NodeKey::from_digest(Sha256::digest(bytes).into()))
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
 }
 

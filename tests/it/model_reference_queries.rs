@@ -219,13 +219,13 @@ fn object_reference(
     object: &str,
 ) -> ObjectReference {
     let universe = UniverseIdentity::new(universe.as_bytes()).unwrap();
-    let object_type = NodeKey::from_hex(&type_identity.to_string()).unwrap();
+    let object_type = NodeKey::from_digest(*type_identity.as_bytes());
     let identity = ObjectIdentity::new(object.as_bytes()).unwrap();
     ObjectReference::new(universe, object_type, identity)
 }
 
 fn node_key(identity: &EffectiveId) -> NodeKey {
-    NodeKey::from_hex(&identity.to_string()).unwrap()
+    NodeKey::from_digest(*identity.as_bytes())
 }
 
 struct Scenario {
@@ -555,7 +555,7 @@ fn check_refusal_as_postcondition(
 /// `TypeEnvironment::new` time, never through an expression) and finding 2's
 /// package-declared-but-not-in-the-model case need one each.
 fn fixed_key(byte: u8) -> NodeKey {
-    NodeKey::from_hex(&format!("{byte:02x}").repeat(32)).unwrap()
+    NodeKey::from_digest([byte; 32])
 }
 
 fn run(

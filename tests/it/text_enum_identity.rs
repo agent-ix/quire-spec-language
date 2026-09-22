@@ -395,11 +395,7 @@ fn jcs(value: &Value) -> String {
 }
 
 fn fixture_key(preimage: &Value) -> NodeKey {
-    let digest: String = Sha256::digest(jcs(preimage).as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    NodeKey::from_hex(&digest).unwrap()
+    NodeKey::from_digest(Sha256::digest(jcs(preimage).as_bytes()).into())
 }
 
 fn example_owner() -> NodeOwner {

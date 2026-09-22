@@ -63,8 +63,12 @@ fn digest_hex(preimage: &Value) -> String {
         .collect()
 }
 
+fn digest_bytes(preimage: &Value) -> [u8; 32] {
+    Sha256::digest(jcs(preimage).as_bytes()).into()
+}
+
 fn fixture_key(preimage: &Value) -> NodeKey {
-    NodeKey::from_hex(&digest_hex(preimage)).unwrap()
+    NodeKey::from_digest(digest_bytes(preimage))
 }
 
 // ---- graph fixtures --------------------------------------------------------
@@ -345,7 +349,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         (celsius_preimage, celsius),
     ];
     for (preimage, key) in &dimensions {
-        assert_eq!(NodeKey::from_hex(&digest_hex(preimage)).unwrap(), *key);
+        assert_eq!(NodeKey::from_digest(digest_bytes(preimage)), *key);
         assert_eq!(
             DimensionPreimage::from_json(preimage.clone())
                 .unwrap()
@@ -355,7 +359,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         );
     }
     for (preimage, key) in &units {
-        assert_eq!(NodeKey::from_hex(&digest_hex(preimage)).unwrap(), *key);
+        assert_eq!(NodeKey::from_digest(digest_bytes(preimage)), *key);
         assert_eq!(
             UnitPreimage::from_json(preimage.clone())
                 .unwrap()
