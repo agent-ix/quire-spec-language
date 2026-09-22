@@ -14,9 +14,9 @@ mod provenance;
 use native_rule_model::{parts, symbol, Parts};
 use quire_contract_ir as ir;
 use quire_spec_language::native_model::{
-    ModelLimits, NativeModel, ScalarKind, ScalarRole, ScalarSite, Unit,
+    ModelLimits, NativeModel, NativeModelError, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
-use quire_spec_language::{Code, Diagnostic, Phase};
+use quire_spec_language::{Code, Phase};
 use serde_json::{json, Value};
 
 fn authored(change: impl FnOnce(&mut Value)) -> Parts {
@@ -99,7 +99,7 @@ fn add_value(input: &mut Parts, name: &str, kind: ir::ValueDeclarationKind, ty: 
     .expect("added IR value must be valid before native admission");
 }
 
-fn refuse(input: Parts, code: Code) -> Box<Diagnostic> {
+fn refuse(input: Parts, code: Code) -> Box<NativeModelError> {
     let native = input.source.source().clone();
     let error = NativeModel::new(
         input.source,

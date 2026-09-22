@@ -44,12 +44,12 @@ fn bounded<'a>(
     models: &'a [NativeModel],
     expression: &str,
     limits: CheckLimits,
-) -> Result<CheckedPackage<'a>, Box<Diagnostic>> {
+) -> Result<CheckedPackage<'a>, Box<CheckingError>> {
     let (linked, bindings) = prepared(models, expression, ClauseKind::Invariant).unwrap();
     check(linked, bindings, limits)
 }
 
-fn exhaustion(result: Result<CheckedPackage<'_>, Box<Diagnostic>>) -> Box<Diagnostic> {
+fn exhaustion(result: Result<CheckedPackage<'_>, Box<CheckingError>>) -> Box<CheckingError> {
     let Err(error) = result else {
         panic!("must refuse without a partial checked package");
     };

@@ -9,7 +9,8 @@ use super::inputs::Populations;
 use super::types::Catalog;
 use super::variables::Variables;
 use super::{
-    failure, CheckLimits, CheckUsage, NativeType, Observation, Result, RuntimeRequirements,
+    failure, CheckLimits, CheckUsage, CheckingError, NativeType, Observation, Result,
+    RuntimeRequirements,
 };
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
 use crate::native_model::{NativeModel, ObjectRole, OperationRole, ScalarKind, ScalarSite};
@@ -87,7 +88,7 @@ struct Solver<'u, 'a> {
 }
 
 impl<'u, 'a> Solver<'u, 'a> {
-    fn invalid(&self, id: ExprId, message: &str) -> Box<crate::Diagnostic> {
+    fn invalid(&self, id: ExprId, message: &str) -> Box<CheckingError> {
         failure(
             self.unit.source(),
             Code::IllTyped,

@@ -13,8 +13,8 @@ use quire_contract_ir as ir;
 use super::constraints::NodeType;
 use super::types::Catalog;
 use super::{
-    failure, CheckLimits, CheckUsage, ClauseBinding, NativeType, Observation, PresencePremise,
-    ProofGoal, ProofValue, Result,
+    failure, CheckLimits, CheckUsage, CheckingError, ClauseBinding, NativeType, Observation,
+    PresencePremise, ProofGoal, ProofValue, Result,
 };
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationKey, DeclarationLocation, LinkedPackage, ResolutionTarget};
@@ -197,7 +197,7 @@ impl From<ir::Diagnostic> for RepresentationError {
 }
 
 impl RepresentationError {
-    fn into_native(self, source: &Source, span: Span, message: &str) -> Box<crate::Diagnostic> {
+    fn into_native(self, source: &Source, span: Span, message: &str) -> Box<CheckingError> {
         match self {
             Self::Unsupported => failure(source, Code::InvalidModelBinding, span, message),
             Self::Ir(diagnostic) => upstream(source, span, vec![diagnostic], message),
@@ -283,6 +283,7 @@ impl<'u, 'a> Builder<'u, 'a> {
     fn source(&self, id: ExprId) -> Result<ir::SourceSpan> {
         self.formal
             .to_ir(self.linked.unit().source(), self.span(id))
+            .map_err(Into::into)
     }
     fn ty(&self, id: ExprId) -> Result<&'u NodeType<'a>> {
         self.types
@@ -351,12 +352,14 @@ impl<'u, 'a> Builder<'u, 'a> {
             "proof values",
         )?;
         let symbol = ir::SymbolName::new(format!("proof{}", key.0)).map_err(|upstream| {
-            failure(
+            let mut error = failure(
                 self.meter.source,
                 Code::InvalidModelBinding,
                 span,
-                format!("generated proof symbol is invalid: {upstream}"),
-            )
+                "generated proof symbol is invalid",
+            );
+            error.upstream = Some(Box::new(upstream));
+            error
         })?;
         let source = self.source(native)?;
         let representation = proof_type(ty).map_err(|error| {
@@ -688,7 +691,7 @@ fn upstream(
     span: Span,
     diagnostics: Vec<ir::Diagnostic>,
     message: &str,
-) -> Box<crate::Diagnostic> {
+) -> Box<CheckingError> {
     let cause = diagnostics.into_iter().next();
     let code = match cause.as_ref().map(|diagnostic| diagnostic.code) {
         Some(
@@ -699,12 +702,7 @@ fn upstream(
         Some(ir::DiagnosticCode::PotentiallyUndefined) => Code::UndefinedExpression,
         _ => Code::InvalidModelBinding,
     };
-    let message = match cause {
-        Some(cause) => {
-            let upstream_span = cause.span.clone();
-            format!("{message}: {cause} (upstream span: {upstream_span:?})")
-        }
-        None => message.to_owned(),
-    };
-    failure(source, code, span, message)
+    let mut error = failure(source, code, span, message);
+    error.upstream = cause.map(Box::new);
+    error
 }
