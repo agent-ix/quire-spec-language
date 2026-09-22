@@ -99,7 +99,7 @@ pub(crate) struct Rule {
     pub(crate) scope_note: Option<&'static str>,
 }
 
-/// today's three T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05).
+/// today's four T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
@@ -198,6 +198,30 @@ pub(crate) const RULES: &[Rule] = &[
         // re-exports the kernel `EffectiveId` rather than defining it, but
         // the marker path's presence is all this check tests).
         pending_reason: "unreachable: src/model/key.rs already exists on origin/main",
+        scope_note: Some(
+            "scoped to QSL's own tree only; does not scan quire-contract-runtime's or \
+             quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
+             name an allowed-caller mapping for either, not decided here (#213)",
+        ),
+    },
+    Rule {
+        id: "T12-D",
+        description: "only `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21)",
+        role: Role::Qsl,
+        // The kernel's real constructor (`quire-exact`'s `PopulationId::
+        // from_digest`, QSL-131 Slice B). No mint call site exists yet on
+        // origin/main (QSL `model` minting a `PopulationId` at admission
+        // time is QSL-131's other half), so this rule is expected to report
+        // zero violations until that lands, the same as any newly added
+        // rule with no live callers yet.
+        call_patterns: &["PopulationId::from_digest("],
+        allowed_caller_prefixes: &["model"],
+        requires_path: Some("src/model/population.rs"),
+        // Genuinely unreachable for the same reason as T12-C's, above:
+        // `src/model/population.rs` already exists on origin/main (FR-084's
+        // `admit_binding`/`admit_invocation`), so the marker path's presence
+        // is all this check tests.
+        pending_reason: "unreachable: src/model/population.rs already exists on origin/main",
         scope_note: Some(
             "scoped to QSL's own tree only; does not scan quire-contract-runtime's or \
              quire-contract-codegen's own copies of this identity's shape -- ADR-013 does not \
@@ -609,5 +633,51 @@ mod tests {
         let rule = &RULES[0]; // T12-A: now live (src/replay.rs exists).
         let error = evaluate(rule, qsl_dir.path(), None).unwrap_err();
         assert!(error.to_string().contains("--cg"), "{error}");
+    }
+
+    /// tc_arch_lint_api_surface_012 (negative control, ADR-013 QC-21): a call
+    /// to the kernel `PopulationId` constructor from a module outside T12-D's
+    /// allowed list is a violation, the same shape as T12-C's `EffectiveId`
+    /// check (tc_arch_lint_api_surface_003).
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "src/value/composite.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "value::composite");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_013 (ADR-013 QC-21): a call to the kernel
+    /// `PopulationId` constructor from a `model` module is not a violation --
+    /// the mirror of T12-C's allowed-caller check
+    /// (tc_arch_lint_api_surface_004).
+    #[trace("TC-157", "FR-060-AC-2")]
+    #[test]
+    fn tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D: allowed prefix "model"
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty());
+        assert!(outcome.passed());
     }
 }

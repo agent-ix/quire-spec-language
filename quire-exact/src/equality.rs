@@ -147,10 +147,6 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
                 l.retained() == r.retained()
             }
             (Value::Enum(l), Value::Enum(r)) => l == r,
-            // `PopulationId` is an opaque digest, compared exactly like
-            // `VariantId` above: no resolution, no reference to the binding
-            // it names (ADR-013 O-13 Population row, QC-21, FR-089).
-            (Value::Population(l), Value::Population(r)) => l == r,
             (Value::Reference(l), Value::Reference(r)) => {
                 if l.universe() != r.universe() {
                     return Err(Refusal::ForeignReference);
@@ -309,30 +305,5 @@ mod tests {
             plan_pairs(&left, &right),
             Err(Refusal::ForeignReference)
         ));
-    }
-
-    /// TC-297: `Value::Population` compares equal exactly when the
-    /// `PopulationId` digests are equal, and unequal otherwise -- purely by
-    /// identity, the same rule `Value::Enum` uses, with no resolution to
-    /// any binding (ADR-013 O-13 Population row, QC-21, FR-089).
-    #[trace("TC-297", "FR-089-AC-5")]
-    #[test]
-    fn tc_297_population_values_compare_equal_by_digest_only() {
-        use crate::identity::PopulationId;
-
-        fn digest(byte: u8) -> [u8; 32] {
-            let mut bytes = [0_u8; 32];
-            bytes[31] = byte;
-            bytes
-        }
-
-        let left = Value::Population(PopulationId::from_digest(digest(1)));
-        let same_digest = Value::Population(PopulationId::from_digest(digest(1)));
-        let plan = plan_pairs(&left, &same_digest).unwrap();
-        assert!(plan.equal);
-
-        let different_digest = Value::Population(PopulationId::from_digest(digest(2)));
-        let plan = plan_pairs(&left, &different_digest).unwrap();
-        assert!(!plan.equal);
     }
 }

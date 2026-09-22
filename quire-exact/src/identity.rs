@@ -13,14 +13,11 @@
 //! digest and never hashes. QSL's `check`/`model` compute each digest over
 //! their own preimage schema and mint the id; this crate holds no preimage
 //! knowledge for any of them. The ADR-011 T-12 `arch-lint api-surface` check
-//! (T12-C) enforces "only `model` calls `EffectiveId::from_digest`" by
-//! scanning QSL's tree for that call pattern (#213 S-2 fixed the rule's
+//! enforces "only `model` calls `EffectiveId::from_digest`" (T12-C) and
+//! "only `model` calls `PopulationId::from_digest`" (T12-D, ADR-013 QC-21)
+//! by scanning QSL's tree for each call pattern (#213 S-2 fixed T12-C's
 //! pattern to match this crate's real `from_digest`, in place of the
-//! pre-migration `from_digest_bytes(` name); ADR-013 QC-21 states the same
-//! "only `model` calls it" discipline for `PopulationId::from_digest`, but no
-//! call site exists yet (QSL `model` minting is QSL-131's other half), so no
-//! T-12 rule for it is added by this crate -- that is the QSL-side lane that
-//! adds the mint call.
+//! pre-migration `from_digest_bytes(` name).
 //! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) still
 //! scans for the pre-migration `crate::value::node::NodeKey` names and is
 //! separate, unclaimed debt.

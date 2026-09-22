@@ -26,22 +26,23 @@
 //!
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
-//! - [`Value`]/[`ValueType`]: `Value::Population(PopulationId)` pairs with
-//!   `ValueType::Population(u64)` at the presence level only -- the kernel
-//!   has no `model` correspondence to resolve `PopulationId` through, so
-//!   `ValueType::admits` cannot compare the declared `u64` against a
-//!   resolved binding's own declared maximum (ADR-013 O-13 Population row,
-//!   QC-21, FR-089); that comparison is the QSL evaluator's job (the
-//!   `ValueType::Enum` shape, by contrast, carries its variant set inline
-//!   per ADR-013 O-14, so it needs no declaration lookup and is not a
-//!   capability loss).
-//! - the `key` and `equality` modules: an enum or population pair keys and
-//!   compares equal by raw digest, with no declaration-aware ordering or
-//!   resolution. (A same-enum check is *not* a loss here: `ValueType::
-//!   Enum(EnumShape)`'s admission already guarantees both operands share
-//!   one enum's variant set before either module ever runs, per ADR-013
-//!   O-14; no equivalent admission-time guarantee exists for population
-//!   identities, which this crate cannot resolve at all.)
+//! - [`Value`]/[`ValueType`]: `ValueType::admits` does not pair
+//!   `ValueType::Population(u64)` with `Value::Population(PopulationId)`
+//!   (ADR-013 O-13 Population row, QC-21, FR-089): FR-089-AC-5 requires
+//!   comparing the declared `u64` against a resolved binding's own declared
+//!   maximum, and this crate cannot resolve a `PopulationId` to a binding,
+//!   so every such pair falls through to `admits`'s catch-all and returns
+//!   `false` (the `ValueType::Enum` shape, by contrast, carries its variant
+//!   set inline per ADR-013 O-14, so it needs no declaration lookup and is
+//!   not a capability loss).
+//! - the `key` and `equality` modules: `Value::Population` has no key and
+//!   compares under neither, matching QSL's own `value::equality`/
+//!   `value::key`, which refuse a population as an equality operand or key
+//!   participant today -- a population binding is a direct operand of
+//!   `allInstances`/`lookup` only, never an equality or key operand. (A
+//!   same-enum check *is* still available: `ValueType::Enum(EnumShape)`'s
+//!   admission already guarantees both operands share one enum's variant
+//!   set before either module ever runs, per ADR-013 O-14.)
 //! - [`Quantity`]: no cross-unit arithmetic, comparison or equality; only
 //!   same-unit operations.
 //! - the `equality` module: the top-level text/enum/quantity schedule

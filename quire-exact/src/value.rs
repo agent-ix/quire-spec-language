@@ -26,19 +26,14 @@
 //! - `Value::Population(Arc<PopulationBinding>)` becomes
 //!   `Value::Population(PopulationId)` (ADR-013 O-13 Population row, QC-21,
 //!   FR-089): the kernel carries the opaque identity alone, never the
-//!   `PopulationBinding` a QSL `model` type still owns. `ValueType::
-//!   Population(u64)` is unchanged (T-6: "keeps `u64` count only"), and
-//!   `ValueType::admits` now recognizes the pairing again -- but only at the
-//!   presence level: any `Value::Population(_)` satisfies any
-//!   `ValueType::Population(_)` here, because the declared maximum
-//!   comparison FR-089-AC-5 states is against the *resolved* binding's own
-//!   declared maximum, and resolving a `PopulationId` needs the QSL `model`
-//!   correspondence this crate does not have and does not import. That
-//!   resolved-maximum check is the QSL evaluator's job (FR-089's "The
-//!   evaluator resolves identity through the recorded correspondence"),
-//!   blocked on `model` minting the correspondence in the first place --
-//!   this crate's contribution is exactly the opaque identity and the
-//!   presence-level pairing, no more.
+//!   `PopulationBinding` a QSL `model` type owns. `ValueType::Population(u64)`
+//!   is unchanged (T-6: "keeps `u64` count only"). `ValueType::admits` does
+//!   not pair `ValueType::Population` with `Value::Population`: FR-089-AC-5
+//!   requires comparing the declared `u64` against a resolved binding's own
+//!   declared maximum, and this crate has no way to resolve a `PopulationId`
+//!   to a binding, so every `(ValueType::Population(_),
+//!   Value::Population(_))` pair falls through to `admits`'s existing
+//!   catch-all and returns `false`.
 //! - `TypeEnvironment::record`/`tuple`/`evaluate_record`/`evaluate_tuple`
 //!   become free functions taking the declared shape directly
 //!   (`&[FieldDeclaration]` or `&[ValueType]`) instead of looking it up by
@@ -124,12 +119,7 @@ pub enum ValueType {
     /// `Reference<T>` to an object of the object type with this effective
     /// identity (ADR-013 T-6).
     Reference(EffectiveId),
-    /// The `Population<T>[N]` parameter type's declared maximum `N`. Pairs
-    /// with `Value::Population(PopulationId)` at the presence level only
-    /// (ADR-013 O-13 Population row, QC-21, FR-089): `N` itself is checked
-    /// against the *resolved* binding's declared maximum by the QSL
-    /// evaluator, not by this crate's `admits` (see this module's doc
-    /// comment).
+    /// The `Population<T>[N]` parameter type's declared maximum `N`.
     Population(u64),
 }
 
@@ -170,13 +160,11 @@ impl ValueType {
             (Self::Reference(object_type), Value::Reference(reference)) => {
                 reference.object_type() == *object_type
             }
-            // Presence-level pairing only: `Value::Population` carries an
-            // opaque `PopulationId` with no declared maximum of its own, so
-            // this crate cannot compare `maximum` against anything -- the
-            // resolved-maximum check FR-089-AC-5 states happens once the QSL
-            // evaluator looks `population_id` up in `model`'s recorded
-            // correspondence (see this module's doc comment).
-            (Self::Population(_), Value::Population(_)) => true,
+            // `ValueType::Population` does not pair with `Value::Population`
+            // here (see this module's doc comment): FR-089-AC-5 requires
+            // comparing the declared maximum against a resolved binding's
+            // own declared maximum, which this crate cannot resolve. This
+            // pair falls through to the catch-all below and returns `false`.
             (
                 Self::Boolean
                 | Self::Integer
@@ -221,8 +209,7 @@ pub enum Value {
     Enum(VariantId),
     /// An opaque population admission identity (ADR-013 O-13 Population
     /// row, QC-21, FR-089): never the `PopulationBinding` itself, which
-    /// stays a QSL `model` type. Resolving this identity to its binding is
-    /// the QSL evaluator's job, through `model`'s recorded correspondence.
+    /// stays a QSL `model` type.
     Population(PopulationId),
     /// An option value.
     Option(Arc<OptionValue>),
@@ -748,42 +735,6 @@ mod tests {
         assert!(shape.admits(&Value::Enum(in_shape)));
         assert!(!shape.admits(&Value::Enum(out_of_shape)));
         assert!(!ValueType::Boolean.admits(&Value::Enum(in_shape)));
-    }
-
-    /// TC-292 (FR-089-AC-2): the kernel `Value::Population` variant's
-    /// payload is a bare `PopulationId` -- constructing one and matching it
-    /// back out of the value yields exactly the identity that was put in,
-    /// never a `PopulationBinding` or any other `model::population` state.
-    /// There is no such state reachable from this behavior at all: this
-    /// crate imports nothing outside itself (`quire-exact/Cargo.toml`
-    /// declares no dependency on `quire-spec-language` or any crate
-    /// exposing `model::population`), so no test needs to scan for an
-    /// import that the crate graph already makes impossible.
-    #[trace("TC-292", "FR-089-AC-2")]
-    #[test]
-    fn tc_292_population_variant_carries_only_the_opaque_identity() {
-        let id = PopulationId::from_digest(digest(9));
-        let value = Value::Population(id);
-        let Value::Population(payload) = value else {
-            panic!("Value::Population must destructure back to its own PopulationId");
-        };
-        assert_eq!(payload, id);
-    }
-
-    /// TC-297: `ValueType::Population` admits any `Value::Population` at
-    /// the presence level -- the resolved-maximum comparison FR-089-AC-5
-    /// also names needs QSL `model`'s recorded correspondence, which this
-    /// crate does not have (see this module's doc comment) -- and refuses
-    /// every other `Value` kind; conversely, no other `ValueType` admits a
-    /// `Value::Population`.
-    #[trace("TC-297", "FR-089-AC-5")]
-    #[test]
-    fn tc_297_population_type_pairs_with_population_value_only() {
-        let id = PopulationId::from_digest(digest(11));
-        assert!(ValueType::Population(5).admits(&Value::Population(id)));
-        assert!(ValueType::Population(0).admits(&Value::Population(id)));
-        assert!(!ValueType::Population(5).admits(&Value::Boolean(true)));
-        assert!(!ValueType::Boolean.admits(&Value::Population(id)));
     }
 
     /// TC-309: building a record with a missing required field is refused
