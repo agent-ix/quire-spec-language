@@ -32,7 +32,6 @@
 //! below -- three now-`it` modules each used to include it as their own
 //! private copy (`clippy::duplicate_mod` denies that once they share a
 //! crate).
-#![allow(dead_code)]
 
 pub mod composed_types;
 #[path = "../../examples/config-version/fixtures.rs"]
