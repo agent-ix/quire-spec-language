@@ -543,13 +543,25 @@ re-walks them against the scenarios.
   break this rule. The rule is met by deleting the native-v1 type with SEAM-1
   (M-6). No type is renamed (AD-016 Owner decision 6). The RT and IR types of
   that name stay in their repositories as AD-016 records them.
-- The S4 in-process type is defined in layer-4 `package`. `package` keeps its
-  fields and its constructor private and exposes read-only accessors. Its
-  `call` entry is implemented in layer-5 `value::expression` over those
-  accessors. `value::expression` names the type through one `pub use`, so the
-  AD-016 arrow 7 path `value::expression::CheckedPackage::call` is the
-  contract, not a second type. A `compile_fail` test shows that
-  `value::expression` cannot construct it.
+- The S4 in-process type is defined in layer-4 `package` (module
+  `checked_package`, §6.2). `package` keeps its fields and its constructor
+  private and exposes read-only accessors. `value::expression` names the type
+  through one `pub use`, so the AD-016 arrow 7 path
+  `value::expression::CheckedPackage::call` is the contract, not a second
+  type. A `compile_fail` test shows that `value::expression` cannot
+  construct it.
+- `CheckedPackage`'s layer-5 operations, `call`, `evaluate`,
+  `emit_function_package_v2` and `decode_function_package_v2`, are the
+  methods of the extension trait `CheckedPackageEvaluation`. Layer-5
+  `value::expression` defines the trait and implements it for
+  `CheckedPackage` over `package`'s accessors. The operations are trait
+  methods because Rust accepts an inherent `impl` only in the crate that
+  defines the type (E0116), and layer-4 `package` is its own crate,
+  `qsl-package` (X-7). The
+  trait keeps the method names, so `pkg.call(..)` and
+  `CheckedPackage::call(&pkg, ..)` both resolve, as AD-016 Owner decision 6
+  requires. A caller brings `CheckedPackageEvaluation` into scope to call
+  them; `value` re-exports it beside `CheckedPackage`.
 - A value that fails a stage keeps the previous stage's type. It is never
   wrapped as the next stage's type in a failed state.
 

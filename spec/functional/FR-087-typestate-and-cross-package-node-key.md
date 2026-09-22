@@ -368,9 +368,12 @@ during implementation.**
 - `CheckedPackage` (S4 in-process output), relocated to layer-4 `package`,
   per ADR-013 T-1's text and ADR-011 §4's mechanism: its fields and
   constructor private to `package`, its state reached elsewhere only
-  through named accessors, with `call` named through `value::expression`
-  by one `pub use` (`pub use crate::checked_package::CheckedPackage;`, no
-  third name, never a glob). Until X-7, layer-4 `package`'s content lives in
+  through named accessors, named in `value::expression` by one `pub use`
+  (`pub use crate::checked_package::CheckedPackage;`, no third name, never a
+  glob). Its layer-5 operations are methods of the `CheckedPackageEvaluation`
+  extension trait, which `value::expression` defines and implements for it
+  (ADR-011 §4); a caller brings the trait into scope, and the method names,
+  `CheckedPackage::call` among them, are unchanged. Until X-7, layer-4 `package`'s content lives in
   the top-level module `checked_package` (ADR-011 §6.2, `package` row), so
   every `package` path this requirement names for the canonical
   `CheckedPackage` resolves under `crate::checked_package`. `package` constructs it from the `CheckedGraph` the
@@ -423,11 +426,10 @@ step from a `CheckedGraph` and, per E4, the checked dependency closure (each
 dependency's own checked package, compiled from its digest-addressed source
 and verified against the identity the checking package's I2 resolution
 named). `CheckedPackage`'s constructor and fields SHALL be private to
-`package`; `value::expression`'s `CheckedPackage::call` and
-`CheckedPackage::evaluate` (layer 5, unaffected by this requirement) SHALL
-reach its state only through `package`'s named accessors, per ADR-011 §4's
-mechanism, exactly as they do today for the fields `package` already keeps
-private.
+`package`; `CheckedPackage::call` and `CheckedPackage::evaluate` (layer 5,
+methods of `value::expression`'s `CheckedPackageEvaluation` trait, unaffected
+by this requirement) SHALL reach its state only through `package`'s named
+accessors, per ADR-011 §4's mechanism.
 
 This closes the edge ADR-011 §6.1 forbids: `check` (layer 3) SHALL import
 nothing from `package` (layer 4), since `check` no longer names

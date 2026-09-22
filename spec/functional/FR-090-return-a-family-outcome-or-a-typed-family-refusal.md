@@ -170,7 +170,10 @@ SHALL return `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(i)))`.
 ### Clause expressions evaluate through `CheckedPackage::evaluate`
 
 `CheckedPackage::evaluate` is the S6a entry point for a checked clause
-expression. Its target signature is
+expression. It is a method of the `CheckedPackageEvaluation` extension trait,
+which `value::expression` defines and implements for `CheckedPackage`
+(ADR-011 §4), so a caller brings that trait into scope. `call` is a method of
+the same trait. Its target signature, as the trait declares it, is
 
 ```text
 fn evaluate(
