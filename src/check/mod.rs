@@ -90,6 +90,7 @@ use facts::{CallSite, Definedness};
 use crate::family::FamilyContract;
 use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use crate::value::composite::ValueType;
+use crate::value::node::Identifier;
 
 pub(crate) use check::Scope;
 pub(crate) use family::ValueFunctionFamily;
@@ -567,7 +568,7 @@ impl PackageDeclarations {
                 .members
                 .iter()
                 .map(|member| {
-                    identity::Identifier::new(member.case().to_owned())
+                    Identifier::new(member.case().to_owned())
                         .map(identity::SumVariant::new)
                         .expect(
                             "an EnumBinding's own EnumDeclaration/EnumMemberPreimage \

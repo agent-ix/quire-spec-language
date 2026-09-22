@@ -203,10 +203,10 @@ pub use ieee::{
     IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind,
     IeeeProvenance, IeeeResult, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
-pub use member::{Identifier, InvalidIdentifier, Member};
+pub use member::Member;
 pub use node::{
-    InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
-    SemanticGraphCause, NODE_KEY_DOMAIN,
+    Identifier, InvalidIdentifier, InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner,
+    OwnerSelection, OwnerSubject, SemanticGraphCause, NODE_KEY_DOMAIN,
 };
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,

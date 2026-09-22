@@ -20,7 +20,7 @@
 
 use serde_json::{json, Value};
 
-use super::node::{is_identifier, NodeKey};
+use super::node::{Identifier, NodeKey};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
@@ -28,39 +28,6 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord};
 // tests below still assert the wire shape against the domain's own constant.
 #[cfg(test)]
 use super::node::NODE_KEY_DOMAIN;
-
-/// A `node-identity-preimage.schema.json` `$defs.Identifier`
-/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the type every `Member` name/operator field
-/// carries, so an invalid identifier is refused at construction instead of
-/// being serialized as a schema-invalid `OperationMember` (ADR-013 O-06).
-/// Reuses `is_identifier`, the same character-class check this crate's
-/// other identifier-shaped fields already use ("one fact, one place"),
-/// rather than a second copy of the schema's character class.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Identifier(String);
-
-/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("a member identifier is `^[A-Za-z_][A-Za-z0-9_]*$`")]
-pub struct InvalidIdentifier;
-
-impl Identifier {
-    /// `value` as a member identifier, or [`InvalidIdentifier`] if it is not
-    /// `^[A-Za-z_][A-Za-z0-9_]*$`.
-    pub fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
-        let value = value.into();
-        if is_identifier(&value) {
-            Ok(Self(value))
-        } else {
-            Err(InvalidIdentifier)
-        }
-    }
-
-    /// The identifier's own text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
@@ -320,35 +287,5 @@ mod tests {
             name: Identifier::new("same").unwrap(),
         };
         assert_ne!(field, operation);
-    }
-
-    /// ADR-013 O-06/#260 review item 3: a name that is not
-    /// `^[A-Za-z_][A-Za-z0-9_]*$` is refused at `Identifier::new`, before a
-    /// `Member` carrying it can ever exist to be serialized as a
-    /// schema-invalid `OperationMember`.
-    #[test]
-    fn a_non_identifier_name_is_refused() {
-        for invalid in ["not an id!", "", "1starts_with_digit", "has-a-dash"] {
-            assert_eq!(
-                Identifier::new(invalid),
-                Err(InvalidIdentifier),
-                "{invalid:?} must be refused"
-            );
-        }
-    }
-
-    /// The positive complement of the refusal above: every name/operator
-    /// this file's own schema-shape tests use is itself accepted.
-    #[test]
-    fn ordinary_identifiers_are_accepted() {
-        for valid in [
-            "quantity",
-            "source",
-            "totalPrice",
-            "add",
-            "_leading_underscore",
-        ] {
-            assert!(Identifier::new(valid).is_ok(), "{valid:?} must be accepted");
-        }
     }
 }

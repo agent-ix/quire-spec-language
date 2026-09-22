@@ -91,50 +91,10 @@ use quire_exact::{
 
 use super::family::Preimage;
 use crate::model::key::DeclarationKey;
-use crate::value::node::is_identifier;
+use crate::value::node::Identifier;
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
-}
-
-/// `check`'s own identifier-shaped single name segment (ADR-013 R-09,
-/// lane-private types) -- not `value::member::Identifier`. Used today only
-/// to declare a [`SumVariant`]'s own case name (PR #300 review round 2,
-/// HIGH-1: the prior `&[Identifier]` declared-name-sequence use, for a
-/// deleted minter, is gone -- see this module's own doc). FR-068-AC-6
-/// bounds `check`'s imports from `value` to nine K-designated modules plus a
-/// small declared-interim allow-list, and `member` (where `value::Identifier`
-/// actually lives) is in neither; `xtask`'s own `import_graph::
-/// value_import_edges` scan enforces this over `check`'s shipped dependency
-/// graph (this type's own predecessor, `crate::value::Identifier`, tripped
-/// it). Reuses `value::node::is_identifier` (a tier-1, K-designated module)
-/// for the same `^[A-Za-z_][A-Za-z0-9_]*$` character-class check
-/// `value::member::Identifier` itself is built on ("one fact, one place"),
-/// rather than a second copy of the regex.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Identifier(String);
-
-/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("a checked name segment is `^[A-Za-z_][A-Za-z0-9_]*$`")]
-pub(super) struct InvalidIdentifier;
-
-impl Identifier {
-    /// `value` as a checked name segment, or [`InvalidIdentifier`] if it is
-    /// not `^[A-Za-z_][A-Za-z0-9_]*$`.
-    pub(super) fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
-        let value = value.into();
-        if is_identifier(&value) {
-            Ok(Self(value))
-        } else {
-            Err(InvalidIdentifier)
-        }
-    }
-
-    /// The identifier's own text.
-    pub(super) fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -381,12 +341,15 @@ impl Frame {
 // second `QualifiedName` type: FR-068-AC-3 forbids `check` (layer 3) from
 // importing `value::expression` (layer 5) at all, so a `check`-owned type
 // could never be the same type as that one, and a same-named but distinct
-// type here would only invite the two to be confused. `Identifier` (above)
-// is this module's own name-*segment* type -- a single component, never a
-// declared name sequence claiming the O-11 name itself; PR #300 review
-// round 2 (HIGH-1) removed the one caller that used to build a `&[Identifier]`
-// name sequence from it (`mint_type_declaration_identity`), so today
-// `Identifier` names only a `SumVariant`'s own single declared case.
+// type here would only invite the two to be confused. `Identifier`
+// (`crate::value::node::Identifier`, imported above) is this module's own
+// name-*segment* use -- a single component, never a declared name sequence
+// claiming the O-11 name itself; PR #300 review round 2 (HIGH-1) removed the
+// one caller that used to build a `&[Identifier]` name sequence from it
+// (`mint_type_declaration_identity`), so today `Identifier` names only a
+// `SumVariant`'s own single declared case. `node` is one of FR-068-AC-6's
+// nine K-designated `value` siblings `check` may import from unbounded, so
+// this is a normal tier-1 edge.
 //
 // PR #300 review finding 2: the checker's own name -> node id resolution
 // function already exists and is exercised in production --
@@ -436,10 +399,7 @@ impl SumVariant {
         Self { name }
     }
 
-    /// This variant's own declared name. `&str`, not `&Identifier`
-    /// (`Identifier` is `pub(super)`, `check`-private, per its own doc --
-    /// `SumVariant` is `pub`, exported crate-wide, so its own public
-    /// accessor surface cannot name a type more private than itself).
+    /// This variant's own declared name.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
