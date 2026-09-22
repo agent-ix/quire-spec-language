@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-023: real native execution and retained request provenance.
 
-// This shared public-API fixture also serves graph and operation binaries.
+// This shared public-API fixture also serves graph and operation `it` modules.
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;

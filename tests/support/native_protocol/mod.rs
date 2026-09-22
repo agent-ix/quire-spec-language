@@ -156,7 +156,7 @@ impl Inputs {
 
     #[allow(
         dead_code,
-        reason = "Shared fixture module; each test binary selects its own constructor"
+        reason = "Shared fixture module; each caller selects its own constructor"
     )]
     pub fn new(units: &[Unit<'_>]) -> Self {
         Self::with_model(units, composed_inputs::model("NativeEmission"))

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-022: mapped source admission through the actual native compiler/runtime.
 
-// The shared fixture also serves operation/graph tests in other binaries.
+// The shared fixture also serves operation/graph tests in other `it` modules.
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;

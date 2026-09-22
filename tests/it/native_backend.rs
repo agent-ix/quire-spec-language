@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! IT-008: actual generated Rust and measured coverage against native execution.
 
-// This shared fixture module also serves operation/graph tests in other binaries.
+// This shared fixture module also serves operation/graph tests in other `it` modules.
 use crate::support::runtime_setup as setup;
 
 use std::{fs, path::Path, path::PathBuf, process::Command};

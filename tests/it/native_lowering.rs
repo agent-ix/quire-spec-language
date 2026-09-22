@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-009: real frontend-to-binder correspondence and refusal controls.
 
-// This shared fixture module also serves runtime execution tests in other binaries.
+// This shared fixture module also serves runtime execution tests in other `it` modules.
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
