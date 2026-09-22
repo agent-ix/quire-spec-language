@@ -35,17 +35,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
-    Charge, ChargePoint, ComparisonOperator, Decimal, DecimalOperation, IllTyped, IllTypedCause,
-    Integer, LimitKind, Meter, Presence, Rational,
+    compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
+    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Presence,
+    Rational,
 };
 
 use super::composite::{
     composite, match_names, Component, ConstructionCause, ConstructionRefusal, Deferred,
     FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
 };
-use super::decimal::{
-    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, DecimalType,
-};
+use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::compare_enum;
 use super::equality::planned_equality;
 use super::node::NodeKey;

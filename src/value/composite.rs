@@ -44,8 +44,8 @@ use quire_exact::IllTyped;
 use quire_exact::Rational;
 use quire_exact::TextType;
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, IeeeValue, Integer, IntegerInterval, LimitKind, Meter,
-    PopulationId, Presence, RationalDomain,
+    Charge, ChargePoint, IeeeValue, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
+    Presence, RationalDomain,
 };
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
