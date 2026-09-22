@@ -6,17 +6,20 @@ use crate::token::LexError;
 use crate::{Code, Diagnostic, Phase, Source, Span};
 use logos::Logos;
 
-/// Layer-1 parse limits: the CST/lexer bounds this crate seam owns, separate
-/// from the historical SEAM `syntax::Limits`. Caller limits may lower these
-/// ceilings, never disable them.
+/// Layer-1 parse limits: the lexer's own recognizer bounds and the
+/// complete-V1 CST bounds built on it. Caller limits may lower these
+/// ceilings, never disable them. Equality compares the requested capacities,
+/// so a resource-only configuration change remains visible in retained build
+/// provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
     /// Inclusive input-content ceiling, clamped to 1 MiB.
     pub source_bytes: usize,
-    /// Historical parsing: maximum non-comment tokens. Complete parsing:
-    /// maximum retained CST leaves. Clamped to 100,000.
+    /// Maximum tokens the lexer's recognizer admits, and the retained CST
+    /// leaf ceiling for complete-V1 parsing. Clamped to 100,000.
     pub tokens: usize,
-    /// Maximum syntax nodes, clamped to 50,000.
+    /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
+    /// node per matched grammar production.
     pub nodes: usize,
     /// Maximum delimiter or recursive parser nesting, clamped to 64.
     pub nesting: usize,
