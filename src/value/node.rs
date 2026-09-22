@@ -14,10 +14,27 @@ use sha2::{Digest, Sha256};
 
 use quire_exact::Integer;
 
-/// Digest domain of every checked semantic node key.
-pub const NODE_KEY_DOMAIN: &str = "quire.checked-semantic-node/v1";
+// `NODE_KEY_DOMAIN` is `quire_exact`'s own canonical constant (QSL-131):
+// byte-identical, and independent of `NodeKey` itself, which stays local
+// (see this module's own [`NodeKey`] doc).
+pub use quire_exact::NODE_KEY_DOMAIN;
 
 /// An opaque `quire.checked-semantic-node/v1` node key.
+///
+/// `quire_exact::node::NodeKey` (QSL-131) is a stripped kernel copy of this
+/// type: same 32-byte wrapper and `Display`/`Debug`, but its own module doc
+/// states it retires hex parsing and hashing from the kernel by design
+/// (`from_digest` is its one public constructor, wrapping an
+/// already-computed digest; QSL's own hex parsing and SHA-256 hashing stay
+/// here). This type's [`Self::from_hex`], [`Self::from_bytes`] and
+/// [`Self::of`] are exactly the retired capability, still load-bearing here
+/// (production callers in `value::model_query`/`value::member`, and every
+/// `it` fixture that builds a `NodeKey` from a literal digest), so widening
+/// `quire_exact::node::NodeKey` back out to cover them would undo that
+/// design rather than cut a duplicate. Cutting this type over to
+/// `quire_exact::node::NodeKey` needs its callers rerouted through a
+/// `WireNodeId`-style lookup first; that is remaining work, not part of this
+/// slice (Linear QSL-131).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey([u8; 32]);
 

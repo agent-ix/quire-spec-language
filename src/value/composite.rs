@@ -11,6 +11,20 @@
 //! declaration and refuses at the originating component. Values are immutable
 //! and cache their `occ`; sharing a contained value (`Arc`) never creates
 //! object identity.
+//!
+//! `quire_exact::value` (QSL-131) is a redesigned cut of this module, not a
+//! duplicate of it: per its own module doc, `ValueType::Enum` carries an
+//! inline `EnumShape` where this module's carries a `NodeKey` lookup,
+//! `ValueType::Reference` carries an `EffectiveId` where this module's
+//! carries a `NodeKey`, and `TypeEnvironment`/`ObjectTypeDeclaration` (the
+//! declaration registry) stay out of the kernel by design (ADR-013 O-15).
+//! `Presence` has no such divergence -- it names only `Required`/`Optional`
+//! and touches neither `Value` nor `ValueType` -- so it is `quire_exact`'s
+//! type here. Every other item below (`ValueType`, `Value`, `OptionValue`,
+//! `FieldValue`, `FieldDeclaration`, `CompositeValue` and the construction
+//! functions over them) stays local because it is parameterized over this
+//! module's own `ValueType`/`Value`, not `quire_exact`'s: remaining work,
+//! Linear QSL-131.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -285,15 +299,10 @@ impl OptionValue {
     }
 }
 
-/// Whether a declared field admits only a present value (`f: T`) or also
-/// `absent` and explicit `null` (`f: T?`).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Presence {
-    /// A field declared without `?`.
-    Required,
-    /// A field declared with `?`.
-    Optional,
-}
+// `Presence` is `quire_exact`'s own canonical type (QSL-131): it is a plain
+// two-variant enum with no dependency on the diverged `Value`/`ValueType`
+// kernel types, so it is byte-identical between the two crates.
+pub use quire_exact::Presence;
 
 /// The state of one field slot.
 #[derive(Clone, Debug)]
