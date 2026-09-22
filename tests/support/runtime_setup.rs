@@ -115,7 +115,8 @@ pub(crate) fn request_source<'a>(
             ir::SourceRevision::new(7).unwrap(),
         ),
     );
-    let linked = link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+    let linked =
+        link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
     let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
         .into_iter()
         .map(|(name, clause)| ClauseBinding {

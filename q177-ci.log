@@ -1,0 +1,36 @@
+tools/check-no-committed-binaries.sh
+check-no-committed-binaries: every tracked file is at most 1048576 bytes and has no executable/binary content.
+tools/check-index-completeness.sh
+check-index-completeness: every FR and TC artifact under spec/ has an index row.
+cargo fmt --all -- --check
+Diff in /home/peter/dev/worktrees/qsl-177-m1/examples/../tests/support/runtime_setup.rs:115:
+             ir::SourceRevision::new(7).unwrap(),
+         ),
+     );
+[31m-    let linked = link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m[32m+    let linked =
+(B[m[32m+        link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m     let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
+         .into_iter()
+         .map(|(name, clause)| ClauseBinding {
+Diff in /home/peter/dev/worktrees/qsl-177-m1/src/../tests/support/runtime_setup.rs:115:
+             ir::SourceRevision::new(7).unwrap(),
+         ),
+     );
+[31m-    let linked = link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m[32m+    let linked =
+(B[m[32m+        link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m     let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
+         .into_iter()
+         .map(|(name, clause)| ClauseBinding {
+Diff in /home/peter/dev/worktrees/qsl-177-m1/tests/it/../support/runtime_setup.rs:115:
+             ir::SourceRevision::new(7).unwrap(),
+         ),
+     );
+[31m-    let linked = link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m[32m+    let linked =
+(B[m[32m+        link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
+(B[m     let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
+         .into_iter()
+         .map(|(name, clause)| ClauseBinding {
+make: *** [Makefile:63: ci-default-features] Error 1
