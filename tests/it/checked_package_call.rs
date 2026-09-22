@@ -22,8 +22,8 @@ use ix_trace_rs::trace;
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckingLimits, Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome,
-    PackageDeclarations, QualifiedName, Value, ValueType,
+    CheckedPackageEvaluation, CheckingLimits, Expression, FunctionDeclaration, InputRefusal,
+    ObjectEnvironment, Outcome, PackageDeclarations, QualifiedName, Value, ValueType,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

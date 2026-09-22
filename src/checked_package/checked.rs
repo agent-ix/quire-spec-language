@@ -20,11 +20,14 @@
 //! `CheckedGraph`'s own accessor surface) is reached only by delegating
 //! through [`CheckedPackage::graph`]: this module imports exactly one
 //! layer-3 `check`-core item, `CheckedGraph` itself (FR-087-AC-9/TC-256).
-//! `value::expression`'s own inherent `impl CheckedPackage` (`call`,
-//! `evaluate`, the v2 function-identity codec) reaches `check`-owned state
-//! through that same `graph()` accessor, under its own separate, permitted
-//! layer-5-depends-on-layer-3 edge -- not routed through this module, and
-//! outside this module's own one-item `check`-core import count.
+//! `value::expression`'s own `CheckedPackageEvaluation` trait impl for this
+//! type (`call`, `evaluate`, the v2 function-identity codec) reaches
+//! `check`-owned state through that same `graph()` accessor, under its own
+//! separate, permitted layer-5-depends-on-layer-3 edge -- not routed
+//! through this module, and outside this module's own one-item `check`-core
+//! import count. A trait, not an inherent impl (QSL-182 prep): once
+//! `CheckedPackage` is `qsl-package`'s own foreign type (X-7), an inherent
+//! `impl CheckedPackage` outside its defining crate is E0116.
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,

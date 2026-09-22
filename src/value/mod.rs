@@ -182,9 +182,13 @@ pub use crate::check::{
 // exactly one re-export source for `value` to track.
 pub use expression::CheckedPackage;
 // The evaluation half stays at layer 5, in `value::expression` itself.
+// `CheckedPackageEvaluation` (QSL-182 prep): the trait that carries `call`,
+// `evaluate` and the v2 function-identity codec over the foreign-to-`value`
+// `CheckedPackage` typestate, since an inherent impl here would be E0116
+// once `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::{
-    CallFailure, DecodeV2Error, Evaluation, InputRefusal, InvalidQualifiedName, LocatedLoss,
-    QualifiedName, ValueLoss,
+    CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation, InputRefusal,
+    InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`

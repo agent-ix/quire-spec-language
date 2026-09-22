@@ -687,8 +687,9 @@ mod checked {
     use super::*;
     use quire_spec_language::value::{
         BinaryOperator, BoundViolation, CallFailure, CheckCause, CheckMode, CheckRefusal,
-        CheckedExpression, CheckedPackage, CheckingLimits, Expression, FieldInitializer,
-        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
+        CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression,
+        FieldInitializer, FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations,
+        Refusal,
     };
 
     fn name(spelling: &str) -> Expression {

@@ -191,69 +191,43 @@ fn validate(
     Ok(())
 }
 
-impl CheckedPackage {
-    /// Every admitted function's own name, checked body and slot count, as
-    /// [`evaluate::Callable`] -- built from `check`'s
-    /// [`crate::check::CheckedGraph::function_states`] accessor, reached
-    /// through this package's own [`Self::graph`] accessor (ADR-013 T-1,
-    /// FR-087-AC-9/TC-256: `package` itself imports nothing from `check`
-    /// beyond `CheckedGraph`; this module's own, separate,
-    /// layer-5-depends-on-layer-3 edge is what reaches `check`-owned state
-    /// here), since `Callable` is a layer-5 type `check` itself must never
-    /// construct (that would be a `check` -> `value::expression` edge,
-    /// forbidden by FR-068-AC-3).
-    fn callables(&self) -> Vec<Callable<'_>> {
-        self.graph()
-            .function_states()
-            .map(|state| Callable {
-                body: state.body,
-                slots: state.slots,
-                name: state.name,
-            })
-            .collect()
-    }
+/// Every admitted function's own name, checked body and slot count, as
+/// [`evaluate::Callable`] -- built from `check`'s
+/// [`crate::check::CheckedGraph::function_states`] accessor, reached
+/// through `package`'s own [`CheckedPackage::graph`] accessor (ADR-013 T-1,
+/// FR-087-AC-9/TC-256: `package` itself imports nothing from `check`
+/// beyond `CheckedGraph`; this module's own, separate,
+/// layer-5-depends-on-layer-3 edge is what reaches `check`-owned state
+/// here), since `Callable` is a layer-5 type `check` itself must never
+/// construct (that would be a `check` -> `value::expression` edge,
+/// forbidden by FR-068-AC-3).
+///
+/// A private free function, not a [`CheckedPackageEvaluation`] method: it is
+/// [`CheckedPackageEvaluation::evaluate`]'s own internal plumbing, never a
+/// caller-facing entry point (QSL-182 prep).
+fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
+    package
+        .graph()
+        .function_states()
+        .map(|state| Callable {
+            body: state.body,
+            slots: state.slots,
+            name: state.name,
+        })
+        .collect()
+}
 
-    /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
-    /// bytes -- the checked-package producer's own public entry point.
-    /// S4-links each identity first (`family::link_function_identity`),
-    /// then emits directly through `family::emit_v2`. Reads no CST, no
-    /// source text, only each function's already-checked identity, through
-    /// `check`'s `CheckedGraph::function_identities` (`pub(crate)`, not
-    /// part of this crate's public doc surface) accessor, reached through
-    /// [`Self::graph`] -- this method itself, not `check` and not
-    /// `package`, is what builds `QualifiedName` and calls the v2 codec,
-    /// both `value::expression` types/functions `check` must not import
-    /// (FR-068-AC-3).
-    ///
-    /// `Result<_, InvalidQualifiedName>`: the v2 wire format is typed on
-    /// `QualifiedName`, matching `call`'s own `&QualifiedName` parameter,
-    /// not a bare `String` a decode caller has to re-parse and re-validate
-    /// one function over. A declared function name that is not
-    /// identifier-shaped refuses here rather than either panicking or
-    /// silently emitting v2 bytes that could never decode back into a
-    /// `QualifiedName` anyway.
-    pub fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
-        let entries = self
-            .graph()
-            .function_identities()
-            .map(|(name, identity)| {
-                let linked = family::link_function_identity(identity);
-                QualifiedName::unqualified(name.to_owned()).map(|name| (name, linked))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(family::emit_v2(&entries))
-    }
-
-    /// Decode `quire.checked-function-package/v2` bytes emitted by
-    /// [`Self::emit_function_package_v2`] back into (qualified name,
-    /// identity) pairs, for a caller verifying identity survived the round
-    /// trip (FR-065-AC-2).
-    pub fn decode_function_package_v2(
-        bytes: &[u8],
-    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error> {
-        family::decode_v2(bytes)
-    }
-
+/// `call`, `evaluate` and the v2 function-identity codec over a
+/// [`CheckedPackage`] (ADR-011 §4, ADR-013 T-1, AD-016 Owner decision 6):
+/// once `CheckedPackage` is `qsl-package`'s own foreign type (X-7, QSL-182),
+/// an inherent `impl CheckedPackage` here is E0116, so layer 5 exposes its
+/// evaluator over layer 4's typestate through this trait instead --
+/// preserving both `pkg.call(..)` and `CheckedPackage::call(&pkg, ..)`,
+/// which a free function would not (QSL-182 prep, coordinator decision
+/// 2026-09-22). `callables` stays a private free function, never a trait
+/// method: it is internal plumbing, not part of the evaluator's public
+/// surface.
+pub trait CheckedPackageEvaluation {
     /// Call the named function: `function.call`, then its body. Refused
     /// `InputRefusal::UnknownFunction` for a name `function` finds
     /// but whose `callable_by_name` is `false` -- the same refusal an
@@ -269,7 +243,60 @@ impl CheckedPackage {
     /// entry for `Value`'s function family. A name this package's
     /// declarations do not resolve refuses with `UnknownFunction`, naming
     /// it; it never falls back to a display-name string comparison.
-    pub fn call(
+    ///
+    /// FR-090 (ADR-013 T-4): an ordinary caller-input refusal is
+    /// `Err(CallFailure::Input(_))`, admitted before any S6a evaluation
+    /// runs; a broken S6a invariant is `Err(CallFailure::Fault(_))`, never
+    /// a caller-input refusal.
+    fn call(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
+    /// Evaluate a checked expression with `arguments` for its parameters.
+    fn evaluate(
+        &self,
+        expression: &CheckedExpression,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
+    /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
+    /// bytes -- the checked-package producer's own public entry point.
+    /// S4-links each identity first (`family::link_function_identity`),
+    /// then emits directly through `family::emit_v2`. Reads no CST, no
+    /// source text, only each function's already-checked identity, through
+    /// `check`'s `CheckedGraph::function_identities` (`pub(crate)`, not
+    /// part of this crate's public doc surface) accessor, reached through
+    /// [`CheckedPackage::graph`] -- this method itself, not `check` and not
+    /// `package`, is what builds `QualifiedName` and calls the v2 codec,
+    /// both `value::expression` types/functions `check` must not import
+    /// (FR-068-AC-3).
+    ///
+    /// `Result<_, InvalidQualifiedName>`: the v2 wire format is typed on
+    /// `QualifiedName`, matching `call`'s own `&QualifiedName` parameter,
+    /// not a bare `String` a decode caller has to re-parse and re-validate
+    /// one function over. A declared function name that is not
+    /// identifier-shaped refuses here rather than either panicking or
+    /// silently emitting v2 bytes that could never decode back into a
+    /// `QualifiedName` anyway.
+    fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName>;
+
+    /// Decode `quire.checked-function-package/v2` bytes emitted by
+    /// [`Self::emit_function_package_v2`] back into (qualified name,
+    /// identity) pairs, for a caller verifying identity survived the round
+    /// trip (FR-065-AC-2).
+    fn decode_function_package_v2(
+        bytes: &[u8],
+    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error>;
+}
+
+impl CheckedPackageEvaluation for CheckedPackage {
+    fn call(
         &self,
         function: &QualifiedName,
         arguments: Vec<Value>,
@@ -324,8 +351,7 @@ impl CheckedPackage {
         }
     }
 
-    /// Evaluate a checked expression with `arguments` for its parameters.
-    pub fn evaluate(
+    fn evaluate(
         &self,
         expression: &CheckedExpression,
         arguments: Vec<Value>,
@@ -333,7 +359,7 @@ impl CheckedPackage {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
         validate(expression.parameters(), &arguments, objects)?;
-        let callables = self.callables();
+        let callables = callables(self);
         Machine::new(
             self.graph().scope(),
             &callables,
@@ -343,6 +369,24 @@ impl CheckedPackage {
         )
         .run(expression.root(), expression.slots(), arguments)
         .map_err(CallFailure::Fault)
+    }
+
+    fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
+        let entries = self
+            .graph()
+            .function_identities()
+            .map(|(name, identity)| {
+                let linked = family::link_function_identity(identity);
+                QualifiedName::unqualified(name.to_owned()).map(|name| (name, linked))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(family::emit_v2(&entries))
+    }
+
+    fn decode_function_package_v2(
+        bytes: &[u8],
+    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error> {
+        family::decode_v2(bytes)
     }
 }
 

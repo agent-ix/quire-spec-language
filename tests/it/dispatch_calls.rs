@@ -31,12 +31,12 @@ use quire_spec_language::model::normalize::{
 };
 use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckingLimitKind, CheckingLimits, CheckingStage, ClauseKind, DeclaredClauseKind,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, Expression,
-    FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration, Location,
-    NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin,
-    Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment, Undefined,
-    UniverseIdentity, Value, ValueType,
+    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, ClauseKind,
+    DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration,
+    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    Origin, Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type

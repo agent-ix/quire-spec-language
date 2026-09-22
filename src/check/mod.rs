@@ -258,7 +258,7 @@ impl CheckedExpression {
     }
 
     /// The declared parameters, in evaluation-slot order -- the accessor
-    /// [`crate::value::expression::CheckedPackage::evaluate`] reads to
+    /// [`crate::value::expression::CheckedPackageEvaluation::evaluate`] reads to
     /// validate its caller's arguments (ADR-011 §4: evaluation never reads
     /// this type's fields directly). Crate-internal only: `Node` (see
     /// [`Self::root`]) is `pub(crate)`, so this whole accessor surface stays
@@ -293,7 +293,7 @@ pub(crate) struct FunctionState<'a> {
 }
 
 /// One callable function's evaluation-visible identity and signature --
-/// what [`crate::value::expression::CheckedPackage::call`] needs to route a
+/// what [`crate::value::expression::CheckedPackageEvaluation::call`] needs to route a
 /// runtime `QualifiedName` lookup through
 /// [`crate::family::ReferenceEvaluation::evaluate`] and validate its
 /// caller's arguments, without a direct field read.
@@ -973,7 +973,7 @@ impl CheckedGraph {
 
     /// Every admitted function's own name, checked body and evaluation slot
     /// count -- the accessor surface
-    /// [`crate::value::expression::CheckedPackage::evaluate`] reads to build
+    /// [`crate::value::expression::CheckedPackageEvaluation::evaluate`] reads to build
     /// its own `Callable` list, since `Callable` is a layer-5 type this
     /// module must not construct itself (that would be a `check` ->
     /// `value::expression` edge, forbidden by FR-068-AC-3).
@@ -1004,7 +1004,7 @@ impl CheckedGraph {
 
     /// `name`'s identity and declared parameters, filtered to functions a
     /// plain named call may resolve to (`callable_by_name`) -- the accessor
-    /// [`crate::value::expression::CheckedPackage::call`] uses to resolve a
+    /// [`crate::value::expression::CheckedPackageEvaluation::call`] uses to resolve a
     /// runtime `QualifiedName` lookup and validate its caller's arguments,
     /// without a direct field read (TC-196 D07's bypass: a crate-internal
     /// FR-151 synthesized dispatch candidate is never reachable this way).
@@ -1032,7 +1032,7 @@ impl CheckedGraph {
     }
 
     /// The scope every declared name resolves against -- the accessor
-    /// [`crate::value::expression::CheckedPackage::evaluate`] passes through
+    /// [`crate::value::expression::CheckedPackageEvaluation::evaluate`] passes through
     /// to the evaluator.
     pub(crate) fn scope(&self) -> &Scope {
         &self.scope
