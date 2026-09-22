@@ -106,7 +106,7 @@ fn model_refusal(refusal: ModelRefusal) -> Stop {
 /// checked invariant).
 fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, Stop> {
     let universe = UniverseIdentity::new(key.universe.as_bytes()).map_err(|_| invariant())?;
-    let object_type = NodeKey::from_bytes(*key.type_identity.as_bytes());
+    let object_type = NodeKey::from_digest(*key.type_identity.as_bytes());
     let identity = ObjectIdentity::new(key.object.as_bytes()).map_err(|_| invariant())?;
     Ok(ObjectReference::new(universe, object_type, identity))
 }

@@ -516,10 +516,13 @@ impl PackageDeclarations {
         // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
         // carried into this module's own `quire_exact::NodeKey` checked-node
         // space unchanged, byte for byte, by `identity::declaration_node_key`
-        // (the two are different Rust newtypes -- `value::node::NodeKey` is
-        // I04's pre-check nominal semantic-node identity -- but the same
-        // opaque digest) -- never a second, parallel id minted from the
-        // declared name and shape. This is the same identity `Typer::
+        // (QSL-131: `value::node::NodeKey` is now `quire_exact::NodeKey`
+        // itself, a `pub use`, not a separate newtype -- the conversion
+        // function stays, named for the crossing from I04's pre-check
+        // nominal semantic-node identity into `check`'s own checked-node
+        // space, though it is a same-type identity today) -- never a
+        // second, parallel id minted from the declared name and shape. This
+        // is the same identity `Typer::
         // type_named` (`check.rs`) and every field type (`family.rs`)
         // already resolve a reference against, so a checked type node's id
         // is exactly what those other sites already use, once carried into
@@ -1158,7 +1161,7 @@ mod tests {
         use crate::value::node::NodeKey as ValueNodeKey;
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = ValueNodeKey::from_hex(&"11".repeat(32)).expect("64 lowercase hex digits");
+        let key = ValueNodeKey::from_digest([0x11; 32]);
         let composite =
             CompositeDeclaration::new(key, "Flagged", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
@@ -1205,7 +1208,7 @@ mod tests {
         use crate::value::node::NodeKey as ValueNodeKey;
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let key = ValueNodeKey::from_hex(&"22".repeat(32)).expect("64 lowercase hex digits");
+        let key = ValueNodeKey::from_digest([0x22; 32]);
         let composite = CompositeDeclaration::new(key, "P::R", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {

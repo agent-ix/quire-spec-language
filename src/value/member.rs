@@ -187,7 +187,7 @@ mod tests {
     use super::*;
 
     fn node(fill: u8) -> NodeKey {
-        NodeKey::from_hex(&format!("{fill:02x}").repeat(32)).expect("64 lowercase hex digits")
+        NodeKey::from_digest([fill; 32])
     }
 
     /// (#213 S-2, C-18) one test per variant: each renders exactly the

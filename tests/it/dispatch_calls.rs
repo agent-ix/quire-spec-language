@@ -60,8 +60,7 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 fn key(label: &str) -> NodeKey {
-    let digest = format!("{:x}", Sha256::digest(label.as_bytes()));
-    NodeKey::from_hex(&digest).unwrap()
+    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn types(receiver_type: NodeKey) -> TypeEnvironment {

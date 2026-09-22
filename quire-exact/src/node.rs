@@ -25,11 +25,16 @@
 //! caller of this constructor outside QSL `check`. Updating the check to
 //! this crate's real constructor is follow-on work, not part of this slice.
 //!
-//! `NodeKey::from_bytes` (the QSL `value/node.rs:49` internal escape hatch)
-//! and the public `NodeKey::from_hex` (`value/node.rs:25`) are both retired by
-//! this cut: hex parsing is a wire-string concern that stays with QSL's
-//! `WireNodeId`, which becomes a `NodeKey` only by lookup in a checked
-//! package (ADR-013 O-04), never by parsing a digest string directly.
+//! `NodeKey::from_bytes` and the public `NodeKey::from_hex` are both retired
+//! by this cut: hex parsing is a wire-string concern QSL keeps itself
+//! (`value::node::NodeIdDocument::key` decodes and domain-checks a wire
+//! digest string, then wraps the result with `from_digest`); bridging
+//! another already-known 32-byte digest across types is a direct QSL-side
+//! call to `from_digest` too (`value::model_query::to_object_reference`).
+//! QSL-131 rerouted every QSL call site off the retired `NodeKey::from_hex`/
+//! `from_bytes`/`of` and onto `from_digest`, then deleted QSL's own
+//! duplicate `NodeKey` type in `src/value/node.rs` in favor of `pub use
+//! quire_exact::NodeKey`.
 
 use std::fmt;
 

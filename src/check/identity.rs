@@ -56,10 +56,12 @@
 //! `value/enumeration.rs`, whose `owner` field already carries the
 //! declaring package/source scope AC-7 requires). `check` now simply carries
 //! that existing key, unchanged byte for byte, into the `CheckedTypeNode`'s
-//! own node id (`declaration_node_key`, below -- `value::node::NodeKey` and
-//! this module's own `quire_exact::NodeKey` are different Rust newtypes over
-//! the same opaque digest, so a conversion is needed, but it re-hashes or
-//! re-derives nothing): `CheckedTypeNode::Composite { node:
+//! own node id (`declaration_node_key`, below -- QSL-131 made
+//! `value::node::NodeKey` a `pub use` of this module's own
+//! `quire_exact::NodeKey`, so the two names are the same type today; the
+//! function stays as the named crossing point from I04's pre-check identity
+//! into `check`'s own checked-node space, and it re-hashes or re-derives
+//! nothing): `CheckedTypeNode::Composite { node:
 //! declaration_node_key(composite.key()) }`, `Sum { node:
 //! declaration_node_key(binding.declaration.key()), .. }`, exactly the
 //! identity `type_named` and field types already read (once carried into
@@ -583,17 +585,19 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
     }
 }
 
-/// Converts a `value::node::NodeKey` -- the pre-check I04 nominal semantic
+/// Carries a `value::node::NodeKey` -- the pre-check I04 nominal semantic
 /// node identity `CompositeDeclaration::key()`/`EnumDeclaration::key()`
 /// already carry -- into this module's own `quire_exact::NodeKey`, the
 /// ADR-013 O-04 checked-node-id space [`CheckedTypeNode`] and every other
 /// checked graph member (functions, occurrences, the model correspondence)
-/// live in. Both are opaque 32-byte SHA-256 digests; this reuses the
+/// live in. Named as a conversion for where each identity is read from
+/// (I04 pre-check identity in, `check`'s own checked-node space out), but
+/// since QSL-131 the two names resolve to the same kernel type, so this is
+/// an identity function today, not a cross-newtype bridge: this reuses the
 /// declaration's own raw digest bytes unchanged, never re-hashing or
 /// re-deriving anything, so a `CheckedTypeNode`'s id and the declaration's
-/// own pre-existing key are the same identity under two crate-boundary
-/// newtypes, not two different identities that merely happen to agree
-/// (PR #300 review round 2, HIGH-1).
+/// own pre-existing key are the same identity, not two different identities
+/// that merely happen to agree (PR #300 review round 2, HIGH-1).
 pub(super) fn declaration_node_key(key: crate::value::node::NodeKey) -> NodeKey {
     NodeKey::from_digest(*key.as_bytes())
 }
