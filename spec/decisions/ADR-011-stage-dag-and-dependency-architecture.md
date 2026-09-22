@@ -841,7 +841,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6b with #217 |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
-| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
+| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); X-10 (`qsl-replay`) is extracted (QSL-185); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 
@@ -961,7 +961,7 @@ is unstaffed**, blocking QSL-165.
 | X-7 | Extract crate `qsl-package` (QSL-182) | 4 | the layer-4 modules' public items | after X-6, on the same condition | none: no root-crate re-export (§7.2) |
 | X-8 | Extract crate `qsl-eval` (QSL-183) | 5 | the layer-5 modules' public items | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
 | X-9 | Extract crate `qsl-route` (QSL-184) | R | `route` | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
-| X-10 | Extract crate `qsl-replay` (QSL-185) | 6 | the `replay` facade, including the #231 envelopes | after X-4 and X-8, on the same condition | none: no root-crate re-export (§7.2) |
+| X-10 | Extract crate `qsl-replay` (QSL-185). **Extracted**: `bounds`, `identity`, `proof_result`, `request`, `result` and `witness` moved, unchanged, out of the root crate's `replay` module (which no longer exists there). Landed ahead of X-4/X-8 in this table's original order: today's `replay` code depends only on `quire-exact` and `qsl-foundation` (the #231 envelopes and their provisional local types), not on `qsl-source` or the layer-5 evaluator, so neither prerequisite was load-bearing for this slice. | 6 | the `replay` facade, including the #231 envelopes | after X-4 and X-8, on the same condition | none: no root-crate re-export (§7.2) |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
 a working path is removed before its replacement, and no window in which an

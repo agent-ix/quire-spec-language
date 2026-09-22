@@ -23,8 +23,8 @@ use std::fmt;
 use quire_exact::Origin;
 use quire_exact::ScalarLimits;
 
-use crate::replay::bounds::BoundExceeded;
-use crate::replay::identity::{
+use crate::bounds::BoundExceeded;
+use crate::identity::{
     Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection, QualifiedName,
     RawSourceRef, SourceDigestWire, TracePosition,
 };
@@ -834,7 +834,7 @@ pub(crate) fn origin(role: &str, ordinal: u64) -> Origin {
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
-    use crate::replay::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
     use quire_exact::Identifier;
 

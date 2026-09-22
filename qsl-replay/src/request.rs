@@ -14,11 +14,11 @@ use std::collections::BTreeMap;
 
 use quire_exact::ScalarLimits;
 
-use crate::replay::bounds::BoundExceeded;
-use crate::replay::identity::{
+use crate::bounds::BoundExceeded;
+use crate::identity::{
     Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
 };
-use crate::replay::witness::ReplaySource;
+use crate::witness::ReplaySource;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
@@ -453,7 +453,7 @@ impl ReplayRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::replay::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
     use quire_exact::Identifier;
@@ -513,7 +513,7 @@ mod tests {
                 Identifier::new("f").unwrap(),
             ])
             .unwrap(),
-            source: ReplaySource::Input(vec![crate::replay::witness::CanonicalAssignment {
+            source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: 42,
             }]),
@@ -725,11 +725,10 @@ mod tests {
         // B2's second half: a distinctive concrete-argument value on the
         // `Input` arm.
         let distinctive_value: i64 = 918_273_645;
-        request_wire.source =
-            ReplaySource::Input(vec![crate::replay::witness::CanonicalAssignment {
-                parameter: WireNodeId::from_digest([42; 32]),
-                value: distinctive_value,
-            }]);
+        request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
+            parameter: WireNodeId::from_digest([42; 32]),
+            value: distinctive_value,
+        }]);
         let request = ReplayRequest::decode(request_wire).unwrap();
 
         let debug = format!("{request:?}");

@@ -419,7 +419,7 @@ pub(crate) fn evaluate(
 /// extracted ADR-011 §6.1 layer crate's `src/` -- `qsl-foundation`
 /// (ADR-011 §7.3 X-2, QSL-177) and `qsl-cst` (ADR-011 §7.3 X-3, QSL-178)
 /// today, and each later layer crate as its own extraction PR adds it here
-/// -- `qsl-replay` (ADR-011 §7.3 X-9, QSL-185) joins the list alongside
+/// -- `qsl-replay` (ADR-011 §7.3 X-10, QSL-185) joins the list alongside
 /// `qsl-foundation` and `qsl-cst`. `quire-exact` and `qsl-attrs` are
 /// excluded: `quire-exact` is the kernel these rules' constructors are
 /// defined *in*, never a caller of them (T12-B/T12-C/T12-D's own scope notes
@@ -872,7 +872,7 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-9, QSL-185): a
+    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185): a
     /// `Role::Qsl` rule scans `qsl-replay/src/` too, the same way
     /// tc_arch_lint_api_surface_014/016 cover `qsl-foundation/src/` and
     /// `qsl-cst/src/` -- the extracted layer-6 crate is as much "QSL's own

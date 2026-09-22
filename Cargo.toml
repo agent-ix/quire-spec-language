@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst"]
+members = [".", "xtask", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
 resolver = "2"
 
 [package]

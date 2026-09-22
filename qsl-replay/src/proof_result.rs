@@ -9,8 +9,8 @@
 //! select it. A future arm attempting to map some FR-331 value to
 //! `undefined` is a compile error here, not merely untested dead code.
 
-use crate::replay::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
-use crate::replay::identity::Backend;
+use crate::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+use crate::identity::Backend;
 use qsl_foundation::digest::DigestRecord;
 
 /// One of the seven ADR-013 O-16 categories an FR-331 proof column can

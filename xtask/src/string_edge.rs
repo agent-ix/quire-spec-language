@@ -404,7 +404,7 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
 /// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2, QSL-177), `qsl-cst`
-/// (ADR-011 §7.3 X-3, QSL-178) and `qsl-replay` (ADR-011 §7.3 X-9, QSL-185
+/// (ADR-011 §7.3 X-3, QSL-178) and `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
 /// -- each extracted §6.1 layer crate adds its own entry here the same way).
 /// `qsl-attrs` is excluded -- it is a proc-macro identity transform with no
 /// string dispatch of any kind (its own module doc).

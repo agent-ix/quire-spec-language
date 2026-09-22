@@ -1,0 +1,23 @@
+[package]
+name = "qsl-replay"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the four #231 typed envelopes (proof result, witness, replay request, replay result), their round trips and their redacted rendering."
+
+[dependencies]
+qsl-foundation = { path = "../qsl-foundation" }
+quire-exact = { path = "../quire-exact" }
+thiserror = "=2.0.20"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
