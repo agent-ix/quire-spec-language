@@ -16,9 +16,10 @@ mod package_tests;
 mod parser;
 
 pub use cst::{
-    CstElement, CstNode, CstToken, DefinitionDigest, DefinitionRef, ImportSelection, LosslessCst,
-    ModelDigest, ModelRef, ModelSelection, NodeIdentity, Production, ProfileSelection, Recovery,
-    RecoveryKind, SourceSelections, StableNodeId, TokenClass, TokenKind,
+    CstElement, CstNode, CstToken, DefinitionDigest, DefinitionRef, ImportSelection,
+    InvalidDefinitionComponent, InvalidModelComponent, LosslessCst, ModelDigest, ModelRef,
+    ModelSelection, NodeIdentity, Production, ProfileSelection, Recovery, RecoveryKind,
+    SourceSelections, StableNodeId, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use edit::{

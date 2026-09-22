@@ -32,38 +32,25 @@ impl ReaderAuthority {
 // selection types (`ProfileSelection`, `ImportSelection`, `ModelSelection`,
 // `SourceSelections`) are layer-1 CST types, defined in `super::cst`: they are
 // the exact syntax-level selection domain the parser produces, not package
-// resolution. This module (layer 3) depends on them downward and adds the
-// `PackageError`-typed convenience constructors below.
-
-impl DefinitionRef {
-    /// Validate a non-empty exact definition selection.
-    pub fn new(
-        identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: DefinitionDigest,
-    ) -> Result<Self, PackageError> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version).map_err(|component| match component {
-            InvalidDefinitionComponent::Identity => PackageError::InvalidDefinitionIdentity,
-            InvalidDefinitionComponent::Version => PackageError::InvalidDefinitionVersion,
-        })?;
-        Ok(Self::from_validated(identity, version, digest))
+// resolution. This module (layer 3) depends on them downward. `new()` stays
+// an inherent impl in `cst` (an inherent impl for a foreign type is an error
+// once layer 1 is its own crate); this module maps its public layer-1
+// validation errors onto `PackageError` instead.
+impl From<InvalidDefinitionComponent> for PackageError {
+    fn from(component: InvalidDefinitionComponent) -> Self {
+        match component {
+            InvalidDefinitionComponent::Identity => Self::InvalidDefinitionIdentity,
+            InvalidDefinitionComponent::Version => Self::InvalidDefinitionVersion,
+        }
     }
 }
 
-impl ModelRef {
-    /// Validate a non-empty exact compiled-model selection.
-    pub fn new(
-        identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: ModelDigest,
-    ) -> Result<Self, PackageError> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version).map_err(|component| match component {
-            InvalidModelComponent::Identity => PackageError::InvalidModelIdentity,
-            InvalidModelComponent::Version => PackageError::InvalidModelVersion,
-        })?;
-        Ok(Self::from_validated(identity, version, digest))
+impl From<InvalidModelComponent> for PackageError {
+    fn from(component: InvalidModelComponent) -> Self {
+        match component {
+            InvalidModelComponent::Identity => Self::InvalidModelIdentity,
+            InvalidModelComponent::Version => Self::InvalidModelVersion,
+        }
     }
 }
 

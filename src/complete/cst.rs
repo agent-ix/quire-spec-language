@@ -36,13 +36,27 @@ pub struct DefinitionRef {
     digest: DefinitionDigest,
 }
 
+/// Why an identity/version pair failed [`DefinitionRef::new`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InvalidDefinitionComponent {
+pub enum InvalidDefinitionComponent {
+    /// Identity was empty or exceeded 512 bytes.
     Identity,
+    /// Version was empty or exceeded 256 bytes.
     Version,
 }
 
 impl DefinitionRef {
+    /// Validate a non-empty exact definition selection.
+    pub fn new(
+        identity: impl Into<String>,
+        version: impl Into<String>,
+        digest: DefinitionDigest,
+    ) -> Result<Self, InvalidDefinitionComponent> {
+        let (identity, version) = (identity.into(), version.into());
+        Self::validate_components(&identity, &version)?;
+        Ok(Self::from_validated(identity, version, digest))
+    }
+
     pub(crate) fn validate_components(
         identity: &str,
         version: &str,
@@ -114,6 +128,17 @@ pub struct ModelRef {
 }
 
 impl ModelRef {
+    /// Validate a non-empty exact compiled-model selection.
+    pub fn new(
+        identity: impl Into<String>,
+        version: impl Into<String>,
+        digest: ModelDigest,
+    ) -> Result<Self, InvalidModelComponent> {
+        let (identity, version) = (identity.into(), version.into());
+        Self::validate_components(&identity, &version)?;
+        Ok(Self::from_validated(identity, version, digest))
+    }
+
     pub(crate) fn validate_components(
         identity: &str,
         version: &str,
@@ -148,9 +173,12 @@ impl ModelRef {
     }
 }
 
+/// Why an identity/version pair failed [`ModelRef::new`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InvalidModelComponent {
+pub enum InvalidModelComponent {
+    /// Identity was empty or exceeded 512 bytes.
     Identity,
+    /// Version was empty or exceeded 256 bytes.
     Version,
 }
 
