@@ -380,8 +380,9 @@ fn recorded_operation_files_preserve_captures_and_frame_refusal() {
                 .iter()
                 .find(|d| d["code"] == "frame_violation")
                 .unwrap();
-            assert_eq!(error["runtime"]["clause"], "population_rule");
-            assert_eq!(error["runtime"]["artifact"]["kind"], "snapshot");
+            let message = error["message"].as_str().unwrap();
+            assert!(message.contains("clause: ClauseId(\"population_rule\")"));
+            assert!(message.contains("artifact: Snapshot("));
         } else {
             assert_eq!(code, 0, "{result}");
             assert_eq!(result["truth"], true);

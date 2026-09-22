@@ -112,18 +112,6 @@
             "end"
           ],
           "additionalProperties": false
-        },
-        "upstream": {
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "runtime": {
-          "type": [
-            "object",
-            "null"
-          ]
         }
       },
       "required": [
@@ -132,9 +120,7 @@
         "message",
         "source",
         "path",
-        "span",
-        "upstream",
-        "runtime"
+        "span"
       ],
       "additionalProperties": false
     },
