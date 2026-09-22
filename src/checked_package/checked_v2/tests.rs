@@ -16,8 +16,9 @@ use quire_contract_ir::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{read_checked_package_v2, V2ReadIncomplete, V2ReadOutcome, V2ReadRefusal};
-use crate::checked_package::PackageLimits;
+use super::{
+    read_checked_package_v2, V2ReadIncomplete, V2ReadLimits, V2ReadOutcome, V2ReadRefusal,
+};
 use crate::library::{LibraryName, LibraryRefusal, PreimageDefect};
 use qsl_foundation::diagnostic::Code;
 
@@ -212,7 +213,7 @@ fn read(bytes: &[u8]) -> V2ReadOutcome {
         bytes,
         identity("pkg"),
         "1".to_owned(),
-        PackageLimits::default(),
+        V2ReadLimits::default(),
         &evidence(None),
     )
 }
@@ -440,7 +441,7 @@ fn refuses_dependency_selections_present() {
         &bytes,
         identity("pkg"),
         "1".to_owned(),
-        PackageLimits::default(),
+        V2ReadLimits::default(),
         &evidence(Some("dep-def")),
     );
     assert_eq!(
@@ -453,9 +454,9 @@ fn refuses_dependency_selections_present() {
 fn incomplete_when_bytes_exceed_the_ceiling() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
-    let limits = PackageLimits {
+    let limits = V2ReadLimits {
         artifact_bytes: bytes.len() - 1,
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     let outcome = read_checked_package_v2(
         &bytes,
@@ -477,9 +478,9 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
 fn incomplete_when_a_depth_ceiling_is_reached() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
-    let limits = PackageLimits {
+    let limits = V2ReadLimits {
         depth: 1,
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     match read_checked_package_v2(
         &bytes,
@@ -500,9 +501,9 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
 fn exact_selected_limits_admit_the_boundary() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
-    let limits = PackageLimits {
+    let limits = V2ReadLimits {
         artifact_bytes: bytes.len(),
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     let outcome = read_checked_package_v2(
         &bytes,
@@ -527,9 +528,9 @@ fn exact_depth_ceiling_admits_the_boundary() {
         &bytes,
         identity("pkg"),
         "1".to_owned(),
-        PackageLimits {
+        V2ReadLimits {
             depth: 0,
-            ..PackageLimits::default()
+            ..V2ReadLimits::default()
         },
         &evidence(None),
     ) {
@@ -541,9 +542,9 @@ fn exact_depth_ceiling_admits_the_boundary() {
         other => panic!("expected Incomplete(Limit(Depth)) at depth 0, got {other:?}"),
     };
 
-    let admits = PackageLimits {
+    let admits = V2ReadLimits {
         depth: actual_depth as usize,
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     let outcome = read_checked_package_v2(
         &bytes,
@@ -557,9 +558,9 @@ fn exact_depth_ceiling_admits_the_boundary() {
         "expected Candidate at the exact depth boundary, got {outcome:?}"
     );
 
-    let refuses = PackageLimits {
+    let refuses = V2ReadLimits {
         depth: (actual_depth - 1) as usize,
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     match read_checked_package_v2(
         &bytes,
@@ -593,7 +594,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
     // serde_json's own fixed 128-container recursion cap fires before IR's
     // own `json_depth` resource meter ever runs. Pins the module doc's
     // "Ceilings" section: a wire this far past the default limit is
-    // refused, not reported `Incomplete`, however `PackageLimits::depth` is
+    // refused, not reported `Incomplete`, however `V2ReadLimits::depth` is
     // configured. Bare bytes, not a valid envelope: the depth check runs
     // before schema decode, on any well-formed JSON document.
     let bytes = jcs(&nested_array(200, json!(1)));
@@ -601,7 +602,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
-        PackageLimits::default(),
+        V2ReadLimits::default(),
         &evidence(None),
     );
     assert!(
@@ -616,7 +617,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
 
 #[test]
 fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
-    // QSL-6 M2 (decided fail-closed): `PackageLimits::depth` is passed to
+    // QSL-6 M2 (decided fail-closed): `V2ReadLimits::depth` is passed to
     // IR unchanged, in entered-container units. IR's own `json_depth`
     // counts a scalar leaf as one further unit beyond the containers
     // entered to reach it, but counts an empty container as exactly the
@@ -624,9 +625,9 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
     // kinds of deepest path disagree by one (module doc, IR-238 item 1).
     // Bare bytes, not a valid envelope: the depth check runs before schema
     // decode, on any well-formed JSON document.
-    let limits = PackageLimits {
+    let limits = V2ReadLimits {
         depth: 3,
-        ..PackageLimits::default()
+        ..V2ReadLimits::default()
     };
     let is_depth_incomplete = |bytes: &[u8]| {
         matches!(

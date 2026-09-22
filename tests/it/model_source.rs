@@ -7,13 +7,12 @@ use crate::support::runtime_setup as setup;
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Source, SourceIdentity};
 use quire_contract_ir as ir;
-use quire_spec_language::checked_package::PackageLimits;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::model_source::{
     read, EntryKind, ModelSourceCause, ModelSourceLimits, FORMAT,
 };
 use quire_spec_language::native_model::ModelLimits;
-use quire_spec_language::package::NativePackage;
+use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
     execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode,
 };

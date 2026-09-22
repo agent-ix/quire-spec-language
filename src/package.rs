@@ -31,7 +31,48 @@ use sha2::{Digest, Sha256};
 
 use qsl_foundation::{ByteDigest, Code, Diagnostic};
 
-use crate::checked_package::PackageLimits;
+/// Inclusive per-pass ceilings; elevated options clamp to the defaults.
+///
+/// Not every reader in this module enforces every field. The
+/// `quire.checked-package/v2` byte reader (`checked_v2`, ADR-011 §4 I2)
+/// honors only `artifact_bytes` and `depth`: IR's own I04 reader has no
+/// decode-time meter for `string_bytes` or aggregate `entries` at all
+/// (IR-238 item 2), so a caller of that reader who sets either of those two
+/// fields gets no enforcement of them.
+#[derive(Clone, Copy, Debug)]
+pub struct PackageLimits {
+    /// Offered or emitted bytes, at most 16 MiB.
+    pub artifact_bytes: usize,
+    /// Inspected decoded strings, including member names, at most 16 MiB.
+    pub string_bytes: usize,
+    /// Aggregate object members and array elements, at most 100,000.
+    pub entries: usize,
+    /// Entered JSON containers, at most 128.
+    pub depth: usize,
+}
+
+impl Default for PackageLimits {
+    fn default() -> Self {
+        Self {
+            artifact_bytes: 16_777_216,
+            string_bytes: 16_777_216,
+            entries: 100_000,
+            depth: 128,
+        }
+    }
+}
+
+impl PackageLimits {
+    fn bounded(self) -> Self {
+        let hard = Self::default();
+        Self {
+            artifact_bytes: self.artifact_bytes.min(hard.artifact_bytes),
+            string_bytes: self.string_bytes.min(hard.string_bytes),
+            entries: self.entries.min(hard.entries),
+            depth: self.depth.min(hard.depth),
+        }
+    }
+}
 
 /// Actual admitted work in one package pass; inapplicable fields are zero.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

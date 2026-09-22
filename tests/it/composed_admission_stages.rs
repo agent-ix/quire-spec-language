@@ -11,7 +11,6 @@ use crate::support::package_vector_setup;
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity};
 use quire_spec_language::check::Capability;
-use quire_spec_language::checked_package::PackageLimits;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
@@ -28,7 +27,7 @@ use quire_spec_language::linking::composed::{
 };
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{
-    NativePackage, NativePackageRef, PackageReadLimits, PackageStage, PackageSupport,
+    NativePackage, NativePackageRef, PackageLimits, PackageReadLimits, PackageStage, PackageSupport,
 };
 use quire_spec_language::runtime::{
     ArtifactLimits, InputReadCause, InputReadStage, Snapshot, SnapshotRef,

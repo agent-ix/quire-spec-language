@@ -28,11 +28,10 @@
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
-//! QSL-6/#242, slice S1a): [`crate::checked_package::emit`], a sibling
-//! module of this one, so it stays within `checked_package`'s own
-//! `pub(super)` reach without being reachable from outside
-//! `checked_package` (ADR-013 O-02: `package_id` is computed from the
-//! package, never accepted from a caller).
+//! QSL-6/#242, slice S1a): [`super::emit`], a sibling module of this one, so
+//! it stays within `checked_package`'s own `pub(super)` reach without being
+//! reachable from outside `checked_package` (ADR-013 O-02: `package_id` is
+//! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
 

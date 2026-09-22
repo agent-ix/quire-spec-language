@@ -12,8 +12,7 @@ mod schema;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, SourceIdentity};
-use quire_spec_language::checked_package::PackageLimits;
-use quire_spec_language::package::NativePackage;
+use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
     execute, ArtifactLimits, ExecutionLimits, ExecutionOutcome, InputReadCause, InputReadStage,
     Invocation, RuntimeInput, Snapshot, SnapshotRef, ValueId, ValueNode,

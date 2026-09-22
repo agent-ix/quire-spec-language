@@ -8,10 +8,9 @@ use ix_trace_rs::trace;
 use quire_contract_ir as ir;
 use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
-    checked_package::PackageLimits,
     lowering::{lower, lower_for, LoweringCode, LoweringLimits, ProjectionTarget},
     native_model::NativeModel,
-    package::NativePackage,
+    package::{NativePackage, PackageLimits},
     syntax::ClauseKind,
 };
 use serde_json::{json, Value};

@@ -3,11 +3,10 @@
 
 use quire_contract_ir as ir;
 
-use crate::checked_package::PackageLimits;
 use crate::checking::{check, CheckBindings, CheckLimits, ClauseBinding};
 use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
-use crate::package::{NativePackage, PackageCause, PackageError};
+use crate::package::{NativePackage, PackageCause, PackageError, PackageLimits};
 use crate::{link_native, parse_source, Limits, LinkLimits};
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, Span};
