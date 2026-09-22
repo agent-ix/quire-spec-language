@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest as _, Sha256};
 use std::sync::Arc;
 
-use super::cst::{
-    DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, InvalidModelComponent,
-    ModelDigest, ModelRef,
+use qsl_cst::{
+    CompleteCause, DefinitionDigest, DefinitionRef, InvalidDefinitionComponent,
+    InvalidModelComponent, ModelDigest, ModelRef, ParsedSource,
 };
 use qsl_foundation::{ByteDigest, Code, SourceIdentity, Span};
 
@@ -30,12 +30,13 @@ impl ReaderAuthority {
 
 // `DefinitionDigest`, `DefinitionRef`, `ModelDigest`, `ModelRef` and the
 // selection types (`ProfileSelection`, `ImportSelection`, `ModelSelection`,
-// `SourceSelections`) are layer-1 CST types, defined in `super::cst`: they are
-// the exact syntax-level selection domain the parser produces, not package
-// resolution. This module (layer 3) depends on them downward. `new()` stays
-// an inherent impl in `cst` (an inherent impl for a foreign type is an error
-// once layer 1 is its own crate); this module maps its public layer-1
-// validation errors onto `PackageError` instead.
+// `SourceSelections`) are layer-1 CST types, defined in the `qsl-cst` crate
+// (ADR-011 §7.3 X-3): they are the exact syntax-level selection domain the
+// parser produces, not package resolution. This module (layer 3) depends on
+// them downward. `new()` stays an inherent impl in `qsl_cst::cst` (an
+// inherent impl for a foreign type is an error across the crate boundary);
+// this module maps its public layer-1 validation errors onto `PackageError`
+// instead.
 impl From<InvalidDefinitionComponent> for PackageError {
     fn from(component: InvalidDefinitionComponent) -> Self {
         match component {
@@ -430,7 +431,7 @@ pub struct SourceAuthority {
 /// Syntax/package-graph checked result; not the later type-checked package.
 #[derive(Clone, Debug)]
 pub struct ResolvedSourcePackage {
-    parsed: Arc<super::ParsedSource>,
+    parsed: Arc<ParsedSource>,
     authority: SourceAuthority,
     bundle: CompleteBundle,
     definitions: BTreeMap<DefinitionRef, Arc<Definition>>,
@@ -439,7 +440,7 @@ pub struct ResolvedSourcePackage {
 
 impl ResolvedSourcePackage {
     /// The exact admitted syntax tree this package was resolved from.
-    pub fn parsed(&self) -> &Arc<super::ParsedSource> {
+    pub fn parsed(&self) -> &Arc<ParsedSource> {
         &self.parsed
     }
     /// Original source authority (identity, digest, path) this package was
@@ -676,12 +677,12 @@ pub struct PackageRefusal {
     /// Typed corrective cause.
     pub cause: PackageError,
     /// Closed catalogued cause tag, admitted by the catalog for `code`.
-    pub cause_tag: super::CompleteCause,
+    pub cause_tag: CompleteCause,
 }
 
 /// Resolve exact source selections into a dependency-closed complete bundle.
 pub fn resolve_source_package(
-    parsed: Arc<super::ParsedSource>,
+    parsed: Arc<ParsedSource>,
     catalog: &DefinitionCatalog,
     models: &ModelCatalog,
     limits: PackageLimits,
@@ -833,7 +834,7 @@ pub fn resolve_source_package(
                         *span,
                         PackageError::StaleDefinition((*selected).clone()),
                     );
-                    stale.cause_tag = super::CompleteCause::ByteDigestMismatch;
+                    stale.cause_tag = CompleteCause::ByteDigestMismatch;
                     return Err(stale);
                 }
                 (
@@ -1079,7 +1080,7 @@ pub fn resolve_source_package(
     })
 }
 
-fn source_authority(parsed: &super::ParsedSource) -> SourceAuthority {
+fn source_authority(parsed: &ParsedSource) -> SourceAuthority {
     SourceAuthority {
         identity: parsed.source().identity().clone(),
         digest: SourceDigest(parsed.source().digest()),
@@ -1087,12 +1088,7 @@ fn source_authority(parsed: &super::ParsedSource) -> SourceAuthority {
     }
 }
 
-fn refusal(
-    parsed: &super::ParsedSource,
-    code: Code,
-    span: Span,
-    cause: PackageError,
-) -> PackageRefusal {
+fn refusal(parsed: &ParsedSource, code: Code, span: Span, cause: PackageError) -> PackageRefusal {
     PackageRefusal {
         code,
         authority: Box::new(source_authority(parsed)),
@@ -1105,8 +1101,8 @@ fn refusal(
 /// The catalogued cause tag of a package-graph refusal. A stale definition is
 /// tagged at its call site, which knows whether the version or only the digest
 /// differs; here it is the version.
-fn cause_tag(code: Code, cause: &PackageError) -> super::CompleteCause {
-    use super::CompleteCause as Tag;
+fn cause_tag(code: Code, cause: &PackageError) -> CompleteCause {
+    use CompleteCause as Tag;
     match cause {
         PackageError::InvalidSource => Tag::EstablishedInvariantBroken,
         PackageError::InvalidDefinitionIdentity
@@ -1133,11 +1129,7 @@ fn cause_tag(code: Code, cause: &PackageError) -> super::CompleteCause {
     }
 }
 
-fn identity_refusal(
-    parsed: &super::ParsedSource,
-    span: Span,
-    cause: PackageError,
-) -> PackageRefusal {
+fn identity_refusal(parsed: &ParsedSource, span: Span, cause: PackageError) -> PackageRefusal {
     let code = match &cause {
         PackageError::CanonicalSize | PackageError::ResourceLimit => Code::ResourceExhausted,
         _ => Code::InvalidPackage,

@@ -19,7 +19,6 @@ pub(crate) mod family;
 pub mod formal_source;
 pub mod format;
 pub mod forms;
-mod lexer;
 pub mod library;
 pub mod linking;
 pub mod located_json;
@@ -40,7 +39,6 @@ pub mod simulation;
 pub mod state;
 pub mod syntax;
 pub mod temporal;
-mod token;
 pub mod value;
 
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};

@@ -10,12 +10,12 @@
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
+use qsl_cst::{CompleteCause, CompleteCode, Limits};
 use qsl_foundation::SourceIdentity;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
 };
-use quire_spec_language::complete::{self, CompleteCause, CompleteCode, Limits};
 use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
@@ -1080,7 +1080,7 @@ mod checked {
 #[test]
 fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
     let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
-    let parsed = complete::parse(
+    let parsed = qsl_cst::parse(
         SourceIdentity {
             identity: "test:tc-188".into(),
             revision: "1".into(),

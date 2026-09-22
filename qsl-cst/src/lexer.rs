@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: apply token budgets and delimiter checks to the generated recognizer.
-pub(crate) use crate::token::Kind;
+// Kept crate-private: `token::Kind` is `qsl_cst::token::Kind`'s own public
+// path; the root crate's base-grammar `parser` imports it from there
+// directly, not through this re-export (QSL-178 review F6).
+use crate::token::Kind;
 use crate::token::LexError;
 use logos::Logos;
 use qsl_foundation::diagnostic::error;
@@ -37,7 +40,10 @@ impl Default for Limits {
 }
 
 impl Limits {
-    pub(crate) fn bounded(self) -> Self {
+    /// Clamp every field to its hard ceiling, never raising it.
+    // Widened to `pub`: the root crate's `complete::parse_with_catalog` calls
+    // it across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn bounded(self) -> Self {
         let hard = Self::default();
         Self {
             source_bytes: self.source_bytes.min(hard.source_bytes),
@@ -48,13 +54,21 @@ impl Limits {
     }
 }
 
+// `Token` and `lex`/`recognize` are widened to `pub`: the root crate's own
+// base-grammar `parser` calls all three across the crate boundary
+// (ADR-011 §7.3 X-3).
+/// One recognized token and its exact source span.
 #[derive(Clone, Debug)]
-pub(crate) struct Token {
+pub struct Token {
+    /// Recognized token kind.
     pub kind: Kind,
+    /// Exact half-open source span.
     pub span: Span,
 }
 
-pub(crate) fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
+/// Recognize `source` and reclassify each token under the historical
+/// `0-draft` grammar's reservation set.
+pub fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
     let mut tokens = recognize(source, limits)?;
     for token in &mut tokens {
         token.kind = token
@@ -65,7 +79,9 @@ pub(crate) fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Dia
     Ok(tokens)
 }
 
-pub(crate) fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
+/// Recognize `source` into tokens under `limits`' recognizer bounds, without
+/// the historical edition's reclassification.
+pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
     let mut tokens = Vec::new();
     let mut delimiters = Vec::new();
     for (result, range) in Kind::lexer(source.text()).spanned() {

@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! The lossless complete-V1 concrete syntax tree: exact definition/model
+//! selection digests and identities, the recovering node/token tree, and
+//! incremental whitespace-only editing.
 use std::collections::BTreeSet;
 
 use qsl_foundation::digest::InvalidDigest;
@@ -15,7 +18,9 @@ impl DefinitionDigest {
     }
 
     /// Wrap an already-computed raw-byte digest.
-    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+    // Widened to `pub`: the root crate's `complete::package` calls it
+    // across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn from_digest(digest: ByteDigest) -> Self {
         Self(digest)
     }
 
@@ -109,7 +114,9 @@ impl ModelDigest {
     }
 
     /// Wrap an already-computed raw-byte digest.
-    pub(crate) fn from_digest(digest: ByteDigest) -> Self {
+    // Widened to `pub`: the root crate's `complete::package` calls it
+    // across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn from_digest(digest: ByteDigest) -> Self {
         Self(digest)
     }
 
@@ -634,6 +641,12 @@ impl LosslessCst {
             .min_by_key(|node| node.span.end.saturating_sub(node.span.start))
     }
 
+    /// Apply a single whitespace-only insertion to this CST without
+    /// reparsing, or `None` if the fast path does not apply. Kept
+    /// `pub(crate)`: `ParsedSource::with_whitespace_insertion` is the only
+    /// public entry point, since it also checks the predecessor parse is
+    /// admissible and pairs the result through `ParsedSource::from_parts`
+    /// (QSL-178 review F2).
     pub(crate) fn with_whitespace_insertion(
         &self,
         source: Source,
@@ -791,7 +804,6 @@ fn append_tokens(tokens: &[CstToken], start: usize, end: usize, output: &mut Vec
     );
 }
 
-#[cfg(test)]
 impl LosslessCst {
     /// Test-only fixture: a lossless CST over the given significant token
     /// spellings (space-joined into the backing source text, in order), one
@@ -814,7 +826,16 @@ impl LosslessCst {
     /// The root node has no children: nothing in `forms` reads a node's
     /// children, only [`Self::tokens`] (the whole stream) and
     /// [`Self::root`]'s own span.
-    pub(crate) fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
+    ///
+    /// Gated on `feature = "test-support"` (rather than a bare
+    /// `#[cfg(test)]`) because `cfg(test)` gates only qsl-cst's own test
+    /// build, never a downstream crate's: the root crate's
+    /// `forms::dispatch` unit tests are the only caller, and reach this
+    /// through its `[dev-dependencies]` enabling the feature, in both the
+    /// default-feature and `--all-features` lanes (mirrors the repo's own
+    /// convention, e.g. `src/model/key.rs`'s `DeclarationKey::fixture`).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
         assert!(!spellings.is_empty(), "a fixture needs at least one token");
         let mut text = String::new();
         let mut tokens = Vec::with_capacity(spellings.len());

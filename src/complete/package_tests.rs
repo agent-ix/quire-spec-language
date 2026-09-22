@@ -2,12 +2,15 @@
 use std::collections::BTreeSet;
 
 use crate::complete::{
-    self, resolve_source_package, CapabilityId, CompleteCause, Definition, DefinitionCatalog,
-    DefinitionDigest, DefinitionRef, DefinitionRole, Facet, InvalidDefinitionComponent, Limits,
-    ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
-    SourceDigest,
+    self, resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole,
+    Facet, ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog,
+    ReaderAuthority, SourceDigest,
 };
 use ix_trace_rs::trace;
+use qsl_cst::{
+    parse, CompleteCause, CompleteDiagnostic, DefinitionDigest, DefinitionRef,
+    InvalidDefinitionComponent, Limits, ParsedSource,
+};
 use qsl_foundation::{Code, SourceIdentity};
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [
@@ -88,7 +91,7 @@ fn compiled_model() -> ModelArtifact {
     .unwrap()
 }
 
-fn resolved_source(definitions: &[Definition], model: &ModelArtifact) -> complete::ParsedSource {
+fn resolved_source(definitions: &[Definition], model: &ModelArtifact) -> ParsedSource {
     let profiles = definitions
         .iter()
         .enumerate()
@@ -117,7 +120,7 @@ fn resolved_source(definitions: &[Definition], model: &ModelArtifact) -> complet
         model.exact().digest().digest(),
         profiles = profiles,
     );
-    complete::parse(
+    parse(
         SourceIdentity {
             identity: "test:resolved-package".into(),
             revision: "r1".into(),
@@ -141,7 +144,7 @@ fn resolved_package(definitions: &[Definition]) -> complete::ResolvedSourcePacka
 }
 
 fn resolve_fixture(
-    parsed: std::sync::Arc<complete::ParsedSource>,
+    parsed: std::sync::Arc<ParsedSource>,
     catalog: &DefinitionCatalog,
     model: &ModelArtifact,
 ) -> Result<complete::ResolvedSourcePackage, complete::PackageRefusal> {
@@ -153,7 +156,7 @@ fn resolve_fixture(
     )
 }
 
-fn assert_refusal_authority(refusal: &complete::PackageRefusal, parsed: &complete::ParsedSource) {
+fn assert_refusal_authority(refusal: &complete::PackageRefusal, parsed: &ParsedSource) {
     assert_eq!(refusal.authority.identity, *parsed.source().identity());
     assert_eq!(refusal.authority.path, parsed.source().path());
     assert_eq!(refusal.authority.digest.digest(), parsed.source().digest());
@@ -209,7 +212,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         parsed.source().text()
     );
     let broken = std::sync::Arc::new(
-        complete::parse(
+        parse(
             SourceIdentity {
                 identity: "test:broken-source".into(),
                 revision: "r1".into(),
@@ -385,7 +388,7 @@ fn dependency_closure_refuses_logical_conflicts_and_duplicate_aliases() {
         .source()
         .text()
         .replacen("P1", "P0", 1);
-    let parsed = complete::parse(
+    let parsed = parse(
         SourceIdentity {
             identity: "test:duplicate-alias".into(),
             revision: "r1".into(),
@@ -439,18 +442,14 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
         (Code::InvalidPackage, CompleteCause::FeatureSetMismatch)
     );
 
-    type ParseFn = fn(
-        SourceIdentity,
-        String,
-        &[u8],
-        Limits,
-    ) -> Result<complete::ParsedSource, Box<complete::CompleteDiagnostic>>;
-    let _: ParseFn = complete::parse;
+    type ParseFn =
+        fn(SourceIdentity, String, &[u8], Limits) -> Result<ParsedSource, Box<CompleteDiagnostic>>;
+    let _: ParseFn = parse;
 
     // These public types are the complete parser/resolver authority surface;
     // neither admits backend installation or capability state as an input.
     let resolver: fn(
-        std::sync::Arc<complete::ParsedSource>,
+        std::sync::Arc<ParsedSource>,
         &DefinitionCatalog,
         &ModelCatalog,
         PackageLimits,
@@ -823,7 +822,7 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
             };
             let invalid_literal = format!("\"{invalid_value}\"");
             let expected_start = source.find(&invalid_literal).unwrap();
-            let parsed = complete::parse(
+            let parsed = parse(
                 SourceIdentity {
                     identity: format!("test:{declaration_kind}-{invalid_component}"),
                     revision: "r1".into(),

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: bounded declarations and precedence parsing into flat located syntax.
-use crate::lexer::{self, Kind, Token};
 use crate::syntax::*;
-use crate::token::Kind as K;
+use qsl_cst::lexer::{self, Token};
+use qsl_cst::token::{Kind, Kind as K};
 use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
 
 mod composed;

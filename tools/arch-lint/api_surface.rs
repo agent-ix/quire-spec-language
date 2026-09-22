@@ -363,25 +363,21 @@ pub(crate) fn evaluate(
         ));
     };
     let mut violations = Vec::new();
-    for (index, src_root) in qsl_scan_src_roots(rule.role, scan_root)
-        .into_iter()
-        .enumerate()
-    {
+    for src_root in qsl_scan_src_roots(rule.role, scan_root) {
         if !src_root.exists() {
-            // The primary root (index 0, `<scan_root>/src`) is always
-            // required, matching this function's pre-existing contract. A
-            // later, extracted-layer-crate root (`qsl-foundation/src` and
-            // so on) is additive and optional: an older checkout, or a test
-            // fixture built before that crate existed, has nothing there to
-            // scan, which is not the same failure as the primary tree being
-            // absent.
-            if index == 0 {
-                return Err(Error::new(
-                    Code::Usage,
-                    format!("source root does not exist: {}", src_root.display()),
-                ));
-            }
-            continue;
+            // Every listed root is required, the primary root
+            // (`<scan_root>/src`) and every extracted-layer-crate root
+            // (`qsl-foundation/src`, `qsl-cst/src`, ...) alike: a missing
+            // configured root must fail loudly rather than silently drop
+            // that tree's coverage (QSL-178 review F4, carried over from
+            // review-325's same finding). A crate rename or move that this
+            // scanner's own root list has not caught up with is exactly the
+            // failure this guards -- it must not read as a clean, coverage-free
+            // pass.
+            return Err(Error::new(
+                Code::Usage,
+                format!("source root does not exist: {}", src_root.display()),
+            ));
         }
         let mut files = Vec::new();
         walk_rs_files(&src_root, &mut files)?;
@@ -413,18 +409,18 @@ pub(crate) fn evaluate(
 /// rule scans every QSL workspace crate whose `[dependencies]` can name the
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/` -- `qsl-foundation`
-/// (ADR-011 §7.3 X-2, QSL-177) today, and each later layer crate as its own
-/// extraction PR adds it here. `quire-exact` and `qsl-attrs` are excluded:
-/// `quire-exact` is the kernel these rules' constructors are defined *in*,
-/// never a caller of them (T12-B/T12-C/T12-D's own scope notes already
-/// exclude checking a copy of the constructor elsewhere; the crate that
-/// defines a constructor calling its own inherent `impl` is not a "caller"),
-/// and `qsl-attrs` is a proc-macro crate with no dependency on `quire-exact`
-/// at all.
+/// (ADR-011 §7.3 X-2, QSL-177) and `qsl-cst` (ADR-011 §7.3 X-3, QSL-178)
+/// today, and each later layer crate as its own extraction PR adds it here.
+/// `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel
+/// these rules' constructors are defined *in*, never a caller of them
+/// (T12-B/T12-C/T12-D's own scope notes already exclude checking a copy of
+/// the constructor elsewhere; the crate that defines a constructor calling
+/// its own inherent `impl` is not a "caller"), and `qsl-attrs` is a
+/// proc-macro crate with no dependency on `quire-exact` at all.
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src"]
+        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src"]
             .into_iter()
             .map(|relative| scan_root.join(relative))
             .collect(),
@@ -441,6 +437,18 @@ mod tests {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, contents).unwrap();
+    }
+
+    /// Every `Role::Qsl` scan root now has to exist (QSL-178 review F4): a
+    /// missing one is an error, not a silently skipped tree. Tests that
+    /// exercise `Role::Qsl` rules but are not themselves about a missing
+    /// root (every one below except tc_arch_lint_api_surface_015, which
+    /// tests exactly that) call this first so the extracted-crate roots
+    /// they don't care about are present, but empty.
+    fn ensure_qsl_roots(root: &Path) {
+        for relative in ["src", "qsl-foundation/src", "qsl-cst/src"] {
+            fs::create_dir_all(root.join(relative)).unwrap();
+        }
     }
 
     /// tc_arch_lint_api_surface_001: module-path mapping matches Rust's own
@@ -489,6 +497,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_003_disallowed_caller_is_a_violation() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/value/node.rs",
@@ -514,6 +523,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_004_allowed_caller_is_not_a_violation() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(dir.path(), "src/model/key.rs", "impl EffectiveId {}\n");
         write(
             dir.path(),
@@ -535,6 +545,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_005_segment_boundary_not_string_prefix() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(dir.path(), "src/model/key.rs", "impl EffectiveId {}\n");
         write(
             dir.path(),
@@ -558,6 +569,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_006_node_key_of_helper_call_is_a_violation() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/value/node.rs",
@@ -583,6 +595,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_007_defining_module_is_exempt() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/value/node.rs",
@@ -682,6 +695,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/model/population.rs",
@@ -708,6 +722,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/model/population.rs",
@@ -731,6 +746,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_api_surface_014_qsl_foundation_crate_is_scanned() {
         let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
         write(
             dir.path(),
             "src/model/population.rs",
@@ -749,14 +765,17 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_015: a checkout with no `qsl-foundation/`
-    /// directory at all (an older checkout, or any fixture that predates
-    /// ADR-011 §7.3 X-2) is not an error -- the extracted-crate root is
-    /// additive and optional, unlike the root crate's own `src/`
-    /// (tc_arch_lint_api_surface_009 covers that root being required).
+    /// tc_arch_lint_api_surface_015 (QSL-178 review F4): a checkout with no
+    /// `qsl-foundation/` directory at all is an error, the same as the root
+    /// crate's own `src/` being absent (tc_arch_lint_api_surface_009). Every
+    /// listed root is required precisely so a crate rename or move this
+    /// scanner's root list has not caught up with fails loudly instead of
+    /// silently scanning nothing there -- previously this case passed with
+    /// zero violations and zero coverage, indistinguishable from a clean
+    /// tree.
     #[trace("TC-157", "FR-060-AC-2")]
     #[test]
-    fn tc_arch_lint_api_surface_015_missing_qsl_foundation_crate_is_not_an_error() {
+    fn tc_arch_lint_api_surface_015_missing_qsl_foundation_crate_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         write(
             dir.path(),
@@ -764,9 +783,35 @@ mod tests {
             "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
         );
         let rule = &RULES[3]; // T12-D
+        let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
+        assert!(error.to_string().contains("qsl-foundation/src"), "{error}");
+    }
+
+    /// tc_arch_lint_api_surface_016 (ADR-011 §7.3 X-3, QSL-178): a
+    /// `Role::Qsl` rule scans `qsl-cst/src/` too, the same way
+    /// tc_arch_lint_api_surface_014 covers `qsl-foundation/src/` -- the
+    /// extracted layer-1 crate is as much "QSL's own tree" as the root
+    /// crate.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_016_qsl_cst_crate_is_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-cst/src/token.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
-        assert!(outcome.violations.is_empty());
-        assert!(outcome.passed());
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "token");
+        assert!(!outcome.passed());
     }
 }

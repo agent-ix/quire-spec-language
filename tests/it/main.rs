@@ -41,7 +41,6 @@ mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;
-mod complete_grammar;
 mod complete_v1_plan;
 mod complete_value_lock;
 mod composed_admission_stages;

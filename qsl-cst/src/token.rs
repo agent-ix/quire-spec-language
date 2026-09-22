@@ -2,11 +2,18 @@
 //! FR-002: one declarative vocabulary; Logos generates the token recognizer.
 use logos::Logos;
 
+// Widened to `pub`: `Kind`'s `Logos` derive exposes this as its associated
+// error type, and `Kind` itself is `pub` now that the root crate's own
+// base-grammar `parser` uses it across the crate boundary (ADR-011 §7.3 X-3).
+/// Why the generated recognizer could not classify a byte span as a token.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) enum LexError {
+pub enum LexError {
+    /// Bytes that form no recognized token.
     #[default]
     Character,
+    /// An integer literal has a disallowed leading zero.
     LeadingZero,
+    /// A quoted string literal has a malformed JSON escape.
     String,
 }
 
@@ -24,7 +31,12 @@ fn string(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
     serde_json::from_str(lex.slice()).map_err(|_| LexError::String)
 }
 
-pub(crate) fn is_lexer_whitespace(value: &str) -> bool {
+/// Whether `value` is entirely lexer-skipped whitespace (spaces, tabs,
+/// newlines and `\r\n`), so it can be inserted between tokens without
+/// reparsing.
+// Widened to `pub`: the root crate's `complete::edit` calls it across the
+// crate boundary (ADR-011 §7.3 X-3).
+pub fn is_lexer_whitespace(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -45,32 +57,54 @@ macro_rules! vocabulary {
         #[derive(Logos, Clone, Debug, PartialEq)]
         #[logos(error = LexError)]
         #[logos(skip r"[ \t\n]+|\r\n")]
-        pub(crate) enum Kind {
-            $(#[token($base_text)] $base_variant,)+
-            $(#[token($complete_text)] $complete_variant,)+
+        /// One recognized base or complete-V1 lexical token.
+        pub enum Kind {
+            $(
+                #[doc = concat!("Reserved keyword or symbol spelled `", $base_text, "`.")]
+                #[token($base_text)]
+                $base_variant,
+            )+
+            $(
+                #[doc = concat!("Complete-V1-only reserved keyword or symbol spelled `", $complete_text, "`.")]
+                #[token($complete_text)]
+                $complete_variant,
+            )+
+            /// An identifier: not a reserved word in the active grammar.
             #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_owned())]
             Identifier(String),
+            /// An unsigned decimal integer literal.
             #[regex(r"[0-9]+", integer)]
             Integer(String),
+            /// A JSON-quoted string literal.
             #[regex(r#""([^"\\\x00-\x1f]|\\[^\r\n])*""#, string)]
             Text(String),
+            /// A fractional or exponent-bearing numeric literal.
             #[regex(r"[0-9]+(\.[0-9]+([eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)")]
             Fractional,
+            /// A numeric literal with an exponent marker but no exponent digits.
             #[regex(r"[0-9]+(\.[0-9]+)?[eE][+-]?")]
             BadExponent,
+            /// A spelling reserved by another edition or facet, unsupported here.
             #[regex(r"helper|rec|cast|Tuple", priority = 3)]
             Unsupported,
+            /// A hexadecimal bit-pattern literal, complete-V1-only.
             #[regex(r"0x[0-9a-f]+", |lex| lex.slice().to_owned(), priority = 4)]
             Hex(String),
+            /// A `//`-prefixed line comment.
             #[regex(r"//[^\r\n]*", allow_greedy = true)]
             Comment,
+            /// End of source.
             End,
         }
         macro_rules! complete_only_kind_pattern {
             () => { $(Kind::$complete_variant)|+ };
         }
         impl Kind {
-            pub(crate) fn is_word(&self) -> bool {
+            /// Whether this token's spelling is a bare ASCII word, so a
+            /// composed-base member name may reuse it unquoted.
+            // Widened to `pub`: the root crate's `parser::composed` calls it
+            // across the crate boundary (ADR-011 §7.3 X-3).
+            pub fn is_word(&self) -> bool {
                 match self {
                     $(Self::$base_variant => $base_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
                     $(Self::$complete_variant => $complete_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
@@ -78,7 +112,11 @@ macro_rules! vocabulary {
                     _ => false,
                 }
             }
-            pub(crate) fn description(&self) -> &'static str {
+            /// A human-readable name for this token kind, used in "expected
+            /// ..." diagnostics.
+            // Widened to `pub`: the root crate's own base-grammar `parser`
+            // calls it across the crate boundary (ADR-011 §7.3 X-3).
+            pub fn description(&self) -> &'static str {
                 match self {
                     $(Self::$base_variant => $base_text,)+
                     $(Self::$complete_variant => $complete_text,)+
@@ -182,7 +220,9 @@ impl Kind {
     }
 
     /// Remove complete-facet reservations when parsing the composed base grammar.
-    pub(crate) fn composed_base(self, spelling: &str) -> Self {
+    // Widened to `pub`: the root crate's `parser::composed` calls it across
+    // the crate boundary (ADR-011 §7.3 X-3).
+    pub fn composed_base(self, spelling: &str) -> Self {
         if self.complete_only() {
             self.unreserved(spelling)
         } else {
@@ -190,9 +230,13 @@ impl Kind {
         }
     }
 
+    /// Reclassify this token under the historical `0-draft` grammar's own
+    /// reservation set.
     // Edition classification uses the recognized token's original spelling;
     // it does not tokenize source again or reserve new words in old editions.
-    pub(crate) fn historical(self, spelling: &str) -> Self {
+    // Widened to `pub`: the root crate's own base-grammar `parser` calls it
+    // across the crate boundary (ADR-011 §7.3 X-3).
+    pub fn historical(self, spelling: &str) -> Self {
         if self.complete_only() {
             return self.unreserved(spelling);
         }
