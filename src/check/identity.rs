@@ -84,13 +84,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest, Sha256};
 
 use quire_exact::{
-    DecimalType, EnumShape, IeeeWidth, IntegerInterval, NodeKey, RationalDomain, TextType, UnitId,
-    ValueType, VariantId,
+    DecimalType, EnumShape, Identifier, IeeeWidth, IntegerInterval, NodeKey, RationalDomain,
+    TextType, UnitId, ValueType, VariantId,
 };
 
 use super::family::Preimage;
 use crate::model::key::DeclarationKey;
-use crate::value::node::Identifier;
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
@@ -341,14 +340,14 @@ impl Frame {
 // importing `value::expression` (layer 5) at all, so a `check`-owned type
 // could never be the same type as that one, and a same-named but distinct
 // type here would only invite the two to be confused. `Identifier`
-// (`crate::value::node::Identifier`, imported above) is this module's own
+// (`quire_exact::Identifier`, imported above) is this module's own
 // name-*segment* use -- a single component, never a declared name sequence
 // claiming the O-11 name itself; PR #300 review round 2 (HIGH-1) removed the
 // one caller that used to build a `&[Identifier]` name sequence from it
 // (`mint_type_declaration_identity`), so today `Identifier` names only a
-// `SumVariant`'s own single declared case. `node` is one of FR-068-AC-6's
-// nine K-designated `value` siblings `check` may import from unbounded, so
-// this is a normal tier-1 edge.
+// `SumVariant`'s own single declared case. `quire_exact` is the kernel K
+// layer itself, so this is not a `value` import at all, and FR-068-AC-6's
+// tier bound on `check`'s `value` imports does not apply to it.
 //
 // PR #300 review finding 2: the checker's own name -> node id resolution
 // function already exists and is exercised in production --

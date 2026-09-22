@@ -11,9 +11,9 @@
 
 use quire_exact::ScalarLimits;
 
-use crate::replay::bounds::BoundExceeded;
-use crate::replay::identity::{RawSourceRef, TracePosition};
-use crate::replay::proof_result::{ProofCategory, ToolPin};
+use crate::bounds::BoundExceeded;
+use crate::identity::{RawSourceRef, TracePosition};
+use crate::proof_result::{ProofCategory, ToolPin};
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -359,7 +359,7 @@ pub fn read_bounded(result: ReplayResult) -> Result<ReplayResult, BoundExceeded>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::replay::bounds::MAX_ENCODED_BYTES;
+    use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
 
     fn regions() -> Vec<ResolvedRegion> {
@@ -598,15 +598,15 @@ mod tests {
     /// `spec/tests.md` attributes that row to #217, not to #231's debt.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
-        use crate::replay::identity::{OccurrenceKey, QualifiedName};
-        use crate::replay::proof_result::{
+        use crate::identity::{OccurrenceKey, QualifiedName};
+        use crate::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };
-        use crate::replay::witness::{
+        use crate::witness::{
             origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
         };
-        use crate::value::Identifier;
         use qsl_foundation::digest::WireNodeId;
+        use quire_exact::Identifier;
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {

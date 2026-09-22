@@ -1,34 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 layer-6 `replay`: the CG-facing replay facade (ADR-011 §6.1,
-//! ADR-013 O-26, C-13). `origin/main` had no `replay` module before this
-//! change (ADR-011 §6.2's module table: "none today | 6 `replay` | new").
+//! `qsl-replay`: the ADR-011 §6.1 layer **6** crate (QSL-185, ADR-011 §7.3
+//! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-24 to
+//! O-27, C-13). It depends only on `quire-exact` (layer K) and
+//! `qsl-foundation` (layer F).
 //!
-//! **This change (#231, ADR-013 O-24 to O-27) builds only the four typed
-//! envelopes this module's public API exposes** -- the proof-result
-//! envelope (`proof_result`), the counterexample/witness envelope
-//! (`witness`), the replay request (`request`) and the replay result
-//! (`result`) -- their round trips, and their redacted rendering
-//! (FR-069 through FR-073). It builds no backend invocation, no Kani
-//! harness and no replay execution: the executor entry (ADR-013 TK-01,
-//! `CheckedPackage::call`) is #243's, which "lands it first with the
-//! skeleton spine" (ADR-011 §6.1) and widens it per family thereafter.
-//! CG reaches this module's public API and nothing else in QSL (ADR-011
-//! FB-05).
+//! **This crate builds only the four typed envelopes its public API
+//! exposes** -- the proof-result envelope (`proof_result`), the
+//! counterexample/witness envelope (`witness`), the replay request
+//! (`request`) and the replay result (`result`) -- their round trips, and
+//! their redacted rendering (FR-069 through FR-073). It builds no backend
+//! invocation, no Kani harness and no replay execution: the executor entry
+//! (ADR-013 TK-01, `CheckedPackage::call`) stays in the root crate's own
+//! `value::expression`/`checked_package`, which "lands it first with the
+//! skeleton spine" (ADR-011 §6.1) and widens it per family thereafter. CG
+//! reaches this crate's public API and nothing else in QSL (ADR-011 FB-05).
 //!
 //! # Provisional local types
 //!
 //! Several members these envelopes carry have a canonical home ADR-013
-//! assigns to a ticket that has not landed on `origin/main` as of this
-//! change (#213 slices S-3/S-4: O-07's occurrence key beyond the kernel
+//! assigns to #213 slices S-3/S-4: O-07's occurrence key beyond the kernel
 //! `quire_exact::Origin`/`Location` pair, O-09's obligation identity, O-11's
-//! `QualifiedName`, O-12's resolved region). `identity` defines this
-//! module's own minimal, spec-faithful versions, documented there with
-//! exactly which ticket should absorb each one. This is not a
-//! compatibility layer or a redesign of ADR-013 -- each type has the shape
-//! ADR-013 already specifies -- only a placement decision made necessary by
-//! an unmerged dependency (see this ticket's PR description for the full
-//! account, including PR #262's independent, unmerged `QualifiedName` in
-//! `value::expression`, which this change does not touch or depend on).
+//! `QualifiedName` and O-12's resolved region. `identity` defines this
+//! crate's own minimal versions with the shape ADR-013 specifies, and names
+//! the ticket that absorbs each one.
+
+#![forbid(unsafe_code)]
 
 mod bounds;
 mod identity;
@@ -43,9 +39,9 @@ pub use identity::{
     ProfileSelection, QualifiedName, RawSourceRef, TracePosition,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, IncompleteCause, InconclusiveCause,
-    ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, TerminalRecord,
-    TerminalValue, ToolPin, UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
+    InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
 pub use request::{
     ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,
@@ -65,8 +61,8 @@ mod redaction_tests {
     use ix_trace_rs::trace;
 
     use super::*;
-    use crate::value::Identifier;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+    use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> quire_exact::ScalarLimits {
         quire_exact::ScalarLimits {

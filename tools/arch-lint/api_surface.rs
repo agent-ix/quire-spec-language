@@ -23,13 +23,11 @@
 //! Each rule scans one *role*'s source tree (see [`Role`]): T12-B, T12-C and
 //! T12-D are QSL-side rules (which QSL module calls the kernel constructor),
 //! scanned against the QSL tree passed with `--qsl`; T12-A is a CG-side rule (does CG
-//! call only QSL's `replay` facade), scanned against the CG tree passed with
-//! `--cg` -- never against QSL's own tree, which the rule's call pattern
-//! (`quire_spec_language::replay::`, a fully-qualified external-caller path)
-//! could never match from inside QSL itself. Evaluating a CG-role rule
-//! against the QSL tree would go straight from `Pending` to a vacuous `PASS`
-//! the moment the QSL-side facade module exists, without ever having scanned
-//! the tree the rule actually protects (#249 review, HIGH-2/MEDIUM-4).
+//! call only QSL's `qsl-replay` facade crate), scanned against the CG tree
+//! passed with `--cg` -- never against QSL's own tree, which contains no CG
+//! call sites for the rule to find (#249 review, HIGH-2/MEDIUM-4). A rule
+//! whose role's tree was not supplied reports [`RuleStatus::NeedsRoot`]; the
+//! other rules are still evaluated.
 
 use std::{
     fs,
@@ -46,12 +44,16 @@ pub(crate) struct CallSite {
     pub(crate) module: String,
 }
 
-/// Whether a rule's symbol exists yet in the scanned tree. A rule the tool
-/// cannot evaluate is reported as `Pending`, never as a silent pass.
+/// Whether a rule could be evaluated. A rule the tool cannot evaluate is
+/// reported as `Pending` or `NeedsRoot`, never as a silent pass.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RuleStatus {
     Live,
+    /// The rule's `requires_path` marker is absent from the QSL tree.
     Pending(&'static str),
+    /// The rule's target exists, but no tree was supplied for its role, so
+    /// nothing was scanned. Not a pass.
+    NeedsRoot(Role),
 }
 
 /// Which repository's tree a rule scans for call sites. `requires_path` is
@@ -85,6 +87,9 @@ pub(crate) struct Rule {
     /// T12-B matches the bare path `"NodeKey::from_digest"` instead (see its
     /// own comment, below).
     pub(crate) call_patterns: &'static [&'static str],
+    /// Call-site substrings that are a violation from any module, including
+    /// an allowed caller: a path that no longer names the rule's symbol.
+    pub(crate) forbidden_patterns: &'static [&'static str],
     /// Module path prefixes allowed to contain a call site (matched as
     /// `module == prefix` or `module.starts_with("{prefix}::")`).
     pub(crate) allowed_caller_prefixes: &'static [&'static str],
@@ -107,18 +112,21 @@ pub(crate) struct Rule {
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
-        description: "CG calls the QSL layer-6 `replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
+        description:
+            "CG calls the QSL layer-6 `qsl-replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
         role: Role::Cg,
-        call_patterns: &["quire_spec_language::replay::"],
+        // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6).
+        call_patterns: &["qsl_replay::"],
+        // The root crate has no `replay` module, so a call spelled this way
+        // cannot reach the facade; it is a finding, never a pass.
+        forbidden_patterns: &["quire_spec_language::replay::"],
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
         // #217/#219 build it). Left as a placeholder for #213/#217 to set.
         allowed_caller_prefixes: &["replay"],
-        requires_path: Some("src/replay.rs"),
-        pending_reason:
-            "the QSL layer-6 `replay` module `src/replay.rs` (ADR-011 §1 S8, §2.1 E9) does not \
-             exist yet on origin/main; it is #217/#219's work. This rule cannot be evaluated \
-             until `src/replay.rs` lands.",
+        requires_path: Some("qsl-replay/src/lib.rs"),
+        pending_reason: "the layer-6 facade crate `qsl-replay/src/lib.rs` is absent from the \
+                         --qsl tree",
         scope_note: None,
     },
     Rule {
@@ -136,6 +144,7 @@ pub(crate) const RULES: &[Rule] = &[
         // directly, rather than only its callee, is what surfaces those two
         // modules' own minting sites (R1, #249 review, review item 7).
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
+        forbidden_patterns: &[],
         // ADR-011 §1 stage table, S3 row: "QSL check (today: value::expression
         // check, model::checked_dispatch, value::library)". `model::
         // checked_dispatch` -> `check::checked_dispatch` (FR-074, ADR-011
@@ -190,6 +199,7 @@ pub(crate) const RULES: &[Rule] = &[
         // `model::key`'s own `EffectiveId` struct in favor of re-exporting
         // the kernel type.
         call_patterns: &["EffectiveId::from_digest("],
+        forbidden_patterns: &[],
         allowed_caller_prefixes: &["model"],
         requires_path: Some("src/model/key.rs"),
         // Genuinely unreachable for the same reason as T12-B's, above:
@@ -214,6 +224,7 @@ pub(crate) const RULES: &[Rule] = &[
         // zero violations until that lands, the same as any newly added
         // rule with no live callers yet.
         call_patterns: &["PopulationId::from_digest("],
+        forbidden_patterns: &[],
         allowed_caller_prefixes: &["model"],
         requires_path: Some("src/model/population.rs"),
         // Genuinely unreachable for the same reason as T12-C's, above:
@@ -272,6 +283,7 @@ impl RuleOutcome {
     pub(crate) fn passed(&self) -> bool {
         match self.status {
             RuleStatus::Pending(_) => true,
+            RuleStatus::NeedsRoot(_) => false,
             RuleStatus::Live => self.violations.is_empty(),
         }
     }
@@ -301,11 +313,17 @@ fn module_allowed(module: &str, allowed_prefixes: &[&str]) -> bool {
         .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}::")))
 }
 
-fn scan_file(path: &Path, module: &str, patterns: &[&str]) -> Result<Vec<CallSite>> {
+/// Every line of `path` that violates `rule`: a forbidden pattern from any
+/// module, or a call pattern from a module outside the allowed callers.
+fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<CallSite>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
+    let contains_any = |line: &str, patterns: &[&str]| patterns.iter().any(|p| line.contains(p));
+    let caller_allowed = module_allowed(module, rule.allowed_caller_prefixes);
     let mut sites = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        if patterns.iter().any(|pattern| line.contains(pattern)) {
+        if contains_any(line, rule.forbidden_patterns)
+            || (!caller_allowed && contains_any(line, rule.call_patterns))
+        {
             sites.push(CallSite {
                 file: path.to_path_buf(),
                 line: index + 1,
@@ -336,7 +354,8 @@ fn walk_rs_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 /// target lands in QSL first). `scan_root` is the package root of the tree
 /// the rule's `role` actually scans (QSL itself for a `Role::Qsl` rule, the
 /// CG checkout for a `Role::Cg` rule) -- `None` when the caller has no root
-/// for that role, which is only valid while the rule is still `Pending`.
+/// for that role, in which case a rule whose target exists reports
+/// [`RuleStatus::NeedsRoot`].
 pub(crate) fn evaluate(
     rule: &Rule,
     qsl_root: &Path,
@@ -352,14 +371,11 @@ pub(crate) fn evaluate(
         }
     }
     let Some(scan_root) = scan_root else {
-        return Err(Error::new(
-            Code::Usage,
-            format!(
-                "{}'s target has landed; pass {} to give it a tree to scan",
-                rule.id,
-                rule.role.flag_name()
-            ),
-        ));
+        return Ok(RuleOutcome {
+            rule_id: rule.id,
+            status: RuleStatus::NeedsRoot(rule.role),
+            violations: Vec::new(),
+        });
     };
     let mut violations = Vec::new();
     for src_root in qsl_scan_src_roots(rule.role, scan_root) {
@@ -386,12 +402,7 @@ pub(crate) fn evaluate(
                 .expect("walked file is under src_root")
                 .to_path_buf();
             let module = module_path_of(&relative);
-            let sites = scan_file(&file, &module, rule.call_patterns)?;
-            violations.extend(
-                sites
-                    .into_iter()
-                    .filter(|site| !module_allowed(&site.module, rule.allowed_caller_prefixes)),
-            );
+            violations.extend(scan_file(&file, &module, rule)?);
         }
     }
     violations.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -407,19 +418,19 @@ pub(crate) fn evaluate(
 /// (CG is a single crate as far as this tool is concerned). A `Role::Qsl`
 /// rule scans every QSL workspace crate whose `[dependencies]` can name the
 /// symbols these rules match: the root crate's own `src/`, plus each
-/// extracted ADR-011 §6.1 layer crate's `src/` -- `qsl-foundation`
-/// (ADR-011 §7.3 X-2, QSL-177) and `qsl-cst` (ADR-011 §7.3 X-3, QSL-178)
-/// today, and each later layer crate as its own extraction PR adds it here.
-/// `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel
-/// these rules' constructors are defined *in*, never a caller of them
-/// (T12-B/T12-C/T12-D's own scope notes already exclude checking a copy of
-/// the constructor elsewhere; the crate that defines a constructor calling
-/// its own inherent `impl` is not a "caller"), and `qsl-attrs` is a
-/// proc-macro crate with no dependency on `quire-exact` at all.
+/// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
+/// (ADR-011 §7.3 X-2), `qsl-cst` (X-3) and `qsl-replay` (X-10). Each later
+/// layer crate joins this list when it is extracted. `quire-exact` and `qsl-attrs` are
+/// excluded: `quire-exact` is the kernel these rules' constructors are
+/// defined *in*, never a caller of them (T12-B/T12-C/T12-D's own scope notes
+/// already exclude checking a copy of the constructor elsewhere; the crate
+/// that defines a constructor calling its own inherent `impl` is not a
+/// "caller"), and `qsl-attrs` is a proc-macro crate with no dependency on
+/// `quire-exact` at all.
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src"]
+        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"]
             .into_iter()
             .map(|relative| scan_root.join(relative))
             .collect(),
@@ -445,7 +456,7 @@ mod tests {
     /// tests exactly that) call this first so the extracted-crate roots
     /// they don't care about are present, but empty.
     fn ensure_qsl_roots(root: &Path) {
-        for relative in ["src", "qsl-foundation/src", "qsl-cst/src"] {
+        for relative in ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
     }
@@ -475,12 +486,12 @@ mod tests {
     fn tc_arch_lint_api_surface_002_missing_symbol_is_pending_not_vacuous_pass() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src/lib.rs", "pub mod value;\n");
-        let rule = &RULES[0]; // T12-A: requires src/replay.rs, absent here.
+        let rule = &RULES[0]; // T12-A: requires qsl-replay/src/lib.rs, absent here.
         let outcome = evaluate(rule, dir.path(), None).unwrap();
         assert_eq!(outcome.rule_id, rule.id);
         match &outcome.status {
             RuleStatus::Pending(reason) => assert!(
-                reason.contains("src/replay.rs"),
+                reason.contains("qsl-replay/src/lib.rs"),
                 "pending reason must name the missing path, got: {reason}"
             ),
             other => panic!("expected Pending, got {other:?}"),
@@ -622,17 +633,18 @@ mod tests {
     /// CG-shaped consumer tree, given as T12-A's `--cg` scan root, that calls
     /// the `replay` facade from a disallowed module is a real, failing
     /// violation -- T12-A must scan the CG tree, not the QSL tree, once its
-    /// `requires_path` gate (QSL's own `src/replay.rs`) is satisfied.
+    /// `requires_path` gate (QSL's own `qsl-replay/src/lib.rs`, QSL-185) is
+    /// satisfied.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_008_consumer_tree_violation_is_caught() {
         let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "src/replay.rs", "pub fn run() {}\n");
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
         let cg_dir = tempfile::tempdir().unwrap();
         write(
             cg_dir.path(),
             "src/oracle.rs",
-            "fn f() {\n    quire_spec_language::replay::run();\n}\n",
+            "fn f() {\n    qsl_replay::run();\n}\n",
         );
         let rule = &RULES[0]; // T12-A
         let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
@@ -684,18 +696,44 @@ mod tests {
         assert_is_qsl_root(dir.path()).unwrap();
     }
 
-    /// tc_arch_lint_api_surface_009: once a rule's target has landed, scanning
-    /// it with no root for its role is a usage error, not a silent pass --
-    /// `Pending` is reserved for a target that does not exist yet, never for
-    /// "no one told this tool where to look."
+    /// tc_arch_lint_api_surface_009: a rule whose target exists but whose
+    /// role's tree was not supplied reports `NeedsRoot` naming that role, and
+    /// does not pass -- `Pending` is reserved for a target that does not
+    /// exist yet, never for "no one told this tool where to look."
     #[trace("TC-157", "FR-060-AC-1")]
     #[test]
-    fn tc_arch_lint_api_surface_009_live_rule_with_no_scan_root_is_an_error() {
+    fn tc_arch_lint_api_surface_009_live_rule_with_no_scan_root_needs_root() {
         let qsl_dir = tempfile::tempdir().unwrap();
-        write(qsl_dir.path(), "src/replay.rs", "pub fn run() {}\n");
-        let rule = &RULES[0]; // T12-A: now live (src/replay.rs exists).
-        let error = evaluate(rule, qsl_dir.path(), None).unwrap_err();
-        assert!(error.to_string().contains("--cg"), "{error}");
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let rule = &RULES[0]; // T12-A: live (qsl-replay/src/lib.rs exists).
+        let outcome = evaluate(rule, qsl_dir.path(), None).unwrap();
+        assert_eq!(outcome.status, RuleStatus::NeedsRoot(Role::Cg));
+        assert!(outcome.violations.is_empty());
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_020 (negative control): a CG call spelled
+    /// `quire_spec_language::replay::` is a T12-A violation even from the
+    /// allowed `replay` module -- the root crate has no `replay` module, so
+    /// that spelling can never be a pass.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_020_root_crate_replay_path_is_a_violation() {
+        let qsl_dir = tempfile::tempdir().unwrap();
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let cg_dir = tempfile::tempdir().unwrap();
+        write(
+            cg_dir.path(),
+            "src/replay.rs",
+            "fn f() {\n    quire_spec_language::replay::run();\n    qsl_replay::run();\n}\n",
+        );
+        let rule = &RULES[0]; // T12-A
+        let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "replay");
+        assert_eq!(outcome.violations[0].line, 2);
+        assert!(!outcome.passed());
     }
 
     /// tc_arch_lint_api_surface_012 (negative control, ADR-013 QC-21): a call
@@ -858,5 +896,55 @@ mod tests {
         assert_eq!(outcome.violations[1].module, "value::reference");
         assert_eq!(outcome.violations[1].line, 5);
         assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185): a
+    /// `Role::Qsl` rule scans `qsl-replay/src/` too, the same way
+    /// tc_arch_lint_api_surface_014/016 cover `qsl-foundation/src/` and
+    /// `qsl-cst/src/` -- the extracted layer-6 crate is as much "QSL's own
+    /// tree" as the root crate.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_018_qsl_replay_crate_is_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "impl PopulationId {}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-replay/src/identity.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        let rule = &RULES[3]; // T12-D
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1);
+        assert_eq!(outcome.violations[0].module, "identity");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185): a checkout
+    /// with no `qsl-replay/` directory at all is an error, the same as
+    /// tc_arch_lint_api_surface_015 for `qsl-foundation/`. Every listed root
+    /// is required precisely so a crate rename or move this scanner's root
+    /// list has not caught up with fails loudly instead of silently scanning
+    /// nothing there.
+    #[trace("TC-157", "FR-060-AC-2")]
+    #[test]
+    fn tc_arch_lint_api_surface_019_missing_qsl_replay_crate_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/model/population.rs",
+            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+        );
+        fs::create_dir_all(dir.path().join("qsl-foundation/src")).unwrap();
+        fs::create_dir_all(dir.path().join("qsl-cst/src")).unwrap();
+        let rule = &RULES[3]; // T12-D
+        let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
+        assert!(error.to_string().contains("qsl-replay/src"), "{error}");
     }
 }

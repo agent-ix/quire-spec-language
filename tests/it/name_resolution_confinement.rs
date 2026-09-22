@@ -3,12 +3,9 @@
 //! a `QualifiedName` (or a bare string) to a node id or declaration, with
 //! the one documented exception being the `replay` facade's own E9 lookup.
 //!
-//! **Scope of what this scans (step 3's own signature criterion, the part
-//! this test can check with `syn` alone -- see the doc below for what step
-//! 1/2's call-graph half is not decided here).** This walks every function
-//! and method definition in `src/`, outside `src/check/` and `src/replay/`,
-//! and fails on any whose signature both (a) takes a parameter naming
-//! `QualifiedName` and (b) returns a type naming `NodeKey`, `DeclarationKey`
+//! **Scope.** This walks every function and method definition in this
+//! crate's own `src/`, outside `src/check/`, and fails on any whose signature
+//! both (a) takes a parameter naming `QualifiedName` and (b) returns a type naming `NodeKey`, `DeclarationKey`
 //! or `ExportIdentity` -- exactly AC-5's own literal criterion for that
 //! half, "a function ... accepts a `QualifiedName` ... and returns a node id
 //! or declaration." This is a signature scan, not a full call-graph/
@@ -206,7 +203,7 @@ impl<'ast> Visit<'ast> for SignatureScanner {
 fn no_signature_outside_check_or_replay_resolves_a_qualified_name_to_an_identity() {
     let root = workspace_root();
     let mut violations = Vec::new();
-    for file in source_files(&root, &["src/check/", "src/replay/"]) {
+    for file in source_files(&root, &["src/check/"]) {
         let path = root.join(&file);
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("{file}: failed to read: {error}"));

@@ -21,7 +21,7 @@
 use qsl_attrs::string_edge;
 
 use qsl_foundation::diagnostic::InternalFault;
-use quire_exact::NodeKey;
+use quire_exact::{is_identifier, NodeKey};
 
 use crate::check::ValueFunctionFamily;
 
@@ -50,14 +50,6 @@ pub struct QualifiedName(Box<[String]>);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 #[error("a qualified name is a non-empty sequence of identifiers")]
 pub struct InvalidQualifiedName;
-
-fn is_identifier(text: &str) -> bool {
-    let mut bytes = text.bytes();
-    bytes
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-}
 
 impl QualifiedName {
     /// A qualified name from its segments, refusing anything that is not a

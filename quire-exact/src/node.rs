@@ -39,6 +39,47 @@ use std::fmt;
 /// Digest domain of every checked semantic node key.
 pub const NODE_KEY_DOMAIN: &str = "quire.checked-semantic-node/v1";
 
+/// Whether `text` is `^[A-Za-z_][A-Za-z0-9_]*$`: the one definition of this
+/// character class, which every identifier-shaped field and [`Identifier`]
+/// validate against.
+pub fn is_identifier(text: &str) -> bool {
+    let mut bytes = text.bytes();
+    bytes
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+/// A `node-identity-preimage.schema.json` `$defs.Identifier`
+/// (`^[A-Za-z_][A-Za-z0-9_]*$`): one identifier-shaped name segment. An
+/// invalid identifier is refused at construction rather than reaching a
+/// schema-invalid wire shape (ADR-013 O-06).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Identifier(String);
+
+/// A string that is not `^[A-Za-z_][A-Za-z0-9_]*$`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[error("an identifier is `^[A-Za-z_][A-Za-z0-9_]*$`")]
+pub struct InvalidIdentifier;
+
+impl Identifier {
+    /// `value` as an identifier, or [`InvalidIdentifier`] if it is not
+    /// `^[A-Za-z_][A-Za-z0-9_]*$`.
+    pub fn new(value: impl Into<String>) -> Result<Self, InvalidIdentifier> {
+        let value = value.into();
+        if is_identifier(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidIdentifier)
+        }
+    }
+
+    /// The identifier's own text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// An opaque `quire.checked-semantic-node/v1` node key.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey([u8; 32]);
@@ -114,5 +155,32 @@ mod tests {
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert!(rendered.ends_with("ab"));
+    }
+
+    /// A name that is not `^[A-Za-z_][A-Za-z0-9_]*$` is refused at
+    /// `Identifier::new`.
+    #[test]
+    fn a_non_identifier_name_is_refused() {
+        for invalid in ["not an id!", "", "1starts_with_digit", "has-a-dash"] {
+            assert_eq!(
+                Identifier::new(invalid),
+                Err(InvalidIdentifier),
+                "{invalid:?} must be refused"
+            );
+        }
+    }
+
+    /// The positive complement of the refusal above.
+    #[test]
+    fn ordinary_identifiers_are_accepted() {
+        for valid in [
+            "quantity",
+            "source",
+            "totalPrice",
+            "add",
+            "_leading_underscore",
+        ] {
+            assert!(Identifier::new(valid).is_ok(), "{valid:?} must be accepted");
+        }
     }
 }

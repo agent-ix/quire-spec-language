@@ -205,8 +205,8 @@ pub use ieee::{
 };
 pub use member::Member;
 pub use node::{
-    Identifier, InvalidIdentifier, InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner,
-    OwnerSelection, OwnerSubject, SemanticGraphCause, NODE_KEY_DOMAIN,
+    InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
+    SemanticGraphCause, NODE_KEY_DOMAIN,
 };
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,

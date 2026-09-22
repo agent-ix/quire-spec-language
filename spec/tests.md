@@ -237,7 +237,7 @@ permitted layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9/TC-256).
 
 [FR-069](../spec/functional/FR-069-implement-typed-proof-result-envelope.md)
 through [FR-073](../spec/functional/FR-073-implement-redacted-safe-diagnostic-rendering.md)
-are implemented under issue #231, in `src/replay/{bounds,identity,proof_result,
+are implemented under issue #231, in `qsl-replay/src/{bounds,identity,proof_result,
 witness,request,result}.rs`. Every TC below was red/green falsified during
 implementation: the targeted behavior was independently removed (one code
 mutation per test — e.g. the vacuous-proof category branch, the
@@ -253,23 +253,23 @@ identical code shape (the same `.ok_or(Refusal::X)?` early-refusal pattern,
 the same round-trip-equality pattern, or the same redacted-`Debug` pattern)
 as a row that was.
 
-- TC-177 (FR-069-AC-1): `src/replay/proof_result.rs::tests::tc_177_every_fr331_value_maps_to_its_exact_category`
-- TC-178 (FR-069-AC-2, FR-069-AC-4): `src/replay/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
-- TC-179 (FR-069-AC-3): `src/replay/proof_result.rs::tests::tc_179_round_trip_preserves_backend_tool_pin_and_dispositions`
-- TC-180 (FR-070-AC-1): `src/replay/witness.rs::witness_tests::tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript`
-- TC-181 (FR-070-AC-2, FR-070-AC-6, FR-070-AC-7): `src/replay/witness.rs::witness_tests::tc_181_refuses_malformed_transcripts`, `::envelope_tests::tc_181_refuses_an_out_of_domain_digest`, `::envelope_tests::tc_181_refuses_an_oversized_encoding`
-- TC-182 (FR-070-AC-3): `src/replay/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`
-- TC-183 (FR-070-AC-4): `src/replay/witness.rs::envelope_tests::tc_183_refuses_reconstruction_when_any_o25_member_is_missing` — caveat: this is a `Property`-typed row, but the test asserts only four of the roughly thirteen O-25 members individually (`backend`, `trace_position`, `source_digests`, `obligation_identity`); the rest share the identical `.ok_or(WitnessRefusal::MissingMember(...))?` pattern but are not each individually exercised.
-- TC-184 (FR-070-AC-5): `src/replay/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
-- TC-185 (FR-071-AC-1): `src/replay/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
-- TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `src/replay/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
-- TC-188 (FR-071-AC-4): `src/replay/request.rs::tests::tc_188_refuses_unknown_version_or_profile_before_recompilation`
-- TC-189 (FR-072-AC-1): `src/replay/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
-- TC-190 (FR-072-AC-2): `src/replay/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
-- TC-191 (FR-072-AC-3, FR-072-AC-5): `src/replay/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`
-- TC-209 (FR-073-AC-1): `src/replay/witness.rs::witness_tests::tc_209_debug_and_display_never_reproduce_the_full_transcript`
-- TC-210 (FR-073-AC-2): `src/replay/request.rs::tests::tc_210_debug_never_reproduces_byte_provision_raw_bytes`
-- TC-211 (FR-073-AC-3): `src/replay/mod.rs::redaction_tests::tc_211_refusal_causes_redact_while_typed_accessors_stay_readable`
+- TC-177 (FR-069-AC-1): `qsl-replay/src/proof_result.rs::tests::tc_177_every_fr331_value_maps_to_its_exact_category`
+- TC-178 (FR-069-AC-2, FR-069-AC-4): `qsl-replay/src/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
+- TC-179 (FR-069-AC-3): `qsl-replay/src/proof_result.rs::tests::tc_179_round_trip_preserves_backend_tool_pin_and_dispositions`
+- TC-180 (FR-070-AC-1): `qsl-replay/src/witness.rs::witness_tests::tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript`
+- TC-181 (FR-070-AC-2, FR-070-AC-6, FR-070-AC-7): `qsl-replay/src/witness.rs::witness_tests::tc_181_refuses_malformed_transcripts`, `::envelope_tests::tc_181_refuses_an_out_of_domain_digest`, `::envelope_tests::tc_181_refuses_an_oversized_encoding`
+- TC-182 (FR-070-AC-3): `qsl-replay/src/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`
+- TC-183 (FR-070-AC-4): `qsl-replay/src/witness.rs::envelope_tests::tc_183_refuses_reconstruction_when_any_o25_member_is_missing` — caveat: this is a `Property`-typed row, but the test asserts only four of the roughly thirteen O-25 members individually (`backend`, `trace_position`, `source_digests`, `obligation_identity`); the rest share the identical `.ok_or(WitnessRefusal::MissingMember(...))?` pattern but are not each individually exercised.
+- TC-184 (FR-070-AC-5): `qsl-replay/src/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
+- TC-185 (FR-071-AC-1): `qsl-replay/src/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
+- TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `qsl-replay/src/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
+- TC-188 (FR-071-AC-4): `qsl-replay/src/request.rs::tests::tc_188_refuses_unknown_version_or_profile_before_recompilation`
+- TC-189 (FR-072-AC-1): `qsl-replay/src/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
+- TC-190 (FR-072-AC-2): `qsl-replay/src/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
+- TC-191 (FR-072-AC-3, FR-072-AC-5): `qsl-replay/src/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`
+- TC-209 (FR-073-AC-1): `qsl-replay/src/witness.rs::witness_tests::tc_209_debug_and_display_never_reproduce_the_full_transcript`
+- TC-210 (FR-073-AC-2): `qsl-replay/src/request.rs::tests::tc_210_debug_never_reproduces_byte_provision_raw_bytes`
+- TC-211 (FR-073-AC-3): `qsl-replay/src/lib.rs::redaction_tests::tc_211_refusal_causes_redact_while_typed_accessors_stay_readable`
 
 TC-187 stays `🚧 Planned; #231` and TC-192 is now attributed
 `🚧 Planned; #217`: both rows' core claim is an absence of something (no
@@ -280,8 +280,8 @@ test itself, so neither test carries a `#[trace]` tag naming the AC it
 cannot fail on. The positive half of each (a multi-segment name round-trips
 its segments; two structurally different functions reuse the four #231
 types) is exercised by
-`src/replay/request.rs::tests::tc_187_selection_is_always_a_typed_qualified_name`
-and `src/replay/result.rs::tests::tc_192_function_exemplar_reuses_the_four_types_with_none_new`
+`qsl-replay/src/request.rs::tests::tc_187_selection_is_always_a_typed_qualified_name`
+and `qsl-replay/src/result.rs::tests::tc_192_function_exemplar_reuses_the_four_types_with_none_new`
 respectively, but the row's literal claim is broader than what either test
 asserts at runtime. TC-192's row is attributed to #217 rather than #231
 because its claim ("no fifth type is defined in #217's repository scope") is

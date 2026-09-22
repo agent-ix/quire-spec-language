@@ -83,7 +83,7 @@ four rules:
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
-| T12-A | Cg | The layer-6 `replay` facade module | (this rule reports pending until the facade module exists at the path this rule names; once it exists, a CG checkout must be supplied to scan it) | `src/replay.rs` |
+| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module | `qsl-replay/src/lib.rs` |
 | T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `src/model/population.rs` |
@@ -160,9 +160,10 @@ inspection, the check SHALL report that rule **pending**, naming the missing
 path, and SHALL NOT scan for call sites under that rule.
 
 If a rule's role names a tree that was not supplied (a CG-role rule given no
-CG checkout, once its target exists), the check SHALL refuse with a usage
-error naming the flag the caller must supply, rather than reporting a vacuous
-pass.
+CG checkout, once its target exists), the check SHALL report that rule **not
+evaluated**, naming the flag the caller must supply, and SHALL still evaluate
+and report every other rule. A run with a not-evaluated rule SHALL exit as a
+usage error, with the full report, rather than reporting a vacuous pass.
 
 If a rule's required file path exists and its tree was supplied, the check
 SHALL scan every `.rs` file under that tree's `src/` for the rule's call
@@ -207,7 +208,7 @@ each list can only shrink.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head with no CG checkout, rule T12-A reports not evaluated, naming `--cg` (its target `qsl-replay/src/lib.rs` exists), the run exits as a usage error, and rules T12-B, T12-C and T12-D are still evaluated and reported; rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
 
 ## Dependencies
 
@@ -228,9 +229,10 @@ Specified and implemented under
 [#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
 `arch-lint api-surface` subcommand (`tools/arch-lint/api_surface.rs`), with a
 per-rule role (`--qsl`/`--cg`) and a `node_key_of(` call pattern added at
-#249 review (R1, HIGH-2/MEDIUM-4). T12-A is CG-role and pending (the `replay`
-facade does not exist; once it lands, `arch-lint api-surface` needs `--cg
-<checkout>` to scan it -- the Makefile's `CG_CLONE` variable). T12-C is
+#249 review (R1, HIGH-2/MEDIUM-4). T12-A is CG-role and live: its target
+`qsl-replay/src/lib.rs` exists, and it scans the checkout passed with `--cg
+<checkout>` (the Makefile's `CG_CLONE` variable); without one it reports not
+evaluated while the other three rules run. T12-C is
 QSL-role and live; its only shipped mints outside `model`, on `main` at
 `dccf9175` and on #335's branch alike, are its two debt-list functions
 (`src/value/model_query.rs` lines 124 and 156). T12-D is QSL-role, live, and passes

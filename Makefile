@@ -126,8 +126,9 @@ ci: check-no-committed-binaries check-index-completeness ci-default-features ci-
 # target's caller. `arch-lint-direction` needs real local checkouts of the
 # three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
 # `arch-lint-api-surface`'s T12-A rule is CG-side (#249 review, HIGH-2/
-# MEDIUM-4) and needs CG_CLONE too, once `src/replay.rs` lands; until then it
-# stays PENDING with no root given.
+# MEDIUM-4): it scans CG_CLONE for calls into the `qsl-replay` facade crate.
+# Without CG_CLONE, T12-A reports NOT EVALUATED, T12-B, T12-C and T12-D still
+# run and report, and the target exits 2 (usage) for the missing input.
 #
 # `arch-lint` (this repo's own checks: api-surface, duplicate-revisions on
 # QSL's own root lock, and duplicate-revisions on the current-head lane's own

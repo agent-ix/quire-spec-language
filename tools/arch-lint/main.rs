@@ -187,6 +187,10 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
          this check, not silent gaps.\n",
     );
     let mut all_passed = true;
+    // Flags a rule needed but was not given. Every rule is still evaluated,
+    // so one rule's missing input never hides the others' results; the run
+    // then fails as a usage error with the full report attached.
+    let mut missing_flags: Vec<&'static str> = Vec::new();
     for rule in api_surface::RULES {
         let scan_root = match rule.role {
             api_surface::Role::Qsl => Some(qsl.as_path()),
@@ -201,6 +205,17 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                     "  {} [{}]: PENDING -- {reason}\n",
                     outcome.rule_id, rule.description
                 ));
+            }
+            api_surface::RuleStatus::NeedsRoot(role) => {
+                let flag = role.flag_name();
+                summary.push_str(&format!(
+                    "  {} [{}]: NOT EVALUATED -- its target exists; pass {flag} to give it a \
+                     tree to scan\n",
+                    outcome.rule_id, rule.description
+                ));
+                if !missing_flags.contains(&flag) {
+                    missing_flags.push(flag);
+                }
             }
             api_surface::RuleStatus::Live if outcome.violations.is_empty() => {
                 summary.push_str(&format!(
@@ -226,6 +241,15 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
         if let Some(note) = rule.scope_note {
             summary.push_str(&format!("    (not evaluated for every role: {note})\n"));
         }
+    }
+    if !missing_flags.is_empty() {
+        return Err(Error::new(
+            Code::Usage,
+            format!(
+                "{summary}missing input: pass {} to evaluate every rule",
+                missing_flags.join(" and ")
+            ),
+        ));
     }
     Ok((summary, all_passed))
 }
@@ -294,5 +318,72 @@ fn main() -> ExitCode {
             let _ = writeln!(io::stderr().lock(), "{error}");
             ExitCode::from(error.exit_code())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use std::{fs, path::Path};
+
+    fn write(root: &Path, relative: &str, contents: &str) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+
+    /// tc_arch_lint_api_surface_021 (negative control): with no `--cg`,
+    /// T12-A reports that it needs `--cg` and T12-B, T12-C and T12-D are
+    /// still evaluated -- one rule's missing input does not hide the others'
+    /// results. The run fails as a usage error carrying the full report.
+    #[trace("TC-157", "FR-060-AC-4")]
+    #[test]
+    fn tc_arch_lint_api_surface_021_missing_cg_still_runs_qsl_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "Cargo.toml",
+            "[package]\nname = \"quire-spec-language\"\nversion = \"0.2.0\"\n",
+        );
+        for relative in ["qsl-foundation/src", "qsl-cst/src"] {
+            fs::create_dir_all(root.join(relative)).unwrap();
+        }
+        write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        write(root, "src/value/node.rs", "pub struct NodeKey;\n");
+        write(root, "src/model/key.rs", "pub struct EffectiveId;\n");
+        write(
+            root,
+            "src/model/population.rs",
+            "pub struct PopulationId;\n",
+        );
+        write(
+            root,
+            "src/value/model_query.rs",
+            "fn f() {\n    NodeKey::from_digest(k);\n    EffectiveId::from_digest(d);\n}\n",
+        );
+
+        let arguments: Vec<OsString> = ["api-surface", "--qsl"]
+            .into_iter()
+            .map(OsString::from)
+            .chain([root.as_os_str().to_owned()])
+            .collect();
+        let error = run(&arguments).unwrap_err();
+        assert_eq!(error.code, Code::Usage);
+        let report = error.message();
+        let line_of = |id: &str| {
+            report
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{id} [")))
+                .unwrap_or_else(|| panic!("no {id} line in report:\n{report}"))
+        };
+        assert!(line_of("T12-A").ends_with("pass --cg to give it a tree to scan"));
+        assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
+        assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
+        assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
+        assert!(report.contains("model_query.rs:2 (module value::model_query)"));
+        assert!(report.contains("model_query.rs:3 (module value::model_query)"));
+        assert!(report.ends_with("missing input: pass --cg to evaluate every rule"));
     }
 }
