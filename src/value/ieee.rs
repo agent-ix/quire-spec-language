@@ -10,34 +10,36 @@
 //! `sqrt`) and rounds exactly once. No host floating-point value or operation
 //! exists anywhere on this path.
 //!
-//! QSL-131 (ieee cut): [`IeeeWidth`], [`IeeeValue`], [`IeeeFlag`],
-//! [`IeeeFlags`], [`IeeeComparison`], [`IeeeOperationKind`],
-//! [`ieee_intrinsic_identities`], [`IeeeExactLoss`], the generic
-//! [`IeeeOperation`] shape and [`IEEE_DEFINITION`] are `quire_exact`'s own
-//! canonical items, re-exported below rather than duplicated -- diffed
-//! byte-identical against `quire-exact/src/ieee.rs` before the cut. Because
-//! those types become foreign to this module, a few purely private helpers
-//! below (`format_of`, `flags_with`, `make_ieee_value`, `try_map_operation`,
-//! `operation_arity`, `operation_operands`) replace what were inherent
-//! methods or direct field/tuple access on the old local types (private
-//! fields/methods on a foreign type, and new inherent impls for a foreign
-//! type, are both unreachable under Rust's own visibility and orphan rules);
-//! each is a mechanical wrapper over the surviving public accessor with no
-//! behavior change.
+//! [`IeeeWidth`], [`IeeeValue`], [`IeeeFlag`], [`IeeeFlags`],
+//! [`IeeeComparison`], [`IeeeOperationKind`], [`ieee_intrinsic_identities`],
+//! [`IeeeExactLoss`], the generic [`IeeeOperation`] shape and
+//! [`IEEE_DEFINITION`] are `quire_exact`'s own canonical items, re-exported
+//! below rather than duplicated. Because those types are foreign to this
+//! module, their private fields, private methods and any would-be new
+//! inherent impl are all unreachable here (Rust visibility and orphan
+//! rules), so six free functions stand in: `format_of`, `try_map_operation`,
+//! `operation_arity` and `operation_operands` are verbatim ports of the
+//! private methods they replace; `flags_with` and `make_ieee_value` are
+//! rewrites onto the surviving public API (`iter`/`FromIterator`, and
+//! `binary32`/`binary64`) that are behaviour-equivalent, not verbatim.
 //!
 //! Everything else below still carries its own definition: `ExactScalar`,
 //! `IeeeOperand`, `IeeeProvenance`, `IeeeResult`, `IeeeExact`,
-//! `IeeeExactTarget` and the five profile-checked entry points
+//! `IeeeExactTarget`, the five profile-checked entry points
 //! (`evaluate_ieee`/`compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/
-//! `exact_to_ieee`) are parameterized over this crate's own `RoundingMode`
-//! (`value::decimal`), `Decimal`/`Rational` (`value::decimal`/
-//! `value::rational`) and `IllTyped`/`Outcome`/`Refusal`/`Undefined`
-//! (`value::comparison`/`value::outcome`) -- none of which `quire_exact`'s
-//! same-named items use -- and by `AdmittedIeeeProfile`, a QSL-only
-//! package-admission witness `quire_exact` deliberately excludes (it depends
-//! on this crate's own package-catalog module, not a kernel type). The
-//! classification and the exact per-item difference are recorded in the
-//! QSL-131 PR body, not here.
+//! `exact_to_ieee`) and the private rounding/arithmetic engine beneath them.
+//! Each is parameterized over this crate's own `RoundingMode`/`Decimal`
+//! (`value::decimal`), `Rational` (`value::rational`), `IllTyped`
+//! (`value::comparison`) or `Outcome`/`Refusal`/`Undefined`
+//! (`value::outcome`) -- separate types from `quire_exact`'s own
+//! same-named ones -- or, for `AdmittedIeeeProfile`, this crate's own
+//! package-catalog module (`value::definition`), which `quire_exact`
+//! deliberately excludes. Linear QSL-131 owns cutting
+//! `value::{decimal, rational, outcome, comparison}` over to `quire_exact`;
+//! once that lands, these five entry points reduce to thin
+//! `&AdmittedIeeeProfile` wrappers around `quire_exact`'s own
+//! `evaluate_ieee`/`compare_ieee`/etc., and the private engine and the six
+//! helpers above go away.
 
 use std::cmp::Ordering;
 
@@ -621,7 +623,9 @@ fn format_of(width: IeeeWidth) -> Format {
 /// re-exported foreign type, so the width selects which one narrows `bits`.
 fn make_ieee_value(width: IeeeWidth, bits: u64) -> IeeeValue {
     match width {
-        IeeeWidth::Binary32 => IeeeValue::binary32(bits as u32),
+        IeeeWidth::Binary32 => IeeeValue::binary32(u32::try_from(bits).expect(
+            "bits was encoded by this module's own Format for Binary32, so its high bits are zero",
+        )),
         IeeeWidth::Binary64 => IeeeValue::binary64(bits),
     }
 }
