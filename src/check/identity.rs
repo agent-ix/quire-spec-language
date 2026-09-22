@@ -968,8 +968,11 @@ mod tests {
         // under the very same name, likewise never collide with either of
         // the above or each other.
         let bound = IntegerInterval::new(Integer::zero(), Integer::from(10_i64)).unwrap();
-        let bounded =
-            mint_type_declaration_identity("test/orders@1.0.0", &name, DeclaredShape::BoundedDomain(&bound));
+        let bounded = mint_type_declaration_identity(
+            "test/orders@1.0.0",
+            &name,
+            DeclaredShape::BoundedDomain(&bound),
+        );
         let scalar = mint_type_declaration_identity(
             "test/orders@1.0.0",
             &name,

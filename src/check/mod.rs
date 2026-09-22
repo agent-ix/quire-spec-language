@@ -1136,7 +1136,8 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let call_identity = family::mint_call_identity(family::DEFAULT_PACKAGE_IDENTITY, "helper", &[]);
+        let call_identity =
+            family::mint_call_identity(family::DEFAULT_PACKAGE_IDENTITY, "helper", &[]);
         let first = Origin::new(Role::new("reference"), 0);
         let second = Origin::new(Role::new("reference"), 1);
         let first_location = graph
