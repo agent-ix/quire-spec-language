@@ -36,7 +36,7 @@
 //!   identical guard-fact propagation a real checked postcondition's
 //!   `Definedness::walk` already uses, then decides discharge from what
 //!   that derivation actually proves. It reaches back into this module's
-//!   [`ConformanceIndex`], [`AxisFailure`], [`ConformanceOutcome`] and
+//!   `ConformanceIndex`, [`AxisFailure`], [`ConformanceOutcome`] and
 //!   `missing_member`, each widened to `pub(crate)` for exactly that call
 //!   (`check` sits above `model` in ADR-011 §6.1's layer-3 order, so `check`
 //!   depending back on `model` is legal; the reverse was not).
