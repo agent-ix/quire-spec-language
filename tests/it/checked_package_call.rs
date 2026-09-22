@@ -1,28 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-174 (FR-068-AC-5), QSL-183 edge cut: the three
-//! `CheckedPackage::call`/refusal fixtures formerly in
-//! `value::expression::mod`'s own `#[cfg(test)] mod tests` reach only the
-//! crate's public API (`PackageDeclarations::check`, `CheckedPackage::call`,
-//! and the public refusal types), so they moved here in #323.
+//! TC-174 (FR-068-AC-5): `CheckedPackage::call` and `CheckedPackage::evaluate`,
+//! this crate's public runtime entry points, exercised together with the
+//! checking pipeline that produces their `CheckedPackage`/`CheckedExpression`
+//! inputs (`PackageDeclarations::check`, `CheckedGraph::check_expression`,
+//! `CheckedPackage::link`) -- an integration test, allowed to reach both the
+//! `forms`-owned fixture types (`FunctionDeclaration`, `Expression`,
+//! `BinaryOperator`) and this crate's checking/evaluation pipeline in the
+//! same file.
 //!
-//! `function_slots_are_stable_across_declaration_order` (formerly kept in
-//! `value::expression::mod` because it read that module's same-crate
-//! `check::CheckedGraph::function_states()`, `pub(crate)`) also moves here
-//! now, rewritten rather than relocated verbatim: `function_states()` itself
-//! has no public accessor and nothing outside this crate needs one, but the
-//! property it existed to guard -- a checked function's own evaluation-slot
-//! count never leaking onto a *different* function's frame, regardless of
-//! declaration order -- is independently observable through
-//! `CheckedGraph::check_expression`/`CheckedPackage::evaluate` (both
-//! public): `evaluate`'s `Machine` resizes each callee's frame from exactly
-//! this per-function slot count (`evaluate.rs`'s `frame.resize(callable.
-//! slots.max(frame.len()), None)`) when a checked expression's own `Call`
-//! node runs, so a scrambled count surfaces as a wrong or undefined result,
-//! not only as an internal accessor mismatch. See
-//! `evaluated_call_slots_are_stable_across_declaration_order` below --
-//! renamed off the original because "slots" is no longer read directly, and
-//! kept on `TC-174`/`FR-068-AC-5` because it is still exactly that test
-//! case's own property, exercised through the public surface instead.
+//! `evaluated_call_slots_are_stable_across_declaration_order` checks that a
+//! standalone expression calling into a declared function resolves to the
+//! correct result regardless of the package's declaration order:
+//! `evaluate`'s `Machine` resizes each callee's frame from that function's
+//! own evaluation-slot count (`evaluate.rs`'s `frame.resize(callable.
+//! slots.max(frame.len()), None)`), so a count that leaked from a different
+//! function surfaces here as a wrong or undefined result. `two`'s body needs
+//! a `let`-bound local beyond its two parameters, discriminating it from
+//! `one`'s smaller slot count.
 
 use ix_trace_rs::trace;
 use quire_exact::{Integer, Meter, ScalarLimits};
@@ -150,17 +144,13 @@ fn call_resolves_by_name_regardless_of_declaration_order() {
     }
 }
 
-/// TC-174 steps 1-4 (formerly `value::expression::mod::tests::
-/// function_slots_are_stable_across_declaration_order`, QSL-183 edge cut):
-/// a standalone expression that calls into a declared function, checked and
-/// evaluated through the public `CheckedGraph::check_expression`/
-/// `CheckedPackage::evaluate` pair, resolves to the correct result
-/// regardless of the package's declaration order -- the same property the
-/// original fixture read off `function_states()` directly, now observed
-/// through `evaluate`'s own per-function frame allocation instead. `two`'s
-/// body needs a `let`-bound local beyond its two parameters, so a
-/// declaration-order bug that hands it `one`'s (smaller) slot count would
-/// produce a wrong or undefined result here, not a passing one.
+/// TC-174 steps 1-4: a standalone expression that calls into a declared
+/// function, checked and evaluated through the public
+/// `CheckedGraph::check_expression`/`CheckedPackage::evaluate` pair,
+/// resolves to the correct result regardless of the package's declaration
+/// order. `two`'s body needs a `let`-bound local beyond its two parameters,
+/// so a declaration-order bug that hands it `one`'s (smaller) slot count
+/// produces a wrong or undefined result here, not a passing one.
 #[trace("TC-174", "FR-068-AC-5")]
 #[test]
 fn evaluated_call_slots_are_stable_across_declaration_order() {

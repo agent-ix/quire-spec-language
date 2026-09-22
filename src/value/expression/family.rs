@@ -381,16 +381,9 @@ mod family_contract_tests {
         CheckContext, DiagnosticSink, EvaluateFailure, EvaluateRefusal, FamilyContract,
         ReferenceEvaluation, ScopeStack, StageLimits,
     };
-    // `crate::value`'s own re-export of the S2 parsed-form types, not a
-    // direct `crate::forms::` import (QSL-183 edge cut, matching
-    // `value::expression::mod`'s own `function_slots_are_stable_across_declaration_order`
-    // fixture): this module reads several other `pub(crate)` internals
-    // (`CheckContext`, `mint_declaration_identity`, `ValueFunctionFamily::check`)
-    // that have no public surface to move behind, so these fixtures stay
-    // same-crate white-box tests, and only the forms edge itself is cut.
+    use crate::forms::{Expression, FunctionDeclaration};
     use crate::value::composite::{TypeEnvironment, ValueType};
     use crate::value::reference::ObjectEnvironment;
-    use crate::value::{Expression, FunctionDeclaration};
     use ix_trace_rs::trace;
     use quire_exact::Meter;
 
@@ -1066,12 +1059,8 @@ mod family_contract_tests {
 mod tests {
     use super::*;
     use crate::check::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
-    // `crate::value`'s own re-export of the S2 parsed-form types, not a
-    // direct `crate::forms::` import (QSL-183 edge cut): `mint_declaration_identity`
-    // is `pub(crate)`, so these fixtures cannot move behind a public API and
-    // stay same-crate white-box tests; only the forms edge itself is cut.
+    use crate::forms::{Expression, FunctionDeclaration};
     use crate::value::composite::ValueType;
-    use crate::value::{Expression, FunctionDeclaration};
     use ix_trace_rs::trace;
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
