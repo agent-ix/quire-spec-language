@@ -1167,7 +1167,19 @@ mod library_import {
         }
     }
 
-    #[trace("TC-188", "FR-143-AC-6")]
+    // FR-143-AC-6's own claim -- one library export reached by two import
+    // paths (A and B, both over L) evaluates as one declaration at the
+    // composite-value level -- is not backed here. FR-087 (#213 S-3a)
+    // relocated `resolve_name`/`ExportIdentity` out of `library` (name
+    // resolution is E3's own, over an `ImportView`, per ADR-013 R-06), and
+    // no E3 resolution exists yet to derive each path's own export node id
+    // for a real, independent comparison: the previous version of this test
+    // built both "paths'" `NodeKey`s from the same `declaration_key`
+    // variable, so its composite-value equality check compared a key with
+    // itself and could not have failed for any resolution defect. Left
+    // untraced (FR-143-AC-6 unbacked by this vector) until E3 exists to
+    // derive two real, independently-resolved node ids to compare.
+    #[trace("TC-227", "FR-307-AC-2")]
     #[test]
     fn r03_one_library_export_reached_by_two_paths_is_one_declaration() {
         let root = package("P", &["A", "B"], false);
@@ -1176,15 +1188,9 @@ mod library_import {
             package("B", &["L"], false),
             package("L", &[], true),
         ];
-        // FR-087 (#213 S-3a) relocated `resolve_name`/`ExportIdentity` out of
-        // `library` (name resolution is E3's own, over an `ImportView`, per
-        // ADR-013 R-06). What this test proves -- one library export reached
-        // by two import paths (A and B, both over L) is one declaration --
-        // is now demonstrated structurally: `resolve_libraries` unifies the
-        // diamond into a single selection for `L` (TC-227 l04's own claim),
-        // so both paths' export node id is the same deterministic wire id
-        // `library`'s preimage projection derives from `L`'s own identity
-        // preimage, independent of which path reached it.
+        // `resolve_libraries` unifies the diamond into a single selection
+        // for `L` (TC-227 l04's own claim, re-demonstrated here over the
+        // real `value::library`... boundary this test module exercises).
         let lock = resolve_libraries(&root, &supplied).unwrap();
         let l_selections: Vec<_> = lock
             .selections()
@@ -1195,51 +1201,6 @@ mod library_import {
             l_selections.len(),
             1,
             "L is selected once despite two import paths"
-        );
-        let declaration_key = NodeKey::from_hex(&hex("L")).unwrap();
-        let (through_a, through_b) = (declaration_key, declaration_key);
-
-        let types = |declaration: NodeKey| {
-            TypeEnvironment::new(
-                [CompositeDeclaration::new(
-                    declaration,
-                    "R",
-                    CompositeShape::Record(vec![FieldDeclaration::new(
-                        "x",
-                        ValueType::Integer,
-                        Presence::Required,
-                    )]),
-                )],
-                [],
-            )
-            .unwrap()
-        };
-        let env = types(through_a);
-        let value = |env: &TypeEnvironment, declaration: NodeKey| {
-            env.record(
-                declaration,
-                vec![(
-                    "x",
-                    FieldValue::Present(Value::Integer(Integer::from(1_i64))),
-                )],
-            )
-            .unwrap()
-        };
-        let r_type = ValueType::Composite(through_b);
-        let checked = env
-            .check_equality(
-                EqualityOperator::Equal,
-                EqualityOperand::typed(ValueType::Composite(through_a)),
-                EqualityOperand::typed(r_type),
-            )
-            .unwrap();
-        assert_eq!(
-            checked.evaluate(
-                &value(&env, through_a),
-                &value(&types(through_b), through_b),
-                &mut Meter::new(UNLIMITED)
-            ),
-            Outcome::Completed(true)
         );
     }
 }
