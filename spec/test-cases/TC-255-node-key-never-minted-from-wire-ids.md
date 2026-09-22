@@ -29,21 +29,22 @@ R-10 violation this criterion exists to catch.
 
 This test is scoped to what FR-087 (S-3) owns, not to "only `check` calls
 the constructor" crate-wide: that crate-wide claim is FR-060 T12-B's own
-allow-list, and T12-B's Status section records it failing today at three
-real sites this requirement does not touch — `value::enumeration`,
-`value::unit` and `value::model_query` (pre-existing debt, Remaining work:
-agent-ix/quire-spec-language#211). This criterion does not require those
-three sites to be zero; it requires `library`, `package`'s E4 path, and
-`replay`'s E9 path each to add none, and no call anywhere to be fed by a
-`WireNodeId`. Scope: FR-087-AC-6.
+allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists")
+holds the real minting sites outside `check` this requirement does not touch
+(pre-existing debt, Remaining work: agent-ix/quire-spec-language#211). This
+criterion does not require the debt list to be empty; it requires `library`,
+`package`'s E4 path, and `replay`'s E9 path each to add none, and no call
+anywhere to be fed by a `PackageNodeKey`'s `WireNodeId`. Scope: FR-087-AC-6.
 
 ## Test Procedure
 
 1. Search `library`'s whole source, `package`'s E4 dependency-resolution
-   code path, and `replay`'s E9 lookup for any `NodeKey`-constructing call
-   (`NodeKey::of(`, `NodeKey::from_bytes(`, `NodeKey::from_hex(`,
-   `node_key_of(`, or an equivalent construction from a digest or
-   wire-read value).
+   code path, and `replay`'s E9 lookup for any reference to a `NodeKey`
+   constructor, called or passed as a function value
+   (`NodeKey::from_digest`, and while QSL's own `value::node::NodeKey`
+   exists, `NodeKey::of`, `NodeKey::from_bytes`, `NodeKey::from_hex`), any
+   `node_key_of(` call, or an equivalent construction from a digest or
+   wire-read value.
 2. Confirm none exists in any of the three: E4's dependency resolution (in
    `package`) resolves a `PackageNodeKey`'s `WireNodeId` to a `NodeKey` by
    looking one up in the dependency's own already-checked package —
@@ -58,10 +59,10 @@ three sites to be zero; it requires `library`, `package`'s E4 path, and
 4. Confirm the FR-060 T-12 API-surface scan (`arch-lint api-surface`)
    still enforces "only `check` calls the `NodeKey` constructor" as its own
    allow-list, and that adding a constructor call inside `library`, E4's
-   dependency resolution, or E9's `replay` lookup makes that scan fail.
-5. Confirm the scan's three currently-known real call sites outside
-   `check` (`value::enumeration`, `value::unit`, `value::model_query`) are
-   the pre-existing debt FR-060 Status already names, tracked under
+   dependency resolution, or E9's `replay` lookup makes that scan fail
+   (none of those is on T12-B's debt list).
+5. Confirm every mint the scan reports outside `check` is in a function on
+   FR-060's T12-B debt list, the pre-existing debt tracked under
    agent-ix/quire-spec-language#211 and out of this requirement's scope:
    this step records that fact, it does not require remediating those
    sites.
@@ -83,8 +84,8 @@ three sites to be zero; it requires `library`, `package`'s E4 path, and
   its feeding value.
 - Step 4: the T-12 scan's allow-list is `check`-only; a constructor call
   added inside `library`, E4, or E9 fails the scan.
-- Step 5: the three pre-existing, out-of-scope sites are named and left
-  unremediated by this criterion; this step records, not requires, their
-  absence.
+- Step 5: every reported mint outside `check` is on T12-B's debt list;
+  those pre-existing, out-of-scope sites are left unremediated by this
+  criterion; this step records, not requires, their absence.
 - Step 6: no transitive path from `library`, E4, or E9 reaches the
   constructor through a wire-fed value.

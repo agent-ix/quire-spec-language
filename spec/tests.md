@@ -41,7 +41,7 @@ operational validation remains outside this audit-only plan.
 | TC-009 | CLI encoding and Rust-only execution | E2E | P1 | FR-012-AC-10, NFR-005-M-2 | ✅ Passed locally |
 | TC-010 | Owned verification language inventory | Manual | P1 | NFR-005-M-1 | ✅ Inspected locally |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
-| TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally |
+| TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
 | TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 | ✅ Passed locally |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214 |
@@ -59,7 +59,7 @@ operational validation remains outside this audit-only plan.
 | TC-172 | check's real import graph has no edge into value::expression or into checking, and its re-export back is bounded | Integration | P1 | FR-068-AC-3, FR-068-AC-10 | ✅ Passed locally |
 | TC-173 | Refusal split: check causes in check, InputRefusal in value::expression | Unit | P1 | FR-068-AC-4, FR-068-AC-8 | ✅ Passed locally |
 | TC-174 | Checking and evaluation produce identical results before and after the split | Integration | P1 | FR-068-AC-5 | ✅ Passed locally |
-| TC-175 | The move stays inside M-5: no early M-2 work, no edge widening | Integration | P1 | FR-068-AC-6, FR-068-AC-7 | ❌ Partially retired — FR-068-AC-6 steps ✅ Passed locally; FR-068-AC-7 steps retired by FR-074, superseded by TC-261 |
+| TC-175 | The move stays inside M-5: no early M-2 work, no edge widening | Integration | P1 | FR-068-AC-6, FR-068-AC-7 | 🚧 FR-068-AC-6 steps amended to the module-level layer rule (2026-09-22), gate rewrite planned; FR-068-AC-7 steps retired by FR-074, superseded by TC-261 |
 | TC-176 | The interim `model` -> `check` edge stays bounded to two files and thirteen names, imported directly | Unit | P1 | FR-068-AC-9, FR-068-CON-5 | ❌ Retired by FR-074, superseded by TC-262 |
 | TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | ✅ Passed locally; QSL-46 (PR #305); AC-5's no-second-enum half by inspection |
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-080-AC-1 | ✅ Passed locally; QSL-46 (PR #305) |
@@ -139,7 +139,7 @@ operational validation remains outside this audit-only plan.
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | 🚧 Planned; QSL-158 |
 | TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | 🚧 Planned; QSL-158 |
 | TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
-| TC-256 | check and package's dependency edge is one direction, bounded to CheckedGraph and {ImportView, LibraryLock} | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
+| TC-256 | check and package's dependency edge is one direction, and CheckedPackage wraps CheckedGraph | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
 | TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
 | TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 (not in #300's scope) |
 | TC-259 | A package type's identity is its checked node id, package-scoped | Unit | P1 | FR-088-AC-7 | ✅ Passed locally; #300 |
@@ -204,8 +204,8 @@ ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4
 `package` per ADR-013 T-1, `check`'s S3 output becomes `CheckedGraph`
 instead of the already-landed `check::CheckedPackage` (FR-068/M-5), and
 FR-087-AC-9/TC-256 assert the resulting `package` → `check` (never the
-reverse) edge direction, plus the new bounded `check` → `library` edge
-(`ImportView` and `LibraryLock`, read-only). FR-068 is amended in place
+reverse) edge direction, and that `CheckedPackage` is built from and wraps
+a `CheckedGraph`. FR-068 is amended in place
 (its AC-2, AC-6 and AC-10)
 to record this supersession, since the criteria it originally tested for
 `CheckedPackage`'s placement in `check` no longer hold there — see FR-068's
@@ -228,8 +228,8 @@ condition reads, and `resolve_libraries`' whole-graph refusals classify,
 variant by variant, to an ADR-011 I2 rule, the §4 binding's condition 2 or
 condition 3, or E3 name resolution, with `DuplicatePackageId` named as
 lying outside all four (FR-087-AC-12/TC-282; FR-087 Description, item 3).
-`check` imports exactly `ImportView` and `LibraryLock` (read-only) from
-`library` (FR-087-AC-9/TC-256; FR-068-AC-6 tier (c)).
+`check` reads `ImportView` and `LibraryLock` (read-only) from `library`, a
+permitted layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9/TC-256).
 
 ## Typed replay envelopes (FR-069–073) coverage
 
