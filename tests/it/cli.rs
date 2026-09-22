@@ -124,7 +124,8 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert_eq!(value["path"], "tests/fixtures/parent.native");
     assert_eq!(
         value["source"]["digest"],
-        quire_spec_language::ByteDigest::of(include_bytes!("../fixtures/parent.native")).to_string()
+        quire_spec_language::ByteDigest::of(include_bytes!("../fixtures/parent.native"))
+            .to_string()
     );
     assert!(value.get("value").is_none());
     let formatted = Command::new(env!("CARGO_BIN_EXE_quire-spec"))

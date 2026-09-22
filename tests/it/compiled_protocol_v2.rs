@@ -166,7 +166,9 @@ fn published_v2_producer_digest_matches_this_repositorys_producer_source() {
     )
     .expect("decode expected-v2.json with the published type");
     assert_eq!(
-        ByteDigest::of(include_bytes!("../../examples/protocol-handoff/producer.rs")),
+        ByteDigest::of(include_bytes!(
+            "../../examples/protocol-handoff/producer.rs"
+        )),
         selection.inherited.producer.binary.digest,
         "FR-042-AC-10: published producer identity is this repository's producer source",
     );

@@ -46,5 +46,5 @@ pub mod temporal;
 
 // See this module's own doc above: both are re-exports of copies nested
 // inside `standalone_setup`, not fresh `mod` declarations.
-pub(crate) use standalone_setup::runtime as runtime_setup;
 pub(crate) use runtime_setup::native_rule_model;
+pub(crate) use standalone_setup::runtime as runtime_setup;

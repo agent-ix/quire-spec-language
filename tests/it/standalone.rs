@@ -43,9 +43,10 @@ fn invoke(directory: &Path) -> (i32, Value, bool) {
 fn result_schema() -> &'static jsonschema::JSONSchema {
     static SCHEMA: std::sync::OnceLock<jsonschema::JSONSchema> = std::sync::OnceLock::new();
     SCHEMA.get_or_init(|| {
-        let schema: Value =
-            serde_json::from_str(include_str!("../../schemas/native-run-result-1.schema.json"))
-                .unwrap();
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../schemas/native-run-result-1.schema.json"
+        ))
+        .unwrap();
         jsonschema::JSONSchema::compile(&schema).unwrap()
     })
 }

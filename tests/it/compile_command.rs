@@ -251,8 +251,10 @@ fn shared_format_catalog_preserves_existing_wire_spellings() {
             json!("native-linked-package/1")
         ]
     );
-    let result_schema: Value =
-        serde_json::from_str(include_str!("../../schemas/native-run-result-1.schema.json")).unwrap();
+    let result_schema: Value = serde_json::from_str(include_str!(
+        "../../schemas/native-run-result-1.schema.json"
+    ))
+    .unwrap();
     assert_eq!(
         result_schema["$defs"]["report"]["properties"]["format"]["const"],
         WireFormat::RunResult.as_str()
