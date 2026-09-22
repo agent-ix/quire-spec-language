@@ -991,6 +991,90 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     );
 }
 
+/// PR #303 review round 3, finding F1: `CheckingLimits::new`'s own doc
+/// ("at most `nodes` expression nodes per checked package") is a bound on
+/// the whole package, not on any one declaration in it -- QSL-148's move of
+/// typing into `ValueFunctionFamily::check` briefly reset the `Typer` node
+/// counter to zero for every declaration (`check::family::
+/// check_declaration_body`), so two declarations that each individually fit
+/// comfortably under a small `nodes` budget were both admitted even though
+/// their combined node count exceeded it; a package of many small
+/// declarations could exceed a caller's configured `nodes` budget without
+/// limit. Fixed by threading the package's running node total through
+/// `ValueDeclarations::nodes_used`/`CheckedDeclarationBody::nodes_used`
+/// (ordinary `Ok` payloads, not a side channel) -- see
+/// `check_declaration_body`'s own doc for the mechanism.
+///
+/// **Untagged.** No acceptance criterion in the currently authored spec
+/// governs this specific, pre-QSL-148 `CheckingLimits`/`Typer` package-wide
+/// `nodes` contract. FR-016-AC-8 ("Caller/hard budgets bound native
+/// checking...") was this finding's own suggested mapping, but FR-016
+/// governs a different subsystem entirely -- the *native* checker
+/// (`native_checking`/`runtime`, a `LinkedPackage`/`CheckBindings`/
+/// `CheckedPackage` all distinct from this file's `Value`
+/// `PackageDeclarations`/`CheckingLimits`/`Typer`) -- so it does not fit.
+/// FR-062-AC-5/TC-160 (`family_contract_tests::
+/// stage_limits_restored_kinds_refuse_one_below_the_real_metric`) is the
+/// nearest real candidate but governs a different, deliberately
+/// per-declaration-only mechanism (`StageLimits::node_count`, QSL-153's
+/// `Limit` outcome) -- not this cumulative, package-wide `Refused
+/// {ResourceExhausted}` one. No FR/AC in `spec/functional` or
+/// `spec/non-functional` currently states the package-wide contract this
+/// test exercises; this is reported rather than guessed at, per this
+/// fix's own brief ("do not write new AC text").
+#[test]
+fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
+    fn small(name: &str) -> FunctionDeclaration {
+        function(
+            name,
+            &[],
+            ValueType::Integer,
+            None,
+            binary(BinaryOperator::Add, literal(1), literal(1)),
+        )
+    }
+
+    // One such declaration, alone, fits comfortably under a budget of 4.
+    PackageDeclarations {
+        functions: vec![small("a")],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::new(4, 128).unwrap())
+    .expect("one small declaration admits under a budget of 4");
+
+    // Two declarations under a budget wide enough for both still admit --
+    // the fix does not just refuse every multi-declaration package.
+    PackageDeclarations {
+        functions: vec![small("a"), small("b")],
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::new(100, 128).unwrap())
+    .expect("two small declarations admit under a generous package-wide budget");
+
+    // The same two declarations, under the reviewer's own measured budget
+    // (main refuses the second at exactly this limit; the PR before this
+    // fix admitted both): combined, they exceed 4 nodes even though neither
+    // does alone.
+    let exhausted = refusal(
+        PackageDeclarations {
+            functions: vec![small("a"), small("b")],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::new(4, 128).unwrap()),
+    );
+    assert_eq!(
+        exhausted.cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::Nodes,
+            // The caller's own original configured limit (4), not a
+            // remaining/partial figure -- `Typer`'s cap is never modified,
+            // only its counter's starting value.
+            limit: 4,
+        }
+    );
+}
+
 /// PR #302 review finding 1: `CheckingLimits::with_input_bytes` is a real,
 /// caller-configurable knob on the public entry point, not just the
 /// `ValueFunctionFamily::check`-level mechanism `family_contract_tests`

@@ -373,9 +373,9 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::*;
     use crate::check::{
-        empty_scope, mint_declaration_identity, root_location, CheckCause, CheckingLimitKind,
-        CheckingLimits, Location, PackageDeclarations, Scope, ValueDeclarations,
-        DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+        declarations_for, empty_scope, mint_declaration_identity, root_location, CheckCause,
+        CheckingLimitKind, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
+        SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvaluateFailure, EvaluateRefusal, FamilyContract,
@@ -406,27 +406,6 @@ mod family_contract_tests {
         FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
     }
 
-    /// [`ValueFunctionFamily`]'s own `FamilyContract::Declarations` for
-    /// these tests: an empty package (no other declared functions or
-    /// dispatch tables) around one `Scope`, at one location, under
-    /// `checking_limits`.
-    fn declarations_for<'a>(
-        package_identity: &'a str,
-        scope: &'a Scope,
-        checking_limits: CheckingLimits,
-        location: &'a Location,
-    ) -> ValueDeclarations<'a> {
-        ValueDeclarations {
-            package_identity,
-            scope,
-            signatures: &[],
-            dispatch_tables: &[],
-            checking_limits,
-            location,
-            measure_location: location,
-        }
-    }
-
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
     /// function with no shared associated-type binding -- and its minted
@@ -446,6 +425,8 @@ mod family_contract_tests {
         let declarations = declarations_for(
             &package_identity,
             &scope,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location,
         );
@@ -488,6 +469,8 @@ mod family_contract_tests {
         let declarations = declarations_for(
             &package_identity,
             &scope,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location,
         );
@@ -729,6 +712,8 @@ mod family_contract_tests {
         let declarations_a = declarations_for(
             &package_identity,
             &scope_a,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location_a,
         );
@@ -749,6 +734,8 @@ mod family_contract_tests {
         let declarations_b = declarations_for(
             &package_identity,
             &scope_b,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location_b,
         );
@@ -785,6 +772,8 @@ mod family_contract_tests {
         let declarations = declarations_for(
             &package_identity,
             &scope,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location,
         );
@@ -843,6 +832,8 @@ mod family_contract_tests {
         let declarations = declarations_for(
             &package_identity,
             &scope,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location,
         );
@@ -929,6 +920,8 @@ mod family_contract_tests {
         let declarations = declarations_for(
             &package_identity,
             &scope,
+            &[],
+            &[],
             CheckingLimits::default(),
             &location,
         );
@@ -1016,7 +1009,7 @@ mod family_contract_tests {
         let form = declaration("f", nested);
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, tight, &location);
+        let declarations = declarations_for(&package_identity, &scope, &[], &[], tight, &location);
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -1044,7 +1037,7 @@ mod family_contract_tests {
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, wide, &location);
+        let declarations = declarations_for(&package_identity, &scope, &[], &[], wide, &location);
         let mut cx = CheckContext::new(
             &declarations,
             limits(),

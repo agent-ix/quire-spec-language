@@ -298,7 +298,12 @@ they exist in the delivered code today:
   `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
 
-One of this requirement's ten Acceptance Criteria is backed (AC-2); the
-other nine are unbacked, for the reasons above -- not silently. AC-7 in
-particular stays unbacked pending a scoping decision on the `Typer`
-entanglement described in its row above.
+Two of this requirement's ten Acceptance Criteria are backed (AC-2, AC-5;
+PR #303 review round 3, finding F3 -- corrected back from an intervening
+"one... (AC-2)" summary that briefly contradicted AC-5's own row and its
+two `FR-062-AC-5`-tagged tests, both still real and passing:
+`stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
+`evaluate_returns_incomplete_when_the_meter_is_exhausted`,
+`src/value/expression/family.rs`); the other eight are unbacked, for the
+reasons above -- not silently. AC-7 in particular stays unbacked pending a
+scoping decision on the `Typer` entanglement described in its row above.

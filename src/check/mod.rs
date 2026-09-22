@@ -107,8 +107,7 @@ pub(crate) use family::ValueFunctionFamily;
 // constant has no production reader left.
 #[cfg(test)]
 pub(crate) use family::{
-    mint_declaration_identity, OccurrenceMap, ValueDeclarations, DEFAULT_PACKAGE_IDENTITY,
-    SCALAR_LIMITS_UNLIMITED,
+    mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -116,8 +115,12 @@ pub(crate) use family::{
 // `family_contract_tests` module. Both build the same `Scope`/`Location`
 // this crate already defines once; re-exporting the one real definition
 // removes the second copy instead of letting it drift.
+//
+// `declarations_for` joined this list in PR #303 review round 3 (finding
+// F6): the same duplication, for a `ValueDeclarations` test fixture, with
+// two different parameter shapes.
 #[cfg(test)]
-pub(crate) use family::checking_tests::{empty_scope, root_location};
+pub(crate) use family::checking_tests::{declarations_for, empty_scope, root_location};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use capability::{Capability, UnknownCapabilityLabel};
@@ -483,12 +486,16 @@ impl PackageDeclarations {
         // `CheckingLimits` the unchanged `Typer` below already honors)
         // makes the contract's own resource bound live.
         // QSL-153: `node_count` reads the same `CheckingLimits.nodes()` the
-        // unchanged `Typer` below already honors -- the contract's own
-        // per-declaration node-count check now runs before the Typer's, so
-        // a package that would have exhausted the Typer's node limit
-        // refuses through the contract first (naming the same
-        // `CheckingLimitKind::Nodes`, since the two visits count the same
-        // `Expression` nodes). `input_bytes` reads `CheckingLimits`' own
+        // unchanged `Typer` below also honors, but the two are separate,
+        // deliberately different-shaped bounds over the same underlying
+        // quantity (PR #303 review round 3, finding F1): the contract's own
+        // `check_node_count` compares one declaration's own preimage node
+        // count against `limits.nodes()` in isolation, while `Typer`'s
+        // counter (seeded from `nodes_used` below) accumulates across every
+        // declaration in the package, against that same unmodified bound --
+        // the contract's check can refuse a single oversized declaration
+        // first, but it is not a substitute for the package-wide budget, and
+        // does not make it redundant. `input_bytes` reads `CheckingLimits`' own
         // dedicated knob (`with_input_bytes`), unlimited unless a caller
         // configures it -- the same real-default-until-configured shape
         // `nesting_depth` itself had before this exact fix wired it to
@@ -513,6 +520,15 @@ impl PackageDeclarations {
         let mut contract_meter = quire_exact::Meter::new(contract_meter_limits);
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
+        // PR #303 review round 3, finding F1: the running total of
+        // `Expression` nodes every declaration admitted so far in this
+        // package has consumed -- this loop's own state, read by each
+        // iteration's `ValueDeclarations::nodes_used` and advanced from each
+        // admitted declaration's own `CheckedDeclarationBody::nodes_used`,
+        // restoring `CheckingLimits::new`'s documented, package-wide `nodes`
+        // bound (see `check::family::check_declaration_body`'s own doc for
+        // why this, not a `Cell` or a second call, is the mechanism).
+        let mut nodes_used = 0_u64;
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let measure_location = root(Origin::Measure {
@@ -527,6 +543,7 @@ impl PackageDeclarations {
                 checking_limits: limits,
                 location: &location,
                 measure_location: &measure_location,
+                nodes_used,
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -544,6 +561,12 @@ impl PackageDeclarations {
                     // channel: no `.expect(...)` unwrap of a slot `check`
                     // might not have filled.
                     let checked = staged.value;
+                    // PR #303 review round 3, finding F1: advance the
+                    // package's running node total from this admitted
+                    // declaration's own final count, so the next
+                    // declaration's `Typer` picks up where this one left
+                    // off instead of restarting at zero.
+                    nodes_used = checked.body.nodes_used;
                     functions.push(CheckedFunction {
                         identity: checked.identity,
                         signature: Signature {
