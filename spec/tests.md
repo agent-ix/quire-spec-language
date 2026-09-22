@@ -148,6 +148,12 @@ operational validation remains outside this audit-only plan.
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | 🚧 Planned; QSL-158 |
+| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
+| TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Unit | P1 | FR-089-AC-2 | 🚧 Planned; QSL-131 |
+| TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | 🚧 Planned; QSL-131 |
+| TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | 🚧 Planned; QSL-131 |
+| TC-295 | ValueType::Population admits a Value::Population identity by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | 🚧 Planned; QSL-131 |
+| TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -333,3 +339,18 @@ private-packet tests were explicitly executed against specification revision
 36293bae7f5bcb7ca3b2389ed166e525dc9dba87 and passed. Quire resolves every audit
 test symbol, every FR-012 AC and every executable TC. TC-010 has manual evidence. These counts establish
 the selected scope; they are not full compiler or semantic qualification.
+
+## Kernel population identity (FR-089) coverage
+
+[FR-089](../spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md)
+carries ADR-013 O-13's Population row (QC-21), authored under QSL-172 to
+close an AD-016 kernel-row gap. TC-291 through TC-295 all state `🚧 Planned;
+QSL-131` honestly: the kernel `quire-exact::Value` has no `Population`
+variant today (`quire-exact/src/value.rs:26-27,115-116`), and the evaluator
+still matches `Value::Population(binding)` directly
+(`src/value/expression/evaluate.rs:921,934`) rather than through a resolved
+`PopulationId`. Each TC's own "Known gap" note names the exact absence.
+None of the five rows claims existing passing coverage; this section
+records the target behavior QSL-131 Slice B implements against, in the same
+sense TC-214, TC-216, TC-217, TC-220, TC-225, TC-227 and TC-230 through
+TC-234 above already do for FR-081 through FR-086.
