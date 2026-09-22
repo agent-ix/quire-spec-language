@@ -453,9 +453,8 @@ impl ReplayRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digest::{ByteDigest, DigestDomain};
+    use crate::digest::{ByteDigest, DigestDomain, WireNodeId};
     use crate::replay::bounds::MAX_ENCODED_BYTES;
-    use crate::replay::identity::WireNodeId;
     use crate::value::Identifier;
     use ix_trace_rs::trace;
 

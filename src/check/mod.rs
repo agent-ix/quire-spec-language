@@ -160,6 +160,20 @@ struct CheckedFunction {
 /// canonical `CheckedPackage`, layer-4 `package`) reaches this state only
 /// through the accessor methods below, never through a private field or a
 /// conversion function (R-10).
+///
+/// TC-244 row 1 (FR-087-AC-2): an unchecked `ParsedSource` never becomes a
+/// `CheckedGraph` by any path other than [`PackageDeclarations::check`] --
+/// in particular, not by naming this struct's private fields directly from
+/// outside `check`:
+/// ```compile_fail,E0451
+/// use quire_spec_language::check::CheckedGraph;
+/// let forged = CheckedGraph {
+///     scope: todo!(),
+///     functions: Vec::new(),
+///     dispatch_tables: Vec::new(),
+///     occurrences: todo!(),
+/// };
+/// ```
 #[derive(Debug)]
 pub struct CheckedGraph {
     scope: Scope,

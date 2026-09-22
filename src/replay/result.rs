@@ -598,7 +598,8 @@ mod tests {
     /// `spec/tests.md` attributes that row to #217, not to #231's debt.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
-        use crate::replay::identity::{OccurrenceKey, QualifiedName, WireNodeId};
+        use crate::digest::WireNodeId;
+        use crate::replay::identity::{OccurrenceKey, QualifiedName};
         use crate::replay::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };

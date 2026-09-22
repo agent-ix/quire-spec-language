@@ -11,14 +11,15 @@
 //!   `value::expression`, which this change must not touch (M-5 is
 //!   splitting that module concurrently) and cannot depend on before it
 //!   merges. This module's copy is #231's own, scoped to `replay` only.
-//! - [`WireNodeId`] and [`OccurrenceKey`] (O-04, O-07) have no landed
-//!   canonical type either; only the *checked* domain sibling
-//!   (`quire_exact::{NodeKey, Location}`) exists, and ADR-013 O-04 is
-//!   explicit that a wire-read node id "becomes a `NodeKey` only by lookup
-//!   in a QSL checked package" -- a lookup #231 never performs (that is
-//!   #243's E9). `OccurrenceKey` reuses the kernel's own `Role`/`Origin`
-//!   pair for its role/ordinal half, since that part carries no
-//!   checked-only restriction.
+//! - [`OccurrenceKey`] (O-07) has no landed canonical type either; only the
+//!   *checked* domain sibling (`quire_exact::Location`) exists.
+//!   `OccurrenceKey` reuses the kernel's own `Role`/`Origin` pair for its
+//!   role/ordinal half, since that part carries no checked-only
+//!   restriction; its node half is `crate::digest::WireNodeId` (O-04,
+//!   relocated there by QSL-158 S-3a per ADR-011 `:588`'s `F` foundation
+//!   layer placement -- imported directly from `digest` below, not
+//!   re-exported back out under this module's own path, so `replay`'s own
+//!   layer-6-depends-on-F edge stays the only edge to it).
 //! - [`ObligationIdentity`] (O-09) is CG-computed (AD-016 arrow 5, no QSL
 //!   ticket); QSL only ever carries the digest CG mints, never hashes one
 //!   itself, mirroring `quire_exact`'s own opaque digest identities.
@@ -31,44 +32,8 @@ use std::fmt;
 
 use quire_exact::Origin;
 
-use crate::digest::DigestRecord;
+use crate::digest::{DigestRecord, WireNodeId};
 use crate::value::Identifier;
-
-/// A node id exactly as it travels on the wire (a v2 node key's 64
-/// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). #231's envelopes and requests
-/// never perform that lookup, so every node id they carry stays a
-/// `WireNodeId`, not a `NodeKey`.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WireNodeId([u8; 32]);
-
-impl WireNodeId {
-    /// Wrap an already-known wire node-id digest. Unlike
-    /// `quire_exact::NodeKey::from_digest`, this constructor carries no
-    /// "only `check` calls this" restriction: a `WireNodeId` is exactly the
-    /// unchecked wire spelling, never a claim that the id resolves to a
-    /// real node.
-    pub fn from_digest(digest: [u8; 32]) -> Self {
-        Self(digest)
-    }
-
-    /// The raw digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Display for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for WireNodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WireNodeId({self})")
-    }
-}
 
 /// ADR-013 O-07: an occurrence key -- `(node id, role, ordinal)` -- keeping
 /// two source occurrences of a structurally identical node apart. Reuses

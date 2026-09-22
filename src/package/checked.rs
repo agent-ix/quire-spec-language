@@ -42,6 +42,35 @@ use crate::value::PackageId;
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
 /// dependency closure E4 names. Both fields are private to this module
 /// (ADR-011 §4); [`Self::link`] is the sole constructor.
+///
+/// TC-244 row 2 (FR-087-AC-2): a `CheckedGraph` never becomes a
+/// `CheckedPackage` by any path other than [`CheckedPackage::link`] -- in
+/// particular, not by naming this struct's private fields directly from
+/// outside `package`:
+/// ```compile_fail,E0451
+/// use quire_spec_language::package::CheckedPackage;
+/// let forged = CheckedPackage {
+///     graph: todo!(),
+///     dependencies: Default::default(),
+/// };
+/// ```
+///
+/// TC-244 row 6 (FR-087-AC-2): the same struct-literal privacy also
+/// forecloses the other forbidden path R-10 names -- decoding
+/// `EmittedPackage`'s wire bytes and forcing the result directly into a
+/// `CheckedPackage`, bypassing the verified binding and the S1-S4 recompile
+/// `replay`'s own E9 uses instead (ADR-013 T-2). No constructor accepting
+/// decoded bytes is exposed at all; the only way to attempt it is the same
+/// private struct literal row 2 already forecloses:
+/// ```compile_fail,E0451
+/// use quire_spec_language::package::CheckedPackage;
+/// fn from_decoded_bytes(decoded_graph: quire_spec_language::check::CheckedGraph) -> CheckedPackage {
+///     CheckedPackage {
+///         graph: decoded_graph,
+///         dependencies: Default::default(),
+///     }
+/// }
+/// ```
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: CheckedGraph,
