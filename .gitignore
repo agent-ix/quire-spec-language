@@ -7,4 +7,3 @@ target/
 target-*/
 .fixtarget/
 .worktrees/
-*-ci.log

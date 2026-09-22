@@ -149,8 +149,8 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin, ProvedInterval,
-    WrongSnapshotCause,
+    InvalidDispatchDeclaration, InvalidModelCorrespondence, Location, MeasureObligation,
+    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -509,72 +509,100 @@ impl PackageDeclarations {
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
-        // ADR-013 O-14/C-26 (PR #300 review finding 1): every admitted
+        // ADR-013 O-14/C-26 (PR #300 review round 2, HIGH-1): every admitted
         // composite and enum type declaration this package's own
         // `TypeEnvironment`/`enums` already carry becomes a real
-        // `CheckedTypeNode`, minted from its own declared shape through
-        // `identity::mint_type_declaration_identity` -- real production
-        // code, not only exercised by this module's unit tests.
+        // `CheckedTypeNode`, identified by that declaration's own
+        // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
+        // carried into this module's own `quire_exact::NodeKey` checked-node
+        // space unchanged, byte for byte, by `identity::declaration_node_key`
+        // (the two are different Rust newtypes -- `value::node::NodeKey` is
+        // I04's pre-check nominal semantic-node identity -- but the same
+        // opaque digest) -- never a second, parallel id minted from the
+        // declared name and shape. This is the same identity `Typer::
+        // type_named` (`check.rs`) and every field type (`family.rs`)
+        // already resolve a reference against, so a checked type node's id
+        // is exactly what those other sites already use, once carried into
+        // this module's own identity space -- FR-088-AC-7 step 4
+        // ("references resolve to the one node id the single declaration
+        // was minted with"). Round 1 minted a fresh, unused id here instead
+        // (`identity::mint_type_declaration_identity`, deleted); see
+        // `identity`'s own module doc for the full account of why that was
+        // wrong and why no third scheme is needed: package scoping (AC-7)
+        // and "not an identity in its own right" (AC-6) are already
+        // properties of these pre-existing keys, not something `check` needs
+        // to (re)establish.
+        //
+        // This also closes HIGH-2 (qualified declared names silently
+        // dropped): the prior code required a composite's or enum's own
+        // *name* to be a single valid `Identifier` before it would mint an
+        // id from it, so a package-qualified name like `"P::R"` produced no
+        // `CheckedTypeNode` at all, with no refusal or diagnostic. Reusing
+        // the declaration's own key needs no name validation in the first
+        // place -- the key is already minted (by the declaration's own
+        // producer), so every admitted composite and enum gets a checked
+        // type node, `"P::R"` included (see `composite_type_node_for_a_qualified_declared_name`
+        // below).
         let mut type_nodes = BTreeMap::new();
         for composite in scope.types.composites() {
-            // Complete-V1's own `TypeEnvironment` admits any string as a
-            // composite's declared name (existing fixtures use
-            // package-convention names such as `"P::R"`, never validated as
-            // a grammar identifier -- that is a pre-existing, unrelated
-            // property of this native-v1 type system, not something O-11's
-            // qualified-name mechanism can retrofit). A declaration whose
-            // name is not itself a valid `Identifier` simply gets no
-            // `CheckedTypeNode` yet, rather than a panic; it is not a
-            // reachable refusal this stage owns today.
-            let Ok(name) = identity::Identifier::new(composite.name().to_owned()) else {
-                continue;
-            };
-            let node = identity::mint_type_declaration_identity(
-                &package_identity,
-                std::slice::from_ref(&name),
-                identity::DeclaredShape::Composite(composite.shape()),
-            );
+            let node = identity::declaration_node_key(composite.key());
             type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
         }
         for enum_binding in &scope.enums {
-            let Ok(name) = identity::Identifier::new(enum_binding.name.clone()) else {
-                continue;
-            };
-            let variants: Option<Vec<identity::SumVariant>> = enum_binding
+            let node = identity::declaration_node_key(enum_binding.declaration.key());
+            // Every case name here was already validated as
+            // `^[A-Za-z_][A-Za-z0-9_]*$` and checked distinct from its
+            // siblings when this `EnumBinding`'s own `EnumDeclaration`/
+            // `EnumMemberPreimage` were admitted (`value/enumeration.rs`'s
+            // `EnumDeclarationPreimage::from_json`/`EnumDeclaration::
+            // admit_member`) -- an `EnumBinding` reaching `check` at all
+            // already carries that guarantee, so re-deriving an
+            // `Identifier`/`SumVariants` here cannot fail in production.
+            // PR #300 review round 2 (HIGH-2): `expect` rather than a
+            // silent `continue`/skip, so a genuine violation of that
+            // upstream invariant is loud, not a quietly missing checked
+            // type node (the review's own "or `expect`, if truly
+            // unreachable" alternative for this exact site).
+            let variants: Vec<identity::SumVariant> = enum_binding
                 .members
                 .iter()
                 .map(|member| {
                     identity::Identifier::new(member.case().to_owned())
-                        .ok()
                         .map(identity::SumVariant::new)
+                        .expect(
+                            "an EnumBinding's own EnumDeclaration/EnumMemberPreimage \
+                             admission already validated every case name as an \
+                             identifier before this declaration ever reached `check`",
+                        )
                 })
                 .collect();
-            let Some(variants) = variants else {
-                continue;
-            };
-            // Two members sharing one declared case name is already refused
-            // upstream of `check` (an `EnumBinding` whose own admission
-            // rejected a duplicate case never reaches here) -- this is
-            // defense in depth over an input `check` treats as already
-            // well-formed, not a reachable production refusal, so this
-            // declaration's checked type node is simply omitted rather than
-            // panicking on it.
-            if let Ok(variants) = identity::SumVariants::new(variants) {
-                let node = identity::mint_type_declaration_identity(
-                    &package_identity,
-                    std::slice::from_ref(&name),
-                    identity::DeclaredShape::Sum(&variants),
-                );
-                type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
-            }
+            let variants = identity::SumVariants::new(variants).expect(
+                "an EnumBinding's own EnumDeclaration admission already refuses two \
+                 members sharing one declared case name before this declaration ever \
+                 reaches `check`",
+            );
+            type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
         }
-        // ADR-013 O-04 (PR #300 review finding 1): `check` records every
-        // caller-supplied correspondence entry verbatim -- see
-        // `PackageDeclarations::model_correspondence`'s own doc for why the
-        // entries themselves are still caller-supplied today.
+        // ADR-013 O-04 (PR #300 review round 2, MEDIUM-3): a second entry
+        // for a node already recorded refuses rather than silently
+        // overwriting the first (R-05) -- see `CheckCause::
+        // InvalidModelCorrespondence`'s own doc for why full node-membership
+        // validation is not implemented here yet.
         let mut model_correspondence = identity::ModelCorrespondence::default();
         for (node, declaration) in self.model_correspondence {
+            if model_correspondence.resolve(node).is_some() {
+                refusals.push(CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InvalidModelCorrespondence(
+                        InvalidModelCorrespondence::DuplicateNode { node },
+                    ),
+                });
+                continue;
+            }
             model_correspondence.record(node, declaration);
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
         }
         // PR #262 review, finding F4: this used to hardcode
         // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
@@ -1040,6 +1068,15 @@ mod tests {
     /// covered by `identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
     /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
     /// test is the "the checker really records it" half.
+    ///
+    /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
+    /// `crate::package::CheckedPackage::link(graph).graph().resolve_declaration`,
+    /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
+    /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
+    /// directly, which the prior version of this test read from. `package`
+    /// is `pub` at the crate root and this test module is `#[cfg(test)]`
+    /// (excluded from the FR-068-AC-6 `value_import_edges` scan, whose own
+    /// doc says so), so this is not a `check` -> `package` production edge.
     #[trace("TC-248", "FR-088-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
@@ -1054,20 +1091,63 @@ mod tests {
         }
         .check(CheckingLimits::default())
         .expect("an empty package with a correspondence seed checks cleanly");
+        let package = crate::package::CheckedPackage::link(graph);
 
-        assert_eq!(graph.resolve_declaration(node), Some(&declaration));
+        assert_eq!(
+            package.graph().resolve_declaration(node),
+            Some(&declaration)
+        );
 
         // Adverse (R-05): a node the caller never supplied resolves to
         // nothing -- `check` never re-derives an entry by search.
         let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
-        assert_eq!(graph.resolve_declaration(other), None);
+        assert_eq!(package.graph().resolve_declaration(other), None);
+    }
+
+    /// PR #300 review round 2, MEDIUM-3: a second correspondence entry for a
+    /// node an earlier entry already named refuses rather than silently
+    /// overwriting the first.
+    #[trace("TC-248", "FR-088-AC-2")]
+    #[test]
+    fn a_duplicate_correspondence_node_refuses_rather_than_overwriting() {
+        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+        let first = crate::model::key::DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "Order.status".to_owned(),
+        };
+        let second = crate::model::key::DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "Order.total".to_owned(),
+        };
+        let refusals = PackageDeclarations {
+            model_correspondence: vec![(node, first), (node, second)],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect_err("a duplicate correspondence node must refuse, not overwrite");
+        assert!(
+            refusals.iter().any(|refusal| matches!(
+                refusal.cause,
+                CheckCause::InvalidModelCorrespondence(
+                    InvalidModelCorrespondence::DuplicateNode { node: refused_node }
+                ) if refused_node == node
+            )),
+            "expected an InvalidModelCorrespondence::DuplicateNode refusal: {refusals:?}"
+        );
     }
 
     /// PR #300 review finding 1: a real composite declaration in
     /// `PackageDeclarations.types` becomes a real `CheckedTypeNode`,
     /// convertible through C-26, not only in `identity`'s own
     /// hand-constructed unit tests.
-    #[trace("TC-252", "FR-088-AC-9")]
+    ///
+    /// PR #300 review round 2 (HIGH-1): the checked type node's own id is
+    /// asserted equal to the declaration's own pre-existing
+    /// `CompositeDeclaration::key()` -- the same identity `Typer::
+    /// type_named` (`check.rs`) and every field type (`family.rs`) already
+    /// resolve a reference against -- not a second, parallel id this
+    /// module used to mint from the declared name and shape.
+    #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
         use crate::value::composite::{
@@ -1076,11 +1156,9 @@ mod tests {
         use crate::value::node::NodeKey as ValueNodeKey;
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
-        let composite = CompositeDeclaration::new(
-            ValueNodeKey::from_hex(&"11".repeat(32)).expect("64 lowercase hex digits"),
-            "Flagged",
-            CompositeShape::Record(vec![field]),
-        );
+        let key = ValueNodeKey::from_hex(&"11".repeat(32)).expect("64 lowercase hex digits");
+        let composite =
+            CompositeDeclaration::new(key, "Flagged", CompositeShape::Record(vec![field]));
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
@@ -1092,11 +1170,143 @@ mod tests {
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared composite");
         let node = nodes[0].node();
-        assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
+        assert_eq!(
+            node,
+            identity::declaration_node_key(key),
+            "the checked type node's id must be the declaration's own existing key"
+        );
+        assert_eq!(
+            graph.checked_type_node(identity::declaration_node_key(key)),
+            Some(nodes[0])
+        );
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(node)
         );
+    }
+
+    /// PR #300 review round 2 (HIGH-2): a package-qualified declared name
+    /// (`"P::R"`, the FR-143 R-03 fixture convention, `tests/it/
+    /// composite_values.rs`) gets a real checked type node -- the prior
+    /// code silently dropped any composite whose declared name was not
+    /// itself a single valid `Identifier` (no refusal, no diagnostic,
+    /// `check()` still returning `Ok`, review round 2's own probe: "0
+    /// checked type nodes, check returns Ok, no refusal or diagnostic").
+    /// Reusing the declaration's own key (HIGH-1) needs no name validation
+    /// at all, so this can no longer happen.
+    #[trace("TC-252", "FR-088-AC-9")]
+    #[test]
+    fn composite_type_node_for_a_qualified_declared_name() {
+        use crate::value::composite::{
+            CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
+        };
+        use crate::value::node::NodeKey as ValueNodeKey;
+
+        let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
+        let key = ValueNodeKey::from_hex(&"22".repeat(32)).expect("64 lowercase hex digits");
+        let composite = CompositeDeclaration::new(key, "P::R", CompositeShape::Record(vec![field]));
+        let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
+        let graph = PackageDeclarations {
+            types,
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("a package-qualified declared name checks cleanly");
+
+        let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
+        assert_eq!(
+            nodes.len(),
+            1,
+            "a package-qualified declared name must still get a checked type node"
+        );
+        assert_eq!(nodes[0].node(), identity::declaration_node_key(key));
+    }
+
+    /// PR #300 review round 2 (HIGH-1, L10): the enum/Sum companion to
+    /// `composite_declaration_becomes_a_real_checked_type_node` above --
+    /// round 1's own review named this as a real gap ("no real-`check()`
+    /// test for the enum/Sum path"). A real `EnumDeclaration`, admitted the
+    /// same way `tests/it/collection_algebra.rs`'s own fixtures build one,
+    /// becomes a real `CheckedTypeNode::Sum` whose own node id is exactly
+    /// `EnumDeclaration::key()` -- the same identity `Typer::type_named`
+    /// and every `EnumValue::declaration()` already resolve a reference
+    /// against (FR-088-AC-7 step 4) -- and whose `VariantId`s are minted
+    /// from that same key, never a second, parallel one (FR-088-AC-10).
+    #[trace("TC-259", "FR-088-AC-7")]
+    #[test]
+    fn enum_declaration_becomes_a_real_checked_type_node() {
+        use crate::value::{
+            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeOwner,
+            OwnerSelection, OwnerSubject, NODE_KEY_DOMAIN,
+        };
+        use serde_json::json;
+
+        let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".to_owned(),
+            identity: "example-model".to_owned(),
+        })]);
+        let declaration_json = json!({
+            "version": "quire.enum-declaration-node/v1",
+            "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
+            "qualified_declaration": ["Example", "Status"],
+            "ordered": false,
+            "members": ["Active", "Closed"],
+        });
+        let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
+        let declaration_key = declaration_preimage.node_key().unwrap();
+        let declaration =
+            EnumDeclaration::admit(declaration_preimage, declaration_key, &owners).unwrap();
+
+        let members = ["Active", "Closed"]
+            .into_iter()
+            .map(|case| {
+                let member_json = json!({
+                    "version": "quire.enum-member-node/v1",
+                    "declaration_node_id": {
+                        "domain": NODE_KEY_DOMAIN,
+                        "digest": declaration.key().to_string(),
+                    },
+                    "case": case,
+                });
+                let member_preimage = EnumMemberPreimage::from_json(member_json).unwrap();
+                let member_key = member_preimage.node_key().unwrap();
+                declaration
+                    .admit_member(&member_preimage, member_key)
+                    .unwrap()
+            })
+            .collect();
+
+        let enums = vec![EnumBinding {
+            name: "Status".to_owned(),
+            declaration,
+            members,
+        }];
+        let graph = PackageDeclarations {
+            enums,
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("one enum declaration checks cleanly");
+
+        let checked_declaration_key = identity::declaration_node_key(declaration_key);
+        let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
+        assert_eq!(nodes.len(), 1, "exactly the one declared enum");
+        assert_eq!(
+            nodes[0].node(),
+            checked_declaration_key,
+            "the checked type node's id must be the declaration's own existing key"
+        );
+        assert_eq!(
+            graph.checked_type_node(checked_declaration_key),
+            Some(nodes[0])
+        );
+
+        let quire_exact::ValueType::Enum(shape) = to_kernel_value_type(nodes[0]) else {
+            panic!("the sum form must convert to ValueType::Enum");
+        };
+        for case in ["Active", "Closed"] {
+            assert!(shape.contains(identity::mint_variant_id(checked_declaration_key, case)));
+        }
     }
 
     /// PR #300 review finding 7: TC-249's own identity/occurrence-key

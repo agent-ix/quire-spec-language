@@ -249,6 +249,38 @@ pub enum CheckCause {
     /// reads as already valid; reuses the already-catalogued `invalid-value`
     /// tag rather than minting a new one.
     InvalidDispatchDeclaration(InvalidDispatchDeclaration),
+    /// `invalid_package` / `invalid-value`: a supplied `PackageDeclarations::
+    /// model_correspondence` entry repeats a `NodeKey` an earlier entry
+    /// already named (PR #300 review round 2, MEDIUM-3). The same "built by
+    /// the caller (the `model` bridge); the checker only records/resolves
+    /// against it" division as `dispatch_operations`/`dispatch_tables`
+    /// above, validated the same way and reusing the same already-catalogued
+    /// `invalid-value` tag, not a new one.
+    ///
+    /// This crate does not yet validate that a correspondence entry's
+    /// `NodeKey` names a node this package's own checking actually admitted
+    /// (the review's own "refuse or diagnose nodes not in the graph"):
+    /// `model_correspondence`'s keys are checked relation/model node keys
+    /// (`FrameSubjects`'s own doc), a node category with no check-stage
+    /// producer yet (FR-340 frame syntax, FR-088-CON-2, `Remaining work:
+    /// #210`) -- validating against `type_nodes`/function identities, the
+    /// only node categories `check` can enumerate today, would refuse every
+    /// legitimate future frame-subject entry as readily as a genuinely
+    /// malformed one, since neither category is the one a real entry names.
+    InvalidModelCorrespondence(InvalidModelCorrespondence),
+}
+
+/// [`CheckCause::InvalidModelCorrespondence`]'s own typed detail.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum InvalidModelCorrespondence {
+    /// Two entries name the same `NodeKey`. ADR-013 O-04's correspondence is
+    /// one node id to one `DeclarationKey`; a second entry for a node
+    /// already recorded is refused rather than silently overwriting the
+    /// first (R-05: no entry's arrival order is load-bearing).
+    DuplicateNode {
+        /// The repeated node key.
+        node: quire_exact::NodeKey,
+    },
 }
 
 /// Which dispatch-table function slot [`InvalidDispatchDeclaration`] names.
@@ -348,7 +380,8 @@ impl CheckCause {
             Self::ResourceExhausted { .. } => Code::ResourceExhausted,
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
-            | Self::InvalidDispatchDeclaration(_) => Code::InvalidPackage,
+            | Self::InvalidDispatchDeclaration(_)
+            | Self::InvalidModelCorrespondence(_) => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
         }
     }
@@ -370,7 +403,9 @@ impl CheckCause {
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
-            Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
+            Self::InvalidDispatchDeclaration(_) | Self::InvalidModelCorrespondence(_) => {
+                Some("invalid-value")
+            }
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
         }
     }

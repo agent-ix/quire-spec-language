@@ -58,10 +58,13 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 xtask = { path = "xtask" }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
 quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
-# "extra-traits" enables `Debug` on `syn::Type` etc., used by TC-251's
-# signature scanner (`tests/name_resolution_confinement.rs`) to text-match a
-# parameter/return type's own written form.
-syn = { version = "=2.0.119", features = ["full", "visit", "extra-traits"] }
+# TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
+# walks a parameter/return type's own AST directly (an exact path-segment
+# match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted
+# tree, so it needs only "full" (the full grammar) and "visit" -- PR #300
+# review round 2, L5 dropped the "extra-traits" feature that used to exist
+# solely to put `Debug` on `syn::Type` for that string search.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 
 [[bin]]
 name = "quire-spec"
