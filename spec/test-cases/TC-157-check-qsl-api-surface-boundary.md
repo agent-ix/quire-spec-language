@@ -40,7 +40,10 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
    - a shipped mint in a function that is on the debt list;
    - a debt-list entry whose function no longer mints;
    - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
-     `check`.
+     `check`;
+   - a doc comment naming `NodeKey::from_digest` in a module outside `check`.
+7. T12-C fixture: a shipped `EffectiveId::from_digest(` call in
+   `value::model_query`, in a function not on T12-C's debt list.
 
 ## Expected Results
 
@@ -53,29 +56,29 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
   treated as inside `model`), because segment matching requires a `::`
   boundary, not a textual prefix.
 - Step 5: T12-A reports `pending` (the `replay` facade module does not exist
-  yet; no `--cg` checkout is given). T12-C reports `failing` at exactly the
-  two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and
-  `resolve_target` functions). T12-B reports every shipped `NodeKey` mint
-  outside `check` as debt, each in a function on FR-060's T12-B debt list,
-  with file, line, module and function named, and fails if any mint outside
-  `check` is in a function not on that list or if a list entry has no mint
-  left. **Amended by the layer-rule ruling (2026-09-22): this step formerly
-  expected "exactly five real sites".** A fixed count breaks every time the
-  gate becomes more accurate, so the expected result is the rule plus the
-  debt list (FR-060-AC-4). T12-D reports `PASS` with zero call sites: no
+  yet; no `--cg` checkout is given). T12-B and T12-C each report every
+  shipped mint outside their allowed callers as debt, each in a function on
+  that rule's FR-060 debt list, with file, line, module and function named,
+  and each fails if such a mint is in a function not on its list or if a
+  list entry has no mint left (FR-060-AC-4). **Amended by the layer-rule
+  ruling (2026-09-22)**: fixed site counts are replaced by the debt lists.
+  T12-D reports `PASS` with zero call sites: no
   module outside `model` calls `PopulationId::from_digest(`. This output is
   captured for the PR body as real, not synthetic, evidence -- the check is
   not tuned to exclude any finding.
 - Step 6: the `check` submodule mint is not reported; the function-value
   mint outside `check` fails T12-B and is named; the debt-list mint is
   reported as debt and does not fail T12-B; the stale debt-list entry fails
-  T12-B and names the entry; the `#[cfg(test)]` mint is not reported.
+  T12-B and names the entry; the `#[cfg(test)]` mint and the doc-comment
+  match are not reported.
+- Step 7: the call fails T12-C and is named with file, line, module and
+  function.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/api_surface.rs`
-- Automation: Automated Rust unit tests (steps 1-4, 6) plus one manual real-data run (step 5)
+- Automation: Automated Rust unit tests (steps 1-4, 6, 7) plus one manual real-data run (step 5)
 
 ## Dependencies
 

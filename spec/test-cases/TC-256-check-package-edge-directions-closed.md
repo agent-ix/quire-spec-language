@@ -15,8 +15,7 @@ from `library`". The first passes a `package` that copies check-owned data
 into re-declared types while importing only `CheckedGraph`, and fails a
 `package` that imports `Node` to name an accessor's return type, which is the
 permitted layer-4-on-layer-3 direction. The second caps a permitted edge:
-`library` precedes `check` core in ADR-011 §6.1's layer-3 order, and `check`
-imports nothing from `library` today. What these counts stood in for is
+`library` precedes `check` core in ADR-011 §6.1's layer-3 order. What these counts stood in for is
 checked directly below (step 5) or elsewhere: FR-087-AC-6 and FR-060 T12-B
 hold the no-minting-from-wire-ids property. FR-087-AC-9 gives the reasons.
 

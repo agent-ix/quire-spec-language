@@ -52,8 +52,8 @@ kernel, rather than a check that is retired and rewritten.
   call site outside the allowed caller modules is absent), **live and
   failing** (the rule's target exists and at least one call site outside the
   allowed caller modules exists; each is reported with file and line; for
-  T12-B, a site in a debt-list function is reported as debt rather than as
-  a failure, and a stale debt-list entry is a failure), or
+  T12-B and T12-C, a site in a debt-list function is reported as debt rather
+  than as a failure, and a stale debt-list entry is a failure), or
   **pending** (the rule's target -- a file the rule requires -- does not
   exist yet, so the rule reports this explicitly rather than passing
   vacuously).
@@ -85,12 +85,13 @@ four rules:
 | --- | --- | --- | --- | --- |
 | T12-A | Cg | The layer-6 `replay` facade module | (this rule reports pending until the facade module exists at the path this rule names; once it exists, a CG checkout must be supplied to scan it) | `src/replay.rs` |
 | T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
-| T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` | the constructor's current source file |
+| T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `src/model/population.rs` |
 
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.
-T12-D's pattern is `PopulationId::from_digest(`, the kernel `PopulationId`'s
+T12-C's pattern matches `EffectiveId::from_digest`, called or passed as a
+function value. T12-D's pattern is `PopulationId::from_digest(`, the kernel `PopulationId`'s
 one public constructor.
 
 ### T12-B: only `check` mints `NodeKey`
@@ -98,39 +99,45 @@ one public constructor.
 **Amended by the layer-rule ruling (2026-09-22).** T12-B's allowed callers
 are `check` and every module under it, because ADR-013 O-04 says only
 `check` calls the `NodeKey` constructor. `check::family`'s
-`mint_declaration_identity` and `mint_call_identity` are therefore allowed
-as `check` submodules. `check::checked_dispatch`, which the rule formerly
-named, is covered by the same prefix. `value::expression::check` and
-`value::library` no longer exist. `value::node` is no longer exempt: once
-QSL's `NodeKey` is the kernel type (#335), `value::node` is not the
-constructor's defining module, and its mints are real debt.
+`mint_declaration_identity` and `mint_call_identity`, and
+`check::checked_dispatch`, are allowed under that prefix. `value::node` is
+not exempt: it defines the `node_key_of` helper, not the kernel constructor,
+and its mints are debt.
 
 T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
-shipped code, whether it is called or passed as a function value. Today that
-is `quire_exact::NodeKey::from_digest`, and, while QSL's own
-`value::node::NodeKey` type still exists, its `of`, `from_bytes` and
-`from_hex`. T12-B also matches calls of `node_key_of`, the crate-internal
-helper that wraps the constructor (#249 review R1). A pattern that requires
-an opening parenthesis misses `.map(NodeKey::from_digest)`, which is how
-`value::node`'s `NodeIdDocument::key` mints.
+shipped code, whether it is called or passed as a function value:
+`NodeKey::from_digest` (the kernel constructor), and, while QSL's own
+`value::node::NodeKey` type exists, its `of`, `from_bytes` and `from_hex`.
+T12-B also matches calls of `node_key_of`, the crate-internal helper that
+wraps the constructor (#249 review R1); the helper's own `fn node_key_of(`
+definition line is not a mint. A reference passed as a function value, such
+as `value::node`'s `NodeIdDocument::key` writing
+`.map(NodeKey::from_digest)`, is a mint.
 
-T12-B scans shipped code only; items under `#[cfg(test)]` are excluded. A
-test fixture that builds a `NodeKey` from literal bytes is not a node
-identity the crate mints, and counting fixtures would force non-violations
-onto the debt list.
+### T12-B and T12-C: shipped code and debt lists
 
-### T12-B's debt list
+T12-B and T12-C scan shipped code only: items under `#[cfg(test)]` are
+excluded, and so is a pattern match inside a comment or a doc comment. A test
+fixture that builds a `NodeKey` or `EffectiveId` from literal bytes, or a doc
+comment that names the constructor, is not an identity the crate mints.
 
-Every shipped `NodeKey` mint outside `check` SHALL be in a function on this
-list. The list is keyed by enclosing module and function, not by line
-number, and it only shrinks: an entry leaves in the change that removes its
-last mint, and no entry is added. A mint outside `check` in a function not on
-the list fails T12-B. An entry with no remaining mint also fails T12-B until
-it is removed, so a fixed site cannot later hide a new mint.
+Each of the two rules has a debt list. Every shipped mint outside the rule's
+allowed callers SHALL be in a function on that rule's list. A list is keyed
+by enclosing module and function, not by line number, and it only shrinks:
+an entry leaves in the change that removes its last mint, and no entry is
+added. A mint outside the allowed callers in a function not on the list
+fails the rule. An entry with no remaining mint also fails the rule until it
+is removed, so a fixed site cannot later hide a new mint. Each debt-list mint
+is reported as debt, with file, line, module and function. The lists name
+functions rather than counting sites, because a count is met by a broken
+state (one new mint and one fixed mint cancel out) and changes whenever the
+patterns become more accurate.
+
+T12-B's debt list:
 
 | Module | Function | Why it is debt |
 | --- | --- | --- |
-| `value::enumeration` | `EnumDeclarationPreimage::node_key` | mints through `node_key_of` outside `check` (ADR-011 FB-13, ADR-013 OBS-018) |
+| `value::enumeration` | `EnumDeclarationPreimage::node_key` | mints through `node_key_of` outside `check` (ADR-011 FB-13) |
 | `value::enumeration` | `EnumMemberPreimage::node_key` | same |
 | `value::unit` | `DimensionPreimage::node_key` | same |
 | `value::unit` | `UnitPreimage::node_key` | same |
@@ -139,10 +146,12 @@ it is removed, so a fixed site cannot later hide a new mint.
 | `value::model_query` | `to_object_reference` | OBS-018: builds a `NodeKey` from a model `ReferenceKey`'s bytes |
 | `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
 
-A fixed count of sites is not used. A count breaks every time the gate gets
-more accurate: #335 corrected T12-B's patterns and the count went from five
-to ten without any code getting worse. A named list fails only when a new
-mint appears or an old one is fixed and not removed from the list.
+T12-C's debt list:
+
+| Module | Function | Why it is debt |
+| --- | --- | --- |
+| `value::model_query` | `bridge_lookup_key` | OBS-018: builds an `EffectiveId` from a `NodeKey`'s bytes outside `model` |
+| `value::model_query` | `resolve_target` | same |
 
 ### Pending vs. live vs. failing
 
@@ -169,11 +178,14 @@ A rule with no call site outside its allowed callers SHALL report **passing**.
 The check SHALL scan source text for each rule's literal call patterns. It
 does not resolve import aliases or macro-expanded call sites; a call reached
 only through a renamed import is a known limitation of this check, not a
-silent pass. It also does not exclude a call pattern's text when that text
-appears inside a comment or a string literal, rather than as real code; a
-match inside either is a known limitation of this check (a possible false
-positive), not a resolved parse. The check's own report SHALL state both
-limitations (#249 review, MEDIUM-5).
+silent pass. T12-A and T12-D do not exclude a call pattern's text when that
+text appears inside a comment or a string literal, rather than as real code;
+a match inside either is a known limitation of those rules (a possible false
+positive), not a resolved parse. T12-B and T12-C exclude comments, because a
+false positive outside a debt-list function fails them (Behavior, "T12-B and
+T12-C: shipped code and debt lists"); a match inside a string literal
+remains a known limitation of all four rules. The check's own report SHALL
+state these limitations (#249 review, MEDIUM-5).
 
 ### Honest reporting of real findings
 
@@ -184,9 +196,9 @@ already names as known architecture debt (OBS-018, `value/model_query.rs`'s
 and any real call site the check finds
 that OBS-018's or ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
-make a run pass (#249 review R1). T12-B's debt list is not such an
-exclusion: each entry is reported as debt in the check's output, and the
-list can only shrink.
+make a run pass (#249 review R1). T12-B's and T12-C's debt lists are not
+such an exclusion: each entry is reported as debt in the check's output, and
+each list can only shrink.
 
 ## Acceptance Criteria
 
@@ -195,7 +207,7 @@ list can only shrink.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rule T12-C reports failing at exactly the two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and `resolve_target` functions); rule T12-B reports every shipped `NodeKey` mint outside `check` and its descendants, and fails if any such mint lies in a function not on T12-B's debt list (Behavior, "T12-B's debt list") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under `check` (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`) and mints in `#[cfg(test)]` items are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22): this criterion formerly required "exactly five real sites".** A fixed count breaks every time the gate becomes more accurate (#335's pattern fix took it from five to ten with no code change), so the count is replaced by the rule plus a named debt list that only shrinks; rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rules T12-B and T12-C each report every shipped mint outside their allowed callers (`check` and its descendants for T12-B, `model` and its descendants for T12-C), and each fails if such a mint lies in a function not on that rule's debt list (Behavior, "T12-B and T12-C: shipped code and debt lists") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under the allowed callers (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`), mints in `#[cfg(test)]` items, and matches inside comments are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22)**: the fixed site counts for T12-B and T12-C are replaced by the named debt lists. Rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
 
 ## Dependencies
 
@@ -219,28 +231,27 @@ per-rule role (`--qsl`/`--cg`) and a `node_key_of(` call pattern added at
 #249 review (R1, HIGH-2/MEDIUM-4). T12-A is CG-role and pending (the `replay`
 facade does not exist; once it lands, `arch-lint api-surface` needs `--cg
 <checkout>` to scan it -- the Makefile's `CG_CLONE` variable). T12-C is
-QSL-role, live, and fails at exactly the two OBS-018 locations
-(`src/value/model_query.rs`'s `bridge_lookup_key` and `resolve_target`
-functions). T12-D is QSL-role, live, and passes
+QSL-role and live; its only shipped mints outside `model`, on `main` at
+`dccf9175` and on #335's branch alike, are its two debt-list functions
+(`src/value/model_query.rs` lines 124 and 156). T12-D is QSL-role, live, and passes
 with zero call sites: `quire-exact`'s `PopulationId::from_digest` (QSL-131
 Slice B) has no caller outside `model` (tests
 `tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation`
 and `tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation`
 back its failing and passing paths).
 
-T12-B is QSL-role and live. **Amended by the layer-rule ruling
-(2026-09-22):** its allowed callers are `check` and its descendants, and its
-known minting sites outside `check` are the named debt list in Behavior
-("T12-B's debt list"): eight functions across `value::enumeration`,
-`value::unit`, `value::node`, `value::model_query` and
-`value::expression::family`. Measured on #335's branch, T12-B's patterns
-report ten shipped lines: `check/family.rs` 739 and 782 (allowed under the
-new rule); `value/enumeration.rs` 126 and 171; `value/unit.rs` 207 and 320;
-`value/expression/family.rs` 232 (`decode_v2`); `value/model_query.rs` 109;
-and `value/node.rs` 280 (the `node_key_of` definition line) and 282 (its
-mint). They miss `value/node.rs` 198, `NodeIdDocument::key`'s
-`.map(NodeKey::from_digest)`, which the rule above covers. The rewrite of
-`tools/arch-lint/api_surface.rs` to this rule follows this amendment.
-Remediating the debt-list sites and the two OBS-018 `T12-C` sites is
-#211/#213's work, not this requirement's. Remaining work: #211, gate
-rewrite.
+T12-B is QSL-role and live. Its shipped mints outside `check`, on `main` at
+`dccf9175` and on #335's branch alike, are in exactly the eight debt-list
+functions (Behavior, "T12-B and T12-C: shipped code and debt lists"). On
+#335's branch they are `value/enumeration.rs` 126 and 171, `value/unit.rs`
+207 and 320, `value/expression/family.rs` 232, `value/model_query.rs` 109,
+and `value/node.rs` 198 (`.map(NodeKey::from_digest)`) and 282.
+
+**Amended by the layer-rule ruling (2026-09-22); not yet implemented.**
+`tools/arch-lint/api_surface.rs` still carries T12-B's former allow-list
+(`value::expression::check`, `check::checked_dispatch`, `value::node`) and
+patterns (`NodeKey::of(`, `NodeKey::from_bytes(`, `node_key_of(`) that omit
+`from_digest` and `from_hex` and require an opening parenthesis, scans
+`#[cfg(test)]` code and comments, and has no debt lists. Remediating the
+debt-list sites is #211/#213's work, not this requirement's. Remaining work:
+#211, gate rewrite.

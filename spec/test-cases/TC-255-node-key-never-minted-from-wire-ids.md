@@ -29,7 +29,7 @@ R-10 violation this criterion exists to catch.
 
 This test is scoped to what FR-087 (S-3) owns, not to "only `check` calls
 the constructor" crate-wide: that crate-wide claim is FR-060 T12-B's own
-allow-list, whose named debt list (FR-060 Behavior, "T12-B's debt list")
+allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists")
 holds the real minting sites outside `check` this requirement does not touch
 (pre-existing debt, Remaining work: agent-ix/quire-spec-language#211). This
 criterion does not require the debt list to be empty; it requires `library`,

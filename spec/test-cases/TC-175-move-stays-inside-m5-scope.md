@@ -53,7 +53,9 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
 
 1. Enumerate every shipped (non-`#[cfg(test)]`) import under `src/check/`:
    every `use` line, and every `crate::`-rooted path written inline in code.
-   Resolve each to the module it names. Resolve a flat `crate::value::Name`
+   Resolve each to the module it names, resolving `super::` and `self::`
+   paths relative to their file. Imports from `std` and third-party crates
+   are outside the rule and are not classified. Resolve a flat `crate::value::Name`
    through `value/mod.rs`'s re-export table only to report which module it
    reaches; the flat form itself fails in step 2.
 2. Classify each import as permitted (its module is on FR-068-AC-6's
@@ -80,6 +82,8 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
    - a shipped inline path `crate::value::expression::Evaluation` with no
      `use` line fails step 2;
    - a shipped `use crate::value::Rational;` (flat aggregate) fails step 2;
+   - a shipped inline flat path `crate::value::Presence::Optional` fails
+     step 2;
    - a shipped import from a module on no list (for example
      `crate::value::member`) fails step 2;
    - the same forbidden import inside a `#[cfg(test)]` item does not fail
