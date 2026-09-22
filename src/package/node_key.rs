@@ -80,7 +80,8 @@ mod tests {
     fn equality_holds_iff_both_components_are_lexically_equal() {
         let a = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
         let same = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([9; 32]));
-        let different_package = PackageNodeKey::new(package_id(2), WireNodeId::from_digest([9; 32]));
+        let different_package =
+            PackageNodeKey::new(package_id(2), WireNodeId::from_digest([9; 32]));
         let different_node = PackageNodeKey::new(package_id(1), WireNodeId::from_digest([8; 32]));
 
         assert_eq!(a, same);

@@ -412,7 +412,9 @@ mod tests {
         }
     }
 
-    fn slots_by_name(graph: &crate::check::CheckedGraph) -> std::collections::BTreeMap<String, usize> {
+    fn slots_by_name(
+        graph: &crate::check::CheckedGraph,
+    ) -> std::collections::BTreeMap<String, usize> {
         graph
             .function_states()
             .map(|state| (state.name.to_owned(), state.slots))

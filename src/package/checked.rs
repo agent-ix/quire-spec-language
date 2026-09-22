@@ -94,7 +94,10 @@ impl CheckedPackage {
     /// typestate -- a `CheckedGraph` and other `CheckedPackage`s -- never by
     /// an unchecked or wire-admitted value (R-10).
     pub fn link(graph: CheckedGraph, dependencies: BTreeMap<PackageId, CheckedPackage>) -> Self {
-        Self { graph, dependencies }
+        Self {
+            graph,
+            dependencies,
+        }
     }
 
     /// This package's own checked declarations (S3's stage output) -- the

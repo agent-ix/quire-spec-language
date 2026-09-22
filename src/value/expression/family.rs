@@ -451,7 +451,8 @@ mod family_contract_tests {
             .expect("f is declared in this package");
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
-        let package = crate::package::CheckedPackage::link(graph, std::collections::BTreeMap::new());
+        let package =
+            crate::package::CheckedPackage::link(graph, std::collections::BTreeMap::new());
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {
