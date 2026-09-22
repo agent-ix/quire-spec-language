@@ -594,7 +594,7 @@ fn resolves_into_package(path: &[String]) -> bool {
 /// doc, "`#[cfg(test)]` handling differs by which criterion is being
 /// checked"). Widened by QSL-182 prep to also flag `checked_package`, the
 /// sibling module the same layer-4 content partly moved into (see
-/// [`resolves_into_package`]'s own doc).
+/// `resolves_into_package`'s own doc, private to this module).
 pub fn check_package_import_edges(workspace_root: &Path) -> Result<Vec<UseEdge>> {
     let mut edges_found = Vec::new();
     for file in files_in(workspace_root, "src/check")? {
