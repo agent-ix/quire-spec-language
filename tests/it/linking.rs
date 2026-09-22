@@ -538,7 +538,9 @@ fn inclusive_lowered_and_zero_limits_are_enforced_independently() {
             assert_eq!(error.code, Code::ResourceExhausted, "dimension {dimension}");
             assert!(error.is_incomplete());
             if dimension >= 5 {
-                assert!(error.message.contains("canonicalization_resource_exhausted"));
+                assert!(error
+                    .message
+                    .contains("canonicalization_resource_exhausted"));
             }
             assert_eq!(link(read(&text), &envs, exact).unwrap().clauses().len(), 1);
         }
@@ -753,7 +755,9 @@ fn hard_canonical_byte_budgets_admit_equality_and_refuse_one_more() {
     let oversized = padded_environment("FR-000", hard.model_bytes + 1);
     let error = link(read(original.text()), &[oversized], raised).unwrap_err();
     assert_eq!(error.code, Code::ResourceExhausted);
-    assert!(error.message.contains("canonicalization_resource_exhausted"));
+    assert!(error
+        .message
+        .contains("canonicalization_resource_exhausted"));
     let mut aggregate = envs.clone();
     aggregate.push(padded_environment("FR-008", 1024));
     let error = link(read(original.text()), &aggregate, raised).unwrap_err();

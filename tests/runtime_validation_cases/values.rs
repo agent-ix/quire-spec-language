@@ -330,9 +330,11 @@ fn every_native_shape_is_checked_at_fields_state_parameters_and_results() {
                 };
                 let expected_repr = format!("{expected:?}");
                 assert!(
-                    report.diagnostics.iter().any(|diagnostic| diagnostic.code
-                        == Code::InvalidRuntimeInput
-                        && diagnostic.message.contains(&expected_repr)),
+                    report
+                        .diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput
+                            && diagnostic.message.contains(&expected_repr)),
                     "{shape:?} at {site}"
                 );
             }

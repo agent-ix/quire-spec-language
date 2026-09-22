@@ -131,8 +131,10 @@ fn assert_validation_failure(
         .contains(&format!("{:?}", authored_owner())));
     assert!(diagnostic.message.contains("population_rule"));
     assert!(report.usage.work > 0);
-    println!("case={name} phase=validate status={:?} code={} native={:?} message={:?} usage={:?}",
-        report.status, diagnostic.code, diagnostic.span, diagnostic.message, report.usage);
+    println!(
+        "case={name} phase=validate status={:?} code={} native={:?} message={:?} usage={:?}",
+        report.status, diagnostic.code, diagnostic.span, diagnostic.message, report.usage
+    );
 }
 
 #[test]

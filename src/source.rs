@@ -117,18 +117,19 @@ impl Source {
             line: 1,
             column: 1,
         };
-        let refusal = |cause, source: SourceIdentity, path: String, message: &str| SourceReadRefusal {
-            cause,
-            error: SourceReadError {
-                source,
-                path,
-                span: LocatedSpan {
-                    start: point,
-                    end: point,
+        let refusal =
+            |cause, source: SourceIdentity, path: String, message: &str| SourceReadRefusal {
+                cause,
+                error: SourceReadError {
+                    source,
+                    path,
+                    span: LocatedSpan {
+                        start: point,
+                        end: point,
+                    },
+                    message: message.into(),
                 },
-                message: message.into(),
-            },
-        };
+            };
         if identity.identity.trim().is_empty()
             || identity.revision.trim().is_empty()
             || path.is_empty()

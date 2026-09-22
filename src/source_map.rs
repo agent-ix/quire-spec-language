@@ -100,7 +100,10 @@ impl SourceMap {
         let mut original_cursor = region.start;
         for segment in &segments {
             let Some(body_bytes) = body.slice(segment.body) else {
-                return Err(fail(SourceMapErrorCause::InvalidMap, "invalid body segment"));
+                return Err(fail(
+                    SourceMapErrorCause::InvalidMap,
+                    "invalid body segment",
+                ));
             };
             let Some(original_bytes) = original.slice(segment.original) else {
                 return Err(fail(

@@ -130,7 +130,12 @@ impl<'u, 'a> Context<'a> for Builder<'u, 'a> {
             Some(upstream) => format!("{message}: {upstream}"),
             None => message.to_owned(),
         };
-        failure(self.meter.source, Code::InvalidModelBinding, self.span(at), message)
+        failure(
+            self.meter.source,
+            Code::InvalidModelBinding,
+            self.span(at),
+            message,
+        )
     }
 }
 impl Builder<'_, '_> {

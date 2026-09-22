@@ -1120,7 +1120,9 @@ fn rational_output_limits_use_independently_assembled_artifact_content() {
                 let ModelSourceCause::Admission(cause) = &error.cause else {
                     panic!("admission budget")
                 };
-                assert!(cause.message.contains("canonicalization_resource_exhausted"));
+                assert!(cause
+                    .message
+                    .contains("canonicalization_resource_exhausted"));
             }
         } else {
             let admitted = result.unwrap();
