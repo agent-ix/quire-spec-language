@@ -275,6 +275,27 @@ mod tests {
         assert!(plan.equal);
     }
 
+    // TODO(FR-089): trace to the new AC (kernel `plan_pairs` refuses a
+    // population pair; see PR #295 review finding 2/3) once the spec agent
+    // adds it.
+    #[test]
+    fn plan_pairs_refuses_a_population_pair() {
+        use crate::identity::PopulationId;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Population(PopulationId::from_digest(digest(1)));
+        let right = Value::Population(PopulationId::from_digest(digest(2)));
+        assert!(matches!(
+            plan_pairs(&left, &right),
+            Err(Refusal::CheckedInvariant)
+        ));
+    }
+
     /// TC-322: a reference pair of different universes refuses with
     /// `ForeignReference` rather than comparing structurally.
     #[trace("TC-322")]

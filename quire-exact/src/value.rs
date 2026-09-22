@@ -27,11 +27,13 @@
 //!   `Value::Population(PopulationId)` (ADR-013 O-13 Population row, QC-21,
 //!   FR-089): the kernel carries the opaque identity alone, never the
 //!   `PopulationBinding` a QSL `model` type owns. `ValueType::Population(u64)`
-//!   is unchanged (T-6: "keeps `u64` count only"). `ValueType::admits` does
-//!   not pair `ValueType::Population` with `Value::Population`: FR-089-AC-5
-//!   requires comparing the declared `u64` against a resolved binding's own
-//!   declared maximum, and this crate has no way to resolve a `PopulationId`
-//!   to a binding, so every `(ValueType::Population(_),
+//!   is unchanged (T-6: "keeps `u64` count only"). FR-089-AC-5's
+//!   declared-maximum comparison is a QSL-layer check: the model/evaluator
+//!   resolves a `PopulationId` to its binding and compares the binding's own
+//!   declared maximum there, since this leaf crate has no way to resolve a
+//!   `PopulationId` to anything. Kernel `ValueType::admits` refuses every
+//!   population pair outright: it never pairs `ValueType::Population` with
+//!   `Value::Population`, so every `(ValueType::Population(_),
 //!   Value::Population(_))` pair falls through to `admits`'s existing
 //!   catch-all and returns `false`.
 //! - `TypeEnvironment::record`/`tuple`/`evaluate_record`/`evaluate_tuple`
@@ -161,10 +163,11 @@ impl ValueType {
                 reference.object_type() == *object_type
             }
             // `ValueType::Population` does not pair with `Value::Population`
-            // here (see this module's doc comment): FR-089-AC-5 requires
-            // comparing the declared maximum against a resolved binding's
-            // own declared maximum, which this crate cannot resolve. This
-            // pair falls through to the catch-all below and returns `false`.
+            // here (see this module's doc comment): FR-089-AC-5's
+            // declared-maximum comparison is a QSL-layer check, performed by
+            // the model/evaluator once it resolves the binding. Kernel
+            // `admits` refuses population pairs outright; this pair falls
+            // through to the catch-all below and returns `false`.
             (
                 Self::Boolean
                 | Self::Integer
@@ -721,6 +724,18 @@ mod tests {
     fn tc_307_admits_checks_the_matching_variant_only() {
         assert!(ValueType::Boolean.admits(&Value::Boolean(true)));
         assert!(!ValueType::Boolean.admits(&Value::Integer(Integer::one())));
+    }
+
+    // TODO(FR-089): trace to the new AC (kernel `admits` refuses a
+    // population pair; see this module's doc comment and PR #295 review
+    // finding 2/3) once the spec agent adds it -- FR-089-AC-5 does not cover
+    // this, since it is about resolving a binding, which is QSL's job, not
+    // the kernel's.
+    #[test]
+    fn admits_refuses_a_population_pair() {
+        assert!(!ValueType::Population(5).admits(&Value::Population(PopulationId::from_digest(
+            digest(1)
+        ))));
     }
 
     /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it

@@ -172,6 +172,24 @@ mod tests {
         assert_eq!(compare_keys(&boolean, &integer), None);
     }
 
+    // TODO(FR-089): trace to the new AC (kernel `compare_keys` yields no key
+    // for a population; see PR #295 review finding 2/3) once the spec agent
+    // adds it.
+    #[test]
+    fn compare_keys_yields_no_key_for_a_population_pair() {
+        use crate::identity::PopulationId;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Population(PopulationId::from_digest(digest(1)));
+        let right = Value::Population(PopulationId::from_digest(digest(2)));
+        assert_eq!(compare_keys(&left, &right), None);
+    }
+
     /// TC-349 (M-2): a same-type `Value::Float` pair has no key, matching
     /// its exclusion from `=` in `crate::equality`'s leaf match.
     #[trace("TC-349")]

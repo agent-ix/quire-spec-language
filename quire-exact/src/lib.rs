@@ -24,17 +24,19 @@
 //! digest through its one public `from_digest` constructor (ADR-013 T-6),
 //! never by hashing internally.
 //!
+//! [`Value`]/[`ValueType`]: `ValueType::admits` never pairs
+//! `ValueType::Population(u64)` with `Value::Population(PopulationId)`
+//! (ADR-013 O-13 Population row, QC-21, FR-089). This is not a capability
+//! loss: FR-089-AC-5's declared-maximum comparison is a QSL-layer check --
+//! the model/evaluator resolves a `PopulationId` to its binding and compares
+//! the binding's own declared maximum there, work this leaf crate has no way
+//! to do -- so kernel `admits` refuses every population pair outright,
+//! falling through to its catch-all and returning `false` (the
+//! `ValueType::Enum` shape, by contrast, carries its variant set inline per
+//! ADR-013 O-14, so it needs no declaration lookup at all).
+//!
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
-//! - [`Value`]/[`ValueType`]: `ValueType::admits` does not pair
-//!   `ValueType::Population(u64)` with `Value::Population(PopulationId)`
-//!   (ADR-013 O-13 Population row, QC-21, FR-089): FR-089-AC-5 requires
-//!   comparing the declared `u64` against a resolved binding's own declared
-//!   maximum, and this crate cannot resolve a `PopulationId` to a binding,
-//!   so every such pair falls through to `admits`'s catch-all and returns
-//!   `false` (the `ValueType::Enum` shape, by contrast, carries its variant
-//!   set inline per ADR-013 O-14, so it needs no declaration lookup and is
-//!   not a capability loss).
 //! - the `key` and `equality` modules: `Value::Population` has no key and
 //!   compares under neither, matching QSL's own `value::equality`/
 //!   `value::key`, which refuse a population as an equality operand or key
