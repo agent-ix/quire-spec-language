@@ -2,12 +2,12 @@
 use std::collections::BTreeSet;
 
 use crate::complete::{
-    self, resolve_source_package, CapabilityId, CompleteCause, CompleteCode, Definition,
-    DefinitionCatalog, DefinitionDigest, DefinitionRef, DefinitionRole, Facet,
-    InvalidDefinitionComponent, Limits, ModelArtifact, ModelCatalog, PackageError, PackageLimits,
-    ProfileCatalog, ReaderAuthority, SourceDigest,
+    self, resolve_source_package, CapabilityId, CompleteCause, Definition, DefinitionCatalog,
+    DefinitionDigest, DefinitionRef, DefinitionRole, Facet, InvalidDefinitionComponent, Limits,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimits, ProfileCatalog, ReaderAuthority,
+    SourceDigest,
 };
-use crate::SourceIdentity;
+use crate::{Code, SourceIdentity};
 use ix_trace_rs::trace;
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [
@@ -201,7 +201,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     let parsed = std::sync::Arc::new(resolved_source(&definitions, &model));
     let unknown_catalog = DefinitionCatalog::new(definitions[1..].to_vec()).unwrap();
     let unknown = resolve_fixture(parsed.clone(), &unknown_catalog, &model).unwrap_err();
-    assert_eq!(unknown.code, CompleteCode::UnknownProfile);
+    assert_eq!(unknown.code, Code::UnknownProfile);
     assert_eq!(unknown.cause_tag, CompleteCause::UnsupportedSelection);
 
     let broken_text = format!(
@@ -223,7 +223,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     let inadmissible = resolve_fixture(broken.clone(), &unknown_catalog, &model).unwrap_err();
     assert_eq!(
         (inadmissible.code, inadmissible.cause_tag),
-        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
+        (Code::InvalidSyntax, CompleteCause::UnexpectedToken)
     );
     assert_refusal_authority(&inadmissible, broken.as_ref());
     assert_eq!(unknown.span, parsed.selections().profiles[0].identity_span);
@@ -246,7 +246,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         &model,
     )
     .unwrap_err();
-    assert_eq!(stale.code, CompleteCode::StaleDependency);
+    assert_eq!(stale.code, Code::StaleDependency);
     assert_eq!(stale.cause_tag, CompleteCause::RevisionMismatch);
     assert_refusal_authority(&stale, parsed.as_ref());
 
@@ -267,7 +267,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         &model,
     )
     .unwrap_err();
-    assert_eq!(digest_only.code, CompleteCode::StaleDependency);
+    assert_eq!(digest_only.code, Code::StaleDependency);
     assert_eq!(digest_only.cause_tag, CompleteCause::ByteDigestMismatch);
     assert_refusal_authority(&digest_only, parsed.as_ref());
 
@@ -294,7 +294,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     .unwrap();
     assert_eq!(
         stale_parsed.diagnostics()[0].code,
-        CompleteCode::StaleDependency
+        Code::StaleDependency
     );
 
     let mut missing_dependency = definitions.clone();
@@ -315,7 +315,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         &model,
     )
     .unwrap_err();
-    assert_eq!(missing.code, CompleteCode::MissingImport);
+    assert_eq!(missing.code, Code::MissingImport);
     assert!(matches!(missing.cause, PackageError::MissingDefinition(_)));
     assert_eq!(missing.cause_tag, CompleteCause::MissingSelection);
     assert_refusal_authority(&missing, missing_source.as_ref());
@@ -376,7 +376,7 @@ fn dependency_closure_refuses_logical_conflicts_and_duplicate_aliases() {
         &model,
     )
     .unwrap_err();
-    assert_eq!(conflict.code, CompleteCode::AmbiguousDeclaration);
+    assert_eq!(conflict.code, Code::AmbiguousDeclaration);
     assert_eq!(conflict.cause_tag, CompleteCause::ConflictingAuthority);
     assert_eq!(conflict.span, second_span);
     let PackageError::ConflictingDefinitions(details) = conflict.cause else {
@@ -404,7 +404,7 @@ fn dependency_closure_refuses_logical_conflicts_and_duplicate_aliases() {
         &model,
     )
     .unwrap_err();
-    assert_eq!(duplicate.code, CompleteCode::AmbiguousDeclaration);
+    assert_eq!(duplicate.code, Code::AmbiguousDeclaration);
     assert_eq!(duplicate.cause_tag, CompleteCause::AmbiguousName);
     assert!(matches!(
         duplicate.cause,
@@ -440,7 +440,7 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
     assert_eq!(
         (refusal.code, refusal.cause_tag),
         (
-            CompleteCode::InvalidPackage,
+            Code::InvalidPackage,
             CompleteCause::FeatureSetMismatch
         )
     );
@@ -594,7 +594,7 @@ fn compiled_models_cannot_substitute_for_or_be_substituted_by_definitions() {
         PackageLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::InvalidModelBinding);
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert!(matches!(refusal.cause, PackageError::MissingModel(_)));
     assert_eq!(refusal.cause_tag, CompleteCause::WrongModelSelection);
 
@@ -674,7 +674,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         },
     )
     .unwrap_err();
-    assert_eq!(artifact_refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(artifact_refusal.code, Code::ResourceExhausted);
     assert_eq!(artifact_refusal.cause, PackageError::ResourceLimit);
     assert_eq!(
         artifact_refusal.cause_tag,
@@ -692,7 +692,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, Code::ResourceExhausted);
     assert_eq!(refusal.cause, PackageError::ResourceLimit);
 }
 
@@ -846,9 +846,9 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
             assert_eq!(
                 diagnostic.code,
                 if invalid_component == "digest" {
-                    CompleteCode::InvalidDigest
+                    Code::InvalidDigest
                 } else {
-                    CompleteCode::InvalidIdentifier
+                    Code::InvalidIdentifier
                 }
             );
             assert_eq!(diagnostic.span.start.byte, expected_start);
