@@ -32,6 +32,7 @@
 pub(crate) mod support;
 
 mod assessment_artifact_kinds;
+mod checked_package_call;
 mod clause_kind_canonical;
 mod cli;
 mod collection_algebra;
