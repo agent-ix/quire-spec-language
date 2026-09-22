@@ -8,17 +8,17 @@
 //! [`crate::check`] module (ADR-011 §7.3 M-5, QSL-139/FR-068). This module
 //! is what remains at layer 5 (S6a): [`CheckedPackage::call`] and
 //! [`CheckedPackage::evaluate`] run already-checked code under a
-//! [`Meter`](super::Meter), reaching `check`'s checked-output state only
+//! [`Meter`](quire_exact::Meter), reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
 
 mod evaluate;
 mod family;
 
-use super::accounting::Meter;
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
 use crate::family::ReferenceEvaluation;
 use evaluate::{Callable, Machine};
+use quire_exact::Meter;
 
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
@@ -237,7 +237,7 @@ impl CheckedPackage {
         // should observe that as a limit today. `meter` (this method's own
         // parameter, `EvaluationEnv::local_meter` below) is the accounting
         // path that is actually charged.
-        let mut contract_meter = quire_exact::Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
         let mut env = family::EvaluationEnv {
             package: self,
             objects,
@@ -314,9 +314,8 @@ mod tests {
     use super::*;
     use crate::check::{CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations};
     use crate::forms::{BinaryOperator, Expression, FunctionDeclaration};
-    use crate::value::ScalarLimits;
     use ix_trace_rs::trace;
-    use quire_exact::Integer;
+    use quire_exact::{Integer, ScalarLimits};
 
     const UNLIMITED: ScalarLimits = ScalarLimits {
         integer_bits: u64::MAX,

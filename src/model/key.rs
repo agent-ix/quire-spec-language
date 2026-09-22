@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::model::refusal::ModelRefusalCause;
-use crate::value::length_amount;
+use quire_exact::length_amount;
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
 /// domain `quire.model.effective-declaration/v1`, minted only through

@@ -28,8 +28,9 @@
 //!    [`BooleanConnective`] operands — all under `quire.value.accounting/v1`
 //!    (QSL #119);
 //! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
-//!    and [`Incomplete`] reasons;
-//! 6. `quire.value.accounting/v1` metering through [`Meter`].
+//!    and [`Incomplete`](quire_exact::Incomplete) reasons;
+//! 6. `quire.value.accounting/v1` metering through
+//!    [`Meter`](quire_exact::Meter).
 //!
 //! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
 //! operate on exact bit patterns with soft-float arithmetic over big integers.
@@ -84,7 +85,6 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-mod accounting;
 // PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
 // `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
 // layer-3 sibling imports `check.rs` keeps") can name them by their real,
@@ -121,14 +121,16 @@ mod reference;
 pub(crate) mod text;
 mod unit;
 
-pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
-// `crate::model` reuses this crate-wide `usize -> u64` persistence/wire
-// conversion (PR #140 F7) rather than a bare `as u64` at its own charge sites.
-// FR-153's `crate::model::population` charges `lookup.*`, `population.visit`
-// and `collection.*` directly against this crate's own `ScalarLimitsV1`
-// meter (`quire.value.accounting/v1` is the one schedule those charge points
-// belong to), so `Charge` itself is exposed crate-wide the same way.
-pub(crate) use accounting::{length_amount, Charge};
+// QSL-166: `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
+// `Meter`, `ScalarLimits`, `Charge` and `length_amount` were this module's
+// own `accounting` submodule, re-exported from here. That submodule
+// duplicated `quire-exact/src/accounting.rs` byte-for-byte and is deleted;
+// every former consumer (`crate::model::population` included, which reused
+// this crate-wide re-export the same way FR-153 reuses this crate's own
+// `quire.value.accounting/v1` meter for `lookup.*`/`population.visit`/
+// `collection.*` charges) now imports `quire_exact::{..}` directly. One
+// definition, one import path -- no re-export shim stands in for the
+// deleted module.
 pub use collection::{
     construct_collection, form_collection, CardinalityBound, CollectionType, CollectionValue,
     EmptyCardinalityBound,

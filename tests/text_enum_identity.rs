@@ -10,15 +10,16 @@
 use std::cmp::Ordering;
 
 use ix_trace_rs::trace;
-use quire_exact::Integer;
+use quire_exact::{
+    ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
+};
 use quire_spec_language::complete;
 use quire_spec_language::value::{
-    admit_text, compare_enum, compare_text, ChargePoint, ComparisonOperator, EmptyTextBounds,
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, IllTyped,
-    IllTypedCause, Incomplete, InjectedDenial, InvalidSemanticGraph, InvalidUtf8, LimitKind, Meter,
-    NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Refusal, ScalarLimits,
-    SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType, NODE_KEY_DOMAIN,
-    UNICODE_TEXT_DEFINITION,
+    admit_text, compare_enum, compare_text, ComparisonOperator, EmptyTextBounds, EnumDeclaration,
+    EnumDeclarationPreimage, EnumMemberPreimage, EnumValue, IllTyped, IllTypedCause,
+    InvalidSemanticGraph, InvalidUtf8, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject,
+    Refusal, SemanticGraphCause, Text, TextPayload, TextProfile, TextProvenance, TextType,
+    NODE_KEY_DOMAIN, UNICODE_TEXT_DEFINITION,
 };
 use quire_spec_language::{Code, Limits, SourceIdentity};
 use serde_json::{json, Value};

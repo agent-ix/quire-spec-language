@@ -12,9 +12,9 @@ use std::str::Chars;
 
 use unicode_normalization::{Decompositions, Recompositions, UnicodeNormalization};
 
-use super::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop};
+use quire_exact::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 
 /// Definition identity of the normalization tables.
 pub const UNICODE_TEXT_DEFINITION: &str = "quire.value.text.unicode-17.0.0/v1";

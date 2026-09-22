@@ -144,11 +144,11 @@ use crate::model::key::{hex, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
     object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
 };
-use crate::value::{
-    length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
-    Incomplete as ScalarIncomplete, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
+use crate::value::CardinalityBound;
+use quire_exact::{
+    length_amount, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
+    Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
 };
-use quire_exact::Integer;
 
 // ---------------------------------------------------------------------------
 // PopulationAdmissionLimitsV1

@@ -124,7 +124,9 @@ mod value;
 // gates the type; an inherent method's own `pub`/`pub(crate)` is not listed
 // here separately) -- what changed is that their methods are now reachable
 // through that existing export, not merely from inside this crate.
-pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits};
+pub use accounting::{
+    length_amount, Charge, ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits,
+};
 pub use collection::{
     construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
     CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,

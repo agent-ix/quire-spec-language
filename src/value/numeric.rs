@@ -8,11 +8,10 @@
 
 use std::cmp::Ordering;
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::decimal::{sbits, sdigits, Decimal};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use super::rational::{Rational, RationalDomain};
-use quire_exact::{Integer, IntegerInterval};
+use quire_exact::{Charge, ChargePoint, Incomplete, Integer, IntegerInterval, LimitKind, Meter};
 
 /// A binary `+`, `-`, `*` or `/` before its operand values exist.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -388,10 +387,7 @@ pub fn evaluate_boolean(connective: BooleanConnective, meter: &mut Meter) -> Out
 }
 
 /// Charge `boolean.result-retain` for a decided connective result.
-pub(crate) fn retain_boolean(
-    result: bool,
-    meter: &mut Meter,
-) -> Result<bool, super::accounting::Incomplete> {
+pub(crate) fn retain_boolean(result: bool, meter: &mut Meter) -> Result<bool, Incomplete> {
     meter.charge(Charge::new(ChargePoint::BooleanResultRetain).results(1))?;
     Ok(result)
 }

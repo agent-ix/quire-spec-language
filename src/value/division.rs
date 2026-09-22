@@ -3,10 +3,9 @@
 //! `mod`, atomic pair admission and the named integer-division and
 //! integer-modulus charges.
 
-use super::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use super::definition::AdmittedIntegerDivision;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use quire_exact::{Integer, IntegerDomain};
+use quire_exact::{Charge, ChargePoint, Integer, IntegerDomain, LimitKind, Meter};
 
 /// A selectable `div`/`rem` law.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
