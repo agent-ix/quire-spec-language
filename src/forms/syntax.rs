@@ -96,12 +96,12 @@ pub enum ClauseKind {
 
 /// The [`ClauseKind`] a [`FunctionDeclaration::clause`] entry may declare.
 /// [`ClauseKind::Postcondition`] has no variant here: `pre(...)` legality
-/// belongs to `CheckedPackage::check_postcondition_expression`'s own
+/// belongs to `CheckedGraph::check_postcondition_expression`'s own
 /// `pre_anchor`/population wiring, which no `PackageDeclarations::functions`
 /// entry ever has, so the type itself rules the case out instead of a
 /// runtime check on an otherwise-valid `ClauseKind` value.
 ///
-/// [`CheckedPackage::check_postcondition_expression`]: crate::value::CheckedPackage::check_postcondition_expression
+/// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclaredClauseKind {
     /// A model invariant clause.
@@ -452,12 +452,12 @@ impl FunctionDeclaration {
     /// package hand an ordinary function `pre(...)` legality it never
     /// earned — `pre(...)` is legal only behind a real postcondition's own
     /// `pre_anchor`/population wiring
-    /// ([`CheckedPackage::check_postcondition_expression`], a standalone
+    /// ([`CheckedGraph::check_postcondition_expression`], a standalone
     /// expression check outside `PackageDeclarations::functions` entirely),
     /// which no package function has — so `DeclaredClauseKind` leaves that
     /// case unrepresentable rather than accepting it and refusing later.
     ///
-    /// [`CheckedPackage::check_postcondition_expression`]: crate::value::CheckedPackage::check_postcondition_expression
+    /// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
         parameters: Vec<(String, ValueType)>,

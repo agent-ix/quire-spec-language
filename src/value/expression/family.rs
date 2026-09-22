@@ -296,6 +296,7 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
     ) -> Result<super::Evaluation, crate::family::EvaluateFailure> {
         let function = env
             .package
+            .graph()
             .function_by_identity(*checked)
             .ok_or(crate::family::EvaluateRefusal::UnknownIdentity { identity: *checked })?;
         meter
@@ -324,11 +325,11 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
             .ok_or(crate::family::EvaluateRefusal::EnvironmentAlreadyConsumed)?;
         let callables = env.package.callables();
         Ok(super::evaluate::Machine::new(
-            env.package.scope(),
+            env.package.graph().scope(),
             &callables,
             env.objects,
             env.local_meter,
-            env.package.dispatch_tables(),
+            env.package.graph().dispatch_tables(),
         )
         .run(function.body, function.slots, arguments))
     }
@@ -439,15 +440,18 @@ mod family_contract_tests {
     /// unguarded -- and lands the guard with a real second call.
     #[test]
     fn evaluate_refuses_a_second_call_on_the_same_env() {
-        let package = PackageDeclarations {
+        let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
             ..PackageDeclarations::default()
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly");
-        let identity = package
+        let identity = graph
             .function_identity("f")
             .expect("f is declared in this package");
+        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // empty dependency closure -- this fixture declares no import.
+        let package = crate::package::CheckedPackage::link(graph, std::collections::BTreeMap::new());
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {

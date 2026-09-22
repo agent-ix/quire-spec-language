@@ -138,14 +138,17 @@ fn aliases() -> Vec<(String, ValueType)> {
 }
 
 fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> CheckedPackage {
-    PackageDeclarations {
+    let graph = PackageDeclarations {
         types,
         aliases: aliases(),
         functions,
         ..PackageDeclarations::default()
     }
     .check(CheckingLimits::default())
-    .unwrap()
+    .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import.
+    CheckedPackage::link(graph, std::collections::BTreeMap::new())
 }
 
 fn plain() -> CheckedPackage {
@@ -161,7 +164,7 @@ fn check(
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
-    package.check_expression(
+    package.graph().check_expression(
         parameters,
         expression,
         None,
@@ -927,7 +930,7 @@ fn check_linked(
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
         .collect();
-    package.check_expression(
+    package.graph().check_expression(
         parameters,
         expression,
         None,

@@ -8,11 +8,11 @@ use quire_exact::{
     Meter, ScalarLimits,
 };
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType, CompositeDeclaration,
-    CompositeShape, DefinitionLock, DefinitionReference, DefinitionRevision, Expression,
-    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth, IllTypedCause,
-    MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
+    CheckedPackage, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
+    CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference, DefinitionRevision,
+    Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth,
+    IllTypedCause, MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome, PackageDeclarations, Presence,
     ProvedInterval, QualifiedName, Rational, RationalDomain, Refusal, TypeEnvironment, Undefined,
     UniverseIdentity, Value, ValueType,
@@ -152,12 +152,12 @@ fn declarations(
     }
 }
 
-fn check(functions: Vec<FunctionDeclaration>) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+fn check(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     declarations(TypeEnvironment::default(), functions).check(CheckingLimits::default())
 }
 
 /// The single refusal of a package check.
-fn refusal(result: Result<CheckedPackage, Vec<CheckRefusal>>) -> CheckRefusal {
+fn refusal(result: Result<CheckedGraph, Vec<CheckRefusal>>) -> CheckRefusal {
     match result {
         Err(mut refusals) if refusals.len() == 1 => refusals.remove(0),
         Err(refusals) => panic!("one refusal, not {refusals:?}"),
@@ -166,7 +166,7 @@ fn refusal(result: Result<CheckedPackage, Vec<CheckRefusal>>) -> CheckRefusal {
 }
 
 fn unproved_decrease(
-    result: Result<CheckedPackage, Vec<CheckRefusal>>,
+    result: Result<CheckedGraph, Vec<CheckRefusal>>,
 ) -> (Vec<String>, MeasureObligation) {
     let refusal = refusal(result);
     assert_eq!(refusal.cause.code().as_str(), "undefined_expression");
@@ -354,7 +354,7 @@ fn zero_quotient() -> Expression {
     Expression::Rational(integer(0), integer(1))
 }
 
-fn unproved(result: Result<CheckedPackage, Vec<CheckRefusal>>) -> (Obligation, &'static str) {
+fn unproved(result: Result<CheckedGraph, Vec<CheckRefusal>>) -> (Obligation, &'static str) {
     let refusal = refusal(result);
     assert_eq!(refusal.cause.code().as_str(), "undefined_expression");
     let cause = refusal.cause.cause().unwrap();
@@ -502,9 +502,12 @@ fn chain(types: &TypeEnvironment, heads: &[i64]) -> Value {
 #[test]
 fn p06_each_call_charges_function_call() {
     let types = node_environment();
-    let package = declarations(types.clone(), vec![last()])
+    let graph = declarations(types.clone(), vec![last()])
         .check(CheckingLimits::default())
         .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import.
+    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
     let objects = ObjectEnvironment::default();
     let mut meter = Meter::new(UNLIMITED);
     let evaluation = package
@@ -908,6 +911,11 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         [(object(), vec![("n", FieldValue::Present(int(7)))])],
     )
     .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import. `converted`
+    // above is checked against `admitted` (S3, `CheckedGraph`) directly;
+    // evaluation needs the S4 `CheckedPackage` `admitted` links into.
+    let admitted = CheckedPackage::link(admitted, std::collections::BTreeMap::new());
     let convert = |bits: u64| {
         let mut meter = Meter::new(UNLIMITED);
         let evaluation = admitted
@@ -1052,7 +1060,7 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
 #[trace("TC-191", "FR-146-AC-6")]
 #[test]
 fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
-    let package = check(vec![
+    let graph = check(vec![
         down(),
         quotient(if_then(
             binary(BinaryOperator::NotEqual, name("b"), literal(0)),
@@ -1061,6 +1069,9 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )),
     ])
     .unwrap();
+    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // dependency closure -- this fixture declares no import.
+    let package = CheckedPackage::link(graph, std::collections::BTreeMap::new());
     let objects = ObjectEnvironment::default();
     let invoke = |function: &str, arguments: Vec<Value>, limits| {
         let mut meter = Meter::new(limits);
@@ -1164,6 +1175,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         binary(BinaryOperator::Greater, name("b"), literal(0)),
     );
     let checked = package
+        .graph()
         .check_expression(
             vec![
                 ("a".to_owned(), ValueType::Integer),
