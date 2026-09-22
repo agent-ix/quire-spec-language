@@ -168,6 +168,14 @@ impl ProjectedDeclarations {
             .collect::<Result<_, _>>()
             .map(Self)
     }
+
+    /// Consume `self` into its underlying name -> wire node id map, for
+    /// [`super::ImportView`]'s own exported-declaration data (FR-087-AC-4):
+    /// the verified binding's already-`select`ed exports, carried forward
+    /// without re-deriving them from the preimage a second time.
+    pub(crate) fn into_map(self) -> BTreeMap<String, WireNodeId> {
+        self.0
+    }
 }
 
 fn members<'a>(
@@ -424,15 +432,14 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     Ok(ProjectedDeclarations(declarations))
 }
 
+/// Identity-preimage builders shared by this module's tests and
+/// `library`'s verified-binding tests.
 #[cfg(test)]
-mod tests {
-    use ix_trace_rs::trace;
+pub(super) mod fixtures {
     use serde_json::json;
     use sha2::{Digest, Sha256};
 
-    use super::*;
-
-    fn hex(bytes: &[u8]) -> String {
+    pub(crate) fn hex(bytes: &[u8]) -> String {
         Sha256::digest(bytes)
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -441,7 +448,7 @@ mod tests {
 
     /// A single-node identity preimage: one nominal declaration node,
     /// digested from `node_seed`, declaring `qualified_name`.
-    fn one_node_preimage(node_seed: &[u8], qualified_name: &[&str]) -> Vec<u8> {
+    pub(crate) fn one_node_preimage(node_seed: &[u8], qualified_name: &[&str]) -> Vec<u8> {
         let reference =
             json!({"digest": hex(node_seed), "domain": "quire.checked-semantic-node/v1"});
         let node = json!({
@@ -482,6 +489,14 @@ mod tests {
         });
         serde_json::to_vec(&preimage).unwrap()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::fixtures::{hex, one_node_preimage};
+    use super::*;
 
     /// FR-307: the wire node id `library::package_identity` derives for a
     /// nominal declaration is the projection node's own `node_id` digest.
