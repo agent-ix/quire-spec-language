@@ -1,0 +1,221 @@
+---
+id: FR-088
+title: "S-3b: frame and clause identity, clause kind, qualified names, and type descriptors"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-005
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-087
+    type: traces_to
+---
+# FR-088: S-3b: frame and clause identity, clause kind, qualified names, and type descriptors
+
+## Description
+
+ADR-013 §7 slice **S-3** has no owning FR (QSL-158). QSL-158's comments
+split S-3 into S-3a (FR-087: T-1, T-3, O-15) and **S-3b** (this
+requirement): O-08 (frame identity), O-09's clause half (obligation
+identity is CG's own conformance work, out of this requirement's scope),
+O-10 (clause kind), O-11 (qualified names), O-14 (type descriptors) and
+C-26 (checked type node → kernel `ValueType`). S-3b does not gate QSL-6
+(#242, ADR-011 M-4), so it can overlap that work; it depends on the S-3a
+types this requirement's cited types are checked-graph members of
+(`CheckedGraph`, FR-087), but does not depend on `PackageNodeKey` or
+`library`.
+
+This requirement's gate is ADR-013 §7's "S-2, QC-10" for S-3 as a whole
+(clear: S-2 landed as PR #260 `97ec26e3`; QC-10 landed under STD-2, Done —
+see FR-087's Description for the verification detail) plus S-3a's
+`CheckedGraph` type (FR-087), since every object this requirement owns is a
+member of that checked graph.
+
+Three of this requirement's five owned items carry an ADR-013 instruction to
+turn prose into tests, not to restate the prose as the acceptance criterion:
+
+- O-15 (FR-087's, cited here only because the forbidden-construction
+  evidence rule also governs this requirement's own types): "`compile_fail`
+  tests for every forbidden construction."
+- O-10: "Wire-string totality tests in both directions; mutation tests on
+  each mapping."
+- C-26: "test per type-node form, including a sum."
+
+Acceptance Criteria FR-088-AC-4 (O-10) and FR-088-AC-9/AC-10 (C-26) enumerate
+the concrete forms these three instructions cover, rather than repeating the
+ADR's summary sentence as if it were itself testable.
+
+## Inputs
+
+- ADR-013 O-08 (frame identity), O-09 (clause half only; the obligation half
+  is CG conformance work, ADR-013 §7 lists no ticket for it), O-10 (clause
+  kind), O-11 (qualified names), O-14 (type descriptors), C-26 (checked type
+  node → kernel `ValueType`), O-04 (checked node identity, pre-existing:
+  S-1/S-2), O-06 (member identity, pre-existing: S-2), O-07 (source
+  occurrence identity, ADR-013 §3 O-07: occurrence key disambiguates two
+  structurally identical clauses; the full occurrence-key-keyed source map
+  is S-4's, this requirement uses only the key shape).
+- ADR-013 §6 lane-private table: `syntax::ClauseKind` (native-v1, canonical
+  owner O-10); native-v1's use of `ir::SymbolName` (canonical owner O-11);
+  `checking::types::NativeType` and native-v1's use of `ir::ValueType`
+  (canonical owner O-14).
+- ADR-013 §8 QC-15 (`:848`; the kernel `Value`/`ValueType` component types
+  this requirement's sum shape depends on, already added to the kernel row
+  by S-1/S-2: `VariantId`, an opaque digest newtype with one public
+  constructor from a digest, no dependency on `check` or `model`).
+- The layer-3 `check` core module ADR-011 §6.1 places the clause-kind enum
+  in (`CheckContext`, family checker trait, shared checked types,
+  `FamilyOutcome`, `FamilyRefusal`).
+
+## Outputs
+
+- One closed checked clause-kind enum, defined once in the layer-3 `check`
+  core (O-10). `syntax::ClauseKind` is untouched and gains no new variant
+  (it stays lane-private).
+- Frame identity (O-08): the checked node id of the `state` node with
+  `semantic_form: "frame"`, plus the resolution of its FR-340
+  `modifies`/`creates`/`deletes` node-id sets to their `DeclarationKey`s
+  through the model correspondence (O-04). This requirement implements the
+  identity and the resolution step only; FR-340's frame semantics
+  themselves are #210's.
+- Clause identity (O-09, clause half): the checked node id of the `claim`,
+  `temporal` or `protocol` node, with the O-07 occurrence key available to
+  disambiguate two structurally identical clauses at different source
+  occurrences. This requirement does not build `KaniObligationIdentity` or
+  any CG-side type.
+- Qualified names (O-11): the `QualifiedName` type (a non-empty sequence of
+  identifiers), and the checker's own name → node id resolution function.
+  No name → identity lookup function is exposed for use after the check
+  stage (R-06); the one documented exception (the `replay` facade's E9
+  lookup of the executor's `QualifiedName`, OQ-5) is S-3a/`replay`'s own
+  scope, not built here, though this requirement's `QualifiedName` type is
+  what that lookup resolves against.
+- Type descriptors (O-14): package types as checked graph nodes
+  (`scalar_type`, `composite_type`, `bounded_domain`), identified by node
+  id; `ValueTypeRef{Native(NativeValueType), Package(DeclarationKey)}` for
+  model field types; the sum-type checked node form, whose variants are
+  declared members (O-06) and whose kernel counterpart is the QC-15 sum
+  shape (opaque `VariantId`s, no `NodeKey`).
+- C-26: the total conversion function, checked type node → kernel
+  `ValueType`, owned by the QSL checker, covering every checked type-node
+  form including the sum form.
+
+## Behavior
+
+### One closed clause-kind enum; each downstream layer maps to it, never from it
+
+QSL SHALL define exactly one clause-kind enum in the layer-3 `check` core.
+Every conversion out of it (QSL → v2 wire strings; v2 → IR `ClauseKind`; IR
+→ RT observation kind; IR → CG obligation kind) is each layer's own owned
+mapping (ADR-013 O-10), not built by this requirement, but this
+requirement's own QSL → v2 direction SHALL be total with no `_` arm: every
+variant of the checked clause-kind enum maps to exactly one v2 `node_tag`/
+`semantic_form` pair or clause operation identity, and no v2 string this
+enum's wire spelling admits maps to zero or more than one variant.
+
+### Two identities resolve through the model correspondence, never by search
+
+Frame identity's `modifies`/`creates`/`deletes` sets (O-08) and any other
+lookup from a checked node id to its `DeclarationKey` in this requirement's
+scope SHALL resolve only through the model correspondence: the S3 checker
+records it on `CheckedGraph`, its own stage output (FR-087 T-1), and the S4
+link step carries it, unchanged, into the `CheckedPackage` it builds from
+that `CheckedGraph` — so a layer-4 or layer-5 consumer reads the
+correspondence from the `CheckedPackage` it holds (ADR-013 O-04's own text:
+"Consumers read the correspondence from the `CheckedPackage`"), without
+`check` itself ever naming `CheckedPackage` (FR-087-AC-9). No consumer of
+this requirement's types SHALL search a collection whose order no
+declaration defines to find a matching node (R-05).
+
+### Clause identity is the node id; the occurrence key, not the node id alone, disambiguates
+
+QSL SHALL identify a clause by the checked node id of its `claim`,
+`temporal` or `protocol` node. For two occurrences of a structurally
+identical clause (same node id, since node ids are content-addressed,
+ADR-013 O-04), QSL SHALL distinguish them only by their O-07 occurrence key
+(node id, role, ordinal), and SHALL NOT distinguish them by display text,
+source order, or collection iteration order (R-05). This requirement
+exposes the occurrence key as an input to the identity, not as a field
+CG's `KaniObligationIdentity` digest computes independently a second time.
+
+### Names resolve to node ids only inside the checker; no later lookup exists
+
+QSL SHALL resolve a `QualifiedName` to a node id only inside the check
+stage. This requirement SHALL NOT expose a name-resolution function whose
+signature would let a post-check module (a stage after S3, a backend
+repository, or a CLI command) look up a node by name (R-06). QSL SHALL
+treat a `QualifiedName` only as a declared component of an identity
+preimage (used, for example, in `DeclarationKey`'s or the checked node's own
+preimage where a domain package's declared name participates), and SHALL
+NOT treat it as an identity in its own right.
+
+### Package types are checked nodes; the kernel shape is a separate, evaluation-only representation
+
+QSL SHALL identify a package type (`scalar_type`, `composite_type`,
+`bounded_domain`) by its checked node id (record, tuple and union identity
+follow FR-143-AC-6). The kernel `ValueType` (already extended with the sum
+shape by S-1/S-2's QC-15 work) is the type's evaluation-time shape, produced
+from the checked node by C-26; it is not itself identity-bearing the way
+the checked node id is (ADR-013 O-14: "Equality | normalized (node id) ...
+Semantic (structural) for kernel `ValueType` during evaluation").
+
+### C-26 is total, and a sum keeps both its node id and its variant identities
+
+QSL's checker SHALL convert every checked type-node form to the kernel
+`ValueType` with no `_` arm: a source checked type node with no matching
+arm is a compile error, not a runtime refusal. For a sum-type checked node,
+the conversion SHALL preserve both the node's own id (unchanged, since the
+node id is never re-minted by a conversion) and each variant's `VariantId`
+(computed from the declaring sum and its member, QC-15); the resulting
+kernel sum shape SHALL carry no `NodeKey`, and a sum value produced from it
+SHALL carry its `VariantId`, never a variant index (ADR-013 O-14 "Sum
+types").
+
+## Constraints
+
+| ID | Constraint | Type | Validation |
+| --- | --- | --- | --- |
+| FR-088-CON-1 | This requirement builds the clause identity (the checked node id and its occurrence-key disambiguation) only. It does not build `KaniObligationIdentity`, the CG obligation-kind mapping, or any CG-owned type; those are CG conformance work with no #213 ticket (ADR-013 §7). | Design | Inspection |
+| FR-088-CON-2 | This requirement does not implement FR-340's frame semantics (the meaning of `modifies`/`creates`/`deletes`); it implements only the identity and the resolution of those sets' node ids to `DeclarationKey`s. Frame semantics are #210's. | Design | Inspection |
+| FR-088-CON-3 | This requirement does not build the occurrence-key-keyed source map itself (that is S-4, ADR-013 O-07/O-12); it uses only the occurrence-key shape (node id, role, ordinal) as an input to clause identity. | Design | Inspection |
+| FR-088-CON-4 | This requirement's `QualifiedName` type and the checker's name-resolution function do not implement the `replay` facade's E9 lookup (OQ-5); that lookup is `replay`'s own module (layer 6), built separately, though it resolves against this requirement's `QualifiedName` type. | Design | Inspection |
+| FR-088-CON-5 | This requirement does not modify `syntax::ClauseKind`, `checking::types::NativeType`, native-v1's use of `ir::ValueType`, or native-v1's use of `ir::SymbolName`: all four are lane-private (ADR-013 §6) and gain no new variant, field or consumer under R-09. | Design | Test (TC-257) |
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-088-AC-1 | Exactly one checked clause-kind enum is defined in the layer-3 `check` core; `syntax::ClauseKind` is unchanged and gains no variant. A whole-crate definition scan confirms one canonical enum and zero variants added to the lane-private one. | Test (TC-257) |
+| FR-088-AC-2 | Frame identity resolves each `modifies`/`creates`/`deletes` `NodeKey` to its `DeclarationKey` only by reading the model correspondence the S3 checker recorded on `CheckedGraph` and the S4 link step carried, unchanged, into the `CheckedPackage` a layer-4/layer-5 consumer holds (ADR-013 O-04: "Consumers read the correspondence from the `CheckedPackage`"); an adverse test that removes an entry from the correspondence and re-derives the same frame from source (rather than reusing the correspondence) demonstrates the resolution is not re-derived by search. | Test (TC-248) |
+| FR-088-AC-3 | Given two occurrences of a structurally identical clause (same checked node id) at two distinct source positions, the two clauses' occurrence keys (node id, role, ordinal) differ, and a consumer keying on (node id, occurrence key) together, not on node id alone, distinguishes them; an adverse test that changes display text, diagnostic text, or the collection order the clauses are iterated in leaves both clauses' identities (node id, occurrence key) unchanged (R-05). | Test (TC-249) |
+| FR-088-AC-4 | Every checked clause-kind variant maps to exactly one v2 `node_tag`/`semantic_form`/clause-operation-identity spelling, and every v2 spelling this enum's wire vocabulary defines maps back to exactly one variant: a wire-string totality test iterates every variant forward and every wire string backward and finds no gap and no ambiguity. A mutation test on the forward mapping function (each mutant flips one variant's target wire string, or deletes one match arm) fails the totality test for every mutant, with no mutant allow-listed (ADR-013 §4 preamble; ADR-012 §5.3 evidence convention). | Test (TC-250) |
+| FR-088-AC-5 | No function exists whose signature accepts a `QualifiedName` or a bare string and returns a node id or a declaration, callable from outside the check stage; a source and call-graph scan over every crate module confirms every call site of the checker's name-resolution function lies inside the check stage, with the sole documented exception being the `replay` facade's own E9 lookup (a separate module, not built by this requirement) never called from `check` itself. | Test (TC-251) |
+| FR-088-AC-6 | `QualifiedName` is used only as a declared component of an identity preimage (for example inside `DeclarationKey`'s or a checked node's own preimage where a name participates); no equality or hashing implementation on any identity type treats a `QualifiedName` as the sole identity-bearing field where a node id or digest is available instead. | Inspection (TC-258) |
+| FR-088-AC-7 | A package type's identity is its checked node id: two checked nodes admitted from textually different but structurally identical type declarations in two different packages produce two distinct node ids (per the O-04 package-scoped preimage). Within one package, two source *occurrences* of a reference to the same declared type (ADR-013 O-07's own term: "each source occurrence of a node is keyed by (node id, role, ordinal)" — for example the same type named as the field type of two different fields) resolve to the one node id the single declaration was minted with; this is not a claim about declaring a type twice; declaring a structurally identical type a second time under a colliding name is a name-binding refusal (a duplicate declaration), a different criterion, not a second occurrence of the first node id, and is out of this criterion's scope. This repository's own precedent for a duplicate name/binding — `checking::composed::proofs::CorrespondenceError::DuplicateDeclaration`, `src/checking/composed/proofs/correspondence.rs:96` — refuses rather than admits with a shared id. | Test (TC-259) |
+| FR-088-AC-8 | `ValueTypeRef` is exactly the two-member union `{Native(NativeValueType), Package(DeclarationKey)}`; no third variant exists, and no model field type is represented by a bare `NodeKey` or a raw string type name. | Inspection (TC-260) |
+| FR-088-AC-9 | C-26's conversion function is total: for every checked type-node form (`scalar_type`, `composite_type`, `bounded_domain`, and the sum form), a test constructs a checked node of that form and confirms the function returns a kernel `ValueType` with no panic, no `_`-arm fallback, and no lossy substitution; a checked type-node form added without a corresponding match arm fails to compile (`clippy::wildcard_enum_match_arm`, following ADR-011 §5's convention for other exhaustive maps). | Test (TC-252) |
+| FR-088-AC-10 | For the sum form specifically, the source checked node's own id is not re-minted by C-26's conversion (it is the same content-addressed id the node carried before conversion, read from `CheckedGraph`/`CheckedPackage`, not a value the kernel shape carries); C-26's output kernel `ValueType` carries, per variant, a `VariantId` computed from the declaring sum and that member, and the kernel shape carries no `NodeKey` anywhere in its variant representation. A sum value built from this conversion carries its `VariantId`, and an adverse test confirms no code path reads or stores a bare variant index in place of the `VariantId`. | Test (TC-252) |
+
+## Dependencies
+
+- [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
+  §1 R-05, R-06, §3 O-04, O-06, O-07, O-08, O-09, O-10, O-11, O-14, §4 C-26,
+  §6 (lane-private table), §7 (the S-3 slice row).
+- [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
+  §2.1 (admitted types), §6.1 (layer-3 `check` core position).
+- [FR-087](FR-087-typestate-and-cross-package-node-key.md): S-3a's
+  `CheckedGraph` is the type this requirement's checked nodes are members
+  of, and is where the S3 checker records the model correspondence this
+  requirement's frame-identity resolution (FR-088-AC-2) reads, through the
+  `CheckedPackage` the S4 link step carries it into (ADR-013 O-04); this
+  requirement does not depend on FR-087's `PackageNodeKey` or `library`
+  module.
+- [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
+- Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split).
+
+## Status
+
+Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
+2026-09-21 comment on that ticket). Not yet implemented.

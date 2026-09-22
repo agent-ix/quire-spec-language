@@ -29,10 +29,11 @@ a real dependency cut — for example, `check` calling back into
 `evaluate::Machine` for a shortcut, or a careless implementation writing the
 new checking content into the existing `checking` module by name confusion,
 or merging the two. It also verifies FR-068-AC-10's other direction: that
-`value::expression`'s own re-export back into `check` is exactly the
-closed, two-name, non-glob list AC-10 requires, since nothing else in this
-requirement's test cases inspects it and `pub use check::*;` would otherwise
-pass every other criterion. Scope: FR-068-AC-3, FR-068-AC-10.
+`value::expression`'s own re-export back into `check` (and, after FR-087,
+into `package` for the relocated `CheckedPackage`) is exactly the closed,
+non-glob list AC-10 (as amended by FR-087) requires, since nothing else in
+this requirement's test cases inspects it and a glob re-export would
+otherwise pass every other criterion. Scope: FR-068-AC-3, FR-068-AC-10.
 
 ## Test Procedure
 
@@ -56,9 +57,15 @@ pass every other criterion. Scope: FR-068-AC-3, FR-068-AC-10.
 5. Compile the crate and confirm the flagged-absent conditions hold at the
    resolved (post-macro-expansion) level, not only at the textual `use`-line
    level, in case a macro or re-export obscures a textual scan.
-6. Read `value::expression`'s own re-export line naming `check`'s types
-   (`pub use crate::check::{...};`) and record its exact name list and
-   whether it is written as a glob.
+6. Read `value::expression`'s own re-export line(s) naming `check`'s and
+   `package`'s relocated types and record each exact name list and whether
+   either is written as a glob. **Amended by FR-087 (owner ruling on
+   QSL-158, 2026-09-21): `CheckedPackage` relocates out of `check` into
+   layer-4 `package` (FR-087-AC-9), so the single two-name line this step
+   originally checked splits into two single-name re-exports from two
+   different crate-absolute paths** — `pub use crate::check::{CheckedExpression};`
+   and `pub use crate::package::{CheckedPackage};` — and this step now
+   reads both lines, not one.
 
 ## Expected Results
 
@@ -71,7 +78,12 @@ pass every other criterion. Scope: FR-068-AC-3, FR-068-AC-10.
 - Step 5: the resolved import graph confirms the same absence a textual scan
   found; a discrepancy (a hidden edge a textual scan misses) fails this
   step and names the actual resolved path.
-- Step 6: the line reads exactly `pub use crate::check::{CheckedPackage,
-  CheckedExpression};` — precisely these two names, in any order, and not a
-  glob; anything else (a third name, a glob `pub use crate::check::*;`, or a
-  path other than `crate::check`) fails this step.
+- Step 6 (amended by FR-087): the two lines read exactly
+  `pub use crate::check::{CheckedExpression};` and
+  `pub use crate::package::{CheckedPackage};` — one name each, from their
+  own named path, not a glob; a third name on either line, a glob, a path
+  other than `crate::check`/`crate::package`, or `CheckedPackage` still
+  named on the `crate::check` line, fails this step. (Pre-FR-087, this step
+  read the single line `pub use crate::check::{CheckedPackage,
+  CheckedExpression};`; that form is superseded, not merely narrowed, once
+  `CheckedPackage` no longer lives in `check` at all.)
