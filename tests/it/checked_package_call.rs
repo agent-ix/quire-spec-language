@@ -3,23 +3,33 @@
 //! `CheckedPackage::call`/refusal fixtures formerly in
 //! `value::expression::mod`'s own `#[cfg(test)] mod tests` reach only the
 //! crate's public API (`PackageDeclarations::check`, `CheckedPackage::call`,
-//! and the public refusal types) -- unlike
-//! `function_slots_are_stable_across_declaration_order` (kept in
-//! `value::expression::mod`, which still needs that module's same-crate
-//! read of `check::CheckedGraph`'s `pub(crate)` `function_states()`
-//! accessor), so these three belong in this crate's own `tests/it`
-//! integration binary, which is allowed to reach both the `forms`-owned
-//! fixture types (`FunctionDeclaration`, `Expression`, `BinaryOperator`)
-//! and the `check`/`value::expression` checking-and-evaluation pipeline in
-//! the same test (QSL-183's own audit: "an integration test under
-//! tests/it/ that is allowed to use both layers").
+//! and the public refusal types), so they moved here in #323.
+//!
+//! `function_slots_are_stable_across_declaration_order` (formerly kept in
+//! `value::expression::mod` because it read that module's same-crate
+//! `check::CheckedGraph::function_states()`, `pub(crate)`) also moves here
+//! now, rewritten rather than relocated verbatim: `function_states()` itself
+//! has no public accessor and nothing outside this crate needs one, but the
+//! property it existed to guard -- a checked function's own evaluation-slot
+//! count never leaking onto a *different* function's frame, regardless of
+//! declaration order -- is independently observable through
+//! `CheckedGraph::check_expression`/`CheckedPackage::evaluate` (both
+//! public): `evaluate`'s `Machine` resizes each callee's frame from exactly
+//! this per-function slot count (`evaluate.rs`'s `frame.resize(callable.
+//! slots.max(frame.len()), None)`) when a checked expression's own `Call`
+//! node runs, so a scrambled count surfaces as a wrong or undefined result,
+//! not only as an internal accessor mismatch. See
+//! `evaluated_call_slots_are_stable_across_declaration_order` below --
+//! renamed off the original because "slots" is no longer read directly, and
+//! kept on `TC-174`/`FR-068-AC-5` because it is still exactly that test
+//! case's own property, exercised through the public surface instead.
 
 use ix_trace_rs::trace;
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
-    BinaryOperator, CheckCause, CheckRefusal, CheckedGraph, CheckedPackage, CheckingLimits,
-    Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome, PackageDeclarations,
-    QualifiedName, Value, ValueType,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    CheckingLimits, Expression, FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome,
+    PackageDeclarations, QualifiedName, Value, ValueType,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -129,6 +139,83 @@ fn call_resolves_by_name_regardless_of_declaration_order() {
                 &objects,
                 &mut meter,
             )
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", two.outcome),
+            format!(
+                "{:?}",
+                Outcome::Completed(Value::Integer(Integer::from(7_i64)))
+            )
+        );
+    }
+}
+
+/// TC-174 steps 1-4 (formerly `value::expression::mod::tests::
+/// function_slots_are_stable_across_declaration_order`, QSL-183 edge cut):
+/// a standalone expression that calls into a declared function, checked and
+/// evaluated through the public `CheckedGraph::check_expression`/
+/// `CheckedPackage::evaluate` pair, resolves to the correct result
+/// regardless of the package's declaration order -- the same property the
+/// original fixture read off `function_states()` directly, now observed
+/// through `evaluate`'s own per-function frame allocation instead. `two`'s
+/// body needs a `let`-bound local beyond its two parameters, so a
+/// declaration-order bug that hands it `one`'s (smaller) slot count would
+/// produce a wrong or undefined result here, not a passing one.
+#[trace("TC-174", "FR-068-AC-5")]
+#[test]
+fn evaluated_call_slots_are_stable_across_declaration_order() {
+    let objects = ObjectEnvironment::default();
+    for functions in [
+        vec![function_one(), function_two()],
+        vec![function_two(), function_one()],
+    ] {
+        let graph = declarations(functions)
+            .check(CheckingLimits::default())
+            .unwrap();
+        let call_one = graph
+            .check_expression(
+                Vec::new(),
+                &Expression::Call {
+                    name: "one".to_owned(),
+                    arguments: vec![Expression::Integer(Integer::from(5_i64))],
+                },
+                Some(&ValueType::Integer),
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let call_two = graph
+            .check_expression(
+                Vec::new(),
+                &Expression::Call {
+                    name: "two".to_owned(),
+                    arguments: vec![
+                        Expression::Integer(Integer::from(3_i64)),
+                        Expression::Integer(Integer::from(4_i64)),
+                    ],
+                },
+                Some(&ValueType::Integer),
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let package = link(graph);
+
+        let mut meter = Meter::new(UNLIMITED);
+        let one = package
+            .evaluate(&call_one, Vec::new(), &objects, &mut meter)
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", one.outcome),
+            format!(
+                "{:?}",
+                Outcome::Completed(Value::Integer(Integer::from(5_i64)))
+            )
+        );
+
+        let mut meter = Meter::new(UNLIMITED);
+        let two = package
+            .evaluate(&call_two, Vec::new(), &objects, &mut meter)
             .unwrap();
         assert_eq!(
             format!("{:?}", two.outcome),
