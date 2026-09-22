@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: immutable native checked artifacts and source-bound static
 //! identity, plus ADR-013 T-1 (FR-087, QSL-158 S-3a)'s canonical, layer-4
-//! `CheckedPackage`/`EmittedPackage` typestate (this module's [`checked`]
-//! submodule). The two are unrelated: this file's own top-level
-//! `NativePackage` wraps the lane-private `checking::CheckedPackage<'a>`
-//! (ADR-013 §6), referenced here by its full path rather than a bare `use`
-//! import, precisely so that name stays distinct from [`checked::CheckedPackage`]
-//! in this module's own item namespace (both are reachable as
+//! [`CheckedPackage`]/[`EmittedPackage`] typestate (defined in this module's
+//! private `checked` submodule and re-exported below). The two are unrelated:
+//! this file's own top-level `NativePackage` wraps the lane-private
+//! `checking::CheckedPackage<'a>` (ADR-013 §6), referenced here by its full
+//! path rather than a bare `use` import, precisely so that name stays
+//! distinct from [`CheckedPackage`] in this module's own item namespace (both
+//! are reachable as
 //! `crate::package::*` items once `checked`'s canonical type is re-exported
 //! below) -- `src/package/features.rs` and `src/package/view.rs` keep their
 //! own pre-existing, unrelated `use crate::checking::CheckedPackage;`
