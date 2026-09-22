@@ -211,6 +211,25 @@ pub struct PackageDeclarations {
     /// for the evaluator. Built by the same caller, with function indices
     /// already resolved against `functions`.
     pub dispatch_tables: Vec<DispatchTable>,
+    /// ADR-013 O-04 (PR #300 review finding 1): the checked-node-id ->
+    /// domain-declaration correspondence entries this package's declarations
+    /// are already known to require, in the same "built by the caller (the
+    /// `model` bridge); the checker only records/resolves against it"
+    /// division `dispatch_operations`/`dispatch_tables` above already use.
+    /// `check` records every entry here onto `CheckedGraph`'s
+    /// [`super::identity::ModelCorrespondence`] verbatim -- it never derives
+    /// or searches for one itself (R-05) -- so [`super::CheckedGraph::resolve_declaration`]
+    /// reads back exactly what a caller supplied. Always empty from every
+    /// production call site today: no #213 slice before S-3b gives `model`'s
+    /// bridge a domain-package declaration to resolve a
+    /// `crate::model::key::DeclarationKey` from in the first place
+    /// (FR-088-CON-2 leaves FR-340's frame semantics, the first real
+    /// consumer, to #210). The field exists now so that bridge has a real
+    /// place to hand its entries to, and so this crate's own tests can
+    /// exercise the recording step through a genuine `check()` run rather
+    /// than a hand-built `ModelCorrespondence` (`check/mod.rs`'s own test
+    /// module).
+    pub model_correspondence: Vec<(quire_exact::NodeKey, crate::model::key::DeclarationKey)>,
 }
 
 /// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call

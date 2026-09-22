@@ -218,4 +218,10 @@ types").
 ## Status
 
 Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
-2026-09-21 comment on that ticket). Not yet implemented.
+2026-09-21 comment on that ticket). S-3b implemented by #300: AC-1, AC-2,
+AC-3, AC-4, AC-7, AC-9 and AC-10 are backed by real `check()`-driven tests
+(TC-257, TC-248, TC-249, TC-250, TC-259, TC-252). AC-5 is enforced for its
+`QualifiedName` half only (TC-251); the "or a bare string" half is
+investigated and documented as a gap, not enforced (see
+`tests/it/name_resolution_confinement.rs`'s own module doc). AC-6 (TC-258)
+and AC-8 (TC-260) remain unimplemented, out of #300's scope.

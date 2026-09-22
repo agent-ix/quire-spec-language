@@ -152,6 +152,17 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// (`value::expression::family`'s `tests` module) for the golden-digest test
 /// that closes that gap.
 ///
+/// **`bytes`, `write_bytes` and `write_str` are `pub(super)` (PR #300 review
+/// finding 10, QSL-158 S-3b):** `check::identity` (a sibling submodule under
+/// `check`) shares this exact length-prefixed preimage writer for its own
+/// O-04 type-declaration/variant identities, instead of carrying a
+/// byte-identical copy. Both live under `check`, so `pub(super)` (visible to
+/// `check` and everything under it) is exactly the scope this sharing
+/// needs, no wider; `nodes`/`writes`/`input_bytes`/`input_bytes_limit` stay
+/// private -- `identity.rs`'s minters have no `StageLimits` budget to
+/// report against (they pass `u64::MAX`, see [`Self::new`]'s own doc) and
+/// read only the finished bytes, through [`Self::finish`].
+///
 /// **`nodes`/`writes`/`input_bytes` (QSL-153).** Running counters alongside
 /// the byte buffer, read back only by [`mint_declaration_identity`] as
 /// [`IdentityPreimageMetrics`] -- never written into the buffer itself, so
@@ -176,7 +187,7 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// leave capped at that point because a capped preimage's identity is never
 /// used: `check` refuses before hashing it (`ValueFunctionFamily::check`'s
 /// own doc).
-struct Preimage {
+pub(super) struct Preimage {
     bytes: Vec<u8>,
     nodes: u64,
     writes: u64,
@@ -185,7 +196,13 @@ struct Preimage {
 }
 
 impl Preimage {
-    fn new(input_bytes_limit: u64) -> Self {
+    /// `input_bytes_limit` bounds this preimage's own buffer growth (PR
+    /// #302 review finding 4): pass `u64::MAX` for the pre-QSL-153,
+    /// unbounded behavior every caller but `ValueFunctionFamily::check`
+    /// keeps -- that includes every `check::identity` minter (PR #300
+    /// review finding 10), which has no `StageLimits` budget of its own to
+    /// report against.
+    pub(super) fn new(input_bytes_limit: u64) -> Self {
         Self {
             bytes: Vec::new(),
             nodes: 0,
@@ -203,7 +220,7 @@ impl Preimage {
         self.input_bytes <= self.input_bytes_limit
     }
 
-    fn write_bytes(&mut self, bytes: &[u8]) {
+    pub(super) fn write_bytes(&mut self, bytes: &[u8]) {
         self.writes += 1;
         // A `u64` length prefix, plus the bytes themselves.
         self.input_bytes = self
@@ -218,8 +235,15 @@ impl Preimage {
         self.bytes.extend_from_slice(bytes);
     }
 
-    fn write_str(&mut self, text: &str) {
+    pub(super) fn write_str(&mut self, text: &str) {
         self.write_bytes(text.as_bytes());
+    }
+
+    /// The finished buffer, for a minter (`check::identity`'s own,
+    /// PR #300 review finding 10) that has no `IdentityPreimageMetrics` of
+    /// its own to report and only wants the bytes to hash.
+    pub(super) fn finish(self) -> Vec<u8> {
+        self.bytes
     }
 
     fn write_u64(&mut self, value: u64) {
@@ -359,7 +383,12 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
 // second, parallel integer serialization where one canonical, tested one
 // already exists and is already trusted for identity purposes -- so they
 // are left on `Integer::to_string()` deliberately, not as an oversight.
-fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
+// PR #300 review finding 3 (QSL-158 S-3b): `pub(super)` so `check::identity`
+// can encode a package type declaration's own declared shape (composite
+// field types, a bounded domain's element type, and so on) into its O-04
+// preimage through this exact, already-tested encoding, rather than
+// inventing a second one.
+pub(super) fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
     match value_type {
         ValueType::Boolean => out.write_str("boolean"),
         ValueType::Integer => out.write_str("integer"),

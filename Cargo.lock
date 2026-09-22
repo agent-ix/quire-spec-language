@@ -1322,6 +1322,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "unicode-normalization",
+ "xtask",
 ]
 
 [[package]]

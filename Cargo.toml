@@ -51,9 +51,20 @@ tempfile = "=3.27.0"
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
+# whole-crate `syn` scanner instead of a second, byte-identical copy; a
+# workspace path dependency, dev-only, so it adds no edge to any shipped
+# build (PR #300 review, QSL-158 S-3b).
+xtask = { path = "xtask" }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
 quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
-syn = { version = "=2.0.119", features = ["full"] }
+# TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
+# walks a parameter/return type's own AST directly (an exact path-segment
+# match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted
+# tree, so it needs only "full" (the full grammar) and "visit" -- PR #300
+# review round 2, L5 dropped the "extra-traits" feature that used to exist
+# solely to put `Debug` on `syn::Type` for that string search.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 
 [[bin]]
 name = "quire-spec"

@@ -131,19 +131,19 @@ operational validation remains outside this audit-only plan.
 | TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | ✅ Passed locally |
 | TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158 |
 | TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Planned; QSL-158 |
-| TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | 🚧 Planned; QSL-158 |
-| TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | 🚧 Planned; QSL-158 |
-| TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | 🚧 Planned; QSL-158 |
-| TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | 🚧 Planned; QSL-158 |
-| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | 🚧 Planned; QSL-158 |
+| TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | ✅ Passed locally; #300 |
+| TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | ✅ Passed locally; #300 |
+| TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | ✅ Passed locally; #300 |
+| TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | ✅ Passed locally; #300 (the `QualifiedName` half only -- AC-5's "or a bare string" half is investigated, not enforced; see `tests/it/name_resolution_confinement.rs`'s own module doc) |
+| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300 |
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | 🚧 Planned; QSL-158 |
 | TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | 🚧 Planned; QSL-158 |
 | TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
 | TC-256 | check and package's dependency edge is one direction, bounded to CheckedGraph and {ImportView, LibraryLock} | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
-| TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | 🚧 Planned; QSL-158 |
-| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 |
-| TC-259 | A package type's identity is its checked node id, package-scoped | Unit | P1 | FR-088-AC-7 | 🚧 Planned; QSL-158 |
-| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Planned; QSL-158 |
+| TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
+| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 (not in #300's scope) |
+| TC-259 | A package type's identity is its checked node id, package-scoped | Unit | P1 | FR-088-AC-7 | ✅ Passed locally; #300 |
+| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Planned; QSL-158 (not in #300's scope) |
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
