@@ -19,7 +19,6 @@ use crate::value::collection::CollectionType;
 use crate::value::composite::{Value, ValueType};
 use crate::value::equality::EqualityOperator;
 use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
-use crate::value::rational::rational_domain_result_of;
 use quire_exact::{Integer, IntegerInterval};
 
 /// One step of a stable path.
@@ -763,7 +762,7 @@ impl<'a> Definedness<'a> {
                 if *operator == ArithmeticOperator::Divide && !right.excludes_zero() {
                     return Err(Self::refuse(node, Obligation::Nonzero));
                 }
-                if domain.contains_domain(&rational_domain_result_of(left, *operator, right)) {
+                if domain.contains_domain(&left.result_of(*operator, right)) {
                     Ok(())
                 } else {
                     Err(Self::refuse(node, Obligation::RationalRange))

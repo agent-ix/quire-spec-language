@@ -5,65 +5,38 @@
 //! Every intermediate is an exact integer or reduced rational; no binary
 //! floating-point value exists anywhere on this path.
 //!
-//! [`DecimalRepresentation`], [`Decimal`], [`RoundingMode`] and
-//! [`DecimalOperation`] are `quire_exact`'s own canonical items, re-exported
-//! below rather than duplicated: diffed method-for-method against
-//! `quire-exact/src/decimal.rs` before the cut, every method these types
-//! carry (`new`, `coefficient`, `scale`, `normalized`, `from_representation`,
-//! `representation`, `compare`, `numerically_equal`, `as_str`, `from_code`)
-//! is identical and reachable straight off the re-exported type.
-//! `DecimalRepresentation::to_rational` is identical too but `pub(crate)`
-//! upstream (its own H-5 doc comment: an unmetered caller-supplied scale is
-//! a real out-of-memory risk), so [`decimal_representation_to_rational`]
-//! ports it as a free function over the surviving public API for
-//! `super::equality` and `super::ieee`, which still call it.
+//! [`DecimalRepresentation`], [`Decimal`], [`RoundingMode`],
+//! [`DecimalOperation`], [`DecimalRepresentation::to_rational`],
+//! `compare_shifted`, `sbits`, `sdigits` and `power_of_ten_bits` are
+//! `quire_exact`'s own canonical items, re-exported below rather than
+//! duplicated: every method and function these carry is reachable straight
+//! off the re-exported type or name; none of it is duplicated here.
 //!
 //! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
-//! evaluation engine, `Placement`/`DecimalType::placement`/`round_at_target`
-//! for `super::quantity`'s unit-graph decimal targets, and the
-//! `compare_shifted`/`sbits`/`sdigits`/`power_of_ten_bits` helpers
-//! `super::equality`, `super::numeric` and `super::quantity` also call
-//! directly) all stay local, unchanged. Two independent reasons hold each of
-//! them here for this slice, both recorded in Linear QSL-131:
-//!
-//! - `DecimalType::new` and `evaluate_decimal` return this crate's own
-//!   `IllTyped` (`value::comparison`) and `Outcome`/`Refusal`
-//!   (`value::outcome`), a strict superset of `quire_exact`'s kernel
-//!   `IllTyped`/`Outcome`/`Refusal` -- out of scope here, blocked on
-//!   QSL-166 and QSL-174.
-//! - `DecimalResult` and `DecimalLoss` are constructed only through their
-//!   own private struct literals inside that engine; `quire_exact` exposes
-//!   neither type with a public constructor (only accessors), so even once
-//!   the `Outcome`/`Refusal` coupling above is resolved, this crate's
-//!   engine could not build a `quire_exact::DecimalResult`/`DecimalLoss`
-//!   without one.
-//! - `compare_shifted`/`sbits`/`sdigits`/`power_of_ten_bits` are themselves
-//!   plain `Integer` arithmetic with no `Outcome`/`Refusal` coupling at
-//!   all, and byte-identical to `quire_exact`'s own copies, but those
-//!   copies are `pub(crate)` upstream (invisible outside that crate); this
-//!   crate's own modules call them directly, so they stay.
+//! evaluation engine and `Placement`/`DecimalType::placement`/
+//! `round_at_target` for `super::quantity`'s unit-graph decimal targets)
+//! stay local. `DecimalType::new` and `evaluate_decimal` return this crate's
+//! own `IllTyped` (`value::comparison`) and `Outcome`/`Refusal`
+//! (`value::outcome`), a strict superset of `quire_exact`'s kernel
+//! `IllTyped`/`Outcome`/`Refusal` -- out of scope here, blocked on QSL-166
+//! and QSL-174 -- and `DecimalResult`/`DecimalLoss` are constructed only
+//! through their own private struct literals inside that engine;
+//! `quire_exact` exposes neither type with a public constructor (only
+//! accessors), so even once the `Outcome`/`Refusal` coupling above is
+//! resolved, this crate's engine could not build a
+//! `quire_exact::DecimalResult`/`DecimalLoss` without one.
 
 use std::cmp::Ordering;
 
 use super::comparison::{IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::{rational_div, rational_divided_by_power_of_ten, Rational};
+use super::rational::Rational;
+pub use quire_exact::{
+    compare_shifted, power_of_ten_bits, sbits, sdigits, Decimal, DecimalOperation,
+    DecimalRepresentation, RoundingMode,
+};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
-pub use quire_exact::{Decimal, DecimalOperation, DecimalRepresentation, RoundingMode};
-
-/// The exact mathematical value of `representation`. Ported from
-/// `quire_exact::DecimalRepresentation::to_rational`, which is `pub(crate)`
-/// there (see the module doc); this crate still needs it outside
-/// `value::decimal`.
-pub(crate) fn decimal_representation_to_rational(
-    representation: &DecimalRepresentation,
-) -> Rational {
-    rational_divided_by_power_of_ten(
-        &Rational::from_integer(representation.coefficient().clone()),
-        u64::from(representation.scale()),
-    )
-}
 
 /// `DecimalLoss { exact_numerator, exact_denominator, rounded_coefficient,
 /// rounded_scale, mode }`. The exact value is a canonical rational.
@@ -276,39 +249,6 @@ impl DecimalType {
         let coefficient = normalized.coefficient();
         compare_shifted(coefficient, shift, &self.lower).is_ge()
             && compare_shifted(coefficient, shift, &self.upper).is_le()
-    }
-}
-
-/// Compare `value × 10^shift` with `bound` without materializing the power.
-pub(crate) fn compare_shifted(value: &Integer, shift: u64, bound: &Integer) -> Ordering {
-    let sign = |integer: &Integer| {
-        if integer.is_zero() {
-            Ordering::Equal
-        } else if integer.is_negative() {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    };
-    match sign(value).cmp(&sign(bound)) {
-        Ordering::Equal if value.is_zero() => Ordering::Equal,
-        Ordering::Equal => {
-            let magnitude = shifted_digits(value, shift)
-                .cmp(&bound.decimal_digits())
-                .then_with(|| {
-                    // Equal digit counts bound `shift` by the materialized bound.
-                    value
-                        .abs()
-                        .mul(&Integer::power_of_ten(shift))
-                        .cmp(&bound.abs())
-                });
-            if value.is_negative() {
-                magnitude.reverse()
-            } else {
-                magnitude
-            }
-        }
-        unequal => unequal,
     }
 }
 
@@ -657,12 +597,10 @@ impl DecimalType {
     fn round_at_target(&self, value: &Rational) -> Result<Placed, Refusal> {
         let (numerator, denominator) = (value.numerator(), value.denominator());
         // A reduced denominator is positive, so the division exists.
-        let units = rational_div(
-            &Rational::from_integer(
-                numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
-            ),
-            &Rational::from_integer(denominator.clone()),
+        let units = Rational::from_integer(
+            numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
         )
+        .div(&Rational::from_integer(denominator.clone()))
         .ok_or(Refusal::InexactDecimal)?;
         let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
         Ok(Placed {
@@ -851,42 +789,6 @@ fn expand_one((coefficient, shift): Shifted<'_>) -> Integer {
         coefficient.clone()
     } else {
         coefficient.mul(&Integer::power_of_ten(shift))
-    }
-}
-
-/// `bits(10^k)`, derived without allocating the power of ten.
-pub(crate) fn power_of_ten_bits(shift: u64) -> Integer {
-    Integer::power_product_bits(
-        &Integer::one(),
-        &Integer::from(10_i64),
-        &Integer::from(shift),
-    )
-}
-
-/// `sbits(c,k)` from `quire.value.accounting/v1`: `bits(c)` when `k = 0` and
-/// `bits(c) + bits(10^k)` otherwise, from the unshifted coefficient. Every
-/// shifted-coefficient `integer_bits` amount routes through this function.
-pub(crate) fn sbits(coefficient: &Integer, shift: u64) -> Integer {
-    let bits = Integer::from(coefficient.magnitude_bits());
-    if shift == 0 {
-        bits
-    } else {
-        bits.add(&power_of_ten_bits(shift))
-    }
-}
-
-/// `sdigits(c,k)` from `quire.value.accounting/v1`: `digits(c) + k`. Every
-/// shifted-coefficient `decimal_digits` amount routes through this function.
-pub(crate) fn sdigits(coefficient: &Integer, shift: u64) -> Integer {
-    Integer::from(coefficient.decimal_digits()).add(&Integer::from(shift))
-}
-
-/// `digits(c × 10^shift)` of a membership comparison, which zero keeps at one.
-fn shifted_digits(value: &Integer, shift: u64) -> u64 {
-    if value.is_zero() {
-        1
-    } else {
-        value.decimal_digits().saturating_add(shift)
     }
 }
 

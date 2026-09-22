@@ -11,9 +11,7 @@ use super::decimal::{
 };
 use super::numeric::{rational_arithmetic_bits, RationalArithmetic};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::{
-    rational_add, rational_div, rational_mul, rational_neg, rational_pow, rational_sub, Rational,
-};
+use super::rational::Rational;
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
 use quire_exact::{
     BoundedInteger, Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter,
@@ -265,13 +263,13 @@ fn rational_event(operation: RationalArithmetic<'_>, meter: &mut Meter) -> Resul
             .exact_size(LimitKind::IntegerBits, rational_arithmetic_bits(operation)),
     )?;
     Ok(match operation {
-        RationalArithmetic::Add(left, right) => rational_add(left, right),
-        RationalArithmetic::Subtract(left, right) => rational_sub(left, right),
-        RationalArithmetic::Multiply(left, right) => rational_mul(left, right),
-        RationalArithmetic::Divide(left, right) => {
-            rational_div(left, right).ok_or(Stop::Undefined(Undefined::DivisionByZero))?
-        }
-        RationalArithmetic::Negate(operand) => rational_neg(operand),
+        RationalArithmetic::Add(left, right) => left.add(right),
+        RationalArithmetic::Subtract(left, right) => left.sub(right),
+        RationalArithmetic::Multiply(left, right) => left.mul(right),
+        RationalArithmetic::Divide(left, right) => left
+            .div(right)
+            .ok_or(Stop::Undefined(Undefined::DivisionByZero))?,
+        RationalArithmetic::Negate(operand) => operand.neg(),
     })
 }
 
@@ -505,7 +503,7 @@ fn power(base: &Rational, exponent: &Integer, meter: &mut Meter) -> Result<Optio
     meter.charge(
         Charge::new(ChargePoint::UnitRationalArithmetic).exact_size(LimitKind::IntegerBits, bits),
     )?;
-    Ok(rational_pow(base, exponent))
+    Ok(base.pow(exponent))
 }
 
 /// A conversion target resolved at type-check time.

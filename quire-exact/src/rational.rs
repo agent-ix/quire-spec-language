@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Canonical exact rationals (AD-005, FR-140 loss records).
 //!
-//! Ported from QSL `value::rational` as part of QSL#213 S-1 (ADR-011 X-1);
-//! no edge needed cutting. One adaptation: the unmetered inherent
-//! `add`/`sub`/`neg`/`mul`/`div`/`pow` arithmetic methods are dropped. They
-//! had no caller anywhere in the kernel crate -- [`crate::numeric`]'s
-//! metered `evaluate_rational_arithmetic` computes over the numerator and
-//! denominator directly rather than through them -- and exposing them as a
-//! `pub` convenience would let a caller compute rational arithmetic while
-//! silently bypassing every `quire.value.accounting/v1` charge, which is the
-//! one property this kernel's accounting types exist to make impossible to
-//! skip by construction. `RationalDomain::contains_domain`/`excludes_zero`/
-//! `negated`/`result_of` are, by contrast, widened from `pub(crate)` to
-//! `pub` below: none of them perform arithmetic outside a charge already
-//! taken by their caller.
+//! `Rational`'s arithmetic (`add`/`sub`/`neg`/`mul`/`div`/`pow`,
+//! `divided_by_power_of_ten`/`divided_by_power_of_two`) is unmetered and
+//! exact, the same discipline [`crate::integer::Integer`]'s own arithmetic
+//! carries: a caller charges `quire.value.accounting/v1` before calling it.
+//! `divided_by_power_of_ten`/`divided_by_power_of_two` take a
+//! caller-supplied exponent with no bound of their own, so an uncharged call
+//! can build an arbitrarily large `BigInt`; callers bound or charge the
+//! exponent first, exactly as [`Integer::pow`](crate::integer::Integer::pow)
+//! and [`Integer::shifted_left`](crate::integer::Integer::shifted_left)
+//! already require of their own callers.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -86,11 +83,9 @@ impl Rational {
         self.denominator == Integer::one()
     }
 
-    /// The exact value `self / 10^exponent`. `pub(crate)`, not `pub` (H-5):
-    /// `exponent` is caller-supplied and unmetered, and `10^u64::MAX` is an
-    /// out-of-memory `BigInt`, mirroring [`Self::divided_by_power_of_two`]'s
-    /// own `pub(crate)` visibility for the identical reason.
-    pub(crate) fn divided_by_power_of_ten(&self, exponent: u64) -> Self {
+    /// The exact value `self / 10^exponent`. Callers bound or charge
+    /// `exponent` before calling.
+    pub fn divided_by_power_of_ten(&self, exponent: u64) -> Self {
         let denominator = self.denominator.mul(&Integer::power_of_ten(exponent));
         let divisor = self.numerator.gcd(&denominator);
         Self {
@@ -104,9 +99,10 @@ impl Rational {
         self.numerator.is_zero()
     }
 
-    /// The exact value `self / 2^exponent` (IEEE exact conversions). Total: the
-    /// power-of-two denominator is never zero.
-    pub(crate) fn divided_by_power_of_two(&self, exponent: u64) -> Self {
+    /// The exact value `self / 2^exponent` (IEEE exact conversions). Total:
+    /// the power-of-two denominator is never zero. Callers bound or charge
+    /// `exponent` before calling.
+    pub fn divided_by_power_of_two(&self, exponent: u64) -> Self {
         let power = Integer::from_big(num_bigint::BigInt::from(1_u8) << exponent);
         Self::reduce(self.numerator.clone(), self.denominator.mul(&power))
     }
@@ -116,6 +112,60 @@ impl Rational {
         self.numerator
             .magnitude_bits()
             .max(self.denominator.magnitude_bits())
+    }
+
+    /// Exact `self + other`. Unmetered; a caller charges before calling.
+    pub fn add(&self, other: &Self) -> Self {
+        Self::reduce(
+            self.numerator
+                .mul(&other.denominator)
+                .add(&other.numerator.mul(&self.denominator)),
+            self.denominator.mul(&other.denominator),
+        )
+    }
+
+    /// Exact `self - other`. Unmetered; a caller charges before calling.
+    pub fn sub(&self, other: &Self) -> Self {
+        self.add(&other.neg())
+    }
+
+    /// Exact `-self`.
+    pub fn neg(&self) -> Self {
+        Self {
+            numerator: self.numerator.neg(),
+            denominator: self.denominator.clone(),
+        }
+    }
+
+    /// Exact `self × other`. Unmetered; a caller charges before calling.
+    pub fn mul(&self, other: &Self) -> Self {
+        Self::reduce(
+            self.numerator.mul(&other.numerator),
+            self.denominator.mul(&other.denominator),
+        )
+    }
+
+    /// Exact `self / other`, or `None` for a zero divisor. Unmetered; a
+    /// caller charges before calling.
+    pub fn div(&self, other: &Self) -> Option<Self> {
+        (!other.is_zero()).then(|| {
+            Self::reduce(
+                self.numerator.mul(&other.denominator),
+                self.denominator.mul(&other.numerator),
+            )
+        })
+    }
+
+    /// Exact `self^exponent`, or `None` for zero raised to a negative power.
+    /// Callers bound the result size before calling.
+    pub fn pow(&self, exponent: &Integer) -> Option<Self> {
+        let (numerator, denominator) =
+            (self.numerator.pow(exponent), self.denominator.pow(exponent));
+        if exponent.is_negative() {
+            (!numerator.is_zero()).then(|| Self::reduce(denominator, numerator))
+        } else {
+            Some(Self::reduce(numerator, denominator))
+        }
     }
 }
 

@@ -115,11 +115,11 @@ impl ValueType {
             // arm); the declared-maximum comparison itself happens in two
             // places instead: argument admission's `validate`
             // (`value/expression/mod.rs`) checks it against every
-            // `Population<T>[N]` parameter at call time (FR-089-AC-5), and
+            // `Population<T>[N]` parameter at call time (FR-089-AC-4/AC-5), and
             // `Machine::resolve_population` (`value/expression/evaluate.rs`)
             // checks it again at the `allInstances`/`lookup` sites that
-            // consume the identity (FR-089-AC-3/AC-4), refusing a mismatch
-            // in either place instead.
+            // consume the identity (FR-089-AC-3/AC-4/AC-5), refusing a
+            // mismatch in either place instead.
             (Self::Population(_), Value::Population(_)) => true,
             (
                 Self::Boolean
