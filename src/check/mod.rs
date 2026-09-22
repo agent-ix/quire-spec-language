@@ -517,8 +517,18 @@ impl PackageDeclarations {
         // code, not only exercised by this module's unit tests.
         let mut type_nodes = BTreeMap::new();
         for composite in scope.types.composites() {
-            let name = crate::value::Identifier::new(composite.name().to_owned())
-                .expect("a checked composite declaration's own name is a grammar-valid identifier");
+            // Complete-V1's own `TypeEnvironment` admits any string as a
+            // composite's declared name (existing fixtures use
+            // package-convention names such as `"P::R"`, never validated as
+            // a grammar identifier -- that is a pre-existing, unrelated
+            // property of this native-v1 type system, not something O-11's
+            // qualified-name mechanism can retrofit). A declaration whose
+            // name is not itself a valid `Identifier` simply gets no
+            // `CheckedTypeNode` yet, rather than a panic; it is not a
+            // reachable refusal this stage owns today.
+            let Ok(name) = crate::value::Identifier::new(composite.name().to_owned()) else {
+                continue;
+            };
             let node = identity::mint_type_declaration_identity(
                 &package_identity,
                 std::slice::from_ref(&name),
@@ -527,19 +537,21 @@ impl PackageDeclarations {
             type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
         }
         for enum_binding in &scope.enums {
-            let name = crate::value::Identifier::new(enum_binding.name.clone())
-                .expect("a checked enum declaration's own name is a grammar-valid identifier");
-            let variants: Vec<identity::SumVariant> = enum_binding
+            let Ok(name) = crate::value::Identifier::new(enum_binding.name.clone()) else {
+                continue;
+            };
+            let variants: Option<Vec<identity::SumVariant>> = enum_binding
                 .members
                 .iter()
                 .map(|member| {
-                    identity::SumVariant::new(
-                        crate::value::Identifier::new(member.case().to_owned()).expect(
-                            "a checked enum declaration's own case is a grammar-valid identifier",
-                        ),
-                    )
+                    crate::value::Identifier::new(member.case().to_owned())
+                        .ok()
+                        .map(identity::SumVariant::new)
                 })
                 .collect();
+            let Some(variants) = variants else {
+                continue;
+            };
             // Two members sharing one declared case name is already refused
             // upstream of `check` (an `EnumBinding` whose own admission
             // rejected a duplicate case never reaches here) -- this is

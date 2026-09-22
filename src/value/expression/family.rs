@@ -536,8 +536,7 @@ mod family_contract_tests {
             .expect("f is declared in this package");
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
-        let package =
-            crate::package::CheckedPackage::link(graph, std::collections::BTreeMap::new());
+        let package = crate::package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = EvaluationEnv {
@@ -1153,13 +1152,15 @@ mod tests {
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
         let name = QualifiedName::unqualified("f").unwrap();
-        let first = mint_declaration_identity(
+        let (first, _) = mint_declaration_identity(
             DEFAULT_PACKAGE_IDENTITY,
             &declaration("f", Expression::Boolean(true)),
+            u64::MAX,
         );
-        let second = mint_declaration_identity(
+        let (second, _) = mint_declaration_identity(
             "other-package@1.0.0",
             &declaration("f", Expression::Boolean(true)),
+            u64::MAX,
         );
         assert_ne!(
             first, second,

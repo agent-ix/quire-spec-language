@@ -32,6 +32,7 @@
 pub(crate) mod support;
 
 mod assessment_artifact_kinds;
+mod clause_kind_canonical;
 mod cli;
 mod collection_algebra;
 mod collection_queries;
@@ -96,6 +97,7 @@ mod model_reference_queries;
 mod model_source;
 #[cfg(feature = "test-support")]
 mod model_systems;
+mod name_resolution_confinement;
 mod native_backend;
 mod native_boundaries;
 mod native_checking;
