@@ -367,6 +367,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-003](usecase/US-003-evaluate-bounded-state.md) | US | Draft |
 | [US-004](usecase/US-004-reuse-existing-toolchain.md) | US | Draft |
 | [US-013](usecase/US-013-receive-a-typed-family-evaluation-outcome.md) | US | Draft |
+| [US-014](usecase/US-014-compile-value-source-through-the-forms-stage.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -467,3 +468,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-088](functional/FR-088-clause-name-and-type-identity.md) | FR | Specified under QSL-158 (ADR-013 §7 S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26), split from QSL-158's S-3 by the 2026-09-21 ticket comment; not yet implemented |
 | [FR-089](functional/FR-089-carry-population-identity-across-the-kernel-boundary.md) | FR | Specified under QSL-172 and ADR-013 O-13's Population row (QC-21); implemented -- QSL-131 Slice B's kernel half (FR-089-AC-2; TC-292) is inspected locally, its kernel population-pair refusal (FR-089-AC-6; TC-297) passes locally, and its model-minting/evaluator half (FR-089-AC-1, AC-3, AC-4, AC-5; TC-291, TC-293, TC-294, TC-295, TC-296) passes locally; see `spec/tests.md`; the admission preimage's document-content/declared-maximum collision question (Linear QSL-131) is open |
 | [FR-090](functional/FR-090-return-a-family-outcome-or-a-typed-family-refusal.md) | FR | Specified under QSL-174 (ADR-013 O-16, O-17, T-4, T-6); not yet implemented -- TC-382–TC-391 planned. Open questions FR-090-OQ-1 (carrier of `wrong-anchor`, the model-query refusal and `PreconditionFalse`), OQ-2 (no catalog code for `FamilyNotNativelyEvaluable`), OQ-3 (where location and losses travel) |
+| [FR-091](functional/FR-091-produce-value-forms-and-assemble-package-declarations.md) | FR | Specified for ADR-011 §7.3 M-3b (`Value` family, QSL-141) on the M-6a path (QSL-8); not yet implemented -- TC-392–TC-403 planned. Open questions FR-091-OQ-1 (family ownership of `enum`, `predicate`, `dimension`, `unit`, nested `deref`/`pre`/`allInstances`), OQ-2 (prelude selections, `using` alias, `ieee_profile`), OQ-3 (record/tuple key package identity), OQ-4 (float rounding mode), OQ-5 (unrepresented `Value` constructs), OQ-6 (nested spans), OQ-7 (catalog codes) |

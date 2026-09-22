@@ -171,6 +171,19 @@ operational validation remains outside this audit-only plan.
 | TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | 🚧 Planned; QSL-174; carrier per FR-090-OQ-1 |
 | TC-390 | FamilyOutcome and FamilyRefusal live once in the check core and no lower layer names them | Unit | P1 | FR-090-AC-9 | 🚧 Planned; QSL-174 |
 | TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | 🚧 Planned; QSL-174 |
+| TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
+| TC-393 | A function form carries its name, using alias, signature type references as syntax, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |
+| TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | 🚧 Planned; QSL-141 |
+| TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141; AC-6 cases per FR-091-OQ-1 |
+| TC-396 | S2 refuses a declaration holding an expression construct with no parsed-form variant | Unit | P1 | FR-091-AC-7 | 🚧 Planned; QSL-141; cases per FR-091-OQ-5 and FR-091-OQ-1 |
+| TC-397 | S2 bounds nesting by its explicit depth limit and refuses past it without overflowing the stack | Unit | P1 | FR-091-AC-8 | 🚧 Planned; QSL-141 |
+| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
+| TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-10, FR-091-AC-17 | 🚧 Planned; QSL-141 |
+| TC-400 | The assembler refuses unresolved names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-11, FR-091-AC-12, FR-091-AC-13 | 🚧 Planned; QSL-141 |
+| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-14 | 🚧 Planned; QSL-141; blocked by FR-091-OQ-3 |
+| TC-402 | The assembler lives in the check core and has no edge to qsl-cst | Unit | P1 | FR-091-AC-15 | 🚧 Planned; QSL-141 |
+| TC-403 | For a unit with no import or model selection, the assembler fills only aliases, functions and types | Unit | P1 | FR-091-AC-16 | 🚧 Planned; QSL-141; `enums` per FR-091-OQ-1, `ieee_profile` per FR-091-OQ-2 |
+| TC-404 | format takes the qsl-cst ParsedSource and formats complete-V1 source | Unit | P1 | FR-003-AC-7 | 🚧 Planned; QSL-8 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -429,3 +442,16 @@ evaluation-time `wrong_snapshot` and model-query refusals leaving the kernel
 TC-256, TC-170 and TC-176. TC-385 waits on FR-090-OQ-2 for
 `FamilyNotNativelyEvaluable`. TC-388 and TC-389 assert what a caller observes
 and read the refusal from whichever carrier FR-090-OQ-1 rules.
+
+## Value forms and assembler (FR-091) and format input (FR-003-AC-7) coverage
+
+[FR-091](../spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md)
+carries ADR-011 §2.1 to §2.3 (E2 and E3), §6.1 and ADR-012 §3 and §4.3 for
+the `Value` family's S2 production and the forms-to-`PackageDeclarations`
+assembler in the layer-3 `check` core. TC-392 to TC-403 are `🚧 Planned`
+under QSL-141. TC-398 and TC-402 use the resolved-import and definition-scan
+approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
+source to `CheckedPackage::call`. TC-395's AC-6 cases, TC-396's cases,
+TC-401 and TC-403 depend on FR-091-OQ-1, OQ-2, OQ-3 and OQ-5 as marked.
+TC-404 backs FR-003-AC-7, the `format` input retargeted to the `qsl-cst`
+CST (ADR-011 §7.3 M-6a), under QSL-8.
