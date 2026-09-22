@@ -5,12 +5,13 @@
 //! decisions (no FR-146 evaluator, no exact per-axis work-unit costs).
 
 use ix_trace_rs::trace;
+use quire_spec_language::check::check_field_refinement_obligation;
 use quire_spec_language::diagnostic::Code;
 use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
 use quire_spec_language::model::conformance::{
-    check_field_redefinition, check_field_refinement_obligation, check_operation_redefinition,
-    check_subsetting, resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome,
-    ConformanceOutcome, RedefinitionTargetOutcome,
+    check_field_redefinition, check_operation_redefinition, check_subsetting,
+    resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome, ConformanceOutcome,
+    RedefinitionTargetOutcome,
 };
 use quire_spec_language::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,

@@ -495,8 +495,10 @@ mod tests {
     /// live callers rather than by this test: binding a field with `_`
     /// names it but does not check its *type* (TC-169 step 4's stated
     /// scope), and `FunctionDeclaration::clause` is never called here.
-    /// `src/model/checked_dispatch.rs:851,888,916` exercises both today —
-    /// a type-shape change on a bound-`_` field, or a `clause` signature
+    /// `check::checked_dispatch`'s `checked_dispatch_operation` (moved from
+    /// `model::checked_dispatch` by FR-074, ADR-011 §7.3 M-2) exercises
+    /// both today, at its own `FunctionDeclaration::clause` call sites — a
+    /// type-shape change on a bound-`_` field, or a `clause` signature
     /// change, still fails to compile there.
     #[trace("TC-169", "FR-067-AC-9", "FR-067-CON-3")]
     #[test]

@@ -8,6 +8,26 @@ relationships:
 ---
 # TC-175: The move stays inside M-5: no early M-2 work, no edge widening
 
+**Retired in part by TC-261 (FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21).**
+This test case's Scope named two acceptance criteria: FR-068-AC-6 (the
+two-tier `value::` import bound, live) and FR-068-AC-7 (M-2's items stay in
+`model`, ahead of M-2 landing). FR-074 is M-2: it moved
+`model::checked_dispatch` and `model::conformance::check_field_refinement_obligation`
+into `check`, the exact inverse of what FR-068-AC-7 (now retired, see FR-068)
+required. Steps 3-5 below and their Expected Results, which verified the
+pre-M-2 "stays in `model`" shape, are retired along with FR-068-AC-7;
+TC-261 verifies the post-M-2 inverse (both items now in `check`, absent from
+`model`) in the corresponding xtask test
+(`m2_items_moved_to_check_and_are_absent_from_model`, `#[trace("TC-261", ...)]`).
+Steps 1-2 (FR-068-AC-6) follow FR-068-AC-6 as amended by FR-074 (`model`
+removed from the forbidden-import list this test's Description and step 2
+Expected Results enumerate, since `check` importing from `model` is now the
+legal, later-depends-on-earlier direction §6.1 always permitted) — this
+document's Test Procedure and Expected Results below are otherwise
+unchanged from the pre-M-2 baseline, and are not renumbered, so the retired
+steps stay visible as what they were rather than disappearing from the
+file's history.
+
 ## Description
 
 Verify two scope boundaries at once, both easy for an otherwise-correct
@@ -32,7 +52,7 @@ would have permanently licensed production code to the same import with no
 way for this criterion's own verification to catch that back. Tier 2 stays
 seven items; this criterion's scan now excludes `#[cfg(test)]`-gated
 imports on that stated basis**) — and no
-other `value::` submodule (`model`, `library`, `package`, `definition`,
+other `value::` submodule (`library`, `package`, `definition`,
 `unit`, `key`, `reference`, `containment`, `model_query`,
 `package_identity`, or any sibling M-2 has not yet relabeled) gains a new
 shipped consumer in `check`; and (2) `model::checked_dispatch` and
@@ -86,7 +106,7 @@ was decided. Scope: FR-068-AC-6, FR-068-AC-7.
 - Step 2: group (a) may hold any number of items from the nine K-designated
   siblings; group (b) holds only the seven named items — any additional item
   resolving from `enumeration`, `quantity` or `text` fails this step; group
-  (c) is empty — any import into `model`, `library`, `package`, `definition`,
+  (c) is empty — any import into `library`, `package`, `definition`,
   `unit`, `key`, `reference`, `containment`, `model_query`,
   `package_identity`, or any other `value::` submodule outside groups (a)/(b)
   fails this step, naming the file and the unexpected import. Any group-(a)/

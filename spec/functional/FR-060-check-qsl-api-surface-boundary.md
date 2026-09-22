@@ -79,7 +79,7 @@ three rules:
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
 | T12-A | Cg | The layer-6 `replay` facade module | (this rule reports pending until the facade module exists at the path this rule names; once it exists, a CG checkout must be supplied to scan it) | `src/replay.rs` |
-| T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `value::expression::check`, `model::checked_dispatch`, `value::library` (ADR-011's own "today" mapping for the S3 `check` stage), and `value::node` (the crate-internal helper `node_key_of`'s own defining module -- #249 review R1; see Status) | the constructor's current source file |
+| T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `value::expression::check`, `check::checked_dispatch` (**amended by FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21: was `model::checked_dispatch`, moved to `check` by M-2, realising ADR-011:694-697's "only `check` calls the kernel `NodeKey` constructor"**), `value::library` (ADR-011's own "today" mapping for the S3 `check` stage), and `value::node` (the crate-internal helper `node_key_of`'s own defining module -- #249 review R1; see Status) | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` | the constructor's current source file |
 
 A rule's call patterns SHALL include every textual spelling that constructs
@@ -178,7 +178,8 @@ the helper's own internal call. This is real, new information this check
 surfaces, not a false positive tuned away: none of `value::enumeration`,
 `value::unit` or `value::model_query` is among the three modules ADR-011
 §1's S3 "today" mapping names for the `check` stage
-(`value::expression::check`, `model::checked_dispatch`, `value::library`) --
+(`value::expression::check`, `check::checked_dispatch` (amended by FR-074:
+was `model::checked_dispatch`, moved to `check` by ADR-011 §7.3 M-2), `value::library`) --
 a discrepancy between what ADR-011 §1 documents as today's minting callers
 and what real QSL head contains. This requirement reports that discrepancy;
 it does not resolve it, and does not remediate any of these five sites or

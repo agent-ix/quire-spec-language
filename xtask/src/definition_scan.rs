@@ -420,15 +420,18 @@ mod tests {
         }
     }
 
-    /// TC-175 step 3/FR-068-AC-7: `model::checked_dispatch` and
+    /// TC-261 step 3/FR-074-AC-1/FR-074-AC-2: `model::checked_dispatch` and
     /// `model::conformance::check_field_refinement_obligation` -- M-2's own
-    /// items -- remain defined in `model`, unmoved, and are absent from
-    /// `check`; an implementation that folds either in early (ahead of the
-    /// corrected M-5-before-M-2 order) would pass every other criterion in
-    /// this requirement while doing work QSL-7 (M-2) owns.
-    #[trace("TC-175", "FR-068-AC-7")]
+    /// items -- are now defined in `check`, moved, and are absent from
+    /// `model`; an implementation that leaves either one behind in `model`
+    /// (a partial move), or that adds a `check` copy while leaving the
+    /// original in `model` (a duplicate rather than a move), fails this
+    /// test. Inverted from FR-068-AC-7's pre-M-2 assertion (the same two
+    /// names, opposite module) now that M-2 (this ticket, QSL-7) has moved
+    /// them.
+    #[trace("TC-261", "FR-074-AC-1", "FR-074-AC-2")]
     #[test]
-    fn m2_items_stay_in_model_and_are_absent_from_check() {
+    fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
         for name in [
             "checked_dispatch_operation",
@@ -437,11 +440,11 @@ mod tests {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_eq!(locations.len(), 1, "{name}: {locations:?}");
             assert!(
-                locations[0].file.starts_with("src/model/"),
-                "{name} must stay in src/model/: {locations:?}"
+                locations[0].file.starts_with("src/check/"),
+                "{name} must now live in src/check/: {locations:?}"
             );
             assert!(
-                !locations[0].file.starts_with("src/check/"),
+                !locations[0].file.starts_with("src/model/"),
                 "{name}: {locations:?}"
             );
         }
