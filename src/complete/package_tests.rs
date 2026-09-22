@@ -292,10 +292,7 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         Limits::default(),
     )
     .unwrap();
-    assert_eq!(
-        stale_parsed.diagnostics()[0].code,
-        Code::StaleDependency
-    );
+    assert_eq!(stale_parsed.diagnostics()[0].code, Code::StaleDependency);
 
     let mut missing_dependency = definitions.clone();
     missing_dependency[0] = Definition::from_exact_bytes(
@@ -439,10 +436,7 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
     );
     assert_eq!(
         (refusal.code, refusal.cause_tag),
-        (
-            Code::InvalidPackage,
-            CompleteCause::FeatureSetMismatch
-        )
+        (Code::InvalidPackage, CompleteCause::FeatureSetMismatch)
     );
 
     type ParseFn = fn(

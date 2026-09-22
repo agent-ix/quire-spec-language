@@ -695,11 +695,7 @@ pub fn resolve_source_package(
         };
         // The source's first diagnostic classifies it; an inadmissible source
         // without one broke the parser's established invariant.
-        let mut refused = refusal(
-            Code::RuntimeInvariant,
-            whole,
-            PackageError::InvalidSource,
-        );
+        let mut refused = refusal(Code::RuntimeInvariant, whole, PackageError::InvalidSource);
         if let Some(first) = parsed.diagnostics().first() {
             refused.code = first.code;
             refused.cause_tag = first.cause;
@@ -793,11 +789,7 @@ pub fn resolve_source_package(
             } else {
                 PackageError::MissingModel(selected.clone())
             };
-            return Err(refusal(
-                Code::InvalidModelBinding,
-                selection.span,
-                cause,
-            ));
+            return Err(refusal(Code::InvalidModelBinding, selection.span, cause));
         };
         resolved_models.insert(selected.clone(), model.clone());
     }
@@ -922,11 +914,7 @@ pub fn resolve_source_package(
             traversed_edges = traversed_edges
                 .checked_add(definition.dependencies.len())
                 .ok_or_else(|| {
-                    refusal(
-                        Code::ResourceExhausted,
-                        span,
-                        PackageError::ResourceLimit,
-                    )
+                    refusal(Code::ResourceExhausted, span, PackageError::ResourceLimit)
                 })?;
             if traversed_edges > limits.dependency_edges {
                 return Err(refusal(
@@ -1151,9 +1139,7 @@ fn identity_refusal(
     cause: PackageError,
 ) -> PackageRefusal {
     let code = match &cause {
-        PackageError::CanonicalSize | PackageError::ResourceLimit => {
-            Code::ResourceExhausted
-        }
+        PackageError::CanonicalSize | PackageError::ResourceLimit => Code::ResourceExhausted,
         _ => Code::InvalidPackage,
     };
     refusal(parsed, code, span, cause)
