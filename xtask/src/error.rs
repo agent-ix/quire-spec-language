@@ -151,6 +151,15 @@ pub enum Error {
         /// The findings, formatted for display.
         summary: String,
     },
+    /// A configured `string-edge` crate root does not exist. Every listed
+    /// root is required (QSL-178 review F4): a crate rename or move this
+    /// scan's own root list has not caught up with must fail loudly, not
+    /// silently drop that tree's coverage.
+    #[error("string-edge: configured crate root does not exist: {path}")]
+    StringEdgeMissingRoot {
+        /// The missing root.
+        path: PathBuf,
+    },
     /// A source file could not be parsed as Rust source by
     /// `xtask::import_graph`'s resolver (TC-172/TC-176).
     #[error("import-graph: cannot parse {path} as Rust source: {source}")]
@@ -204,6 +213,7 @@ impl Error {
             Self::StringEdgeParse { .. }
             | Self::StringEdgeAllowListGatesABranch { .. }
             | Self::StringEdgeFound { .. } => Code::StringEdge,
+            Self::StringEdgeMissingRoot { .. } => Code::Usage,
             Self::ImportGraphParse { .. } => Code::ImportGraph,
             Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
         }

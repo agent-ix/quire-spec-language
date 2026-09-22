@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-002: apply token budgets and delimiter checks to the generated recognizer.
-// Widened to `pub`: the root crate's own base-grammar `parser` imports
-// `Kind` through this re-export across the crate boundary (ADR-011 §7.3
-// X-3).
-pub use crate::token::Kind;
+// Kept crate-private: `token::Kind` is `qsl_cst::token::Kind`'s own public
+// path; the root crate's base-grammar `parser` imports it from there
+// directly, not through this re-export (QSL-178 review F6).
+use crate::token::Kind;
 use crate::token::LexError;
 use logos::Logos;
 use qsl_foundation::diagnostic::error;

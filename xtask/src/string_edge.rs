@@ -447,7 +447,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     let mut reported = Vec::new();
     for root in crate_roots(workspace_root) {
         if !root.exists() {
-            continue;
+            return Err(Error::StringEdgeMissingRoot { path: root });
         }
         for relative in source_files(&root, workspace_root)? {
             for occurrence in scan_file(workspace_root, &relative)? {
@@ -516,7 +516,7 @@ fn allow_list_branch_gating_check(workspace_root: &Path) -> Result<Vec<AllowList
     let mut all_occurrences = Vec::new();
     for root in crate_roots(workspace_root) {
         if !root.exists() {
-            continue;
+            return Err(Error::StringEdgeMissingRoot { path: root });
         }
         for relative in source_files(&root, workspace_root)? {
             all_occurrences.extend(scan_file(workspace_root, &relative)?);

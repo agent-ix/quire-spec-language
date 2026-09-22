@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
-    SourceSelections,
 };
 use qsl_foundation::{Phase, SourceIdentity, Span};
 
@@ -173,8 +172,7 @@ fn apply_edits_selected(
         cursor = edit.range.end;
     }
     bytes.extend_from_slice(&source.text().as_bytes()[cursor..]);
-    if parsed.is_admissible()
-        && edits.len() == 1
+    if edits.len() == 1
         && edits[0].range.start == edits[0].range.end
         && qsl_cst::token::is_lexer_whitespace(&edits[0].replacement)
         && limits.source_bytes == Limits::default().source_bytes
@@ -182,28 +180,14 @@ fn apply_edits_selected(
         && limits.nodes == Limits::default().nodes
         && limits.nesting == Limits::default().nesting
     {
-        let edited_source = qsl_cst::diagnostic::read_source(
+        if let Some(result) = parsed.with_whitespace_insertion(
             new_identity.clone(),
-            source.path(),
-            &bytes,
-            limits.source_bytes,
-        )?;
-        if let Some(cst) = parsed.cst().with_whitespace_insertion(
-            edited_source.clone(),
             edits[0].range.start,
             &edits[0].replacement,
-        ) {
-            return Ok(ParsedSource::from_parts(
-                edited_source,
-                cst,
-                Vec::new(),
-                shifted_selections(
-                    parsed.selections(),
-                    edits[0].range.start,
-                    edits[0].replacement.len(),
-                ),
-                true,
-            ));
+            &bytes,
+            limits,
+        )? {
+            return Ok(result);
         }
     }
     if let Some(catalog) = catalog {
@@ -211,29 +195,4 @@ fn apply_edits_selected(
     } else {
         parse(new_identity, source.path(), &bytes, limits)
     }
-}
-
-fn shifted_selections(selections: &SourceSelections, at: usize, added: usize) -> SourceSelections {
-    fn shifted(mut span: Span, at: usize, added: usize) -> Span {
-        if span.start >= at {
-            span.start = span.start.saturating_add(added);
-            span.end = span.end.saturating_add(added);
-        } else if span.end > at {
-            span.end = span.end.saturating_add(added);
-        }
-        span
-    }
-
-    let mut selections = selections.clone();
-    for profile in &mut selections.profiles {
-        profile.span = shifted(profile.span, at, added);
-        profile.identity_span = shifted(profile.identity_span, at, added);
-    }
-    for import in &mut selections.imports {
-        import.span = shifted(import.span, at, added);
-    }
-    for model in &mut selections.models {
-        model.span = shifted(model.span, at, added);
-    }
-    selections
 }

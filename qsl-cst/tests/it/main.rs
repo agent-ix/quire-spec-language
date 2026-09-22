@@ -3,4 +3,5 @@
 //! same `it` pattern the root crate uses (`tests/it/main.rs`, QSL-175/#306) --
 //! one link step per `cargo test` invocation instead of one per file.
 
+mod complete_cst;
 mod complete_grammar;

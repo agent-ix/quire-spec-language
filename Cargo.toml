@@ -55,6 +55,11 @@ tempfile = "=3.27.0"
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# `forms::dispatch`'s unit tests reach `LosslessCst::fixture`, gated on
+# `qsl-cst`'s own `test-support` feature (ADR-011 §7.3 X-3, QSL-178 review
+# F1); resolver 2 turns this on only when a test target is built, so it
+# never reaches the production lib.
+qsl-cst = { path = "qsl-cst", features = ["test-support"] }
 # TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
 # whole-crate `syn` scanner instead of a second, byte-identical copy; a
 # workspace path dependency, dev-only, so it adds no edge to any shipped

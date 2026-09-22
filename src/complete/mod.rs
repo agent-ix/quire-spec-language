@@ -50,18 +50,15 @@ pub fn parse_with_catalog(
             .map(|refusal| (selection.identity_span, refusal))
     });
     if let Some((identity_span, (code, cause, message))) = refused {
-        base.insert_diagnostic(
-            0,
-            *qsl_cst::diagnostic::error(
-                &source,
-                code,
-                cause,
-                qsl_foundation::Phase::Profile,
-                identity_span.start,
-                identity_span.end,
-                message,
-            ),
-        );
+        base.prepend_diagnostic(*qsl_cst::diagnostic::error(
+            &source,
+            code,
+            cause,
+            qsl_foundation::Phase::Profile,
+            identity_span.start,
+            identity_span.end,
+            message,
+        ));
     }
     Ok(base)
 }
