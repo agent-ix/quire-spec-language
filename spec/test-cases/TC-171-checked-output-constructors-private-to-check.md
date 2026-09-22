@@ -45,6 +45,18 @@ these three types' state is reachable from outside `check` at all, not
 merely which diagnostic a particular external-crate build produces. Scope:
 FR-068-AC-2.
 
+**Amended by FR-087 (owner ruling on QSL-158, 2026-09-21): `CheckedPackage`
+relocates out of `check` into layer-4 `package`.** This test's own privacy
+claim for `CheckedPackage` is superseded in place, not merely narrowed:
+after FR-087's implementation, `CheckedPackage` is no longer defined in
+`check` at all, so steps 1-2 and 4 below no longer have a `check`-module
+`CheckedPackage` to inspect. FR-087-AC-1/TC-243 restate this test's own
+reasoning (constructor/field privacy plus accessor-only reachability) for
+`CheckedPackage` at its new site in `package`, extending it from three
+types to five. This test's remaining scope, post-FR-087, is
+`CheckedExpression` and `CheckedFunction` only, which stay in `check`
+unchanged.
+
 ## Test Procedure
 
 1. Read `check`'s definitions of `CheckedPackage`, `CheckedExpression` and

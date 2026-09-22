@@ -126,8 +126,70 @@ operational validation remains outside this audit-only plan.
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Planned; #120 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
+| TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Planned; QSL-158 |
+| TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | 🚧 Planned; QSL-158 |
+| TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | 🚧 Planned; QSL-158 |
+| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158 |
+| TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Planned; QSL-158 |
+| TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | 🚧 Planned; QSL-158 |
+| TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | 🚧 Planned; QSL-158 |
+| TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | 🚧 Planned; QSL-158 |
+| TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | 🚧 Planned; QSL-158 |
+| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | 🚧 Planned; QSL-158 |
+| TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | 🚧 Planned; QSL-158 |
+| TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | 🚧 Planned; QSL-158 |
+| TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
+| TC-256 | check and package's dependency edge is one direction, bounded to CheckedGraph and {ImportView, LibraryLock} | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
+| TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | 🚧 Planned; QSL-158 |
+| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 |
+| TC-259 | A package type's identity is its checked node id, package-scoped | Unit | P1 | FR-088-AC-7 | 🚧 Planned; QSL-158 |
+| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Planned; QSL-158 |
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
+| TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
+| TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | 🚧 Planned; QSL-158 |
+
+## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
+
+[FR-087](../spec/functional/FR-087-typestate-and-cross-package-node-key.md)
+(S-3a: T-1, T-3, O-15) and
+[FR-088](../spec/functional/FR-088-clause-name-and-type-identity.md)
+(S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified under
+QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
+split. Neither is implemented yet; TC-243–260, TC-281 and TC-282 above are
+the corresponding test cases, all `🚧 Planned`. FR-087 also resolves, by owner
+ruling on QSL-158 (2026-09-21), the `CheckedPackage`-placement half of
+QSL-167 (an
+ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4
+`package` per ADR-013 T-1, `check`'s S3 output becomes `CheckedGraph`
+instead of the already-landed `check::CheckedPackage` (FR-068/M-5), and
+FR-087-AC-9/TC-256 assert the resulting `package` → `check` (never the
+reverse) edge direction, plus the new bounded `check` → `library` edge
+(`ImportView` and `LibraryLock`, read-only). FR-068 is amended in place
+(its AC-2, AC-6 and AC-10)
+to record this supersession, since the criteria it originally tested for
+`CheckedPackage`'s placement in `check` no longer hold there — see FR-068's
+own Status section.
+
+FR-087's `library` module is also the relocation target ADR-011's module
+table (`:744`) already names for `src/value/library.rs` (FR-307, tested by
+TC-227/`tests/library_resolution.rs`) and `src/value/package_identity.rs`
+(Description, item 3); FR-087-AC-11/TC-281 assert the relocation, the
+shape changes an owner ruling on QSL-158 (2026-09-21) requires
+(`ExportIdentity` replaced by `PackageNodeKey`, `resolve_name` staying out
+of `library`, `package_identity`'s wire node reference changed to
+`WireNodeId`), and the resulting closure of `package_identity`'s current
+`NodeKey::from_hex` call over wire-read JSON (`value::library` itself
+makes no `NodeKey`-constructor call). That same owner ruling settles how the
+relocated `resolve_libraries`/`LibraryLock` whole-graph resolution
+composes with the new per-dependency `VerifiedPackage`/`ImportView`/§4
+binding: `LibraryLock` is the library lock the §4 binding's third
+condition reads, and `resolve_libraries`' whole-graph refusals classify,
+variant by variant, to an ADR-011 I2 rule, the §4 binding's condition 2 or
+condition 3, or E3 name resolution, with `DuplicatePackageId` named as
+lying outside all four (FR-087-AC-12/TC-282; FR-087 Description, item 3).
+`check` imports exactly `ImportView` and `LibraryLock` (read-only) from
+`library` (FR-087-AC-9/TC-256; FR-068-AC-6 tier (c)).
 
 ## Typed replay envelopes (FR-069–073) coverage
 
