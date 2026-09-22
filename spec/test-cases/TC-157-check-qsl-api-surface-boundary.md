@@ -33,6 +33,14 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
    containing a call to the T12-C-shaped constructor, under a rule whose
    allowed caller is `model`. Run the check.
 5. Run `arch-lint api-surface` against QSL's real source tree at head.
+6. T12-B fixtures, each a small source tree:
+   - a shipped `NodeKey::from_digest(` call in a `check` submodule;
+   - a shipped `.map(NodeKey::from_digest)` in a module outside `check`, in a
+     function not on the debt list;
+   - a shipped mint in a function that is on the debt list;
+   - a debt-list entry whose function no longer mints;
+   - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
+     `check`.
 
 ## Expected Results
 
@@ -47,27 +55,27 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
 - Step 5: T12-A reports `pending` (the `replay` facade module does not exist
   yet; no `--cg` checkout is given). T12-C reports `failing` at exactly the
   two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and
-  `resolve_target` functions). T12-B reports `failing` at exactly five real
-  sites: `value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and
-  `EnumMemberPreimage::node_key`, `value/unit.rs`'s
-  `DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the
-  OBS-018 site in `value/model_query.rs`'s `to_object_reference`
-  (#249 review R1: `node_key_of(` was added to T12-B's call patterns, and
-  `value::node`, the helper's own defining module, to its allowed callers, so
-  the check reports the helper's five real external callers rather than the
-  helper's own internal call to the constructor it wraps). None of these five
-  are among the three modules ADR-011 §1's S3 "today" mapping names for the
-  `check` stage. T12-D reports `PASS` with zero call sites: no module outside
-  `model` calls `PopulationId::from_digest(`. This output is captured for the PR body as real, not
-  synthetic, evidence -- the check is not tuned to exclude any finding,
-  including the four beyond OBS-018's documented set, and not widened beyond
-  R1's stated exemption to admit them either.
+  `resolve_target` functions). T12-B reports every shipped `NodeKey` mint
+  outside `check` as debt, each in a function on FR-060's T12-B debt list,
+  with file, line, module and function named, and fails if any mint outside
+  `check` is in a function not on that list or if a list entry has no mint
+  left. **Amended by the layer-rule ruling (2026-09-22): this step formerly
+  expected "exactly five real sites".** A fixed count breaks every time the
+  gate becomes more accurate, so the expected result is the rule plus the
+  debt list (FR-060-AC-4). T12-D reports `PASS` with zero call sites: no
+  module outside `model` calls `PopulationId::from_digest(`. This output is
+  captured for the PR body as real, not synthetic, evidence -- the check is
+  not tuned to exclude any finding.
+- Step 6: the `check` submodule mint is not reported; the function-value
+  mint outside `check` fails T12-B and is named; the debt-list mint is
+  reported as debt and does not fail T12-B; the stale debt-list entry fails
+  T12-B and names the entry; the `#[cfg(test)]` mint is not reported.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/api_surface.rs`
-- Automation: Automated Rust unit tests plus one manual real-data run (step 5)
+- Automation: Automated Rust unit tests (steps 1-4, 6) plus one manual real-data run (step 5)
 
 ## Dependencies
 

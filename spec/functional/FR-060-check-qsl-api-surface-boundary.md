@@ -51,7 +51,9 @@ kernel, rather than a check that is retired and rewritten.
 - Per rule, one of: **live and passing** (the rule's target exists and every
   call site outside the allowed caller modules is absent), **live and
   failing** (the rule's target exists and at least one call site outside the
-  allowed caller modules exists; each is reported with file and line), or
+  allowed caller modules exists; each is reported with file and line; for
+  T12-B, a site in a debt-list function is reported as debt rather than as
+  a failure, and a stale debt-list entry is a failure), or
   **pending** (the rule's target -- a file the rule requires -- does not
   exist yet, so the rule reports this explicitly rather than passing
   vacuously).
@@ -82,17 +84,65 @@ four rules:
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
 | T12-A | Cg | The layer-6 `replay` facade module | (this rule reports pending until the facade module exists at the path this rule names; once it exists, a CG checkout must be supplied to scan it) | `src/replay.rs` |
-| T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `value::expression::check`, `check::checked_dispatch` (**amended by FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21: was `model::checked_dispatch`, moved to `check` by M-2, realising ADR-011:694-697's "only `check` calls the kernel `NodeKey` constructor"**), `value::library` (ADR-011's own "today" mapping for the S3 `check` stage), and `value::node` (the crate-internal helper `node_key_of`'s own defining module -- #249 review R1; see Status) | the constructor's current source file |
+| T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `src/model/population.rs` |
 
 A rule's call patterns SHALL include every textual spelling that constructs
-the protected value, not only its primary constructor name: T12-B's patterns
-are `NodeKey::of(`, `NodeKey::from_bytes(` and `node_key_of(` (the
-crate-internal helper that wraps the constructor -- #249 review R1), so a
-caller that mints a `NodeKey` only through the helper is still scanned.
+the protected value, not only its primary constructor name.
 T12-D's pattern is `PopulationId::from_digest(`, the kernel `PopulationId`'s
 one public constructor.
+
+### T12-B: only `check` mints `NodeKey`
+
+**Amended by the layer-rule ruling (2026-09-22).** T12-B's allowed callers
+are `check` and every module under it, because ADR-013 O-04 says only
+`check` calls the `NodeKey` constructor. `check::family`'s
+`mint_declaration_identity` and `mint_call_identity` are therefore allowed
+as `check` submodules. `check::checked_dispatch`, which the rule formerly
+named, is covered by the same prefix. `value::expression::check` and
+`value::library` no longer exist. `value::node` is no longer exempt: once
+QSL's `NodeKey` is the kernel type (#335), `value::node` is not the
+constructor's defining module, and its mints are real debt.
+
+T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
+shipped code, whether it is called or passed as a function value. Today that
+is `quire_exact::NodeKey::from_digest`, and, while QSL's own
+`value::node::NodeKey` type still exists, its `of`, `from_bytes` and
+`from_hex`. T12-B also matches calls of `node_key_of`, the crate-internal
+helper that wraps the constructor (#249 review R1). A pattern that requires
+an opening parenthesis misses `.map(NodeKey::from_digest)`, which is how
+`value::node`'s `NodeIdDocument::key` mints.
+
+T12-B scans shipped code only; items under `#[cfg(test)]` are excluded. A
+test fixture that builds a `NodeKey` from literal bytes is not a node
+identity the crate mints, and counting fixtures would force non-violations
+onto the debt list.
+
+### T12-B's debt list
+
+Every shipped `NodeKey` mint outside `check` SHALL be in a function on this
+list. The list is keyed by enclosing module and function, not by line
+number, and it only shrinks: an entry leaves in the change that removes its
+last mint, and no entry is added. A mint outside `check` in a function not on
+the list fails T12-B. An entry with no remaining mint also fails T12-B until
+it is removed, so a fixed site cannot later hide a new mint.
+
+| Module | Function | Why it is debt |
+| --- | --- | --- |
+| `value::enumeration` | `EnumDeclarationPreimage::node_key` | mints through `node_key_of` outside `check` (ADR-011 FB-13, ADR-013 OBS-018) |
+| `value::enumeration` | `EnumMemberPreimage::node_key` | same |
+| `value::unit` | `DimensionPreimage::node_key` | same |
+| `value::unit` | `UnitPreimage::node_key` | same |
+| `value::node` | `node_key_of` | the helper the four entries above call; mints directly |
+| `value::node` | `NodeIdDocument::key` | wraps a digest string read from caller-supplied JSON into a `NodeKey`; O-04 says a wire-read id becomes a `NodeKey` only by lookup |
+| `value::model_query` | `to_object_reference` | OBS-018: builds a `NodeKey` from a model `ReferenceKey`'s bytes |
+| `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
+
+A fixed count of sites is not used. A count breaks every time the gate gets
+more accurate: #335 corrected T12-B's patterns and the count went from five
+to ten without any code getting worse. A named list fails only when a new
+mint appears or an old one is fixed and not removed from the list.
 
 ### Pending vs. live vs. failing
 
@@ -134,10 +184,9 @@ already names as known architecture debt (OBS-018, `value/model_query.rs`'s
 and any real call site the check finds
 that OBS-018's or ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
-make a run pass (#249 review R1). At the time of this requirement, running
-T12-B against QSL's real head reports five real call sites, not the three
-ADR-011 §1's S3 "today" mapping names for the `check` stage -- see Status for
-the exact sites and the discrepancy this surfaces.
+make a run pass (#249 review R1). T12-B's debt list is not such an
+exclusion: each entry is reported as debt in the check's output, and the
+list can only shrink.
 
 ## Acceptance Criteria
 
@@ -146,7 +195,7 @@ the exact sites and the discrepancy this surfaces.
 | FR-060-AC-1 | A rule whose required path does not exist reports `pending` with the missing path named, and contributes no call-site scan. | Test (TC-157) |
 | FR-060-AC-2 | A rule whose required path exists and has no call site outside its allowed callers reports `passing`. | Test (TC-157) |
 | FR-060-AC-3 | A rule whose required path exists and has a call site outside its allowed callers reports `failing`, naming the call site's file, line and module; a caller module that is a textual prefix but not a `::`-segment descendant (for example `model_query` under an `model` allow-list) is not treated as allowed. | Test (TC-157) |
-| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rule T12-C reports failing at exactly the two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and `resolve_target` functions); rule T12-B reports failing at exactly five real sites -- `value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and `EnumMemberPreimage::node_key`, `value/unit.rs`'s `DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the one OBS-018 site in `value/model_query.rs`'s `to_object_reference` -- none of which the check excludes, and none of which are the three modules ADR-011 §1's S3 "today" mapping names for the `check` stage; rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
+| FR-060-AC-4 | Run against real QSL source at head, rule T12-A reports pending (the `replay` facade module does not exist yet); rule T12-C reports failing at exactly the two OBS-018 sites (`value/model_query.rs`'s `bridge_lookup_key` and `resolve_target` functions); rule T12-B reports every shipped `NodeKey` mint outside `check` and its descendants, and fails if any such mint lies in a function not on T12-B's debt list (Behavior, "T12-B's debt list") or if a debt-list entry has no remaining mint; each debt-list mint is reported as debt, with file, line, module and function. Mints under `check` (including `check::family`'s `mint_declaration_identity` and `mint_call_identity`) and mints in `#[cfg(test)]` items are not reported. A reference to the constructor passed as a function value (`.map(NodeKey::from_digest)`) is a mint. **Amended by the layer-rule ruling (2026-09-22): this criterion formerly required "exactly five real sites".** A fixed count breaks every time the gate becomes more accurate (#335's pattern fix took it from five to ten with no code change), so the count is replaced by the rule plus a named debt list that only shrinks; rule T12-D reports passing with zero call sites (no module outside `model` calls `PopulationId::from_digest(`). | Test (TC-157) |
 
 ## Dependencies
 
@@ -179,24 +228,19 @@ Slice B) has no caller outside `model` (tests
 and `tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation`
 back its failing and passing paths).
 
-T12-B is QSL-role, live, and fails at exactly five real sites:
-`src/value/enumeration.rs`'s `EnumDeclarationPreimage::node_key` and
-`EnumMemberPreimage::node_key`, `src/value/unit.rs`'s
-`DimensionPreimage::node_key` and `UnitPreimage::node_key`, and the one
-OBS-018 site in `src/value/model_query.rs`'s `to_object_reference`. Each is a call to the
-crate-internal helper `node_key_of`, which itself calls `NodeKey::of`
-directly from its own defining module, `src/value/node.rs`; #249 review R1
-exempts that defining module from T12-B's allowed-caller list (a helper
-calling the constructor it wraps, from the module that defines it, is not a
-foreign caller), so the check reports the helper's five real *callers*, not
-the helper's own internal call. This is real, new information this check
-surfaces, not a false positive tuned away: none of `value::enumeration`,
-`value::unit` or `value::model_query` is among the three modules ADR-011
-§1's S3 "today" mapping names for the `check` stage
-(`value::expression::check`, `check::checked_dispatch` (amended by FR-074:
-was `model::checked_dispatch`, moved to `check` by ADR-011 §7.3 M-2), `value::library`) --
-a discrepancy between what ADR-011 §1 documents as today's minting callers
-and what real QSL head contains. This requirement reports that discrepancy;
-it does not resolve it, and does not remediate any of these five sites or
-the two OBS-018 `T12-C` sites -- that is #211/#213's remediation, not this
-requirement's. Remaining work: #211.
+T12-B is QSL-role and live. **Amended by the layer-rule ruling
+(2026-09-22):** its allowed callers are `check` and its descendants, and its
+known minting sites outside `check` are the named debt list in Behavior
+("T12-B's debt list"): eight functions across `value::enumeration`,
+`value::unit`, `value::node`, `value::model_query` and
+`value::expression::family`. Measured on #335's branch, T12-B's patterns
+report ten shipped lines: `check/family.rs` 739 and 782 (allowed under the
+new rule); `value/enumeration.rs` 126 and 171; `value/unit.rs` 207 and 320;
+`value/expression/family.rs` 232 (`decode_v2`); `value/model_query.rs` 109;
+and `value/node.rs` 280 (the `node_key_of` definition line) and 282 (its
+mint). They miss `value/node.rs` 198, `NodeIdDocument::key`'s
+`.map(NodeKey::from_digest)`, which the rule above covers. The rewrite of
+`tools/arch-lint/api_surface.rs` to this rule follows this amendment.
+Remediating the debt-list sites and the two OBS-018 `T12-C` sites is
+#211/#213's work, not this requirement's. Remaining work: #211, gate
+rewrite.
