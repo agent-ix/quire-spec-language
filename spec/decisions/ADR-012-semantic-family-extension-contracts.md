@@ -234,7 +234,9 @@ trait FamilyContract {
 trait ReferenceEvaluation: FamilyContract {
     type Observed;          // kernel value, state observation or trace verdict
     fn evaluate(checked: &Self::Checked, env: &mut EvalEnv)
-        -> Outcome<Self::Observed>;
+        -> Result<Outcome<Self::Observed>, FamilyResult>;
+        // Err: a family-owned evaluation-time refusal or undefined result
+        // (ADR-013 O-16)
 }
 ```
 
@@ -245,9 +247,15 @@ enum, so the set of families is fixed at compile time.
 `ReferenceEvaluation` is implemented by every family except `Relation`, whose
 gates run over compiled corpora. The S1 evaluation seam (ADR-011 S6a) has an
 explicit `Relation` arm. The seam returns a QSL layer-3 `check`-core type,
-`FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }`, because
-the kernel `Refusal` carries only kernel causes. `FamilyRefusal` carries the
-family-dispatch causes, starting with `FamilyNotNativelyEvaluable`.
+`FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal),
+FamilyEvaluated(FamilyResult) }`, because the kernel `Refusal` carries only
+kernel causes. `FamilyRefusal` carries the family-dispatch causes only,
+starting with `FamilyNotNativelyEvaluable`. `FamilyResult { Refused,
+Undefined }` carries a family-owned evaluation-time cause that the `evaluate`
+hook returns: the family owns the cause type and implements F `diagnostic`'s
+`CatalogCoded` or `UndefinedCoded` for it, so a new family cause needs no
+`check`-core edit (ADR-013 O-16, O-17). The seam passes a hook's
+`FamilyResult` through as `FamilyOutcome::FamilyEvaluated` unchanged.
 `FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the
 code to category `refusal` (ADR-013 O-16); F `diagnostic` does not name
 `FamilyRefusal`. The `Relation` arm returns
@@ -989,7 +997,7 @@ item settles `invalid-request` with no preference order
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (`FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the code to the category); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged; O-16 is unchanged. Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. The S1 `Relation` evaluate arm → `FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable)` → `refusal` (`FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the code to the category); `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on

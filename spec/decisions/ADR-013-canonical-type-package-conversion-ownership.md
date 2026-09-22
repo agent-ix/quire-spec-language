@@ -358,8 +358,8 @@ Category mapping. Every source value has exactly one row.
 | --- | --- | --- | --- |
 | success | `Completed(value)`, except `Completed(false)` of a claim → value | `supported` | `Proved` with at least one SUCCESS check → result `proved`. A backend result `tested` is also success; it keeps the value `tested`, is never promoted to `proved`, and never counts as proof evidence. Only `proved` does. |
 | violation | `Completed(false)` of a claim → false/violation | not applicable | `Counterexample` → result `refuted` |
-| undefined | `Undefined` → `undefined` (FR-323-AC-1) | not applicable | not produced |
-| refusal | `Refused(Refusal)` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause; the result value is QC-9 |
+| undefined | `Undefined` → `undefined` (FR-323-AC-1); S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))` → `undefined` | not applicable | not produced |
+| refusal | `Refused(Refusal)` → refusal; S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and `FamilyOutcome::Refused(FamilyRefusal)` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause; the result value is QC-9 |
 | unsupported | not an evaluation outcome | `unsupported` or `requires-bound` | `Unavailable` (solver or backend absent after negotiation) → one FR-331 result with a typed unavailability cause; the result value is QC-9 |
 | incomplete (timeout, cancellation, bound exhaustion) | `Incomplete` with its charge point and limit → incomplete | not applicable | `TimedOut`, `Cancelled`, `ResourceExhausted` → result `incomplete`, cause kept |
 | inconclusive | not an evaluation outcome | not applicable | `Inconclusive` → result `inconclusive`. A vacuous `Proved` (a `Proved` run with zero SUCCESS checks in the obligation) maps to the existing `KaniOutcomeKind::Inconclusive` variant with the typed cause `kani_vacuous_proof`, following IR's typed-cause convention (Remaining work: agent-ix/quire-contract-ir#146, agent-ix/quire-specification#141). A replay parity disagreement (O-27) is also `inconclusive`, with a typed cause. |
@@ -373,15 +373,78 @@ proof column fixes the category part of AD-016's `OPEN — decided in WP9` cell
 state `EvaluationOutcome` and simulation `Outcome` are lane-private (§6); a
 family result wraps kernel outcomes and maps to these categories under its
 family contract (Q210-3). S6a returns `Result<FamilyOutcome, InternalFault>`,
-where `FamilyOutcome { Evaluated(kernel::Outcome), Refused(FamilyRefusal) }` is
-a QSL layer-3 `check`-core type and `InternalFault` is T-4's. `FamilyRefusal`
-carries the family-dispatch causes, starting with `FamilyNotNativelyEvaluable`.
-`FamilyRefusal::catalog_code()` yields the catalog code, and F `diagnostic` maps
-that code to category `refusal` (O-17); F never names `FamilyRefusal`. A family
-that ADR-012 does not evaluate natively (`Relation`) returns
-`FamilyOutcome::Refused` with cause `FamilyNotNativelyEvaluable`. The kernel
-`Refusal` holds kernel causes only. Simulation (lane D) converges into S6a
-(ADR-011 §8), so its outcomes are the kernel `Outcome` through S6a.
+where
+
+```text
+FamilyOutcome<T> {
+    Evaluated(kernel::Outcome<T>),   // the kernel outcome, unchanged
+    Refused(FamilyRefusal),          // dispatch: the family does not run here
+    FamilyEvaluated(FamilyResult),   // the family ran; its own result
+}
+FamilyResult {
+    Refused(Box<dyn CatalogCoded>),     // category refusal
+    Undefined(Box<dyn UndefinedCoded>), // category undefined
+}
+```
+
+are QSL layer-3 `check`-core types and `InternalFault` is T-4's.
+`FamilyRefusal` carries the family-dispatch causes only, starting with
+`FamilyNotNativelyEvaluable`. `FamilyRefusal::catalog_code()` yields the
+catalog code, and F `diagnostic` maps that code to category `refusal` (O-17);
+F never names `FamilyRefusal`. A family that ADR-012 does not evaluate natively
+(`Relation`) returns `FamilyOutcome::Refused` with cause
+`FamilyNotNativelyEvaluable`.
+
+`FamilyOutcome::FamilyEvaluated` carries an evaluation-time result that a
+family owns and the kernel does not. `FamilyResult::Refused` holds a family
+refusal cause, category `refusal`; `FamilyResult::Undefined` holds a family
+undefined cause, category `undefined`. The two arms keep the categories
+distinct by type. The cause types are family-owned, and the `check` core never
+names one: it holds them through two F `diagnostic` traits,
+`CatalogCoded` (`fn catalog_code(&self) -> CatalogCode`, the O-17 method) and
+`UndefinedCoded` (`fn undefined_reason(&self) -> UndefinedReason`, the closed
+reason of the `quire.native.diagnostics/v1` "Undefined reasons" table, which
+is not a refusal code). F names no family type. A consumer outside the family
+reads the O-17 `RefusalRecord` built from a `FamilyResult::Refused` cause, or
+the undefined reason of a `FamilyResult::Undefined` cause, never the cause
+itself. The evaluation causes are:
+
+- `WrongSnapshot` (`wrong-anchor` and `forbidden-pre-read`): a `Value`-family
+  evaluation cause in `value::expression`, carried in `FamilyResult::Refused`
+  (T-6).
+- The model-query refusal: `model`'s `ModelRefusal`, carried in
+  `FamilyResult::Refused` with its own `catalog_code()` (O-17).
+- `PreconditionFalse` (FR-151 dispatch): a `Value`-family undefined cause in
+  `value::expression`, carried in `FamilyResult::Undefined` with reason
+  `precondition-false`. The kernel `Undefined` has no `PreconditionFalse`
+  reason.
+
+The kernel `Refusal` holds kernel causes only. Simulation (lane D) converges
+into S6a (ADR-011 §8), so its outcomes are the kernel `Outcome` through S6a.
+
+Why a third arm (owner ruling on FR-090-OQ-1, QSL-174):
+
+1. O-17 rules that each family owns its own `Cause` enum and that no shared
+   enum lists every family's causes. Holding evaluation causes in
+   `FamilyRefusal` would make it that shared list.
+2. Families stay pluggable without editing the `check` core (ADR-012's
+   extension contract). A shared enum would force a `check` edit for every new
+   family cause; a trait object does not.
+3. A dispatch refusal means "cannot run here", so routing (#185) may try
+   another backend. An evaluation refusal means "it ran and the answer is
+   refused", which is never retried. `FamilyOutcome::Refused` and
+   `FamilyOutcome::FamilyEvaluated` tell the two apart by type.
+4. The kernel stays free of model vocabulary (O-13). `PreconditionFalse`
+   carries an operation, a selected method and a receiver, which come from
+   FR-151 dispatch.
+
+Rejected alternatives:
+
+- Widen `FamilyRefusal` to hold the evaluation causes and move
+  `PreconditionFalse` into the kernel `Undefined`: `FamilyRefusal` becomes
+  the shared cause list O-17 forbids, and model vocabulary enters the kernel.
+- Put all three causes into the kernel `Refusal` and `Undefined`: the kernel
+  then names QSL model and dispatch vocabulary, which O-13 forbids.
 
 Implementing tickets: #213 S-1 builds the kernel outcome and refusal types;
 #213 S-5a builds the category type in F `diagnostic` (landed, #258); #231
@@ -641,7 +704,7 @@ stores one and derives four (QC-13).
 | --- | --- |
 | Owner | CG replay adapter builds the request (reconstruction, agent-ix/quire-contract-codegen#50). QSL owns the executor-side typed request type, in the ADR-011 layer-6 `replay` module (#231). |
 | Implementing ticket | #231 for the typed request and its round trip. agent-ix/quire-contract-codegen#50 for C-12. The executor entry (C-13) is TK-01. |
-| Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits, and the S1 to S4 stage limits copied from the proving run (QC-8). QSpec fixes the outcome → verdict map per O-16 category (FR-323, QC-8), and `Undefined` and `FamilyOutcome::Refused` never count as agreement. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
+| Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits, and the S1 to S4 stage limits copied from the proving run (QC-8). QSpec fixes the outcome → verdict map per O-16 category (FR-323, QC-8), and `Undefined`, `FamilyOutcome::Refused` and `FamilyOutcome::FamilyEvaluated` never count as agreement. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
 | Serialized authority | QSpec FR-323 `quire.native-runtime/v1` (`package`, `selection`, `state_environment`, `limits`, `replay`), plus the digest-addressed byte provision QC-1 adds. |
 | Conversions | Packet + #231 envelope members → request (CG, C-12); CG copies them and invents no member. Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles under the stage limits the request carries, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the `QualifiedName` by name lookup in the recompiled package's declarations (OQ-5 ruling), and calls the selected function. `CheckedPackage::call` admits the arguments before any evaluation. |
 | Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S1 to S4 and verifying the emitted v2 bytes under the ADR-011 §4 binding, and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain (an `InputRefusal`, carried by `replay` as a `StageFailure::Refused` cause and never `inconclusive`); a recompile that reaches a stage limit (`LimitExceeded`); and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
@@ -842,7 +905,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-5 | FR-321: a refusal code for a second selection of the same domain-package identity, if the catalog has none. | #213 S-2 |
 | QC-6 | FR-331 `counterexamples`: an entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript, never both (O-25). | #231 counterexample envelope |
 | QC-7 | AD-016 WP9 as amended by agent-ix/quire-specification#140: the parity carrier is the `ReplaySource` arm, and each arm has its own result type. | agent-ix/quire-contract-codegen#50 parity, #231 result type |
-| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined` and `FamilyOutcome::Refused` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
+| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined`, `FamilyOutcome::Refused` and `FamilyOutcome::FamilyEvaluated` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
 | QC-9 | FR-331: the result value for a `supported` item whose Kani run ends in `Refused`, `InvalidInput`, `IncompleteInput` or `Unavailable`, so the item keeps exactly one terminal record with a typed cause (O-16). | IR C-09, #231 C-23 |
 | QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. | #213 S-3, the v2 emitter (ADR-011 T-8) |
 | QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5a (the internal-fault code) and S-5b (each limit-kind code) |

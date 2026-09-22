@@ -167,8 +167,8 @@ operational validation remains outside this audit-only plan.
 | TC-385 | FamilyRefusal::catalog_code is exhaustive and returns only catalogued codes | Unit | P1 | FR-090-AC-4 | 🚧 Planned; QSL-174; blocked for `FamilyNotNativelyEvaluable` by FR-090-OQ-2 |
 | TC-386 | F diagnostic maps every family-refusal and snapshot-cause catalog code to category refusal | Unit | P1 | FR-090-AC-5 | 🚧 Planned; QSL-174 |
 | TC-387 | The value::expression snapshot family cause maps each WrongSnapshotCause to wrong_snapshot | Unit | P1 | FR-090-AC-6 | 🚧 Planned; QSL-174 |
-| TC-388 | An evaluation-time wrong-anchor snapshot reaches the caller as a coded QSL refusal, not a kernel refusal | Integration | P1 | FR-090-AC-7 | 🚧 Planned; QSL-174; carrier per FR-090-OQ-1 |
-| TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | 🚧 Planned; QSL-174; carrier per FR-090-OQ-1 |
+| TC-388 | An evaluation-time wrong-anchor snapshot reaches the caller as a coded QSL refusal, not a kernel refusal | Integration | P1 | FR-090-AC-7 | 🚧 Planned; QSL-174 |
+| TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | 🚧 Planned; QSL-174 |
 | TC-390 | FamilyOutcome and FamilyRefusal live once in the check core and no lower layer names them | Unit | P1 | FR-090-AC-9 | 🚧 Planned; QSL-174 |
 | TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | 🚧 Planned; QSL-174 |
 | TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
@@ -186,6 +186,7 @@ operational validation remains outside this audit-only plan.
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | 🚧 Planned; QSL-8 |
 | TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19 | 🚧 Planned; QSL-141 |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; alias cycle per FR-091-OQ-7 |
+| TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | 🚧 Planned; QSL-174 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -435,15 +436,18 @@ silently letting the later admission overwrite the earlier one.
 [FR-090](../spec/functional/FR-090-return-a-family-outcome-or-a-typed-family-refusal.md)
 carries ADR-013 O-16, O-17, T-4 and T-6 for the S6a result: the layer-3
 `check`-core `FamilyOutcome { Evaluated(quire_exact::Outcome<T>),
-Refused(FamilyRefusal) }` beside T-4's `InternalFault`, `FamilyRefusal`'s
-`catalog_code()` and F `diagnostic`'s map to category `refusal`, and the
-evaluation-time `wrong_snapshot` and model-query refusals leaving the kernel
-`Refusal`, and unresolved population arguments refused at admission
-(`CallFailure::Input`) and faulted inside S6a. TC-382 to TC-391 are
-`🚧 Planned` under QSL-174, one per criterion. TC-390 uses the resolved-import and definition-scan approach of
+Refused(FamilyRefusal), FamilyEvaluated(FamilyResult) }` beside T-4's
+`InternalFault`, `FamilyRefusal`'s `catalog_code()` and F `diagnostic`'s map
+to category `refusal`, the evaluation-time `wrong_snapshot` and model-query
+refusals and the `precondition-false` undefined result carried in
+`FamilyOutcome::FamilyEvaluated` instead of the kernel types, and unresolved
+population arguments refused at admission (`CallFailure::Input`) and faulted
+inside S6a. TC-382 to TC-391 and TC-407 are `🚧 Planned` under QSL-174, one
+per criterion. TC-390 uses the resolved-import and definition-scan approach of
 TC-256, TC-170 and TC-176. TC-385 waits on FR-090-OQ-2 for
-`FamilyNotNativelyEvaluable`. TC-388 and TC-389 assert what a caller observes
-and read the refusal from whichever carrier FR-090-OQ-1 rules.
+`FamilyNotNativelyEvaluable`. TC-388, TC-389 and TC-407 match the
+`FamilyOutcome::FamilyEvaluated` arm the ADR-013 O-16 ruling on FR-090-OQ-1
+fixes.
 
 ## Value forms and assembler (FR-091) and format input (FR-003-AC-7, AC-8) coverage
 

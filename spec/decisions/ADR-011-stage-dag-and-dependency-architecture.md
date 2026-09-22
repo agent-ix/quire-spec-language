@@ -189,7 +189,7 @@ flowchart LR
 | S3 Checked semantic graph | Checked nodes with minted node ids and declaration identities, resolved against admitted domain packages and dependency import views | QSL `check` (today `value::expression` check, `check::checked_dispatch`, `value::library`) over `model` | arrow 1 output |
 | S4 Linked checked package | The checked graph linked with the checked packages of its dependencies, each compiled from its digest-addressed source through S1 to S4, with package identity and source map. The closure carries checked dependency nodes, never wire-admitted ones. Two forms: in-process, and `quire.checked-package/v2` wire. | QSL `package` | arrow 2 producer |
 | S5 Contract IR | Target-neutral IR nodes read from the v2 wire | IR `quire-contract-model` (`CheckedPackageV2::read`, `::lower`) | arrow 2 consumer |
-| S6a Reference execution | `FamilyOutcome` of evaluating a checked package: the kernel `Outcome` (completed, undefined, refused or incomplete), or a `FamilyRefusal` for a family that sits out evaluation. Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
+| S6a Reference execution | `FamilyOutcome` of evaluating a checked package: the kernel `Outcome` (completed, undefined, refused or incomplete), a `FamilyRefusal` for a family that sits out evaluation, or a family-owned `FamilyResult` (refused or undefined) for an evaluation-time result the kernel does not own (ADR-013 O-16). Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
 | S6b Bounded proof | Per-item negotiation disposition, then one IR `KaniOutcome` per supported item | CG (per-item negotiation, oracle, `kani_obligations`), RT ops, host ABI and `negotiate_*` predicates, IR `src/kani` outcome | arrows 3 to 6 |
 | S7 Typed witness | `CounterexamplePacket` with a `ReplaySource` | IR `src/kani` (packet and witness types) | arrow 6 output |
 | S8 Native replay | Parity verdict: the S6a result under the reconstructed input, compared with the S6b result | CG replay adapter (reconstruction and comparator), QSL layer-6 `replay` (S1 to S4 recompile, then S6a as executor) | arrow 7 |
@@ -267,8 +267,9 @@ E9 details:
   copied from the proving run (ADR-013 O-26, QC-8). CG does not construct
   them from anything else. QSpec fixes the outcome→verdict map per ADR-013
   O-16 category (FR-323, with QC-8), and the request carries the members
-  above only. `Undefined` and `FamilyOutcome::Refused` never count as
-  agreement. Remaining work: agent-ix/quire-specification#141.
+  above only. `Undefined`, `FamilyOutcome::Refused` and
+  `FamilyOutcome::FamilyEvaluated` never count as agreement. Remaining
+  work: agent-ix/quire-specification#141.
 - The recompile runs under the stage limits the request carries. A limit
   refusal at E9 yields no verdict and carries its `LimitExceeded` cause,
   never `inconclusive`.
@@ -305,9 +306,9 @@ E9 details:
   resolves through the source map of the dependency package that `replay`
   recompiled, under the `RawSourceRef` digests the packet carries (ADR-013
   O-25).
-- An S6a `Incomplete`, `Undefined`, `Refused` or `FamilyOutcome::Refused`
-  result never counts as agreement. It settles `inconclusive` with a typed
-  cause.
+- An S6a `Incomplete`, `Undefined`, `Refused`, `FamilyOutcome::Refused` or
+  `FamilyOutcome::FamilyEvaluated` result never counts as agreement. It
+  settles `inconclusive` with a typed cause.
 
 Capability routing (ADR-012 §6 and §7, #185). Each step has one owner. QSL
 `route` (layer R, §6.1) computes each item's candidate set after S4 and
@@ -374,8 +375,11 @@ causes and catalog codes. Stages S1 to S4 and the I2 reader return
 `Result<FamilyOutcome, CallFailure>`, with `CallFailure { Input(InputRefusal),
 Fault(InternalFault) }`. S6a itself returns `Result<FamilyOutcome,
 InternalFault>`, where the layer-3 `check`-core `FamilyOutcome {
-Evaluated(kernel::Outcome), Refused(FamilyRefusal) }` carries the kernel
-`Outcome<T>` unchanged in its `Evaluated` arm (ADR-013 T-4, O-16);
+Evaluated(kernel::Outcome), Refused(FamilyRefusal),
+FamilyEvaluated(FamilyResult) }` carries the kernel `Outcome<T>` unchanged in
+its `Evaluated` arm, a family-dispatch refusal in `Refused`, and a family-owned
+evaluation-time refusal or undefined result in `FamilyEvaluated` (ADR-013 T-4,
+O-16);
 `Incomplete` is an S6a outcome only. The layer-6 `replay` facade and the
 layer-R `route` module return `Result<Staged<T>, StageFailure<C>>`, each with
 its own cause type. The
@@ -393,7 +397,7 @@ edge.
 | E3 | Refusal with every error diagnostic; warnings travel with a success | No. A package with an error diagnostic yields no checked graph (AD-016 arrow 1). |
 | E4 | Refusal, including `DependencyIdentityMismatch` (catalog code `stale_dependency`, §4) | No. No package, and no v2 bytes. |
 | E5 | IR `CheckedPackageRefusalCode` | No. A refused package yields no IR package (AD-016 arrow 2). |
-| E6 | `Outcome::Refused`, `Undefined` or `Incomplete`; `FamilyOutcome::Refused(FamilyRefusal)` for a family that sits out evaluation; `InternalFault`. Bad arguments are refused at admission, before S6a: `CheckedPackage::call` returns `CallFailure::Input(InputRefusal)` | `Incomplete` is a typed outcome that says a budget ran out. It is never read as `Completed`. |
+| E6 | `Outcome::Refused`, `Undefined` or `Incomplete`; `FamilyOutcome::Refused(FamilyRefusal)` for a family that sits out evaluation; `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` or `FamilyResult::Undefined(_)` for a family-owned evaluation cause (`wrong_snapshot`, the model-query refusal, `precondition-false`); `InternalFault`. Bad arguments are refused at admission, before S6a: `CheckedPackage::call` returns `CallFailure::Input(InputRefusal)` | `Incomplete` is a typed outcome that says a budget ran out. It is never read as `Completed`. |
 | E7 | Per item: `requires-bound`, `unsupported` (warned) or `invalid-request` | **Per item only.** Each requested item settles exactly one terminal record (AD-016 terminal-disposition rule). An item not settled `supported` produces no oracle, harness or packet. Other items proceed. |
 | E8 | `KaniOutcomeKind` other than `Counterexample` | No packet without a counterexample, and no placeholder witness |
 | E9 | Identity mismatch refusal, including `DependencyIdentityMismatch` (catalog code `stale_dependency`, §4); `Witness::parse` or `decode` refusal; `CallFailure::Input(InputRefusal)` from `CheckedPackage::call`, carried as a `StageFailure::Refused` cause (ADR-013 O-26), and `CallFailure::Fault`, carried as an internal fault; a recompile limit refusal with its `LimitExceeded` cause; internal fault: no verdict, distinct outcome kind (§5); disagreement → `inconclusive` with a typed cause | No verdict is synthesized for a refusal, a limit or a fault, and a disagreement is never repaired |
@@ -591,7 +595,7 @@ enforces it; before #226, §3's interim rule applies.
 | 1 | `token` < `lexer` < `cst` | S1 | F |
 | 2 | `forms` core < family form builders | S2 | 1, F |
 | I3 | `quire_source` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
-| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome` and `FamilyRefusal`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
+| 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome`, `FamilyRefusal` and `FamilyResult`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
 | 4 | `package` | S4, I2 byte reader (verification calls `library`) | 3, F, K; `quire-contract-model` for v2 wire constants and round-trip tests only |
 | 5 | `value::expression` core (S6a) < family evaluators under `value::expression`, including the state and temporal evaluators < `simulation` | S6a | 4, 3, F, K |
 | R | `route` (#185 registry and router) | candidate sets over S4 before E7; after E7, the `BackendId` of each item settled `supported`, read from the FR-331 dispositions as wire. The backend is chosen only by the `BackendId` argument. | 4, 3, F, K |
