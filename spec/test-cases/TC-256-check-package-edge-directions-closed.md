@@ -24,8 +24,15 @@ as an E3 input) from `library` and no other `library` item; `check` reads
 constructing, mutating, or holding one of its private fields; `check`
 defines no type, method, or field named `CheckedPackage`;
 and `value::expression` reaches `CheckedPackage` only through the single
-closed re-export `pub use crate::package::CheckedPackage;`. Scope:
+closed re-export `pub use crate::checked_package::CheckedPackage;`. Scope:
 FR-087-AC-9.
+
+Until X-7, layer-4 `package`'s content — the canonical `CheckedPackage`,
+`EmittedPackage`, the v2 emitter and the I2 byte reader — lives in the
+top-level module `checked_package` (`src/checked_package.rs`,
+`src/checked_package/`), and the module named `package` holds only SEAM-1
+(ADR-011 §6.2, `package` row). In this test, "`package`" means layer-4
+`package`, whose source is both trees; the steps name both paths.
 
 `package`'s bound to exactly one `check`-core import holds only under a
 specific design this criterion also checks for: `package`'s `CheckedPackage`
@@ -57,8 +64,9 @@ readable first pass.
 ## Test Procedure
 
 1. Search every `use` statement under `src/check/` and confirm none
-   resolves into `crate::package`.
-2. Search every `use` statement under `src/package/` (excluding
+   resolves into `crate::package` or `crate::checked_package`.
+2. Search every `use` statement under `src/checked_package.rs`,
+   `src/checked_package/`, `src/package.rs` and `src/package/` (excluding
    `src/package/features.rs` and `src/package/view.rs`'s pre-existing,
    unrelated `crate::checking::CheckedPackage` import, TC-247) and confirm
    the only `check`-core item imported is `CheckedGraph`; a second
@@ -73,13 +81,14 @@ readable first pass.
 4. Search the whole compiled crate for any type, method, or field named
    `CheckedPackage` defined under `src/check/`; confirm none exists.
 5. Read `value::expression`'s re-export line for `CheckedPackage` and
-   confirm it is exactly `pub use crate::package::CheckedPackage;` — no
-   glob, no additional name, and no import from any path other than
-   `crate::package`.
-6. Run the resolved import graph over `src/package/` and confirm `package`
-   → `check` resolves to exactly one name, `CheckedGraph`, at the resolved
-   level, not only in `use` lines — a fully-qualified `crate::check::Node`
-   or similar inline path used anywhere under `src/package/` (bypassing a
+   confirm it is exactly `pub use crate::checked_package::CheckedPackage;`
+   — no glob, no additional name, and no import from any path other than
+   `crate::checked_package`.
+6. Run the resolved import graph over `src/checked_package/` and
+   `src/package/` and confirm `package` → `check` resolves to exactly one
+   name, `CheckedGraph`, at the resolved level, not only in `use` lines — a
+   fully-qualified `crate::check::Node` or similar inline path used
+   anywhere under either tree (bypassing a
    `use` statement) fails this step even though steps 2 and 4 would not
    catch it.
 7. Read `package`'s `CheckedPackage` definition and confirm it holds a

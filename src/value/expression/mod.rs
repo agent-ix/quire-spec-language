@@ -26,14 +26,14 @@ pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
 // ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
 // QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
 // re-exported by this one, closed, non-glob line. `CheckedPackage` (S4
-// in-process) is no longer `check`'s: it is layer-4 `package`'s own
+// in-process) is no longer `check`'s: it is layer-4 `checked_package`'s own
 // canonical type (this package's checked declarations plus the checked
 // dependency closure), re-exported by the second line below so that
 // `value::expression::CheckedPackage::call` remains the S6a entry point
 // ADR-011 §7.3's M-5 row names -- the sole closed re-export FR-087-AC-9/
 // TC-256 requires, naming no other path and no glob.
 pub use crate::check::CheckedExpression;
-pub use crate::package::CheckedPackage;
+pub use crate::checked_package::CheckedPackage;
 
 /// A runtime input a call or evaluation refuses before any charge. Stays at
 /// layer 5 (FR-068's refusal split): every *check-cause* type moved to

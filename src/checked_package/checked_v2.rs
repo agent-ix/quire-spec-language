@@ -38,11 +38,14 @@
 //!
 //! # Ceilings
 //!
-//! [`PackageLimits::artifact_bytes`] and [`PackageLimits::depth`] are the
-//! only two of [`PackageLimits`]' four fields this reader honors:
-//! `string_bytes` and `entries` have no IR counterpart -- IR's own I04
-//! reader does not meter decoded string bytes or aggregate entries at all,
-//! only [`quire_contract_ir::CheckedPackageReadLimits`]'s seven ceilings
+//! [`V2ReadLimits`] holds only the two ceilings this reader itself checks
+//! before and during the call into IR: `artifact_bytes` and `depth`. It is
+//! not the native-v1 `PackageLimits` (`crate::package`, FR-019, SEAM-1
+//! until M-6): that type's other two fields, `string_bytes` and `entries`,
+//! exist only for the native encode/intake path and have no IR
+//! counterpart -- IR's own I04 reader does not meter decoded string bytes
+//! or aggregate entries at all, only
+//! [`quire_contract_ir::CheckedPackageReadLimits`]'s seven ceilings
 //! (`bytes`, `depth`, `nodes`, `edges`, `occurrences`, `diagnostics`,
 //! `work`). This reader passes `artifact_bytes`/`depth` through unchanged
 //! (see below) and leaves the other five at IR's own bounded defaults;
@@ -58,17 +61,17 @@
 //!   so serde_json's own fixed 128-container recursion cap fires *before*
 //!   IR's own `json_depth` resource meter ever runs. A wire nested past
 //!   128 containers is reported `Refused(Envelope(MalformedWire))`, not
-//!   `Incomplete(Limit(Depth))`, regardless of `PackageLimits::depth`
+//!   `Incomplete(Limit(Depth))`, regardless of [`V2ReadLimits::depth`]
 //!   (IR-238 item 1; pinned by this module's own
 //!   `depth_far_past_the_default_limit_is_refused_as_malformed_wire`
 //!   test).
 //! - **Fail-closed at the boundary, for a scalar-terminated path.** IR's
 //!   `json_depth` counts a scalar leaf as depth 1 even at zero entered
-//!   containers, while [`PackageLimits::depth`] counts only entered
+//!   containers, while [`V2ReadLimits::depth`] counts only entered
 //!   containers, so e.g. `{"a":1}` is depth 2 in IR's units but depth 1
-//!   here. This reader passes `PackageLimits::depth` to IR *unchanged* --
+//!   here. This reader passes `V2ReadLimits::depth` to IR *unchanged* --
 //!   no `+ 1` conversion (QSL-6 M2, decided fail-closed): no wire deeper
-//!   than `PackageLimits::depth` containers is ever admitted, for either
+//!   than `V2ReadLimits::depth` containers is ever admitted, for either
 //!   kind of deepest path. The cost is one-sided: a wire whose deepest
 //!   path ends in a scalar exactly at the configured boundary is refused
 //!   `Incomplete` one level early (IR counts its terminal scalar as an
@@ -83,7 +86,6 @@ use quire_contract_ir::{
     CheckedPackageRefusalCode,
 };
 
-use super::PackageLimits;
 use crate::library::{
     declared_exports, verify_package, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
 };
@@ -91,6 +93,35 @@ use qsl_foundation::diagnostic::Code;
 
 #[cfg(test)]
 mod tests;
+
+/// The two ceilings this reader itself enforces (see the module doc's
+/// "Ceilings" section); elevated options clamp to the defaults.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct V2ReadLimits {
+    /// Offered bytes, at most 16 MiB.
+    pub(crate) artifact_bytes: usize,
+    /// Entered JSON containers, at most 128.
+    pub(crate) depth: usize,
+}
+
+impl Default for V2ReadLimits {
+    fn default() -> Self {
+        Self {
+            artifact_bytes: 16_777_216,
+            depth: 128,
+        }
+    }
+}
+
+impl V2ReadLimits {
+    fn bounded(self) -> Self {
+        let hard = Self::default();
+        Self {
+            artifact_bytes: self.artifact_bytes.min(hard.artifact_bytes),
+            depth: self.depth.min(hard.depth),
+        }
+    }
+}
 
 /// Why the reader could not admit the offered bytes (ADR-011 §4). Distinct
 /// from [`V2ReadIncomplete`]: a refusal names a defect in the input, never a
@@ -195,7 +226,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
 /// refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum V2ReadIncomplete {
-    /// The offered bytes exceed [`PackageLimits::artifact_bytes`], checked
+    /// The offered bytes exceed [`V2ReadLimits::artifact_bytes`], checked
     /// before the bytes are handed to IR's v2 reader.
     Bytes {
         /// The configured ceiling.
@@ -251,7 +282,7 @@ pub(crate) fn read_checked_package_v2(
     bytes: &[u8],
     identity: LibraryName,
     version: String,
-    limits: PackageLimits,
+    limits: V2ReadLimits,
     evidence: &CheckedPackageEvidence,
 ) -> V2ReadOutcome {
     let limits = limits.bounded();
@@ -266,7 +297,7 @@ pub(crate) fn read_checked_package_v2(
         // Fail-closed (QSL-6 M2, see the module doc's "Ceilings" section):
         // passed through unchanged, never widened by one for IR's
         // scalar-counts-as-depth-1 convention, so no wire deeper than
-        // `PackageLimits::depth` containers is ever admitted.
+        // `V2ReadLimits::depth` containers is ever admitted.
         depth: u64::try_from(limits.depth).unwrap_or(u64::MAX),
         ..CheckedPackageReadLimits::bounded()
     };

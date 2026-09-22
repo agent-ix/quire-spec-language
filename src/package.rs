@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: immutable native checked artifacts and source-bound static
-//! identity, plus ADR-013 T-1 (FR-087, QSL-158 S-3a)'s canonical, layer-4
-//! [`CheckedPackage`]/[`EmittedPackage`] typestate (defined in this module's
-//! private `checked` submodule and re-exported below). The two are unrelated:
-//! this file's own top-level `NativePackage` wraps the lane-private
-//! `checking::CheckedPackage<'a>` (ADR-013 §6), referenced here by its full
-//! path rather than a bare `use` import, precisely so that name stays
-//! distinct from [`CheckedPackage`] in this module's own item namespace (both
-//! are reachable as
-//! `crate::package::*` items once `checked`'s canonical type is re-exported
-//! below) -- `src/package/features.rs` and `src/package/view.rs` keep their
-//! own pre-existing, unrelated `use crate::checking::CheckedPackage;`
-//! imports unchanged (FR-087-AC-10/TC-247).
+//! identity (SEAM-1, ADR-011 §6.2, retired at M-6). The layer-4 canonical
+//! [`crate::checked_package::CheckedPackage`]/
+//! [`crate::checked_package::EmittedPackage`] typestate (ADR-013 T-1,
+//! FR-087, QSL-158 S-3a) lives in the sibling `checked_package` module
+//! until X-7 extracts it into `qsl-package` (Linear QSL-182): this file's own
+//! top-level `NativePackage` wraps the lane-private
+//! `checking::CheckedPackage<'a>` (ADR-013 §6), an unrelated type
+//! referenced here by its full path so it is never confused with
+//! `checked_package`'s own `CheckedPackage` -- `src/package/features.rs`
+//! and `src/package/view.rs` keep their own pre-existing, unrelated
+//! `use crate::checking::CheckedPackage;` imports unchanged
+//! (FR-087-AC-10/TC-247).
 
-mod checked;
-mod checked_v2;
-mod emit;
 mod encoding;
 mod features;
 mod intake;
@@ -25,17 +22,7 @@ mod tests;
 mod view;
 mod wire;
 
-pub use checked::{CheckedPackage, EmittedPackage};
 pub use reading::{PackageReadLimits, PackageSupport};
-
-// ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
-// (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
-// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
-// review) and not re-exported here: its candidate is not yet a
-// checked-package-crossing type any caller outside this crate should see
-// (`resolve_libraries` check 3 has not run, and FR-087's `VerifiedPackage`
-// does not exist yet), and this module has no caller yet (S3, ADR-011 §4's
-// round trip, has not landed) beyond `checked_v2`'s own tests.
 
 use std::fmt;
 

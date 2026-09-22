@@ -518,14 +518,14 @@ pub(crate) fn verify_package(
 
 /// Every name `identity_preimage` declares, in ascending order (FR-307: "a
 /// package's local declarations are exactly its exports", this module's own
-/// doc). The layer-4 `package` I2 reader calls this to populate a freshly
+/// doc). The layer-4 `checked_package` I2 reader calls this to populate a freshly
 /// wire-read [`LibraryPackage::exports`] before handing the candidate to
 /// [`verify_package`]: a package read straight from its own wire bytes
 /// carries no separate export selection, so its exports are exactly what its
 /// preimage declares.
 #[allow(
     dead_code,
-    reason = "no production caller yet: the I2 reader (`package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
+    reason = "no production caller yet: the I2 reader (`checked_package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
 )]
 pub(crate) fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
     Ok(project_declarations(identity_preimage)?
