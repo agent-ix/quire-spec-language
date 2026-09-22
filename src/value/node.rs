@@ -341,7 +341,7 @@ pub(crate) fn is_identifier(text: &str) -> bool {
 /// is in neither. QSL-186 deleted `check::identity`'s own lane-private
 /// `Identifier` newtype (`crate::value::member::Identifier`'s predecessor
 /// duplicate) so `value::member` and `check` share this one type. Reuses
-/// [`is_identifier`], the same character-class check every other
+/// `is_identifier`, the same character-class check every other
 /// identifier-shaped field in this crate already uses ("one fact, one
 /// place"), rather than a second copy of the schema's character class.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
