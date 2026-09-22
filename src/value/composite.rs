@@ -109,15 +109,17 @@ impl ValueType {
             // compare `maximum` against a resolved binding's own declared
             // maximum -- that comparison needs the recorded
             // `PopulationId` -> `PopulationBinding` correspondence, which
-            // only the evaluator has access to (`ObjectEnvironment`,
-            // threaded through `Machine`). Presence is admitted here
-            // (mirroring FR-153's own restriction of `Population<T>[N]` to
-            // a bare parameter type: no nested context ever reaches this
-            // arm), and `Machine::resolve_population`
-            // (`value/expression/evaluate.rs`) performs the real
-            // declared-maximum comparison at the `allInstances`/`lookup`
-            // sites that actually consume the identity (FR-089-AC-3/AC-4/
-            // AC-5), refusing a mismatch there instead.
+            // only `ObjectEnvironment` has access to. Presence is admitted
+            // here (mirroring FR-153's own restriction of `Population<T>[N]`
+            // to a bare parameter type: no nested context ever reaches this
+            // arm); the declared-maximum comparison itself happens in two
+            // places instead: argument admission's `validate`
+            // (`value/expression/mod.rs`) checks it against every
+            // `Population<T>[N]` parameter at call time (FR-089-AC-5), and
+            // `Machine::resolve_population` (`value/expression/evaluate.rs`)
+            // checks it again at the `allInstances`/`lookup` sites that
+            // consume the identity (FR-089-AC-3/AC-4), refusing a mismatch
+            // in either place instead.
             (Self::Population(_), Value::Population(_)) => true,
             (
                 Self::Boolean
