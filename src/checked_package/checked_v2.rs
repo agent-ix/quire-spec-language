@@ -376,8 +376,9 @@ pub(crate) fn read_checked_package_v2(
                 imports: Vec::new(),
                 exports,
             };
-            // Condition 1: IR's `AdmittedV2` arm is the only place this
-            // witness is minted (`tests/it/verified_binding_witness.rs`).
+            // Condition 1: this call, in IR's `AdmittedV2` arm, is the
+            // witness's only production mint; `tests/it/
+            // verified_binding_witness.rs` fails on any other.
             let admitted = SupportedV2Wire::attest_ir_admitted_v2();
             match verify_binding(admitted, candidate, pinned) {
                 Ok(verified) => V2ReadOutcome::Verified(verified),

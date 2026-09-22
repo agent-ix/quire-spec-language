@@ -63,10 +63,12 @@ use qsl_foundation::digest::WireNodeId;
 #[cfg(test)]
 mod binding_tests;
 mod package_identity;
+mod witness;
 
 pub(crate) use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
+pub(crate) use witness::SupportedV2Wire;
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -332,11 +334,12 @@ pub enum LibraryRefusal {
         /// The cycle's dependency edges, first and last equal.
         cycle: ImportPath,
     },
-    /// A supplied library's identity, version or `package_id` differs from
-    /// the import.
+    /// A supplied library's version or `package_id` differs from the import
+    /// declaration or pinned lock entry it was checked against.
     #[error("stale dependency")]
     StaleDependency {
-        /// Importer path, then the imported library.
+        /// Importer path then the imported library, or the bound library
+        /// alone for a pinned lock entry.
         path: ImportPath,
         /// The import declaration or lock entry the package disagrees with.
         pin: StalePin,
@@ -575,12 +578,11 @@ pub(crate) fn verify_package(
 /// };
 /// ```
 ///
-/// Nor does calling the binding from outside the crate with a hand-built
-/// candidate, which is how PR #340's review minted a `VerifiedPackage` from
-/// no wire bytes at all. `verify_binding`, its condition-1 witness and its
-/// pinned-request type are all crate-private; making the three public lets
-/// this snippet compile, so the test fails. (Stable rustdoc does not check
-/// a `compile_fail` error code, so none is claimed here.)
+/// A crate-external caller cannot build a `VerifiedPackage` from a
+/// hand-built candidate either: `verify_binding`, its condition-1 witness
+/// and its pinned-request type are all crate-private, and making the three
+/// public lets this snippet compile, so the test fails. (Stable rustdoc does
+/// not check a `compile_fail` error code, so none is claimed here.)
 /// ```compile_fail
 /// use quire_spec_language::library::{verify_binding, LibraryPackage};
 /// let candidate: LibraryPackage = todo!();
@@ -619,24 +621,6 @@ impl VerifiedPackage {
             package: self.package.package_id,
             exports: self.exports.into_map(),
         }
-    }
-}
-
-/// ADR-011 §4 condition 1's witness: IR's I04 reader admitted the bytes as a
-/// supported `quire.checked-package/v2` wire. `library` is layer 3 and may
-/// not name IR's admitted package type (ADR-011 §6.1: only layer-4
-/// `package` depends on `quire-contract-model`), so the layer-4 reader
-/// attests it with this token instead. [`Self::attest_ir_admitted_v2`] has
-/// exactly one call site, in `checked_package::checked_v2`'s `AdmittedV2`
-/// arm; `tests/it/verified_binding_witness.rs` fails on any other.
-#[derive(Debug)]
-pub(crate) struct SupportedV2Wire(());
-
-impl SupportedV2Wire {
-    /// Attest that IR's v2 reader has just admitted the bytes the candidate
-    /// is derived from. Only `checked_package::checked_v2` calls this.
-    pub(crate) fn attest_ir_admitted_v2() -> Self {
-        Self(())
     }
 }
 
@@ -696,7 +680,7 @@ impl From<&LibraryLock> for PinnedRequest {
 
 /// ADR-011 §4's verified binding, `library`'s own entry point. The layer-4
 /// `package` reader calls it after IR admitted the wire (condition 1,
-/// `admitted`) and after cross-checking its recomputed `package_id` against
+/// `_admitted`) and after cross-checking its recomputed `package_id` against
 /// IR's own verified digest (QSL-6 L2). It re-applies condition 2 through
 /// `verify_package` (owner ruling item 3(f): reused unchanged, not a second
 /// digest implementation), then condition 3: `pinned` must select
@@ -709,11 +693,10 @@ impl From<&LibraryLock> for PinnedRequest {
 /// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
 /// of the file bytes, a lock file or the source.
 pub(crate) fn verify_binding(
-    admitted: SupportedV2Wire,
+    _admitted: SupportedV2Wire,
     candidate: LibraryPackage,
     pinned: &PinnedRequest,
 ) -> Result<VerifiedPackage, LibraryRefusal> {
-    let SupportedV2Wire(()) = admitted;
     let exports = verify_package(&candidate)?;
     let Some(selection) = pinned.0.get(&candidate.library) else {
         return Err(LibraryRefusal::MissingImport {

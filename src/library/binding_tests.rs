@@ -187,7 +187,7 @@ fn refuses_when_the_pinned_id_and_version_both_disagree() {
     );
 }
 
-/// PR #340 review F8: a pinned request holds one selection per identity.
+/// A pinned request holds one selection per identity.
 /// Two different selections for one identity cannot be built, in either
 /// order, so condition 3's verdict can never depend on entry order.
 #[trace("TC-253", "FR-087-AC-3")]
