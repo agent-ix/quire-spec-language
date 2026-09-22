@@ -37,3 +37,7 @@ Tag the test `#[trace("FR-090-AC-6", "TC-387")]`.
 - Step 1 returns `CatalogCode::new("wrong_snapshot", "wrong-anchor")`.
 - Step 2 returns `CatalogCode::new("wrong_snapshot", "forbidden-pre-read")`.
 - Under step 3, a variant with no arm fails to compile.
+
+## Status
+
+Planned; no test backs this case.

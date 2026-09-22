@@ -11,44 +11,54 @@ relationships:
 ## Description
 
 Verify FR-090-AC-1. For a checked `Value` function, S6a returns every kernel
-outcome it evaluates to in `Ok(FamilyOutcome::Evaluated(o))`, with `o` equal in
-variant and payload to the `quire_exact::Outcome` the family's `evaluate`
-hook produced. Scope: FR-090-AC-1.
+outcome in `Ok(FamilyOutcome::Evaluated(o))`, and each `o` is a fixed,
+literal expected outcome. The hook's `EvaluateFailure::Incomplete(i)` becomes
+`Evaluated(Outcome::Incomplete(i))`. Scope: FR-090-AC-1.
+
+The fixture uses an IEEE-to-rational conversion because the checker's
+definedness pass puts no obligation on it: `src/check/facts.rs` raises
+obligations only for `Nonzero`, `Presence`, integer `Range`, `RationalRange`
+and `NonemptyReduction`. The same conversion already runs through a checked
+package in `tests/it/total_functions.rs`
+(`p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits`),
+giving `Undefined(IeeeNotFinite)` for NaN, `Refused(IeeeRationalOutOfDomain)`
+for 20.0 and `Completed(1/2)` for 0.5. A zero divisor or an out-of-domain
+integer result would be refused at check time and never reach S6a.
 
 This catches three faults. The first is a wrapper that turns a kernel
 `Refused` into a `FamilyOutcome::Refused`, which conflates a kernel refusal
-with a family refusal. The second reports a meter-budget `Incomplete` as a
-refusal or as an `InternalFault`. The third rewrites a kernel payload on the
-way out, for example by dropping `IeeeNotExact`'s flags or a
-`CardinalityOutOfBound`'s count.
+with a family refusal. The second reports the hook's meter-budget
+`Incomplete` as a refusal or as an `InternalFault`. The third rewrites a
+kernel payload on the way out.
 
 ## Test Procedure
 
-1. Check a package declaring four `Value` functions:
-   - `id(x: Integer[0,10]): Integer[0,10] = x`;
-   - `div(x: Integer[0,10], y: Integer[0,10]): Rational[..] = x / y`;
-   - `inc(x: Integer[0,10]): Integer[0,10] = x + 1`;
-   - any one-call function, for the meter case.
-2. Evaluate `id(3)` through S6a with an unlimited meter.
-3. Evaluate `div(1, 0)` through S6a with an unlimited meter.
-4. Evaluate `inc(10)` through S6a with an unlimited meter. The result `11`
-   is outside the declared `Integer[0,10]` domain.
-5. Evaluate the one-call function through S6a with a meter whose work limit
-   is zero, so the call's first charge is denied.
-6. For each step, run the same evaluation directly through
-   `ValueFunctionFamily::evaluate` and keep the kernel outcome it produces.
-   Compare that outcome with the S6a result.
+1. Check a package declaring
+   `f(x: Float[binary64]): Rational[-9..9 / 1..9] = convert(x)` and link it.
+   Confirm the check admits it.
+2. Call S6a for `f` with `x = 0.5` (`0x3FE0_0000_0000_0000`) and an unlimited
+   meter.
+3. Call S6a for `f` with `x = NaN` (`0x7FF8_0000_0000_0000`) and an unlimited
+   meter.
+4. Call S6a for `f` with `x = 20.0` (`0x4034_0000_0000_0000`) and an
+   unlimited meter.
+5. Call S6a for `f` with `x = 0.5` and a meter whose work limit is zero, so
+   the hook's `ChargePoint::FunctionCall` charge is denied.
 
 Tag the test `#[trace("FR-090-AC-1", "TC-382")]`.
 
 ## Expected Results
 
-- Step 2 returns `Ok(FamilyOutcome::Evaluated(Outcome::Completed(3)))`.
-- Step 3 returns `Ok(FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::DivisionByZero)))`.
-- Step 4 returns `Ok(FamilyOutcome::Evaluated(Outcome::Refused(r)))`, where
-  `r` is the kernel cause (`Refusal::IntegerOutOfDomain`).
-- Step 5 returns `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(i)))`,
-  where `i` names the denied charge point and limit.
-- In every step, the payload inside `Evaluated` equals the step-6 kernel
-  outcome under `PartialEq`.
+Each result is compared with a fixed literal outcome, not with another run
+of the hook.
+
+- Step 2: `Ok(FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2))))`.
+- Step 3: `Ok(FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite)))`.
+- Step 4: `Ok(FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain)))`.
+- Step 5: `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(i)))`, where `i`'s
+  charge point is `ChargePoint::FunctionCall`.
 - No step returns `Ok(FamilyOutcome::Refused(_))` or `Err(_)`.
+
+## Status
+
+Planned; no test backs this case.

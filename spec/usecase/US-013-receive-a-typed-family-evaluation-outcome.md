@@ -37,10 +37,11 @@ a catalog code, and F `diagnostic` maps that code to an O-16 category
 
 ### US-013-EX-1: A kernel outcome arrives unchanged
 
-- **Given** a checked `Value` function whose body divides by a zero argument.
-- **When** the caller evaluates it through S6a.
+- **Given** a checked `Value` function that converts a binary64 argument to a
+  bounded rational.
+- **When** the caller evaluates it through S6a with a NaN argument.
 - **Then** the caller receives `FamilyOutcome::Evaluated` holding the kernel
-  `Outcome::Undefined(DivisionByZero)`, exactly as the kernel produced it.
+  `Outcome::Undefined(IeeeNotFinite)`, exactly as the kernel produced it.
 
 ### US-013-EX-2: A family that sits out evaluation refuses with a code
 
@@ -50,11 +51,20 @@ a catalog code, and F `diagnostic` maps that code to an O-16 category
 - **Then** the caller receives `FamilyOutcome::Refused` with cause
   `FamilyNotNativelyEvaluable`, its catalog code, and category `refusal`.
 
-### US-013-EX-3: A broken invariant is a fault, not a refusal or a panic
+### US-013-EX-3: A bad argument is refused before evaluation
 
-- **Given** an evaluation environment whose arguments an earlier call already
-  consumed.
-- **When** S6a evaluates against it.
+- **Given** a checked `Value` function with a population parameter.
+- **When** the caller calls it with a population identity this evaluation
+  never recorded.
+- **Then** `CheckedPackage::call` returns `CallFailure::Input` and S6a never
+  runs.
+
+### US-013-EX-4: A broken invariant is a fault, not a refusal or a panic
+
+- **Given** a checked package and a declaration identity that names no
+  function in it, handed to S6a directly (for example by a test harness or
+  a replay facade that resolved the wrong package).
+- **When** S6a evaluates that identity.
 - **Then** the caller receives `Err(InternalFault)` naming the stage and the
   invariant, category `internal-failure`.
 

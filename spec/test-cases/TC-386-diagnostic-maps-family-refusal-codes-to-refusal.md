@@ -34,5 +34,10 @@ Tag the test `#[trace("FR-090-AC-5", "TC-386")]`.
 ## Expected Results
 
 - Every code in steps 1 and 2 maps to `Category::Refusal`.
-- The step-3 table names no workspace member and no path dependency, so F
-  cannot import the crate that defines `FamilyRefusal`.
+- The step-3 table names neither the crate that defines `FamilyRefusal` nor
+  any crate at layer 3 or above. It may name `quire-exact`, because ADR-011
+  §6.1 lets F depend on K.
+
+## Status
+
+Planned; no test backs this case.

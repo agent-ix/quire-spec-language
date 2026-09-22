@@ -47,3 +47,7 @@ Tag the test `#[trace("FR-090-AC-7", "TC-388")]`.
   `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))`.
 - Step 5 finds no variant whose payload is `WrongSnapshotCause`. This is
   also a compile-time fact: `quire-exact` cannot import `crate::check`.
+
+## Status
+
+Planned; no test backs this case. The carrier waits on FR-090-OQ-1.

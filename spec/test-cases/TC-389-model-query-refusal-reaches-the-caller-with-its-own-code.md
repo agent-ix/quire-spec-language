@@ -12,10 +12,11 @@ relationships:
 
 Verify FR-090-AC-8. Suppose `model::population` refuses an `allInstances<T>(p)`
 query with a `ModelRefusal`. The caller then receives a refusal whose catalog
-code equals that `ModelRefusal`'s code and cause. The result is neither a
+code is that refusal's `ModelRefusal::catalog_code()`, the method O-17
+requires and which does not exist today. The result is neither a
 kernel `Outcome::Refused` inside `FamilyOutcome::Evaluated` nor a panic. The
-carried refusal holds no native-v1 `qsl_foundation::diagnostic::Code`.
-Scope: FR-090-AC-8.
+carried refusal holds no native-v1 `qsl_foundation::diagnostic::Code`
+(ADR-013 R-09). Scope: FR-090-AC-8.
 
 The fixture is the above-maximum refusal of `all_instances`
 (`src/model/population.rs`, `Code::CardinalityOutOfBound` with
@@ -45,7 +46,13 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
 ## Expected Results
 
 - Step 3's code is
-  `CatalogCode::new("cardinality_out_of_bound", "above-maximum")`.
+  `CatalogCode::new("cardinality_out_of_bound", "above-maximum")`, and it
+  equals `ModelRefusal::catalog_code()` of the refusal `all_instances`
+  returns for the same binding.
 - Step 2 does not panic, and its result is not
   `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))`.
 - Step 4 finds no field of type `qsl_foundation::diagnostic::Code`.
+
+## Status
+
+Planned; no test backs this case. The carrier waits on FR-090-OQ-1.

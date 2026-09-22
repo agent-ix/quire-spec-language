@@ -45,3 +45,7 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 - Step 1's list has as many entries as `FamilyRefusal` has variants. Step 4
   shows that a variant with no arm fails to compile, so the list cannot fall
   behind the enum without the build failing.
+
+## Status
+
+Planned; no test backs this case. Blocked for `FamilyNotNativelyEvaluable` by FR-090-OQ-2.
