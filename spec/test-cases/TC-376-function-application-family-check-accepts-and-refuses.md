@@ -39,21 +39,30 @@ any symbol; see this test case's own Status section for why.
 
 ## Status
 
-**Backed.** `check_application_accepts_a_well_typed_call`,
-`check_application_refuses_wrong_arity` and
-`check_application_refuses_an_unknown_name`
-(`src/check/family.rs`, `checking_tests`), tagged
+**Backed for behavior; the AC it targets is true by inspection, not
+backed (PR #303 review, finding 3).** All four steps now have a test:
+`check_application_accepts_a_well_typed_call`,
+`check_application_refuses_wrong_arity`,
+`check_application_refuses_an_unknown_name` and
+`check_application_refuses_a_type_mismatched_argument` (step 4, added
+this round) (`src/check/family.rs`, `checking_tests`), all tagged
 `#[trace("TC-376", "FR-065-AC-4")]`.
 
-**Behavioral, not structural, per team-lead testing-policy ruling (QSL-148,
-2026-09-21).** FR-065-AC-4 is worded as a code-shape test ("an AST or
-line-count check against a fixed budget"), and TC-163's own step 6 verifies
-that shape directly. That structural fact is true of the delivered code --
+**Behavioral, not structural, per the
+[testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+(Peter, QSL-148, 2026-09-22, relayed by the QSL team lead).** FR-065-AC-4
+is worded as a code-shape test ("an AST or line-count check against a
+fixed budget"). That structural fact is true of the delivered code --
 `infer_form`'s `Call` arm is exactly one call into
 `super::family::check_application` and holds no other conditional, lookup
-or loop -- but this test case does not re-verify it, on explicit
-instruction: test what the family check accepts and refuses, not the arm's
-structure or placement. TC-376 instead exercises `check_application` itself
-(the function the arm's one call reaches) directly, showing that call
-performs real, adjudicated checking -- not that the arm merely delegates
-somewhere.
+or loop -- but no test in the delivered code re-verifies it: TC-163's own
+step 6 is not implemented by a code-shape/AST test either (see TC-163's
+own Status section), on the same explicit instruction: test what the
+family check accepts and refuses, not the arm's structure or placement.
+These four tests exercise `check_application` itself (the function the
+arm's one call reaches) directly, showing that call performs real,
+adjudicated checking -- genuine, valuable coverage -- but none of them
+would catch a future change that reintroduced a conditional directly into
+`infer_form`'s `Call` arm while leaving `check_application` unchanged.
+That is why FR-065-AC-4 is recorded as true by inspection rather than
+backed; see FR-065's own Status section, AC-4 row.

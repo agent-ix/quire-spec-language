@@ -32,24 +32,39 @@ absolute size, to be the proximate cause of the refusal.
 
 ## Status
 
-**Backed.** `real_recursive_descent_is_nesting_depth_bounded`
-(`src/value/expression/family.rs`, `family_contract_tests`), tagged
-`#[trace("TC-378", "FR-062-AC-7")]`.
+**Unbacked** (PR #303 review, findings 4/5; reverted from an earlier
+"backed" claim in this round). The earlier claim rested on
+`real_recursive_descent_is_nesting_depth_bounded`, which depended on
+`check::family::charge_recursive_nesting` -- a side-walk added purely to
+charge `CheckContext`'s nesting counter once per expression-tree node
+*after* the real check had already run. That is not what this test case
+asks for: charging nesting during a re-walk of an already-checked form is
+not "the limit... is shown to be the proximate cause" of real recursive
+descent, and the side-walk silently dropped the real walk's own source
+location and early-return-on-first-error behavior. Both the side-walk and
+the test that exercised it are deleted.
 
-**Plant/revert red-green check (QSL-148, 2026-09-21).** The same test
-function, planted onto `main` at `1f313fd4` (pre-QSL-148) in a throwaway
-worktree, fails: `ValueFunctionFamily::check` on that tree calls
-`enter_nesting` at most once per top-level declaration and never descends
-into the body, so a limit of 3 does not refuse a body nested 4 deep. On this
-branch, `ValueFunctionFamily::check` additionally charges nesting once per
-expression-tree node via a real recursive walk
-(`check::family::charge_recursive_nesting`, called from `check` itself,
-independent of and in addition to `Typer`'s own unrelated internal
-recursion), which the test's own mutation argument covers: deleting that
-walk's call in `check` reproduces the same failure this test showed on
-`main`.
+`real_checker_depth_limit_is_the_proximate_cause`
+(`src/value/expression/family.rs`, `family_contract_tests`, untagged)
+demonstrates the real mechanism this test case's fixture needs: a body
+nested to depth D (`Not(Not(Not(true)))`) checked through
+`ValueFunctionFamily::check`, which now drives `Typer` via
+`check_declaration_body` (QSL-148), refuses at `Typer`'s own
+pre-existing `CheckingLimits.depth` configured to 3 and admits at 4,
+varying only the limit by exactly one -- satisfying this test case's
+Test Procedure and Expected Results as literally written. It stays
+untagged for FR-062-AC-7 because the refusal it demonstrates surfaces as
+`StageFailure::Refused` (a `Typer`-level `CheckCause::ResourceExhausted`),
+not the `StageFailure::Limit` outcome AC-7's wording names, and it bounds
+`Typer`'s own depth counter, not `CheckContext`'s
+`StageLimits.nesting_depth` (which `nesting_depth_limit_is_the_proximate_
+cause`, below, still covers at one charge per top-level declaration).
+Making AC-7 itself backed would require threading `&mut CheckContext`
+through every recursive arm of `Typer::infer_form`, not just `Call` --
+see FR-062's own Status section for AC-7 for the full reasoning. Reported
+as an open scoping question, not decided here.
 
-This test case supersedes `nesting_depth_limit_is_the_proximate_cause`
-(`src/value/expression/family.rs`), which stays, untagged, as a narrower
-regression guard on the `>=` comparison itself; see that test's own doc
-comment.
+`nesting_depth_limit_is_the_proximate_cause`
+(`src/value/expression/family.rs`) remains, untagged, as a narrower
+regression guard on `CheckContext`'s own per-declaration nesting charge;
+see that test's own doc comment.

@@ -58,12 +58,17 @@ typing/definedness pass is replaced by a call to
 (`src/check/family.rs`) -- the composed checker's pre-migration
 function-check entry points genuinely are absent now. But this test case's
 own procedure (a symbol-search step and an `E0004` compile-fail fixture) is
-not implemented, on explicit team-lead testing-policy ruling delivered
-during QSL-148: test what the family check accepts and refuses, never a
-symbol's presence/absence or a match arm's shape. `TC-377`'s behavioral
-tests of `check_declaration_body` back FR-065-AC-5 instead -- see FR-065's
-own Status section, AC-5 row, and `TC-377` for the tests themselves and the
-reasoning.
+not implemented, on the explicit
+[testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+delivered during QSL-148 (Peter, 2026-09-22, relayed by the QSL team
+lead): test what the family check accepts and refuses, never a symbol's
+presence/absence or a match arm's shape. `TC-377`'s behavioral tests of
+`check_declaration_body` are genuine coverage of the checking-decision
+half of this migration, but they do not demonstrate this test case's own
+enum-shape/symbol-absence procedure, and `Expression::Call` remains
+present in `Expression` regardless -- so FR-065-AC-5 itself stays
+unbacked, not backed by substitution; see FR-065's own Status section,
+AC-5 row, and `TC-377` for the tests themselves and the full reasoning.
 
 This test case is kept, as written, as a record of AC-5's originally
 specified verification method; it is not a currently-planned piece of
