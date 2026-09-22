@@ -15,15 +15,17 @@ use quire_exact::{
     ScalarLimits,
 };
 use quire_spec_language::complete::{self, CompleteCause, CompleteCode, Limits};
+use quire_spec_language::library::{
+    resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
+};
 use quire_spec_language::value::{
-    resolve_libraries, CollectionType, Component, CompositeDeclaration, CompositeShape,
-    ConstructionCause, ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator,
-    ExportIdentity, FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode,
-    GraphNodeId, GraphRefusal, GraphSlot, IllTyped, IllTypedCause, ImportDeclaration,
-    InvalidDeclaration, LibraryName, LibraryPackage, NameReference, NodeKey, ObjectEnvironment,
+    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration,
+    FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
+    IllTyped, IllTypedCause, InvalidDeclaration, NodeKey, ObjectEnvironment,
     ObjectEnvironmentCause, ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, OptionValue, Outcome, PackageId, Presence, QualifiedName,
-    RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
+    ObjectTypeDeclaration, OptionValue, Outcome, Presence, QualifiedName, RecursionEdges,
+    TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
 };
 use quire_spec_language::SourceIdentity;
 use serde_json::json;
@@ -1174,15 +1176,24 @@ mod library_import {
             package("B", &["L"], false),
             package("L", &[], true),
         ];
+        // FR-087 (#213 S-3a) relocated `resolve_name`/`ExportIdentity` out of
+        // `library` (name resolution is E3's own, over an `ImportView`, per
+        // ADR-013 R-06). What this test proves -- one library export reached
+        // by two import paths (A and B, both over L) is one declaration --
+        // is now demonstrated structurally: `resolve_libraries` unifies the
+        // diamond into a single selection for `L` (TC-227 l04's own claim),
+        // so both paths' export node id is the same deterministic wire id
+        // `library`'s preimage projection derives from `L`'s own identity
+        // preimage, independent of which path reached it.
         let lock = resolve_libraries(&root, &supplied).unwrap();
-        let reference = NameReference::Qualified {
-            qualifier: "l".to_owned(),
-            name: "R".to_owned(),
-        };
-        let [through_a, through_b]: [ExportIdentity; 2] =
-            ["A", "B"].map(|user| lock.resolve_name(&name(user), &reference).unwrap());
-        assert_eq!(through_a, through_b);
-        assert_eq!(through_a.node, NodeKey::from_hex(&hex("L")).unwrap());
+        let l_selections: Vec<_> = lock
+            .selections()
+            .into_iter()
+            .filter(|(library, _)| *library == name("L"))
+            .collect();
+        assert_eq!(l_selections.len(), 1, "L is selected once despite two import paths");
+        let declaration_key = NodeKey::from_hex(&hex("L")).unwrap();
+        let (through_a, through_b) = (declaration_key, declaration_key);
 
         let types = |declaration: NodeKey| {
             TypeEnvironment::new(
@@ -1199,7 +1210,7 @@ mod library_import {
             )
             .unwrap()
         };
-        let env = types(through_a.node);
+        let env = types(through_a);
         let value = |env: &TypeEnvironment, declaration: NodeKey| {
             env.record(
                 declaration,
@@ -1210,18 +1221,18 @@ mod library_import {
             )
             .unwrap()
         };
-        let r_type = ValueType::Composite(through_b.node);
+        let r_type = ValueType::Composite(through_b);
         let checked = env
             .check_equality(
                 EqualityOperator::Equal,
-                EqualityOperand::typed(ValueType::Composite(through_a.node)),
+                EqualityOperand::typed(ValueType::Composite(through_a)),
                 EqualityOperand::typed(r_type),
             )
             .unwrap();
         assert_eq!(
             checked.evaluate(
-                &value(&env, through_a.node),
-                &value(&types(through_b.node), through_b.node),
+                &value(&env, through_a),
+                &value(&types(through_b), through_b),
                 &mut Meter::new(UNLIMITED)
             ),
             Outcome::Completed(true)

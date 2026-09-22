@@ -2,12 +2,20 @@
 //! Structural reading of a CheckedPackage V2 `quire.checked-package-id/v2`
 //! identity preimage: its version, required members and the
 //! `identity_projection` nodes from which FR-307 export node keys are derived.
+//!
+//! FR-087 (#213 S-3a, owner ruling on QSL-158, 2026-09-21, item 3(d)):
+//! relocated from `value::package_identity`. Every field or return value
+//! here that is built from wire-read or preimage-read data is typed
+//! [`super::WireNodeId`], never `quire_exact::NodeKey` (ADR-013 R-10, O-04):
+//! a wire node id becomes a `NodeKey` only by lookup in a QSL checked
+//! package, a lookup this module never performs.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use super::node::{is_qualified_name, NodeKey, NODE_KEY_DOMAIN};
+use super::WireNodeId;
+use crate::value::node::{is_qualified_name, NODE_KEY_DOMAIN};
 
 /// The identity preimage version constant.
 pub(crate) const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
@@ -80,20 +88,20 @@ pub enum PreimageDefect {
         index: usize,
     },
     /// Two projection nodes carry equal `declaration.qualified_name` values
-    /// (`ambiguous-name`). `nodes` holds both node keys in ascending digest
-    /// order.
+    /// (`ambiguous-name`). `nodes` holds both wire node ids in ascending
+    /// digest order.
     AmbiguousDeclaration {
         /// The repeated qualified name.
         name: String,
-        /// Both node keys, in ascending digest order.
-        nodes: [NodeKey; 2],
+        /// Both wire node ids, in ascending digest order.
+        nodes: [WireNodeId; 2],
     },
     /// A node's top-level `declaration.qualified_name` disagrees with its
     /// nominal `qualified_declaration`, or is absent while a nominal
     /// `qualified_declaration` is present (`declaration-nominal-mismatch`).
     DeclarationNominalMismatch {
-        /// The node's key.
-        node: NodeKey,
+        /// The node's wire id.
+        node: WireNodeId,
         /// The node's top-level `declaration.qualified_name`, or `None` when
         /// `declaration` is absent.
         declared: Option<String>,
@@ -124,14 +132,14 @@ pub enum NodeDefect {
     Declaration,
 }
 
-/// The validated node keys of one identity preimage, by the top-level
+/// The validated wire node ids of one identity preimage, by the top-level
 /// `declaration.qualified_name` each node spells, spelled with `::`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ProjectedDeclarations(BTreeMap<String, NodeKey>);
+pub(crate) struct ProjectedDeclarations(BTreeMap<String, WireNodeId>);
 
 impl ProjectedDeclarations {
-    /// The node key declaring `name`.
-    pub(crate) fn node(&self, name: &str) -> Option<NodeKey> {
+    /// The wire node id declaring `name`.
+    pub(crate) fn node(&self, name: &str) -> Option<WireNodeId> {
         self.0.get(name).copied()
     }
 
@@ -174,12 +182,14 @@ enum MemberDefect {
     Unknown(String),
 }
 
-fn node_key(value: &Value) -> Option<NodeKey> {
+/// The wire node id `{domain: quire.checked-semantic-node/v1, digest}`
+/// object names, without becoming a `NodeKey` (R-10, O-04).
+fn wire_node_id(value: &Value) -> Option<WireNodeId> {
     let object = value.as_object()?;
     if object.len() != 2 || object.get("domain")?.as_str()? != NODE_KEY_DOMAIN {
         return None;
     }
-    NodeKey::from_hex(object.get("digest")?.as_str()?)
+    WireNodeId::from_hex(object.get("digest")?.as_str()?)
 }
 
 /// The node tags of the V2 semantic graph.
@@ -245,12 +255,12 @@ fn declared_name(value: &Value) -> Result<String, NodeDefect> {
     qualified(segments)
 }
 
-/// A projection node's key and its shape-valid `declaration.qualified_name`
-/// and nominal `qualified_declaration`, before the cross-node checks that
-/// order them: whether `declared` and `nominal` agree, and whether `declared`
-/// repeats an earlier node's.
+/// A projection node's wire id and its shape-valid `declaration
+/// .qualified_name` and nominal `qualified_declaration`, before the
+/// cross-node checks that order them: whether `declared` and `nominal`
+/// agree, and whether `declared` repeats an earlier node's.
 struct NodeShape {
-    key: NodeKey,
+    key: WireNodeId,
     declared: Option<String>,
     nominal: Option<String>,
 }
@@ -278,7 +288,7 @@ fn projected_node(value: &Value) -> Result<NodeShape, NodeDefect> {
     })?;
     let key = node
         .get("node_id")
-        .and_then(node_key)
+        .and_then(wire_node_id)
         .ok_or(NodeDefect::NodeId)?;
     if node.get("schema_version").and_then(Value::as_str) != Some(NODE_SCHEMA_VERSION) {
         return Err(NodeDefect::SchemaVersion);
@@ -317,8 +327,8 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
     }
 }
 
-/// Validate `bytes` as an identity preimage and derive the node key of each
-/// nominal declaration in its `identity_projection`.
+/// Validate `bytes` as an identity preimage and derive the wire node id of
+/// each nominal declaration in its `identity_projection`.
 ///
 /// Canonicity is enforced by requiring `bytes` to be byte-identical to the
 /// re-serialization of the JSON value they parse to: object members in
@@ -365,7 +375,7 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
     // schema refusal anywhere in the projection outranks a mismatch or an
     // ambiguity found by scanning fewer nodes.
     let mut shapes = Vec::with_capacity(nodes.len());
-    let mut previous: Option<NodeKey> = None;
+    let mut previous: Option<WireNodeId> = None;
     for (index, node) in nodes.iter().enumerate() {
         let shape =
             projected_node(node).map_err(|defect| PreimageDefect::Node { index, defect })?;

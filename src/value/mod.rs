@@ -14,9 +14,10 @@
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after the type-checking [`IllTyped`] refusal;
 //! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
 //!    [`TypeEnvironment`], the FR-149 equality matrix
-//!    ([`TypeEnvironment::check_equality`]), FR-144 bounded
-//!    [`CollectionValue`]s ([`construct_collection`]) and FR-307 library
-//!    resolution [`resolve_libraries`] (QSL #119);
+//!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
+//!    [`CollectionValue`]s ([`construct_collection`]) (QSL #119); FR-307
+//!    library resolution relocated to the top-level `library` module
+//!    (FR-087, #213 S-3a);
 //! 4. [`order_numbers`] compares one [`OrderedOperands`] pair (`Integer`,
 //!    `Rational` or `Decimal`) under one [`OrderingOperator`];
 //!    [`evaluate_integer_arithmetic`] evaluates add/subtract/multiply/negate
@@ -108,13 +109,11 @@ pub(crate) mod equality;
 mod expression;
 pub(crate) mod ieee;
 mod key;
-mod library;
 mod member;
 mod model_query;
 pub(crate) mod node;
 pub(crate) mod numeric;
 mod outcome;
-mod package_identity;
 pub(crate) mod quantity;
 pub(crate) mod rational;
 mod reference;
@@ -203,12 +202,6 @@ pub use ieee::{
     IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeOperationKind,
     IeeeProvenance, IeeeResult, IeeeValue, IeeeWidth, IEEE_DEFINITION,
 };
-pub use library::{
-    check_migration, resolve_libraries, ExportIdentity, ImportDeclaration, ImportPath,
-    InvalidLibraryName, LibraryCause, LibraryLock, LibraryMigration, LibraryName, LibraryPackage,
-    LibraryRefusal, NameReference, NameRefusal, PackageId, Selection, StaleCause,
-    IDENTITY_PREIMAGE_PATH, PACKAGE_ID_PATH,
-};
 pub use member::{Identifier, InvalidIdentifier, Member};
 pub use node::{
     InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
@@ -219,7 +212,6 @@ pub use numeric::{
     BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
 pub use outcome::{BoundViolation, Outcome, PreconditionFailure, Refusal, Undefined};
-pub use package_identity::{NodeDefect, PreimageDefect};
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit,

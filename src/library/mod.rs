@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-307 reusable semantic libraries: qualified imports bound to a library
-//! `package_id`, transitive closure into a lock with one selection per library
-//! identity, diamond unification, cycle refusal, qualified name resolution and
-//! identity-preserving migration.
+//! ADR-011 §6.1 layer-3 `library`: FR-307 reusable semantic libraries
+//! (qualified imports bound to a library `package_id`, transitive closure
+//! into a lock with one selection per library identity, diamond
+//! unification, cycle refusal and identity-preserving migration), and
+//! [`WireNodeId`] (ADR-013 O-04, T-3).
 //!
 //! A package's `quire.package.semantic/v2` `package_id` is the SHA-256 of the
 //! RFC 8785 JCS bytes of its `quire.checked-package-id/v2` identity preimage.
@@ -16,14 +17,115 @@
 //! explicit declared name, so an export no node's `declaration` spells is
 //! `missing_declaration` with cause `undeclared-export`, never a guessed node.
 //! A package's local declarations are exactly its exports.
+//!
+//! ## FR-087 relocation (#213 S-3a, owner ruling on QSL-158, 2026-09-21)
+//!
+//! Relocated from `value::library` and `value::package_identity` (ADR-011's
+//! own module-move table, `:744`), which no longer exist. `LibraryLock` and
+//! `resolve_libraries` carry forward unchanged in shape (owner ruling item
+//! 3(a)); `PackageId`, `ImportDeclaration`, `LibraryPackage` and the rest of
+//! `value::library`'s public surface likewise. Two names do not carry
+//! forward in their pre-move shape:
+//!
+//! - `ExportIdentity{package, node: NodeKey}` is gone, not renamed: T-3's
+//!   `PackageNodeKey{package: package_id, node: WireNodeId}` is the module's
+//!   sole cross-package node reference after relocation (owner ruling item
+//!   3(c)). `PackageNodeKey` and `ImportView` are the typestate lane's own
+//!   PR against this same ticket (ADR-013 T-1's shells); this module defines
+//!   neither, only the [`WireNodeId`] field type both depend on.
+//! - `resolve_name` does not relocate (owner ruling item 3(b)): name
+//!   resolution against an imported dependency's exports is E3's own
+//!   resolution over an `ImportView`, performed by the importing package's
+//!   own check stage, never by `library` calling back into itself. Removed,
+//!   not deprecated or aliased (no migration/fallback layer for prerelease
+//!   software):
+//!
+//! ```compile_fail,E0432
+//! use quire_spec_language::library::resolve_name;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::library::ExportIdentity;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::library::NameReference;
+//! ```
+//! ```compile_fail,E0432
+//! use quire_spec_language::library::NameRefusal;
+//! ```
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-use super::node::{is_qualified_name, NodeKey};
-use super::package_identity::{project_declarations, PreimageDefect, ProjectedDeclarations};
 use crate::diagnostic::Code;
+use crate::value::node::is_qualified_name;
+
+mod package_identity;
+
+pub use package_identity::{NodeDefect, PreimageDefect};
+use package_identity::{project_declarations, ProjectedDeclarations};
+
+/// A node id exactly as it travels on the wire (a v2 node key's 64
+/// lowercase-hex digest), before a checked-package lookup resolves it to a
+/// `quire_exact::NodeKey` (ADR-013 O-04). Its canonical home (FR-087, #213
+/// S-3a): `T-3`'s `PackageNodeKey{package: package_id, node: WireNodeId}`
+/// pins it here, and `replay`'s #231 envelopes re-export this same type
+/// rather than defining a second one.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WireNodeId([u8; 32]);
+
+impl WireNodeId {
+    /// Wrap an already-known wire node-id digest. Unlike
+    /// `quire_exact::NodeKey::from_digest`, this constructor carries no
+    /// "only `check` calls this" restriction: a `WireNodeId` is exactly the
+    /// unchecked wire spelling, never a claim that the id resolves to a
+    /// real node.
+    pub fn from_digest(digest: [u8; 32]) -> Self {
+        Self(digest)
+    }
+
+    /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
+    /// travels (`{domain, digest}`'s `digest` member).
+    pub fn from_hex(digest: &str) -> Option<Self> {
+        let (pairs, []) = digest.as_bytes().as_chunks::<2>() else {
+            return None;
+        };
+        if pairs.len() != 32 {
+            return None;
+        }
+        let mut key = [0_u8; 32];
+        for (slot, [high, low]) in key.iter_mut().zip(pairs) {
+            *slot = (lower_hex(*high)? << 4) | lower_hex(*low)?;
+        }
+        Some(Self(key))
+    }
+
+    /// The raw digest bytes.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+fn lower_hex(digit: u8) -> Option<u8> {
+    match digit {
+        b'0'..=b'9' => Some(digit - b'0'),
+        b'a'..=b'f' => Some(digit - b'a' + 10),
+        _ => None,
+    }
+}
+
+impl fmt::Display for WireNodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+impl fmt::Debug for WireNodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WireNodeId({self})")
+    }
+}
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -96,15 +198,6 @@ pub struct LibraryPackage {
     /// Exported qualified declarations, spelled with `::`. Each node key is
     /// derived from the identity preimage.
     pub exports: Vec<String>,
-}
-
-/// An export identity: (library package key, export node key).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ExportIdentity {
-    /// The library's package key.
-    pub package: PackageId,
-    /// The export's node key in that library's graph.
-    pub node: NodeKey,
 }
 
 /// One exact library selection.
@@ -480,55 +573,6 @@ pub fn resolve_libraries(
     })
 }
 
-/// A name use inside a package.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum NameReference {
-    /// `Name`.
-    Unqualified(String),
-    /// `a::Name`.
-    Qualified {
-        /// The import qualifier `a`.
-        qualifier: String,
-        /// `Name`.
-        name: String,
-    },
-}
-
-/// Why a name use does not resolve.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-pub enum NameRefusal {
-    /// No local declaration, import qualifier or export matches. A library
-    /// name is never a qualifier.
-    #[error("missing declaration")]
-    MissingDeclaration(NameReference),
-    /// Two imports bind the qualifier.
-    #[error("ambiguous declaration")]
-    AmbiguousDeclaration {
-        /// The qualifier.
-        qualifier: String,
-        /// Every import path binding it, in declaration order.
-        paths: Vec<ImportPath>,
-    },
-}
-
-impl NameRefusal {
-    /// The FR-307 refusal code.
-    pub fn code(&self) -> Code {
-        match self {
-            Self::MissingDeclaration(_) => Code::MissingDeclaration,
-            Self::AmbiguousDeclaration { .. } => Code::AmbiguousDeclaration,
-        }
-    }
-
-    /// The FR-272 cause.
-    pub fn cause(&self) -> LibraryCause {
-        match self {
-            Self::MissingDeclaration(_) => LibraryCause::MissingName,
-            Self::AmbiguousDeclaration { .. } => LibraryCause::AmbiguousName,
-        }
-    }
-}
-
 impl LibraryLock {
     /// The resolved root package.
     pub fn root(&self) -> &LibraryPackage {
@@ -549,61 +593,6 @@ impl LibraryLock {
                 )
             })
             .collect()
-    }
-
-    /// Resolve `reference` as used in the package with identity `user` (the
-    /// root or a selected library). Unqualified names resolve only to the
-    /// package's own declarations.
-    pub fn resolve_name(
-        &self,
-        user: &LibraryName,
-        reference: &NameReference,
-    ) -> Result<ExportIdentity, NameRefusal> {
-        let missing = || NameRefusal::MissingDeclaration(reference.clone());
-        let user_selection = if *user == self.root.package.library {
-            &self.root
-        } else {
-            self.selected.get(user).ok_or_else(missing)?
-        };
-        let (owner, name) = match reference {
-            NameReference::Unqualified(name) => (user_selection, name),
-            NameReference::Qualified { qualifier, name } => {
-                let bound: Vec<&ImportDeclaration> = user_selection
-                    .package
-                    .imports
-                    .iter()
-                    .filter(|import| import.qualifier.as_ref() == Some(qualifier))
-                    .collect();
-                match bound.as_slice() {
-                    [] => return Err(missing()),
-                    [import] => {
-                        let owner = self.selected.get(&import.library).ok_or_else(missing)?;
-                        (owner, name)
-                    }
-                    [..] => {
-                        return Err(NameRefusal::AmbiguousDeclaration {
-                            qualifier: qualifier.clone(),
-                            paths: bound
-                                .iter()
-                                .map(|import| {
-                                    let mut import_path = user_selection.path.clone();
-                                    import_path.push(import.library.clone());
-                                    import_path
-                                })
-                                .collect(),
-                        });
-                    }
-                }
-            }
-        };
-        owner
-            .exports
-            .node(name)
-            .map(|node| ExportIdentity {
-                package: owner.package.package_id,
-                node,
-            })
-            .ok_or_else(missing)
     }
 }
 
