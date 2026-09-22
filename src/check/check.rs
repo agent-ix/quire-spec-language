@@ -1864,9 +1864,7 @@ impl<'a> Typer<'a> {
         for (declaration, slot) in declared.iter().zip(supplied) {
             slots.push(match slot {
                 Some(slot) => slot,
-                None if declaration.presence() == Presence::Optional => {
-                    RecordSlot::Absent
-                }
+                None if declaration.presence() == Presence::Optional => RecordSlot::Absent,
                 None => return Err(mismatch(location)),
             });
         }

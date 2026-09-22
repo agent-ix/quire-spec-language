@@ -82,7 +82,10 @@ impl Error {
     pub(crate) fn exit_code(&self) -> u8 {
         match self.code {
             Code::Usage => 2,
-            Code::Io | Code::CargoMetadata | Code::InvalidMetadata | Code::InvalidLockfile
+            Code::Io
+            | Code::CargoMetadata
+            | Code::InvalidMetadata
+            | Code::InvalidLockfile
             | Code::SourceParse => 3,
             Code::Stale => 4,
         }

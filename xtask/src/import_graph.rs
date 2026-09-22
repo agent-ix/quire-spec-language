@@ -1252,7 +1252,11 @@ mod tests {
     #[test]
     fn forbidden_glob_use_edge_is_a_violation() {
         let dir = layer_fixture_root();
-        write(dir.path(), "src/check/fixture.rs", "use crate::package::*;\n");
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::package::*;\n",
+        );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].module, "package");
@@ -1286,8 +1290,16 @@ mod tests {
     #[test]
     fn flat_value_use_import_is_a_violation_even_when_the_target_is_permitted() {
         let dir = layer_fixture_root();
-        write(dir.path(), "src/value/mod.rs", "pub use rational::Rational;\n");
-        write(dir.path(), "src/check/fixture.rs", "use crate::value::Rational;\n");
+        write(
+            dir.path(),
+            "src/value/mod.rs",
+            "pub use rational::Rational;\n",
+        );
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use crate::value::Rational;\n",
+        );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].module, "value::rational");
@@ -1306,7 +1318,11 @@ mod tests {
     #[test]
     fn flat_inline_value_path_is_a_violation() {
         let dir = layer_fixture_root();
-        write(dir.path(), "src/value/mod.rs", "pub use composite::Presence;\n");
+        write(
+            dir.path(),
+            "src/value/mod.rs",
+            "pub use composite::Presence;\n",
+        );
         write(
             dir.path(),
             "src/check/fixture.rs",
