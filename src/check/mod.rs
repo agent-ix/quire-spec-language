@@ -19,7 +19,7 @@
 //! checker's stage output, produced by [`PackageDeclarations::check`].
 //! `CheckedPackage` (the S4 in-process link step's output, `CheckedGraph`
 //! plus the checked dependency closure) is a *different*, canonical type,
-//! defined in layer-4 [`crate::package`], not here -- `check` defines no
+//! defined in layer-4 `crate::package`, not here -- `check` defines no
 //! `CheckedPackage` type, method or field, and imports nothing from
 //! `package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
 //! `CheckedPackage::evaluate` references in this module's own doc comments
