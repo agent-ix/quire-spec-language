@@ -310,12 +310,6 @@ impl std::fmt::Display for LinkingError {
 
 impl std::error::Error for LinkingError {}
 
-impl From<LinkingError> for Diagnostic {
-    fn from(error: LinkingError) -> Self {
-        *error.diagnostic
-    }
-}
-
 /// Link native names using the native-formal-environment/1 binding profile.
 ///
 /// # Errors

@@ -127,9 +127,3 @@ impl std::fmt::Display for FormalSourceError {
 }
 
 impl std::error::Error for FormalSourceError {}
-
-impl From<FormalSourceError> for Diagnostic {
-    fn from(error: FormalSourceError) -> Self {
-        *error.diagnostic
-    }
-}

@@ -43,12 +43,6 @@ impl std::fmt::Display for CheckingError {
 
 impl std::error::Error for CheckingError {}
 
-impl From<CheckingError> for Diagnostic {
-    fn from(error: CheckingError) -> Self {
-        *error.diagnostic
-    }
-}
-
 impl From<Box<crate::linking::LinkingError>> for Box<CheckingError> {
     fn from(error: Box<crate::linking::LinkingError>) -> Self {
         Box::new(CheckingError {

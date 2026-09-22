@@ -239,12 +239,6 @@ impl std::fmt::Display for ValidationDiagnostic {
 
 impl std::error::Error for ValidationDiagnostic {}
 
-impl From<ValidationDiagnostic> for Diagnostic {
-    fn from(error: ValidationDiagnostic) -> Self {
-        *error.diagnostic
-    }
-}
-
 /// Retained actual defects and the optional reason traversal stopped.
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("native runtime validation: {status:?}")]

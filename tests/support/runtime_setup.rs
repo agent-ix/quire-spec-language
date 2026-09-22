@@ -115,8 +115,7 @@ pub(crate) fn request_source<'a>(
             ir::SourceRevision::new(7).unwrap(),
         ),
     );
-    let linked = link_native(unit, models, LinkLimits::default())
-        .map_err(|error| Box::new(quire_spec_language::Diagnostic::from(*error)))?;
+    let linked = link_native(unit, models, LinkLimits::default()).map_err(|error| error.diagnostic)?;
     let clauses = [("Rule", "population_rule"), ("Other", "other_rule")]
         .into_iter()
         .map(|(name, clause)| ClauseBinding {
@@ -131,7 +130,7 @@ pub(crate) fn request_source<'a>(
         CheckBindings { source, clauses },
         CheckLimits::default(),
     )
-    .map_err(|error| Box::new(quire_spec_language::Diagnostic::from(*error)))?;
+    .map_err(|error| error.diagnostic)?;
     assert_eq!(checked.clauses().len(), 2);
     assert_eq!(checked.clauses()[0].binding().requirement, authored_owner());
     Ok(checked)

@@ -335,12 +335,6 @@ impl std::fmt::Display for NativeModelError {
 
 impl std::error::Error for NativeModelError {}
 
-impl From<NativeModelError> for Diagnostic {
-    fn from(error: NativeModelError) -> Self {
-        *error.diagnostic
-    }
-}
-
 fn normalize(roles: &mut NativeRoles) {
     roles.scalars.sort_by(|a, b| a.name.cmp(&b.name));
     for role in &mut roles.scalars {
