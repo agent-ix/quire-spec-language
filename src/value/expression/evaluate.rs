@@ -1484,8 +1484,7 @@ mod tests {
             })
             .map(|entry| entry.effective_id)
             .expect("model.A has a type-level effective declaration");
-        let node_a = crate::value::node::NodeKey::from_hex(&a.to_string())
-            .expect("an EffectiveId's Display is 64 hex digits");
+        let node_a = crate::value::node::NodeKey::from_digest(*a.as_bytes());
         let types = crate::value::composite::TypeEnvironment::new(
             [],
             [crate::value::composite::ObjectTypeDeclaration::new(
