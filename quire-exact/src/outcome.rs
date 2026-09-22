@@ -17,7 +17,7 @@
 //!   explicitly keeps `CatalogCode`/category out of the kernel; that is
 //!   S-5's job, not S-1's).
 //!
-//! The category-mapping table and `FamilyOutcome`/`FamilyRefusal` that union
+//! The category-mapping table and `FamilyOutcome`/`FamilyResult` that union
 //! several evaluators' outcomes into one reported shape are QSL concepts
 //! layered on top of this and are not kernel (ADR-013 O-16).
 //!

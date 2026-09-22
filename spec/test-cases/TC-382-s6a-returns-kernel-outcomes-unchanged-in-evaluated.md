@@ -11,8 +11,8 @@ relationships:
 ## Description
 
 Verify FR-090-AC-1. For a checked `Value` function, S6a returns every kernel
-outcome in `Ok(FamilyOutcome::Evaluated(o))`, and each `o` is a fixed,
-literal expected outcome. The hook's
+outcome as `Ok(e)` with `e.outcome` equal to `FamilyOutcome::Evaluated(o)`,
+and each `o` is a fixed, literal expected outcome. The hook's
 `Ok(EvalOutcome::Kernel(Outcome::Incomplete(i)))` becomes
 `Evaluated(Outcome::Incomplete(i))`. Scope: FR-090-AC-1.
 
@@ -27,8 +27,8 @@ for 20.0 and `Completed(1/2)` for 0.5. A zero divisor or an out-of-domain
 integer result would be refused at check time and never reach S6a.
 
 This catches three faults. The first is a wrapper that turns a kernel
-`Refused` into a `FamilyOutcome::Refused`, which conflates a kernel refusal
-with a family refusal. The second reports the hook's meter-budget
+`Refused` into a `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`,
+which conflates a kernel refusal with a family refusal. The second reports the hook's meter-budget
 `Incomplete` as a refusal or as an `InternalFault`. The third rewrites a
 kernel payload on the way out.
 
@@ -51,16 +51,16 @@ Tag the test `#[trace("FR-090-AC-1", "TC-382")]`.
 ## Expected Results
 
 Each result is compared with a fixed literal outcome, not with another run
-of the hook. `FamilyOutcome` has no `Eq`, so the test matches the
-`Evaluated` arm and compares the kernel `Outcome` it holds with
-`assert_eq!`.
+of the hook. Each step returns `Ok(e)`. `FamilyOutcome` has no `Eq`, so the
+test matches `e.outcome`'s `Evaluated` arm and compares the kernel `Outcome`
+it holds with `assert_eq!`.
 
-- Step 2: `Ok(FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2))))`.
-- Step 3: `Ok(FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite)))`.
-- Step 4: `Ok(FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain)))`.
-- Step 5: `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(i)))`, where `i`'s
-  charge point is `ChargePoint::FunctionCall`.
-- No step returns `Ok(FamilyOutcome::Refused(_))` or `Err(_)`.
+- Step 2: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Completed(Value::Rational(1/2)))`, and `e.location` is `None`.
+- Step 3: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::IeeeNotFinite))`.
+- Step 4: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Refused(Refusal::IeeeRationalOutOfDomain))`.
+- Step 5: `e.outcome` is `FamilyOutcome::Evaluated(Outcome::Incomplete(i))`,
+  where `i`'s charge point is `ChargePoint::FunctionCall`.
+- No step returns a `FamilyOutcome::FamilyEvaluated` or `Err(_)`.
 
 ## Status
 

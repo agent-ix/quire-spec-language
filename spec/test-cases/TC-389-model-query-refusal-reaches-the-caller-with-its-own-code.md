@@ -11,14 +11,14 @@ relationships:
 ## Description
 
 Verify FR-090-AC-8. Suppose `model::population` refuses an `allInstances<T>(p)`
-query with a `ModelRefusal`. The caller then receives
-`FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` whose
+query with a `ModelRefusal`. The caller then receives an `Evaluation` whose
+`outcome` is `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`
+and whose
 `cause.catalog_code()` is that refusal's `ModelRefusal::catalog_code()`, the
 method O-17 requires and which does not exist today. The result is not a
-kernel `Outcome::Refused` inside `FamilyOutcome::Evaluated`, not a dispatch
-`FamilyOutcome::Refused` and not a panic. The carried refusal holds no
-native-v1 `qsl_foundation::diagnostic::Code` (ADR-013 R-09), and
-`FamilyRefusal` has no variant naming `ModelRefusal` (ADR-013 O-16).
+kernel `Outcome::Refused` inside `FamilyOutcome::Evaluated` and not a panic.
+The carried refusal holds no native-v1 `qsl_foundation::diagnostic::Code`
+(ADR-013 R-09).
 Scope: FR-090-AC-8.
 
 The fixture is the above-maximum refusal of `all_instances`
@@ -37,11 +37,10 @@ model-query refusal with a kernel collection-bound refusal.
    members of type `A`.
 2. Evaluate the checked expression `allInstances<A>(p)` through
    `CheckedPackage::evaluate`, with an unlimited meter.
-3. Match the result as
-   `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` and
-   take `cause.catalog_code()`.
-4. Inspect the definition of `ModelRefusal` and of the `check` core's
-   `FamilyRefusal`.
+3. Match the result as `Ok(e)` and `e.outcome` as
+   `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
+   `cause.catalog_code()`.
+4. Inspect the definition of `ModelRefusal`.
 
 Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
 
@@ -51,12 +50,10 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
   `CatalogCode::new("cardinality_out_of_bound", "above-maximum")`, and it
   equals `ModelRefusal::catalog_code()` of the refusal `all_instances`
   returns for the same binding.
-- Step 2 does not panic, and its result matches step 3's pattern; it is not
-  `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))` and not
-  `Ok(FamilyOutcome::Refused(_))`.
+- Step 2 does not panic, and its result matches step 3's pattern;
+  `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 - Step 4 finds no `ModelRefusal` field of type
-  `qsl_foundation::diagnostic::Code`, and no `FamilyRefusal` variant whose
-  payload is `ModelRefusal`.
+  `qsl_foundation::diagnostic::Code`.
 
 ## Status
 

@@ -12,8 +12,8 @@ relationships:
 
 Verify FR-090-AC-12. Suppose a `lookup<T>(p, r) absent undefined` query
 names a reference whose key is not a member of the population bound to `p`.
-The caller then receives
-`FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))` whose
+The caller then receives an `Evaluation` whose `outcome` is
+`FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))` and whose
 `cause.undefined_record()` has reason `absent-key` and the catalog payload,
 category `undefined`. The same query with `absent refused` receives
 `FamilyResult::Refused` with code `invalid_runtime_input`/`absent-key`,
@@ -39,13 +39,13 @@ query, which erases the refusal that query asks for.
 2. Evaluate the checked expression `lookup<A>(p, r) absent undefined` with
    `r` naming `c9` through `CheckedPackage::evaluate`, with an unlimited
    meter.
-3. Match the result as
-   `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)))` and
-   take `record = cause.undefined_record()`.
+3. Match the result as `Ok(e)` and `e.outcome` as
+   `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, and take
+   `record = cause.undefined_record()`.
 4. Evaluate `lookup<A>(p, r) absent refused` with the same arguments through
-   `CheckedPackage::evaluate`, match
-   `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` and
-   take `cause.catalog_code()`.
+   `CheckedPackage::evaluate`, match `Ok(e)` and `e.outcome` as
+   `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
+   `cause.catalog_code()`.
 5. Inspect `quire-exact/src/outcome.rs`'s `Undefined` enum.
 
 Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
@@ -55,10 +55,9 @@ Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
 - Step 3's `record.reason` is `UndefinedReason` `absent-key`, and
   `record.fields` name the population binding bound to `p` and the requested
   key `c9`.
-- Step 2 does not panic, and its result matches step 3's pattern; it is not
-  `Ok(FamilyOutcome::Evaluated(Outcome::Undefined(_)))`, not
-  `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)))` and not
-  `Ok(FamilyOutcome::Refused(_))`.
+- Step 2 does not panic, and its result matches step 3's pattern;
+  `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and
+  not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`.
 - Step 4's code is
   `CatalogCode::new("invalid_runtime_input", "absent-key")`.
 - Step 5 finds no `AbsentKey` variant.

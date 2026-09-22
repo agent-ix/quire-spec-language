@@ -24,7 +24,7 @@ Scope: FR-090-AC-3.
 This catches three faults. The first keeps an `unreachable!`/`panic!` on
 these paths; today `CheckedPackage::call` ends its
 `EnvironmentAlreadyConsumed` arm in `unreachable!`. The second reports the
-invariant as `FamilyOutcome::Refused`. The third reports it as a kernel
+invariant as a `FamilyOutcome::FamilyEvaluated` result. The third reports it as a kernel
 `Outcome::Refused(Refusal::CheckedInvariant)` inside `Evaluated`.
 
 ## Test Procedure
@@ -44,23 +44,25 @@ Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
 
 ## Expected Results
 
-- Step 3 returns `Ok(FamilyOutcome::Evaluated(Outcome::Completed(3)))`.
+- Step 3 returns `Ok(e)` with `e.outcome` equal to
+  `FamilyOutcome::Evaluated(Outcome::Completed(3))`.
 - Steps 4 and 5 each return `Err(fault)` and do not panic. For each `fault`:
   - `fault.stage()` names S6a;
   - `fault.category() == Category::InternalFailure`;
   - `fault.invariant()` is compared with a literal identifier, not a
     rendered message.
 - The two steps' invariant identifiers differ.
-- Neither step returns `Ok(FamilyOutcome::Refused(_))` or
-  `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))`.
+- Neither step returns an `Ok(e)` whose `e.outcome` is a
+  `FamilyOutcome::FamilyEvaluated` or
+  `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
 
 ## Status
 
 Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
 `src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
-`FamilyOutcome`/`FamilyRefusal` are not yet built (FR-090-OQ-2, OQ-3 remain
-open), so the test asserts today's real equivalent types rather than the
-literal `FamilyOutcome::Evaluated(Outcome::Completed(3))`/`Err(fault)`
+`FamilyOutcome` is not yet built, and `Evaluation.outcome` is still the
+kernel copy's `Outcome<Value>`, so the test asserts today's real equivalent
+types rather than the literal `FamilyOutcome::Evaluated(Outcome::Completed(3))`/`Err(fault)`
 spelling above: `Ok(Evaluation { outcome: Outcome::Completed(Value::
 Integer(3)), .. })` for step 3, and `Err(crate::family::EvaluateFailure::
 Fault(fault))` -- the S6a seam's own result, asserted directly rather than

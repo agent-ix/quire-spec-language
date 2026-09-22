@@ -25,7 +25,7 @@
 //! import layer 3 `check` directly; nothing needs to import upward. §6.1's
 //! layer-3 row also names the right home directly: `check` core holds
 //! "`CheckContext`, family checker trait, shared checked types,
-//! `FamilyOutcome` and `FamilyRefusal`" -- `Capability` is exactly a shared
+//! `FamilyOutcome`, `FamilyResult` and `EvalOutcome`" -- `Capability` is exactly a shared
 //! checked type admission produces. (`AbsenceMode`, in
 //! [`qsl_foundation::absence`], sits in foundation for the opposite reason: its two
 //! consumers, layer-2 `forms` and layer-3 `model`, cannot depend on each
