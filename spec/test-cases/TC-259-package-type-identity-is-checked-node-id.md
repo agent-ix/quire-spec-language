@@ -1,18 +1,18 @@
 ---
 id: TC-259
-title: "A package type's identity is its checked node id, package-scoped"
+title: "A package type's identity is its checked node id, owner-scoped"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-088
     type: verifies
 ---
-# TC-259: A package type's identity is its checked node id, package-scoped
+# TC-259: A package type's identity is its checked node id, owner-scoped
 
 ## Description
 
 Verify that a package type (`scalar_type`, `composite_type`,
 `bounded_domain`) is identified by its checked node id, and that this
-identity respects the O-04 package-scoped preimage: two structurally
+identity respects the O-04 owner-scoped preimage: two structurally
 identical type declarations admitted in two different packages produce two
 distinct node ids, while two source *occurrences* (ADR-013 O-07's term: a
 reference site, not a second declaration) of the same declared type within
@@ -27,13 +27,13 @@ criterion's actual claim. Scope: FR-088-AC-7.
 
 ## Test Procedure
 
-1. Author two source packages, each declaring a structurally identical
-   composite type (same fields, same field types, same names).
+1. Author two source packages with distinct source owners, each declaring
+   a structurally identical composite type (same fields, same field types,
+   same names).
 2. Check both packages independently and record each type declaration's
    checked node id.
-3. Confirm the two node ids differ (package-scoped preimage: the
-   declaring package's `name@version` is part of the preimage, ADR-013
-   O-04, QC-18).
+3. Confirm the two node ids differ (owner-scoped preimage: the declaring
+   source's owner is part of the preimage, ADR-013 O-04, QC-18).
 4. Within a single package, reference the same type declaration from two
    different call sites (for example, two fields of different records both
    typed by it) and confirm both references resolve to the same node id.

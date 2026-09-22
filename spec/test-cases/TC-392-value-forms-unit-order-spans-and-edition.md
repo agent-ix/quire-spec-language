@@ -12,7 +12,8 @@ relationships:
 
 Verify that the S2 entry walks a unit's declarations in source order and
 returns one `Value` parsed form per declaration, each carrying the span of
-its `Declaration` CST node and the unit's edition.
+its `Declaration` CST node and the unit's edition, and that the unit carries
+its profile selection as spelled.
 
 This catches three faults: a production that dispatches on the unit root's
 leading token (`language`) instead of each declaration's, one that reorders
@@ -32,8 +33,10 @@ alias is `v`.
    `record Point { x: Int[0, 9]; }` and `tuple Pair(Int[0, 9], Int[0, 9]);`.
    Confirm `is_admissible()`.
 2. Run the S2 entry on the result.
-3. For each returned form, read its kind and span. Read the unit's edition.
-4. Collect the spans of the four `Declaration` CST nodes from the CST.
+3. For each returned form, read its kind and span. Read the unit's edition
+   and its selections.
+4. Collect the spans of the four `Declaration` CST nodes and of the
+   `Profile` CST node from the CST.
 
 Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
 
@@ -44,6 +47,9 @@ Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
   tuple.
 - Each form's span equals the matching span from step 4.
 - The unit's edition reads `1-draft`.
+- The unit's selections hold one profile selection, with alias `v`, its
+  definition reference as written and the `Profile` span from step 4, and
+  no import or model selection.
 
 ## Status
 

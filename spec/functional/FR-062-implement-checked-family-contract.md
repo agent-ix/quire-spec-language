@@ -31,8 +31,8 @@ The contract's six parts (ADR-012 §2):
 
 1. **Identity.** Every checked node the contract's `check` produces SHALL
    carry a stable identity minted once, at check time, from a
-   content-addressed preimage over the node's structure and its declaring
-   package's `name@version`. Structurally identical nodes SHALL share one
+   content-addressed preimage over the node's structure and its owner
+   (ADR-013 O-04). Structurally identical nodes SHALL share one
    identity, and `check` SHALL key each source occurrence of a node
    separately from the node's identity, by (identity, role, ordinal).
 2. **Provenance.** Every checked node occurrence SHALL map to its source span

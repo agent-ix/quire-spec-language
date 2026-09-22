@@ -29,6 +29,7 @@ alias is `v`.
 3. Assemble a unit with three functions, whose single parameters are typed
    `Int[9, 0]`, `Rational[0, 1; 0, 5]` and `Text[5, 1; nfc]`.
 4. Assemble a unit with `type A = B;` and `type B = A;`.
+5. Assemble a unit with `type C = Option<C>;`.
 
 Tag the test `#[trace("FR-091-AC-14", "FR-091-AC-15", "FR-091-AC-16", "FR-091-AC-17", "TC-400")]`.
 
@@ -41,7 +42,9 @@ Tag the test `#[trace("FR-091-AC-14", "FR-091-AC-15", "FR-091-AC-16", "FR-091-AC
 - Step 3 gives one refusal with three errors. Each carries the value type's
   own rejection cause (an empty integer interval, a denominator bound below
   one, a text minimum above its maximum) and its type form's span.
-- Step 4 gives an alias-cycle error naming `A` and `B`.
+- Step 4 gives an alias-cycle error, code `invalid_package`/
+  `definition-cycle`, naming `A` and `B`.
+- Step 5 gives an alias-cycle error with the same code, naming `C`.
 - No step returns a `PackageDeclarations` value.
 
 ## Status

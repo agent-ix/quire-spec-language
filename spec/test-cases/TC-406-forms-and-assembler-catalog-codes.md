@@ -13,8 +13,6 @@ relationships:
 Verify that each S2 and assembler cause has one exhaustive `catalog_code()`
 (ADR-013 O-17) that returns the code in FR-091's Catalog codes table.
 
-The alias-cycle cause is outside this case (FR-091-OQ-7).
-
 Scope: FR-091-AC-21.
 
 ## Test Procedure
@@ -23,23 +21,30 @@ Every fixture unit below starts with the complete-V1 header
 (`language "ix:native" edition "1-draft";`) and one profile selection whose
 alias is `v`.
 
-1. Construct one value of each S2 cause and each assembler cause, except
-   the alias cycle, and call `catalog_code()`.
+1. Construct one value of each S2 cause and each assembler cause, and call
+   `catalog_code()`.
 2. Construct the diagnosed-source cause from a diagnostic with code
    `unknown_profile`, and call `catalog_code()`.
 3. With `syn`, inspect each `catalog_code()` body's `match`.
+4. Run S2 with nesting-depth bound `L = 1` on the body `not a`, and read
+   the limit refusal's code and cause.
 
 Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 
 ## Expected Results
 
 - `RecoveringCst` returns `invalid_syntax`.
-- `NoDispatchEntry`, `ForeignFamilyConstruct`, `UnrepresentedConstruct` and
-  the floating-type cause return `unsupported_construct`.
+- `NoDispatchEntry` and `UnrepresentedConstruct` return
+  `unsupported_construct`.
+- The floating-type cause returns `unknown_required_feature`.
 - Unresolved type name returns `missing_declaration`, ambiguous type name
   returns `ambiguous_declaration`, and ill-formed bounds return `ill_typed`.
+- The undeclared-alias cause returns `missing_declaration`, the
+  duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause
+  `invalid_package`.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
+- Step 4 reports `stage_limit_exceeded`/`nesting-depth-exceeded`.
 
 ## Status
 
