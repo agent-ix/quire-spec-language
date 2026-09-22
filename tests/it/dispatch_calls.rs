@@ -30,13 +30,14 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, ClauseKind,
-    DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    Expression, FunctionDeclaration, IllTypedCause, InputRefusal, InvalidDispatchDeclaration,
-    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Origin, Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment,
-    Undefined, UniverseIdentity, Value, ValueType,
+    decode_function_package_v2, BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal,
+    CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
+    ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
+    DispatchTable, Expression, FunctionDeclaration, IllTypedCause, InputRefusal,
+    InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
+    PreconditionFailure, QualifiedName, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -614,7 +615,7 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     let bytes = target_first
         .emit_function_package_v2()
         .expect("every declared name here is identifier-shaped");
-    let decoded = CheckedPackage::decode_function_package_v2(&bytes)
+    let decoded = decode_function_package_v2(&bytes)
         .expect("this crate's own emit_function_package_v2 output decodes cleanly");
     let decoded_identity = decoded
         .into_iter()
@@ -638,9 +639,8 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     let unrelated_first_bytes = unrelated_first
         .emit_function_package_v2()
         .expect("every declared name here is identifier-shaped");
-    let unrelated_first_decoded =
-        CheckedPackage::decode_function_package_v2(&unrelated_first_bytes)
-            .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
+    let unrelated_first_decoded = decode_function_package_v2(&unrelated_first_bytes)
+        .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
     let unrelated_first_decoded_identity = unrelated_first_decoded
         .into_iter()
         .find(|(name, _)| *name == target_name)

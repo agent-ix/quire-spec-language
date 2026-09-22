@@ -27,7 +27,7 @@
 //! name anything in it directly. [`check::mod`](super) re-exports the
 //! public shapes below at `crate::check`'s own surface. `CheckedGraph`
 //! itself (`super::CheckedGraph`) exposes only a node-id-keyed accessor for
-//! the model correspondence ([`CheckedGraph::resolve_declaration`]), never a
+//! the model correspondence ([`CheckedGraph::resolve_declaration`](super::CheckedGraph::resolve_declaration)), never a
 //! name-keyed one, matching R-06's "no name -> identity lookup exists after
 //! the check stage" (FR-088-AC-5).
 //!

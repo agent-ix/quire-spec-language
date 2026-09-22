@@ -8,7 +8,7 @@
 //! [`crate::check`] module (ADR-011 §7.3 M-5, QSL-139/FR-068). This module
 //! is what remains at layer 5 (S6a): [`CheckedPackage::call`] and
 //! [`CheckedPackage::evaluate`] run already-checked code under a
-//! [`Meter`](quire_exact::Meter), reaching `check`'s checked-output state only
+//! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
 
 mod evaluate;
@@ -21,7 +21,7 @@ use evaluate::{Callable, Machine};
 use quire_exact::Meter;
 
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
-pub use family::{DecodeV2Error, InvalidQualifiedName, QualifiedName};
+pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
 
 // ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
 // QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
@@ -204,7 +204,7 @@ fn validate(
 ///
 /// A private free function, not a [`CheckedPackageEvaluation`] method: it is
 /// [`CheckedPackageEvaluation::evaluate`]'s own internal plumbing, never a
-/// caller-facing entry point (QSL-182 prep).
+/// caller-facing entry point.
 fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
     package
         .graph()
@@ -217,17 +217,15 @@ fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
         .collect()
 }
 
-/// `call`, `evaluate` and the v2 function-identity codec over a
-/// [`CheckedPackage`] (ADR-011 §4, ADR-013 T-1, AD-016 Owner decision 6):
-/// once `CheckedPackage` is `qsl-package`'s own foreign type (X-7, QSL-182),
-/// an inherent `impl CheckedPackage` here is E0116, so layer 5 exposes its
-/// evaluator over layer 4's typestate through this trait instead --
-/// preserving both `pkg.call(..)` and `CheckedPackage::call(&pkg, ..)`,
-/// which a free function would not (QSL-182 prep, coordinator decision
-/// 2026-09-22). `callables` stays a private free function, never a trait
-/// method: it is internal plumbing, not part of the evaluator's public
-/// surface.
-pub trait CheckedPackageEvaluation {
+/// `call`, `evaluate` and `emit_function_package_v2` over a
+/// [`CheckedPackage`] (ADR-011 §4, ADR-013 T-1, AD-016 Owner decision 6).
+/// Once `CheckedPackage` is `qsl-package`'s own foreign type (X-7), an
+/// inherent `impl CheckedPackage` here is E0116, so layer 5 exposes its
+/// evaluator over layer 4's typestate through this trait. Both
+/// `pkg.call(..)` and `CheckedPackage::call(&pkg, ..)` resolve through it.
+///
+/// Sealed: [`CheckedPackage`] is the one implementor.
+pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// Call the named function: `function.call`, then its body. Refused
     /// `InputRefusal::UnknownFunction` for a name `function` finds
     /// but whose `callable_by_name` is `false` -- the same refusal an
@@ -285,14 +283,6 @@ pub trait CheckedPackageEvaluation {
     /// silently emitting v2 bytes that could never decode back into a
     /// `QualifiedName` anyway.
     fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName>;
-
-    /// Decode `quire.checked-function-package/v2` bytes emitted by
-    /// [`Self::emit_function_package_v2`] back into (qualified name,
-    /// identity) pairs, for a caller verifying identity survived the round
-    /// trip (FR-065-AC-2).
-    fn decode_function_package_v2(
-        bytes: &[u8],
-    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error>;
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -381,12 +371,6 @@ impl CheckedPackageEvaluation for CheckedPackage {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(family::emit_v2(&entries))
-    }
-
-    fn decode_function_package_v2(
-        bytes: &[u8],
-    ) -> Result<Vec<(QualifiedName, quire_exact::NodeKey)>, family::DecodeV2Error> {
-        family::decode_v2(bytes)
     }
 }
 

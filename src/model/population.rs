@@ -645,7 +645,7 @@ impl AdmissionRole {
 /// differ only in document content or declared maximum, admitted under the
 /// same package/key/role within one evaluation -- an open spec question
 /// (Linear QSL-131) recorded, not resolved, here.
-/// [`ObjectEnvironment::with_population`](crate::value::reference::ObjectEnvironment::with_population)
+/// [`ObjectEnvironment::with_population`](crate::value::ObjectEnvironment::with_population)
 /// is the interim guard: it refuses a second, unequal binding recorded
 /// under an id already bound to a different one, rather than silently
 /// letting the later admission win.

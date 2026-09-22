@@ -9,7 +9,7 @@
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
 //! half -- identity minting, [`crate::check::PackageDeclarations::check`]'s
 //! own [`crate::family::FamilyContract`] hook, and the `OccurrenceMap`
-//! `check` builds from it -- into [`crate::check::family`], since FR-068-
+//! `check` builds from it -- into `check::family`, since FR-068-
 //! AC-3 forbids `check` importing anything from `value::expression`; see
 //! that module's own doc for why the split runs through `family.rs` even
 //! though FR-068 itself only names seven of `value::expression`'s eight
@@ -116,7 +116,7 @@ impl From<QualifiedName> for String {
 /// declared function's qualified name and its checked identity.
 ///
 /// `deny_unknown_fields` (PR #262 review, finding F16): decoded through the
-/// `pub` [`decode_function_package_v2`], from bytes an external caller
+/// `pub` [`crate::value::decode_function_package_v2`], from bytes an external caller
 /// supplies, not only from this crate's own `emit_v2` output -- an unknown
 /// field should refuse, not silently disappear.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -135,7 +135,7 @@ struct FunctionEntryV2 {
 /// `quire.checked-function-package/v2`: this ticket's self-consistent v2
 /// encoding for function-declaration identity. It is not a claim of
 /// conformance to the external `quire.checked-package-id/v2` schema (see
-/// [`mint_declaration_identity`]'s doc) -- it exists to demonstrate, and let
+/// `check::family::mint_declaration_identity`'s doc) -- it exists to demonstrate, and let
 /// a test assert, that identity survives check, S4 linking and a v2
 /// emit/decode round trip unchanged (FR-065-AC-2).
 const FUNCTION_PACKAGE_V2_VERSION: &str = "quire.checked-function-package/v2";
@@ -225,6 +225,27 @@ pub(crate) fn decode_v2(bytes: &[u8]) -> Result<Vec<(QualifiedName, NodeKey)>, D
             Ok((entry.name, NodeKey::from_digest(bytes)))
         })
         .collect()
+}
+
+/// Decode `quire.checked-function-package/v2` bytes emitted by
+/// [`super::CheckedPackageEvaluation::emit_function_package_v2`] back into
+/// (qualified name, identity) pairs, for a caller verifying identity
+/// survived the round trip (FR-065-AC-2). The public entry point to
+/// `decode_v2`.
+pub fn decode_function_package_v2(
+    bytes: &[u8],
+) -> Result<Vec<(QualifiedName, NodeKey)>, DecodeV2Error> {
+    decode_v2(bytes)
+}
+
+/// Seals [`super::CheckedPackageEvaluation`]: [`super::CheckedPackage`] is
+/// its one implementor, and an implementation for any other type would have
+/// no meaning. Declared here because `value::expression`'s own `mod.rs`
+/// declares only `evaluate` and `family` (TC-170).
+pub(super) mod sealed {
+    /// The private supertrait of [`super::super::CheckedPackageEvaluation`].
+    pub trait Sealed {}
+    impl Sealed for super::super::CheckedPackage {}
 }
 
 fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {

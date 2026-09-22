@@ -172,8 +172,8 @@ SHALL return `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(i)))`.
 `CheckedPackage::evaluate` is the S6a entry point for a checked clause
 expression. It is a method of the `CheckedPackageEvaluation` extension trait,
 which `value::expression` defines and implements for `CheckedPackage`
-(ADR-011 §4), so a caller brings that trait into scope. `call` is a method of
-the same trait. Its target signature, as the trait declares it, is
+(ADR-011 §4), so a caller brings that trait into scope. Its target signature
+is
 
 ```text
 fn evaluate(
@@ -191,7 +191,7 @@ there. It SHALL return S6a's `Ok` result unchanged, and an S6a
 `Err(InternalFault)` as `Err(CallFailure::Fault(fault))`. It returns the same
 `FamilyOutcome` arms as the function-declaration seam: the evaluation-time
 family results of the three sections below reach a clause-expression caller
-through it.
+through it. `call` is a method of the same trait.
 
 ### A family that sits out evaluation refuses with a named cause
 

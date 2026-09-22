@@ -799,7 +799,7 @@ pub(crate) fn mint_call_identity(
 /// typed. A call is reached from `infer_form`, which recurses through every
 /// other `Value` expression form (`Let`, `If`, `Binary`, ... ), so this is
 /// itself already reached, transitively, through the one
-/// [`ValueFunctionFamily::check`] call that starts a declaration's real
+/// [`FamilyContract::check`](crate::family::FamilyContract::check) call that starts a declaration's real
 /// typing (QSL-148: `check` now calls [`check_declaration_body`], which
 /// drives the same `Typer`) -- an application inside a declaration's own
 /// body is checked "through the contract" in that sense already.
@@ -821,7 +821,7 @@ pub(crate) fn mint_call_identity(
 ///
 /// What this function does *not* do, on either path, is charge the
 /// contract's own `CheckContext`/`StageLimits.nesting_depth` once
-/// per real recursive step the way [`ValueFunctionFamily::check`]'s
+/// per real recursive step the way [`FamilyContract::check`](crate::family::FamilyContract::check)'s
 /// top-level entry charge does: that would mean threading `&mut
 /// CheckContext` through every recursive arm of `Typer::infer_form`, not
 /// just `Call` (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so
@@ -1009,7 +1009,7 @@ pub(crate) struct CheckedDeclarationBody {
 /// round 3, finding F1).** An earlier round of this fix gave `Typer` a fresh
 /// `let mut nodes = 0_u64` here, on the reasoning that QSL-153's
 /// `CheckContext::check_node_count` already bounded the same underlying
-/// concern one step earlier in [`ValueFunctionFamily::check`]. That reasoning
+/// concern one step earlier in [`FamilyContract::check`](crate::family::FamilyContract::check). That reasoning
 /// was wrong: `check_node_count` compares one declaration's own preimage node
 /// count against `limits.node_count` -- it is a real, but deliberately
 /// *per-declaration-only* bound (`StageLimits::node_count`'s own doc), not a
@@ -1184,7 +1184,7 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 ///
 /// **No interior mutability (PR #303 review, finding N3).** The real checked
 /// body is never smuggled out through a `Cell`-threaded side slot;
-/// [`ValueFunctionFamily::Checked`] itself carries it (see
+/// [`FamilyContract::Checked`](crate::family::FamilyContract::Checked) itself carries it (see
 /// [`CheckedDeclaration`]), returned the ordinary way, through `check`'s own
 /// `Ok`.
 ///

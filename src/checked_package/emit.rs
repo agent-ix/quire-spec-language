@@ -5,7 +5,7 @@
 )]
 //! ADR-011 T-8 (M-4, QSL-6/agent-ix/quire-spec-language#242), slice S1a:
 //! the S4 v2 emitter's identity-preimage builder, the first step toward
-//! [`CheckedPackage`] -> [`EmittedPackage`] (the `quire.checked-package/v2`
+//! [`CheckedPackage`] -> [`EmittedPackage`](super::EmittedPackage) (the `quire.checked-package/v2`
 //! bytes with their own `package_id`, FR-322). Preimage construction is
 //! delegated to `quire_contract_ir`'s typed I04 structs
 //! ([`quire_contract_ir::CheckedPackageIdentityPreimageV2`] and the rest of
@@ -19,7 +19,7 @@
 //! [`emit_package`] has no success arm yet: it always refuses. This
 //! module builds the identity preimage that a later slice (S1b) needs in
 //! order to mint `package_id` and assemble the full envelope
-//! ([`EmittedPackage::new`], ADR-013 O-02's sole constructor, already
+//! ([`EmittedPackage::new`](super::EmittedPackage::new), ADR-013 O-02's sole constructor, already
 //! exists and takes IR's own typed preimage -- there is simply no caller
 //! for it yet). [`quire_contract_ir::CheckedPackageIdentityPreimageV2`]'s
 //! own field types ([`quire_contract_ir::CheckedSelection`],
