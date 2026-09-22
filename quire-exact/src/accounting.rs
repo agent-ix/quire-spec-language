@@ -21,6 +21,10 @@ use crate::integer::Integer;
 ///
 /// Every supported target has pointers of at most 64 bits, so an in-memory
 /// length always fits `u64`; a wider target would violate that invariant.
+///
+/// # Panics
+///
+/// Only on a target whose pointers are wider than 64 bits.
 pub fn length_amount(length: usize) -> u64 {
     u64::try_from(length)
         .expect("in-memory lengths fit u64 on targets with pointers of at most 64 bits")
@@ -423,9 +427,8 @@ pub struct InjectedDenial {
 ///
 /// **`pub` (QSL-166).** Was `pub(crate)`: every consumer of this vector
 /// lived inside this crate until QSL's own `value::accounting` copy (the
-/// byte-identical duplicate this type replaces) was deleted and its ~19
-/// call sites repointed here across the `quire-spec-language` crate
-/// boundary. Widened together with [`Meter::charge`]/[`Meter::charge_plan`]
+/// byte-identical duplicate this type replaces) was deleted and its call
+/// sites repointed here across the `quire-spec-language` crate boundary. Widened together with [`Meter::charge`]/[`Meter::charge_plan`]
 /// and [`length_amount`], each verified against real cross-crate call
 /// sites, the same standard QSL-146 established for the kernel's other
 /// widenings.
@@ -563,9 +566,8 @@ impl Meter {
     /// `ScalarLimitsV1` field order.
     ///
     /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`: QSL's own
-    /// `value::accounting::Meter::charge` call sites (~19 across the
-    /// `quire-spec-language` crate) now call this one directly, across the
-    /// crate boundary, after `value::accounting` was deleted as a duplicate.
+    /// `value::accounting::Meter::charge` call sites in `quire-spec-language`
+    /// now call this one directly, across the crate boundary, after `value::accounting` was deleted as a duplicate.
     pub fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
         self.check_injected(point, charge.work_units.clone())?;

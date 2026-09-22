@@ -301,14 +301,11 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
 ///
 /// **No `Incomplete` variant.** ADR-012 §2 reserves `evaluate` as the one
 /// hook allowed to return the kernel meter's `Incomplete` outcome, and that
-/// part of the design is real -- but `quire_exact::Meter::charge`/
-/// `charge_plan`, the only way to actually produce an `Incomplete`, are
-/// `pub(crate)` inside `quire-exact` (`quire-exact/src/accounting.rs:551,
-/// 595`), not exported to this crate. QSL cannot charge the kernel meter
-/// through any public API today, so nothing here could construct an
-/// `Incomplete` for real. QSL-153 owns this export gap, not a
-/// consequence of how many families are migrated. QSL-153 adds this
-/// variant back together with public charge access.
+/// part of the design is real. `quire_exact::Meter::charge`/`charge_plan`
+/// are `pub` (QSL-166), so public charge access exists, but
+/// `ValueFunctionFamily::evaluate` does not charge its `_meter`, so nothing
+/// here produces an `Incomplete` yet. Adding this variant is QSL-153's
+/// decision.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum EvaluateRefusal {
     /// No checked function is admitted for `identity`.

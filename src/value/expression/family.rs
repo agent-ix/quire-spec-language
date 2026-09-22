@@ -276,7 +276,7 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
     /// QSL-166 exported `Meter::charge`/`charge_plan` as `pub` (they were
     /// `pub(crate)` inside `quire-exact`), closing the export gap that used
     /// to be the reason `_meter` could not be charged even if this contract
-    /// wanted to; QSL-152 still owns the decision of whether it should be.
+    /// wanted to; QSL-153 still owns the decision of whether it should be.
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
