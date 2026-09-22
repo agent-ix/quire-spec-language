@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans ci ci-default-features ci-all-features ci-clean-build ci-docs
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # QSL-169: fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -118,6 +118,25 @@ ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
 ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe route-lint cargo-deny-bans ci-docs
+
+# QSL-156 A4a: the FR-322 application-node key checked against QSpec's
+# published `operation_vectors`, read at run time from the
+# quire-specification checkout named by QSPEC_DIR. Opt-in while QSpec is not
+# public; nothing of QSpec is copied into this repository. Without QSPEC_DIR
+# the test itself skips, so this target refuses to run instead, and it fails
+# when the test did not actually check the vectors (a renamed test filters to
+# zero tests and would otherwise pass).
+CONFORMANCE_TEST := value::application_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
+conformance:
+	@if [ -z "$(QSPEC_DIR)" ]; then \
+		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
+		exit 1; \
+	fi
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked --lib -- --exact $(CONFORMANCE_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: ' || { echo "conformance: the vector check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and

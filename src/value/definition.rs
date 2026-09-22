@@ -16,7 +16,7 @@
 
 use std::collections::BTreeSet;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::division::DivisionProfile;
 
@@ -257,7 +257,7 @@ impl SelectionRefusalCode {
 }
 
 /// A definition revision `{ namespace, value }`.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct DefinitionRevision {
     /// Revision namespace.
@@ -268,7 +268,7 @@ pub struct DefinitionRevision {
 
 /// A retained DefinitionRef as it appears in the lock and in a checked package.
 /// This is untrusted data; only admission turns it into authority.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct DefinitionReference {
     /// Publishing authority.

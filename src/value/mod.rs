@@ -97,6 +97,7 @@
 // reads identically whether the item is tier 1, tier 2, or the forbidden
 // tier 3). Every other `value::` submodule stays private; `check` imports
 // nothing from them.
+mod application_key;
 pub(crate) mod collection;
 pub(crate) mod comparison;
 pub(crate) mod composite;
