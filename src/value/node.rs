@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 
 use quire_exact::Integer;
 
-// `NodeKey` and `NODE_KEY_DOMAIN` are `quire_exact`'s own types (QSL-131):
-// the kernel type's sole public constructor is `from_digest`, which wraps an
+// `NodeKey` and `NODE_KEY_DOMAIN` are `quire_exact`'s own types: the kernel
+// type's sole public constructor is `from_digest`, which wraps an
 // already-computed digest and performs no hashing. This module keeps the
 // hex parsing (`NodeIdDocument::key`) and the SHA-256/JCS hashing
 // (`node_key_of`) that QSL's own preimage checking needs, then wraps the
@@ -183,37 +183,19 @@ pub(crate) struct NodeIdDocument {
 
 impl NodeIdDocument {
     /// The referenced key when the domain and digest spelling are canonical.
-    /// Hex parsing is QSL's own concern (the kernel `NodeKey`'s one
-    /// constructor, `from_digest`, takes already-decoded bytes and performs
-    /// no parsing); this wraps the decoded bytes once the domain and
-    /// spelling check out.
+    ///
+    /// Known non-conforming site (ADR-011 FB-13/SR-508; ADR-013 OBS-018):
+    /// `NodeIdDocument` is read from caller-supplied JSON through the public
+    /// `DimensionPreimage`/`UnitPreimage`/`EnumMemberPreimage::from_json`, so
+    /// this is a wire-read node id. ADR-013 O-04 says a wire-read node id
+    /// becomes a `NodeKey` only by lookup in a checked package, never by
+    /// parsing a digest string directly; this wraps the parsed bytes into a
+    /// `NodeKey` directly instead. Tracked debt, not this design's
+    /// sanctioned path.
     pub(crate) fn key(&self) -> Option<NodeKey> {
-        parse_hex_digest(&self.digest)
+        qsl_foundation::digest::parse_lower_hex32(&self.digest)
             .filter(|_| self.domain == NODE_KEY_DOMAIN)
             .map(NodeKey::from_digest)
-    }
-}
-
-/// Parse 64 lowercase hexadecimal digits into a raw digest.
-fn parse_hex_digest(hex: &str) -> Option<[u8; 32]> {
-    let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
-        return None;
-    };
-    if pairs.len() != 32 {
-        return None;
-    }
-    let mut bytes = [0_u8; 32];
-    for (slot, [high, low]) in bytes.iter_mut().zip(pairs) {
-        *slot = (lower_hex(*high)? << 4) | lower_hex(*low)?;
-    }
-    Some(bytes)
-}
-
-fn lower_hex(digit: u8) -> Option<u8> {
-    match digit {
-        b'0'..=b'9' => Some(digit - b'0'),
-        b'a'..=b'f' => Some(digit - b'a' + 10),
-        _ => None,
     }
 }
 

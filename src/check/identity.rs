@@ -56,14 +56,11 @@
 //! `value/enumeration.rs`, whose `owner` field already carries the
 //! declaring package/source scope AC-7 requires). `check` now simply carries
 //! that existing key, unchanged byte for byte, into the `CheckedTypeNode`'s
-//! own node id (`declaration_node_key`, below -- QSL-131 made
-//! `value::node::NodeKey` a `pub use` of this module's own
-//! `quire_exact::NodeKey`, so the two names are the same type today; the
-//! function stays as the named crossing point from I04's pre-check identity
-//! into `check`'s own checked-node space, and it re-hashes or re-derives
-//! nothing): `CheckedTypeNode::Composite { node:
-//! declaration_node_key(composite.key()) }`, `Sum { node:
-//! declaration_node_key(binding.declaration.key()), .. }`, exactly the
+//! own node id: `CheckedTypeNode::Composite { node: composite.key() }`,
+//! `Sum { node: binding.declaration.key(), .. }`. `value::node::NodeKey`
+//! and this module's own `quire_exact::NodeKey` are the same kernel type (a
+//! `pub use`), so carrying the key across the module boundary re-hashes or
+//! re-derives nothing and needs no conversion function -- exactly the
 //! identity `type_named` and field types already read (once carried into
 //! this space) -- closing HIGH-1 and, as a side effect, HIGH-2 (a qualified
 //! declared name like `"P::R"` no longer needs validating at all here, since
@@ -500,10 +497,10 @@ impl SumVariants {
 /// shape, since the kernel `ValueType::Composite(NodeKey)` needs none -- the
 /// node's own id carries the declaration's own pre-existing key
 /// (`composite.key()`, `value/composite.rs`) unchanged into this module's
-/// checked-node-id space (`declaration_node_key`, private -- not linked
-/// here), the same identity
-/// `type_named` and field types already read, reused rather than minted
-/// afresh (PR #300 review round 2, HIGH-1).
+/// checked-node-id space -- `value::node::NodeKey` and this module's own
+/// `NodeKey` are the same kernel type, so no conversion is needed -- the
+/// same identity `type_named` and field types already read, reused rather
+/// than minted afresh (PR #300 review round 2, HIGH-1).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedTypeNode {
     /// A `scalar_type` node.
@@ -583,23 +580,6 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
                 .map(|variant| mint_variant_id(*node, variant.name())),
         )),
     }
-}
-
-/// Carries a `value::node::NodeKey` -- the pre-check I04 nominal semantic
-/// node identity `CompositeDeclaration::key()`/`EnumDeclaration::key()`
-/// already carry -- into this module's own `quire_exact::NodeKey`, the
-/// ADR-013 O-04 checked-node-id space [`CheckedTypeNode`] and every other
-/// checked graph member (functions, occurrences, the model correspondence)
-/// live in. Named as a conversion for where each identity is read from
-/// (I04 pre-check identity in, `check`'s own checked-node space out), but
-/// since QSL-131 the two names resolve to the same kernel type, so this is
-/// an identity function today, not a cross-newtype bridge: this reuses the
-/// declaration's own raw digest bytes unchanged, never re-hashing or
-/// re-deriving anything, so a `CheckedTypeNode`'s id and the declaration's
-/// own pre-existing key are the same identity, not two different identities
-/// that merely happen to agree (PR #300 review round 2, HIGH-1).
-pub(super) fn declaration_node_key(key: crate::value::node::NodeKey) -> NodeKey {
-    NodeKey::from_digest(*key.as_bytes())
 }
 
 /// ADR-013 O-14/QC-15: a sum variant's `VariantId`, computed from the
