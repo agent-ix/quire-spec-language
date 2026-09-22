@@ -27,7 +27,7 @@
 //! "`CheckContext`, family checker trait, shared checked types,
 //! `FamilyOutcome` and `FamilyRefusal`" -- `Capability` is exactly a shared
 //! checked type admission produces. (`AbsenceMode`, in
-//! [`crate::absence`], sits in foundation for the opposite reason: its two
+//! [`qsl_foundation::absence`], sits in foundation for the opposite reason: its two
 //! consumers, layer-2 `forms` and layer-3 `model`, cannot depend on each
 //! other, so neither layer may own it.)
 //!

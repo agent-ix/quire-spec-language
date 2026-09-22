@@ -125,7 +125,7 @@ pub struct Retained {
 /// ```compile_fail,E0451
 /// use quire_spec_language::protocol_artifact::wire::Revision;
 /// use quire_spec_language::temporal::AuthenticatedSelection;
-/// use quire_spec_language::ByteDigest;
+/// use qsl_foundation::ByteDigest;
 /// let forged = AuthenticatedSelection {
 ///     package_digest: ByteDigest::of(b"forged"),
 ///     declaration: 0,

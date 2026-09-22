@@ -117,7 +117,7 @@ impl ParsedSource {
 /// ```compile_fail
 /// use std::collections::BTreeSet;
 /// use quire_spec_language::complete::{self, Limits};
-/// use quire_spec_language::SourceIdentity;
+/// use qsl_foundation::SourceIdentity;
 /// let installed_backends = BTreeSet::from(["solver:x"]);
 /// let _ = complete::parse(
 ///     SourceIdentity { identity: "doc".into(), revision: "1".into() },
