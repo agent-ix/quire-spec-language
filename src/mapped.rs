@@ -36,6 +36,18 @@ pub enum CompileCause {
     Package(#[from] Box<PackageError>),
 }
 
+impl From<Box<crate::linking::LinkingError>> for CompileCause {
+    fn from(error: Box<crate::linking::LinkingError>) -> Self {
+        Self::Native(Box::new(Diagnostic::from(*error)))
+    }
+}
+
+impl From<Box<crate::checking::CheckingError>> for CompileCause {
+    fn from(error: Box<crate::checking::CheckingError>) -> Self {
+        Self::Native(Box::new(Diagnostic::from(*error)))
+    }
+}
+
 /// A failed mapped request retains both source authorities and authored selection.
 #[derive(Debug, thiserror::Error)]
 #[error("{cause}")]

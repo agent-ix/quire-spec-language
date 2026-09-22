@@ -197,6 +197,18 @@ impl From<ir::Diagnostic> for RunCause {
     }
 }
 
+impl From<Box<crate::linking::LinkingError>> for RunCause {
+    fn from(error: Box<crate::linking::LinkingError>) -> Self {
+        Self::Native(Box::new(Diagnostic::from(*error)))
+    }
+}
+
+impl From<Box<crate::checking::CheckingError>> for RunCause {
+    fn from(error: Box<crate::checking::CheckingError>) -> Self {
+        Self::Native(Box::new(Diagnostic::from(*error)))
+    }
+}
+
 impl RunCause {
     /// Stable catalogued code for this cause, independent of its display message.
     pub fn code(&self) -> Code {

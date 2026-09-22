@@ -417,8 +417,10 @@ pub(super) fn read<'model>(
         limits.syntax,
     )
     .map_err(|cause| request.native(cause))?;
-    let linked = link_native(unit, models, limits.link).map_err(|cause| request.native(cause))?;
-    let checked = check(linked, bindings, limits.check).map_err(|cause| request.native(cause))?;
+    let linked = link_native(unit, models, limits.link)
+        .map_err(|cause| request.native(Box::new(Diagnostic::from(*cause))))?;
+    let checked = check(linked, bindings, limits.check)
+        .map_err(|cause| request.native(Box::new(Diagnostic::from(*cause))))?;
     request.usage.checking = Some(*checked.usage());
     request.stage = PackageStage::Compare;
     let mut reconstructed = NativePackage::new(checked, package_limits).map_err(|mut error| {

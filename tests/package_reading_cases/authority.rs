@@ -267,8 +267,14 @@ fn forged_checked_claims_cannot_bypass_real_parse_link_type_or_definedness_failu
             native.text().as_bytes(),
             Limits::default(),
         )
-        .and_then(|unit| link_native(unit, &models, LinkLimits::default()))
-        .and_then(|linked| check(linked, external.clone(), CheckLimits::default()))
+        .and_then(|unit| {
+            link_native(unit, &models, LinkLimits::default())
+                .map_err(|error| Box::new(quire_spec_language::Diagnostic::from(*error)))
+        })
+        .and_then(|linked| {
+            check(linked, external.clone(), CheckLimits::default())
+                .map_err(|error| Box::new(quire_spec_language::Diagnostic::from(*error)))
+        })
         .unwrap_err();
         assert_eq!(
             (direct.code, direct.phase),
