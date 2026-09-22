@@ -91,8 +91,8 @@ impl Capability {
     /// The order carries no meaning (see the type's own doc); this array
     /// exists so [`Capability::from_wire`] and this module's tests can walk
     /// the whole vocabulary without repeating its ten members a third time.
-    /// A const assertion below checks this array against [`Capability::index`]
-    /// so the two cannot silently drift apart.
+    /// A const assertion below checks this array against the type's private
+    /// `index` method so the two cannot silently drift apart.
     pub const ALL: [Capability; 10] = [
         Capability::ValueValidity,
         Capability::OperationContract,
