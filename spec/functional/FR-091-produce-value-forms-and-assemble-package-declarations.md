@@ -34,14 +34,15 @@ This requirement owns two pieces of the source-to-check path.
    (ADR-011 §2.1 E3 owner: QSL `check`).
 
 With both in place, complete-V1 source reaches `PackageDeclarations::check`
-through S1, S2 and E3 and through no other path.
+through S1, S2 and E3.
 
 The requirement carries testable criteria for decisions already taken:
 
 - ADR-011 §2.1 E2 and E3 rows: the admitted input and owner of each edge.
-- ADR-011 §2.2 E2 row. Provenance is carried: each form holds the span of its
-  CST node. Identity: none. The edition is carried. Declared bounds and
-  extents are carried as syntax. E3 row: bounds and extents are typed.
+- ADR-011 §2.2. E2 row: each form holds the span of its CST node; identity
+  none; edition carried; declared bounds and extents carried as syntax. E3
+  row: QSL keys the source map by occurrence key; bounds and extents typed.
+  E9 row: the packet's occurrence key resolves to a nested span.
 - ADR-011 §2.3. E2 refuses with diagnostics and builds no partial form. E3
   refuses with every error diagnostic and yields no partial output. Every
   stage entry takes explicit limits, and recursive stages (S2 among them)
@@ -50,20 +51,28 @@ The requirement carries testable criteria for decisions already taken:
 - ADR-011 §3 FB-01: no stage after S1 reads source text, CST or token text
   to recover meaning. FB-13: only `check` calls the kernel `NodeKey`
   constructor.
-- ADR-011 §6.1. `forms` core < family form builders is layer 2 and depends
-  on layer 1 and F. A family module depends on its layer's core only. The
-  `check` core is layer 3.
-- ADR-012 §1 and §3: the `Value` family covers scalar and composite values,
-  types, expressions and function application. Its parsing forms are
-  literals, operators, `let`, `if`, calls, records, collections and function
-  declarations.
+- ADR-011 §6.1. Layer 2 (`forms` core < family form builders) depends on
+  "1, F", and the column is an exhaustive allow-list. A family module
+  depends on its layer's core only. The `check` core is layer 3.
+- ADR-012 §1 and §3: `Value` covers scalar and composite values, types,
+  expressions and function application. Its parsing forms are literals,
+  operators, `let`, `if`, calls, records, collections and function
+  declarations. `StateModel` covers model population and lookup.
 - ADR-012 §3 and §4.3. The parser composes families through one closed entry
-  table keyed by the leading-token kind. Each entry makes one call into one
-  family production. The one `Expression` enum is defined in the `forms`
-  core, and each variant's owning family adds and removes that variant.
-- ADR-013 T-4 and T-5: a stage result is its output, a refusal with typed
+  table keyed by the leading-token kind, and each entry makes one call into
+  one family production. The one `Expression` enum is defined in the
+  `forms` core. Each variant's owning family is the family whose hook its
+  arm calls, and that family adds and removes the variant. `Deref` belongs
+  to `StateModel` and `Pre` to `ProtocolClause`.
+- ADR-013 O-11: the parsed-forms stage produces qualified names, and the
+  check stage resolves them. Unresolved or ambiguous names refuse at check
+  with a catalog code.
+- ADR-013 R-07: a conversion never drops a declared value. A target that
+  cannot represent a source value refuses.
+- ADR-013 T-4 and T-5. A stage result is its output, a refusal with typed
   causes, a limit refusal (`LimitExceeded`: limit kind, configured bound,
-  locus) or an internal fault. S0 to S2 name a location by a source region.
+  locus) or an internal fault. S0 to S2 name a location with
+  `Locus::Region`.
 
 The complete-V1 grammar that `qsl-cst` transcribes (`qsl-cst/src/grammar.rs`)
 is the authority for the syntax this requirement maps.
@@ -77,9 +86,8 @@ is the authority for the syntax this requirement maps.
 
 ## Outputs
 
-- From S2: one parsed unit. It holds the edition that the header recorded
-  and, in source order, one `Value`-family parsed form per declaration. Each
-  form holds the span of its `Declaration` CST node.
+- From S2: one parsed unit. It holds the header's edition and, in source
+  order, one `Value`-family parsed form per declaration.
 - From S2 on refusal: a refusal with a typed cause and the byte span it
   concerns, and no parsed unit.
 - From S2 at a limit: a limit refusal that names the limit kind, the
@@ -95,17 +103,23 @@ is the authority for the syntax this requirement maps.
 ### S2 walks the unit's declarations and dispatches each one
 
 The S2 entry admits a `ParsedSource` only when `ParsedSource::is_admissible()`
-holds, that is, no diagnostic and no recovery. Otherwise it refuses with
-cause `RecoveringCst` and returns no parsed unit (ADR-011 §2.3 E2).
+holds. A source whose CST carries a recovery refuses with cause
+`RecoveringCst`. A source that carries a diagnostic and no recovery refuses
+with a cause of its own, distinct from `RecoveringCst`, that holds the first
+diagnostic's code. Such a source comes from `ParsedSource::prepend_diagnostic`,
+for example a profile refusal. S2 returns no parsed unit in either case
+(ADR-011 §2.3 E2).
 
 For an admissible source, S2 visits the unit's `Declaration` nodes in source
-order. The first significant token of each declaration selects its entry in
-the `forms` core's dispatch table (ADR-012 §3). The `Value` family has these
-entries:
+order. The first significant token of each declaration selects that
+declaration's entry in the `forms` core's dispatch table (ADR-012 §3). This
+refines FR-067's "root construct's leading token". A complete unit's root
+begins with `language`, so each declaration is a construct of its own. The
+`Value` family has these entries:
 
 | Leading token | Declaration production | `Value` parsed form |
 |---|---|---|
-| `function` | `FunctionDeclaration` | function form |
+| `function` | `FunctionDeclaration` | the `forms` `FunctionDeclaration` |
 | `type` | `AliasDeclaration` | alias form |
 | `record` | `RecordDeclaration` | record form |
 | `tuple` | `TupleDeclaration` | tuple form |
@@ -122,25 +136,35 @@ the declaration's span. S2 returns no form for any declaration of that unit.
 Every `Value` parsed form carries the span of its `Declaration` CST node and
 the unit's edition. It carries no semantic identity (FR-067-AC-2).
 
-- **Function form.** It carries the declared name; the `using` alias as
-  written; each parameter's name and type reference, in order; the result
-  type reference; the `decreases` measure expression when one is written;
-  and the body expression.
-- **Alias form.** It carries the declared name and the aliased type
-  reference.
+- **Function form.** This is the `forms` core's one `FunctionDeclaration`
+  type. It carries the declared name; the `using` alias as written; each
+  parameter's name and type form, in order; the result type form; the
+  `decreases` measure expression when one is written; and the body
+  expression.
+- **Alias form.** It carries the declared name and the aliased type form.
 - **Record form.** It carries the declared name and each field's name, type
-  reference and optional marker `?`, in order.
-- **Tuple form.** It carries the declared name and each element type
-  reference, in order.
+  form and optional marker `?`, in order.
+- **Tuple form.** It carries the declared name and each element type form,
+  in order.
 
-A **type reference** is carried as syntax. The form holds the constructor
-keyword or qualified name as written, together with every declared bound,
-scale, rounding mode, text profile and element type reference, each as
-written. It holds no `ValueType` and no `NodeKey` (ADR-011 §2.2 E2 row:
-"Declared bounds and extents carried as syntax"; identity "none"). This rule
-applies to every type reference in a `Value` form, including the target of
-`convert<T>(e)` and the named types of `fold<A>`, `reduce<A>`, `count<N>`
-and `sum<N>`.
+A **type form** is a type reference carried as syntax: the head (a
+constructor keyword or a qualified name) as written, every declared bound,
+scale, rounding mode and text profile as spelled, the element type forms,
+and its own span. It holds no `ValueType` and no `NodeKey` (ADR-011 §2.2 E2
+row: "Declared bounds and extents carried as syntax"; identity "none"). Every
+type reference in a `Value` form is a type form. That includes each
+`FunctionDeclaration` parameter and result, the target of `convert<T>(e)`,
+and the named types of `fold<A>`, `reduce<A>`, `count<N>` and `sum<N>`.
+`forms` has no second function type that holds `ValueType`.
+
+### Every expression node carries its span
+
+Each `Expression` node in a `Value` form carries the span of the CST node it
+maps from. `(e)` maps to `e`'s node and carries `e`'s span. E3 keys the
+source map by occurrence key and E9 resolves an occurrence key to a nested
+span, while FB-01 forbids any stage after S1 from reading the CST. S2 is
+therefore the only source of a nested node's region (ADR-011 §2.2 E2, E3
+and E9 rows; §3 FB-01).
 
 ### Expression mapping
 
@@ -172,115 +196,163 @@ The `Value` production maps each CST expression construct to one
 | `count<N>(x in c: p)`, `sum<N>(x in c: e)` | `Count`, `Sum` |
 | `size(e)` | `Size` |
 | `contains(c, v)` | `Contains` |
-| `convert<T>(e)` | `Convert`, with `T` carried as a type reference |
+| `convert<T>(e)` | `Convert`, with `T` carried as a type form |
 | `(e)` | the mapping of `e` |
 
 Grouping and precedence come from the CST's own nesting. The production
 never re-derives them from token order.
 
-When a declaration contains an expression construct that is absent from the
-table, S2 refuses the whole unit. The cause is `UnrepresentedConstruct`, and
-the refusal names the construct's CST production and span. Examples are a
-text literal, `decimal(..)`, `float32(bits: ..)`, `null` outside a record
-field value, `none`, `self`, `result`, `div`, `rem`, `mod`, indexing
-`e[i]`, `size<T>(e)`, `reaches(..)`, `collect(..)`, `deref(e)`, `pre(e)` and
-`allInstances<T>(e)`. S2 returns no form for any declaration of that unit.
+`deref(e)`, `pre(e)` and `allInstances<T>(e)` have `Expression` variants
+that other families own: `Deref` and `AllInstances` belong to `StateModel`,
+and `Pre` to `ProtocolClause` (ADR-012 §1, §3, §4.3). When one of these is
+nested in a `Value` declaration, the `Value` production refuses the whole
+unit with cause `ForeignFamilyConstruct`. The refusal names the construct,
+its owning family and its span (FR-091-OQ-1).
+
+A construct that no family's variant represents refuses the whole unit with
+cause `UnrepresentedConstruct`, naming the construct's CST production and
+span. These constructs are text literals, `decimal(..)`, `float32(bits: ..)`
+and `float64(bits: ..)`, `null` outside a record field value, `none`,
+`self`, `result`, `div`, `rem`, `mod`, indexing `e[i]`, `size<T>(e)`,
+`reaches(..)` and `collect(..)` (FR-091-OQ-5). S2 returns no form for any
+declaration of that unit.
 
 ### S2 depth limit
 
-S2 bounds its recursion by the nesting-depth bound in its limit set, not by
-the native stack (ADR-011 §2.3 Limits). A declaration nested deeper than
-that bound gives a limit refusal. The refusal names limit kind nesting
-depth, the configured bound, and the span of the construct where the bound
-was exceeded. It is never a truncated form and never a `NoDispatchEntry` or
-`UnrepresentedConstruct` refusal. A declaration nested exactly to the bound
-builds.
+S2 bounds its recursion by the nesting-depth bound `L` in its limit set, not
+by the native stack (ADR-011 §2.3 Limits). Depth counts `Expression` nodes.
+The root expression of a function body or measure is at depth 1, and each
+child is one deeper than its parent. A body whose deepest node is at depth
+`L` builds. A body with a node at depth `L + 1` gives a limit refusal that
+names limit kind nesting depth, the bound `L`, and the span of the first node
+at depth `L + 1` in source order. It is never a truncated form and never a
+`NoDispatchEntry`, `ForeignFamilyConstruct` or `UnrepresentedConstruct`
+refusal. The S2 bound applies to sources that S1 admits: S1's own nesting
+clamp is independent of it.
 
 ### S2 layering
 
-The `Value` family form builder is a module under `forms`. It depends on the
-`forms` core, `qsl-cst`, `qsl-foundation` and `quire-exact`, and on no other
-family's module (ADR-011 §6.1). No `Value` parsed form, and no field of an
-`Expression` variant that the `Value` family owns, has type `ValueType` or
+The `Value` family form builder is a module under `forms`. ADR-011 §6.1
+allows layer 2 to depend on layer 1 (`qsl-cst`) and F (`qsl-foundation`),
+and on its own layer's `forms` core. The builder depends on no other family
+module and on nothing in layers 3 to 6. No `Value` parsed form, type form
+or `Value`-owned `Expression` variant has a field of type `ValueType` or
 `NodeKey`.
+
+The `forms` core imports `quire_exact` today (`src/forms/syntax.rs`, for the
+`Integer` and `CollectionKind` payloads of `Expression::Integer`,
+`Expression::Rational` and `Expression::Collection`), and a builder that
+constructs those variants inherits that edge. Whether layer 2 may depend on
+K is FR-091-OQ-8.
 
 ### The assembler builds `PackageDeclarations` from parsed forms
 
-The assembler is a module of the layer-3 `check` core. It reads the parsed
-unit only. It reads no `qsl_cst` type, no source text and no token text
-(FB-01). It fills `PackageDeclarations` as follows:
+The assembler is a module of the layer-3 `check` core. Its non-test code
+reads the parsed unit only. It reads no `qsl_cst` type, no source text and
+no token text (FB-01). It fills `PackageDeclarations` as follows:
 
 - `aliases`: one entry per alias form, in source order, holding the declared
   name and the resolved `ValueType`.
-- `functions`: one `FunctionDeclaration` per function form, in source order,
-  built with `FunctionDeclaration::new`. So each one is clause kind `Body`
-  and callable by name. Parameter and result types are resolved `ValueType`s.
+- `functions`: one entry per `FunctionDeclaration`, in source order, each
+  name-callable with clause kind `Body`. Each entry carries a check-owned
+  resolved signature: the parameter types and the result type that check
+  resolved from the type forms. The resolved signature is a `check` type,
+  not a `forms` type.
 - `types`: one composite declaration per record form and tuple form. Each
-  has a declaration key that `check` mints (FB-13, ADR-013 O-04).
+  has a declaration key that `check` mints (FB-13, ADR-013 O-04;
+  FR-091-OQ-3).
 
-Type resolution is the E3 name-binding phase (ADR-011 §1). A type reference
-resolves in one of three ways:
+Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
+The resolution `match` has one explicit arm per type-form head:
 
 - a built-in constructor (`Boolean`, `Integer`, `Int[..]`, `Rational[..]`,
   `Decimal[..]`, `Text[..]`, `Option<..>`, `Sequence`/`Set`/`Bag`/
   `OrderedSet<..>[..]`) resolves to its `ValueType` over the declared bounds
-  it carries;
-- a qualified name that names an alias form of the same unit resolves to
+  the type form carries;
+- `Float32[mode]` and `Float64[mode]` refuse. `ValueType::Float` holds only
+  an `IeeeWidth` and cannot represent the rounding mode, and R-07 forbids
+  dropping it. The refusal names the rounding mode and the type form's
+  span (FR-091-OQ-4);
+- `Reference<Q>` resolves `Q` against the admitted domain packages (I1). With
+  no admitted domain package, `Q` is an unresolved name;
+- a qualified name that names exactly one alias form of the unit resolves to
   that alias's resolved type;
-- a qualified name that names a record or tuple form of the same unit
+- a qualified name that names exactly one record or tuple form of the unit
   resolves to `ValueType::Composite` of that declaration's key.
 
 The assembler refuses in these cases:
 
 - **Unresolved type name.** A qualified name names no alias, record or tuple
-  form of the unit. The refusal names the name and the span of the form
-  that holds it.
+  form of the unit and nothing in an admitted domain package. The refusal
+  names the name and the span of the type form.
+- **Ambiguous type name.** A qualified name names more than one alias,
+  record or tuple form of the unit (ADR-013 O-11). The refusal names the
+  name, the span of the referencing type form and the span of each
+  candidate declaration.
 - **Ill-formed scalar bounds.** The value type rejects a built-in
-  constructor's declared bounds, for example an `Int` interval whose lower
+  constructor's declared bounds. Examples are an `Int` interval whose lower
   bound is above its upper bound, a `Rational` denominator interval that
-  reaches below one, or a `Text` minimum above its maximum. The refusal
-  carries that value type's own cause and the span of the form that holds
-  the reference.
+  reaches below one, and a `Text` minimum above its maximum. The refusal
+  carries that value type's own cause and the type form's span.
+- **Floating type.** As stated above.
 - **Alias cycle.** An alias resolves through a chain of aliases back to
   itself. The refusal names the aliases on the cycle.
 
 A refusal carries every error the assembler found in the unit, not only the
 first (ADR-011 §2.3 E3). The assembler returns no `PackageDeclarations`
-value alongside a refusal.
+value alongside a refusal. The assembler runs before check mints any
+occurrence key, so each assembler error names its location as a
+`Locus::Region` over the type form's or declaration's span (ADR-013 T-5).
 
-The assembler fills no other `PackageDeclarations` member from parsed forms.
-For a unit with no `import` or `model` selection, `enums`,
-`model_operations`, `dispatch_operations`, `dispatch_tables` and
-`model_correspondence` are empty, and `ieee_profile` is `None`.
+### Catalog codes
+
+Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
+O-17). The codes are these existing `qsl-foundation` catalog codes:
+
+| Cause | Code |
+|---|---|
+| `RecoveringCst` | `invalid_syntax` |
+| diagnosed source (diagnostic, no recovery) | the first diagnostic's own code |
+| `NoDispatchEntry`, `ForeignFamilyConstruct`, `UnrepresentedConstruct` | `unsupported_construct` |
+| unresolved type name | `missing_declaration` |
+| ambiguous type name | `ambiguous_declaration` |
+| ill-formed scalar bounds | `ill_typed` |
+| floating type | `unsupported_construct` |
+| S2 nesting-depth limit | the nesting-depth limit code that ADR-013 QC-11 assigns (#213 S-5b) |
+| alias cycle | FR-091-OQ-7 |
 
 ## Constraints
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-091-CON-1 | The `Value` family form builder and the assembler are the only producers of a `PackageDeclarations` value from complete-V1 source. The assembler's only input is S2 output. | Design | Inspection |
-| FR-091-CON-2 | The dispatch table, the `Value` production's expression match and the assembler's type-reference match have no `_` or catch-all arm (ADR-012 §5.1). | Design | Test (TC-398) |
+| FR-091-CON-1 | The `Value` family form builder and the assembler are the only producers of a `PackageDeclarations` value from complete-V1 source. The assembler's parsed-form input is S2 output. Its other E3 inputs (admitted domain packages, library lock) are those ADR-011 §2.1's E3 row admits, subject to FR-091-OQ-2 and FR-091-OQ-3. | Design | Inspection |
+| FR-091-CON-2 | The dispatch table, the `Value` production's expression match and the assembler's type-form resolution match have no `_` or catch-all arm (ADR-012 §5.1). | Design | Test (TC-398) |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-091-AC-1 | S2 returns a parsed unit with exactly four forms, in the order alias, function, record and tuple, for an admissible S1 output whose header records edition `1-draft` and which holds one profile selection and then, in order, one `type`, one `function`, one `record` and one `tuple` declaration. Each form's span equals the span of its `Declaration` CST node, and the unit's edition reads `1-draft`. | Test (TC-392) |
-| FR-091-AC-2 | Given `function inc using v(x: Int[0, 9], y: Digit): Int[0, 10] pure decreases(x) { x + 1 }`, the function form reads: name `inc`; `using` alias `v`; parameter `x`, whose type reference is constructor `Int` with bounds spelled `0` and `9`; parameter `y`, whose type reference is the qualified name `Digit`; a result type reference `Int` with bounds `0` and `10`; measure `Name("x")`; and body `Binary{Add, Name("x"), Integer(1)}`. No accessor on the form returns a `ValueType` or a `NodeKey`. | Test (TC-393) |
+| FR-091-AC-1 | S2 returns a parsed unit with exactly four forms, in the order alias, function, record and tuple, for an admissible S1 output whose header records edition `1-draft` and which holds one profile selection with alias `v` and then, in order, one `type`, one `function`, one `record` and one `tuple` declaration. Each form's span equals the span of its `Declaration` CST node, and the unit's edition reads `1-draft`. | Test (TC-392) |
+| FR-091-AC-2 | The `forms` `FunctionDeclaration` that S2 builds from `function inc using v(x: Int[0, 9], y: Digit): Int[0, 10] pure decreases(x) { x + 1 }` reads: name `inc`; `using` alias `v`; parameter `x`, a type form with head `Int` and bounds spelled `0` and `9`; parameter `y`, a type form with qualified-name head `Digit`; result, a type form with head `Int` and bounds `0` and `10`; measure `Name("x")`; body `Binary{Add, Name("x"), Integer(1)}`. No field of `FunctionDeclaration` or of the type form, and no accessor return type on either, is `ValueType` or `NodeKey`. | Test (TC-393) |
 | FR-091-AC-3 | For each row of the expression-mapping table, a function body that holds that construct maps to the listed `Expression` variant, with operands in source order. `a or b and c` maps to `Or(a, And(b, c))`. `a - b - c` maps to `Subtract(Subtract(a, b), c)`. `a implies b implies c` maps to `Implies(a, Implies(b, c))`. `(a + b) * c` maps to `Multiply(Add(a, b), c)`. | Test (TC-394) |
-| FR-091-AC-4 | Given a `ParsedSource` that carries a recovery, and separately one that carries a diagnostic but no recovery, S2 refuses each with cause `RecoveringCst` and returns no parsed unit. | Test (TC-395) |
-| FR-091-AC-5 | Given an admissible unit that holds a valid `function` declaration followed by an `invariant` declaration, S2 refuses the whole unit with cause `NoDispatchEntry`. The refusal names the spelling `invariant` and the `invariant` declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
-| FR-091-AC-6 | Given an admissible unit whose only declaration is an `enum`, a `predicate`, a `dimension` or a `unit` declaration, S2 refuses with cause `NoDispatchEntry` and names that declaration's leading token and span. Open question: FR-091-OQ-1. | Test (TC-395) |
-| FR-091-AC-7 | Given a function whose body holds exactly one construct absent from the mapping table (one case each for a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]` and `none`), S2 refuses the whole unit with cause `UnrepresentedConstruct`. The refusal names the construct's CST production and span, and S2 returns no form. The same holds for `deref(e)`, `pre(e)` and `allInstances<T>(e)`. Open questions: FR-091-OQ-5, and FR-091-OQ-1 for the last three. | Test (TC-396) |
-| FR-091-AC-8 | With an S2 nesting-depth bound `L`, a function body of `L` nested `not` operators around a name builds a form. The same body with `L + 1` nested `not` operators gives a limit refusal that names limit kind nesting depth, the bound `L` and the span of the `not` construct at depth `L + 1`, with no parsed unit. A body nested to the deepest level S1 admits, far beyond `L`, gives the same limit refusal and does not overflow the stack. | Test (TC-397) |
-| FR-091-AC-9 | The `Value` family form builder module imports only the `forms` core, `qsl_cst`, `qsl_foundation` and `quire_exact`. It imports no other family module and nothing under `crate::check`, `crate::value` or `crate::model`. No field of a `Value` parsed form, and no field of an `Expression` variant in the mapping table, has type `ValueType` or `NodeKey`. The dispatch `match`, the expression `match` and the assembler's type-reference `match` have no `_` arm. | Test (TC-398) |
-| FR-091-AC-10 | The assembler returns a `PackageDeclarations` value whose `aliases` is `[("Digit", Int[0..9])]` and whose `functions` are `inc` and then `two`, with `inc`'s parameter type `Int[0..9]`, for the S2 output of source that declares `type Digit = Int[0, 9];`, then `function inc using v(x: Digit): Int[0, 10] pure { x + 1 }`, then `function two using v(): Int[0, 10] pure { inc(1) }`. | Test (TC-399) |
-| FR-091-AC-11 | Given a unit with `function f using v(x: Missing): Boolean pure { true }` and `function g using v(y: Absent): Boolean pure { true }`, the assembler returns one refusal that holds two unresolved-type-name errors. One names `Missing` with `f`'s form span, and the other names `Absent` with `g`'s form span. It returns no `PackageDeclarations`. | Test (TC-400) |
-| FR-091-AC-12 | Given parameters typed `Int[9, 0]`, `Rational[0, 1; 0, 5]` and `Text[5, 1; nfc]`, one per function, the assembler returns one refusal with three errors. Each carries the owning value type's own rejection cause and the span of its function form. It returns no `PackageDeclarations`. | Test (TC-400) |
-| FR-091-AC-13 | Given `type A = B;` and `type B = A;`, the assembler refuses with an alias-cycle error that names both `A` and `B`, and returns no `PackageDeclarations`. | Test (TC-400) |
-| FR-091-AC-14 | Given `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each keyed by a key that `check` minted. `px`'s parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Open question: FR-091-OQ-3. | Test (TC-401) |
-| FR-091-AC-15 | The assembler module is under the layer-3 `check` core and has no `use` edge or inline path to `qsl_cst`. Its tests build its input only through S2 or from parsed-form values, never from a CST. | Test (TC-402) |
-| FR-091-AC-16 | For the AC-10 source, which has no `import` or `model` selection, the assembled `PackageDeclarations` has empty `enums`, `model_operations`, `dispatch_operations`, `dispatch_tables` and `model_correspondence`, and `ieee_profile` is `None`. Open questions: FR-091-OQ-1 for `enums`, FR-091-OQ-2 for `ieee_profile`. | Test (TC-403) |
-| FR-091-AC-17 | Calling `two` with no arguments through `CheckedPackage::call`, on the package that `PackageDeclarations::check` admits and links from the AC-10 assembler output, returns a completed outcome with integer value `2`. | Test (TC-399) |
+| FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
+| FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
+| FR-091-AC-6 | S2 refuses with cause `NoDispatchEntry`, naming the leading token and the declaration's span, an admissible unit whose only declaration is an `enum`, a `predicate`, a `dimension` or a `unit` declaration. Open question: FR-091-OQ-1. | Test (TC-395) |
+| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]`, `none`, `collect(x in c: x)`. Open question: FR-091-OQ-5. | Test (TC-396) |
+| FR-091-AC-8 | S2 refuses the whole unit with cause `ForeignFamilyConstruct`, naming the construct, its owning family (`StateModel` for `deref(r)` and `allInstances<M::T>(p)`, `ProtocolClause` for `pre(a)`) and its span, for a function body that holds one of those constructs. Open question: FR-091-OQ-1. | Test (TC-396) |
+| FR-091-AC-9 | With S2 nesting-depth bound `L = 8`, S2 builds a function body `not`×7 `a`, whose deepest node is at depth 8. It refuses `not`×8 `a` with a limit refusal that names limit kind nesting depth, bound `8`, and the span of the node at depth 9, and returns no parsed unit. It refuses `not`×20 `a` in the same way. S1 admits all three sources, so each refusal comes from S2. | Test (TC-397) |
+| FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
+| FR-091-AC-11 | The `Value` family form builder module has `use` edges and inline paths only to the `forms` core, `qsl_cst` and `qsl_foundation`. It has none to another family module or to anything under `crate::check`, `crate::value` or `crate::model`. No field of a `Value` parsed form, of the type form, or of an `Expression` variant in the mapping table has type `ValueType` or `NodeKey`. The dispatch `match`, the expression `match` and the assembler's resolution `match` have no `_` arm. The `quire_exact` edge that the `Integer`, `Rational` and `Collection` payloads bring in is FR-091-OQ-8. | Test (TC-398) |
+| FR-091-AC-12 | The assembler returns a `PackageDeclarations` value for the S2 output of source that declares `type Digit = Int[0, 9];`, then `function inc using v(x: Digit): Int[0, 10] pure { x + 1 }`, then `function two using v(): Int[0, 10] pure { inc(1) }`. Its `aliases` is `[("Digit", Int[0..9])]`. Its `functions` are `inc` and then `two`. `inc`'s check-owned resolved signature has parameter type `Int[0..9]` and result type `Int[0..10]`. | Test (TC-399) |
+| FR-091-AC-13 | Calling `two` with no arguments through `CheckedPackage::call`, on the package that `PackageDeclarations::check` admits and links from the AC-12 assembler output, returns a completed outcome with integer value `2`. | Test (TC-399) |
+| FR-091-AC-14 | The assembler returns one refusal holding two unresolved-type-name errors for a unit with `function f using v(x: Missing): Boolean pure { true }` and `function g using v(y: Absent): Boolean pure { true }`. One error names `Missing` with its type form's span, and the other names `Absent` with its type form's span. It returns no `PackageDeclarations`. | Test (TC-400) |
+| FR-091-AC-15 | The assembler refuses with an ambiguous-type-name error for a unit with `type A = Int[0, 1];`, `type A = Int[0, 2];` and `function f using v(x: A): Boolean pure { true }`. The error names `A`, the span of `x`'s type form and the spans of both `type A` declarations. | Test (TC-400) |
+| FR-091-AC-16 | The assembler returns one refusal with three errors for parameters typed `Int[9, 0]`, `Rational[0, 1; 0, 5]` and `Text[5, 1; nfc]`, one per function. Each error carries the owning value type's own rejection cause and its type form's span. It returns no `PackageDeclarations`. | Test (TC-400) |
+| FR-091-AC-17 | The assembler refuses with an alias-cycle error naming both `A` and `B` for `type A = B;` and `type B = A;`, and returns no `PackageDeclarations`. | Test (TC-400) |
+| FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Open question: FR-091-OQ-3. | Test (TC-401) |
+| FR-091-AC-19 | The assembler refuses a parameter typed `Float64[nearest-even]` with a floating-type error that names the rounding mode `nearest-even` and the type form's span. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`. Neither returns a `PackageDeclarations`. | Test (TC-405) |
+| FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The alias-cycle cause is outside this criterion (FR-091-OQ-7). | Test (TC-406) |
 
 ## Dependencies
 
@@ -288,9 +360,13 @@ For a unit with no `import` or `model` selection, `enums`,
   `forms` core: the dispatch table, `ParsedForm`'s span, edition and
   declared-extent accessors, and the `RecoveringCst` and `NoDispatchEntry`
   causes. This requirement adds the `Value` family's entries and production
-  (M-3b), which FR-067-CON-2 leaves to the family.
+  (M-3b), which FR-067-CON-2 leaves to the family, and refines FR-067's
+  dispatch key to each declaration's leading token.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
   `PackageDeclarations` and its `check` in the layer-3 `check` core.
+- QSL-180's K5 slice replaces the `ValueType` fields of the `forms` types
+  with a syntactic type form, and gives `PackageDeclarations` a check-owned
+  resolved signature. This requirement states the same direction.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) takes
   a family's parsed forms as its input. This requirement produces them from
   source for the `Value` family.
@@ -307,59 +383,64 @@ Specified for ADR-011 §7.3 M-3b (the `Value` family, tracked under QSL-141)
 on the M-6a path (QSL-8). Not yet implemented. `forms::build_form` has a
 test-only dispatch entry only, so every production CST refuses with
 `NoDispatchEntry`. No module builds `PackageDeclarations` from parsed forms.
-`Expression::Convert` holds a `ValueType` target, which AC-9 does not allow.
+`Expression::Convert` and `FunctionDeclaration` hold `ValueType` fields,
+which AC-2 and AC-11 do not allow. `Expression` nodes carry no span.
 
 ## Open Questions
 
-- **FR-091-OQ-1: Which family owns the `enum`, `predicate`, `dimension` and
-  `unit` declaration productions, and the nested `deref`, `pre` and
-  `allInstances` constructs?** ADR-012 §1 gives `Value` "scalar and composite
-  values, types", and §3 lists its parsing forms as "literals, operators,
-  `let`, `if`, calls, records, collections, function declarations". §3 gives
-  `SumCase` "variant type declarations". Neither list names `enum` (which
-  `PackageDeclarations::enums` holds), `predicate` (grammatically a
-  Boolean-valued function declaration), `dimension` or `unit`. ADR-012 §4.3
-  moves the `Deref` check arm to `StateModel` and `Pre` to `ProtocolClause`,
-  but it rules on check arms, not on which production parses the construct
-  when it is nested in a `Value` declaration. FR-091-AC-6, AC-7 (last three
-  cases) and AC-16 (`enums`) depend on this.
+- **FR-091-OQ-1: What does the `Value` production do with another family's
+  construct, and who owns `enum`, `predicate`, `dimension` and `unit`?**
+  ADR-012 §4.3 assigns the `Deref` and `AllInstances` variants to
+  `StateModel` and `Pre` to `ProtocolClause`. It does not say whether the
+  `Value` production refuses such a construct nested in a `Value`
+  declaration, or hands it to the owning family's production. ADR-012 §1
+  and §3 do not name the family that owns the `enum`, `predicate`,
+  `dimension` and `unit` declaration productions. `enum` is held by
+  `PackageDeclarations::enums`, and `predicate` is grammatically a
+  Boolean-valued function declaration. FR-091-AC-6 and AC-8 depend on this.
 - **FR-091-OQ-2: What do the unit's profile, import and model selections and
   a function's `using` alias become at E2 and E3?** The E2 row carries only
   the edition in its Version column. E3 admits "library lock" beside the
-  parsed forms, and no FR says where lock evidence comes from (recorded on
-  QSL-6). `using <alias>` is not trivia, so E2 cannot drop it. AC-2 has
-  the form carry it as written. No text says what E3 does with it: whether
-  it must name a profile selection of the unit, and what it refuses if it
-  does not. `ieee_profile` is built by `DefinitionLock::admit_ieee_profile`,
-  which needs the lock. FR-091-AC-16 (`ieee_profile`) depends on this. If E3
-  must admit the profile against the lock, the AC-10 fixture gains that lock
-  entry.
+  parsed forms, and no FR says where a source unit's lock comes from
+  (recorded on QSL-6). `using <alias>` is not trivia, so E2 cannot drop it;
+  AC-2 has the form carry it as written. No text says what E3 does with it.
+  `ieee_profile` is built by `DefinitionLock::admit_ieee_profile`, which
+  needs the lock. No criterion covers `ieee_profile`.
 - **FR-091-OQ-3: Over which package identity does `check` mint record and
   tuple declaration keys?** ADR-013 O-04's node-identity preimage includes
   the declaring package's `name@version` (QC-18). No FR says where the
   assembler gets a package's name and version for a unit compiled from
-  source; this is the same lock-evidence gap as FR-091-OQ-2. FR-091-AC-14
+  source; this is the same lock-evidence gap as FR-091-OQ-2. FR-091-AC-18
   depends on this.
-- **FR-091-OQ-4: Where does a floating type's rounding mode go?** The grammar
-  writes `Float32[mode]` and `Float64[mode]`. `ValueType::Float` holds only
-  an `IeeeWidth`, and ADR-013 R-07 forbids a conversion that drops a
-  declared value. No criterion covers resolving a floating type reference
-  until this is ruled.
+- **FR-091-OQ-4: Where is a floating type's rounding mode represented?**
+  The grammar writes `Float32[mode]` and `Float64[mode]`, and
+  `ValueType::Float` holds only an `IeeeWidth`. Under R-07 the assembler
+  refuses floating types (AC-19). Whether the mode belongs in the value
+  type, in the IEEE profile or elsewhere is not ruled (see QSL-131 for the
+  kernel `ValueType` shape).
 - **FR-091-OQ-5: Does the `Value` production represent the rest of the
   complete-V1 `Value` syntax?** Text, decimal and float literals, `none`,
-  `null`, `self`, `result`, `div`, `rem`, `mod`, indexing, `size<T>`,
-  `reaches` and `collect` have grammar productions and no `Expression`
-  variant. Adding a variant needs checker and evaluator support as well.
-  FR-091-AC-7 states what happens today: the production refuses. Whether
-  M-3b for `Value` must add variants for these constructs is not ruled.
-- **FR-091-OQ-6: Does every nested expression carry its span at S2?** The E2
-  row says "each form holds the span of its CST node". `Expression` variants
-  carry no span, and E3 keys the source map by occurrence key (ADR-013 O-07,
-  QSL-159). The criteria above require spans on declaration forms only.
-- **FR-091-OQ-7: Which catalog codes do the S2 and assembler causes map to?**
-  ADR-013 O-17 gives each cause type one exhaustive `catalog_code()` into
-  the catalog revision that FR-322 selects, and forbids inventing a code.
-  This requirement does not verify whether that revision defines codes for
-  `RecoveringCst`, `NoDispatchEntry`, `UnrepresentedConstruct`, an
-  unresolved type name or an alias cycle (compare FR-090-OQ-2). No criterion
-  above asserts a catalog code.
+  `null` outside a record field, `self`, `result`, `div`, `rem`, `mod`,
+  indexing, `size<T>`, `reaches` and `collect` have grammar productions and
+  no `Expression` variant. Adding a variant also needs checker and
+  evaluator support. For `collect`, `src/forms/syntax.rs` documents
+  `BinderQuery::Map` as "also spelled `collect`", while the native lane
+  gives `collect` its own duplicate-output refusal (FR-008-AC-20). The two
+  texts disagree on whether `collect` is `Map`. FR-091-AC-7 states what
+  happens today: the production refuses.
+- **FR-091-OQ-7: Which catalog code does an alias cycle map to?** ADR-013
+  O-17 requires a code from the catalog revision FR-322 selects and forbids
+  inventing one. No existing `qsl-foundation` code clearly names a cyclic
+  type alias. A catalog entry is needed from
+  `ix://agent-ix/quire-specification`, as in FR-090-OQ-2.
+- **FR-091-OQ-8: May layer 2 depend on K?** Against: ADR-011 §6.1 gives layer
+  2 "1, F" in an exhaustive allow-list; the crate-map rule limits a layer
+  crate's `[dependencies]` to its "Depends on" cell; and the §7.1 graph gives
+  `qsl-forms` no edge to `quire-exact`. FR-067 states that the `forms` core
+  depends on layer 1 and F only. For: ADR-011 §7.3's QSL-146 row repointed
+  the removed types' consumers, `src/forms/syntax.rs` among them, at
+  `quire-exact`, and `src/forms/mod.rs` calls K "allow-listed". The options
+  are to amend §6.1 and §7.1 to add K to layer 2, or to have S2 carry
+  integer literals and collection kinds as syntax. This is recorded as OQ-A
+  in the QSL-180 kernel-convergence plan. FR-091-AC-11 does not allow the
+  `quire_exact` edge, and names this question for it.

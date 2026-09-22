@@ -14,16 +14,19 @@ Verify that the S2 entry walks a unit's declarations in source order and
 returns one `Value` parsed form per declaration, each carrying the span of
 its `Declaration` CST node and the unit's edition.
 
-This catches a production that dispatches on the unit root's leading token
-(`language`) instead of each declaration's, one that reorders or drops
-declarations, and one that gives every form the root span.
+This catches three faults: a production that dispatches on the unit root's
+leading token (`language`) instead of each declaration's, one that reorders
+or drops declarations, and one that gives every form the root span.
 
 Scope: FR-091-AC-1.
 
 ## Test Procedure
 
-1. Parse with `qsl_cst::parse` a unit with the complete-V1 header
-   (`edition "1-draft"`), one profile selection, then in order:
+Every fixture unit below starts with the complete-V1 header
+(`language "ix:native" edition "1-draft";`) and one profile selection whose
+alias is `v`.
+
+1. Parse with `qsl_cst::parse` a unit holding, in order:
    `type Digit = Int[0, 9];`,
    `function inc using v(x: Digit): Int[0, 10] pure { x + 1 }`,
    `record Point { x: Int[0, 9]; }` and `tuple Pair(Int[0, 9], Int[0, 9]);`.
@@ -39,8 +42,7 @@ Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
 - Step 2 returns a parsed unit, not a refusal.
 - Step 3 reads exactly four forms, in the order alias, function, record,
   tuple.
-- Each form's span equals the matching span from step 4, and no two forms
-  share a span.
+- Each form's span equals the matching span from step 4.
 - The unit's edition reads `1-draft`.
 
 ## Status
