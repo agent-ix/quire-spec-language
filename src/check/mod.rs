@@ -82,6 +82,8 @@ mod ir;
 mod refusal;
 mod termination;
 
+use std::collections::BTreeMap;
+
 use check::{bind_parameters, Signature, Typer};
 use facts::{CallSite, Definedness};
 
@@ -134,10 +136,15 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+// PR #300 review finding 4: `mint_type_declaration_identity` and
+// `mint_variant_id` are `pub(super)` in `identity` (visible to `check`,
+// which calls them from `PackageDeclarations::check` below), not `pub` --
+// they are not part of this re-export list, since no consumer outside
+// `check` mints an identity.
 pub use identity::{
-    mint_type_declaration_identity, mint_variant_id, to_kernel_value_type, CheckedClauseKind,
-    CheckedTypeNode, Frame, FrameSubjects, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape,
-    SumVariant,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, DuplicateSumVariant, Frame,
+    FrameSubjects, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape, SumVariant,
+    SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
@@ -202,12 +209,25 @@ pub struct CheckedGraph {
     occurrences: family::OccurrenceMap<Location>,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
-    /// a node-id-keyed accessor, never a name-keyed one (R-06). Always empty
-    /// today: no #213 slice before S-3b gives the checker a frame/model
-    /// declaration to record one from (FR-088-CON-2 leaves FR-340's frame
-    /// semantics to #210); the field exists now so a consumer already has a
-    /// stable accessor to read it through once that checking exists.
+    /// a node-id-keyed accessor, never a name-keyed one (R-06). PR #300
+    /// review finding 1: populated from `PackageDeclarations::model_correspondence`
+    /// (see that field's own doc for why the entries themselves are still
+    /// caller-supplied -- no #213 slice before S-3b gives the checker a real
+    /// domain-package intake to derive a frame/model declaration's own
+    /// `DeclarationKey` from, FR-088-CON-2 leaves FR-340's frame semantics to
+    /// #210), but the *recording* is real production code, not a test-only
+    /// stub: `check` copies every caller-supplied entry onto this field
+    /// itself, exactly the same "built by the caller, checker only
+    /// records/resolves against it" split this struct's own
+    /// `dispatch_operations`/`dispatch_tables` already use.
     model_correspondence: identity::ModelCorrespondence,
+    /// ADR-013 O-14/C-26 (PR #300 review finding 1): every admitted
+    /// composite and enum type declaration this package's `TypeEnvironment`
+    /// and `enums` carried, converted once at `check` into a real
+    /// [`identity::CheckedTypeNode`] and keyed by its own checked node id --
+    /// read only through [`Self::checked_type_node`], node-id-keyed like
+    /// every other accessor here (R-06).
+    type_nodes: BTreeMap<quire_exact::NodeKey, identity::CheckedTypeNode>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -489,6 +509,61 @@ impl PackageDeclarations {
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
         let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
+        // ADR-013 O-14/C-26 (PR #300 review finding 1): every admitted
+        // composite and enum type declaration this package's own
+        // `TypeEnvironment`/`enums` already carry becomes a real
+        // `CheckedTypeNode`, minted from its own declared shape through
+        // `identity::mint_type_declaration_identity` -- real production
+        // code, not only exercised by this module's unit tests.
+        let mut type_nodes = BTreeMap::new();
+        for composite in scope.types.composites() {
+            let name = crate::value::Identifier::new(composite.name().to_owned())
+                .expect("a checked composite declaration's own name is a grammar-valid identifier");
+            let node = identity::mint_type_declaration_identity(
+                &package_identity,
+                std::slice::from_ref(&name),
+                identity::DeclaredShape::Composite(composite.shape()),
+            );
+            type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
+        }
+        for enum_binding in &scope.enums {
+            let name = crate::value::Identifier::new(enum_binding.name.clone())
+                .expect("a checked enum declaration's own name is a grammar-valid identifier");
+            let variants: Vec<identity::SumVariant> = enum_binding
+                .members
+                .iter()
+                .map(|member| {
+                    identity::SumVariant::new(
+                        crate::value::Identifier::new(member.case().to_owned()).expect(
+                            "a checked enum declaration's own case is a grammar-valid identifier",
+                        ),
+                    )
+                })
+                .collect();
+            // Two members sharing one declared case name is already refused
+            // upstream of `check` (an `EnumBinding` whose own admission
+            // rejected a duplicate case never reaches here) -- this is
+            // defense in depth over an input `check` treats as already
+            // well-formed, not a reachable production refusal, so this
+            // declaration's checked type node is simply omitted rather than
+            // panicking on it.
+            if let Ok(variants) = identity::SumVariants::new(variants) {
+                let node = identity::mint_type_declaration_identity(
+                    &package_identity,
+                    std::slice::from_ref(&name),
+                    identity::DeclaredShape::Sum(&variants),
+                );
+                type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
+            }
+        }
+        // ADR-013 O-04 (PR #300 review finding 1): `check` records every
+        // caller-supplied correspondence entry verbatim -- see
+        // `PackageDeclarations::model_correspondence`'s own doc for why the
+        // entries themselves are still caller-supplied today.
+        let mut model_correspondence = identity::ModelCorrespondence::default();
+        for (node, declaration) in self.model_correspondence {
+            model_correspondence.record(node, declaration);
+        }
         // PR #262 review, finding F4: this used to hardcode
         // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
         // method's own caller-supplied `CheckingLimits`) declared, and a
@@ -681,7 +756,8 @@ impl PackageDeclarations {
             functions,
             dispatch_tables,
             occurrences,
-            model_correspondence: identity::ModelCorrespondence::default(),
+            model_correspondence,
+            type_nodes,
         })
     }
 }
@@ -697,6 +773,22 @@ impl CheckedGraph {
         node: quire_exact::NodeKey,
     ) -> Option<&crate::model::key::DeclarationKey> {
         self.model_correspondence.resolve(node)
+    }
+
+    /// ADR-013 O-14/C-26 (PR #300 review finding 1): `node`'s own checked
+    /// type descriptor, when this package admitted a composite or enum
+    /// declaration that minted that node id. Node-id-keyed, never
+    /// name-keyed (R-06), like every other accessor here.
+    pub fn checked_type_node(&self, node: quire_exact::NodeKey) -> Option<&CheckedTypeNode> {
+        self.type_nodes.get(&node)
+    }
+
+    /// Every checked type node this package admitted, in node-id order --
+    /// the listing accessor a test or a future C-26 consumer uses to find a
+    /// declaration's own minted node id without independently recomputing
+    /// it (there is no name-keyed lookup, R-06).
+    pub fn checked_type_nodes(&self) -> impl Iterator<Item = &CheckedTypeNode> {
+        self.type_nodes.values()
     }
 
     /// Check a standalone expression over `parameters`, against `expected`
@@ -910,5 +1002,176 @@ impl CheckedGraph {
     /// -- the accessor the evaluator reads directly, alongside `scope`.
     pub(crate) fn dispatch_tables(&self) -> &[DispatchTable] {
         &self.dispatch_tables
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::{Origin, Role};
+
+    use super::*;
+
+    fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
+        PackageDeclarations {
+            functions,
+            ..PackageDeclarations::default()
+        }
+    }
+
+    /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
+    /// real `PackageDeclarations::check` run, from its own new
+    /// `model_correspondence` field, and read back only through
+    /// `CheckedGraph::resolve_declaration` -- not a hand-built
+    /// `ModelCorrespondence` sitting outside the checker (FR-088-AC-2). The
+    /// frame-subject *resolution mechanics* over that correspondence stay
+    /// covered by `identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
+    /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
+    /// test is the "the checker really records it" half.
+    #[trace("TC-248", "FR-088-AC-2")]
+    #[test]
+    fn model_correspondence_is_recorded_by_a_real_check_run() {
+        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+        let declaration = crate::model::key::DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "Order.status".to_owned(),
+        };
+        let graph = PackageDeclarations {
+            model_correspondence: vec![(node, declaration.clone())],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("an empty package with a correspondence seed checks cleanly");
+
+        assert_eq!(graph.resolve_declaration(node), Some(&declaration));
+
+        // Adverse (R-05): a node the caller never supplied resolves to
+        // nothing -- `check` never re-derives an entry by search.
+        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
+        assert_eq!(graph.resolve_declaration(other), None);
+    }
+
+    /// PR #300 review finding 1: a real composite declaration in
+    /// `PackageDeclarations.types` becomes a real `CheckedTypeNode`,
+    /// convertible through C-26, not only in `identity`'s own
+    /// hand-constructed unit tests.
+    #[trace("TC-252", "FR-088-AC-9")]
+    #[test]
+    fn composite_declaration_becomes_a_real_checked_type_node() {
+        use crate::value::composite::{
+            CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
+        };
+        use crate::value::node::NodeKey as ValueNodeKey;
+
+        let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
+        let composite = CompositeDeclaration::new(
+            ValueNodeKey::from_hex(&"11".repeat(32)).expect("64 lowercase hex digits"),
+            "Flagged",
+            CompositeShape::Record(vec![field]),
+        );
+        let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
+        let graph = PackageDeclarations {
+            types,
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("one record declaration checks cleanly");
+
+        let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
+        assert_eq!(nodes.len(), 1, "exactly the one declared composite");
+        let node = nodes[0].node();
+        assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
+        assert_eq!(
+            to_kernel_value_type(nodes[0]),
+            quire_exact::ValueType::Composite(node)
+        );
+    }
+
+    /// PR #300 review finding 7: TC-249's own identity/occurrence-key
+    /// mechanism, demonstrated through a real `check()` run rather than
+    /// only a hand-built `OccurrenceMap` (`identity`'s own unit test keeps
+    /// that mechanism coverage; this is the real-checker, adverse
+    /// companion FR-088-AC-3 also names). This crate has no `claim`/
+    /// `temporal`/`protocol` clause syntax yet (FR-088-CON-1 scopes clause
+    /// identity to the identity/occurrence-key mechanism only, not the
+    /// syntax that would produce one), so the closest real,
+    /// checker-produced case of "one identity, two distinct occurrences"
+    /// is two calls to the same function with the same arguments:
+    /// `family::mint_call_identity` mints one identity from the callee
+    /// name and arguments alone, never from a resolved index or the
+    /// caller's own identity, so both call sites share it -- the same
+    /// "structurally identical content shares one id" premise ADR-013 O-04
+    /// states for clause identity -- while `check`'s own `OccurrenceMap`
+    /// still gives each call site its own (role, ordinal), exactly O-07's
+    /// shape.
+    #[trace("TC-249", "FR-088-AC-3")]
+    #[test]
+    fn call_occurrences_of_the_same_callee_share_an_identity_and_disambiguate_by_occurrence_key() {
+        fn literal_function(name: &str, body: Expression) -> FunctionDeclaration {
+            FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        }
+        let call_helper = || Expression::Call {
+            name: "helper".to_owned(),
+            arguments: Vec::new(),
+        };
+        let graph = declarations(vec![
+            literal_function("helper", Expression::Boolean(true)),
+            literal_function("caller_one", call_helper()),
+            literal_function("caller_two", call_helper()),
+        ])
+        .check(CheckingLimits::default())
+        .expect("two callers of one no-argument function check cleanly");
+
+        // Steps 2-3: both call sites mint the same identity, but distinct
+        // occurrence keys.
+        let call_identity = family::mint_call_identity(family::DEFAULT_PACKAGE_IDENTITY, "helper", &[]);
+        let first = Origin::new(Role::new("reference"), 0);
+        let second = Origin::new(Role::new("reference"), 1);
+        let first_location = graph
+            .occurrence(call_identity, &first)
+            .expect("the first call site was recorded")
+            .clone();
+        let second_location = graph
+            .occurrence(call_identity, &second)
+            .expect("the second call site was recorded")
+            .clone();
+
+        // Step 4: (identity, occurrence key) disambiguates what identity
+        // alone cannot; a third, never-recorded ordinal resolves to
+        // nothing rather than aliasing an existing occurrence.
+        assert_ne!(
+            first_location, second_location,
+            "two distinct source occurrences must not collapse to one location"
+        );
+        let third = Origin::new(Role::new("reference"), 2);
+        assert_eq!(graph.occurrence(call_identity, &third), None);
+
+        // Step 5 (adverse, R-05): renaming both callers changes their
+        // *diagnostic* location text (each `Location` names its own
+        // enclosing function, exactly as a diagnostic pointer should), but
+        // leaves the shared call *identity* and both *occurrence keys*
+        // (role, ordinal) unchanged -- display/diagnostic text is never
+        // load-bearing for identity or the occurrence key that
+        // disambiguates it, only for where a human-readable message points.
+        let renamed = declarations(vec![
+            literal_function("helper", Expression::Boolean(true)),
+            literal_function("renamed_caller_one", call_helper()),
+            literal_function("renamed_caller_two", call_helper()),
+        ])
+        .check(CheckingLimits::default())
+        .expect("renaming the callers changes no checking outcome");
+        assert!(
+            renamed.occurrence(call_identity, &first).is_some(),
+            "the same call identity and first occurrence key still resolve after renaming"
+        );
+        assert!(
+            renamed.occurrence(call_identity, &second).is_some(),
+            "the same call identity and second occurrence key still resolve after renaming"
+        );
+        assert_ne!(
+            renamed.occurrence(call_identity, &first),
+            Some(&first_location),
+            "the diagnostic location's own embedded function name is expected to change"
+        );
     }
 }
