@@ -329,21 +329,18 @@ pub(crate) fn is_identifier(text: &str) -> bool {
 }
 
 /// A `node-identity-preimage.schema.json` `$defs.Identifier`
-/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the shared identifier-shaped single name
-/// segment every checked-member name/operator field and `check`'s own
-/// name-segment uses carry, so an invalid identifier is refused at
-/// construction rather than reaching a schema-invalid wire shape (ADR-013
-/// O-06) or a second, parallel copy of this same check (QSL-186). Lives here,
-/// in this K-designated `node` module, rather than in `value::member` (not
+/// (`^[A-Za-z_][A-Za-z0-9_]*$`): the identifier-shaped single name segment
+/// every checked-member name/operator field and `check`'s own name-segment
+/// use carry, so an invalid identifier is refused at construction rather
+/// than reaching a schema-invalid wire shape (ADR-013 O-06). Lives here, in
+/// this K-designated `node` module, rather than in `value::member` (not
 /// K-designated) or as a `check`-lane-private newtype, because FR-068-AC-6
 /// bounds `check`'s imports from `value` to the nine K-designated siblings
 /// (`node` among them) plus a small declared-interim allow-list -- `member`
-/// is in neither. QSL-186 deleted `check::identity`'s own lane-private
-/// `Identifier` newtype (`crate::value::member::Identifier`'s predecessor
-/// duplicate) so `value::member` and `check` share this one type. Reuses
-/// `is_identifier`, the same character-class check every other
-/// identifier-shaped field in this crate already uses ("one fact, one
-/// place"), rather than a second copy of the schema's character class.
+/// is in neither. Reuses `is_identifier`, the same character-class check
+/// every other identifier-shaped field in this crate already uses ("one
+/// fact, one place"), rather than a second copy of the schema's character
+/// class.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Identifier(String);
 
@@ -396,4 +393,39 @@ pub(crate) fn check_terms(terms: &[(NodeKey, Integer)]) -> Result<(), SemanticGr
         return Err(SemanticGraphCause::UnsortedTerms);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::*;
+
+    /// ADR-013 O-06/#260 review item 3: a name that is not
+    /// `^[A-Za-z_][A-Za-z0-9_]*$` is refused at `Identifier::new`, before a
+    /// `Member` carrying it can ever exist to be serialized as a
+    /// schema-invalid `OperationMember`.
+    #[test]
+    fn a_non_identifier_name_is_refused() {
+        for invalid in ["not an id!", "", "1starts_with_digit", "has-a-dash"] {
+            assert_eq!(
+                Identifier::new(invalid),
+                Err(InvalidIdentifier),
+                "{invalid:?} must be refused"
+            );
+        }
+    }
+
+    /// The positive complement of the refusal above: every name/operator
+    /// `value::member`'s own schema-shape tests use is itself accepted.
+    #[test]
+    fn ordinary_identifiers_are_accepted() {
+        for valid in [
+            "quantity",
+            "source",
+            "totalPrice",
+            "add",
+            "_leading_underscore",
+        ] {
+            assert!(Identifier::new(valid).is_ok(), "{valid:?} must be accepted");
+        }
+    }
 }

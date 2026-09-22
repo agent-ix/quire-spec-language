@@ -347,12 +347,9 @@ impl Frame {
 // claiming the O-11 name itself; PR #300 review round 2 (HIGH-1) removed the
 // one caller that used to build a `&[Identifier]` name sequence from it
 // (`mint_type_declaration_identity`), so today `Identifier` names only a
-// `SumVariant`'s own single declared case. QSL-186 deleted this module's own
-// lane-private `Identifier`/`InvalidIdentifier` newtype (a byte-identical
-// duplicate of `value::member`'s) and repointed this module onto the shared
-// `value::node::Identifier` instead -- `node` is one of FR-068-AC-6's nine
-// K-designated `value` siblings `check` may import from unbounded, so this
-// is a normal tier-1 edge, not a new exception.
+// `SumVariant`'s own single declared case. `node` is one of FR-068-AC-6's
+// nine K-designated `value` siblings `check` may import from unbounded, so
+// this is a normal tier-1 edge.
 //
 // PR #300 review finding 2: the checker's own name -> node id resolution
 // function already exists and is exercised in production --
@@ -402,9 +399,7 @@ impl SumVariant {
         Self { name }
     }
 
-    /// This variant's own declared name, as `&str` -- unchanged by QSL-186's
-    /// move of `Identifier` onto the shared `value::node::Identifier`; this
-    /// accessor's own shape was never about that type's visibility.
+    /// This variant's own declared name.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }

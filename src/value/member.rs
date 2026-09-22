@@ -26,12 +26,8 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord};
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
 // tests below still assert the wire shape against the domain's own constant.
-// `InvalidIdentifier` (QSL-186: moved to `value::node` along with
-// `Identifier`) is likewise test-only here now that `Identifier::new`'s
-// `Result::Err` type is no longer constructed anywhere in this file's own
-// production code -- only the refusal tests below name it directly.
 #[cfg(test)]
-use super::node::{InvalidIdentifier, NODE_KEY_DOMAIN};
+use super::node::NODE_KEY_DOMAIN;
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
@@ -291,35 +287,5 @@ mod tests {
             name: Identifier::new("same").unwrap(),
         };
         assert_ne!(field, operation);
-    }
-
-    /// ADR-013 O-06/#260 review item 3: a name that is not
-    /// `^[A-Za-z_][A-Za-z0-9_]*$` is refused at `Identifier::new`, before a
-    /// `Member` carrying it can ever exist to be serialized as a
-    /// schema-invalid `OperationMember`.
-    #[test]
-    fn a_non_identifier_name_is_refused() {
-        for invalid in ["not an id!", "", "1starts_with_digit", "has-a-dash"] {
-            assert_eq!(
-                Identifier::new(invalid),
-                Err(InvalidIdentifier),
-                "{invalid:?} must be refused"
-            );
-        }
-    }
-
-    /// The positive complement of the refusal above: every name/operator
-    /// this file's own schema-shape tests use is itself accepted.
-    #[test]
-    fn ordinary_identifiers_are_accepted() {
-        for valid in [
-            "quantity",
-            "source",
-            "totalPrice",
-            "add",
-            "_leading_underscore",
-        ] {
-            assert!(Identifier::new(valid).is_ok(), "{valid:?} must be accepted");
-        }
     }
 }
