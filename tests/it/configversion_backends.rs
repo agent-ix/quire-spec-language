@@ -262,8 +262,8 @@ fn native_verdict(
             panic!("out-of-domain input reached native evaluation")
         };
         assert!(failure.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
-                && diagnostic.message == "integer is outside its nominal bounds"
+            diagnostic.diagnostic.code == quire_spec_language::Code::InvalidRuntimeInput
+                && diagnostic.diagnostic.message == "integer is outside its nominal bounds"
         }));
     }
     report.truth()

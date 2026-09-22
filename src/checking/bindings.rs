@@ -15,7 +15,7 @@ pub(super) fn validate(linked: &LinkedPackage<'_>, bindings: &CheckBindings) -> 
     let at_start = Span { start: 0, end: 0 };
     let invalid = |message| failure(unit.source(), Code::InvalidModelBinding, at_start, message);
     linked.require_historical_native().map_err(|mut error| {
-        error.phase = crate::Phase::Check;
+        error.diagnostic.phase = crate::Phase::Check;
         error
     })?;
     let bound = bindings.source.source();

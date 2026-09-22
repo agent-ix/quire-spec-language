@@ -73,11 +73,11 @@ fn skipped_invalid_field_refuses_with_actual_native_and_model_loci() {
     let diagnostic = report
         .diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput)
+        .find(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput)
         .expect("the skipped Version field is still checked against 0..1000");
-    assert_eq!(diagnostic.phase, Phase::Validate);
+    assert_eq!(diagnostic.diagnostic.phase, Phase::Validate);
     assert_eq!(
-        diagnostic.source,
+        diagnostic.diagnostic.source,
         *checked.linked().unit().source().identity()
     );
     assert!(diagnostic.related.iter().any(|location| {
@@ -88,7 +88,7 @@ fn skipped_invalid_field_refuses_with_actual_native_and_model_loci() {
                     field: symbol("n"),
                 }
     }));
-    assert!(!diagnostic.is_incomplete());
+    assert!(!diagnostic.diagnostic.is_incomplete());
 }
 
 #[test]
@@ -121,12 +121,12 @@ fn missing_target_is_dangling_only_when_its_population_is_complete() {
         assert!(report
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == code));
+            .any(|diagnostic| diagnostic.diagnostic.code == code));
         if !complete {
             assert!(report
                 .diagnostics
                 .iter()
-                .all(|diagnostic| diagnostic.code != Code::DanglingReference));
+                .all(|diagnostic| diagnostic.diagnostic.code != Code::DanglingReference));
         }
     }
 }
@@ -183,7 +183,7 @@ fn selection_refuses_foreign_clauses_stale_bytes_and_duplicate_inventory() {
         assert!(report
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == code));
+            .any(|diagnostic| diagnostic.diagnostic.code == code));
     }
 }
 
@@ -263,7 +263,7 @@ fn foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_
     let diagnostic = report
         .diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.code == Code::InvalidModelBinding)
+        .find(|diagnostic| diagnostic.diagnostic.code == Code::InvalidModelBinding)
         .unwrap();
     let runtime = &diagnostic.runtime;
     assert_eq!(
@@ -274,6 +274,6 @@ fn foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_
     assert_eq!(runtime.requirement, selected.requirement);
     assert!(runtime.path.is_empty());
     assert!(runtime.observation.is_none());
-    assert_eq!(diagnostic.span.start.byte, 0);
-    assert_eq!(diagnostic.span.end.byte, 0);
+    assert_eq!(diagnostic.diagnostic.span.start.byte, 0);
+    assert_eq!(diagnostic.diagnostic.span.end.byte, 0);
 }

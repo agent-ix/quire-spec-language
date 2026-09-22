@@ -40,16 +40,16 @@ fn coordinates(location: &ir::SourceLocation) -> (u64, u32, u32) {
 
 fn assert_refusal<T: std::fmt::Debug>(result: Result<T, Box<FormalSourceError>>, source: &Source) {
     let diagnostic = result.unwrap_err();
-    assert_eq!(diagnostic.code, Code::InvalidSourceMap);
-    assert_eq!(diagnostic.phase, Phase::SourceMap);
-    assert_eq!(&diagnostic.source, source.identity());
-    assert_eq!(diagnostic.path, source.path());
+    assert_eq!(diagnostic.diagnostic.code, Code::InvalidSourceMap);
+    assert_eq!(diagnostic.diagnostic.phase, Phase::SourceMap);
+    assert_eq!(&diagnostic.diagnostic.source, source.identity());
+    assert_eq!(diagnostic.diagnostic.path, source.path());
     assert_eq!(
-        diagnostic.span,
+        diagnostic.diagnostic.span,
         source.locate(Span { start: 0, end: 0 }).unwrap()
     );
     assert!(diagnostic.upstream.is_none());
-    assert!(!diagnostic.is_incomplete());
+    assert!(!diagnostic.diagnostic.is_incomplete());
 }
 
 #[test]

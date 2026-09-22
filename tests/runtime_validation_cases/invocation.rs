@@ -46,7 +46,7 @@ fn recorded_input_checks_immutable_field_permissions_before_any_truth() {
                 assert!(report
                     .diagnostics
                     .iter()
-                    .any(|diagnostic| diagnostic.code == Code::FrameViolation));
+                    .any(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation));
             }
         }
     }
@@ -97,8 +97,10 @@ fn precondition_can_record_permitted_self_deletion_and_pre_captured_parameter() 
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == Code::DanglingReference
-                    && diagnostic.runtime.observation == Some(ir::StateObservation::Post)));
+                .any(
+                    |diagnostic| diagnostic.diagnostic.code == Code::DanglingReference
+                        && diagnostic.runtime.observation == Some(ir::StateObservation::Post)
+                ));
         }
     }
 }
@@ -142,14 +144,15 @@ fn actual_created_sets_need_both_exact_recording_and_model_permission() {
                     report
                         .diagnostics
                         .iter()
-                        .any(|diagnostic| diagnostic.code == Code::FrameViolation),
+                        .any(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation),
                     !allowed
                 );
                 assert_eq!(
                     report
                         .diagnostics
                         .iter()
-                        .any(|diagnostic| diagnostic.code == Code::PopulationDeltaMismatch),
+                        .any(|diagnostic| diagnostic.diagnostic.code
+                            == Code::PopulationDeltaMismatch),
                     !recorded_correctly
                 );
             }
@@ -187,14 +190,14 @@ fn unavailable_pre_does_not_become_empty_or_suppress_known_post_and_delta_defect
             report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == code),
+                .any(|diagnostic| diagnostic.diagnostic.code == code),
             "{code:?}"
         );
     }
     assert!(report
         .diagnostics
         .iter()
-        .all(|diagnostic| diagnostic.code != Code::FrameViolation));
+        .all(|diagnostic| diagnostic.diagnostic.code != Code::FrameViolation));
 }
 
 #[test]
@@ -252,7 +255,7 @@ fn state_roots_need_preserved_storage_values_and_explicit_counterparts() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == code));
+                .any(|diagnostic| diagnostic.diagnostic.code == code));
         }
     }
 }
@@ -280,12 +283,12 @@ fn incomplete_population_retains_known_unauthorized_field_change() {
         assert!(report
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == code));
+            .any(|diagnostic| diagnostic.diagnostic.code == code));
     }
     assert!(report
         .diagnostics
         .iter()
-        .all(|diagnostic| diagnostic.code != Code::PopulationDeltaMismatch));
+        .all(|diagnostic| diagnostic.diagnostic.code != Code::PopulationDeltaMismatch));
 }
 
 #[test]
@@ -319,11 +322,11 @@ fn unrelated_duplicate_objects_or_fields_do_not_hide_known_frame_changes() {
         assert!(report
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == Code::InvalidRuntimeInput));
+            .any(|diagnostic| diagnostic.diagnostic.code == Code::InvalidRuntimeInput));
         let frame: Vec<_> = report
             .diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == Code::FrameViolation)
+            .filter(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation)
             .collect();
         assert_eq!(
             frame.len(),
@@ -431,7 +434,7 @@ fn field_and_population_permissions_do_not_extend_to_other_supplied_models() {
                 1,
                 "effect variant {variant}: {report:?}"
             );
-            assert_eq!(report.diagnostics[0].code, Code::FrameViolation);
+            assert_eq!(report.diagnostics[0].diagnostic.code, Code::FrameViolation);
         }
     }
 }
@@ -487,14 +490,15 @@ fn deletion_requires_both_exact_recording_and_model_permission() {
                     report
                         .diagnostics
                         .iter()
-                        .any(|diagnostic| diagnostic.code == Code::FrameViolation),
+                        .any(|diagnostic| diagnostic.diagnostic.code == Code::FrameViolation),
                     !allowed
                 );
                 assert_eq!(
                     report
                         .diagnostics
                         .iter()
-                        .any(|diagnostic| diagnostic.code == Code::PopulationDeltaMismatch),
+                        .any(|diagnostic| diagnostic.diagnostic.code
+                            == Code::PopulationDeltaMismatch),
                     recording != 0
                 );
             }
@@ -544,7 +548,10 @@ fn absent_and_present_results_must_correspond_to_the_declared_operation() {
                 let report = result.unwrap_err();
                 assert_eq!(report.status, ValidationStatus::Refused);
                 assert_eq!(report.diagnostics.len(), 1);
-                assert_eq!(report.diagnostics[0].code, Code::InvalidRuntimeInput);
+                assert_eq!(
+                    report.diagnostics[0].diagnostic.code,
+                    Code::InvalidRuntimeInput
+                );
             }
         }
     }

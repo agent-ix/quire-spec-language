@@ -408,7 +408,7 @@ fn reread_snapshots_and_invocations_reach_actual_native_execution() {
         if bad_frame {
             assert_eq!(report.truth(), None);
             assert!(
-                matches!(report.outcome(), ExecutionOutcome::ValidationFailed(f) if f.diagnostics.iter().any(|d| d.code == Code::FrameViolation))
+                matches!(report.outcome(), ExecutionOutcome::ValidationFailed(f) if f.diagnostics.iter().any(|d| d.diagnostic.code == Code::FrameViolation))
             );
         } else {
             assert_eq!(report.truth(), Some(true));

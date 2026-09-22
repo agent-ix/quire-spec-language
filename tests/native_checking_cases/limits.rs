@@ -54,10 +54,10 @@ fn exhaustion(result: Result<CheckedPackage<'_>, Box<CheckingError>>) -> Box<Che
         panic!("must refuse without a partial checked package");
     };
     assert_eq!(
-        (error.phase, error.code),
+        (error.diagnostic.phase, error.diagnostic.code),
         (Phase::Check, Code::ResourceExhausted)
     );
-    assert!(error.is_incomplete());
+    assert!(error.diagnostic.is_incomplete());
     assert!(
         error.upstream.is_none(),
         "native budgets precede IR execution"
@@ -152,9 +152,12 @@ fn tc_051_shared_graph_expansion_cannot_elevate_hard_limits_or_reuse_prior_succe
     let expression = shared_aliases(14);
     let ordinary = exhaustion(bounded(&models, &expression, CheckLimits::default()));
     let attempted = exhaustion(bounded(&models, &expression, elevated));
-    assert_eq!(ordinary.message, attempted.message);
-    assert_eq!(ordinary.span, attempted.span);
-    assert!(ordinary.message.contains("per-goal nodes"), "{ordinary:?}");
+    assert_eq!(ordinary.diagnostic.message, attempted.diagnostic.message);
+    assert_eq!(ordinary.diagnostic.span, attempted.diagnostic.span);
+    assert!(
+        ordinary.diagnostic.message.contains("per-goal nodes"),
+        "{ordinary:?}"
+    );
 }
 
 #[test]
@@ -188,7 +191,10 @@ fn tc_051_expanded_proof_depth_is_bounded_even_when_native_depth_is_small() {
             ..CheckLimits::default()
         },
     ));
-    assert!(error.message.contains("expanded proof depth"), "{error:?}");
+    assert!(
+        error.diagnostic.message.contains("expanded proof depth"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -217,5 +223,8 @@ fn tc_051_materialization_counts_accumulate_across_distinct_goals() {
             ..limits
         },
     ));
-    assert!(error.message.contains("materialized nodes"), "{error:?}");
+    assert!(
+        error.diagnostic.message.contains("materialized nodes"),
+        "{error:?}"
+    );
 }

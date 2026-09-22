@@ -164,8 +164,8 @@ impl ModelSourceError {
     /// Stable native classification for the actual failing stage.
     pub fn code(&self) -> Code {
         match &self.cause {
-            ModelSourceCause::Decode(located_json::Error::Source(error)) => error.code,
-            ModelSourceCause::Admission(error) => error.code,
+            ModelSourceCause::Decode(located_json::Error::Source(error)) => error.diagnostic.code,
+            ModelSourceCause::Admission(error) => error.diagnostic.code,
             ModelSourceCause::Decode(located_json::Error::ForeignOccurrence) => {
                 Code::InvalidSourceMap
             }

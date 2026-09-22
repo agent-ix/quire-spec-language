@@ -196,9 +196,9 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
     ] {
         let error =
             link_native(unit(&models[0], &clause), &models, LinkLimits::default()).unwrap_err();
-        assert_eq!(error.code, code, "{clause}: {error}");
-        assert_eq!(error.phase, Phase::Link);
-        assert!(!error.is_incomplete());
+        assert_eq!(error.diagnostic.code, code, "{clause}: {error}");
+        assert_eq!(error.diagnostic.phase, Phase::Link);
+        assert!(!error.diagnostic.is_incomplete());
         assert_eq!(
             link_native(
                 unit(&models[0], &invariant("true")),
@@ -248,6 +248,7 @@ fn tc_044_unmapped_native_paths_refuse_and_legacy_profile_is_preserved() {
                 LinkLimits::default()
             )
             .unwrap_err()
+            .diagnostic
             .code,
             code,
             "{clause}"
@@ -280,7 +281,7 @@ fn tc_042_native_selection_requires_its_own_exact_artifact_and_revision() {
             LinkLimits::default(),
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::StaleDependency);
+        assert_eq!(error.diagnostic.code, Code::StaleDependency);
     }
     for revision in ["01", "0", "2"] {
         let text = document(
@@ -292,6 +293,7 @@ fn tc_042_native_selection_requires_its_own_exact_artifact_and_revision() {
         assert_eq!(
             link_native(read(&text), &models, LinkLimits::default())
                 .unwrap_err()
+                .diagnostic
                 .code,
             Code::StaleDependency
         );
@@ -308,6 +310,7 @@ fn tc_042_native_selection_requires_its_own_exact_artifact_and_revision() {
                 LinkLimits::default()
             )
             .unwrap_err()
+            .diagnostic
             .code,
             expected
         );
@@ -360,6 +363,7 @@ fn tc_044_enum_identity_is_not_a_reference_and_parameters_are_operation_scoped()
                 LinkLimits::default()
             )
             .unwrap_err()
+            .diagnostic
             .code,
             code
         );
@@ -413,10 +417,17 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
             LinkLimits::default(),
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::InvalidModelBinding, "mutation {mutation}");
-        assert_eq!(error.phase, Phase::Link);
-        assert_eq!(error.source, *inventory[1].source().source().identity());
-        assert_eq!(error.span.start.byte, 0);
+        assert_eq!(
+            error.diagnostic.code,
+            Code::InvalidModelBinding,
+            "mutation {mutation}"
+        );
+        assert_eq!(error.diagnostic.phase, Phase::Link);
+        assert_eq!(
+            error.diagnostic.source,
+            *inventory[1].source().source().identity()
+        );
+        assert_eq!(error.diagnostic.span.start.byte, 0);
         assert!(!error.related.is_empty());
     }
     let duplicates = [original.clone(), original.clone()];
@@ -426,7 +437,7 @@ fn tc_043_inventory_conflicts_refuse_before_import_selection() {
         LinkLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::AmbiguousDeclaration);
+    assert_eq!(error.diagnostic.code, Code::AmbiguousDeclaration);
     assert!(!error.related.is_empty());
     let mut independent = parts();
     reowner(&mut independent, "IndependentRule");
@@ -484,8 +495,12 @@ fn tc_045_native_link_limits_are_effective_and_inclusive() {
             };
             *selected = if zero { 0 } else { *selected - 1 };
             let error = link_native(unit(&models[0], &clause), &models, limits).unwrap_err();
-            assert_eq!(error.code, Code::ResourceExhausted, "dimension {dimension}");
-            assert!(error.is_incomplete());
+            assert_eq!(
+                error.diagnostic.code,
+                Code::ResourceExhausted,
+                "dimension {dimension}"
+            );
+            assert!(error.diagnostic.is_incomplete());
         }
     }
 }
@@ -523,6 +538,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
             permissive
         )
         .unwrap_err()
+        .diagnostic
         .code,
         Code::ResourceExhausted
     );
@@ -544,7 +560,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
         if count == 64 {
             assert_eq!(result.unwrap().models().len(), 64);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
     for count in [256, 257] {
@@ -555,7 +571,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
         if count == 256 {
             assert_eq!(result.unwrap().clauses().len(), 256);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
     for leaves in [3334, 3335] {
@@ -565,7 +581,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
         if leaves == 3334 {
             assert_eq!(result.unwrap().unit().expressions().len(), 10_000);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
     for depth in [64, 65] {
@@ -576,7 +592,7 @@ fn tc_045_native_link_hard_inventory_syntax_and_depth_limits_cannot_be_raised() 
         if depth == 64 {
             assert_eq!(result.unwrap().clauses().len(), 1);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
 }
@@ -625,6 +641,7 @@ fn tc_045_native_artifact_and_aggregate_hard_byte_ceilings() {
     assert_eq!(
         link_native(unit(&models[0], &clauses), &models, limits)
             .unwrap_err()
+            .diagnostic
             .code,
         Code::ResourceExhausted
     );
@@ -641,7 +658,7 @@ fn tc_045_native_artifact_and_aggregate_hard_byte_ceilings() {
         if total == exact_total {
             assert_eq!(result.unwrap().models().len(), 1);
         } else {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         }
     }
     // NativeModel admission already prevents constructing an artifact beyond
@@ -667,5 +684,5 @@ fn tc_045_native_artifact_and_aggregate_hard_byte_ceilings() {
         },
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::ResourceExhausted);
+    assert_eq!(error.diagnostic.code, Code::ResourceExhausted);
 }

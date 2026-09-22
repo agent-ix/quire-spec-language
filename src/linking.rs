@@ -302,19 +302,6 @@ pub struct LinkingError {
     pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
 }
 
-impl std::ops::Deref for LinkingError {
-    type Target = Diagnostic;
-    fn deref(&self) -> &Diagnostic {
-        &self.diagnostic
-    }
-}
-
-impl std::ops::DerefMut for LinkingError {
-    fn deref_mut(&mut self) -> &mut Diagnostic {
-        &mut self.diagnostic
-    }
-}
-
 impl std::fmt::Display for LinkingError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.diagnostic, formatter)
@@ -1131,10 +1118,13 @@ mod profile_tests {
             };
             assert_eq!(linked.binding_profile(), NativeModelProfile::V1.as_str());
             let error = check(linked, bindings.clone(), CheckLimits::default()).unwrap_err();
-            assert_eq!(error.code, expected);
-            assert_eq!(error.phase, Phase::Check);
+            assert_eq!(error.diagnostic.code, expected);
+            assert_eq!(error.diagnostic.phase, Phase::Check);
             assert_eq!(
-                (error.span.start.byte, error.span.end.byte),
+                (
+                    error.diagnostic.span.start.byte,
+                    error.diagnostic.span.end.byte
+                ),
                 (at.start, at.end)
             );
         }

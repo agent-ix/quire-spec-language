@@ -119,11 +119,11 @@ fn assert_validation_failure(
     let diagnostic = report
         .diagnostics
         .iter()
-        .find(|d| d.code == code)
+        .find(|d| d.diagnostic.code == code)
         .expect("expected validation code after successful setup");
-    assert_eq!(diagnostic.phase, Phase::Validate);
+    assert_eq!(diagnostic.diagnostic.phase, Phase::Validate);
     assert_eq!(
-        diagnostic.source,
+        diagnostic.diagnostic.source,
         *checked.linked().unit().source().identity()
     );
     let runtime = &diagnostic.runtime;
@@ -131,7 +131,7 @@ fn assert_validation_failure(
     assert_eq!(runtime.clause.as_str(), "population_rule");
     assert!(report.usage.work > 0);
     println!("case={name} phase=validate status={:?} code={} native={:?} runtime={runtime:?} related={:?} usage={:?}",
-        report.status, diagnostic.code, diagnostic.span, diagnostic.related, report.usage);
+        report.status, diagnostic.diagnostic.code, diagnostic.diagnostic.span, diagnostic.related, report.usage);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn native_pipeline_retains_dangling_stale_and_incomplete_input_stages() {
             assert!(report
                 .diagnostics
                 .iter()
-                .any(|d| d.code == code && !d.related.is_empty()));
+                .any(|d| d.diagnostic.code == code && !d.related.is_empty()));
         }
     }
 }

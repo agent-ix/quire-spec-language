@@ -169,7 +169,7 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
     }
 
     pub fn observe(&mut self, stage: Stage, diagnostic: ValidationDiagnostic) -> Result<()> {
-        if diagnostic.is_incomplete() {
+        if diagnostic.diagnostic.is_incomplete() {
             self.incomplete = true;
         } else {
             self.invalid = true;
@@ -200,13 +200,14 @@ impl<'a, F: FnMut() -> bool> Budget<'a, F> {
                 .cmp(b_stage)
                 .then_with(|| a.runtime.compare(&b.runtime))
                 .then_with(|| {
-                    (a.span.start.byte, a.span.end.byte).cmp(&(b.span.start.byte, b.span.end.byte))
+                    (a.diagnostic.span.start.byte, a.diagnostic.span.end.byte)
+                        .cmp(&(b.diagnostic.span.start.byte, b.diagnostic.span.end.byte))
                 })
-                .then_with(|| a.code.as_str().cmp(b.code.as_str()))
+                .then_with(|| a.diagnostic.code.as_str().cmp(b.diagnostic.code.as_str()))
                 // Several independent defects can share the prescribed key.
                 // Break those ties by retained content, never discovery order.
                 .then_with(|| a.related.cmp(&b.related))
-                .then_with(|| a.message.cmp(&b.message))
+                .then_with(|| a.diagnostic.message.cmp(&b.diagnostic.message))
         });
         Box::new(ValidationReport {
             status: if self.invalid {

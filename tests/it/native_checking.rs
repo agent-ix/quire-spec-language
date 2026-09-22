@@ -139,9 +139,9 @@ fn refused(
     locus: Option<&str>,
 ) {
     let error = request(models, expression, kind).unwrap_err();
-    assert_eq!(error.code, code, "{expression}: {error:?}");
-    assert_eq!(error.phase, Phase::Check, "{expression}");
-    assert!(!error.is_incomplete());
+    assert_eq!(error.diagnostic.code, code, "{expression}: {error:?}");
+    assert_eq!(error.diagnostic.phase, Phase::Check, "{expression}");
+    assert!(!error.diagnostic.is_incomplete());
     if let Some(locus) = locus {
         let clause_text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n", models[0].digest());
         // Locate against the authored test expression, independently of the AST.
@@ -152,8 +152,8 @@ fn refused(
                 ClauseKind::Postcondition => "post Rule on M::Node::step { ".len(),
             };
         assert_eq!(
-            &expression
-                [error.span.start.byte - expression_start..error.span.end.byte - expression_start],
+            &expression[error.diagnostic.span.start.byte - expression_start
+                ..error.diagnostic.span.end.byte - expression_start],
             locus
         );
     }
@@ -521,11 +521,11 @@ fn tc_053_native_presence_facts_are_sound_against_independent_boolean_assignment
             }
             Err(error) => {
                 assert_eq!(
-                    error.code,
+                    error.diagnostic.code,
                     Code::UndefinedExpression,
                     "{expression}: {error:?}"
                 );
-                assert_eq!(error.phase, Phase::Check);
+                assert_eq!(error.diagnostic.phase, Phase::Check);
                 assert_eq!(
                     error.upstream.as_ref().unwrap().code,
                     ir::DiagnosticCode::PotentiallyUndefined

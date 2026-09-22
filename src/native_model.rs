@@ -327,19 +327,6 @@ pub struct NativeModelError {
     pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
 }
 
-impl std::ops::Deref for NativeModelError {
-    type Target = Diagnostic;
-    fn deref(&self) -> &Diagnostic {
-        &self.diagnostic
-    }
-}
-
-impl std::ops::DerefMut for NativeModelError {
-    fn deref_mut(&mut self) -> &mut Diagnostic {
-        &mut self.diagnostic
-    }
-}
-
 impl std::fmt::Display for NativeModelError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.diagnostic, formatter)

@@ -961,9 +961,12 @@ fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
         let import = unit.imports()[0].span;
         let error =
             link_native(unit, std::slice::from_ref(&model), LinkLimits::default()).unwrap_err();
-        assert_eq!(error.code, Code::UnsupportedConstruct);
+        assert_eq!(error.diagnostic.code, Code::UnsupportedConstruct);
         assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
+            (
+                error.diagnostic.span.start.byte,
+                error.diagnostic.span.end.byte
+            ),
             (import.start, import.end)
         );
         discharged(&report, "Exact");

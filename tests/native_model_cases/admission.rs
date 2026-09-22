@@ -410,11 +410,11 @@ fn tc_041_nested_sequence_value_maxima_cannot_be_raised_with_work_limits() {
                 assert_eq!(selected.value_type(), &ty);
             } else {
                 let error = result.unwrap_err();
-                assert_eq!(error.code, Code::UnrepresentableConstraint);
-                assert_eq!(error.phase, Phase::Link);
-                assert!(!error.is_incomplete());
-                assert_eq!(error.source, *source.identity());
-                assert_eq!(error.path, source.path());
+                assert_eq!(error.diagnostic.code, Code::UnrepresentableConstraint);
+                assert_eq!(error.diagnostic.phase, Phase::Link);
+                assert!(!error.diagnostic.is_incomplete());
+                assert_eq!(error.diagnostic.source, *source.identity());
+                assert_eq!(error.diagnostic.path, source.path());
             }
         }
     }

@@ -49,11 +49,11 @@ fn tc_046_availability_refusals_record_the_actual_native_phase() {
     ] {
         let error = request(&models, expression, kind).unwrap_err();
         assert_eq!(
-            (error.phase, error.code),
+            (error.diagnostic.phase, error.diagnostic.code),
             (phase, Code::WrongSnapshot),
             "{expression}: {error:?}"
         );
-        assert!(!error.is_incomplete());
+        assert!(!error.diagnostic.is_incomplete());
     }
     let checked = request(
         &models,
@@ -130,7 +130,7 @@ fn tc_046_invocation_parameters_and_aliases_keep_their_captured_observation() {
     }
     let error = request(&models, "request = self.peer", ClauseKind::Invariant).unwrap_err();
     assert_eq!(
-        (error.phase, error.code),
+        (error.diagnostic.phase, error.diagnostic.code),
         (Phase::Link, Code::MissingDeclaration)
     );
 }
@@ -198,7 +198,7 @@ fn tc_050_unreachable_work_skips_only_definedness_and_active_locals_do_not_shado
     ] {
         let error = request(&models, expression, ClauseKind::Invariant).unwrap_err();
         assert_eq!(
-            (error.phase, error.code),
+            (error.diagnostic.phase, error.diagnostic.code),
             (Phase::Link, Code::MissingDeclaration),
             "{expression}: {error:?}"
         );

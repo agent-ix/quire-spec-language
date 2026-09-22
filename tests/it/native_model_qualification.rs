@@ -108,12 +108,21 @@ fn refuse(input: Parts, code: Code) -> Box<NativeModelError> {
         ModelLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, code, "{error:?}");
-    assert_eq!(error.phase, Phase::Link);
-    assert_eq!(error.is_incomplete(), code == Code::ResourceExhausted);
-    assert_eq!(error.source, *native.identity());
-    assert_eq!(error.path, native.path());
-    assert_eq!((error.span.start.byte, error.span.end.byte), (0, 0));
+    assert_eq!(error.diagnostic.code, code, "{error:?}");
+    assert_eq!(error.diagnostic.phase, Phase::Link);
+    assert_eq!(
+        error.diagnostic.is_incomplete(),
+        code == Code::ResourceExhausted
+    );
+    assert_eq!(error.diagnostic.source, *native.identity());
+    assert_eq!(error.diagnostic.path, native.path());
+    assert_eq!(
+        (
+            error.diagnostic.span.start.byte,
+            error.diagnostic.span.end.byte
+        ),
+        (0, 0)
+    );
     // Admission consumes only its argument; an adverse call cannot poison reuse.
     assert_eq!(
         parts().model().environment().owner().requirement().as_str(),

@@ -120,13 +120,6 @@ pub struct FormalSourceError {
     pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
 }
 
-impl std::ops::Deref for FormalSourceError {
-    type Target = Diagnostic;
-    fn deref(&self) -> &Diagnostic {
-        &self.diagnostic
-    }
-}
-
 impl std::fmt::Display for FormalSourceError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.diagnostic, formatter)

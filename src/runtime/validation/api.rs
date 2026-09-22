@@ -231,19 +231,6 @@ pub struct ValidationDiagnostic {
     pub related: Vec<DeclarationLocation>,
 }
 
-impl std::ops::Deref for ValidationDiagnostic {
-    type Target = Diagnostic;
-    fn deref(&self) -> &Diagnostic {
-        &self.diagnostic
-    }
-}
-
-impl std::ops::DerefMut for ValidationDiagnostic {
-    fn deref_mut(&mut self) -> &mut Diagnostic {
-        &mut self.diagnostic
-    }
-}
-
 impl std::fmt::Display for ValidationDiagnostic {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.diagnostic, formatter)

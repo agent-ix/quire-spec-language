@@ -261,10 +261,14 @@ fn reconstructed_validation_and_exhaustion_preserve_refusal_and_fresh_retries() 
         )
         .unwrap_err();
         assert_eq!(error.status, status);
-        let diagnostic = error.diagnostics.iter().find(|d| d.code == code).unwrap();
-        assert_eq!(diagnostic.phase, Phase::Validate);
+        let diagnostic = error
+            .diagnostics
+            .iter()
+            .find(|d| d.diagnostic.code == code)
+            .unwrap();
+        assert_eq!(diagnostic.diagnostic.phase, Phase::Validate);
         assert_eq!(
-            diagnostic.source,
+            diagnostic.diagnostic.source,
             *package.checked().bindings().source.source().identity()
         );
         assert_eq!(diagnostic.runtime.requirement, authored_owner());
@@ -373,7 +377,7 @@ fn reconstructed_operation_retains_deleted_pre_capture_post_result_and_frame_ref
             } else {
                 Code::PopulationDeltaMismatch
             };
-            assert!(report.diagnostics.iter().any(|d| d.code == code));
+            assert!(report.diagnostics.iter().any(|d| d.diagnostic.code == code));
             continue;
         }
         let context = validated.unwrap();

@@ -134,9 +134,13 @@ fn tc_041_invalid_roles_refuse_atomically() {
             ModelLimits::default(),
         )
         .unwrap_err();
-        assert_eq!(error.code, Code::InvalidModelBinding, "mutation {mutation}");
-        assert_eq!(error.phase, Phase::Link);
-        assert!(!error.is_incomplete());
+        assert_eq!(
+            error.diagnostic.code,
+            Code::InvalidModelBinding,
+            "mutation {mutation}"
+        );
+        assert_eq!(error.diagnostic.phase, Phase::Link);
+        assert!(!error.diagnostic.is_incomplete());
         assert_eq!(parts().model().roles().objects.len(), 1);
     }
 }
@@ -243,8 +247,8 @@ fn tc_043_constructor_valid_false_role_coordinates_refuse() {
         ModelLimits::default(),
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::InvalidModelBinding);
-    assert_eq!(error.phase, Phase::Link);
+    assert_eq!(error.diagnostic.code, Code::InvalidModelBinding);
+    assert_eq!(error.diagnostic.phase, Phase::Link);
 }
 
 #[test]
@@ -263,7 +267,7 @@ fn tc_045_artifact_and_role_limits_are_inclusive() {
             },
         );
         if maximum < length {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         } else {
             assert_eq!(result.unwrap().artifact_bytes().len(), length);
         }
@@ -280,7 +284,7 @@ fn tc_045_artifact_and_role_limits_are_inclusive() {
             },
         );
         if maximum < 9 {
-            assert_eq!(result.unwrap_err().code, Code::ResourceExhausted);
+            assert_eq!(result.unwrap_err().diagnostic.code, Code::ResourceExhausted);
         } else {
             assert_eq!(result.unwrap().roles().scalars.len(), 7);
         }
