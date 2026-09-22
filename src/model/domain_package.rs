@@ -246,7 +246,8 @@ pub struct OperationEffect {
 /// therefore not parsed here: the caller states one accepted single-relation
 /// guard form directly, as this typed value. What that clause actually
 /// establishes is not caller-trusted, though: FR-151's refinement rule
-/// (`crate::model::conformance::check_field_refinement_obligation`) rebuilds
+/// (`crate::check::check_field_refinement_obligation`, moved from
+/// `crate::model::conformance` by FR-074/ADR-011 §7.3 M-2) rebuilds
 /// the small synthetic guard tree the clause describes and runs it through
 /// `crate::value`'s own FR-146 fact-derivation primitive
 /// (`established_field_fact`) — the identical guard-fact propagation a real

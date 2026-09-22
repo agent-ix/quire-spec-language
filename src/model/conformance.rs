@@ -29,8 +29,8 @@
 //!   [`crate::model::domain_package::PostconditionClause`]. What a clause
 //!   actually establishes is not caller-trusted, though —
 //!   [`crate::check::check_field_refinement_obligation`] (ADR-011 §7.3 M-2,
-//!   QSL-7: moved here from this module, the only `conformance` code that
-//!   read `value::expression`/`check` facts) rebuilds the small typed guard
+//!   QSL-7: moved to `check` from this module, the only `conformance` code
+//!   that read `value::expression`/`check` facts) rebuilds the small typed guard
 //!   tree each clause describes and runs it through `crate::check`'s own
 //!   FR-146 fact-derivation primitive (`established_field_fact`), the
 //!   identical guard-fact propagation a real checked postcondition's

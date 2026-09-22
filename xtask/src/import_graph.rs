@@ -352,17 +352,18 @@ pub fn check_module_violations(workspace_root: &Path) -> Result<Vec<Violation>> 
     Ok(violations)
 }
 
-/// One resolved `model` -> `check` edge (TC-176): which file it was found
-/// in, the name it binds, and whether it was written directly against
-/// `crate::check` or reached indirectly through `value`'s flat aggregate
-/// (the form FR-068-CON-5 forbids for `checked_dispatch.rs`/`conformance.rs`
-/// specifically, and that TC-176 requires be absent from every other
-/// `model` file too).
+/// One resolved `model` -> `check` edge (TC-262/FR-074-AC-3, inverted from
+/// TC-176/FR-068-AC-9, which this retires): which file it was found in, the
+/// name it binds (`"*"` for a glob import whose own path resolves into
+/// `check` -- a glob binds no single leaf, see [`UseEdge::is_glob`]), and
+/// whether it was written directly against `crate::check` or reached
+/// indirectly through `value`'s flat aggregate. After M-2 this edge set
+/// SHALL be empty everywhere under `src/model/`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelCheckEdge {
     /// The file the edge was found in, relative to the workspace root.
     pub file: String,
-    /// The bound leaf name.
+    /// The bound leaf name, or `"*"` for a glob edge.
     pub leaf: String,
     /// `true` when the edge is a direct `crate::check::...` import; `false`
     /// when it is a flat `crate::value::Name` import that resolves into
@@ -370,23 +371,37 @@ pub struct ModelCheckEdge {
     pub direct: bool,
 }
 
-/// TC-176: every `use` edge under `src/model/` that resolves, directly or
-/// through `value`'s flat aggregate, into `crate::check`.
+/// TC-262: every `use` edge under `src/model/` that resolves, directly or
+/// through `value`'s flat aggregate, into `crate::check` -- including a
+/// glob (`use crate::check::*;`) whose own path resolves into `check`.
+/// [`resolves_into_check`] doesn't need `leaf` for that branch (it only
+/// consults `leaf` for a flat `crate::value::Name` import), so a glob's
+/// empty leaf resolves correctly without special-casing; only the *skip*
+/// used to be the bug (PR #291 review finding 1: an earlier revision
+/// skipped every glob edge outright before ever calling
+/// `resolves_into_check`, so a `use crate::check::*;` planted under
+/// `src/model/` passed `real_model_check_edge_is_empty` completely
+/// undetected -- a genuine gate hole, not a false alarm; confirmed live
+/// against the real tree and reverted, see
+/// `glob_import_into_check_is_recorded_not_skipped` below for the pinned
+/// fixture).
 pub fn model_check_edges(workspace_root: &Path) -> Result<Vec<ModelCheckEdge>> {
     let reexports = value_reexports(workspace_root)?;
     let mut edges_found = Vec::new();
     for file in files_in(workspace_root, "src/model")? {
         let parsed = parse_file(workspace_root, &file)?;
         for edge in use_edges_in_file(&parsed, &file) {
-            if edge.is_glob {
-                continue;
-            }
             if resolves_into_check(&edge.path, &edge.leaf, &reexports) {
                 let direct =
                     strip_leading_crate(&edge.path).first().map(String::as_str) == Some("check");
+                let leaf = if edge.is_glob {
+                    "*".to_string()
+                } else {
+                    edge.leaf.clone()
+                };
                 edges_found.push(ModelCheckEdge {
                     file: edge.file.clone(),
-                    leaf: edge.leaf.clone(),
+                    leaf,
                     direct,
                 });
             }
@@ -558,6 +573,35 @@ pub fn value_import_edges(workspace_root: &Path) -> Result<Vec<ValueImportEdge>>
     Ok(edges_found)
 }
 
+/// Whether `path` (a `use` edge's segments, `crate`-rooted or not) resolves
+/// into `crate::package`.
+fn resolves_into_package(path: &[String]) -> bool {
+    matches!(strip_leading_crate(path), [first, ..] if first == "package")
+}
+
+/// FR-068-AC-6's last sentence ("No file under `check` imports from ...
+/// `package`") had no mechanized test (PR #291 review, finding 3):
+/// [`value_import_edges`] only scans edges whose resolved path starts with
+/// `value`, so a `crate::package` import -- direct or, unlike `value`,
+/// **including a glob**, since `package` has no declared-interim allow-list
+/// to check a leaf against -- was invisible to it. This scan closes that
+/// gap directly, over `check`'s *shipped* dependency graph only, matching
+/// AC-6's own scope for the rest of its bound (see this module's header
+/// doc, "`#[cfg(test)]` handling differs by which criterion is being
+/// checked").
+pub fn check_package_import_edges(workspace_root: &Path) -> Result<Vec<UseEdge>> {
+    let mut edges_found = Vec::new();
+    for file in files_in(workspace_root, "src/check")? {
+        let parsed = parse_file(workspace_root, &file)?;
+        for edge in shipped_use_edges_in_file(&parsed, &file) {
+            if resolves_into_package(&edge.path) {
+                edges_found.push(edge);
+            }
+        }
+    }
+    Ok(edges_found)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,13 +683,15 @@ mod tests {
         assert!(!resolves_into_checking(&unrelated));
     }
 
-    /// TC-176's own named hidden-edge shape: a flat `use crate::value::
-    /// DispatchTable;` inside `model` resolves into `check` only because
-    /// `value::mod.rs` re-exports it from there -- FR-068-CON-5 forbids
-    /// exactly this form for `checked_dispatch.rs`/`conformance.rs`, and
-    /// TC-176 requires it be absent, direct or indirect, from every other
-    /// `model` file too.
-    #[trace("TC-176", "FR-068-AC-9")]
+    /// The resolution mechanism `real_model_check_edge_is_empty` (TC-262)
+    /// relies on: a flat `use crate::value::DispatchTable;` inside `model`
+    /// resolves into `check` only because `value::mod.rs` re-exports it
+    /// from there, and is recorded indirect (`direct: false`). Retagged
+    /// from TC-176/FR-068-AC-9 (retired by FR-074): the assertion this test
+    /// backs -- that such a form must be absent from `model` -- moved to
+    /// TC-262's empty-set requirement, but the resolution logic itself is
+    /// unchanged and still needs its own unit coverage.
+    #[trace("TC-262", "FR-074-AC-3")]
     #[test]
     fn flat_value_import_of_a_check_reexport_resolves_into_check_indirectly() {
         let reexports = ValueReexports {
@@ -662,10 +708,11 @@ mod tests {
         assert!(!edge.direct, "a flat value import must record as indirect");
     }
 
-    /// A direct `use crate::check::DispatchTable;` is recorded `direct:
-    /// true` -- the form FR-068-CON-5 requires, and TC-176 steps 1-2 confirm
-    /// is what the two named files actually use.
-    #[trace("TC-176", "FR-068-AC-9")]
+    /// The other half of the resolution mechanism `real_model_check_edge_is_empty`
+    /// (TC-262) relies on: a direct `use crate::check::DispatchTable;` is
+    /// recorded `direct: true`. Retagged from TC-176/FR-068-AC-9 (retired
+    /// by FR-074) for the same reason as the test above.
+    #[trace("TC-262", "FR-074-AC-3")]
     #[test]
     fn direct_check_import_is_recorded_as_direct() {
         let path = vec![
@@ -701,7 +748,10 @@ mod tests {
     /// the interim edge FR-068-AC-9/FR-068-CON-5 bounded to two files and
     /// thirteen names is now bounded to zero files and zero names -- TC-262
     /// steps 1-2 run against the real crate, not a fixture. Inverted from
-    /// FR-068-AC-9's pre-M-2 bounded-but-nonempty assertion.
+    /// FR-068-AC-9's pre-M-2 bounded-but-nonempty assertion. `model_check_edges`
+    /// no longer skips glob edges (see its own doc and the fixture
+    /// immediately below), so this assertion covers a glob import under
+    /// `src/model/` too, not only named-leaf ones.
     #[trace("TC-262", "FR-074-AC-3")]
     #[test]
     fn real_model_check_edge_is_empty() {
@@ -709,6 +759,34 @@ mod tests {
         assert!(
             edges.is_empty(),
             "model -> check edge must be fully closed after M-2: {edges:?}"
+        );
+    }
+
+    /// TC-262 steps 3-4/FR-074-AC-3: `model_check_edges` must not silently
+    /// skip a glob edge. PR #291 review finding 1 planted `use
+    /// crate::check::*;` under `src/model/` against the real tree and
+    /// confirmed `real_model_check_edge_is_empty` stayed green -- a genuine
+    /// gate hole, since the pre-fix loop skipped every glob edge before
+    /// ever calling `resolves_into_check`. Reverted once the fix (removing
+    /// that early skip, above) turned the same planted glob red. This
+    /// fixture pins the fix permanently, at the level `model_check_edges`
+    /// itself relies on: a glob whose own path resolves into `check`
+    /// resolves the same as a named import would, with no special-casing
+    /// needed for its empty leaf.
+    #[trace("TC-262", "FR-074-AC-3")]
+    #[test]
+    fn glob_import_into_check_is_recorded_not_skipped() {
+        let source = r#"
+            use crate::check::*;
+        "#;
+        let parsed = syn::parse_file(source).expect("fixture parses");
+        let edges = use_edges_in_file(&parsed, "src/model/fixture.rs");
+        assert_eq!(edges.len(), 1);
+        assert!(edges[0].is_glob);
+        let reexports = ValueReexports::default();
+        assert!(
+            resolves_into_check(&edges[0].path, &edges[0].leaf, &reexports),
+            "a glob import whose own path resolves into `check` must not be skipped"
         );
     }
 
@@ -776,6 +854,48 @@ mod tests {
             assert!(
                 edge.submodule_qualified,
                 "edge not written in submodule-qualified form: {edge:?}"
+            );
+        }
+    }
+
+    /// FR-068-AC-6's own forbidden list ("No file under `check` imports from
+    /// ... `package`"), checked directly (PR #291 review, finding 3):
+    /// `value_import_edges` only ever scans `value::`-rooted edges, so this
+    /// half of AC-6 had no mechanized backing until now. Against the real,
+    /// current tree, `check`'s shipped dependency graph imports nothing from
+    /// `package` at all -- confirmed live: a `use crate::package::*;` was
+    /// planted temporarily in `src/check/mod.rs` and confirmed to fail this
+    /// test before being reverted.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn real_check_has_no_package_import() {
+        let edges = check_package_import_edges(&workspace_root()).expect("scan runs");
+        assert!(
+            edges.is_empty(),
+            "check must never import from package (FR-068-AC-6): {edges:?}"
+        );
+    }
+
+    /// A fixture proving `check_package_import_edges` actually rejects a
+    /// `package` import, including a glob -- unlike a `value::` import, a
+    /// `package` import is forbidden outright with no allow-list to bound
+    /// it, so a glob (which binds no named leaf to check against an
+    /// allow-list) must still be caught. Pins
+    /// `real_check_has_no_package_import`'s fix permanently.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn package_import_is_classified_as_a_violation_including_glob() {
+        let source = r#"
+            use crate::package::PackageDeclarations;
+            use crate::package::*;
+        "#;
+        let parsed = syn::parse_file(source).expect("fixture parses");
+        let edges = shipped_use_edges_in_file(&parsed, "src/check/fixture.rs");
+        assert_eq!(edges.len(), 2);
+        for edge in &edges {
+            assert!(
+                resolves_into_package(&edge.path),
+                "expected a package-resolving edge: {edge:?}"
             );
         }
     }
