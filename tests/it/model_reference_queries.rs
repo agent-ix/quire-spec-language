@@ -16,8 +16,6 @@
 //! argument bridged through `ObjectReference`/`UniverseIdentity`/`NodeKey`
 //! exactly as `crate::value::model_query` does.
 
-use std::sync::Arc;
-
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
@@ -41,9 +39,10 @@ use quire_spec_language::model::population::{
 use quire_spec_language::value::{
     BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
     CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape, DeclarationCause,
-    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence,
-    Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, InputRefusal, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
+    PackageDeclarations, Presence, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -155,6 +154,38 @@ fn p1(model_identity: &str) -> PopulationDocument {
 /// [`p1_minus_a2`].
 fn p1_population_key() -> DeclarationKey {
     DeclarationKey::fixture("model.pop.p1")
+}
+
+/// [`fixture_f1_with_second_population`]'s own second population
+/// declaration key, `model.pop.second` -- FR-089-AC-1's own distinct-
+/// `population_key` case (TC-291, TC-293) needs two population
+/// declarations on the *same* domain package. Same key spelling as
+/// `tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
+/// review finding S4): the two files' `fixture_f1_with_second_population`
+/// helpers build on each file's own separately authored `fixture_f1`, so
+/// they are not merged into one shared helper, but nothing justifies them
+/// naming the same declared population differently.
+fn p2_population_key() -> DeclarationKey {
+    DeclarationKey::fixture("model.pop.second")
+}
+
+/// [`fixture_f1`], plus a second `Population` declaration
+/// ([`p2_population_key`], same member types) alongside its own
+/// `model.pop.p1` -- FR-089-AC-1/AC-3's tests admit two distinct bindings
+/// against the same domain package under two different population keys.
+fn fixture_f1_with_second_population() -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package
+        .records
+        .push(DomainPackageRecord::Population(PopulationRecord {
+            key: p2_population_key(),
+            member_types: vec![
+                DeclarationKey::fixture("model.A"),
+                DeclarationKey::fixture("model.B"),
+            ],
+            extent: Extent::Closed,
+        }));
+    domain_package
 }
 
 fn admitted_binding(
@@ -388,6 +419,27 @@ fn objects(scenario: &Scenario) -> ObjectEnvironment {
         ],
     )
     .unwrap()
+    .with_population(scenario.binding.clone())
+    .unwrap()
+}
+
+/// FR-089: the `Value::Population` argument a real source expression's `p`
+/// parameter reads -- `scenario.binding`'s own minted `PopulationId`, never
+/// the binding itself, which the evaluator now resolves by lookup in the
+/// recorded correspondence ([`population_environment`]) rather than reading
+/// directly off the `Value`.
+fn population_argument(scenario: &Scenario) -> Value {
+    Value::Population(scenario.binding.population_id())
+}
+
+/// An otherwise-empty `ObjectEnvironment` recording `scenario.binding`'s own
+/// FR-089 `PopulationId` correspondence -- what a bare `ObjectEnvironment::
+/// default()` supplied before the evaluator needed a correspondence to
+/// resolve [`population_argument`] through.
+fn population_environment(scenario: &Scenario) -> ObjectEnvironment {
+    ObjectEnvironment::default()
+        .with_population(scenario.binding.clone())
+        .unwrap()
 }
 
 fn check(
@@ -598,7 +650,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
-    let arguments = vec![Value::Population(Arc::new(scenario.binding.clone()))];
+    let arguments = vec![population_argument(&scenario)];
 
     let checked = check(&package, &parameters, &expression);
     let collection_type = match checked.value_type() {
@@ -618,7 +670,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         &expression,
         arguments,
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     let value = match outcome {
         Outcome::Completed(value) => value,
@@ -636,7 +688,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
 
     // FR-153-AC-6: the same object, `b1`, selected under `M::B` directly, is the
     // identical reference the `M::A` selection above already carries.
-    let arguments_b = vec![Value::Population(Arc::new(scenario.binding.clone()))];
+    let arguments_b = vec![population_argument(&scenario)];
     let expression_b = all_instances(ValueType::Reference(node_key(&scenario.b)));
     let (outcome_b, _) = run(
         &package,
@@ -644,7 +696,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         &expression_b,
         arguments_b,
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     let value_b = match outcome_b {
         Outcome::Completed(value) => value,
@@ -685,9 +737,9 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Completed(_) => {}
@@ -704,9 +756,9 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         limited,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Incomplete(incomplete) => {
@@ -745,7 +797,7 @@ fn l14_lookup_expression_undefined_mode() {
         &parameters,
         &expression,
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(present_reference.clone()),
         ],
         SCALAR_UNLIMITED,
@@ -771,7 +823,7 @@ fn l14_lookup_expression_undefined_mode() {
             AbsenceMode::Undefined,
         ),
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(absent_reference),
         ],
         SCALAR_UNLIMITED,
@@ -805,7 +857,7 @@ fn l15_lookup_expression_empty_mode() {
         &parameters,
         &expression,
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(present_reference.clone()),
         ],
         SCALAR_UNLIMITED,
@@ -832,7 +884,7 @@ fn l15_lookup_expression_empty_mode() {
         &parameters_absent,
         &lookup(target.clone(), AbsenceMode::Empty),
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(absent_reference),
         ],
         SCALAR_UNLIMITED,
@@ -872,7 +924,7 @@ fn l16_lookup_expression_refused_mode() {
         &parameters,
         &expression,
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(absent_reference),
         ],
         SCALAR_UNLIMITED,
@@ -1080,9 +1132,9 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Refused(refusal) => {
@@ -1126,14 +1178,17 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
         ObjectIdentity::new(b"b1").unwrap(),
     );
     let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
+            .unwrap()
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (outcome, meter) = run(
         &package,
         &parameters,
         &expression,
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(malformed_reference),
         ],
         SCALAR_UNLIMITED,
@@ -1179,14 +1234,17 @@ fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
+            .unwrap()
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (outcome, _) = run(
         &package,
         &parameters,
         &expression,
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(malformed_reference),
         ],
         SCALAR_UNLIMITED,
@@ -1249,14 +1307,17 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
+            .unwrap()
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     let (undefined_outcome, _) = run(
         &package,
         &parameters,
         &lookup(target.clone(), AbsenceMode::Undefined),
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(malformed_reference.clone()),
         ],
         SCALAR_UNLIMITED,
@@ -1272,7 +1333,7 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         &parameters,
         &lookup(target.clone(), AbsenceMode::Refused),
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(malformed_reference.clone()),
         ],
         SCALAR_UNLIMITED,
@@ -1291,7 +1352,7 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         &parameters,
         &lookup(target.clone(), AbsenceMode::Empty),
         vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
+            population_argument(&scenario),
             Value::Reference(malformed_reference),
         ],
         SCALAR_UNLIMITED,
@@ -1335,7 +1396,10 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])]).unwrap();
+        ObjectEnvironment::new(&types(&scenario), [(malformed_reference.clone(), vec![])])
+            .unwrap()
+            .with_population(scenario.binding.clone())
+            .unwrap();
 
     for absence in [
         AbsenceMode::Undefined,
@@ -1347,7 +1411,7 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
             &parameters,
             &lookup(target.clone(), absence),
             vec![
-                Value::Population(Arc::new(scenario.binding.clone())),
+                population_argument(&scenario),
                 Value::Reference(malformed_reference.clone()),
             ],
             SCALAR_UNLIMITED,
@@ -1467,6 +1531,8 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
             &types(&scenario),
             [(well_formed.clone(), vec![]), (other.clone(), vec![])],
         )
+        .unwrap()
+        .with_population(scenario.binding.clone())
         .unwrap();
 
         for absence in [
@@ -1481,7 +1547,7 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
                     &parameters,
                     &expression,
                     vec![
-                        Value::Population(Arc::new(scenario.binding.clone())),
+                        population_argument(&scenario),
                         Value::Reference(well_formed.clone()),
                     ],
                     limits,
@@ -1492,7 +1558,7 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
                     &parameters,
                     &expression,
                     vec![
-                        Value::Population(Arc::new(scenario.binding.clone())),
+                        population_argument(&scenario),
                         Value::Reference(other.clone()),
                     ],
                     limits,
@@ -1564,7 +1630,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
         .evaluate(
             &checked,
             vec![
-                Value::Population(Arc::new(scenario.binding.clone())),
+                population_argument(&scenario),
                 Value::Reference(present_reference.clone()),
             ],
             &objects(&scenario),
@@ -1610,9 +1676,9 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         &package,
         &parameters,
         &all_instances(target.clone()),
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     // `A`'s effective-id hash sorts before `B`'s.
     let post_expected = vec![
@@ -1628,9 +1694,9 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         &package,
         &parameters,
         &pre(all_instances(target)),
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     let pre_expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
@@ -1657,16 +1723,16 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
         ("r", ValueType::Reference(node_key(&scenario.a))),
     ];
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
-    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])]).unwrap();
+    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])])
+        .unwrap()
+        .with_population(scenario.binding.clone())
+        .unwrap();
 
     let (post_outcome, _) = run(
         &package,
         &parameters,
         &lookup(target.clone(), AbsenceMode::Empty),
-        vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
-            Value::Reference(r2.clone()),
-        ],
+        vec![population_argument(&scenario), Value::Reference(r2.clone())],
         SCALAR_UNLIMITED,
         &object_world,
     );
@@ -1679,10 +1745,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
         &package,
         &parameters,
         &pre(lookup(target.clone(), AbsenceMode::Empty)),
-        vec![
-            Value::Population(Arc::new(scenario.binding.clone())),
-            Value::Reference(r2.clone()),
-        ],
+        vec![population_argument(&scenario), Value::Reference(r2.clone())],
         SCALAR_UNLIMITED,
         &object_world,
     );
@@ -1738,9 +1801,9 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Completed(Value::Boolean(result)) => assert!(
@@ -2112,9 +2175,9 @@ fn pre_of_a_captured_post_reference_retains_its_post_observation() {
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Completed(Value::Boolean(result)) => assert!(
@@ -2222,17 +2285,17 @@ fn nested_pre_is_idempotent() {
         &package,
         &parameters,
         &pre(all_instances(target.clone())),
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     let (nested, _) = run_postcondition(
         &package,
         &parameters,
         &pre(pre(all_instances(target))),
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match (single, nested) {
         (Outcome::Completed(single), Outcome::Completed(nested)) => {
@@ -2308,9 +2371,9 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
         &package,
         &parameters,
         &expression,
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     match outcome {
         Outcome::Completed(Value::Integer(size)) => assert_eq!(
@@ -2346,9 +2409,9 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
         &package,
         &parameters,
         &pre(all_instances(target)),
-        vec![Value::Population(Arc::new(scenario.binding.clone()))],
+        vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
-        &ObjectEnvironment::default(),
+        &population_environment(&scenario),
     );
     assert!(
         matches!(
@@ -2358,4 +2421,427 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
         "expected Refused(WrongSnapshot(WrongAnchor)) for a pre(..) anchor with no admitted pre \
          binding, got {outcome:?}"
     );
+}
+
+/// TC-293 (FR-089-AC-3): the evaluator resolves a `Value::Population`
+/// argument to the exact admitted `PopulationBinding` its own `PopulationId`
+/// was minted for, by lookup in the recorded correspondence
+/// (`ObjectEnvironment::resolve_population`) -- never a payload the `Value`
+/// itself carries. Two distinct bindings, `B1` (`population_key` K1) and
+/// `B2` (K2), are admitted and recorded in the *same* environment; an
+/// `allInstances(p)`-shaped expression bound to `B1`'s id reads exactly
+/// `B1`'s members, and the identical expression shape bound to `B2`'s id
+/// reads exactly `B2`'s -- catching an evaluator that resolved every
+/// `PopulationId` to whichever binding was admitted last.
+#[test]
+#[trace("TC-293", "FR-089-AC-3")]
+fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
+    let domain_package = fixture_f1_with_second_population();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+
+    let b1_document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("a1", "model.A")],
+    };
+    let b2_document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("a9", "model.A")],
+    };
+    let mut meter1 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let b1_binding = match admit_binding(
+        &domain_package,
+        &view,
+        &b1_document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter1,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted B1 binding, got {other:?}"),
+    };
+    let mut meter2 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let b2_binding = match admit_binding(
+        &domain_package,
+        &view,
+        &b2_document,
+        &p2_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter2,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted B2 binding, got {other:?}"),
+    };
+    let id1 = b1_binding.population_id();
+    let id2 = b2_binding.population_id();
+    assert_ne!(
+        id1, id2,
+        "two distinct population_keys must mint distinct ids"
+    );
+
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: b1_binding.clone(),
+    };
+    let environment = ObjectEnvironment::default()
+        .with_population(b1_binding)
+        .unwrap()
+        .with_population(b2_binding)
+        .unwrap();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = all_instances(ValueType::Reference(node_key(&a)));
+
+    let (outcome1, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(id1)],
+        SCALAR_UNLIMITED,
+        &environment,
+    );
+    match outcome1 {
+        Outcome::Completed(value) => {
+            assert_eq!(
+                reference_elements(&value),
+                vec![object_reference(&universe, &a, "a1")]
+            );
+        }
+        other => panic!("expected B1's own member for id1, got {other:?}"),
+    }
+
+    let (outcome2, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(id2)],
+        SCALAR_UNLIMITED,
+        &environment,
+    );
+    match outcome2 {
+        Outcome::Completed(value) => {
+            assert_eq!(
+                reference_elements(&value),
+                vec![object_reference(&universe, &a, "a9")]
+            );
+        }
+        other => panic!("expected B2's own member for id2, got {other:?}"),
+    }
+}
+
+/// PR #326 review finding F2: two admissions that collide on one
+/// `PopulationId` (same domain package, `population_key` and admission
+/// role -- FR-089's own preimage, Linear QSL-131's open question over
+/// whether declared maximum and document content should also distinguish
+/// two bindings) but carry different declared maxima refuse loudly when
+/// the second is recorded under the first's id, rather than the first
+/// silently being overwritten. `ObjectEnvironment::with_population` is
+/// keyed by the binding's own id, so recording an *equal* binding under an
+/// id already bound is `Ok` (idempotent), but a *different* one is
+/// `Err(PopulationConflict)`.
+#[test]
+fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+
+    let mut meter_3 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding_3 = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter_3,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let mut meter_7 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding_7 = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(7),
+        &mut meter_7,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    assert_eq!(
+        binding_3.population_id(),
+        binding_7.population_id(),
+        "same domain package/population_key/role must mint the same id, \
+         even though the two bindings' declared maxima differ"
+    );
+    let id = binding_3.population_id();
+
+    let environment = ObjectEnvironment::default()
+        .with_population(binding_3.clone())
+        .unwrap();
+
+    // Re-recording the identical binding under its own id is idempotent.
+    let environment = environment.with_population(binding_3).unwrap();
+    assert_eq!(
+        environment
+            .resolve_population(id)
+            .and_then(PopulationBinding::declared_maximum),
+        Some(3)
+    );
+
+    // Recording a *different* binding (declared maximum 7) under the same
+    // id refuses, rather than silently overwriting binding_3's own entry.
+    match environment.with_population(binding_7) {
+        Err(conflict) => assert_eq!(conflict.population_id, id),
+        Ok(_) => panic!("expected Err(PopulationConflict), got Ok -- the conflicting binding overwrote the first silently"),
+    }
+}
+
+/// TC-294 (FR-089-AC-4): a `Value::Population(population_id)` whose
+/// `population_id` names no binding recorded in the current evaluation's
+/// correspondence refuses at argument admission -- `InputRefusal::
+/// WrongValueKind`, naming the parameter, never a panic and never
+/// `Undefined`. PR #326 review finding F1: this now runs inside
+/// `CheckedPackage::evaluate`'s own `validate` (which already receives
+/// `objects: &ObjectEnvironment` for the analogous `DanglingReference`
+/// check), not only inside the evaluator's `Machine::resolve_population` --
+/// `ValueType::admits` alone cannot perform it, since it has no access to
+/// the recorded correspondence, so admission by presence alone let this
+/// case through whenever nothing in the body consumed the parameter (see
+/// [`tc_294_unresolved_population_id_refuses_even_when_unconsumed`]).
+/// `scenario.binding`'s own minted id is genuine (admitted by a real
+/// `admit_binding` call), but the environment this evaluation actually
+/// runs against never recorded it -- exactly TC-294's "a distinct,
+/// independently-admitted identity from a separate evaluation run".
+#[test]
+#[trace("TC-294", "FR-089-AC-4")]
+fn tc_294_unresolved_population_id_refuses_typed() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let unresolved_id = scenario.binding.population_id();
+
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![Value::Population(unresolved_id)],
+        &ObjectEnvironment::default(),
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
+}
+
+/// TC-294 (FR-089-AC-4)/FR-049-AC-2, PR #326 review finding F1: the same
+/// unresolved id refuses at admission even when the checked body never
+/// reads the parameter at all. Before this fix, `ValueType::admits`'s own
+/// presence-only check let an unresolved (or mismatched-maximum, see
+/// [`tc_295_population_maximum_mismatch_refuses_even_when_unconsumed`])
+/// population argument through whenever nothing consumed it, completing
+/// with the body's own unrelated value (the review's own probe: "a
+/// population parameter that is never consumed... `Completed(Boolean(true))`").
+/// A body that ignores `p` entirely still refuses now.
+#[test]
+#[trace("TC-294", "FR-089-AC-4", "FR-049-AC-2")]
+fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(3))];
+    let expression = Expression::Boolean(true);
+    let unresolved_id = scenario.binding.population_id();
+
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![Value::Population(unresolved_id)],
+        &ObjectEnvironment::default(),
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
+}
+
+/// TC-295 (FR-089-AC-5): the QSL layer treats `ValueType::Population(maximum)`
+/// as admitting a `Value::Population(population_id)` exactly when the
+/// binding `population_id` resolves to (through the recorded correspondence)
+/// has a declared maximum equal to `maximum`. A binding admitted with
+/// declared maximum 5 is admitted under `Population<5>` and refused under
+/// `Population<6>` -- the same resolved binding both times, only the
+/// checked parameter's own declared maximum differs, catching an
+/// implementation that admits every `Value::Population(_)` regardless of
+/// `maximum`.
+#[test]
+#[trace("TC-295", "FR-089-AC-5")]
+fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(5),
+        &mut meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let id = binding.population_id();
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: binding.clone(),
+    };
+    let environment = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let package = package(&scenario);
+    let expression = all_instances(ValueType::Reference(node_key(&a)));
+
+    let parameters_5 = [("p", ValueType::Population(5))];
+    let (outcome_5, _) = run(
+        &package,
+        &parameters_5,
+        &expression,
+        vec![Value::Population(id)],
+        SCALAR_UNLIMITED,
+        &environment,
+    );
+    match outcome_5 {
+        Outcome::Completed(_) => {}
+        other => panic!("expected admission under a matching Population<5>, got {other:?}"),
+    }
+
+    let parameters_6 = [("p", ValueType::Population(6))];
+    let checked_6 = check(&package, &parameters_6, &expression);
+    let mut meter_6 = Meter::new(SCALAR_UNLIMITED);
+    let result_6 = package.evaluate(
+        &checked_6,
+        vec![Value::Population(id)],
+        &environment,
+        &mut meter_6,
+    );
+    match result_6 {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!(
+            "expected Err(InputRefusal::WrongValueKind) under a mismatched Population<6>, got {other:?}"
+        ),
+    }
+}
+
+/// TC-295 (FR-089-AC-5)/FR-049-AC-2, PR #326 review finding F1: the same
+/// declared-maximum mismatch refuses at admission even when the checked
+/// body never reads the parameter at all -- companion to
+/// [`tc_294_unresolved_population_id_refuses_even_when_unconsumed`] for the
+/// "resolved, wrong maximum" case rather than "not recorded".
+#[test]
+#[trace("TC-295", "FR-089-AC-5", "FR-049-AC-2")]
+fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = object_universe(&domain_package).unwrap().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(5),
+        &mut meter,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let id = binding.population_id();
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: binding.clone(),
+    };
+    let environment = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let package = package(&scenario);
+    let expression = Expression::Boolean(true);
+
+    let parameters_6 = [("p", ValueType::Population(6))];
+    let checked = check(&package, &parameters_6, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![Value::Population(id)],
+        &environment,
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
+}
+
+/// TC-294 (FR-089-AC-4)/S3 (PR #326 review): the same unresolved-id
+/// admission refusal holds for `lookup<T>(p, r)`, not only `allInstances`
+/// -- the two consumption sites `evaluate.rs`'s `Machine::resolve_population`
+/// doc names (`:921`/`:934`). `admits_a_valid_reference_but_unresolved_
+/// population` supplies a well-formed `r` (present in the environment, so
+/// `DanglingReference` never fires) alongside an unresolved `p`, isolating
+/// the population check from the reference check.
+#[test]
+#[trace("TC-294", "FR-089-AC-4")]
+fn tc_294_lookup_refuses_an_unresolved_population_id() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(node_key(&scenario.a));
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(node_key(&scenario.b))),
+    ];
+    let expression = lookup(target, AbsenceMode::Empty);
+    let unresolved_id = scenario.binding.population_id();
+    let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
+    let environment =
+        ObjectEnvironment::new(&types(&scenario), [(present_reference.clone(), vec![])]).unwrap();
+
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let result = package.evaluate(
+        &checked,
+        vec![
+            Value::Population(unresolved_id),
+            Value::Reference(present_reference),
+        ],
+        &environment,
+        &mut meter,
+    );
+    match result {
+        Err(InputRefusal::WrongValueKind { parameter }) => assert_eq!(parameter, 0),
+        other => panic!("expected Err(InputRefusal::WrongValueKind), got {other:?}"),
+    }
 }

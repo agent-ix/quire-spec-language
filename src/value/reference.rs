@@ -8,11 +8,14 @@
 //! in an [`ObjectEnvironment`].
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::composite::{
     fill_slots, ConstructionRefusal, FieldValue, ObjectTypeDeclaration, TypeEnvironment, Value,
 };
 use super::node::NodeKey;
+use crate::model::population::PopulationBinding;
+use quire_exact::PopulationId;
 
 /// A universe identity in its canonical identity bytes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -116,11 +119,31 @@ pub enum ObjectEnvironmentCause {
     DanglingReference(Box<ObjectReference>),
 }
 
+/// [`ObjectEnvironment::with_population`]'s refusal: `population_id` is
+/// already recorded under a binding that does not equal the one this call
+/// tried to record.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("population {population_id} is already recorded under a different binding")]
+pub struct PopulationConflict {
+    /// The colliding [`PopulationId`].
+    pub population_id: PopulationId,
+}
+
 /// A closed object environment: every reference held by any attribute
-/// resolves to an object of the environment.
+/// resolves to an object of the environment. Also carries FR-089's
+/// recorded `PopulationId` -> `PopulationBinding` correspondence: `model`
+/// mints a `PopulationId` at binding-admission time
+/// (`admit_binding`/`admit_invocation`), and the caller records the pair
+/// here, in the same environment already threaded through
+/// `CheckedPackage::call`/`evaluate` and `Machine`, before constructing the
+/// `Value::Population(population_id)` argument that names it -- one
+/// existing threaded parameter rather than a second one, since neither
+/// binding correspondence needs to change mid-evaluation and both are
+/// closed once evaluation begins.
 #[derive(Clone, Debug, Default)]
 pub struct ObjectEnvironment {
     objects: BTreeMap<ObjectReference, Box<[FieldValue]>>,
+    populations: BTreeMap<PopulationId, Arc<PopulationBinding>>,
 }
 
 impl ObjectEnvironment {
@@ -146,11 +169,59 @@ impl ObjectEnvironment {
             }
             admitted.insert(reference, slots);
         }
-        let environment = Self { objects: admitted };
+        let environment = Self {
+            objects: admitted,
+            populations: BTreeMap::new(),
+        };
         for (owner, slots) in &environment.objects {
             environment.check_closed(owner, slots)?;
         }
         Ok(environment)
+    }
+
+    /// Records `binding`'s admission under its own
+    /// [`PopulationBinding::population_id`] -- FR-089's `PopulationId` ->
+    /// `PopulationBinding` correspondence `model` mints at binding-admission
+    /// time. Consuming builder: call once per admitted binding, before
+    /// constructing the `Value::Population(population_id)` argument that
+    /// names it, so [`Self::resolve_population`] can resolve it. Keyed by
+    /// the binding's own id (never a separately supplied one), so a caller
+    /// cannot record a binding under an id it does not carry.
+    ///
+    /// FR-089's own admission preimage (package, `population_key`, role --
+    /// see `model::population::population_id_preimage`'s own doc) does not
+    /// yet include the admitted document's content or its declared maximum,
+    /// an open spec question tracked by Linear QSL-131. Two distinct
+    /// bindings can therefore collide on one id within a single evaluation
+    /// (for example, two invocations of the same population role with
+    /// different declared maxima). This is the interim guard: recording an
+    /// id already bound to an *equal* binding is `Ok` (idempotent
+    /// re-admission, TC-291's own case), but recording a *different*
+    /// binding under an id already bound refuses loudly, with
+    /// [`PopulationConflict`], rather than silently letting the later
+    /// admission overwrite the earlier one.
+    pub fn with_population(
+        mut self,
+        binding: PopulationBinding,
+    ) -> Result<Self, PopulationConflict> {
+        let population_id = binding.population_id();
+        if let Some(existing) = self.populations.get(&population_id) {
+            if **existing != binding {
+                return Err(PopulationConflict { population_id });
+            }
+            return Ok(self);
+        }
+        self.populations.insert(population_id, Arc::new(binding));
+        Ok(self)
+    }
+
+    /// The `PopulationBinding` FR-089's recorded correspondence resolves
+    /// `population_id` to, or `None` when `population_id` names no binding
+    /// [`Self::with_population`] recorded in this environment
+    /// (FR-089-AC-4: the evaluator refuses this case, never panicking or
+    /// substituting a default binding).
+    pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
+        self.populations.get(&population_id).map(Arc::as_ref)
     }
 
     /// Whether the referenced object is in the environment.

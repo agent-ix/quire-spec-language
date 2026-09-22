@@ -148,12 +148,12 @@ operational validation remains outside this audit-only plan.
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
-| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
+| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | ✅ Passed locally; QSL-131 |
 | TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
-| TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | 🚧 Planned; QSL-131 |
-| TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | 🚧 Planned; QSL-131 |
-| TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | 🚧 Planned; QSL-131 |
-| TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | 🚧 Planned; QSL-131 |
+| TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally; QSL-131 |
+| TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally; QSL-131 |
+| TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | ✅ Passed locally; QSL-131 |
+| TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | ✅ Passed locally; QSL-131 |
 | TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally; QSL-131 |
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
@@ -370,15 +370,37 @@ the payload type is `PopulationId`, and the crate-DAG direction (ADR-011
 §6.1) makes a `PopulationBinding` import structurally impossible, not merely
 absent from a scan.
 
-TC-291, TC-293, TC-294, TC-295 and TC-296 still state `🚧 Planned; QSL-131`
-honestly: each needs QSL `model` to mint a `PopulationId` at admission time
-(`admit_binding`/`admit_invocation`, `src/model/population.rs:624,1097`)
-and record the `PopulationId` -> `PopulationBinding` correspondence, and the
-evaluator to resolve through it (`src/value/expression/evaluate.rs:921,934`)
--- none of which exists yet. TC-296 backs FR-089-AC-1's admission-role
+QSL-131 Slice B's other half (`model` minting and the evaluator's
+resolution step) landed: `model::population::mint_population_id` mints a
+`PopulationId` at admission time (`admit_binding`/`admit_invocation`,
+`src/model/population.rs`), and `ObjectEnvironment` records the
+`PopulationId` -> `PopulationBinding` correspondence
+(`with_population`/`resolve_population`, `src/value/reference.rs`) the
+evaluator resolves through (`Machine::resolve_population`,
+`src/value/expression/evaluate.rs`). TC-291, TC-293, TC-294, TC-295 and
+TC-296 are `✅ Passed locally`. TC-296 backs FR-089-AC-1's admission-role
 discriminator half specifically: a `Direct` (standalone `admit_binding`)
 admission and an `admit_invocation`-attached `Post` binding over the same
 domain package and `population_key` mint distinct `PopulationId`s under the
 closed three-state discriminator (`Direct`, `Pre`, `Post`), rather than
 colliding under a `pre`/`post`-only reading -- this discriminator is
 computed entirely by QSL `model`, not the kernel.
+
+FR-089-AC-4 (TC-294) and FR-089-AC-5 (TC-295) are backed at the argument-
+admission boundary (`CheckedPackage::call`/`evaluate`'s own `validate`,
+`src/value/expression/mod.rs`), not only inside the evaluator's own
+`AllInstances`/`Lookup` consumption sites: an unresolved identity or a
+mismatched declared maximum refuses whether or not the checked body actually
+consumes the parameter (PR #326 review finding F1), for both `allInstances`
+and `lookup` consumers. `Machine::resolve_population`'s own refusal
+branches remain as defence in depth, unreachable through either public
+entry point for a checked program (see that method's own doc).
+
+FR-089's own admission preimage (domain package selection, `population_key`,
+admission role) does not distinguish two bindings that differ only in
+document content or declared maximum, admitted under the same
+package/key/role within one evaluation -- an open spec question (Linear
+QSL-131) this Slice does not resolve.
+`ObjectEnvironment::with_population` is the interim guard: it refuses to
+record a second, unequal binding under an id already bound, rather than
+silently letting the later admission overwrite the earlier one.

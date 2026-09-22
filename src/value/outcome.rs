@@ -9,7 +9,7 @@ use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
+use quire_exact::{CardinalityBound, CollectionKind, Incomplete, PopulationId};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,6 +172,41 @@ pub enum Refusal {
     /// refused the query outright
     /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
     Model(ModelQueryRefusal),
+    /// FR-089-AC-4: a consumed `Value::Population(population_id)`
+    /// (`evaluate.rs`'s `allInstances`/`lookup` sites) names no binding in
+    /// this evaluation's own recorded correspondence. Distinguished from
+    /// [`Self::PopulationMaximumMismatch`] (PR #326 review finding S1: a
+    /// caller cannot otherwise tell "not recorded" from "recorded, wrong
+    /// maximum" apart, though the spec names no code for either case to
+    /// keep separate -- see this variant's own `code`/`cause`). Never
+    /// [`Self::CheckedInvariant`]: `check::check::bind_parameters`'s own
+    /// doc records that a `Population<T>[N]` parameter bypasses
+    /// `Typer::check_declared_type`, so the checker never verifies a
+    /// caller-supplied runtime identity actually names a binding of that
+    /// declared shape -- this is real, caller-input-reachable, exactly like
+    /// [`Self::WrongSnapshot`], and names the identity that failed to
+    /// resolve. `CheckedPackage::call`/`evaluate`'s own `validate`
+    /// (`expression/mod.rs`) now performs this identical check at
+    /// argument-admission time over every top-level `Population<T>[N]`
+    /// parameter (the only context FR-153 lets one appear in), so this
+    /// evaluator-level variant is unreachable defence in depth for any
+    /// checked program reached through a public entry point (see
+    /// `Machine::resolve_population`'s own doc). `code()`/`cause()` return
+    /// `None`: no FR-272/`native-diagnostics.md` catalog entry exists yet
+    /// for this new FR-089 refusal (QSL-131 Slice B), matching
+    /// [`Self::CheckedInvariant`]'s own precedent for an internal refusal
+    /// with no wire spelling.
+    UnresolvedPopulation(PopulationId),
+    /// FR-089-AC-5: a consumed `Value::Population(population_id)` resolves
+    /// to a recorded binding, but that binding's own declared maximum
+    /// differs from the parameter's checked `Population<T>[maximum]`
+    /// maximum. Split from [`Self::UnresolvedPopulation`] (PR #326 review
+    /// finding S1) so a caller can distinguish "not recorded" from
+    /// "recorded, wrong maximum"; see that variant's own doc for why this
+    /// is otherwise identical (never [`Self::CheckedInvariant`],
+    /// unreachable defence in depth once `validate` performs the same
+    /// check at admission, `code()`/`cause()` return `None`).
+    PopulationMaximumMismatch(PopulationId),
 }
 
 /// The closed code and FR-272 cause tag of an FR-153 population-query
@@ -205,7 +240,9 @@ impl Refusal {
             | Self::IntegerOutOfDomain
             | Self::RationalOutOfDomain
             | Self::IeeeNotExact { .. }
-            | Self::CheckedInvariant => None,
+            | Self::CheckedInvariant
+            | Self::UnresolvedPopulation(_)
+            | Self::PopulationMaximumMismatch(_) => None,
         }
     }
 
@@ -226,7 +263,9 @@ impl Refusal {
             | Self::IeeeNanPayloadNotRepresentable
             | Self::IeeeRationalOutOfDomain
             | Self::ForeignReference
-            | Self::CheckedInvariant => None,
+            | Self::CheckedInvariant
+            | Self::UnresolvedPopulation(_)
+            | Self::PopulationMaximumMismatch(_) => None,
         }
     }
 }

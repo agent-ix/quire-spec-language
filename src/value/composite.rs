@@ -26,9 +26,8 @@ use super::quantity::{Quantity, QuantityUnit};
 use super::rational::{Rational, RationalDomain};
 use super::reference::ObjectReference;
 use super::text::{Text, TextType};
-use crate::model::population::PopulationBinding;
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter,
+    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
 };
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
@@ -62,9 +61,11 @@ pub enum ValueType {
     /// `Reference<T>` to an object of the model object type with this key.
     Reference(NodeKey),
     /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
-    /// maximum an admitted [`PopulationBinding`] must carry (never `T`
-    /// itself, which `allInstances<T>(p)`/`lookup<T>(p, r)` name separately
-    /// at each call, per FR-153's own table).
+    /// maximum an admitted
+    /// [`PopulationBinding`](crate::model::population::PopulationBinding)
+    /// must carry (never `T` itself, which
+    /// `allInstances<T>(p)`/`lookup<T>(p, r)` name separately at each call,
+    /// per FR-153's own table).
     Population(u64),
 }
 
@@ -102,9 +103,22 @@ impl ValueType {
             (Self::Reference(object_type), Value::Reference(reference)) => {
                 reference.object_type() == *object_type
             }
-            (Self::Population(maximum), Value::Population(binding)) => {
-                binding.declared_maximum() == Some(*maximum)
-            }
+            // FR-089: `Value::Population` carries only the opaque
+            // `PopulationId` a `model` admission minted, never the
+            // `PopulationBinding` itself, so this structural check cannot
+            // compare `maximum` against a resolved binding's own declared
+            // maximum -- that comparison needs the recorded
+            // `PopulationId` -> `PopulationBinding` correspondence, which
+            // only the evaluator has access to (`ObjectEnvironment`,
+            // threaded through `Machine`). Presence is admitted here
+            // (mirroring FR-153's own restriction of `Population<T>[N]` to
+            // a bare parameter type: no nested context ever reaches this
+            // arm), and `Machine::resolve_population`
+            // (`value/expression/evaluate.rs`) performs the real
+            // declared-maximum comparison at the `allInstances`/`lookup`
+            // sites that actually consume the identity (FR-089-AC-3/AC-4/
+            // AC-5), refusing a mismatch there instead.
+            (Self::Population(_), Value::Population(_)) => true,
             (
                 Self::Boolean
                 | Self::Integer
@@ -155,8 +169,14 @@ pub enum Value {
     Collection(Arc<CollectionValue>),
     /// A terminal object reference.
     Reference(ObjectReference),
-    /// An admitted FR-153 closed population binding.
-    Population(Arc<PopulationBinding>),
+    /// FR-089: the opaque `PopulationId` a `model` admission
+    /// (`admit_binding`/`admit_invocation`) minted for its admitted
+    /// `PopulationBinding` -- never the binding itself, which stays a
+    /// `model` type. The evaluator resolves this identity to its binding by
+    /// lookup in `model`'s recorded correspondence
+    /// (`ObjectEnvironment::resolve_population`), never by decoding the
+    /// identity's own bytes.
+    Population(PopulationId),
 }
 
 impl Value {

@@ -147,14 +147,27 @@ Specified under QSL-172, which found the gap, and ADR-013 O-13's Population
 row, which decided it. QSL-131 Slice B (kernel half) implements
 `PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
 (FR-089-AC-2; TC-292), with kernel `admits`, `plan_pairs` and `compare_keys`
-refusing a population pair (FR-089-AC-6; TC-297). The QSL-layer
-declared-maximum comparison (FR-089-AC-5) needs a resolved binding, which
-requires QSL `model` to mint a `PopulationId` at admission time and record the
+refusing a population pair (FR-089-AC-6; TC-297). QSL-131 Slice B's other
+half (`model` minting and the evaluator's resolution step) implements
+FR-089-AC-1, FR-089-AC-3, FR-089-AC-4 and FR-089-AC-5 (TC-291, TC-293,
+TC-294, TC-295, TC-296; all `✅ Passed locally`): `model::population::
+mint_population_id` mints a `PopulationId` at admission time
+(`admit_binding`/`admit_invocation`), `ObjectEnvironment` records the
 `PopulationId` -> `PopulationBinding` correspondence
-(`admit_binding`/`admit_invocation`, `src/model/population.rs:624,1097`);
-neither exists yet, and the evaluator still matches
-`Value::Population(binding)` directly
-(`src/value/expression/evaluate.rs:921,934`) rather than through a resolved
-identity. Remaining work: QSL-131's other half (`model` minting and the
-evaluator's resolution step), covering FR-089-AC-1, FR-089-AC-3, FR-089-AC-4
-and FR-089-AC-5 (TC-291, TC-293, TC-294, TC-295, TC-296).
+(`with_population`/`resolve_population`), and `CheckedPackage::call`/
+`evaluate`'s own argument-admission `validate` (`src/value/expression/
+mod.rs`) resolves and compares the declared maximum for every
+`Population<T>[N]` parameter, refusing an unresolved identity or a
+mismatched maximum whether or not the checked body consumes it; the
+evaluator's own `Machine::resolve_population` (`src/value/expression/
+evaluate.rs`) performs the identical resolution at its `allInstances`/
+`lookup` consumption sites, kept as defence in depth.
+
+FR-089's own admission preimage (domain package selection, `population_key`,
+admission role) does not distinguish two bindings that differ only in
+document content or declared maximum, admitted under the same
+package/key/role within one evaluation -- an open spec question (Linear
+QSL-131) this Slice records rather than resolves.
+`ObjectEnvironment::with_population` is the interim guard: it refuses to
+record a second, unequal binding under an id already bound, rather than
+silently letting the later admission overwrite the earlier one.

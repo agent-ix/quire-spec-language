@@ -19,27 +19,49 @@ declared maximum equal to `maximum` -- the pairing
 `ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297); this
 comparison is the QSL layer's. Scope: FR-089-AC-5.
 
-Remaining work: QSL-131's other half (QSL `model` minting a `PopulationId`
-and the evaluator's resolution step), which this test case needs.
+Implemented (QSL-131 Slice B): `ValueType::admits` (`src/value/composite.rs`)
+has no access to the recorded correspondence (it takes no
+`ObjectEnvironment`), so it admits a `Value::Population` by presence alone;
+the real comparison this criterion names runs in
+`CheckedPackage::call`/`evaluate`'s own argument-admission `validate`
+(`src/value/expression/mod.rs`), which does receive the environment,
+resolves `population_id` through it, and refuses
+(`InputRefusal::WrongValueKind`) when the resolved binding's declared
+maximum differs from the checked parameter's `maximum` -- whether or not
+the checked body actually consumes the parameter (PR #326 review finding
+F1). The evaluator's own `Machine::resolve_population`
+(`src/value/expression/evaluate.rs`'s `AllInstances`/`Lookup` sites)
+performs the identical comparison and is exercised by this test case's own
+consumed-parameter procedure; it is unreachable through either public entry
+point for a checked program once `validate` already refuses first, and is
+kept only as defence in depth.
 
 Catches an implementation that has `ValueType::Population(maximum)` admit
 every `Value::Population(_)` unconditionally (ignoring the resolved binding's
-declared maximum entirely, silently widening the type), and one that compares
+declared maximum entirely, silently widening the type), one that compares
 `maximum` against something other than the resolved binding's own
 `declared_maximum` (for example the population's member count at the moment
-of the check, which can differ from its declared bound).
+of the check, which can differ from its declared bound), and one that only
+performs the comparison when the checked body actually consumes the
+parameter.
 
 ## Test Procedure
 
 1. Admit a `PopulationBinding` with declared maximum `5`, producing
    `Value::Population(population_id)`.
-2. Check the QSL-layer admission of `Value::Population(population_id)`
-   under `ValueType::Population(5)`, resolving `population_id` through the
-   recorded correspondence.
-3. Check the same QSL-layer admission under `ValueType::Population(6)`.
+2. Evaluate a checked call whose parameter is declared
+   `ValueType::Population(5)`, bound to `population_id`, consuming it
+   (`tc_295_population_type_pairing_checks_the_resolved_maximum`).
+3. Evaluate the same call shape with the parameter declared
+   `ValueType::Population(6)` instead, both consuming it and, separately, a
+   variant whose body never reads the parameter at all
+   (`tc_295_population_maximum_mismatch_refuses_even_when_unconsumed`).
 
 ## Expected Results
 
-Step 2 returns `true`. Step 3 returns `false`. A mutant that admits every
-`Value::Population(_)` regardless of `maximum` passes step 2 but also
-(incorrectly) passes step 3, failing this test's negative assertion.
+Step 2 completes. Step 3 refuses at argument admission
+(`InputRefusal::WrongValueKind`) in both the consuming and non-consuming
+variants. A mutant that admits every `Value::Population(_)` regardless of
+`maximum` passes step 2 but also (incorrectly) completes step 3, failing
+this test's negative assertion; a mutant that checks the maximum only when
+the body consumes the parameter fails the "never reads it at all" variant.

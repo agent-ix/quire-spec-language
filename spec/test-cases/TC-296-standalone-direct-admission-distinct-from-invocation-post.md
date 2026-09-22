@@ -28,9 +28,11 @@ exist. The three-state discriminator (`Direct`, `Pre`, `Post`) closes this
 by naming a role for every admission, not only the two an invocation
 attaches.
 
-Known gap: `PopulationId` does not exist yet, so there is no discriminator
-to construct or compare. This test case fails against current code.
-Remaining work: QSL-131 Slice B.
+Implemented: the closed three-state `AdmissionRole` (`Direct`/`Pre`/`Post`)
+discriminator is part of every `PopulationId`'s admission preimage
+(QSL-131 Slice B). Backed by
+`tc_296_standalone_direct_admission_distinct_from_invocation_post`
+(`tests/it/model_population.rs`).
 
 Catches an implementation that models the admission-role component as a
 two-state `Option<AnchorSide>` (`None` for a standalone admission, `Some(Pre)`/
