@@ -1,17 +1,18 @@
 ---
 id: TC-387
-title: "The value::expression snapshot family cause maps each WrongSnapshotCause to wrong_snapshot"
+title: "The ProtocolClause snapshot cause maps each WrongSnapshotCause to wrong_snapshot"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
 ---
-# TC-387: The value::expression snapshot family cause maps each WrongSnapshotCause to wrong_snapshot
+# TC-387: The ProtocolClause snapshot cause maps each WrongSnapshotCause to wrong_snapshot
 
 ## Description
 
-Verify FR-090-AC-6. The `value::expression` family cause that carries
-`WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm
+Verify FR-090-AC-6. The `ProtocolClause` family cause that carries
+`WrongSnapshotCause` (ProtocolClause owns `Pre`: ADR-012 §4.3, FR-091-AC-8)
+has an exhaustive `catalog_code()` with no `_` arm
 (ADR-013 T-6, O-17). It returns code `wrong_snapshot` with the variant's own
 catalog cause tag. Scope: FR-090-AC-6.
 

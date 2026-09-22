@@ -258,7 +258,8 @@ hook returns: the family owns the cause type and implements F `diagnostic`'s
 `check`-core edit (ADR-013 O-16, O-17). The seam passes each hook result
 through unchanged: `EvalOutcome::Kernel(o)` as `FamilyOutcome::Evaluated(o)`,
 `EvalOutcome::Family(r)` as `FamilyOutcome::FamilyEvaluated(r)`, and
-`Err(fault)` as `Err(fault)`. `EvalOutcome` is a `check`-core type.
+`Err(fault)` as `Err(fault)`. `EvalOutcome` is a `check`-core type because
+it is the hook's return type and the `check` core defines the hook.
 `FamilyRefusal::catalog_code()` yields the code, and F `diagnostic` maps the
 code to category `refusal` (ADR-013 O-16); F `diagnostic` does not name
 `FamilyRefusal`. The `Relation` arm returns

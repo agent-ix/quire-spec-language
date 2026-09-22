@@ -16,9 +16,9 @@ Verify FR-090-AC-9. `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and
 `check` core (`semantic_value`, `model`, `library`) never reach any of the
 four. K (`quire-exact`) and F (`qsl-foundation`) cannot reach them, because
 of the crate DAG. The `check` core names no family cause type: it holds the
-snapshot cause, `ModelRefusal` and the `PreconditionFalse` cause only through
-`CatalogCoded` and `UndefinedCoded` (ADR-013 O-16, O-17). Scope:
-FR-090-AC-9.
+`ProtocolClause` snapshot cause, `ModelRefusal` and the `StateModel`
+undefined cause only through `CatalogCoded` and `UndefinedCoded` (ADR-013
+O-16, O-17). Scope: FR-090-AC-9.
 
 The test uses the same resolved-import and definition-scan approach as
 TC-256, TC-170 and TC-176 (`xtask/src/import_graph.rs`,
@@ -46,8 +46,8 @@ which turns `FamilyResult` back into a shared cause list.
    ADR-011 §6.2) and `qsl-cst/src/`, and check whether any of them names one
    of the four types.
 3. Resolve every `use` edge and every inline path under the `check` core, and
-   check whether any of them names the snapshot cause type, `ModelRefusal`
-   or the `PreconditionFalse` cause type.
+   check whether any of them names the `ProtocolClause` snapshot cause type,
+   `ModelRefusal` or the `StateModel` undefined cause type.
 4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
    `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`.
 

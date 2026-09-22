@@ -44,10 +44,11 @@ code to O-16 category `refusal`.
 The evaluation-time `wrong_snapshot` cause (`WrongSnapshotCause`) and the
 model-query refusal SHALL reach an S6a caller in
 `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, carrying their own
-catalog codes. `PreconditionFalse` SHALL reach an S6a caller in
-`FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))`, carrying the
-undefined reason `precondition-false`. None of the three is a variant of the
-kernel `Refusal` or `Undefined`, or of `FamilyRefusal`.
+catalog codes. `PreconditionFalse` and the absent lookup key SHALL reach an
+S6a caller in `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))`,
+carrying the undefined reasons `precondition-false` and `absent-key`. None of
+the four is a variant of the kernel `Refusal` or `Undefined`, or of
+`FamilyRefusal`.
 
 This requirement carries testable criteria for decisions already taken:
 
@@ -55,16 +56,16 @@ This requirement carries testable criteria for decisions already taken:
   `FamilyOutcome` and `FamilyResult` shapes, `FamilyRefusal`'s first cause,
   F `diagnostic` mapping `FamilyRefusal::catalog_code()` to category
   `refusal` while never naming `FamilyRefusal`, and the owner ruling on
-  FR-090-OQ-1 (QSL-174) that places the three evaluation causes in
+  FR-090-OQ-1 (QSL-174) that places the family evaluation causes in
   `FamilyOutcome::FamilyEvaluated`.
 - ADR-013 O-17: each cause type has one exhaustive `catalog_code()` with no
   `_` arm, and a fixed O-16 category.
 - ADR-013 T-4: `InternalFault` names the stage and the violated invariant,
   maps to category `internal failure`, and is never a `Refusal`.
 - ADR-013 T-6: `WrongSnapshotCause` leaves the kernel `Refusal` and becomes
-  an evaluation cause, with its own `catalog_code()`, of the family that owns
-  `Pre`; family-dispatch causes are `FamilyRefusal` causes in the layer-3
-  `check` core and never kernel causes; `diagnostic::Code` leaves the kernel
+  an evaluation cause, with its own `catalog_code()`, of `ProtocolClause`,
+  the family that owns `Pre`; family-dispatch causes are `FamilyRefusal`
+  causes in the layer-3 `check` core and never kernel causes; `diagnostic::Code` leaves the kernel
   `Refusal`.
 - ADR-011 §2.3 and §6.1: the S6a signature, the E6 row that refuses bad
   arguments at admission before S6a (`CheckedPackage::call` returns
@@ -98,6 +99,9 @@ This requirement carries testable criteria for decisions already taken:
 - For the `precondition-false` path: an FR-151 dispatched call
   `receiver.member(args)` whose selected method's effective precondition
   evaluates to `false`.
+- For the `absent-key` path: a `lookup<T>(p, r) absent undefined` query
+  (FR-153) whose reference `r` names no member of the population bound to
+  `p`.
 
 ## Outputs
 
@@ -118,7 +122,8 @@ This requirement carries testable criteria for decisions already taken:
 - `FamilyResult::Refused` carrying catalog code `wrong_snapshot` with the
   `WrongSnapshotCause` cause tag, or `ModelRefusal::catalog_code()`, for the
   `wrong_snapshot` and model-query paths above; `FamilyResult::Undefined`
-  carrying reason `precondition-false` for the `precondition-false` path.
+  carrying reason `precondition-false` or `absent-key` for the
+  `precondition-false` and `absent-key` paths.
 
 ## Behavior
 
@@ -223,12 +228,6 @@ through these traits. A consumer outside the family reads the O-17
 `catalog_code()`, or the `UndefinedRecord` of a `FamilyResult::Undefined`
 cause, never the cause itself (ADR-013 O-16, O-17).
 
-The undefined reason `absent-key` has exactly one carrier: the kernel
-`quire_exact::Undefined::AbsentKey`, which a `lookup<T>(p, r) absent
-undefined` query returns inside `FamilyOutcome::Evaluated`. No family
-`UndefinedRecord` carries reason `absent-key`. One reason with two carriers
-would let two consumers read the same result differently.
-
 ### A family result is an in-process trait object
 
 `CatalogCoded` and `UndefinedCoded` each have the supertraits
@@ -283,9 +282,10 @@ only.
 
 ### The evaluation-time snapshot cause is a family cause
 
-The family that owns `Pre` SHALL own an evaluation cause type carrying
-`WrongSnapshotCause` and implementing `CatalogCoded`, defined in
-`value::expression` beside that family's evaluator, with its own exhaustive
+`ProtocolClause`, the family that owns `Pre` (ADR-012 §4.3; FR-091-AC-8),
+SHALL own an evaluation cause type carrying `WrongSnapshotCause` and
+implementing `CatalogCoded`, defined in `value::expression` beside the
+`ProtocolClause` evaluator, with its own exhaustive
 `catalog_code()` returning
 code `wrong_snapshot` and the cause tag of the variant it holds:
 `wrong-anchor` for `WrongAnchor`, `forbidden-pre-read` for
@@ -297,9 +297,9 @@ each of these codes. When evaluation of a `pre(..)` read meets a
 result, not an admission refusal: `admit_binding` admits the argument, and
 the refusal arises when evaluation reads `pre(..)`. Under O-17, the caller
 reads this as a `RefusalRecord`, never as the family cause itself. The cause
-belongs to the family that owns `Pre` because a cause belongs to the family
-whose construct produces it, and `wrong_snapshot` arises only from a
-`pre(..)` read.
+belongs to `ProtocolClause` because a cause belongs to the family whose
+construct produces it, and `wrong_snapshot` arises only from a `pre(..)`
+read.
 
 ### The model-query refusal is carried with its own code
 
@@ -318,10 +318,11 @@ no new consumer.
 
 ### A false dispatched precondition is a family-owned undefined result
 
-The `StateModel` family SHALL own an undefined cause type with a
-`PreconditionFalse` variant implementing `UndefinedCoded`, defined in
-`value::expression` beside the `StateModel` evaluator. Its
-`undefined_record()` returns reason `precondition-false` with the reason's
+The `StateModel` family SHALL own an undefined cause type implementing
+`UndefinedCoded`, defined in `value::expression` beside the `StateModel`
+evaluator, with a `PreconditionFalse` variant and an `AbsentKey` variant.
+For `PreconditionFalse`, `undefined_record()` returns reason
+`precondition-false` with the reason's
 catalog payload as `fields`: the called effective operation, the selected
 method's effective identity and the receiver reference. The call locus is
 the evaluation's location, whose carrier is FR-090-OQ-3.
@@ -338,24 +339,54 @@ preconditions to it (§1 family table and checked-type table, §3 per-family
 table, §4.3). The module path does not decide the owner: layer 5
 `value::expression` holds every family's evaluator (ADR-011 §6.1).
 
+### An absent lookup key is a family-owned undefined result
+
+When a `lookup<T>(p, r) absent undefined` query (FR-153) finds no member of
+`r`'s key in the population bound to `p`, S6a SHALL return
+`Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)))`, where
+`cause` is the `StateModel` undefined cause's `AbsentKey` variant and
+`cause.undefined_record()` has reason `absent-key` and, as `fields`, the
+reason's catalog payload: the population binding and the requested reference
+key. The `lookup` locus is the evaluation's location, whose carrier is
+FR-090-OQ-3. The result is category `undefined`. `quire_exact::Undefined`
+has no `AbsentKey` variant, and this `UndefinedRecord` is the only carrier
+of undefined reason `absent-key`.
+
+`absent-key` is a `StateModel` undefined cause for three reasons. The
+catalog requires a payload for it, which a payload-free kernel variant
+cannot carry. `StateModel` lookup is the only code that detects an absent
+key. A key-lookup cause is model vocabulary, which ADR-013 O-13 keeps out of
+the kernel.
+
+`lookup<T>(p, r) absent refused` is a different query: FR-153 has it refuse
+an absent key. That refusal is `ModelRefusalCause::AbsentKey`, catalog code
+`invalid_runtime_input` with cause tag `absent-key`, category `refusal`
+(native-diagnostics `invalid_runtime_input` row; QSpec TC-198 L03), and
+reaches the caller in `FamilyResult::Refused` as the model-query refusal
+above. The catalog defines the `absent-key` cause tag of
+`invalid_runtime_input` and the `absent-key` undefined reason as separate
+entries, and each has exactly one carrier: the absence mode the query names
+selects which one S6a returns.
+
 ### The kernel refusal holds kernel causes only
 
 `quire_exact::Refusal` has no variant that names `WrongSnapshotCause`,
 `ModelRefusal`, `FamilyRefusal`, `FamilyNotNativelyEvaluable` or any
 `qsl_foundation` type, and `quire_exact::Undefined` has no
-`PreconditionFalse` variant. A caller that matches `FamilyOutcome::Evaluated(
+`PreconditionFalse` or `AbsentKey` variant. A caller that matches `FamilyOutcome::Evaluated(
 Outcome::Refused(r))` reads a kernel cause.
 
 ### Layering
 
 `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and `EvalOutcome` are
-defined once, in the layer-3 `check` core. `CatalogCoded`, `UndefinedCoded`
+defined once, in the layer-3 `check` core; `EvalOutcome` is there because it
+is the family hook's return type and the `check` core defines the hook.
+`CatalogCoded`, `UndefinedCoded`
 and `UndefinedRecord` are defined once, in F `diagnostic`, so that `model`
 (below the `check` core) and `value::expression` (above it) can each
-implement the traits for their own cause types. The `check` core names no
-family cause type: no item under it names the snapshot cause type,
-`ModelRefusal` or the `PreconditionFalse` cause type. Under ADR-011 §6.1's "Depends on" column, the modules that may name
-them are: the layer-3 `check` core and the family checker modules above it
+implement the traits for their own cause types. Under ADR-011 §6.1's
+"Depends on" column, the modules that may name the four `check`-core types
+are: the layer-3 `check` core and the family checker modules above it
 in layer 3; layer 4 `package`; layer 5 `value::expression` and its family
 evaluators and `simulation`; layer R `route`; and layer 6 `replay`,
 `command`, `cli` and `main`. K (`quire-exact`), F (`qsl-foundation`),
@@ -365,6 +396,10 @@ four `check`-core types.
 Today `semantic_value`'s modules are `value::{definition, enumeration, unit,
 quantity, key, reference}` (ADR-011 §6.2).
 
+The `check` core names no family cause type: no item under it names the
+`ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel`
+undefined cause type.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -373,13 +408,14 @@ quantity, key, reference}` (ADR-011 §6.2).
 | FR-090-AC-2 | Given a `Relation` declaration, S6a returns `Ok(FamilyOutcome::Refused(FamilyRefusal::FamilyNotNativelyEvaluable))` and calls no `evaluate` hook. This is the precise form of FR-062-AC-6. | Test (TC-383) |
 | FR-090-AC-3 | Each S6a invariant break returns `Err(fault)` without panicking. The cases are: a second S6a call on a `Value` evaluation environment whose arguments an earlier S6a call already consumed; and an S6a call with a checked identity the package does not resolve. For each, `fault.stage()` names S6a, `fault.invariant()` is the stable identifier of that invariant (distinct for the two cases), and `fault.category()` is `Category::InternalFailure`. The result is neither `Ok(FamilyOutcome::Refused(_))` nor `Ok(FamilyOutcome::Evaluated(Outcome::Refused(_)))`. | Test (TC-384) |
 | FR-090-AC-4 | For every `FamilyRefusal` variant, `catalog_code()` returns a code and cause defined by the `quire.native.diagnostics/v1` revision FR-322 selects; the method matches every variant with no `_` arm, so adding a variant without an arm fails to compile. | Test (TC-385) |
-| FR-090-AC-5 | F `diagnostic`'s catalog-code-to-category map returns `Category::Refusal` for the code of every `FamilyRefusal` variant, for every code the `value::expression` snapshot cause's `catalog_code()` returns, and for every code `ModelRefusal::catalog_code()` returns; `qsl-foundation` has no dependency on the crate that defines `FamilyRefusal` or on any crate at layer 3 or above. | Test (TC-386) |
-| FR-090-AC-6 | The `value::expression` family cause carrying `WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm that returns `wrong_snapshot`/`wrong-anchor` for `WrongAnchor` and `wrong_snapshot`/`forbidden-pre-read` for `ForbiddenPreRead`. | Test (TC-387) |
+| FR-090-AC-5 | F `diagnostic`'s catalog-code-to-category map returns `Category::Refusal` for the code of every `FamilyRefusal` variant, for every code the `ProtocolClause` snapshot cause's `catalog_code()` returns, and for every code `ModelRefusal::catalog_code()` returns; `qsl-foundation` has no dependency on the crate that defines `FamilyRefusal` or on any crate at layer 3 or above. | Test (TC-386) |
+| FR-090-AC-6 | The `ProtocolClause` family cause carrying `WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm that returns `wrong_snapshot`/`wrong-anchor` for `WrongAnchor` and `wrong_snapshot`/`forbidden-pre-read` for `ForbiddenPreRead`. | Test (TC-387) |
 | FR-090-AC-7 | Given a postcondition `pre(allInstances<T>(p))` evaluated through `CheckedPackage::evaluate` with a population argument admitted through `admit_binding` (no pre anchor), the result is `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` with `cause.catalog_code()` equal to `wrong_snapshot`/`wrong-anchor`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))`, not `FamilyOutcome::Refused(_)` and not `Err(CallFailure::Input(_))`. Neither `quire_exact::Refusal` nor `FamilyRefusal` has a variant naming `WrongSnapshotCause`. | Test (TC-388) |
 | FR-090-AC-8 | Given an `allInstances<T>(p)` query whose selected member count is above the population's declared maximum, evaluated through `CheckedPackage::evaluate`, the result is `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` with `cause.catalog_code()` equal to the refusing `ModelRefusal`'s `catalog_code()`, `cardinality_out_of_bound`/`above-maximum`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))` and not `FamilyOutcome::Refused(_)`. The carried refusal holds no `qsl_foundation::diagnostic::Code` value, and `FamilyRefusal` has no variant naming `ModelRefusal`. | Test (TC-389) |
-| FR-090-AC-9 | `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-3 `check` core. No `use` edge or inline path under `src/forms/`, `src/model/`, `src/library/`, the `semantic_value` modules (`src/value/{definition, enumeration, unit, quantity, key, reference}`) or `qsl-cst/src/` resolves to any of the four. No `use` edge or inline path under the `check` core resolves to the snapshot cause type, `ModelRefusal` or the `PreconditionFalse` cause type. Neither `quire-exact`, `qsl-foundation` nor `qsl-cst` depends on the crate that defines the four. | Test (TC-390) |
+| FR-090-AC-9 | `FamilyOutcome`, `FamilyRefusal`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-3 `check` core. No `use` edge or inline path under `src/forms/`, `src/model/`, `src/library/`, the `semantic_value` modules (`src/value/{definition, enumeration, unit, quantity, key, reference}`) or `qsl-cst/src/` resolves to any of the four. No `use` edge or inline path under the `check` core resolves to the `ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel` undefined cause type. Neither `quire-exact`, `qsl-foundation` nor `qsl-cst` depends on the crate that defines the four. | Test (TC-390) |
 | FR-090-AC-10 | Given a checked `Value` function with a `Population<T>[N]` parameter, `CheckedPackage::call` with an argument whose `PopulationId` names no recorded binding, or whose resolved binding's declared maximum differs from `N`, returns `Err(CallFailure::Input(_))` before S6a runs. Given the same argument passed directly to the S6a seam, bypassing admission, S6a returns `Err(InternalFault)`, not a kernel or family refusal. | Test (TC-391) |
 | FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)))` where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::Refused(_)` and not a panic, and `quire_exact::Undefined` has no `PreconditionFalse` variant. | Test (TC-407) |
+| FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)))` where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Refused(_)` and not a panic, and `quire_exact::Undefined` has no `AbsentKey` variant. The same query with `absent refused` returns `Ok(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)))` with `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test (TC-408) |
 
 ## Dependencies
 
@@ -394,11 +430,11 @@ quantity, key, reference}` (ADR-011 §6.2).
   `InternalFault` landed with ADR-013 §7 S-5a.
 - **Downstream:** QSL-131's removal of `src/value/outcome.rs`'s kernel copy
   in favour of `quire_exact::{Outcome, Refusal}` needs FR-090-AC-7,
-  FR-090-AC-8, FR-090-AC-10 and FR-090-AC-11, because that copy's
-  `WrongSnapshot`, `Model`, `UnresolvedPopulation` and
+  FR-090-AC-8, FR-090-AC-10, FR-090-AC-11 and FR-090-AC-12, because that
+  copy's `WrongSnapshot`, `Model`, `UnresolvedPopulation` and
   `PopulationMaximumMismatch` refusal variants and its
-  `Undefined::PreconditionFalse` variant are ones `quire_exact` does not
-  have. In the other direction,
+  `Undefined::PreconditionFalse` and `Undefined::AbsentKey` variants are ones
+  the target `quire_exact` does not have. In the other direction,
   FR-090-AC-1's `Evaluated` payload is `quire_exact::Outcome<T>`, which the
   `Value` evaluator produces once that copy is gone. The two changes are
   coupled in both directions.
@@ -424,7 +460,9 @@ FR-090-OQ-2. `FamilyResult`, `EvalOutcome`, `CatalogCoded`, `UndefinedCoded`,
 `UndefinedRecord` and `UndefinedReason` do not exist yet;
 `CheckedPackage::evaluate` returns `Result<Evaluation, InputRefusal>`;
 `Undefined::PreconditionFalse` is still a variant of QSL's kernel copy in
-`src/value/outcome.rs`. Remaining work:
+`src/value/outcome.rs`. `quire_exact::Undefined::AbsentKey` and the kernel
+copy's `Undefined::AbsentKey` still exist, and `src/value/model_query.rs`
+returns the kernel variant for an `absent undefined` lookup. Remaining work:
 QSL-174 implementation.
 
 ## Open Questions

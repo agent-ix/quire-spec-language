@@ -12,7 +12,7 @@ relationships:
 
 Verify FR-090-AC-5. F `diagnostic`'s map from a `CatalogCode` to an O-16
 `Category` returns `Category::Refusal` for the code of every `FamilyRefusal`
-variant. It does the same for every code that the `value::expression`
+variant. It does the same for every code that the `ProtocolClause`
 snapshot cause's `catalog_code()` returns, and for every code
 `ModelRefusal::catalog_code()` returns, since a `ModelRefusal` reaches the
 caller in `FamilyResult::Refused`, category `refusal`. F never names
@@ -27,7 +27,7 @@ This catches two faults: a map that files a family refusal under
 1. For every `FamilyRefusal` variant, take `catalog_code()` and pass the
    resulting `CatalogCode` to F `diagnostic`'s category map. The test lives
    in the crate that defines `FamilyRefusal`.
-2. Do the same for every variant of the `value::expression` family cause
+2. Do the same for every variant of the `ProtocolClause` family cause
    that carries `WrongSnapshotCause` (`WrongAnchor`, `ForbiddenPreRead`).
 3. Do the same for every `ModelRefusal` cause `ModelRefusal::catalog_code()`
    covers.
