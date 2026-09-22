@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-030 / IT-003: real Quire extraction into the native compiler/runtime.
+//! ADR-011 §2.1 I3 / FR-030-AC-2 to AC-5: pure extraction against the original document —
+//! preflight, fence location and exact byte-boundary verification. This adapter never
+//! reaches the native compiler. FR-030-AC-1 ("reaches mapped compilation") and every
+//! native-compile-failure case are tested at the SEAM-1 caller instead: see the
+//! `#[cfg(test)]` module in `src/command/extraction.rs`.
 #![cfg(feature = "quire-extraction")]
 
 // The shared runtime setup also serves graph/operation targets.
@@ -7,16 +11,9 @@ use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
-use quire_contract_ir as ir;
-use quire_rs::semantic::{
-    extract_clauses, read_semantic_block, AvailabilityState, BundleIndex, SemanticContext,
-};
-use quire_spec_language::checking::ClauseBinding;
+use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex, SemanticContext};
 use quire_spec_language::native_model::NativeModel;
-use quire_spec_language::quire_source::{compile, Cause, Limits, PreflightFailure, Selection};
-use quire_spec_language::runtime::{
-    execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode,
-};
+use quire_spec_language::quire_source::{extract, Cause, Limits, PreflightFailure, Selection};
 use serde_json::json;
 
 fn identity() -> SourceIdentity {
@@ -43,23 +40,11 @@ fn context() -> SemanticContext {
 
 fn selection() -> Selection {
     Selection {
-        binding: ClauseBinding {
-            name: "Rule".into(),
-            requirement: setup::authored_owner(),
-            clause: ir::ClauseId::new("population_rule").unwrap(),
-            execution_point: ir::ExecutionPoint::Handler {
-                name: ir::AnchorName::new("validate").unwrap(),
-            },
-        },
-        body: quire_spec_language::formal_source::SourceIdentities {
-            native: SourceIdentity {
-                identity: "test:quire-body".into(),
-                revision: "body:7".into(),
-            },
-            formal: ir::SourceIdentity::new(
-                ir::SourceDocumentId::new("QuireNativeBody").unwrap(),
-                ir::SourceRevision::new(7).unwrap(),
-            ),
+        clause_id: "population_rule".into(),
+        package: setup::authored_owner().package().as_str().into(),
+        body: SourceIdentity {
+            identity: "test:quire-body".into(),
+            revision: "body:7".into(),
         },
     }
 }
@@ -78,180 +63,7 @@ fn document(model: &NativeModel, expression: &str, crlf: bool) -> Source {
 }
 
 #[test]
-#[trace("TC-108", "FR-030-AC-1", "FR-030-AC-2")]
-#[trace("FR-011-AC-1")]
-fn actual_quire_body_reaches_native_truth_and_refusal_with_unchanged_extraction() {
-    let models = [setup::native_rule_model::parts().model()];
-    let model = &models[0];
-    let original = document(
-        model,
-        "true implies forall(item in self.items: item < self.n)",
-        true,
-    );
-    let ctx = context();
-    let expected = extract_clauses(original.text(), &ctx);
-    let program = compile(
-        original.clone(),
-        &ctx,
-        selection(),
-        &models,
-        Limits::default(),
-    )
-    .unwrap();
-    assert_eq!(program.extraction(), &expected);
-    assert_eq!(
-        program.extraction().availability.state,
-        AvailabilityState::Available
-    );
-    assert!(program.extraction().availability.lossy);
-    assert_eq!(program.extraction().clauses.as_ref().unwrap().len(), 2);
-    assert!(program
-        .extraction()
-        .diagnostics
-        .iter()
-        .any(|value| value.code == "semantic.clause-language-unchecked"));
-    assert_eq!(
-        program.mapped().mapping().original().digest(),
-        original.digest()
-    );
-    assert_eq!(
-        program.mapped().native().checked().clauses()[0].binding(),
-        &selection().binding
-    );
-    let body = program.mapped().mapping().body();
-    assert_eq!(
-        body.text(),
-        expected.clause_text["population_rule"]
-            .strip_suffix('\r')
-            .unwrap()
-    );
-    assert!(body.text().contains("\r\n  "));
-    let spans = program
-        .mapped()
-        .original_spans(Span {
-            start: 0,
-            end: body.text().len(),
-        })
-        .unwrap();
-    assert_eq!(spans.len(), 1);
-    assert_eq!(
-        original
-            .slice(Span {
-                start: spans[0].start.byte,
-                end: spans[0].end.byte
-            })
-            .unwrap(),
-        body.text()
-    );
-
-    for (number, dangling, truth) in [
-        (2, false, Some(true)),
-        (1, false, Some(false)),
-        (2, true, None),
-    ] {
-        let mut draft = setup::draft(model);
-        setup::change_field(&mut draft, "n", ValueNode::Integer { value: number });
-        setup::change_field(
-            &mut draft,
-            "items",
-            ValueNode::Sequence {
-                values: vec![ValueId::new(0); 3],
-            },
-        );
-        if dangling {
-            setup::change_field(
-                &mut draft,
-                "peer",
-                ValueNode::Reference {
-                    identity: setup::object(model, "missing"),
-                },
-            );
-        }
-        let snapshot = setup::snapshot(draft);
-        let selected = setup::selection(model, snapshot.reference());
-        let report = execute(
-            program.mapped().native(),
-            setup::input(snapshot),
-            selected.clone(),
-            ExecutionLimits::default(),
-            || false,
-        );
-        assert_eq!(report.truth(), truth);
-        assert_eq!(report.selection(), &selected);
-        assert_eq!(
-            report.package().checked().clauses()[0].binding(),
-            &selection().binding
-        );
-        if dangling {
-            let ExecutionOutcome::ValidationFailed(failure) = report.outcome() else {
-                panic!("invalid population must refuse before evaluation");
-            };
-            assert!(failure
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.diagnostic.code == Code::DanglingReference));
-        }
-    }
-}
-
-#[test]
-#[trace("TC-108", "FR-030-AC-2", "FR-011-AC-2", "FR-011-AC-4")]
-fn unchecked_tags_and_native_refusals_retain_the_actual_upstream_population() {
-    let models = [setup::native_rule_model::parts().model()];
-    let ctx = context();
-    for (expression, code) in [
-        ("@", Code::InvalidSyntax),
-        ("collect(self.items)", Code::UnsupportedConstruct),
-    ] {
-        let original = document(&models[0], expression, true);
-        let expected = extract_clauses(original.text(), &ctx);
-        assert_eq!(expected.availability.state, AvailabilityState::Available);
-        let error = compile(
-            original.clone(),
-            &ctx,
-            selection(),
-            &models,
-            Limits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(error.code(), code);
-        assert_eq!(error.extraction(), Some(&expected));
-        assert_eq!(error.original().digest(), original.digest());
-        assert_eq!(error.selection().binding, selection().binding);
-        let Cause::Compile(native) = &error.cause else {
-            panic!("actual native parser refusal required");
-        };
-        let mapped = native.original_spans().unwrap().unwrap();
-        assert!(!mapped.is_empty());
-        assert_eq!(
-            mapped[0].start.byte,
-            original.text().find(expression).unwrap()
-        );
-        assert!(mapped.iter().all(|span| original
-            .slice(Span {
-                start: span.start.byte,
-                end: span.end.byte
-            })
-            .is_some()));
-        assert!(native.mapping().original().text().contains('Ω'));
-    }
-    let original = document(&models[0], "true", false);
-    let wrong_language = source(&original.text().replacen("```ix:native", "```ocl", 1));
-    let expected = extract_clauses(wrong_language.text(), &ctx);
-    let error = compile(
-        wrong_language,
-        &ctx,
-        selection(),
-        &models,
-        Limits::default(),
-    )
-    .unwrap_err();
-    assert_eq!(error.code(), Code::UnknownLanguage);
-    assert_eq!(error.extraction(), Some(&expected));
-}
-
-#[test]
-#[trace("TC-108", "FR-030-AC-3", "FR-030-AC-4", "FR-011-AC-3")]
+#[trace("TC-108", "FR-030-AC-3", "FR-011-AC-3")]
 fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     let models = [setup::native_rule_model::parts().model()];
     let original = document(&models[0], "true", false);
@@ -280,13 +92,13 @@ fn stale_foreign_unavailable_and_inconsistent_source_selections_refuse() {
     ] {
         let input = source(&text);
         let expected = extract_clauses(input.text(), &ctx);
-        let error = compile(input, &ctx, selection(), &models, Limits::default()).unwrap_err();
+        let error = extract(input, &ctx, selection(), Limits::default()).unwrap_err();
         assert_eq!(error.code(), Code::InvalidModelBinding);
         assert_eq!(error.extraction(), Some(&expected));
     }
     let mut reused = selection();
-    reused.body.native = original.identity().clone();
-    let error = compile(original.clone(), &ctx, reused, &models, Limits::default()).unwrap_err();
+    reused.body = original.identity().clone();
+    let error = extract(original.clone(), &ctx, reused, Limits::default()).unwrap_err();
     assert_eq!(error.code(), Code::InvalidSourceMap);
     assert!(error.extraction().is_some());
 }
@@ -310,18 +122,19 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
         let exact = Limits {
             source_bytes: original.text().len(),
             lines: original.position(original.text().len()).unwrap().line,
-            ..Limits::default()
         };
-        let program = compile(original.clone(), &ctx, selection(), &models, exact).unwrap();
-        assert_eq!(program.extraction(), &upstream);
-        let map = program.mapped().mapping();
-        let body_end = map.body().text().len();
-        let eof = program
-            .mapped()
-            .original_spans(Span {
-                start: body_end,
-                end: body_end,
-            })
+        let extracted = extract(original.clone(), &ctx, selection(), exact).unwrap();
+        assert_eq!(extracted.extraction, upstream);
+        let body_end = extracted.body.text().len();
+        let eof = extracted
+            .map
+            .map_span(
+                &extracted.body,
+                Span {
+                    start: body_end,
+                    end: body_end,
+                },
+            )
             .unwrap();
         assert_eq!(eof.len(), 1);
         assert_eq!(eof[0].start, eof[0].end);
@@ -329,69 +142,63 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
             original
                 .slice(Span {
                     start: eof[0].end.byte,
-                    end: map.region().end
+                    end: extracted.map.region().end
                 })
                 .unwrap(),
             if crlf { "\r\n" } else { "\n" }
         );
-        assert!(program
-            .mapped()
-            .original_spans(Span {
-                start: 0,
-                end: usize::MAX
-            })
+        assert!(extracted
+            .map
+            .map_span(
+                &extracted.body,
+                Span {
+                    start: 0,
+                    end: usize::MAX
+                }
+            )
             .is_err());
         let mut byte_stop = exact;
         byte_stop.source_bytes -= 1;
         let mut line_stop = exact;
         line_stop.lines -= 1;
-        let mut compiler_stop = exact;
-        compiler_stop.compiler.package.artifact_bytes = 0;
-        for (limits, preflight) in [
+        for (limits, expected) in [
             (
                 byte_stop,
-                Some(PreflightFailure::SourceBytes {
+                PreflightFailure::SourceBytes {
                     actual: original.text().len(),
                     maximum: byte_stop.source_bytes,
-                }),
+                },
             ),
             (
                 line_stop,
-                Some(PreflightFailure::SourceLines {
+                PreflightFailure::SourceLines {
                     actual: Some(exact.lines),
                     maximum: line_stop.lines,
-                }),
+                },
             ),
-            (compiler_stop, None),
         ] {
-            let error = compile(original.clone(), &ctx, selection(), &models, limits).unwrap_err();
+            let error = extract(original.clone(), &ctx, selection(), limits).unwrap_err();
             assert_eq!(error.code(), Code::ResourceExhausted);
-            assert_eq!(error.extraction().is_none(), preflight.is_some());
-            if let Some(expected) = preflight {
-                let Cause::Preflight(actual) = &error.cause else {
-                    panic!("expected typed input ceiling");
-                };
-                assert_eq!(**actual, expected);
-            } else {
-                assert!(matches!(error.cause, Cause::Compile(_)));
-            }
+            assert!(error.extraction().is_none());
+            let Cause::Preflight(actual) = &error.cause else {
+                panic!("expected typed input ceiling");
+            };
+            assert_eq!(**actual, expected);
         }
-        assert!(compile(original, &ctx, selection(), &models, exact).is_ok());
+        assert!(extract(original, &ctx, selection(), exact).is_ok());
     }
     let many_lines = source(&format!(
         "{}{}",
         "\n".repeat(4096),
         document(&models[0], "true", false).text()
     ));
-    let error = compile(
+    let error = extract(
         many_lines,
         &ctx,
         selection(),
-        &models,
         Limits {
             lines: usize::MAX,
             source_bytes: usize::MAX,
-            ..Limits::default()
         },
     )
     .unwrap_err();
@@ -465,14 +272,8 @@ fn each_foreign_context_refuses_with_its_own_typed_preflight_cause() {
                 }
             }
         };
-        let error = compile(
-            original.clone(),
-            &foreign,
-            selection(),
-            &models,
-            Limits::default(),
-        )
-        .unwrap_err();
+        let error =
+            extract(original.clone(), &foreign, selection(), Limits::default()).unwrap_err();
         let Cause::Preflight(actual) = &error.cause else {
             panic!("{change:?}: expected preflight refusal, got {error:?}");
         };

@@ -2,6 +2,7 @@
 //! FR-031: typed extraction provenance inside native command output.
 
 use super::{diagnostic, diagnostic_with_upstream, source, types};
+use crate::command::extraction::{JoinCause, JoinFailure};
 use crate::command::{compilation::RunPackage, ExtractionError, ExtractionMode};
 use crate::quire_source::{self, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity, Span};
@@ -147,13 +148,13 @@ pub(super) struct ConsumerFailure<'a> {
     cause: Cause<'a>,
 }
 
-fn consumer_failure(value: &quire_source::Error) -> ConsumerFailure<'_> {
+fn consumer_failure(value: &JoinFailure) -> ConsumerFailure<'_> {
     let original = value.original();
-    let binding = &value.selection().binding;
+    let binding = value.binding();
     let cause = match &value.cause {
-        quire_source::Cause::Preflight(error) => Cause::Preflight { preflight: error },
-        quire_source::Cause::Join(error) => Cause::Join(diagnostic(error)),
-        quire_source::Cause::Compile(error) => Cause::Compile {
+        JoinCause::Preflight(error) => Cause::Preflight { preflight: error },
+        JoinCause::Join(error) => Cause::Join(diagnostic(error)),
+        JoinCause::Compile(error) => Cause::Compile {
             diagnostic: error
                 .native_diagnostic()
                 .map(|value| diagnostic_with_upstream(value, error.upstream_diagnostic())),

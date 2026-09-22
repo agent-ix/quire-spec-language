@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-030: consume actual Quire extraction and verify its original native body.
-//! Quire retains Markdown, availability and schema ownership; native semantics
-//! remain in the existing mapped compiler. Enabled by `quire-extraction`.
+//! ADR-011 §2.1 I3: verify Quire's reported extraction against the original document
+//! and yield S0 bytes plus a document `SourceMap`. Quire retains Markdown, availability
+//! and schema ownership. This adapter never reaches the native compiler; the join lives
+//! at the SEAM-1 caller (`command::extraction`). Enabled by `quire-extraction`.
 
 use quire_rs::semantic::{extract_clauses, AvailabilityState, ClauseRef, SourceLocus};
 /// Pinned Quire-owned input/result contracts deliberately exposed by this feature.
@@ -20,31 +21,31 @@ pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 /// Hard original-document line ceiling, including trailing empty line.
 pub const MAX_LINES: usize = 4096;
 
-use crate::checking::ClauseBinding;
-use crate::formal_source::SourceIdentities;
-use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
-use crate::native_model::NativeModel;
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
-use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span};
 
-/// Explicit authored selection and independently assigned native/formal body identities.
+/// Authored clause selection and the caller-assigned extracted-body identity.
+///
+/// This is the I3-level selection: the SEAM-1 caller resolves the full authored
+/// `ClauseBinding` (name, requirement, execution point) for its own native join and
+/// hands this adapter only the two fields it verifies against Quire's extraction.
 #[derive(Clone, Debug)]
 pub struct Selection {
-    /// Authored clause ID selects the Quire heading; name selects the native clause.
-    pub binding: ClauseBinding,
+    /// Authored clause ID selects the Quire heading.
+    pub clause_id: String,
+    /// Authored requirement's owning package, checked against the Quire context.
+    pub package: String,
     /// Caller-assigned identity/revision for the extracted body, distinct from the original.
-    pub body: SourceIdentities,
+    pub body: SourceIdentity,
 }
 
-/// Pre-extraction input bounds and the unchanged native compiler stage limits.
+/// Pre-extraction input bounds.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     /// Original document bytes; hard maximum 1 MiB.
     pub source_bytes: usize,
     /// Original lines, including trailing empty line; hard maximum 4096.
     pub lines: usize,
-    /// Independent caller-lowered native compiler stages.
-    pub compiler: CompileLimits,
 }
 
 impl Default for Limits {
@@ -52,12 +53,11 @@ impl Default for Limits {
         Self {
             source_bytes: MAX_SOURCE_BYTES,
             lines: MAX_LINES,
-            compiler: CompileLimits::default(),
         }
     }
 }
 
-/// Actual failed join or native stage, without parsing display messages.
+/// Actual failed extraction stage, without parsing display messages.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Cause {
@@ -67,19 +67,16 @@ pub enum Cause {
     /// Original selection/correspondence diagnostic.
     #[error("{0}")]
     Join(#[from] Box<Diagnostic>),
-    /// Complete original mapped compiler failure.
-    #[error("{0}")]
-    Compile(#[from] Box<CompileError>),
 }
 
 /// A failed request preserves its source, selection and any completed extraction.
 #[derive(Debug, thiserror::Error)]
 #[error("{cause}")]
 pub struct Error {
-    original: Source,
-    selection: Selection,
-    extraction: Option<ClausesOutcome>,
-    /// Actual failure with no partial native package.
+    pub(crate) original: Source,
+    pub(crate) selection: Selection,
+    pub(crate) extraction: Option<ClausesOutcome>,
+    /// Actual failure with no partial extraction.
     #[source]
     pub cause: Cause,
 }
@@ -105,28 +102,24 @@ impl Error {
         match &self.cause {
             Cause::Preflight(error) => error.code(),
             Cause::Join(error) => error.code,
-            Cause::Compile(error) => error.code(),
         }
     }
 }
 
-/// Successful native compilation with complete, unchanged upstream extraction data.
+/// Verified S0 bytes, their document `SourceMap`, and the unchanged upstream Quire result.
+///
+/// ADR-011 §2.1 I3 row: extraction stops here. The SEAM-1 caller feeds `body`/`map`/
+/// `language` into the native compiler; this adapter never does.
 #[derive(Debug)]
-pub struct ExtractedPackage<'model> {
-    mapped: MappedPackage<'model>,
-    extraction: ClausesOutcome,
-}
-
-impl<'model> ExtractedPackage<'model> {
-    /// Verified original/body correspondence and the actual native package.
-    pub fn mapped(&self) -> &MappedPackage<'model> {
-        &self.mapped
-    }
-
-    /// Original clause population, availability and diagnostics, including unchecked tags.
-    pub fn extraction(&self) -> &ClausesOutcome {
-        &self.extraction
-    }
+pub struct ExtractedSource {
+    /// Verified native body bytes, ready for the S1 parser.
+    pub body: Source,
+    /// Exact original/body byte correspondence.
+    pub map: SourceMap,
+    /// The selected clause's declared language, from the unchanged upstream result.
+    pub language: String,
+    /// Unchanged upstream clause population, availability and diagnostics.
+    pub extraction: ClausesOutcome,
 }
 
 fn failure(source: &Source, code: Code, message: &str) -> Box<Diagnostic> {
@@ -151,7 +144,7 @@ fn selected_clause<'a>(
         .as_deref()
         .unwrap_or(&[])
         .iter()
-        .find(|clause| clause.clause_id == selection.binding.clause.as_str())
+        .find(|clause| clause.clause_id == selection.clause_id)
         .ok_or_else(|| {
             failure(
                 original,
@@ -246,7 +239,7 @@ fn build_map(
     byte_limit: usize,
 ) -> Result<SourceMap, Box<Diagnostic>> {
     let body = Source::read(
-        selection.body.native.clone(),
+        selection.body.clone(),
         format!("{}#{}", original.path(), clause.clause_id),
         text.as_bytes(),
         byte_limit,
@@ -304,18 +297,18 @@ fn body_map<'a>(
     ))
 }
 
-/// Extract from the original document, verify the selected body and compile it.
+/// Extract from the original document and verify the selected body's correspondence.
 ///
 /// The caller must select/verify original bytes and load its Quire context before
 /// this call. No source text, availability result or authored binding is inferred
-/// from a successful native parse. Each request starts fresh extraction/compiler limits.
-pub fn compile<'model>(
+/// from a successful extraction. Each request starts fresh extraction limits. This
+/// adapter stops at S0 bytes plus the document `SourceMap`; it never compiles.
+pub fn extract(
     original: Source,
     context: &SemanticContext,
     selection: Selection,
-    models: &'model [NativeModel],
     limits: Limits,
-) -> Result<ExtractedPackage<'model>, Box<Error>> {
+) -> Result<ExtractedSource, Box<Error>> {
     if let Err(cause) = preflight::check(&original, context, &selection, limits) {
         return Err(Box::new(Error {
             original,
@@ -325,29 +318,22 @@ pub fn compile<'model>(
         }));
     }
     let extraction = extract_clauses(original.text(), context);
-    let join = || -> Result<MappedPackage<'model>, Cause> {
-        let (mapping, language) = body_map(
-            &original,
-            &extraction,
-            &selection,
-            limits.compiler.syntax.source_bytes,
-        )?;
-        Ok(mapped::compile(
-            mapping,
-            language,
-            selection.binding.clone(),
-            selection.body.formal.clone(),
-            models,
-            limits.compiler,
-        )?)
-    };
-    match join() {
-        Ok(mapped) => Ok(ExtractedPackage { mapped, extraction }),
+    match body_map(&original, &extraction, &selection, limits.source_bytes) {
+        Ok((map, language)) => {
+            let language = language.to_owned();
+            let body = map.body().clone();
+            Ok(ExtractedSource {
+                body,
+                map,
+                language,
+                extraction,
+            })
+        }
         Err(cause) => Err(Box::new(Error {
             original,
             selection,
             extraction: Some(extraction),
-            cause,
+            cause: Cause::Join(cause),
         })),
     }
 }
