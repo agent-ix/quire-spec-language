@@ -1,13 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//! `qsl-source`: the ADR-011 §6.1 layer **I3** crate (ADR-011 §7.3 X-4).
+//!
 //! ADR-011 §2.1 I3: verify Quire's reported extraction against the original document
 //! and yield S0 bytes plus a document `SourceMap`. Quire retains Markdown, availability
 //! and schema ownership. This adapter never reaches the native compiler; the join lives
-//! at the SEAM-1 caller (`command::extraction`). Enabled by `quire-extraction`.
+//! at the SEAM-1 caller (the root crate's `command::extraction`). It depends only on
+//! `qsl-foundation` (layer F) and, under this crate's `quire-extraction` feature, on
+//! quire-rs. Without that feature the crate is empty.
+//!
+//! This crate is the root crate's only path to quire-rs (ADR-011 §6.1 layer-6 row).
 
-use quire_rs::semantic::{extract_clauses, ClauseRef, SourceLocus};
-/// Pinned Quire-owned input/result contracts deliberately exposed by this feature.
+#![cfg(feature = "quire-extraction")]
+
+use quire_rs::semantic::{extract_clauses, SourceLocus};
+/// Pinned Quire-owned input/result contracts deliberately exposed by this crate.
 /// Changes to their upstream shape require consumer compatibility review.
-pub use quire_rs::semantic::{AvailabilityState, ClausesOutcome, SemanticContext};
+/// `read_semantic_block`, `BundleIndex`, `SemanticFailure`, `ClauseRef`,
+/// `KindAvailability` and `SemanticDiagnostic` are here because the root crate's
+/// extracted `run` command builds its clause-only context and renders Quire's
+/// result through them, and it reaches quire-rs only through this crate.
+pub use quire_rs::semantic::{
+    read_semantic_block, AvailabilityState, BundleIndex, ClauseRef, ClausesOutcome,
+    KindAvailability, SemanticContext, SemanticDiagnostic, SemanticFailure,
+};
 
 mod preflight;
 pub use preflight::PreflightFailure;

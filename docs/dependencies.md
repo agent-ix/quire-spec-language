@@ -58,7 +58,7 @@ for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 The lock now selects 248 packages including this crate, optional and target-specific
 dependencies. Cargo metadata
 supplies the complete [name/version/source/license snapshot](dependency-licenses.json).
-FR-030 adds optional quire-rs 0.46.0, pinned at
+FR-030 adds optional quire-rs 0.46.0 to the `qsl-source` crate, pinned at
 2823a93bd3797c970c1d389afae9b893dea6f232 under its declared AGPL-3.0-or-later grant.
 Its default, Python and wasm features are disabled; default native builds omit it.
 The additional 40 locked entries retain their declared grants below, including

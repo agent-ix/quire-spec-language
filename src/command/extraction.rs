@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-031: select one authored binding, extract through the I3 adapter and invoke the
 //! actual native compiler. The native compile join lives here (the SEAM-1 native arm),
-//! not in `quire_source` (ADR-011 §2.1 I3 row; §6.2 `quire_source` row).
+//! not in the `qsl-source` crate (ADR-011 §2.1 I3 row; §6.2 `qsl-source` row).
 
 use super::{wire, Intake, Result, RunCause};
 use crate::checking::ClauseBinding;
 use crate::formal_source::{FormalSource, SourceIdentities};
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
 use crate::native_model::NativeModel;
-use crate::quire_source::{self, ClausesOutcome, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::{Code, Diagnostic, Source};
-use quire_rs::semantic::{read_semantic_block, BundleIndex, SemanticContext, SemanticFailure};
+use qsl_source::{
+    read_semantic_block, BundleIndex, ClausesOutcome, SemanticContext, SemanticFailure,
+    CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
+};
 use serde_json::json;
 
 /// Unsupported combinations at the extracted-command boundary.
@@ -78,14 +80,14 @@ impl From<ExtractionMode> for RunCause {
 
 /// Actual failed join or native stage, without parsing display messages.
 ///
-/// This lives here, not in `quire_source`, because only the SEAM-1 caller depends on
+/// This lives here, not in `qsl-source`, because only the SEAM-1 caller depends on
 /// both the I3 adapter and the native compiler (ADR-011 §2.1 I3 row).
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum JoinCause {
     /// Input limits, profile selection or original-context mismatch before extraction.
     #[error("{0}")]
-    Preflight(#[from] Box<quire_source::PreflightFailure>),
+    Preflight(#[from] Box<qsl_source::PreflightFailure>),
     /// Original selection/correspondence diagnostic.
     #[error("{0}")]
     Join(#[from] Box<Diagnostic>),
@@ -146,8 +148,8 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            source_bytes: quire_source::MAX_SOURCE_BYTES,
-            lines: quire_source::MAX_LINES,
+            source_bytes: qsl_source::MAX_SOURCE_BYTES,
+            lines: qsl_source::MAX_LINES,
             compiler: CompileLimits::default(),
         }
     }
@@ -173,8 +175,8 @@ impl<'model> ExtractedPackage<'model> {
 }
 
 /// The I3 selection for an authored binding and its caller-assigned native body identity.
-fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> quire_source::Selection {
-    quire_source::Selection {
+fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> qsl_source::Selection {
+    qsl_source::Selection {
         clause_id: binding.clause.as_str().to_owned(),
         package: binding.requirement.package().as_str().to_owned(),
         body: body.native.clone(),
@@ -183,8 +185,8 @@ fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> quire_source::
 
 /// Extract through the I3 adapter, then compile the extracted native body.
 ///
-/// The native join lives here (SEAM-1), not in `quire_source` (ADR-011 §2.1 I3 row;
-/// §6.2 `quire_source` row: "its call into `mapped` retires with SEAM-1").
+/// The native join lives here (SEAM-1), not in `qsl-source` (ADR-011 §2.1 I3 row;
+/// §6.2 `qsl-source` row).
 fn extract_and_compile<'model>(
     original: Source,
     context: &SemanticContext,
@@ -193,11 +195,11 @@ fn extract_and_compile<'model>(
     models: &'model [NativeModel],
     limits: Limits,
 ) -> std::result::Result<ExtractedPackage<'model>, Box<JoinFailure>> {
-    let extracted = match quire_source::extract(
+    let extracted = match qsl_source::extract(
         original.clone(),
         context,
         selection(&binding, &body),
-        quire_source::Limits {
+        qsl_source::Limits {
             source_bytes: limits.source_bytes,
             lines: limits.lines,
         },
@@ -206,8 +208,8 @@ fn extract_and_compile<'model>(
         Err(error) => {
             let (original, _, extraction, cause) = error.into_parts();
             let cause = match cause {
-                quire_source::Cause::Preflight(error) => JoinCause::Preflight(error),
-                quire_source::Cause::Join(error) => JoinCause::Join(error),
+                qsl_source::Cause::Preflight(error) => JoinCause::Preflight(error),
+                qsl_source::Cause::Join(error) => JoinCause::Join(error),
             };
             return Err(Box::new(JoinFailure {
                 original,
@@ -304,15 +306,15 @@ impl Selected<'_> {
 #[cfg(test)]
 mod tests {
     //! FR-030-AC-1 ("reaches mapped compilation") and native-compile-failure coverage
-    //! for the join this module owns (ADR-011 §2.1 I3 row; §6.2 `quire_source` row).
+    //! for the join this module owns (ADR-011 §2.1 I3 row; §6.2 `qsl-source` row).
     //! Pure I3 extraction (preflight, fence location, byte boundaries) is tested at
-    //! `tests/it/quire_source.rs`.
+    //! `qsl-source/tests/it/quire_source.rs`.
     use super::*;
-    use crate::quire_source::{AvailabilityState, ExtractedSource};
     use crate::runtime::{execute, ExecutionLimits, ExecutionOutcome, ValueId, ValueNode};
     use crate::runtime_test_setup as setup;
     use ix_trace_rs::trace;
     use qsl_foundation::{SourceIdentity, Span};
+    use qsl_source::{AvailabilityState, ExtractedSource};
     use quire_contract_ir as ir;
 
     fn identity() -> SourceIdentity {
@@ -362,13 +364,13 @@ mod tests {
     }
 
     /// The I3 adapter's own verified extraction, which the join must pass through
-    /// unchanged. `tests/it/quire_source.rs` pins it to Quire's upstream result.
+    /// unchanged. `qsl-source/tests/it/quire_source.rs` pins it to Quire's upstream result.
     fn extracted(original: &Source, ctx: &SemanticContext) -> ExtractedSource {
-        quire_source::extract(
+        qsl_source::extract(
             original.clone(),
             ctx,
             selection(&binding(), &body_identities()),
-            quire_source::Limits::default(),
+            qsl_source::Limits::default(),
         )
         .unwrap()
     }

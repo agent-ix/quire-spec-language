@@ -4,12 +4,12 @@
 use super::{diagnostic, diagnostic_with_upstream, source, types};
 use crate::command::compilation::RunPackage;
 use crate::command::extraction::{ExtractionError, ExtractionMode, JoinCause, JoinFailure};
-use crate::quire_source::{self, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::{Diagnostic, LocatedSpan, SourceIdentity, Span};
-use quire_contract_ir as ir;
-use quire_rs::semantic::{
+use qsl_source::{
     ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic, SemanticFailure,
+    CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
 };
+use quire_contract_ir as ir;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
@@ -131,7 +131,7 @@ impl Serialize for MappedSpans {
 #[serde(untagged)]
 enum Cause<'a> {
     Preflight {
-        preflight: &'a quire_source::PreflightFailure,
+        preflight: &'a qsl_source::PreflightFailure,
     },
     Join(types::Diagnostic<'a>),
     Compile {
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     #[trace("TC-109", "FR-031-AC-2")]
     fn rejected_quire_context_keeps_producer_diagnostics_and_selected_versions() {
-        let diagnostics = quire_rs::semantic::read_semantic_block(
+        let diagnostics = qsl_source::read_semantic_block(
             &serde_json::json!({"contract_version":"future", "semantic_core":SEMANTIC_CORE_VERSION,
                 "package":"example/rules", "exports":[], "targets":["markdown"]}),
             &[],

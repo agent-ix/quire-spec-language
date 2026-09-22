@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source"]
 resolver = "2"
 
 [package]
@@ -14,7 +14,9 @@ default-run = "quire-spec"
 
 [features]
 default = []
-quire-extraction = ["dep:quire-rs"]
+# ADR-011 §7.3 X-4 (QSL-179): the I3 adapter crate `qsl-source` owns the
+# quire-rs dependency; this feature builds it with its own `quire-extraction`.
+quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 # Test-only fixture constructors (`DeclarationKey::fixture`,
 # `DomainPackageRef::fixture`, `DomainPackageRef::fixture_with_version`) that
 # derive a digest from a display identity —
@@ -32,7 +34,9 @@ quire-exact = { path = "quire-exact" }
 qsl-foundation = { path = "qsl-foundation" }
 # ADR-011 §7.3 X-3 (QSL-178): layer 1, extracted out of this crate.
 qsl-cst = { path = "qsl-cst" }
-quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
+# ADR-011 §7.3 X-4 (QSL-179): layer I3, extracted out of this crate. This
+# crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
+qsl-source = { path = "qsl-source", optional = true }
 logos = "=0.16.1"
 num-bigint = "=0.4.8"
 num-integer = "=0.1.47"

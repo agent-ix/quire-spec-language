@@ -42,8 +42,10 @@ No extraction status is rewritten into a parsing or runtime result.
 Preflight failures distinguish byte and line ceilings, contract and semantic-core
 version skew, and source identity, path and authored-package mismatches with
 typed causes carrying actual and expected values. Their existing native code
-families remain unchanged. ClausesOutcome and SemanticContext are deliberate
-re-exports of the pinned Quire-owned contracts; upgrades require compatibility review.
+families remain unchanged. The consumer is the `qsl-source` crate. Its re-exports of
+the pinned Quire-owned contracts (ClausesOutcome, SemanticContext and the types the
+extracted-command caller uses) are deliberate; upgrades require compatibility review.
+The extracted-command caller reaches Quire only through `qsl-source`.
 
 ## Behavior
 
@@ -71,7 +73,8 @@ it is not a new Quire-wide performance guarantee. Existing compiler stage limits
 including the native source-byte limit on the extracted body, remain independent
 and fresh for each request and apply at compilation.
 The quire-extraction Cargo feature is optional; default native builds do not
-require Quire. C retains changes to existing repositories, schemas, CLI/wire
+require Quire. The root crate's feature enables `qsl-source`'s own feature of the
+same name, which alone adds the quire-rs dependency. C retains changes to existing repositories, schemas, CLI/wire
 adoption and broader integration. This is A's native compiler consumer.
 
 ## Acceptance Criteria

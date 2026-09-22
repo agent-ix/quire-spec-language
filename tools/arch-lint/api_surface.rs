@@ -840,9 +840,9 @@ pub(crate) fn evaluate(
 /// rule scans every QSL workspace crate whose `[dependencies]` can name the
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
-/// (ADR-011 §7.3 X-2), `qsl-cst` (X-3) and `qsl-replay` (X-10). Each later
-/// layer crate joins this list when it is extracted. `quire-exact` and
-/// `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
+/// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4) and
+/// `qsl-replay` (X-10). Each later layer crate joins this list when it is
+/// extracted. `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
 /// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
 /// own scope notes already exclude checking a copy of the constructor
 /// elsewhere; the crate that defines a constructor calling its own inherent
@@ -851,10 +851,16 @@ pub(crate) fn evaluate(
 fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
-        Role::Qsl => ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"]
-            .into_iter()
-            .map(|relative| scan_root.join(relative))
-            .collect(),
+        Role::Qsl => [
+            "src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-source/src",
+            "qsl-replay/src",
+        ]
+        .into_iter()
+        .map(|relative| scan_root.join(relative))
+        .collect(),
     }
 }
 
@@ -877,7 +883,13 @@ mod tests {
     /// test exactly that) call this first so the extracted-crate roots they
     /// don't care about are present, but empty.
     fn ensure_qsl_roots(root: &Path) {
-        for relative in ["src", "qsl-foundation/src", "qsl-cst/src", "qsl-replay/src"] {
+        for relative in [
+            "src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-source/src",
+            "qsl-replay/src",
+        ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
     }
@@ -1367,54 +1379,63 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185): a
-    /// `Role::Qsl` rule scans `qsl-replay/src/` too, the same way
-    /// tc_arch_lint_api_surface_014/016 cover `qsl-foundation/src/` and
-    /// `qsl-cst/src/` -- the extracted layer-6 crate is as much "QSL's own
-    /// tree" as the root crate.
+    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185; X-4,
+    /// QSL-179): a `Role::Qsl` rule scans `qsl-replay/src/` and
+    /// `qsl-source/src/` too, the same way tc_arch_lint_api_surface_014/016
+    /// cover `qsl-foundation/src/` and `qsl-cst/src/` -- each extracted layer
+    /// crate is as much "QSL's own tree" as the root crate. Each crate gets
+    /// its own checkout so one crate's violation cannot stand in for the
+    /// other's.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
-    fn tc_arch_lint_api_surface_018_qsl_replay_crate_is_scanned() {
-        let dir = tempfile::tempdir().unwrap();
-        ensure_qsl_roots(dir.path());
-        write(
-            dir.path(),
-            "src/model/population.rs",
-            "impl PopulationId {}\n",
-        );
-        write(
-            dir.path(),
-            "qsl-replay/src/identity.rs",
-            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
-        );
-        let rule = &RULES[3]; // T12-D
-        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
-        assert_eq!(outcome.status, RuleStatus::Live);
-        assert_eq!(outcome.violations.len(), 1);
-        assert_eq!(outcome.violations[0].module, "identity");
-        assert!(!outcome.passed());
+    fn tc_arch_lint_api_surface_018_qsl_replay_and_qsl_source_crates_are_scanned() {
+        for (file, module) in [
+            ("qsl-replay/src/identity.rs", "identity"),
+            ("qsl-source/src/preflight.rs", "preflight"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            ensure_qsl_roots(dir.path());
+            write(
+                dir.path(),
+                "src/model/population.rs",
+                "impl PopulationId {}\n",
+            );
+            write(
+                dir.path(),
+                file,
+                "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+            );
+            let rule = &RULES[3]; // T12-D
+            let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+            assert_eq!(outcome.status, RuleStatus::Live, "{file}");
+            assert_eq!(outcome.violations.len(), 1, "{file}");
+            assert_eq!(outcome.violations[0].module, module, "{file}");
+            assert!(!outcome.passed(), "{file}");
+        }
     }
 
-    /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185): a checkout
-    /// with no `qsl-replay/` directory at all is an error, the same as
-    /// tc_arch_lint_api_surface_015 for `qsl-foundation/`. Every listed root
-    /// is required precisely so a crate rename or move this scanner's root
-    /// list has not caught up with fails loudly instead of silently scanning
-    /// nothing there.
+    /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185, QSL-179): a
+    /// checkout with no `qsl-replay/` or no `qsl-source/` directory is an
+    /// error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
+    /// Every listed root is required precisely so a crate rename or move this
+    /// scanner's root list has not caught up with fails loudly instead of
+    /// silently scanning nothing there.
     #[trace("TC-157", "FR-060-AC-2")]
     #[test]
-    fn tc_arch_lint_api_surface_019_missing_qsl_replay_crate_is_an_error() {
-        let dir = tempfile::tempdir().unwrap();
-        write(
-            dir.path(),
-            "src/model/population.rs",
-            "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
-        );
-        fs::create_dir_all(dir.path().join("qsl-foundation/src")).unwrap();
-        fs::create_dir_all(dir.path().join("qsl-cst/src")).unwrap();
-        let rule = &RULES[3]; // T12-D
-        let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
-        assert!(error.to_string().contains("qsl-replay/src"), "{error}");
+    fn tc_arch_lint_api_surface_019_missing_qsl_replay_or_qsl_source_crate_is_an_error() {
+        for missing in ["qsl-replay/src", "qsl-source/src"] {
+            let dir = tempfile::tempdir().unwrap();
+            ensure_qsl_roots(dir.path());
+            fs::remove_dir_all(dir.path().join(missing)).unwrap();
+            write(
+                dir.path(),
+                "src/model/population.rs",
+                "fn f() {\n    let id = PopulationId::from_digest(bytes);\n}\n",
+            );
+            let rule = &RULES[3]; // T12-D
+            let error = evaluate(rule, dir.path(), Some(dir.path())).unwrap_err();
+            assert!(error.to_string().contains(missing), "{missing}: {error}");
+        }
     }
 
     // -------------------------------------------------------------------

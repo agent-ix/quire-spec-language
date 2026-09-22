@@ -369,9 +369,9 @@ impl Diagnostic {
 
 /// Build a [`Diagnostic`] at a source region, locating `start..end` and
 /// cloning the source's identity and path. `pub`: nearly every stage module
-/// in the root crate (`parser`, `format`, `formal_source`, `quire_source`,
-/// `checking`, `native_model`, `linking`, `mapped`, `complete::*`,
-/// `runtime::*`, `lexer`) is a real cross-crate call site.
+/// in the root crate (`parser`, `format`, `formal_source`, `checking`,
+/// `native_model`, `linking`, `mapped`, `complete::*`, `runtime::*`, `lexer`),
+/// and the `qsl-source` crate, is a real cross-crate call site.
 pub fn error(
     source: &Source,
     code: Code,
