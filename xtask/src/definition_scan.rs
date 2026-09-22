@@ -343,13 +343,15 @@ mod tests {
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
     /// rather than crate-wide).
     ///
-    /// **Updated (QSL-158 S-3a, FR-087-AC-9).** `check`'s S3 output type was
-    /// renamed `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
+    /// **Updated (QSL-158 S-3a).** `check`'s S3 output type was renamed
+    /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
     /// methods this test pins moved with it, and `CheckedPackage` itself is
     /// now `package`'s own, different, S4 in-process type (`src/package/
     /// checked.rs`), so it no longer belongs in this check-scoped assertion
     /// at all -- it is covered instead by `package`'s own TC-243 inspection.
-    #[trace("TC-170", "FR-068-CON-3", "FR-087-AC-9")]
+    /// This test does not itself verify FR-087-AC-9 (TC-256, the
+    /// `graph()` delegation point, does), so it no longer cites that AC.
+    #[trace("TC-170", "FR-068-CON-3")]
     #[test]
     fn con3_methods_and_symbols_each_have_exactly_one_defining_location() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
