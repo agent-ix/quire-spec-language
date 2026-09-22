@@ -19,7 +19,9 @@
 use std::sync::Arc;
 
 use ix_trace_rs::trace;
-use quire_exact::{ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits};
+use quire_exact::{
+    CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits,
+};
 use quire_spec_language::absence::AbsenceMode;
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
@@ -37,12 +39,11 @@ use quire_spec_language::model::population::{
     PopulationMember,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CardinalityBound, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-    CheckedPackage, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
-    DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, NodeKey,
-    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome,
-    PackageDeclarations, Presence, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType, WrongSnapshotCause,
+    BinaryOperator, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+    CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape, DeclarationCause,
+    Expression, FieldDeclaration, FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence,
+    Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

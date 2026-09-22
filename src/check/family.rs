@@ -763,7 +763,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::collection::{CardinalityBound, CollectionType};
+    use crate::value::collection::CollectionType;
+    use quire_exact::CardinalityBound;
     // `TextType`: this golden-digest test was moved here verbatim from
     // `value::expression::family` (PR #282 review F4) and its own doc
     // deliberately exercises `ValueType::Text` as part of the fixture's

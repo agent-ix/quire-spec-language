@@ -131,10 +131,10 @@ mod unit;
 // `collection.*` charges) now imports `quire_exact::{..}` directly. One
 // definition, one import path -- no re-export shim stands in for the
 // deleted module.
-pub use collection::{
-    construct_collection, form_collection, CardinalityBound, CollectionType, CollectionValue,
-    EmptyCardinalityBound,
-};
+// `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own types; this
+// module does not re-export them (QSL-131 S-1b), so consumers import them from
+// `quire_exact` directly.
+pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use composite::{
     Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,

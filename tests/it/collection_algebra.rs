@@ -3,15 +3,15 @@
 
 use ix_trace_rs::trace;
 use quire_exact::{
-    ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ScalarLimits,
+    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
+    ScalarLimits,
 };
 use quire_spec_language::value::{
-    admit_text, construct_collection, form_collection, BoundViolation, CardinalityBound,
-    CollectionType, CompositeDeclaration, CompositeShape, Deferred, EqualityOperand,
-    EqualityOperator, FieldDeclaration, FieldValue, IeeeWidth, IllTyped, IllTypedCause, NodeKey,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Presence,
-    Refusal, TextPayload, TextProfile, TextType, TypeEnvironment, UniverseIdentity, Value,
-    ValueType,
+    admit_text, construct_collection, form_collection, BoundViolation, CollectionType,
+    CompositeDeclaration, CompositeShape, Deferred, EqualityOperand, EqualityOperator,
+    FieldDeclaration, FieldValue, IeeeWidth, IllTyped, IllTypedCause, NodeKey, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Presence, Refusal, TextPayload,
+    TextProfile, TextType, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 

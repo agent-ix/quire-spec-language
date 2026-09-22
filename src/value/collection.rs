@@ -22,55 +22,19 @@ use super::composite::{
 use super::equality::plan_pairs;
 use super::key::compare_keys;
 use super::outcome::{BoundViolation, Outcome, Refusal, Stop};
-use quire_exact::{length_amount, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter};
+use quire_exact::{
+    length_amount, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter,
+};
 
-/// An inclusive declared cardinality bound `[minimum, maximum]`. It counts
-/// occurrences for sequences and bags and members for sets and ordered sets.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CardinalityBound {
-    minimum: u64,
-    maximum: u64,
-}
-
-/// A cardinality bound with `minimum > maximum`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("empty cardinality bound [{minimum}, {maximum}]")]
-pub struct EmptyCardinalityBound {
-    /// The declared minimum.
-    pub minimum: u64,
-    /// The declared maximum.
-    pub maximum: u64,
-}
-
-impl CardinalityBound {
-    /// The inclusive bound `[minimum, maximum]`.
-    pub fn new(minimum: u64, maximum: u64) -> Result<Self, EmptyCardinalityBound> {
-        if minimum > maximum {
-            return Err(EmptyCardinalityBound { minimum, maximum });
-        }
-        Ok(Self { minimum, maximum })
-    }
-
-    /// The inclusive minimum.
-    pub fn minimum(self) -> u64 {
-        self.minimum
-    }
-
-    /// The inclusive maximum.
-    pub fn maximum(self) -> u64 {
-        self.maximum
-    }
-
-    fn violation(self, count: u64) -> Option<BoundViolation> {
-        if count < self.minimum {
-            Some(BoundViolation::BelowMinimum)
-        } else if count > self.maximum {
-            Some(BoundViolation::AboveMaximum)
-        } else {
-            None
-        }
-    }
-}
+// `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own FR-144
+// kernel types (QSL-131 S-1b). `bound_and_retain` below recomputes the
+// three-way bound comparison from their public `minimum()`/`maximum()`
+// accessors rather than calling `quire_exact`'s own `violation` fn: that fn
+// is `pub(crate)` there, but the real reason is its return type,
+// `quire_exact::BoundViolation`, is not QSL's own duplicate
+// `value::outcome::BoundViolation` (`outcome.rs:236`) -- the two stay
+// distinct until the Outcome/Refusal cut later in QSL-131 merges them, and
+// no `From` conversion shims between them meanwhile.
 
 /// A collection type `K<T>[min, max]`. Two collection types are the same type
 /// exactly when kind, element type and bound are all equal.
@@ -256,11 +220,19 @@ fn bound_and_retain(
     meter.charge(
         Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
     )?;
-    if let Some(violation) = collection_type.bound.violation(count) {
+    let bound = collection_type.bound;
+    let violation = if count < bound.minimum() {
+        Some(BoundViolation::BelowMinimum)
+    } else if count > bound.maximum() {
+        Some(BoundViolation::AboveMaximum)
+    } else {
+        None
+    };
+    if let Some(violation) = violation {
         return Err(Stop::Refused(Refusal::CardinalityOutOfBound {
             violation,
             kind,
-            bound: collection_type.bound,
+            bound,
             count,
         }));
     }
