@@ -121,8 +121,8 @@ existing rule-model frontend to library callers. It derives located IR declarati
 and native roles from `native-rule-model/1` source; `ModelDraft::admit` then runs
 the existing model checks. Errors retain the original source and typed cause.
 The [example model](tests/fixtures/native-rule-model.json) shows the admitted source
-shape. Run `cargo test --test model_source` for fixed-artifact, failure and runtime
-cases. Test helpers now call this production frontend.
+shape. Run `cargo test --test it model_source::` for fixed-artifact, failure and
+runtime cases. Test helpers now call this production frontend.
 
 Explicit `model_source::FORMAT_V2` selects `native-rule-model/2` and admits exact
 rational domains through `native-state-model/2`, retaining the actual IR bounds,
@@ -241,9 +241,9 @@ Use `--target-dir target` where a machine config points Cargo outside the checko
 
 Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
 and cargo-llvm-cov 0.9.0. Missing tools fail the test. Run the named LC04 parity
-gate with `cargo test --locked --offline --target-dir target -j 1 --test
-native_backend generated_proptest_and_old_profile_activation_match_reference --
---exact --test-threads=1`. The fixture verifies generated truth and activation
+gate with `cargo test --locked --offline --target-dir target -j 1 --test it
+native_backend::generated_proptest_and_old_profile_activation_match_reference
+-- --exact --test-threads=1`. The fixture verifies generated truth and activation
 for `boolean-oracle/v1` while also requiring the pinned reusable reader to retain
 its explicit LLVM 3.1.0 refusal.
 
@@ -303,8 +303,8 @@ the existing parse/link/check/package stages. Its immutable `MappedPackage`
 exposes the native package for validation, evaluation and lowering while keeping
 the original document available for source locations. Failures preserve the
 native diagnostic or package path; the API does not manufacture source wrappers
-or change extraction availability. Run `cargo test --test mapped` for the mapped
-parent workflow and stage refusals.
+or change extraction availability. Run `cargo test --test it mapped::` for the
+mapped parent workflow and stage refusals.
 
 With `quire-extraction`, `quire_source::compile(original, context, selection,
 models, limits)` calls Quire's actual pinned Rust extractor and compiles the
@@ -314,7 +314,7 @@ source coordinates and exact bytes, including Quire's omitted final LF on CRLF
 input, before using the existing source map. It retains Quire's original clause
 population, availability and diagnostics on both success and refusal. Input is
 bounded to 1 MiB and 4096 lines before extraction. Actual healthy/violating/refused
-cases run with `cargo test --features quire-extraction --test quire_source`;
+cases run with `cargo test --features quire-extraction --test it quire_source::`;
 [the tests](tests/quire_source.rs) show context and identity construction.
 C's existing-repository CLI/wire adoption remains separate from this working
 compiler-side Rust integration.
@@ -342,8 +342,8 @@ package and offered artifacts even on validation failure; `truth()` returns a
 Boolean only after completed evaluation. `outcome()` preserves the original
 stage diagnostics, measured work and implication events. The existing separate
 `validate` and `evaluate` APIs remain available. Run
-`cargo test --test runtime_execution` for aggregate, operation and stopped/retried
-requests. The standalone `quire-spec run <request-file>` command now reads selected
+`cargo test --test it runtime_execution::` for aggregate, operation and
+stopped/retried requests. The standalone `quire-spec run <request-file>` command now reads selected
 model/program/runtime files and calls these same APIs. See
 [the runnable workflow](docs/native-standalone.md) for healthy, violating,
 operation and refused examples, JSON results and exit codes.
@@ -356,8 +356,8 @@ remaining installed-tool limitation. Coverage binding does not execute tests.
 `native-state-input/1` bytes through closed Serde decoding and the existing
 structural constructors. They preserve original bytes/digests and refuse stale
 selections, incompatible envelopes, malformed fields and exhausted budgets.
-Run `cargo test --test runtime_reading` for round trips and actual execution of
-reread inputs. Model-aware validation still occurs during `runtime::execute`.
+Run `cargo test --test it runtime_reading::` for round trips and actual
+execution of reread inputs. Model-aware validation still occurs during `runtime::execute`.
 
 The [formal source bridge](docs/formal-source-binding.md) retains exact native
 source under an explicitly supplied Contract IR source identity. Its forward
@@ -409,7 +409,7 @@ role and rule-syntax packets under
 cargo run --locked --target-dir target --bin fixture-audit -- review /path/to/specification/proposals/state-core/fixtures
 cargo run --locked --target-dir target --bin fixture-audit -- roles /path/to/specification/proposals/state-core/fixtures
 cargo run --locked --target-dir target --bin fixture-audit -- rule-syntax /path/to/specification/proposals/state-core
-QUIRE_STATE_CORE=/path/to/specification/proposals/state-core cargo test --locked --target-dir target --test fixture_audit -- --ignored
+QUIRE_STATE_CORE=/path/to/specification/proposals/state-core cargo test --locked --target-dir target --test it fixture_audit:: -- --ignored
 ```
 
 Review checks 23 artifact files, seven invocation cases and six independent

@@ -60,5 +60,5 @@ Boolean. Run the traced owner suite with:
 
 ```sh
 cargo test --locked --target-dir target -j 1 --no-default-features \
-  --test native_temporal_owner -- --test-threads=1
+  --test it native_temporal_owner:: -- --test-threads=1
 ```
