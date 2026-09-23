@@ -449,11 +449,11 @@ struct ResolvedUnit {
     edge: UnitEdge,
 }
 
-/// The owner of a node and whether its retained key is the recomputed one,
-/// checked after topology.
+/// The owner of a node and whether its retained key is the one its content
+/// determines, checked after topology.
 struct Provenance {
     owner: NodeOwner,
-    retained: bool,
+    key_matches: bool,
 }
 
 impl UnitGraph {
@@ -480,7 +480,7 @@ impl UnitGraph {
                 return Err(refuse(SemanticGraphCause::DuplicateNode));
             }
             provenance.push(Provenance {
-                retained: retains(key, &preimage)?,
+                key_matches: retains(key, &preimage)?,
                 owner: preimage.owner,
             });
             admitted_dimensions.insert(
@@ -497,7 +497,7 @@ impl UnitGraph {
                 return Err(refuse(SemanticGraphCause::DuplicateNode));
             }
             provenance.push(Provenance {
-                retained: retains(key, &preimage)?,
+                key_matches: retains(key, &preimage)?,
                 owner: preimage.owner,
             });
             admitted_units.insert(
@@ -518,7 +518,7 @@ impl UnitGraph {
         if provenance.iter().any(|node| !owners.contains(&node.owner)) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected));
         }
-        if provenance.iter().any(|node| !node.retained) {
+        if provenance.iter().any(|node| !node.key_matches) {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
         Ok(Self {
@@ -606,21 +606,18 @@ fn resolve_units(
 ) -> Result<BTreeMap<NodeKey, ResolvedUnit>, InvalidSemanticGraph> {
     let dimension_ids = wire_index(dimensions.keys().copied());
     let resolved_dimensions = units
-        .iter()
-        .map(|(key, unit)| Some((*key, resolve(&dimension_ids, unit.dimension)?)))
-        .collect::<Option<BTreeMap<_, _>>>()
+        .values()
+        .map(|unit| resolve(&dimension_ids, unit.dimension))
+        .collect::<Option<Vec<_>>>()
         .ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
     units
         .iter()
-        .map(|(key, unit)| {
+        .zip(resolved_dimensions)
+        .map(|((key, unit), dimension)| {
             let target = unit
                 .target
                 .map(|id| resolve(unit_ids, id).ok_or(refuse(SemanticGraphCause::UnknownTarget)))
                 .transpose()?;
-            let dimension = resolved_dimensions
-                .get(key)
-                .copied()
-                .ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
             Ok((
                 *key,
                 ResolvedUnit {
