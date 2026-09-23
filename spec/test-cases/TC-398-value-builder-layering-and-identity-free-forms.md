@@ -27,9 +27,12 @@ Every fixture unit below starts with the complete-V1 header
 alias is `v`.
 
 1. Resolve every `use` edge and inline path in the `Value` builder module
-   under `src/forms/`.
-2. Scan the field types of every `Value` parsed form type, of the type form,
-   and of every `Expression` variant in FR-091's mapping table.
+   under `qsl-forms/src/`, and read `qsl-forms`'s normal and dev
+   dependencies from `cargo metadata`.
+2. Scan every shipped item under `qsl-forms/src/`, including the field types
+   of every `Value` parsed form type, of the type form, and of every
+   `Expression` variant in FR-091's mapping table, for a path or `use` that
+   names `ValueType` or `NodeKey`.
 3. With `syn`, parse the dispatch function, the `Value` expression-mapping
    function and the assembler's type-form resolution function, and list
    each `match`'s arm patterns.
@@ -41,11 +44,30 @@ Tag the test `#[trace("FR-091-AC-11", "TC-398")]`.
 - Step 1 resolves only to the `forms` core, `qsl_cst`, `qsl_foundation` and
   `quire_exact`, and to nothing under another family module,
   `crate::check`, `crate::value` or `crate::model`.
+- Step 1's normal dependencies are exactly `qsl-cst`, `qsl-foundation` and
+  `quire-exact`, and its dev dependencies name no other workspace crate.
 - Step 2 finds no field of type `ValueType` or `NodeKey`, including
   `Expression::Convert`'s target and `FunctionDeclaration`'s parameters and
   result.
 - Step 3 finds no `_` or catch-all arm.
 
+## Crate boundary
+
+`forms` is the `qsl-forms` crate (ADR-011 §7.3 X-5). A path in it that
+leaves the crate resolves into one of its dependencies. The root crate
+depends on `qsl-forms`, so Cargo refuses a normal-dependency edge from
+`qsl-forms` back to it. Cargo accepts a dev-dependency cycle, so the step 1
+dependency check covers `[dev-dependencies]` too:
+`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`
+requires `[dependencies]` to be exactly `qsl-cst`, `qsl-foundation` and
+`quire-exact`, and refuses any other workspace crate in
+`[dev-dependencies]`.
+
 ## Status
 
-Planned; no test backs this case.
+Partial: step 1's crate edges
+(`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`)
+and step 2 over every type `qsl-forms` defines
+(`qsl-forms/tests/it/identity_free_forms.rs`) pass locally. Step 1's
+family-module edges and step 3 need the `Value` builder module and its
+expression-mapping and assembler functions, which QSL-141 adds.

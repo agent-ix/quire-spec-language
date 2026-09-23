@@ -444,11 +444,11 @@ mod family_contract_tests {
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
         StageLimits,
     };
-    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::value::composite::ValueType;
     use crate::value::declaration::TypeEnvironment;
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use quire_exact::Meter;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
@@ -469,7 +469,7 @@ mod family_contract_tests {
     /// A bare `Boolean` type form.
     fn boolean_type_form() -> TypeForm {
         TypeForm::builtin(
-            crate::forms::BuiltinType::Boolean,
+            qsl_forms::BuiltinType::Boolean,
             qsl_foundation::Span { start: 0, end: 0 },
         )
     }
@@ -717,7 +717,7 @@ mod family_contract_tests {
     fn decimal_division(name: &str, mode: &str) -> FunctionDeclaration {
         let decimal = |bounds: [&str; 5]| {
             TypeForm::builtin(
-                crate::forms::BuiltinType::Decimal,
+                qsl_forms::BuiltinType::Decimal,
                 qsl_foundation::Span { start: 0, end: 0 },
             )
             .with_bounds(bounds.map(str::to_owned).to_vec())
@@ -731,7 +731,7 @@ mod family_contract_tests {
             decimal(["0", "10000", "2", "2", mode]),
             None,
             Expression::Binary {
-                operator: crate::forms::BinaryOperator::Divide,
+                operator: qsl_forms::BinaryOperator::Divide,
                 left: Box::new(Expression::Name("p".to_owned())),
                 right: Box::new(Expression::Name("q".to_owned())),
             },
@@ -1289,15 +1289,15 @@ mod family_contract_tests {
 mod tests {
     use super::*;
     use crate::check::{empty_scope, mint_resolved, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
-    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
         FunctionDeclaration::new(
             name,
             Vec::new(),
             TypeForm::builtin(
-                crate::forms::BuiltinType::Boolean,
+                qsl_forms::BuiltinType::Boolean,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,

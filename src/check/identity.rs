@@ -9,7 +9,7 @@
 //!
 //! # Naming: `CheckedClauseKind`, not `ClauseKind`
 //!
-//! `crate::forms::ClauseKind` already names a different, pre-existing
+//! `qsl_forms::ClauseKind` already names a different, pre-existing
 //! concept this same `check` module imports: the value-expression dispatch
 //! context (`Invariant`/`Precondition`/`Postcondition`/`Body`, FR-151). This
 //! module's [`CheckedClauseKind`] (ADR-013 O-10) is not a variant or a

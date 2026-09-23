@@ -17,6 +17,7 @@
 //! exactly as `crate::value::model_query` does.
 
 use ix_trace_rs::trace;
+use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
 use quire_exact::NodeKey;
@@ -40,12 +41,11 @@ use quire_spec_language::model::population::{
     PopulationMember,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
-    CompositeShape, DeclarationCause, Evaluation, Expression, FamilyOutcome, FamilyResult,
-    FieldDeclaration, FunctionDeclaration, InputRefusal, Location, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations,
-    QualifiedName, TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueType,
+    CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
+    DeclarationCause, Evaluation, FamilyOutcome, FamilyResult, FieldDeclaration, InputRefusal,
+    Location, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin,
+    PackageDeclarations, QualifiedName, TypeEnvironment, UniverseIdentity, Value, ValueType,
     WrongSnapshotCause,
 };
 

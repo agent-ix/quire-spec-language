@@ -23,12 +23,12 @@ const CAUSE_TYPES: [&str; 4] = [
 ];
 
 /// The modules ordered below the `check` core (ADR-011 §6.1, §6.2): layer 1
-/// `qsl-cst`, layer 2 `forms`, and the layer-3 `semantic_value`, `model` and
+/// `qsl-cst`, layer 2 `qsl-forms`, and the layer-3 `semantic_value`, `model` and
 /// `library` modules, plus the layer-K and layer-3 `value` modules that sit
 /// beside the evaluator (`value::outcome`, `value::model_query`).
 const BELOW_CORE: [&str; 12] = [
     "qsl-cst/src",
-    "src/forms",
+    "qsl-forms/src",
     "src/model",
     "src/library",
     "src/value/definition.rs",
@@ -51,7 +51,13 @@ fn workspace_root() -> PathBuf {
 fn family_outcome_types_are_defined_once_in_the_check_core() {
     let definitions = xtask::definition_scan::scan_dirs(
         &workspace_root(),
-        &["src", "quire-exact/src", "qsl-foundation/src"],
+        &[
+            "src",
+            "quire-exact/src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-forms/src",
+        ],
     )
     .expect("the definition scan runs cleanly");
     for name in CORE_TYPES {
@@ -123,10 +129,18 @@ fn the_check_core_names_no_family_cause_type() {
     );
 }
 
-/// Every workspace package's name and its normal (`[dependencies]`)
-/// dependency names, from `cargo metadata`, so `x.workspace = true` keys and
-/// `[dependencies.x]` tables resolve like any other entry.
-fn workspace_dependencies() -> Vec<(String, Vec<String>)> {
+/// One workspace package's normal (`[dependencies]`) and dev
+/// (`[dev-dependencies]`) dependency names.
+struct PackageDependencies {
+    name: String,
+    normal: Vec<String>,
+    dev: Vec<String>,
+}
+
+/// Every workspace package's dependency names, from `cargo metadata`, so
+/// `x.workspace = true` keys, `[dependencies.x]` tables and renamed
+/// dependencies resolve to the real package name like any other entry.
+fn workspace_dependencies() -> Vec<PackageDependencies> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let output = std::process::Command::new(cargo)
         .current_dir(workspace_root())
@@ -151,35 +165,56 @@ fn workspace_dependencies() -> Vec<(String, Vec<String>)> {
         .expect("cargo metadata lists packages")
         .iter()
         .map(|package| {
-            let name = package["name"].as_str().expect("a package name").to_owned();
             let dependencies = package["dependencies"]
                 .as_array()
-                .expect("a dependency list")
-                .iter()
-                .filter(|dependency| dependency["kind"].is_null())
-                .map(|dependency| {
-                    dependency["name"]
-                        .as_str()
-                        .expect("a dependency name")
-                        .to_owned()
-                })
-                .collect();
-            (name, dependencies)
+                .expect("a dependency list");
+            let names_of_kind = |kind: Option<&str>| -> Vec<String> {
+                dependencies
+                    .iter()
+                    .filter(|dependency| dependency["kind"].as_str() == kind)
+                    .map(|dependency| {
+                        dependency["name"]
+                            .as_str()
+                            .expect("a dependency name")
+                            .to_owned()
+                    })
+                    .collect()
+            };
+            PackageDependencies {
+                name: package["name"].as_str().expect("a package name").to_owned(),
+                normal: names_of_kind(None),
+                dev: names_of_kind(Some("dev")),
+            }
         })
         .collect()
 }
 
-/// Step 4 of TC-390, and step 3 of TC-386: each crate below layer 3 depends
-/// only on the workspace crates below it. `quire-exact` names none,
-/// `qsl-foundation` may name `quire-exact`, and `qsl-cst` may name
-/// `qsl-foundation` and `quire-exact` (ADR-011 §6.1). Every other workspace
-/// crate, `qsl-source` and this crate included, is refused.
-#[trace("FR-090-AC-9", "TC-390", "FR-090-AC-5", "TC-386")]
+/// Step 4 of TC-390, step 3 of TC-386 and TC-398's crate edges: each crate
+/// below layer 3 depends only on the workspace crates below it, in its
+/// `[dependencies]` and its `[dev-dependencies]` alike. `quire-exact` names
+/// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
+/// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
+/// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
+/// §6.1; layer 2's cell names no external crate). Every other workspace
+/// crate, `qsl-source` and this crate included, is refused. Cargo already
+/// refuses a normal-dependency cycle back to this crate, but accepts a
+/// dev-dependency one, so the dev table is checked here.
+#[trace(
+    "FR-090-AC-9",
+    "TC-390",
+    "FR-090-AC-5",
+    "TC-386",
+    "FR-091-AC-11",
+    "TC-398"
+)]
 #[test]
 fn no_crate_below_layer_three_depends_on_the_check_core() {
     let packages = workspace_dependencies();
-    let workspace_crates: Vec<&str> = packages.iter().map(|(name, _)| name.as_str()).collect();
-    for required in ["quire-spec-language", "qsl-source", "qsl-cst"] {
+    let workspace_crates: Vec<&str> = packages
+        .iter()
+        .map(|package| package.name.as_str())
+        .collect();
+    for required in ["quire-spec-language", "qsl-source", "qsl-cst", "qsl-forms"] {
         assert!(
             workspace_crates.contains(&required),
             "cargo metadata lists no {required}: {workspace_crates:?}"
@@ -189,18 +224,34 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ("quire-exact", &[][..]),
         ("qsl-foundation", &["quire-exact"][..]),
         ("qsl-cst", &["qsl-foundation", "quire-exact"][..]),
+        (
+            "qsl-forms",
+            &["qsl-cst", "qsl-foundation", "quire-exact"][..],
+        ),
     ] {
-        let (_, dependencies) = packages
+        let package = packages
             .iter()
-            .find(|(name, _)| name == crate_name)
+            .find(|package| package.name == crate_name)
             .unwrap_or_else(|| panic!("cargo metadata lists no {crate_name}"));
-        assert!(!dependencies.is_empty(), "{crate_name} lists no dependency");
-        for dependency in dependencies {
-            assert!(
-                !workspace_crates.contains(&dependency.as_str())
-                    || allowed.contains(&dependency.as_str()),
-                "{crate_name} depends on workspace crate {dependency}"
-            );
+        assert!(
+            !package.normal.is_empty(),
+            "{crate_name} lists no dependency"
+        );
+        if crate_name == "qsl-forms" {
+            // Layer 2's "Depends on" cell names no external crate, so its
+            // `[dependencies]` are exactly the three layer crates.
+            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
+            normal.sort_unstable();
+            assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
+        }
+        for (kind, dependencies) in [("normal", &package.normal), ("dev", &package.dev)] {
+            for dependency in dependencies {
+                assert!(
+                    !workspace_crates.contains(&dependency.as_str())
+                        || allowed.contains(&dependency.as_str()),
+                    "{crate_name} has a {kind} dependency on workspace crate {dependency}"
+                );
+            }
         }
     }
 }

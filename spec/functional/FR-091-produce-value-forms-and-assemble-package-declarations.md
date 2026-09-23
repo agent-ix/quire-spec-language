@@ -296,10 +296,13 @@ to sources that S1 admits: S1's own nesting clamp is independent of it.
 
 ### S2 layering
 
-The `Value` family form builder is a module under `forms`. ADR-011 §6.1
-allows layer 2 to depend on layer 1 (`qsl-cst`), F (`qsl-foundation`) and K
-(`quire-exact`), and on its own layer's `forms` core. The builder depends on
-no other family module and on nothing in layers 3 to 6. No `Value` parsed
+The `Value` family form builder is a module under `forms`, in the
+`qsl-forms` crate (`qsl-forms/src/`). ADR-011 §6.1 allows layer 2 to depend
+on layer 1 (`qsl-cst`), F (`qsl-foundation`) and K (`quire-exact`), and on
+its own layer's `forms` core. `qsl-forms`'s `[dependencies]` name exactly
+those three crates, so no shipped path in the builder can reach layers 3
+to 6. The builder depends on no other family module and on nothing in
+layers 3 to 6. No `Value` parsed
 form, type form, parsed-unit selection or `Expression` variant in the
 mapping table has a field of type `ValueType` or `NodeKey`.
 
@@ -517,11 +520,13 @@ for an FR-151 call-graph cycle (`src/check/refusal.rs`,
 ## Status
 
 Specified for ADR-011 §7.3 M-3b (the `Value` family, tracked under QSL-141)
-on the M-6a path (QSL-8). Not yet implemented. `forms::build_form` has a
+on the M-6a path (QSL-8). Not yet implemented. `qsl_forms::build_form` has a
 test-only dispatch entry only, so every production CST refuses with
 `NoDispatchEntry`. No module builds `PackageDeclarations` from parsed forms.
-`Expression::Convert`, `Expression::AllInstances` and `FunctionDeclaration`
-hold `ValueType` fields, which AC-2, AC-3 and AC-11 do not allow.
+`Expression::Convert`, `Expression::AllInstances`, `Expression::Lookup` and
+`FunctionDeclaration` carry a `TypeForm`, not a `ValueType`, and
+`qsl-forms`'s `[dependencies]` are `qsl-cst`, `qsl-foundation` and
+`quire-exact` only.
 `Expression` nodes carry no span. The forms `FunctionDeclaration` has no
 `using` field, and no parsed-unit type carries the unit's selections.
 `check` mints function identities over the constant

@@ -3,6 +3,7 @@
 //! checker and evaluator boundary (FR-145).
 
 use ix_trace_rs::trace;
+use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
 use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
@@ -10,12 +11,11 @@ use quire_exact::{
 };
 use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CollectionLoss, CollectionProperty, CollectionType,
-    CompositeDeclaration, CompositeShape, Expression, FamilyOutcome, FieldDeclaration, FieldValue,
-    FunctionDeclaration, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Obligation, PackageDeclarations, ProvedInterval, TypeEnvironment, UniverseIdentity, Value,
-    ValueType,
+    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
+    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
+    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Obligation, PackageDeclarations, ProvedInterval,
+    TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 

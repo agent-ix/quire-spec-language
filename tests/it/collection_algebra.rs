@@ -558,12 +558,13 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
 /// Rows that need the FR-145/FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
+    use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
     use quire_exact::NODE_KEY_DOMAIN;
     use quire_spec_language::value::{
-        BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, EnumBinding, EnumDeclaration,
-        EnumDeclarationPreimage, EnumMemberPreimage, Expression, NodeOwner, ObjectEnvironment,
-        OwnerSelection, OwnerSubject, PackageDeclarations, SemanticGraphCause, TypeForm,
+        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+        CheckedPackageEvaluation, CheckingLimits, EnumBinding, EnumDeclaration,
+        EnumDeclarationPreimage, EnumMemberPreimage, NodeOwner, ObjectEnvironment, OwnerSelection,
+        OwnerSubject, PackageDeclarations, SemanticGraphCause,
     };
     use serde_json::json;
 

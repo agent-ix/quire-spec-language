@@ -49,7 +49,7 @@ use sha2::{Digest, Sha256};
 
 use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
 
-use crate::forms::{
+use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
 };
@@ -814,7 +814,7 @@ impl<'a> TargetTypes<'a> {
         Self { scope, location }
     }
 
-    fn resolve(&self, target: &crate::forms::TypeForm) -> Result<ValueType, CheckRefusal> {
+    fn resolve(&self, target: &qsl_forms::TypeForm) -> Result<ValueType, CheckRefusal> {
         super::type_form::resolve_type_form(self.scope, target, self.location)
     }
 }
@@ -1088,7 +1088,7 @@ pub(crate) fn check_declaration_body(
         input.signatures,
         input.checking_limits,
         &mut nodes,
-        form.clause_kind,
+        form.clause_kind(),
     );
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
@@ -1476,10 +1476,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 mod tests {
     use super::checking_tests::{empty_scope, mint_resolved, root_location};
     use super::*;
-    use crate::forms::{BuiltinType, TypeForm};
     use crate::value::composite::FieldDeclaration;
     use crate::value::declaration::{CompositeDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
+    use qsl_forms::{BuiltinType, TypeForm};
     use quire_exact::{Presence, TextType};
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -1733,21 +1733,21 @@ pub(crate) mod checking_tests {
     }
 
     /// A bare `Boolean` type form.
-    fn boolean_type_form() -> crate::forms::TypeForm {
-        crate::forms::TypeForm::builtin(
-            crate::forms::BuiltinType::Boolean,
+    fn boolean_type_form() -> qsl_forms::TypeForm {
+        qsl_forms::TypeForm::builtin(
+            qsl_forms::BuiltinType::Boolean,
             qsl_foundation::Span { start: 0, end: 0 },
         )
     }
 
     /// An `Option<Integer>` type form.
-    fn option_integer_type_form() -> crate::forms::TypeForm {
-        crate::forms::TypeForm::builtin(
-            crate::forms::BuiltinType::Option,
+    fn option_integer_type_form() -> qsl_forms::TypeForm {
+        qsl_forms::TypeForm::builtin(
+            qsl_forms::BuiltinType::Option,
             qsl_foundation::Span { start: 0, end: 0 },
         )
-        .with_arguments(vec![crate::forms::TypeForm::builtin(
-            crate::forms::BuiltinType::Integer,
+        .with_arguments(vec![qsl_forms::TypeForm::builtin(
+            qsl_forms::BuiltinType::Integer,
             qsl_foundation::Span { start: 0, end: 0 },
         )])
     }
@@ -2023,8 +2023,8 @@ pub(crate) mod checking_tests {
         let form = FunctionDeclaration::new(
             "v",
             vec![("o".to_owned(), option_integer_type_form())],
-            crate::forms::TypeForm::builtin(
-                crate::forms::BuiltinType::Integer,
+            qsl_forms::TypeForm::builtin(
+                qsl_forms::BuiltinType::Integer,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,

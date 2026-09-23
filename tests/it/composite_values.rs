@@ -692,11 +692,11 @@ mod checked {
     // `BoundViolation` the outer module's glob import brings in -- these
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
+    use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
     use quire_exact::{BoundViolation, Outcome, Refusal};
     use quire_spec_language::value::{
-        BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression, FieldInitializer,
-        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, TypeForm,
+        CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+        CheckedPackageEvaluation, CheckingLimits, InputRefusal, Obligation, PackageDeclarations,
     };
 
     fn name(spelling: &str) -> Expression {

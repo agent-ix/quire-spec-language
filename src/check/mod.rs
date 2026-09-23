@@ -95,8 +95,8 @@ use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
-use crate::forms::{ClauseKind, Expression, FunctionDeclaration};
 use crate::value::composite::ValueType;
+use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 
 pub(crate) use check::Scope;
 pub(crate) use family::ValueFunctionFamily;
@@ -486,7 +486,7 @@ impl PackageDeclarations {
                     name: function.name.clone(),
                     parameters,
                     result,
-                    callable_by_name: function.callable_by_name,
+                    callable_by_name: function.callable_by_name(),
                 }),
                 Err(mut function_refusals) => refusals.append(&mut function_refusals),
             }
@@ -1386,8 +1386,8 @@ mod tests {
             FunctionDeclaration::new(
                 name,
                 Vec::new(),
-                crate::forms::TypeForm::builtin(
-                    crate::forms::BuiltinType::Boolean,
+                qsl_forms::TypeForm::builtin(
+                    qsl_forms::BuiltinType::Boolean,
                     qsl_foundation::Span { start: 0, end: 0 },
                 ),
                 None,

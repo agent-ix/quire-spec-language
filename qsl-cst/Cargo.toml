@@ -9,9 +9,9 @@ description = "ADR-011 §6.1 layer 1: the complete-V1 recovering concrete syntax
 
 [features]
 # Test-only fixture constructors (`LosslessCst::fixture`) — never enabled in a
-# production build; the root crate's `[dev-dependencies]` turns it on so its
-# `forms::dispatch` unit tests can reach it in both feature lanes (mirrors the
-# root crate's own `test-support` convention, PR #140 F13).
+# production build; `qsl-forms`'s `[dev-dependencies]` turns it on so its
+# `dispatch` unit tests can reach it in both feature lanes (mirrors the root
+# crate's own `test-support` convention, PR #140 F13).
 test-support = []
 
 [dependencies]
