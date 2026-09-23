@@ -160,11 +160,11 @@ mod unit;
 // `value::member`'s own doc marks as not yet landed ("No production caller
 // constructs a `Member` yet") -- adopting them here is remaining work,
 // gated on that landing, not on this crate's own choice.
+pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use quire_exact::{
     construct_collection, form_collection, CollectionType, CollectionValue, CompositeValue,
     Deferred, FieldValue, OptionValue, Value, ValueType,
 };
-pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 // QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
 // `evaluate_decimal` were this module's own `decimal` submodule, a
 // byte-identical duplicate of `quire_exact`'s (V4 had already moved unit

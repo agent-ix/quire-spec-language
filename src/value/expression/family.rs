@@ -443,12 +443,12 @@ mod family_contract_tests {
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
         StageLimits,
     };
-    use quire_exact::ValueType;
     use crate::value::declaration::TypeEnvironment;
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use quire_exact::Meter;
+    use quire_exact::ValueType;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
     // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s

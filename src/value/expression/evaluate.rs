@@ -45,13 +45,13 @@ use quire_exact::{
     evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
 };
 use quire_exact::{
+    form, form_grouped, member_equal, CollectionValue, FieldValue, OptionValue, Value, ValueType,
+};
+use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
-use quire_exact::{
-    form, form_grouped, member_equal, CollectionValue, FieldValue, OptionValue, Value, ValueType,
-};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome
