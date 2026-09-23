@@ -30,15 +30,25 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
+use quire_spec_language::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
+    PackageDeclarations,
+};
+use quire_spec_language::family::FamilyOutcome;
+use quire_spec_language::model::object_environment::ObjectEnvironment;
+use quire_spec_language::value::declaration::{
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
+use quire_spec_language::value::enumeration::{
+    EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
+};
+use quire_spec_language::value::quantity::UnitTable;
 use quire_spec_language::value::{
-    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause, CheckMode, CheckRefusal,
-    CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage, EnumDeclaration,
-    EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage, EqualityOperand,
-    EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration, FieldExpression, LocatedLoss,
-    NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OwnerSelection, OwnerSubject,
-    PackageDeclarations, TypeEnvironment, UnitGraph, UnitPreimage, UnitTable, ValueLoss,
+    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckedPackage, CheckedPackageEvaluation,
+    DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage, Evaluation,
+    LocatedLoss, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -199,7 +209,10 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
     .unwrap()
 }
 
-fn enum_value(declaration: &EnumDeclaration, case: &str) -> quire_spec_language::value::EnumValue {
+fn enum_value(
+    declaration: &EnumDeclaration,
+    case: &str,
+) -> quire_spec_language::value::enumeration::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),

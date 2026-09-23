@@ -33,7 +33,7 @@ pub enum FamilyResult {
 /// are outcome categories, so a hook never returns them in `Err` (FR-090
 /// Behavior).
 #[derive(Debug)]
-pub(crate) enum EvalOutcome<T> {
+pub enum EvalOutcome<T> {
     /// The kernel evaluation outcome, unchanged.
     Kernel(quire_exact::Outcome<T>),
     /// A family-owned evaluation-time refusal or undefined result.

@@ -271,7 +271,7 @@ fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
 /// environment's one real (non-test) constructor.
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
-    pub(crate) objects: &'a super::super::reference::ObjectEnvironment,
+    pub(crate) objects: &'a crate::model::object_environment::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<Value>>,
     pub(crate) local_meter: &'a mut quire_exact::Meter,
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
@@ -287,7 +287,7 @@ impl<'a> EvaluationEnv<'a> {
     /// losses recorded.
     pub(crate) fn new(
         package: &'a super::CheckedPackage,
-        objects: &'a super::super::reference::ObjectEnvironment,
+        objects: &'a crate::model::object_environment::ObjectEnvironment,
         arguments: Vec<Value>,
         local_meter: &'a mut quire_exact::Meter,
     ) -> Self {
@@ -388,10 +388,10 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         env.location = evaluation.location;
         env.losses = evaluation.losses;
         match evaluation.outcome {
-            super::FamilyOutcome::Evaluated(outcome) => {
+            crate::family::FamilyOutcome::Evaluated(outcome) => {
                 Ok(crate::family::EvalOutcome::Kernel(outcome))
             }
-            super::FamilyOutcome::FamilyEvaluated(result) => {
+            crate::family::FamilyOutcome::FamilyEvaluated(result) => {
                 Ok(crate::family::EvalOutcome::Family(result))
             }
         }
@@ -435,20 +435,18 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::*;
     use crate::check::{
-        declarations_for, empty_scope, mint_resolved, root_location, CheckCause, CheckingLimitKind,
-        CheckingLimits, PackageDeclarations, Signature, DEFAULT_PACKAGE_IDENTITY,
+        declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
+        root_location, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
         SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
-        StageLimits,
     };
+    use crate::model::object_environment::ObjectEnvironment;
     use crate::value::declaration::TypeEnvironment;
-    use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use quire_exact::Meter;
-    use quire_exact::ValueType;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
     // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
@@ -456,37 +454,6 @@ mod family_contract_tests {
     // (previously two distinct types with the same name in different
     // crates) -- `evaluate_faults_on_a_second_call_on_the_same_env` still
     // needs two separate *instances*, one per role.
-
-    fn limits() -> StageLimits {
-        StageLimits {
-            nesting_depth: 128,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        }
-    }
-
-    /// A bare `Boolean` type form.
-    fn boolean_type_form() -> TypeForm {
-        TypeForm::builtin(
-            qsl_forms::BuiltinType::Boolean,
-            qsl_foundation::Span { start: 0, end: 0 },
-        )
-    }
-
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
-    }
-
-    /// The resolved signature of a [`declaration`] fixture (no parameters,
-    /// `Boolean` result), for `declarations_for`'s `own_signature`.
-    fn declaration_signature(name: &str) -> Signature {
-        Signature {
-            name: name.to_owned(),
-            parameters: Vec::new(),
-            result: ValueType::Boolean,
-            callable_by_name: true,
-        }
-    }
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
@@ -533,69 +500,6 @@ mod family_contract_tests {
         let declaration_name = QualifiedName::unqualified("declaration").unwrap();
         let v2 = emit_v2(&[(declaration_name.clone(), staged.value.identity)]);
         assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
-    }
-
-    /// QSL-148's core requirement (PR #303 review, finding 1): calling
-    /// `ValueFunctionFamily::check` on an ill-typed declaration -- `g() ->
-    /// Boolean = 1`, an `Integer` body against a declared `Boolean` result
-    /// -- returns a refusal *through the contract itself*, not `Ok` after
-    /// minting an identity that says nothing about whether the body
-    /// actually types. Before this ticket, `check` never inspected
-    /// `form.body`'s type at all: the real typing decision was made by a
-    /// `Typer` `check::mod`'s per-declaration loop constructed and drove
-    /// separately, after already calling `check` and discarding nothing --
-    /// so this exact fixture, checked through the contract alone, returned
-    /// `Ok`. It does not any more.
-    #[trace("TC-380", "FR-065-AC-7")]
-    #[test]
-    fn value_function_family_check_refuses_an_ill_typed_body() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scope = empty_scope();
-        let location = root_location();
-        let own_signature = declaration_signature("g");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location,
-        );
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits(),
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let form = FunctionDeclaration::new(
-            "g",
-            Vec::new(),
-            boolean_type_form(),
-            None,
-            Expression::Integer(quire_exact::Integer::from(1_i64)),
-        );
-        let refused = ValueFunctionFamily::check(&form, &mut cx).expect_err(
-            "an Integer body against a declared Boolean result must refuse through the contract",
-        );
-        match refused {
-            crate::family::StageFailure::Refused(refusal) => assert!(
-                matches!(
-                    refusal.cause,
-                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
-                ),
-                "expected an ill-typed/type-mismatch refusal, got {refusal:?}"
-            ),
-            other => panic!("expected StageFailure::Refused, got {other:?}"),
-        }
-        // PR #303 review, finding 11: no diagnostic is recorded for a
-        // refused declaration -- the "checked function declaration"
-        // message asserts a real success, not an attempt.
-        assert_eq!(diagnostics.entries().len(), 0);
     }
 
     /// PR #262 review, finding F17 (round 3, item 8), amended by FR-090-AC-3
@@ -883,478 +787,14 @@ mod family_contract_tests {
             "expected kernel Outcome::Incomplete from the nested call's own denied charge, got {outcome:?}"
         );
     }
-
-    /// Two independently constructed contexts each observe exactly one
-    /// diagnostic from checking the same form -- if `check` wrote through
-    /// any shared/global state instead of `cx.diagnostics`, one of the two
-    /// independent sinks would show zero or more than one entry (PR #262
-    /// review, finding F6: the previous version of this test compared
-    /// `diagnostics_a`'s count against an unrelated, freshly constructed
-    /// `DiagnosticSink::default()` rather than against `diagnostics_b`, so
-    /// it never actually observed `cx_b`'s own state, and separately
-    /// asserted a pure function's output against itself by comparing
-    /// `staged_a.value` to `staged_b.value` -- both deleted).
-    ///
-    /// **Untagged (PR #262 review, coordinator round 3, finding 5).** This
-    /// test was tagged `FR-062-AC-3`, whose central clause is that two
-    /// typing contexts checking the same declarations produce *identical
-    /// checked output* -- F6 correctly deleted the `staged_a.value ==
-    /// staged_b.value` self-comparison that used to (fabricatedly) stand in
-    /// for that, but kept the tag on what remained: two counts, each
-    /// asserted only against the literal `1` the loop below guarantees by
-    /// construction, not against each other's checked output. That is a
-    /// real isolation test, not an identical-output test, so it is untagged
-    /// rather than left claiming to back a criterion it does not; see
-    /// FR-062's own amended Acceptance Criteria for AC-3's current status.
-    #[test]
-    fn two_contexts_from_the_same_declarations_check_identically() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scalar_limits = SCALAR_LIMITS_UNLIMITED;
-        let form = declaration("f", Expression::Boolean(true));
-        let own_signature = declaration_signature("f");
-
-        let scope_a = empty_scope();
-        let location_a = root_location();
-        let declarations_a = declarations_for(
-            &package_identity,
-            &scope_a,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location_a,
-        );
-        let mut meter_a = Meter::new(scalar_limits);
-        let mut diagnostics_a = DiagnosticSink::default();
-        let mut scopes_a = ScopeStack::default();
-        let mut cx_a = CheckContext::new(
-            &declarations_a,
-            limits(),
-            &mut meter_a,
-            &mut diagnostics_a,
-            &mut scopes_a,
-        );
-        ValueFunctionFamily::check(&form, &mut cx_a).unwrap();
-
-        let scope_b = empty_scope();
-        let location_b = root_location();
-        let declarations_b = declarations_for(
-            &package_identity,
-            &scope_b,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location_b,
-        );
-        let mut meter_b = Meter::new(scalar_limits);
-        let mut diagnostics_b = DiagnosticSink::default();
-        let mut scopes_b = ScopeStack::default();
-        let mut cx_b = CheckContext::new(
-            &declarations_b,
-            limits(),
-            &mut meter_b,
-            &mut diagnostics_b,
-            &mut scopes_b,
-        );
-        ValueFunctionFamily::check(&form, &mut cx_b).unwrap();
-
-        // Each independently constructed sink shows exactly its own one
-        // entry -- a shared/global sink would leak entries into whichever
-        // one ran second, or show two entries in one and zero in the other.
-        assert_eq!(diagnostics_a.entries().len(), 1);
-        assert_eq!(diagnostics_b.entries().len(), 1);
-    }
-
-    /// **Untagged.** Guards the top-level declaration-entry charge alone
-    /// (limit 0 refuses, limit 1 admits a leaf-bodied declaration) --
-    /// narrower than FR-062-AC-7, whose own fixture-at-depth-D requirement
-    /// [`real_checker_depth_limit_is_the_proximate_cause`] below addresses
-    /// (see that test's own doc for why it is untagged, rather than
-    /// retagged onto this narrower charge).
-    #[test]
-    fn nesting_depth_limit_is_the_proximate_cause() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scope = empty_scope();
-        let location = root_location();
-        let own_signature = declaration_signature("f");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location,
-        );
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut tight = StageLimits {
-            nesting_depth: 0,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        };
-        let mut cx = CheckContext::new(
-            &declarations,
-            tight,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let form = declaration("f", Expression::Boolean(true));
-        let refused = ValueFunctionFamily::check(&form, &mut cx);
-        assert!(matches!(
-            refused,
-            Err(crate::family::StageFailure::Limit(_))
-        ));
-
-        tight.nesting_depth = 1;
-        let mut cx = CheckContext::new(
-            &declarations,
-            tight,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let admitted = ValueFunctionFamily::check(&form, &mut cx);
-        assert!(admitted.is_ok());
-    }
-
-    /// QSL-153: `StageLimits`' restored `input_bytes`/`node_count` each have
-    /// a real producer (`mint_declaration_identity`'s own preimage pass) and
-    /// a real consumer (`CheckContext::check_input_bytes`/
-    /// `check_node_count`, called from `ValueFunctionFamily::check`) that
-    /// changes behaviour: a limit configured one below the real, measured
-    /// metric refuses with `Limit` naming that exact kind; the same limit
-    /// at the metric itself admits -- the same "varies by exactly one"
-    /// shape `nesting_depth`'s own test uses, so the limit (not the
-    /// fixture) is shown to be the proximate cause. `work_budget` is a real
-    /// producer and consumer too, but through the shared kernel meter's own
-    /// `work_units` charge (PR #302 review finding 3), not a `StageLimits`
-    /// field -- see `work_budget_kind_refuses_from_a_denied_meter_charge`.
-    #[trace("TC-160", "FR-062-AC-5")]
-    #[test]
-    fn stage_limits_restored_kinds_refuse_one_below_the_real_metric() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scope = empty_scope();
-        let location = root_location();
-        let own_signature = declaration_signature("f");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location,
-        );
-        let form = declaration("f", Expression::Boolean(true));
-        let (_, metrics) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
-        assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
-
-        let base = StageLimits {
-            nesting_depth: 128,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        };
-        let check_kind = |limits: StageLimits, expected_kind: crate::family::StageLimitKind| {
-            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let mut diagnostics = DiagnosticSink::default();
-            let mut scopes = ScopeStack::default();
-            let mut cx = CheckContext::new(
-                &declarations,
-                limits,
-                &mut meter,
-                &mut diagnostics,
-                &mut scopes,
-            );
-            match ValueFunctionFamily::check(&form, &mut cx) {
-                Err(crate::family::StageFailure::Limit(exceeded)) => {
-                    assert_eq!(exceeded.kind, expected_kind);
-                }
-                other => panic!("expected a Limit outcome naming {expected_kind:?}, got {other:?}"),
-            }
-        };
-        let admits = |limits: StageLimits| {
-            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let mut diagnostics = DiagnosticSink::default();
-            let mut scopes = ScopeStack::default();
-            let mut cx = CheckContext::new(
-                &declarations,
-                limits,
-                &mut meter,
-                &mut diagnostics,
-                &mut scopes,
-            );
-            assert!(ValueFunctionFamily::check(&form, &mut cx).is_ok());
-        };
-
-        check_kind(
-            StageLimits {
-                input_bytes: metrics.input_bytes - 1,
-                ..base
-            },
-            crate::family::StageLimitKind::InputBytes,
-        );
-        admits(StageLimits {
-            input_bytes: metrics.input_bytes,
-            ..base
-        });
-
-        check_kind(
-            StageLimits {
-                node_count: metrics.node_count - 1,
-                ..base
-            },
-            crate::family::StageLimitKind::NodeCount,
-        );
-        admits(StageLimits {
-            node_count: metrics.node_count,
-            ..base
-        });
-    }
-
-    /// PR #302 review finding 3: `WorkBudget` is a real `Limit` outcome
-    /// produced by a *denied `cx.meter` charge* in `check` -- not by
-    /// comparing the preimage's own write count against a `StageLimits`
-    /// field (that field's own meaning was "how many times the encoder
-    /// wrote," never a caller-configured budget). A `cx.meter` whose
-    /// `work_units` limit is already exhausted denies `check`'s own
-    /// `ChargePoint::DeclarationCheck` charge on the first checked
-    /// declaration, mapped to `StageLimitKind::WorkBudget`; the same
-    /// declaration against a meter with real headroom admits.
-    #[test]
-    fn work_budget_kind_refuses_from_a_denied_meter_charge() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scope = empty_scope();
-        let location = root_location();
-        let own_signature = declaration_signature("f");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location,
-        );
-        let form = declaration("f", Expression::Boolean(true));
-        let limits = StageLimits {
-            nesting_depth: 128,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        };
-
-        let exhausted_limits = quire_exact::ScalarLimits {
-            work_units: 0,
-            ..SCALAR_LIMITS_UNLIMITED
-        };
-        let mut meter = Meter::new(exhausted_limits);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        match ValueFunctionFamily::check(&form, &mut cx) {
-            Err(crate::family::StageFailure::Limit(exceeded)) => {
-                assert_eq!(exceeded.kind, crate::family::StageLimitKind::WorkBudget);
-            }
-            other => panic!("expected a Limit outcome naming WorkBudget, got {other:?}"),
-        }
-
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        assert!(ValueFunctionFamily::check(&form, &mut cx).is_ok());
-    }
-
-    /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
-    /// `Typer`'s own pre-existing, already-correct
-    /// [`crate::check::CheckingLimits`] depth bound -- not the contract's
-    /// own `StageLimits.nesting_depth` (see this test's "Untagged" note
-    /// below for why those are different mechanisms). A body nested to
-    /// depth D (`Not(Not(Not(true)))`, four levels deep counting the
-    /// `Boolean` leaf) checked through `ValueFunctionFamily::check` --
-    /// reachable now that QSL-148 makes `check` call
-    /// `check_declaration_body`, which drives the real `Typer` -- refuses
-    /// at a configured depth of D-1 and admits at D, varying only the
-    /// limit by exactly one.
-    ///
-    /// **Untagged for FR-062-AC-7 (PR #303 review, findings 4/5).** This
-    /// replaces `real_recursive_descent_is_nesting_depth_bounded`, which
-    /// backed FR-062-AC-7/TC-378 against a redundant contract-level walk
-    /// (`check::family::charge_recursive_nesting`, deleted): that walk
-    /// duplicated `check_declaration_body`'s own real recursion just to
-    /// charge `CheckContext::enter_nesting`, and lost the real path's
-    /// location and early-return behavior in the process (finding 5).
-    /// AC-7's own text requires `check` to return a `Limit` outcome
-    /// specifically; this test's refusal is `StageFailure::Refused
-    /// (CheckRefusal { cause: ResourceExhausted { kind: Depth, .. }, .. })`
-    /// -- a typed refusal through `Typer`'s pre-existing, unrelated
-    /// `CheckingLimits.depth` bound, not a `StageFailure::Limit` naming the
-    /// contract's own nesting-depth limit. Wiring the contract's own
-    /// `CheckContext::enter_nesting` into every recursive step of
-    /// `Typer::infer`/`infer_form` (not just the one top-level entry charge
-    /// `check` already makes) would require threading `&mut CheckContext`
-    /// through the general engine's entire recursive signature -- the same
-    /// class of `Typer` entanglement QSL-148's own open question raises,
-    /// reported here (see `check::family::check_application`'s own doc)
-    /// rather than routed around by re-tagging this test onto AC-7.
-    #[test]
-    fn real_checker_depth_limit_is_the_proximate_cause() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
-        let scope = empty_scope();
-        let location = root_location();
-        let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
-            Box::new(Expression::Boolean(true)),
-        )))));
-        let form = declaration("f", nested);
-        let own_signature = declaration_signature("f");
-
-        let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            tight,
-            &location,
-        );
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits(),
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let refused = ValueFunctionFamily::check(&form, &mut cx)
-            .expect_err("a depth limit of 3 must refuse a body nested 4 deep");
-        match refused {
-            crate::family::StageFailure::Refused(refusal) => assert!(
-                matches!(
-                    refusal.cause,
-                    CheckCause::ResourceExhausted {
-                        kind: CheckingLimitKind::Depth,
-                        ..
-                    }
-                ),
-                "expected a Depth resource-exhausted refusal, got {refusal:?}"
-            ),
-            other => panic!("expected StageFailure::Refused, got {other:?}"),
-        }
-
-        let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(
-            &package_identity,
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            wide,
-            &location,
-        );
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits(),
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let admitted = ValueFunctionFamily::check(&form, &mut cx);
-        assert!(
-            admitted.is_ok(),
-            "a depth limit of 4 must admit the identical body nested exactly 4 deep"
-        );
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{empty_scope, mint_resolved, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
+    use crate::check::{declaration, empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
     use ix_trace_rs::trace;
-    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
-
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(
-            name,
-            Vec::new(),
-            TypeForm::builtin(
-                qsl_forms::BuiltinType::Boolean,
-                qsl_foundation::Span { start: 0, end: 0 },
-            ),
-            None,
-            body,
-        )
-    }
-
-    /// FR-062-AC-2/FR-065-AC-2: two structurally identical declarations mint
-    /// one identity; a name change mints a different one.
-    #[trace("TC-160", "FR-062-AC-2")]
-    #[test]
-    fn identical_declarations_share_one_identity() {
-        let a = declaration("f", Expression::Boolean(true));
-        let b = declaration("f", Expression::Boolean(true));
-        let c = declaration("g", Expression::Boolean(true));
-        assert_eq!(
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
-        );
-        assert_ne!(
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
-        );
-    }
-
-    // `identity_ignores_unrelated_declarations` (PR #262 review, coordinator
-    // round 3) is deleted from here. It minted `DEFAULT_PACKAGE_IDENTITY`'s
-    // identity for the same `target` twice and compared the result to
-    // itself -- no second declaration was ever constructed, so FR-065-AC-2's
-    // reordering clause had nothing to be independent *of*; its own comment
-    // conceded "this is definitionally true". A real reordering test needs
-    // two actual declarations checked in two actual orders, which
-    // `mint_declaration_identity`'s single-declaration signature cannot
-    // exercise -- see
-    // `tests/dispatch_calls.rs`'s
-    // `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`,
-    // built at the `PackageDeclarations::check` level instead, where
-    // position could actually leak.
-
-    /// FR-062-AC-2: two occurrences of one identity get distinct ordinals;
-    /// a different identity's occurrence does not consume an ordinal from
-    /// this one.
-    #[trace("TC-160", "FR-062-AC-2")]
-    #[test]
-    fn occurrence_ordinals_are_per_identity_and_role() {
-        let mut map = OccurrenceMap::default();
-        let a = NodeKey::from_digest([1; 32]);
-        let b = NodeKey::from_digest([2; 32]);
-        let first = map.record(a, "reference", (0, 3));
-        let second = map.record(a, "reference", (4, 7));
-        let other = map.record(b, "reference", (8, 11));
-        assert_eq!(first.ordinal(), 0);
-        assert_eq!(second.ordinal(), 1);
-        assert_eq!(other.ordinal(), 0);
-        assert_eq!(map.resolve(a, &first), Some(&(0, 3)));
-        assert_eq!(map.resolve(a, &second), Some(&(4, 7)));
-        assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
-    }
+    use qsl_forms::Expression;
 
     /// FR-065-AC-2: identity read after `check` survives a real v2
     /// emit/decode round trip unchanged. Does not exercise a distinct

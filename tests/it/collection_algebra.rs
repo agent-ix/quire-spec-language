@@ -16,10 +16,12 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
-use quire_spec_language::value::{
-    CompositeDeclaration, CompositeShape, EnumMemberIndex, EqualityOperand, EqualityOperator,
-    FamilyOutcome, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+use quire_spec_language::family::FamilyOutcome;
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_spec_language::value::enumeration::EnumMemberIndex;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -579,11 +581,17 @@ mod checked {
     use super::*;
     use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
     use quire_exact::NODE_KEY_DOMAIN;
+    use quire_spec_language::check::{
+        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, EnumBinding,
+        PackageDeclarations,
+    };
+    use quire_spec_language::model::object_environment::ObjectEnvironment;
+    use quire_spec_language::value::enumeration::{
+        EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    };
     use quire_spec_language::value::{
-        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-        CheckedPackageEvaluation, CheckingLimits, EnumBinding, EnumDeclaration,
-        EnumDeclarationPreimage, EnumMemberPreimage, NodeOwner, ObjectEnvironment, OwnerSelection,
-        OwnerSubject, PackageDeclarations, SemanticGraphCause,
+        CheckedPackage, CheckedPackageEvaluation, NodeOwner, OwnerSelection, OwnerSubject,
+        SemanticGraphCause,
     };
     use serde_json::json;
 

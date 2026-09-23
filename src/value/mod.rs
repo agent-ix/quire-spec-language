@@ -8,19 +8,19 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`](quire_exact::Text), [`EnumValue`] and FR-142
-//!    `quire_exact::Quantity` values read against a [`UnitTable`] over an
+//!    [`Text`](quire_exact::Text), [`EnumValue`](enumeration::EnumValue) and FR-142
+//!    `quire_exact::Quantity` values read against a [`UnitTable`](quantity::UnitTable) over an
 //!    admitted [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
 //!    (FR-140), [`divide`] and [`modulo`] (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
-//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`]
-//!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
+//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`](enumeration::compare_enum)
+//!    (FR-141), [`evaluate_quantity`](quantity::evaluate_quantity) and [`convert_quantity`](quantity::convert_quantity) (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive
 //!    [`Value`](quire_exact::Value)s over a
-//!    [`TypeEnvironment`], the FR-149 equality matrix
-//!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
+//!    [`TypeEnvironment`](declaration::TypeEnvironment), the FR-149 equality matrix
+//!    ([`TypeEnvironment::check_equality`](declaration::TypeEnvironment::check_equality)) and FR-144 bounded
 //!    [`CollectionValue`](quire_exact::CollectionValue)s
 //!    ([`construct_collection`](quire_exact::construct_collection)) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
@@ -106,31 +106,42 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-// PR #282 review, F2: these nine submodules are `pub(crate)`, not private
-// `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
-// layer-3 sibling imports `check.rs` keeps") can name them by their real,
-// submodule-qualified crate-absolute path (`crate::value::quantity::
-// UnitTable`, not the flat `crate::value::UnitTable`
-// aggregate) -- FR-068:280-283 prescribes this form explicitly, and only
-// this form keeps AC-6's two-tier allow-list legible to a textual scan of
-// `check`'s own `use` lines (a flat import carries no tier information: it
-// reads identically whether the item is tier 1, tier 2, or the forbidden
-// tier 3). Every other `value::` submodule stays private; `check` imports
-// nothing from them. QSL-131 O3 deleted `decimal`, `ieee`, `numeric` and
-// `text` from this list; `check` now imports their former items from
-// `quire_exact` directly.
+// This module holds two ADR-011 §6.1 layers, kept in two separate sections
+// so QSL-181 (X-6) can move the first into `qsl-semantics` and leave the
+// second behind without editing either:
+//
+// 1. Layer 3: the §6.2 `semantic_value` submodules, `value::model_query`
+//    (§6.2: `model`) and `value::application_key` (§6.2: `check`), with the
+//    flat re-exports of their own items. Nothing in this section names
+//    `value::expression`, `check` or `family`.
+// 2. Layer 5: `value::expression`, the S6a evaluator, with the flat
+//    re-exports of its own items. It imports layer 3 by explicit
+//    `crate::value::<submodule>` paths, never `super::`.
+//
+// Layer 3's submodules are named by their real, submodule-qualified path
+// (`crate::value::quantity::UnitTable`) wherever `check` imports them, which
+// FR-068-AC-6's layer rule requires. The `pub` ones are those the layer-5
+// evaluator (`value::expression`) imports by submodule path:
+// `declaration`, `enumeration`, `quantity`, `model_query` and `stop`.
+// `definition` and `semantic_node` stay `pub(crate)`: their consumers
+// outside `value` are the layer-3 `check`, `model` and `library`.
+// QSL-131 O3 deleted `decimal`, `ieee`, `numeric` and `text`; their former
+// items are imported from `quire_exact` directly.
+
+// ---------------------------------------------------------------------
+// Layer 3 (ADR-011 §6.1): moves to `qsl-semantics` with QSL-181 (X-6).
+// ---------------------------------------------------------------------
+
 mod application_key;
 mod containment;
-pub(crate) mod declaration;
+pub mod declaration;
 pub(crate) mod definition;
-pub(crate) mod enumeration;
-mod expression;
+pub mod enumeration;
 mod member;
-mod model_query;
-pub(crate) mod quantity;
-mod reference;
+pub mod model_query;
+pub mod quantity;
 pub(crate) mod semantic_node;
-mod stop;
+pub mod stop;
 mod unit;
 
 // QSL-166: `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
@@ -158,57 +169,18 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
+// `declaration`, `enumeration` and `quantity` are `pub` modules, so their
+// items have one public path, the submodule one
+// (`value::declaration::TypeEnvironment`); this module does not re-export
+// them flat as well (QSL-181 X-6a, the same one-path rule as QSL-131 O3).
 // `declaration` owns the FR-143 registry, the FR-149 check-level equality
 // layer and QSL's name-keyed `FieldDeclaration`/`Component`/
 // `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
 // (ADR-011 §6.1).
-pub use declaration::{
-    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule,
-    FieldDeclaration, FieldExpression, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
-    TypeEnvironment,
-};
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
     PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
-};
-pub use enumeration::{
-    compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
-    EnumMemberPreimage, EnumValue,
-};
-// ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
-// `value::expression` to the layer-3 `check` module; `value`'s own
-// aggregation path continues, only its source module changes
-// (FR-068-CON-4: a re-export naming a new source module is not a second
-// definition) -- `check` is these types' one remaining defining module.
-pub use crate::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedGraph, CheckingLimitKind,
-    CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable, EnumBinding,
-    InvalidDispatchDeclaration, Location, MeasureObligation, Obligation, Origin,
-    PackageDeclarations, ProvedInterval, WrongSnapshotCause, MAX_CHECKING_DEPTH,
-};
-// ADR-013 T-1 (FR-087, QSL-158 S-3a): `CheckedPackage` (S4 in-process, the
-// S3 `CheckedGraph` above plus the checked dependency closure) is a
-// different, canonical type, defined in layer-4 `checked_package`, not
-// `check`. Re-exported through `expression` (which already re-exports it
-// from `crate::checked_package` as the S6a entry point, FR-087-AC-9/TC-256)
-// rather than a second, independent
-// `pub use crate::checked_package::CheckedPackage;` line, so there is
-// exactly one re-export source for `value` to track.
-pub use expression::CheckedPackage;
-// The evaluation half stays at layer 5, in `value::expression` itself.
-// `CheckedPackageEvaluation` is the trait that carries `call`, `evaluate`
-// and `emit_function_package_v2` over the foreign-to-`value`
-// `CheckedPackage` typestate, since an inherent impl here would be E0116
-// once `CheckedPackage` is `qsl-package`'s own type (X-7).
-// `decode_function_package_v2` takes no package, so it is a free function
-// beside the v2 codec it wraps.
-pub use expression::{
-    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
-    FamilyOutcome, FamilyResult, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
-    ValueLoss,
 };
 // QSL-131 O3: `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
@@ -242,13 +214,6 @@ pub use member::Member;
 // narrowed to `pub(crate)` since its only consumers are inside
 // `value::expression` (rust-review "narrow API" bar: `pub` only for what
 // consumers outside the crate use).
-pub use quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
-    QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
-};
-pub use reference::{
-    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal, PopulationConflict,
-};
 pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     OwnerSubject, SemanticGraphCause,
@@ -270,4 +235,31 @@ pub use semantic_node::{
 pub use unit::{
     CompoundUnit, CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage,
     InvalidCompoundUnit, NotAUnitKey, Unit, UnitEdge, UnitGraph, UnitPreimage,
+};
+
+// ---------------------------------------------------------------------
+// Layer 5 (ADR-011 §6.1): the S6a evaluator. Stays in this crate at X-6;
+// `qsl-eval` takes it at X-8. It re-exports only its own items and the
+// layer-4 `CheckedPackage` it evaluates, never a layer-3 item.
+// ---------------------------------------------------------------------
+
+mod expression;
+
+// ADR-013 T-1 (FR-087, QSL-158 S-3a): `CheckedPackage` (S4 in-process, the
+// S3 `CheckedGraph` plus the checked dependency closure) is defined in
+// layer-4 `checked_package`. Re-exported through `expression` (which already
+// re-exports it from `crate::checked_package` as the S6a entry point,
+// FR-087-AC-9/TC-256) rather than a second, independent
+// `pub use crate::checked_package::CheckedPackage;` line, so there is
+// exactly one re-export source for `value` to track.
+pub use expression::CheckedPackage;
+// `CheckedPackageEvaluation` is the trait that carries `call`, `evaluate`
+// and `emit_function_package_v2` over the foreign-to-`value`
+// `CheckedPackage` typestate, since an inherent impl here would be E0116
+// once `CheckedPackage` is `qsl-package`'s own type (X-7).
+// `decode_function_package_v2` takes no package, so it is a free function
+// beside the v2 codec it wraps.
+pub use expression::{
+    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
+    InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
 };

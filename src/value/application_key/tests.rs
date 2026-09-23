@@ -538,7 +538,7 @@ fn operation_and_literal_bytes_are_pinned() {
         definition: DefinitionReference {
             authority: "agent-ix".to_owned(),
             identity: "test.law/v1".to_owned(),
-            revision: crate::value::DefinitionRevision {
+            revision: crate::value::definition::DefinitionRevision {
                 namespace: "test".to_owned(),
                 value: "1".to_owned(),
             },

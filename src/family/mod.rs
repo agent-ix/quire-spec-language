@@ -3,7 +3,7 @@
 //!
 //! Every QSL semantic family (`Value`, `StateModel`, `SumCase`,
 //! `TemporalTrace`, `ProtocolClause`, `Relation`; ADR-012 §1) implements
-//! [`FamilyContract`] (and, except `Relation`, [`ReferenceEvaluation`])
+//! `FamilyContract` (and, except `Relation`, `ReferenceEvaluation`)
 //! exactly once. This module is the "check core" ADR-012 §13.1 places the
 //! contract in.
 //!
@@ -42,7 +42,7 @@
 //! `Stage`'s own "no `Requirements` stage" doc note is deleted along with
 //! `Stage`.
 //!
-//! **Provisional types.** [`outcome`] (`Staged`/`StageFailure`/
+//! **Provisional types.** `outcome` (`Staged`/`StageFailure`/
 //! `LimitExceeded`) implements a shape ADR-013 T-4 already decides, but
 //! whose canonical Rust home (`#213` S-5's `diagnostic` crate) had not
 //! landed when this module was first written. `src/diagnostic.rs` has
@@ -83,8 +83,7 @@ mod outcome;
 pub(crate) use contract::{
     CheckContext, DiagnosticSink, FamilyContract, ReferenceEvaluation, ScopeStack, StageLimits,
 };
-pub(crate) use evaluation::EvalOutcome;
-pub use evaluation::{FamilyOutcome, FamilyResult};
+pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub(crate) use outcome::{CheckOutcome, LimitExceeded, StageFailure, StageLimitKind, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
@@ -119,15 +118,15 @@ macro_rules! s6a_family_kinds {
     ($($(#[$doc:meta])* $variant:ident),+ $(,)?) => {
         /// The S6a family kind (FR-090-AC-4, ADR-012 §5.1 S1): the closed
         /// family set the S6a seam dispatches over. It has one variant per
-        /// family that implements [`ReferenceEvaluation`], and never a
+        /// family that implements `ReferenceEvaluation`, and never a
         /// `Relation` variant, so no S6a call can name a `Relation`
         /// declaration (ADR-013 O-16). A family gains its variant, its
-        /// [`S6aFamilyKind::family`] arm and its seam arm in the change that
+        /// `S6aFamilyKind::family` arm and its seam arm in the change that
         /// implements its `ReferenceEvaluation` hook. `#[cfg(seam_probe)]`
         /// adds one probe-only variant (FR-063) that no non-probe code
         /// constructs or matches.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        pub(crate) enum S6aFamilyKind {
+        pub enum S6aFamilyKind {
             $($(#[$doc])* $variant,)+
             /// FR-063: exists only so `--cfg seam_probe` makes every
             /// `match` over `S6aFamilyKind` non-exhaustive. Never

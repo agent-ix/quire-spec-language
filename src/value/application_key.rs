@@ -57,7 +57,7 @@ use quire_exact::{Identifier, RoundingMode, TextProfile};
 
 use super::definition::DefinitionReference;
 use super::member::Member;
-use super::MAX_CHECKING_DEPTH;
+use crate::check::MAX_CHECKING_DEPTH;
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// FR-322's application-node preimage version.

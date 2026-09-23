@@ -27,8 +27,9 @@ const CAUSE_TYPES: [&str; 4] = [
 /// `library` modules, plus the layer-3 `value` module that sits beside the
 /// evaluator (`value::model_query`). `value::outcome` left this list under
 /// QSL-131 O2, which deleted the module (it was layer K, a byte-identical
-/// `quire_exact` copy).
-const BELOW_CORE: [&str; 11] = [
+/// `quire_exact` copy). `value::reference` left it under QSL-181 X-6a, which
+/// moved its `ObjectEnvironment` into `model` (`src/model` covers it).
+const BELOW_CORE: [&str; 10] = [
     "qsl-cst/src",
     "qsl-forms/src",
     "src/model",
@@ -38,7 +39,6 @@ const BELOW_CORE: [&str; 11] = [
     "src/value/unit.rs",
     "src/value/quantity.rs",
     "src/value/declaration.rs",
-    "src/value/reference.rs",
     "src/value/model_query.rs",
 ];
 

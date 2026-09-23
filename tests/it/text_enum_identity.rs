@@ -21,9 +21,11 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits,
 };
+use quire_spec_language::value::enumeration::{
+    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
+};
 use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
-    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
     InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
 };
 use serde_json::{json, Value};

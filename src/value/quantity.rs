@@ -137,13 +137,14 @@ impl FromIterator<QuantityUnit> for UnitTable {
 /// unit; evaluation forms each computed one, so a later operation can read a
 /// compound operand the package never declared.
 #[derive(Clone, Debug)]
-pub(crate) struct UnitScope<'a> {
+pub struct UnitScope<'a> {
     package: &'a UnitTable,
     formed: UnitTable,
 }
 
 impl<'a> UnitScope<'a> {
-    pub(crate) fn new(package: &'a UnitTable) -> Self {
+    /// A scope over `package` with no stage-formed units yet.
+    pub fn new(package: &'a UnitTable) -> Self {
         Self {
             package,
             formed: UnitTable::default(),
@@ -155,7 +156,7 @@ impl<'a> UnitScope<'a> {
     }
 
     /// Record a unit this stage formed and return its id.
-    pub(crate) fn form(&mut self, unit: QuantityUnit) -> UnitId {
+    pub fn form(&mut self, unit: QuantityUnit) -> UnitId {
         let id = unit.id();
         if self.package.get(id).is_none() {
             self.formed.insert(unit);
@@ -163,7 +164,9 @@ impl<'a> UnitScope<'a> {
         id
     }
 
-    pub(crate) fn resolve<'q>(&'q self, quantity: &'q Quantity) -> Option<UnitQuantity<'q>> {
+    /// `quantity` read against the package's units, then this stage's
+    /// formed ones; `None` when neither table holds its unit.
+    pub fn resolve<'q>(&'q self, quantity: &'q Quantity) -> Option<UnitQuantity<'q>> {
         self.package
             .resolve(quantity)
             .or_else(|| self.formed.resolve(quantity))
@@ -288,7 +291,7 @@ pub fn evaluate_quantity(
 
 /// [`evaluate_quantity`] with the result's unit, formed once at type time
 /// and carried by the result quantity's id, for a caller that records it.
-pub(crate) fn evaluate_quantity_unit(
+pub fn evaluate_quantity_unit(
     operation: QuantityOperation<'_>,
     meter: &mut Meter,
 ) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {

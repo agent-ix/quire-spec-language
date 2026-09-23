@@ -98,10 +98,9 @@ use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
-pub(crate) use check::Scope;
-pub(crate) use family::ValueFunctionFamily;
-// `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
-// and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
+pub use check::Scope;
+pub use family::ValueFunctionFamily;
+// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
 // family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
 // permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
 // plain: a plain `pub(crate) use` here is genuinely unused in a non-test
@@ -116,7 +115,7 @@ pub(crate) use family::ValueFunctionFamily;
 // caller's own configured limits (`*meter.limits()`) instead, so this
 // constant has no production reader left.
 #[cfg(test)]
-pub(crate) use family::{OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
+pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -129,19 +128,19 @@ pub(crate) use family::{OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_U
 // two different parameter shapes.
 #[cfg(test)]
 pub(crate) use family::checking_tests::{
-    declarations_for, empty_scope, mint_resolved, root_location,
+    declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
+    root_location,
 };
-pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     ResolvedSignatures, MAX_CHECKING_DEPTH,
 };
-// Crate-internal only (unlike the list above, `value::mod.rs` does not
-// re-export this): `value::expression::evaluate::Machine` is the one
-// consumer outside `check` itself.
-pub(crate) use check::enum_member_index;
+// `value::expression::evaluate::Machine` is the one consumer outside `check`
+// itself.
+pub use check::enum_member_index;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
@@ -271,22 +270,20 @@ impl CheckedExpression {
     }
 
     /// The declared parameters, in evaluation-slot order -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] reads to
+    /// `value::expression::CheckedPackageEvaluation::evaluate` reads to
     /// validate its caller's arguments (ADR-011 §4: evaluation never reads
-    /// this type's fields directly). Crate-internal only: `Node` (see
-    /// [`Self::root`]) is `pub(crate)`, so this whole accessor surface stays
-    /// no more public than that.
-    pub(crate) fn parameters(&self) -> &[(String, ValueType)] {
+    /// this type's fields directly).
+    pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
     }
 
     /// The checked expression tree evaluation runs.
-    pub(crate) fn root(&self) -> &Node {
+    pub fn root(&self) -> &Node {
         &self.root
     }
 
     /// The evaluation slot count evaluation allocates.
-    pub(crate) fn slots(&self) -> usize {
+    pub fn slots(&self) -> usize {
         self.slots
     }
 }
@@ -294,28 +291,29 @@ impl CheckedExpression {
 /// One admitted function's evaluation-visible state: exactly what
 /// `value::expression`'s evaluator needs (name, checked body, slot count --
 /// FR-068's own Description names these as the accessor surface), without
-/// exposing `CheckedFunction`'s private representation. Crate-internal only:
-/// `body`'s `Node` type is `pub(crate)`.
-pub(crate) struct FunctionState<'a> {
+/// exposing `CheckedFunction`'s private representation.
+#[non_exhaustive]
+pub struct FunctionState<'a> {
     /// The declared name.
-    pub(crate) name: &'a str,
+    pub name: &'a str,
     /// The checked body.
-    pub(crate) body: &'a Node,
+    pub body: &'a Node,
     /// The evaluation slot count.
-    pub(crate) slots: usize,
+    pub slots: usize,
 }
 
 /// One callable function's evaluation-visible identity and signature --
-/// what [`crate::value::CheckedPackageEvaluation::call`] needs to route a
+/// what `value::expression::CheckedPackageEvaluation::call` needs to route a
 /// runtime `QualifiedName` lookup through
-/// [`crate::family::ReferenceEvaluation::evaluate`] and validate its
+/// `crate::family::ReferenceEvaluation::evaluate` and validate its
 /// caller's arguments, without a direct field read.
-pub(crate) struct CallableFunction<'a> {
-    /// The minted identity [`crate::family::ReferenceEvaluation::evaluate`]
+#[non_exhaustive]
+pub struct CallableFunction<'a> {
+    /// The minted identity `crate::family::ReferenceEvaluation::evaluate`
     /// resolves against.
-    pub(crate) identity: quire_exact::NodeKey,
+    pub identity: quire_exact::NodeKey,
     /// The declared parameters, for argument admission.
-    pub(crate) parameters: &'a [(String, ValueType)],
+    pub parameters: &'a [(String, ValueType)],
 }
 
 fn root(origin: Origin) -> Location {
@@ -1044,11 +1042,11 @@ impl CheckedGraph {
 
     /// Every admitted function's own name, checked body and evaluation slot
     /// count -- the accessor surface
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] reads to build
+    /// `value::expression::CheckedPackageEvaluation::evaluate` reads to build
     /// its own `Callable` list, since `Callable` is a layer-5 type this
     /// module must not construct itself (that would be a `check` ->
     /// `value::expression` edge, forbidden by FR-068-AC-3).
-    pub(crate) fn function_states(&self) -> impl Iterator<Item = FunctionState<'_>> + '_ {
+    pub fn function_states(&self) -> impl Iterator<Item = FunctionState<'_>> + '_ {
         self.functions.iter().map(|function| FunctionState {
             name: &function.signature.name,
             body: &function.body,
@@ -1058,10 +1056,10 @@ impl CheckedGraph {
 
     /// One admitted function's evaluation-visible state, by its minted
     /// identity -- the accessor
-    /// [`crate::family::ReferenceEvaluation::evaluate`]'s `Value` family
+    /// `crate::family::ReferenceEvaluation::evaluate`'s `Value` family
     /// implementation (`value::expression::family`) resolves a checked call
     /// against.
-    pub(crate) fn function_by_identity(
+    pub fn function_by_identity(
         &self,
         identity: quire_exact::NodeKey,
     ) -> Option<FunctionState<'_>> {
@@ -1075,11 +1073,11 @@ impl CheckedGraph {
 
     /// `name`'s identity and declared parameters, filtered to functions a
     /// plain named call may resolve to (`callable_by_name`) -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::call`] uses to resolve a
+    /// `value::expression::CheckedPackageEvaluation::call` uses to resolve a
     /// runtime `QualifiedName` lookup and validate its caller's arguments,
     /// without a direct field read (TC-196 D07's bypass: a crate-internal
     /// FR-151 synthesized dispatch candidate is never reachable this way).
-    pub(crate) fn callable(&self, name: &str) -> Option<CallableFunction<'_>> {
+    pub fn callable(&self, name: &str) -> Option<CallableFunction<'_>> {
         self.function(name)
             .filter(|(_, function)| function.signature.callable_by_name)
             .map(|(_, function)| CallableFunction {
@@ -1090,28 +1088,26 @@ impl CheckedGraph {
 
     /// Every admitted function's own name and minted identity -- the
     /// accessor
-    /// [`crate::value::CheckedPackageEvaluation::emit_function_package_v2`]
+    /// `value::expression::CheckedPackageEvaluation::emit_function_package_v2`
     /// reads to build its v2 entries, since the v2 codec and `QualifiedName`
     /// are `value::expression::family` types this module must not import
     /// (FR-068-AC-3).
-    pub(crate) fn function_identities(
-        &self,
-    ) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
+    pub fn function_identities(&self) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
         self.functions
             .iter()
             .map(|function| (function.signature.name.as_str(), function.identity))
     }
 
     /// The scope every declared name resolves against -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] passes through
+    /// `value::expression::CheckedPackageEvaluation::evaluate` passes through
     /// to the evaluator.
-    pub(crate) fn scope(&self) -> &Scope {
+    pub fn scope(&self) -> &Scope {
         &self.scope
     }
 
     /// The checked dispatch tables `scope`'s dispatch operations index into
     /// -- the accessor the evaluator reads directly, alongside `scope`.
-    pub(crate) fn dispatch_tables(&self) -> &[DispatchTable] {
+    pub fn dispatch_tables(&self) -> &[DispatchTable] {
         &self.dispatch_tables
     }
 }
@@ -1128,54 +1124,6 @@ mod tests {
             functions,
             ..PackageDeclarations::default()
         }
-    }
-
-    /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
-    /// real `PackageDeclarations::check` run, from its own new
-    /// `model_correspondence` field, and read back only through
-    /// `CheckedGraph::resolve_declaration` -- not a hand-built
-    /// `ModelCorrespondence` sitting outside the checker (FR-088-AC-2). The
-    /// frame-subject *resolution mechanics* over that correspondence stay
-    /// covered by `identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
-    /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
-    /// test is the "the checker really records it" half.
-    ///
-    /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
-    /// `crate::checked_package::CheckedPackage::link(graph).graph().resolve_declaration`,
-    /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
-    /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
-    /// directly, which the prior version of this test read from.
-    /// `checked_package` is `pub` at the crate root and this test module is
-    /// `#[cfg(test)]` (excluded from the FR-068-AC-6 layer rule's
-    /// `check_layer_edges` scan, which covers shipped code only), so this
-    /// is not a `check` -> `checked_package` production edge (QSL-182 prep:
-    /// relocated out of `package` into its own sibling module, same
-    /// non-edge either way).
-    #[trace("TC-248", "FR-088-AC-2")]
-    #[test]
-    fn model_correspondence_is_recorded_by_a_real_check_run() {
-        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let declaration = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
-        };
-        let graph = PackageDeclarations {
-            model_correspondence: vec![(node, declaration.clone())],
-            ..PackageDeclarations::default()
-        }
-        .check(CheckingLimits::default())
-        .expect("an empty package with a correspondence seed checks cleanly");
-        let package = crate::checked_package::CheckedPackage::link(graph);
-
-        assert_eq!(
-            package.graph().resolve_declaration(node),
-            Some(&declaration)
-        );
-
-        // Adverse (R-05): a node the caller never supplied resolves to
-        // nothing -- `check` never re-derives an entry by search.
-        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
-        assert_eq!(package.graph().resolve_declaration(other), None);
     }
 
     /// PR #300 review round 2, MEDIUM-3: a second correspondence entry for a
@@ -1303,9 +1251,11 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
-        use crate::value::{
-            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeIdentityPreimage,
-            NodeOwner, OwnerSelection, OwnerSubject,
+        use crate::value::enumeration::{
+            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+        };
+        use crate::value::semantic_node::{
+            NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
         };
         use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
         use serde_json::json;

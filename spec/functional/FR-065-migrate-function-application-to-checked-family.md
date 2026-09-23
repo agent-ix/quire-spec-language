@@ -373,9 +373,10 @@ delivered code today:
   written against this criterion; recorded here now.
 - FR-065-AC-7: backed (`TC-380`). Since QSL-148 (PR #303) the contract's
   `check` hook type-checks the body.
-  `value_function_family_check_refuses_an_ill_typed_body` (refusal half)
-  and `value_function_family_checks_through_the_contract` (admission half),
-  both in `src/value/expression/family.rs`, are tagged
+  `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
+  `src/check/family.rs` `checking_tests`) and
+  `value_function_family_checks_through_the_contract` (admission half,
+  `src/value/expression/family.rs`), are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
 
 Two of this requirement's seven Acceptance Criteria are backed (AC-2,

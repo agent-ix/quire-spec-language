@@ -22,10 +22,13 @@ use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
+use quire_spec_language::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations,
+};
+use quire_spec_language::family::FamilyOutcome;
+use quire_spec_language::model::object_environment::ObjectEnvironment;
 use quire_spec_language::value::{
-    CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, Evaluation, FamilyOutcome, InputRefusal,
-    ObjectEnvironment, PackageDeclarations, QualifiedName,
+    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:

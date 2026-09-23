@@ -66,7 +66,7 @@ mod binding_tests;
 mod package_identity;
 mod witness;
 
-pub(crate) use package_identity::PACKAGE_ID_VERSION;
+pub use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub(crate) use witness::SupportedV2Wire;
@@ -123,7 +123,7 @@ impl PackageId {
     /// `of_preimage` remains the only way to produce a `PackageId` that
     /// flows anywhere as an actual identity; this only formats one that
     /// already exists, for reporting or cross-checking.
-    pub(crate) fn hex(&self) -> String {
+    pub fn hex(&self) -> String {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }
@@ -569,7 +569,7 @@ pub(crate) fn verify_package(
 /// crate-private `SupportedV2Wire`, which only the layer-4 v2 reader
 /// constructs); 2, the FR-322 `package_id` recompute (`verify_package`); and
 /// 3, this identity and version listed in the consumer's library lock or
-/// pinned request (the crate-private `PinnedRequest`). Not checked typestate
+/// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
 /// never accepted as, or converted into, a `CheckedGraph` or
 /// `CheckedPackage` -- only [`Self::into_import_view`] converts it, into an
@@ -587,8 +587,8 @@ pub(crate) fn verify_package(
 /// ```
 ///
 /// A crate-external caller cannot build a `VerifiedPackage` from a
-/// hand-built candidate either: `verify_binding`, its condition-1 witness
-/// and its pinned-request type are all crate-private, and making the three
+/// hand-built candidate either: `verify_binding` and its condition-1
+/// witness `SupportedV2Wire` are both crate-private, and making the two
 /// public lets this snippet compile, so the test fails. (Stable rustdoc does
 /// not check a `compile_fail` error code, so none is claimed here.)
 /// ```compile_fail
@@ -637,7 +637,7 @@ impl VerifiedPackage {
 /// condition 3 reads it: at most one [`Selection`] per library identity, so
 /// the binding's answer never depends on the order entries were supplied.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct PinnedRequest(BTreeMap<LibraryName, Selection>);
+pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 
 /// Two entries of one pinned request select different versions or
 /// `package_id`s for one library identity (ADR-011 I2's second rule).
@@ -782,14 +782,10 @@ impl ImportView {
 /// package's local declarations are exactly its exports", this module's own
 /// doc). The layer-4 `checked_package` I2 reader calls this to populate a freshly
 /// wire-read [`LibraryPackage::exports`] before handing the candidate to
-/// [`verify_package`]: a package read straight from its own wire bytes
+/// `verify_package`: a package read straight from its own wire bytes
 /// carries no separate export selection, so its exports are exactly what its
 /// preimage declares.
-#[allow(
-    dead_code,
-    reason = "no production caller yet: the I2 reader (`checked_package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
-)]
-pub(crate) fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
+pub fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
     Ok(project_declarations(identity_preimage)?
         .declared_names()
         .into_iter()

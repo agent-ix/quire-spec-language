@@ -20,12 +20,15 @@ use quire_exact::{
     RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
 };
 use quire_spec_language::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
+use quire_spec_language::value::quantity::{
+    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
+    QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
+};
 use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
-    compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
-    ConvertedValue, Dimension, DimensionPreimage, InvalidCompoundUnit, InvalidSemanticGraph,
-    NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, QuantityOperation, QuantityTarget,
-    QuantityUnit, SemanticGraphCause, UnitGraph, UnitPreimage, UnitQuantity, UnitTable,
+    CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage, InvalidCompoundUnit,
+    InvalidSemanticGraph, NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, SemanticGraphCause,
+    UnitGraph, UnitPreimage,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

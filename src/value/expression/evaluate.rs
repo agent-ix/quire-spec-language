@@ -10,25 +10,25 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::declaration::{operand_value, CompositeShape};
-use super::super::enumeration::{compare_enum, EnumMemberIndex};
-use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use super::super::quantity::{
-    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
-};
-use super::super::reference::ObjectEnvironment;
-use super::super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
 };
-use super::FamilyOutcome;
 use crate::check::{
     enum_member_index, Arithmetic, Connective, DispatchTable, Location, Node, NodeKind,
     OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
+use crate::family::FamilyOutcome;
 use crate::family::FamilyResult;
+use crate::model::object_environment::ObjectEnvironment;
 use crate::model::population::PopulationBinding;
+use crate::value::declaration::{operand_value, CompositeShape};
+use crate::value::enumeration::{compare_enum, EnumMemberIndex};
+use crate::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use crate::value::quantity::{
+    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+};
+use crate::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Rational;
 use quire_exact::{
@@ -337,7 +337,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
-            units: UnitScope::new(scope.types.units()),
+            units: UnitScope::new(scope.types().units()),
             enum_members,
         }
     }
@@ -386,12 +386,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Branch(node)
                 | Task::Short(node)
                 | Task::Retain(node)
-                | Task::ChargeElement(node) => Some(&node.location),
-                Task::Iterate(iteration) => Some(&iteration.node.location),
+                | Task::ChargeElement(node) => Some(node.location()),
+                Task::Iterate(iteration) => Some(iteration.node.location()),
                 Task::DispatchGuard(guard) => Some(&guard.location),
                 Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) => None,
             };
-            let location = location.cloned().unwrap_or_else(|| root.location.clone());
+            let location = location.cloned().unwrap_or_else(|| root.location().clone());
             if let Err(halt) = self.step(task) {
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
@@ -412,7 +412,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 location: None,
                 losses: self.losses,
             }),
-            _ => Ok(Self::stopped(checked_invariant(), &root.location)),
+            _ => Ok(Self::stopped(checked_invariant(), root.location())),
         }
     }
 
@@ -470,7 +470,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn record(&mut self, node: &Node, loss: ValueLoss) {
         self.losses.push(LocatedLoss {
-            location: node.location.clone(),
+            location: node.location().clone(),
             loss,
         });
     }
@@ -582,7 +582,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             Task::Branch(node) => {
                 let NodeKind::If {
                     then, otherwise, ..
-                } = &node.kind
+                } = node.kind()
                 else {
                     return Err(invariant());
                 };
@@ -591,7 +591,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Short(node) => {
-                let NodeKind::Connective(connective, _, right) = &node.kind else {
+                let NodeKind::Connective(connective, _, right) = node.kind() else {
                     return Err(invariant());
                 };
                 let left = self.pop_boolean()?;
@@ -661,7 +661,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn eval(&mut self, node: &'a Node) -> Result<(), Halt> {
-        match &node.kind {
+        match node.kind() {
             NodeKind::Literal(value) => {
                 self.values.push(value.clone());
                 return Ok(());
@@ -730,7 +730,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn apply(&mut self, node: &'a Node) -> Result<(), Halt> {
-        let value = match &node.kind {
+        let value = match node.kind() {
             NodeKind::Literal(_)
             | NodeKind::Local(_)
             | NodeKind::Let { .. }
@@ -840,7 +840,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Multiply => IeeeOperation::Multiply(left, right),
                     ArithmeticOperator::Divide => IeeeOperation::Divide(left, right),
                 };
-                if self.scope.ieee_profile.is_none() {
+                if self.scope.ieee_profile().is_none() {
                     return Err(invariant());
                 }
                 let result = outcome_into_stop(
@@ -901,7 +901,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                Self::project(slot, *optional, &node.value_type)?
+                Self::project(slot, *optional, node.value_type())?
             }
             NodeKind::Attribute { name, optional, .. } => {
                 let Value::Reference(reference) = self.pop()? else {
@@ -909,9 +909,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 let slot = self
                     .objects
-                    .attribute(&self.scope.types, &reference, name)
+                    .attribute(self.scope.types(), &reference, name)
                     .ok_or_else(invariant)?;
-                Self::project(slot, *optional, &node.value_type)?
+                Self::project(slot, *optional, node.value_type())?
             }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {
@@ -959,7 +959,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let arguments = self.pop_many(arguments.len())?;
                 let value = self
                     .scope
-                    .types
+                    .types()
                     .tuple(*declaration, arguments)
                     .map_err(|_| invariant())?;
                 outcome_into_stop(retain_composite(value, self.meter))?
@@ -972,7 +972,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let mut values = self.pop_many(present)?.into_iter();
                 let Some(CompositeShape::Record(declared)) = self
                     .scope
-                    .types
+                    .types()
                     .composite(*declaration)
                     .map(|declaration| declaration.shape())
                 else {
@@ -991,7 +991,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 let value = self
                     .scope
-                    .types
+                    .types()
                     .record(*declaration, fields)
                     .map_err(|_| invariant())?;
                 outcome_into_stop(retain_composite(value, self.meter))?
@@ -1035,7 +1035,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Float(value) = self.pop()? else {
                     return Err(invariant());
                 };
-                if self.scope.ieee_profile.is_none() {
+                if self.scope.ieee_profile().is_none() {
                     return Err(invariant());
                 }
                 let exact = outcome_into_stop(
@@ -1051,7 +1051,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return self.start_iteration(node);
             }
             NodeKind::Flatten(_) => {
-                let ValueType::Collection(result_type) = &node.value_type else {
+                let ValueType::Collection(result_type) = node.value_type() else {
                     return Err(invariant());
                 };
                 let outer = self.pop_collection()?;
@@ -1101,10 +1101,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
                 };
-                let ValueType::Population(maximum) = &population.value_type else {
+                let ValueType::Population(maximum) = population.value_type() else {
                     return Err(invariant());
                 };
-                let ValueType::Collection(collection_type) = &node.value_type else {
+                let ValueType::Collection(collection_type) = node.value_type() else {
                     return Err(invariant());
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
@@ -1120,14 +1120,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
                 };
-                let ValueType::Population(maximum) = &population.value_type else {
+                let ValueType::Population(maximum) = population.value_type() else {
                     return Err(invariant());
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
-                let ValueType::Reference(static_key) = &reference.value_type else {
+                let ValueType::Reference(static_key) = reference.value_type() else {
                     return Err(invariant());
                 };
-                let target_key = match &node.value_type {
+                let target_key = match node.value_type() {
                     ValueType::Reference(key) => *key,
                     ValueType::Option(payload) => match &**payload {
                         ValueType::Reference(key) => *key,
@@ -1142,7 +1142,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     *static_key,
                     reference_value,
                     *absence,
-                    &node.value_type,
+                    node.value_type(),
                     self.meter,
                 )?
             }
@@ -1165,7 +1165,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // this node's own `receiver.member(args)` actually named.
                 let operation = self
                     .scope
-                    .dispatch_operations
+                    .dispatch_operations()
                     .get(*operation)
                     .ok_or_else(invariant)?;
                 let table_ref = self.dispatch_tables.get(*table).ok_or_else(invariant)?;
@@ -1201,7 +1201,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                                 selected,
                                 receiver: reference,
                             },
-                            location: node.location.clone(),
+                            location: node.location().clone(),
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -1290,7 +1290,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn start_iteration(&mut self, node: &'a Node) -> Result<(), Halt> {
-        let (identity, reduce) = match &node.kind {
+        let (identity, reduce) = match node.kind() {
             NodeKind::Fold { identity, .. } => (
                 match identity {
                     Some(_) => Some(self.pop()?),
@@ -1335,7 +1335,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 .and_then(|index| iteration.source.elements().get(index))
                 .cloned()
                 .ok_or_else(invariant)?;
-            let stop_early = match &node.kind {
+            let stop_early = match node.kind() {
                 NodeKind::Query { visit, .. } => match (visit, result) {
                     (Visit::Map, value) => {
                         iteration.results.push(value);
@@ -1356,7 +1356,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                                 Some(Value::Integer(total)) => {
                                     outcome_into_stop(evaluate_integer_arithmetic(
                                         IntegerArithmetic::Add(&total, &summand),
-                                        sum_domain(&node.value_type),
+                                        sum_domain(node.value_type()),
                                         self.meter,
                                     ))?
                                 }
@@ -1380,7 +1380,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             };
             if stop_early {
                 let found = matches!(
-                    node.kind,
+                    node.kind(),
                     NodeKind::Query {
                         visit: Visit::Exists,
                         ..
@@ -1396,7 +1396,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         charge_visit(self.meter)?;
         iteration.next = iteration.next.saturating_add(1);
-        let body = match &node.kind {
+        let body = match node.kind() {
             NodeKind::Query { slot, body, .. } => {
                 *self.slot(*slot)? = Some(element);
                 body
@@ -1422,10 +1422,10 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Halt> {
         let node = iteration.node;
-        let value = match &node.kind {
+        let value = match node.kind() {
             NodeKind::Query { visit, .. } => match visit {
                 Visit::Map | Visit::Filter => {
-                    let ValueType::Collection(result_type) = &node.value_type else {
+                    let ValueType::Collection(result_type) = node.value_type() else {
                         return Err(invariant());
                     };
                     if *visit == Visit::Map {
@@ -1442,13 +1442,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                         Some(Value::Integer(total)) => total,
                         Some(_) => return Err(invariant()),
                     };
-                    if sum_domain(&node.value_type).is_some_and(|domain| !domain.contains(&total)) {
+                    if sum_domain(node.value_type()).is_some_and(|domain| !domain.contains(&total))
+                    {
                         return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
                     }
                     retain_scalar(Value::Integer(total), self.meter)?
                 }
                 Visit::Count => {
-                    if let ValueType::Int(domain) = &node.value_type {
+                    if let ValueType::Int(domain) = node.value_type() {
                         if !domain.contains(&iteration.count) {
                             return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
                         }

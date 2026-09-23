@@ -25,12 +25,17 @@ use quire_exact::{
 use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
-use quire_spec_language::value::{
+use quire_spec_language::model::object_environment::{
+    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
+};
+use quire_spec_language::value::declaration::{
     Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator, FieldDeclaration,
-    FieldExpression, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
-    InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectTypeDeclaration, QualifiedName, RecursionEdges, TypeEnvironment, ValueGraph,
+    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+};
+use quire_spec_language::value::enumeration::EnumMemberIndex;
+use quire_spec_language::value::{
+    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, QualifiedName, ValueGraph,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -735,9 +740,12 @@ mod checked {
     // result this submodule compares.
     use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
     use quire_exact::{BoundViolation, Outcome, Refusal};
+    use quire_spec_language::check::{
+        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
+        PackageDeclarations,
+    };
     use quire_spec_language::value::{
-        CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-        CheckedPackageEvaluation, CheckingLimits, InputRefusal, Obligation, PackageDeclarations,
+        CallFailure, CheckedPackage, CheckedPackageEvaluation, InputRefusal,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -859,7 +867,7 @@ mod checked {
             )
             .unwrap();
         match evaluation.outcome {
-            quire_spec_language::value::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
+            quire_spec_language::family::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
             other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
         }
     }

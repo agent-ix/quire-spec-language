@@ -15,13 +15,19 @@ use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
+use quire_spec_language::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
+    CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
+    ProvedInterval,
+};
+use quire_spec_language::family::FamilyOutcome;
+use quire_spec_language::model::object_environment::ObjectEnvironment;
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_spec_language::value::{
-    CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference, DefinitionRevision,
-    Evaluation, FamilyOutcome, FieldDeclaration, LocatedLoss, Location, MeasureObligation,
-    ObjectEnvironment, ObjectTypeDeclaration, Obligation, Origin, PackageDeclarations,
-    ProvedInterval, QualifiedName, TypeEnvironment, ValueLoss,
+    CatalogRole, CheckedPackage, CheckedPackageEvaluation, DefinitionLock, DefinitionReference,
+    DefinitionRevision, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};

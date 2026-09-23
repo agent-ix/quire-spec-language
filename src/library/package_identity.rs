@@ -19,7 +19,7 @@ use qsl_foundation::digest::WireNodeId;
 use quire_exact::NODE_KEY_DOMAIN;
 
 /// The identity preimage version constant.
-pub(crate) const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
+pub const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
 /// The node projection schema version constant.
 pub(crate) const NODE_SCHEMA_VERSION: &str = "quire.checked-semantic-graph/v2";
 
