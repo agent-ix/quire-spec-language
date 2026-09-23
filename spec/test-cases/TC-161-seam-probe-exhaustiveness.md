@@ -14,13 +14,15 @@ relationships:
 
 ## Description
 
-Verify that a build under `RUSTFLAGS=--cfg seam_probe` fails to compile with
-exactly the checked-in set of seam-function locations (and with rustc error
-code `E0004` specifically at each), that a normal build (no `seam_probe`
+Verify that the two probe builds -- `qsl-semantics` under
+`RUSTFLAGS=--cfg seam_probe`, then the root crate under `RUSTFLAGS=--cfg
+seam_probe --cfg seam_probe_downstream` -- each fail to compile, together
+with exactly the checked-in set of seam-function locations (and with rustc
+error code `E0004` specifically at each), that a normal build (no `seam_probe`
 set) succeeds with none, that removing a checked-in entry or removing an
 actual compiler error each causes `xtask seam-probe` to report a mismatch,
-that nothing in the repository sets `seam_probe` outside the probe build's
-own invocation, that the tool's exit code reflects set equality, that the
+that nothing in the repository sets `seam_probe` outside the probe builds'
+own invocations, that the tool's exit code reflects set equality, that the
 full gate fails when the tool does, that the checked-in list covers every
 category the implementation actually delivers, that a wildcard-arm escape or
 a `#[non_exhaustive]` enum is caught by the lint gate rather than silently
@@ -53,8 +55,10 @@ deliver.
 
 ## Test Procedure
 
-1. Run `cargo build` with `RUSTFLAGS=--cfg seam_probe` set against the QSL
-   crate's `--lib` target and collect every `E0004` diagnostic location
+1. Run `cargo build -p qsl-semantics --lib` with `RUSTFLAGS=--cfg
+   seam_probe`, then `cargo build -p quire-spec-language --lib` with
+   `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`; confirm each
+   fails, and collect the union of their `E0004` diagnostic locations
    (via `--message-format=json`, filtering `compiler-message` entries whose
    `code.code` is `"E0004"`, reading each primary span's `file_name` and
    `line_start`) -- not merely whether the build failed.
@@ -70,9 +74,9 @@ deliver.
    locations (`xtask seam-probe` performs this build itself and fails if it
    does not succeed or reports any `E0004`). Separately, grep `Cargo.toml`'s
    `[features]` table, every `build.rs`, every `.cargo/config.toml` and
-   every `Makefile` target and CI workflow step for `seam_probe` or `--cfg
-   seam_probe`; confirm the only match is `xtask seam-probe`'s own build
-   invocation. State plainly that this grep does not prove no other code
+   every `Makefile` target and CI workflow step for `seam_probe`,
+   `seam_probe_downstream` or `--cfg seam_probe`; confirm the only match is
+   `xtask seam-probe`'s own build invocations. State plainly that this grep does not prove no other code
    path could ever set the cfg (a `build.rs` added later would need this
    check re-run, not be caught by it retroactively) -- it proves the
    specific, named set of places FR-063-AC-3 lists today are clean.
