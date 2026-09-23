@@ -53,6 +53,8 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 from `CheckedPackage::call`:
 `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`, in
 `tests/it/model_reference_queries.rs`. The seam-probe list names
-`evaluate_declaration` and `ValueFunctionFamily::evaluate`, and
-`S6aFamilyKind` and `FamilyOutcome` each have a `#[cfg(seam_probe)]`
-variant.
+`evaluate_declaration`, `S6aFamilyKind::family` and
+`ValueFunctionFamily::evaluate`, and `S6aFamilyKind` and `FamilyOutcome`
+each have a `#[cfg(seam_probe)]` variant. A compile-time check in
+`src/family/mod.rs` rejects an S6a family kind that maps to
+`FamilyKind::Relation` or shares a `FamilyKind` with another.

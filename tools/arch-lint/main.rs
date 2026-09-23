@@ -368,7 +368,12 @@ mod tests {
             "Cargo.toml",
             "[package]\nname = \"quire-spec-language\"\nversion = \"0.2.0\"\n",
         );
-        for relative in ["qsl-foundation/src", "qsl-cst/src", "qsl-source/src"] {
+        for relative in [
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-source/src",
+            "qsl-forms/src",
+        ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
         write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");

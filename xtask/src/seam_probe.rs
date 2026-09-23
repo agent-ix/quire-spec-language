@@ -110,7 +110,8 @@ pub struct SeamLocation {
 /// as_str`.
 ///
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
-/// `crate::family::S6aFamilyKind` (`evaluate_declaration`), and the one
+/// `crate::family::S6aFamilyKind` (`evaluate_declaration`), its
+/// `S6aFamilyKind::family` mapping to `FamilyKind`, and the one
 /// `match` over `crate::family::FamilyOutcome` (`ValueFunctionFamily::
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
 /// `EvalOutcome`). Each enum carries a `#[cfg(seam_probe)]` variant.
@@ -135,6 +136,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "src/value/expression/mod.rs".to_owned(),
             item: "evaluate_declaration".to_owned(),
+        },
+        SeamLocation {
+            file: "src/family/mod.rs".to_owned(),
+            item: "S6aFamilyKind::family".to_owned(),
         },
         SeamLocation {
             file: "src/value/expression/family.rs".to_owned(),
@@ -372,48 +377,69 @@ pub fn run(workspace_root: &Path) -> Result<String> {
 mod tests {
     use super::*;
 
-    /// **Untagged (PR #262 review, coordinator round 3, finding 6).** This
-    /// test asserts `checked_in_locations()` returns the same literal
-    /// entries it already hardcodes -- a constant compared to itself, which
-    /// cannot fail regardless of whether AC-6's actual coverage requirement
-    /// holds. It stays as a real guard against an accidental edit to the
-    /// literal (FR-063-AC-1/AC-2's own "update the checked-in list in the
-    /// same change" rule), but is not evidence for AC-6, which FR-063's own
-    /// Status section now records unbacked.
+    /// Records the qualified name of every function that holds a `match`
+    /// expression in one parsed file (the naming [`EnclosingItem`] uses).
+    #[derive(Default)]
+    struct FunctionsWithMatch {
+        current_impl_self: Option<String>,
+        current_fn: Vec<String>,
+        found: BTreeSet<String>,
+    }
+
+    impl<'ast> Visit<'ast> for FunctionsWithMatch {
+        fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+            let previous = self
+                .current_impl_self
+                .replace(crate::impl_self_name(&node.self_ty));
+            syn::visit::visit_item_impl(self, node);
+            self.current_impl_self = previous;
+        }
+
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            self.current_fn.push(node.sig.ident.to_string());
+            syn::visit::visit_item_fn(self, node);
+            self.current_fn.pop();
+        }
+
+        fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+            let name = match &self.current_impl_self {
+                Some(self_ty) => format!("{self_ty}::{}", node.sig.ident),
+                None => node.sig.ident.to_string(),
+            };
+            self.current_fn.push(name);
+            syn::visit::visit_impl_item_fn(self, node);
+            self.current_fn.pop();
+        }
+
+        fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
+            if let Some(name) = self.current_fn.last() {
+                self.found.insert(name.clone());
+            }
+            syn::visit::visit_expr_match(self, node);
+        }
+    }
+
+    /// Every checked-in location names a function that exists in its file
+    /// and holds a `match`, so a renamed, moved or deleted seam fails here
+    /// as well as in the probe build.
     #[test]
-    fn checked_in_locations_are_the_s1_and_s7_matches() {
-        let locations = checked_in_locations();
-        assert_eq!(
-            locations,
-            [
-                SeamLocation {
-                    file: "src/family/mod.rs".to_owned(),
-                    item: "FamilyKind::catalog_code_prefix".to_owned(),
-                },
-                SeamLocation {
-                    file: "src/linking/composed/requests.rs".to_owned(),
-                    item: "families".to_owned(),
-                },
-                SeamLocation {
-                    file: "src/route.rs".to_owned(),
-                    item: "same_kind".to_owned(),
-                },
-                SeamLocation {
-                    file: "src/value/expression/causes.rs".to_owned(),
-                    item: "ProtocolClauseSnapshot::catalog_code".to_owned(),
-                },
-                SeamLocation {
-                    file: "src/value/expression/mod.rs".to_owned(),
-                    item: "evaluate_declaration".to_owned(),
-                },
-                SeamLocation {
-                    file: "src/value/expression/family.rs".to_owned(),
-                    item: "ValueFunctionFamily::evaluate".to_owned(),
-                },
-            ]
-            .into_iter()
-            .collect()
-        );
+    fn checked_in_locations_name_functions_that_hold_a_match() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root");
+        for location in checked_in_locations() {
+            let source = fs::read_to_string(workspace_root.join(&location.file))
+                .unwrap_or_else(|error| panic!("{}: {error}", location.file));
+            let parsed = syn::parse_file(&source)
+                .unwrap_or_else(|error| panic!("{}: {error}", location.file));
+            let mut visitor = FunctionsWithMatch::default();
+            visitor.visit_file(&parsed);
+            assert!(
+                visitor.found.contains(&location.item),
+                "{location:?} names no function holding a match; functions with one: {:?}",
+                visitor.found
+            );
+        }
     }
 
     /// F14: the checked-in key is the enclosing item, not a line number --

@@ -3,21 +3,21 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
+use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_exact::{Decimal, IeeeWidth, IllTypedCause, Presence, Rational, RoundingMode};
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionType, CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock,
-    DefinitionReference, DefinitionRevision, Evaluation, Expression, FamilyOutcome,
-    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, LocatedLoss, Location,
-    MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval,
-    QualifiedName, RationalDomain, TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueLoss,
-    ValueType,
+    CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
+    CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock, DefinitionReference,
+    DefinitionRevision, Evaluation, FamilyOutcome, FieldDeclaration, FieldValue, IeeeValue,
+    LocatedLoss, Location, MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations,
+    ProvedInterval, QualifiedName, RationalDomain, TypeEnvironment, UniverseIdentity, Value,
+    ValueLoss, ValueType,
 };
 
 use sha2::{Digest, Sha256};
@@ -149,7 +149,7 @@ fn param_type_form(value_type: &ValueType) -> TypeForm {
             crate::support::type_form::named_type_form("Obj")
         }
         ValueType::Option(payload) => TypeForm::builtin(
-            quire_spec_language::value::BuiltinType::Option,
+            qsl_forms::BuiltinType::Option,
             crate::support::type_form::SPAN,
         )
         .with_arguments(vec![param_type_form(payload)]),

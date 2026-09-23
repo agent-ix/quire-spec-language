@@ -18,7 +18,6 @@ pub mod complete;
 pub(crate) mod family;
 pub mod formal_source;
 pub mod format;
-pub mod forms;
 pub mod library;
 pub mod linking;
 pub mod located_json;

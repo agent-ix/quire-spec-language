@@ -344,7 +344,7 @@ delivered code today:
   neither a function-declaration nor a function-application variant," and
   states plainly that a variant left in place "with or without an arm for
   it, does not satisfy this criterion." `Expression::Call` is that variant,
-  and it is still present in `Expression` (`src/forms/`) -- checking moved
+  and it is still present in `Expression` (`qsl-forms/src/`) -- checking moved
   (`Typer::call` is deleted, and `check_declaration_body`/
   `check_application`, `src/check/family.rs`, are the real entry points
   `check::family::ValueFunctionFamily::check` now calls internally), but

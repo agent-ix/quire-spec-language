@@ -10,6 +10,18 @@
 //! [`CheckedPackage::evaluate`] run already-checked code under a
 //! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
+//!
+//! The parsed-form types (`Expression` and its siblings) are defined once,
+//! in the layer-2 `qsl-forms` crate; this module has no `syntax` submodule
+//! (FR-067-AC-9, TC-169 step 1). The `use` below fails to compile, but not
+//! as proof of absence by itself: this module is private, so the same `use`
+//! would fail the same way for a `syntax` submodule that existed but stayed
+//! private. `tests::value_expression_syntax_is_absent_from_the_module_tree`
+//! carries the real absence check, against the file-per-module convention:
+//!
+//! ```compile_fail
+//! use quire_spec_language::value::expression::syntax::Expression;
+//! ```
 
 mod causes;
 mod evaluate;
@@ -234,6 +246,11 @@ fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
 /// ruling). An `identity` the package does not resolve is
 /// `Err(InternalFault)` naming stage S6a (FR-090-AC-3).
 ///
+/// `identity` and `env` are `Value`'s `ReferenceEvaluation::Key` and `Env`,
+/// because `Value` is the one S6a family. The next family to gain an
+/// `S6aFamilyKind` variant brings its own `Key` and `Env`, and reshapes these
+/// parameters in that change.
+///
 /// FR-063 seam: adding an `S6aFamilyKind` variant with no arm here fails
 /// `--cfg seam_probe` with `E0004`.
 #[deny(clippy::wildcard_enum_match_arm)]
@@ -428,8 +445,8 @@ mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
     use crate::family::EvalOutcome;
-    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
     use quire_exact::{Integer, NodeKey};
 
@@ -437,7 +454,7 @@ mod tests {
     fn identity_function() -> FunctionDeclaration {
         let bound = || {
             TypeForm::builtin(
-                crate::forms::BuiltinType::Int,
+                qsl_forms::BuiltinType::Int,
                 qsl_foundation::Span { start: 0, end: 0 },
             )
             .with_bounds(vec!["0".to_owned(), "10".to_owned()])
@@ -547,9 +564,6 @@ mod tests {
         );
     }
 
-    /// Every S6a family kind.
-    const EVERY_S6A_FAMILY: [S6aFamilyKind; 1] = [S6aFamilyKind::Value];
-
     /// TC-385 step 1: an exhaustive `match` with no `_` arm over the S6a
     /// family kind, one arm per `ReferenceEvaluation` family and no
     /// `Relation` arm. A new `S6aFamilyKind` variant fails this to compile
@@ -589,7 +603,7 @@ mod tests {
         );
         let objects = ObjectEnvironment::default();
         let undeclared = NodeKey::from_digest([0xAB; 32]);
-        for kind in EVERY_S6A_FAMILY {
+        for kind in S6aFamilyKind::ALL {
             let name = s6a_family_name(kind);
             let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
             let mut env =
@@ -636,6 +650,32 @@ mod tests {
             ),
             "{:?}",
             evaluation.outcome
+        );
+    }
+
+    /// TC-169 step 1 / FR-067-AC-9: `value::expression::syntax` is absent
+    /// from the module tree, checked directly against this repository's
+    /// file-per-module convention (`value::expression::mod`'s own `mod X;`
+    /// declarations map 1:1 to `src/value/expression/X.rs`), rather than
+    /// only through the `compile_fail` doctest on this module's doc, which
+    /// cannot by itself distinguish "absent" from "still present but
+    /// private".
+    #[trace("TC-169", "FR-067-AC-9")]
+    #[test]
+    fn value_expression_syntax_is_absent_from_the_module_tree() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            !manifest_dir.join("src/value/expression/syntax.rs").exists(),
+            "src/value/expression/syntax.rs still exists on disk"
+        );
+        let mod_rs = std::fs::read_to_string(manifest_dir.join("src/value/expression/mod.rs"))
+            .expect("src/value/expression/mod.rs exists");
+        let declares_syntax_module = mod_rs
+            .lines()
+            .any(|line| line.trim() == "mod syntax;" || line.trim() == "pub mod syntax;");
+        assert!(
+            !declares_syntax_module,
+            "value::expression::mod still declares a syntax submodule"
         );
     }
 }
