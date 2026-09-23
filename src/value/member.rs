@@ -150,6 +150,15 @@ impl Member {
     }
 }
 
+/// Serializes exactly [`Member::to_wire`], so a member embedded in a larger
+/// preimage (the FR-322 application-node key's `operation.member`) has one
+/// wire encoding, not a second hand-written one.
+impl serde::Serialize for Member {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_wire().serialize(serializer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
