@@ -8,14 +8,17 @@
 //! layer-4 v2 reader, which is a separate crate once QSL-181 extracts
 //! `qsl-semantics` (and X-7 `qsl-package`). Rust has no visibility that
 //! names one module of another crate, so the minter is `pub`, and two
-//! checks confine its callers instead of the compiler: arch-lint rule T12-E
+//! checks confine its callers within the QSL workspace instead of the
+//! compiler (a crate outside the workspace can call it; those checks do not
+//! scan such a crate): arch-lint rule T12-E
 //! (`tools/arch-lint/api_surface.rs`, run on this tree by
 //! `tc_arch_lint_api_surface_024` in `cargo test --workspace`) fails on any
 //! shipped reference outside `checked_package::checked_v2`, and
 //! `tests/it/verified_binding_witness.rs` fails unless the only reference
 //! outside this module and `library`'s own tests is one call inside
 //! `read_checked_package_v2`'s `AdmittedV2` arm, including any reference
-//! written inside a macro. This is ADR-013 O-04's pattern for the `pub`
+//! written inside a macro, so a wrapper inside `checked_v2` that T12-E's
+//! module check lets through is refused too. This is ADR-013 O-04's pattern for the `pub`
 //! kernel `NodeKey` constructor (T12-B). The field stays private, so the
 //! minter is the only way to build one:
 //!

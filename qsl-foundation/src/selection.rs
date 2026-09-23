@@ -319,3 +319,51 @@ pub enum StaleProfile {
     /// A known profile has the selected version with another digest.
     ByteDigest,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(index: usize) -> DefinitionRef {
+        DefinitionRef::new(
+            format!("acme.profile.{index}"),
+            "1",
+            DefinitionDigest::from_digest(ByteDigest::of(&index.to_be_bytes())),
+        )
+        .unwrap()
+    }
+
+    /// TC-180 (FR-131-AC-2): the profile inventory admits exactly
+    /// `MAX_SELECTED_DEFINITIONS` distinct profiles, refuses one more as a
+    /// resource limit, and refuses a repeated exact profile as a duplicate.
+    #[test]
+    fn profile_catalog_bounds_and_duplicates_are_refused_by_their_own_error() {
+        let full: Vec<_> = (0..MAX_SELECTED_DEFINITIONS).map(profile).collect();
+        let catalog = ProfileCatalog::new(full.clone()).unwrap();
+        assert_eq!(
+            catalog.profile_status(&full[MAX_SELECTED_DEFINITIONS - 1]),
+            ProfileStatus::Exact
+        );
+
+        let mut over = full.clone();
+        over.push(profile(MAX_SELECTED_DEFINITIONS));
+        assert_eq!(
+            ProfileCatalog::new(over).unwrap_err(),
+            ProfileCatalogError::ResourceLimit
+        );
+
+        let duplicate = vec![profile(0), profile(1), profile(0)];
+        assert_eq!(
+            ProfileCatalog::new(duplicate).unwrap_err(),
+            ProfileCatalogError::DuplicateProfile
+        );
+
+        // At the limit, a repeat is a duplicate, not a resource refusal.
+        let mut repeated = full;
+        repeated[MAX_SELECTED_DEFINITIONS - 1] = profile(0);
+        assert_eq!(
+            ProfileCatalog::new(repeated).unwrap_err(),
+            ProfileCatalogError::DuplicateProfile
+        );
+    }
+}

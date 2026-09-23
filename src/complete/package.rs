@@ -22,10 +22,13 @@ pub struct ReaderAuthority {
 }
 
 impl ReaderAuthority {
-    /// Test-only fixture authority (`test-support`, never enabled in a
-    /// production build), so the integration tests that parse a source and
-    /// then resolve it (`tests/it/complete_package.rs`) can build
-    /// definitions and models.
+    /// Test-only fixture authority (`test-support`), so the integration
+    /// tests that parse a source and then resolve it
+    /// (`tests/it/complete_package.rs`) can build definitions and models.
+    /// It forges the capability this type exists to withhold, so
+    /// `test-support` must never be enabled by a shipped dependent: only a
+    /// `[dev-dependencies]` entry may turn it on, which
+    /// `no_shipped_dependency_enables_test_support` checks.
     #[cfg(any(test, feature = "test-support"))]
     pub const fn fixture() -> Self {
         Self { _private: () }

@@ -136,6 +136,10 @@ struct PackageDependencies {
     name: String,
     normal: Vec<String>,
     dev: Vec<String>,
+    /// Each normal (and build) dependency with the features it enables.
+    shipped_features: Vec<(String, Vec<String>)>,
+    /// The package's own `default` feature list.
+    default_features: Vec<String>,
 }
 
 /// Every workspace package's dependency names, from `cargo metadata`, so
@@ -181,10 +185,35 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
                     })
                     .collect()
             };
+            let strings = |value: &serde_json::Value| -> Vec<String> {
+                value
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| item.as_str().expect("a feature name").to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
             PackageDependencies {
                 name: package["name"].as_str().expect("a package name").to_owned(),
                 normal: names_of_kind(None),
                 dev: names_of_kind(Some("dev")),
+                shipped_features: dependencies
+                    .iter()
+                    .filter(|dependency| dependency["kind"].as_str() != Some("dev"))
+                    .map(|dependency| {
+                        (
+                            dependency["name"]
+                                .as_str()
+                                .expect("a dependency name")
+                                .to_owned(),
+                            strings(&dependency["features"]),
+                        )
+                    })
+                    .collect(),
+                default_features: strings(&package["features"]["default"]),
             }
         })
         .collect()
@@ -253,6 +282,42 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "{crate_name} has a {kind} dependency on workspace crate {dependency}"
                 );
             }
+        }
+    }
+}
+
+/// QSL-181 (#371 review L8): `test-support` turns on fixture constructors
+/// that forge crate-issued capabilities (`ReaderAuthority::fixture`) and
+/// test-only views of `pub(crate)` items. It is for tests only: no workspace
+/// package enables it by default, and no normal or build dependency edge
+/// enables it on a workspace crate (a dev-dependency may, which is how a
+/// crate's own tests reach it). Cargo feature unification would otherwise
+/// switch it on in a shipped build.
+#[trace("FR-087-AC-1", "TC-243")]
+#[test]
+fn no_shipped_dependency_enables_test_support() {
+    let packages = workspace_dependencies();
+    let workspace_crates: Vec<&str> = packages
+        .iter()
+        .map(|package| package.name.as_str())
+        .collect();
+    assert!(workspace_crates.contains(&"quire-spec-language"));
+    for package in &packages {
+        assert!(
+            !package
+                .default_features
+                .iter()
+                .any(|feature| feature == "test-support"),
+            "{} enables test-support by default",
+            package.name
+        );
+        for (dependency, features) in &package.shipped_features {
+            assert!(
+                !(workspace_crates.contains(&dependency.as_str())
+                    && features.iter().any(|feature| feature == "test-support")),
+                "{} enables {dependency}/test-support through a normal or build dependency",
+                package.name
+            );
         }
     }
 }

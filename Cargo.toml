@@ -21,7 +21,12 @@ quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 # `DomainPackageRef::fixture`, `DomainPackageRef::fixture_with_version`) that
 # derive a digest from a display identity, and `ReaderAuthority::fixture` —
 # never enabled in a production build; `cargo test --all-features` turns it on
-# so integration tests in `tests/` can reach them (PR #140 F13).
+# so integration tests in `tests/` can reach them (PR #140 F13). A shipped
+# dependent must never enable it: `ReaderAuthority::fixture` forges a
+# crate-issued capability. Only `[dev-dependencies]` may name it, and
+# `tests/it/family_outcome_layering.rs`'s
+# `no_shipped_dependency_enables_test_support` refuses any normal or build
+# dependency that does (QSL-181).
 test-support = []
 
 [dependencies]

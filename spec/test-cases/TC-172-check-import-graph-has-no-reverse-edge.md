@@ -1,12 +1,12 @@
 ---
 id: TC-172
-title: "check's real import graph has no edge into value::expression or into checking, and its re-export back is bounded"
+title: "check's real import graph has no edge into value::expression or into checking, and value::expression re-exports no check item"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: verifies
 ---
-# TC-172: check's real import graph has no edge into value::expression or into checking, and its re-export back is bounded
+# TC-172: check's real import graph has no edge into value::expression or into checking, and value::expression re-exports no check item
 
 ## Description
 

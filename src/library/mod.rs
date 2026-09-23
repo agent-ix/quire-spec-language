@@ -32,8 +32,9 @@
 //! [`VerifiedPackage::into_import_view`] is the only `ImportView`
 //! constructor. Both types' fields are private to this module. The witness
 //! minter and `verify_binding` are `pub` so the layer-4 reader can call them
-//! across the QSL-181 crate boundary; arch-lint rule T12-E confines the
-//! minter's callers to that reader.
+//! across the QSL-181 crate boundary; within the QSL workspace, arch-lint
+//! rule T12-E and `tests/it/verified_binding_witness.rs` confine the
+//! minter's callers to that reader (see `library::witness`).
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
@@ -582,8 +583,10 @@ pub(crate) fn verify_package(
 /// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
 /// T-2): a [`LibraryPackage`] read from v2 wire bytes for which all three
 /// conditions held -- 1, a supported schema version (witnessed by
-/// [`SupportedV2Wire`], which only the layer-4 v2 reader mints: its minter is
-/// `pub` for the crate boundary and arch-lint rule T12-E gates its callers); 2, the FR-322 `package_id` recompute (`verify_package`); and
+/// [`SupportedV2Wire`], which within the QSL workspace only the layer-4 v2
+/// reader mints: its minter is `pub` for the crate boundary and
+/// `library::witness`'s two gates confine its callers); 2, the FR-322
+/// `package_id` recompute (`verify_package`); and
 /// 3, this identity and version listed in the consumer's library lock or
 /// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
@@ -605,8 +608,10 @@ pub(crate) fn verify_package(
 /// `verify_binding` is `pub` for the QSL-181 crate boundary: it only
 /// verifies, and it needs a condition-1 witness. A crate-external caller
 /// cannot build that witness itself (its field is private), so it cannot
-/// verify a hand-built candidate without the witness minter, whose callers
-/// arch-lint rule T12-E confines to the layer-4 v2 reader. Making the
+/// verify a hand-built candidate without calling the `pub` witness minter.
+/// Within the QSL workspace, `library::witness`'s two gates confine the
+/// minter's callers to the layer-4 v2 reader; a crate outside the workspace
+/// is not scanned and can call it. Making the
 /// witness's field public lets this snippet compile, so the test fails.
 /// (Stable rustdoc does not check a `compile_fail` error code, so none is
 /// claimed here.)
