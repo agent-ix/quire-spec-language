@@ -158,6 +158,7 @@ fn cli_parses_and_formats_without_claiming_execution() {
     assert!(refused.stdout.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
     assert_eq!(value["status"], "refused");
+    assert_eq!(value["code"], "unknown_edition");
     assert_eq!(value["path"], "tests/fixtures/parent.native");
     let invalid = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args(["parse", "", "fixture:1", "tests/fixtures/parent.native"])

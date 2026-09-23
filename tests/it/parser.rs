@@ -299,14 +299,19 @@ fn long_flat_chains_parse_and_drop_on_a_bounded_stack() {
     std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(|| {
-            for expression in [
-                std::iter::repeat_n("1", 20_000)
-                    .collect::<Vec<_>>()
-                    .join(" + "),
-                "not ".repeat(20_000) + "true",
+            // 20,000 literals joined by 19,999 additions; 20,000 negations
+            // of one literal.
+            for (expression, nodes) in [
+                (
+                    std::iter::repeat_n("1", 20_000)
+                        .collect::<Vec<_>>()
+                        .join(" + "),
+                    39_999,
+                ),
+                ("not ".repeat(20_000) + "true", 20_001),
             ] {
                 let a = unit(&expression);
-                assert!(!a.expressions().is_empty());
+                assert_eq!(a.expressions().len(), nodes);
             }
         })
         .unwrap()

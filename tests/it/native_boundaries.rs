@@ -92,11 +92,46 @@ fn formatter_cannot_raise_the_hard_content_ceiling() {
     assert_eq!(format(&parsed).unwrap_err().code(), Code::ResourceExhausted);
 }
 
-/// The non-test half of `src/format.rs`, for the TC-404 step-1 edge scan.
-fn format_module_production_text() -> &'static str {
+/// Everything in `src/format.rs` except its `mod tests` block and comment
+/// lines, for the TC-404 step-1 edge scan.
+fn format_module_production_code() -> String {
     let text = include_str!("../../src/format.rs");
-    text.split_once("#[cfg(test)]")
-        .map_or(text, |(production, _)| production)
+    let production = text
+        .split_once("#[cfg(test)]\nmod tests {")
+        .map_or(text, |(production, _)| production);
+    production
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A `use` line of any visibility, with its visibility removed.
+fn use_path(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    let line = ["pub(crate) ", "pub(super) ", "pub "]
+        .iter()
+        .find_map(|visibility| line.strip_prefix(visibility))
+        .unwrap_or(line);
+    line.strip_prefix("use ")
+}
+
+/// Every macro invoked as `name!(`, `name![` or `name!{`.
+fn invoked_macros(code: &str) -> std::collections::BTreeSet<String> {
+    let bytes = code.as_bytes();
+    let mut names = std::collections::BTreeSet::new();
+    for (at, window) in bytes.windows(2).enumerate() {
+        if window[0] != b'!' || !matches!(window[1], b'(' | b'[' | b'{') {
+            continue;
+        }
+        let start = code[..at]
+            .rfind(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+            .map_or(0, |boundary| boundary + 1);
+        if start < at {
+            names.insert(code[start..at].to_owned());
+        }
+    }
+    names
 }
 
 #[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]
@@ -105,35 +140,35 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
     // The signature is the CST's parse type; this fails to compile otherwise.
     let _: fn(&ParsedSource) -> Result<String, FormatRefusal> = format;
     let _: fn(&ParsedSource, usize) -> Result<String, FormatRefusal> = format_with_limit;
-    let production = format_module_production_text();
-    let uses: Vec<&str> = production
-        .lines()
-        .map(str::trim_start)
-        .filter(|line| line.starts_with("use "))
-        .collect();
+    let code = format_module_production_code();
+    let uses: Vec<&str> = code.lines().filter_map(use_path).collect();
     assert!(!uses.is_empty());
-    for line in &uses {
+    for path in &uses {
         assert!(
-            ["use qsl_cst", "use qsl_foundation", "use std"]
+            ["qsl_cst", "qsl_foundation", "std"]
                 .iter()
-                .any(|allowed| line.starts_with(allowed)),
-            "{line}"
+                .any(|allowed| path.starts_with(allowed)),
+            "use {path}"
         );
     }
-    let code: String = production
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
     for forbidden in [
         "crate::",
         "super::",
+        "self::",
         "quire_spec_language",
         "ParsedUnit",
         "syntax::",
         "parser::",
     ] {
         assert!(!code.contains(forbidden), "src/format.rs names {forbidden}");
+    }
+    // A crate-local `macro_rules!` macro reaches the root crate without a
+    // path; only standard-library macros are invoked.
+    for name in invoked_macros(&code) {
+        assert!(
+            ["matches"].contains(&name.as_str()),
+            "src/format.rs invokes {name}!"
+        );
     }
 }
 

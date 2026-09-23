@@ -6,9 +6,7 @@
 //! `ParsedSource` that `is_admissible()`; a recovering or diagnosed parse
 //! refuses with a typed cause and no output.
 //!
-//! This module owns the one CST token walk; `complete::editor`'s
-//! `format_document` calls [`format_with_limit`] rather than keeping a
-//! second walk.
+//! `complete::editor::format_document` calls [`format_with_limit`].
 use qsl_cst::{
     CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, TokenClass, TokenKind,
 };
@@ -95,6 +93,7 @@ pub fn format_with_limit(
     };
     let mut indent = 0_usize;
     let mut previous: Option<&CstToken> = None;
+    let mut closed_declaration = false;
     for token in parsed
         .cst()
         .tokens()
@@ -105,6 +104,11 @@ pub fn format_with_limit(
         let text = output.token_text(token)?;
         if token.class() == TokenClass::Comment {
             output.begin_line(indent, span)?;
+            // A comment never touches the previous token: `/` then `// c`
+            // would otherwise lex as the comment `/// c`.
+            if !output.text.is_empty() && !output.text.ends_with([' ', '\n']) {
+                output.push(" ", span)?;
+            }
             output.push(text, span)?;
             output.newline(span)?;
             previous = None;
@@ -115,7 +119,7 @@ pub fn format_with_limit(
             indent = indent.saturating_sub(1);
             output.newline(span)?;
             output.begin_line(indent, span)?;
-        } else if follows_block(previous, spelling) {
+        } else if closed_declaration && !completes_block(spelling) {
             output.newline(span)?;
             output.begin_line(indent, span)?;
         } else if output.text.ends_with('\n') {
@@ -131,6 +135,7 @@ pub fn format_with_limit(
         } else if spelling == b";" {
             output.newline(span)?;
         }
+        closed_declaration = spelling == b"}" && indent == 0;
         previous = Some(token);
     }
     if !output.text.ends_with('\n') {
@@ -173,11 +178,10 @@ fn whole_source_error(
     )
 }
 
-/// Whether `current` starts a new line because it follows a closing brace.
-/// Punctuation that completes the braced construct stays on its line.
-fn follows_block(previous: Option<&CstToken>, current: &[u8]) -> bool {
-    previous.is_some_and(|previous| previous.spelling() == b"}")
-        && !matches!(current, b";" | b"," | b")" | b"]")
+/// Whether a token completes the braced construct before it and so stays
+/// on the line of a declaration-level closing brace.
+fn completes_block(current: &[u8]) -> bool {
+    matches!(current, b";" | b"," | b")" | b"]")
 }
 
 /// Whether a space separates `current` from the previous significant token.
@@ -319,6 +323,8 @@ mod tests {
             "type Digit = Int[0, 9];\nfunction h using v(p: Point): Int[0, 9] pure { p.x }",
             "function k using v(): Boolean pure { not not (true // retained café comment  \n and false) }",
             "function m using v(): Rational[0, 1; 1, 4] pure { rational(1, 2) }",
+            "function d using v(x: Rational[0, 9; 1, 9]): Rational[0, 9; 1, 9] pure { x / // divide\n rational(3, 1) }",
+            "function c using v(): Boolean pure { true// c\n }",
         ] {
             let source = format!("// leading comment\n{HEADER}{declarations}\n");
             let parsed = parse(&source);
@@ -330,5 +336,33 @@ mod tests {
             assert!(formatted.contains("// leading comment"));
             assert_eq!(format(&reparsed).expect("formats again"), formatted);
         }
+    }
+
+    #[trace("TC-013", "FR-003-AC-2")]
+    #[test]
+    fn a_comment_never_joins_the_token_before_it() {
+        let parsed = parse(&format!(
+            "{HEADER}function d using v(x: Rational[0, 9; 1, 9]): Rational[0, 9; 1, 9] pure {{ x / // divide\n rational(3, 1) }}\nfunction c using v(): Boolean pure {{ true// c\n }}\n"
+        ));
+        let formatted = format(&parsed).expect("admissible source formats");
+        assert!(formatted.contains("x / // divide\n"), "{formatted}");
+        assert!(formatted.contains("true // c\n"), "{formatted}");
+    }
+
+    #[trace("TC-013", "FR-003-AC-3")]
+    #[test]
+    fn only_a_declaration_level_closing_brace_ends_its_line() {
+        let parsed = parse(&format!(
+            "{HEADER}record P {{ x: Int[0, 9]; }} function f using v(b: Boolean): Int[0, 9] pure {{ if b then P {{ x: 1 }}.x else 0 }}\n"
+        ));
+        let formatted = format(&parsed).expect("admissible source formats");
+        let expected = format!(
+            "{HEADER}record P {{\n  x : Int [0, 9];\n}}\nfunction f using v (b : Boolean) : Int [0, 9] pure {{\n  if b then P {{\n    x : 1\n  }}.x else 0\n}}\n"
+        );
+        assert_eq!(formatted, expected);
+        assert_eq!(
+            format(&parse(&formatted)).expect("formats again"),
+            formatted
+        );
     }
 }
