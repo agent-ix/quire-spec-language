@@ -36,16 +36,15 @@ use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
 
-// ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
-// QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
-// re-exported by this one, closed, non-glob line. `CheckedPackage` (S4
-// in-process) is no longer `check`'s: it is layer-4 `checked_package`'s own
-// canonical type (this package's checked declarations plus the checked
-// dependency closure), re-exported by the second line below so that
-// `value::expression::CheckedPackage::call` remains the S6a entry point
+// `CheckedExpression` is `check`'s own checked-output type; this module
+// imports it from `crate::check` and re-exports none of it (FR-068-AC-10 is
+// retired by QSL-181: ADR-011 §7.2 forbids a root re-export of an item that
+// moves to `qsl-semantics`). `CheckedPackage` (S4 in-process) is layer-4
+// `checked_package`'s own canonical type, re-exported by the line below so
+// that `value::expression::CheckedPackage::call` remains the S6a entry point
 // ADR-011 §7.3's M-5 row names -- the sole closed re-export FR-087-AC-9/
 // TC-256 requires, naming no other path and no glob.
-pub use crate::check::CheckedExpression;
+use crate::check::CheckedExpression;
 pub use crate::checked_package::CheckedPackage;
 
 /// A runtime input a call or evaluation refuses before any charge. Stays at
