@@ -17,10 +17,11 @@ use quire_exact::{
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
 use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::value::{
-    CompositeDeclaration, CompositeShape, EnumMemberIndex, EqualityOperand, EqualityOperator,
-    FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_spec_language::value::enumeration::EnumMemberIndex;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -585,9 +586,12 @@ mod checked {
         PackageDeclarations,
     };
     use quire_spec_language::model::object_environment::ObjectEnvironment;
+    use quire_spec_language::value::enumeration::{
+        EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    };
     use quire_spec_language::value::{
-        CheckedPackage, CheckedPackageEvaluation, EnumDeclaration, EnumDeclarationPreimage,
-        EnumMemberPreimage, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
+        CheckedPackage, CheckedPackageEvaluation, NodeOwner, OwnerSelection, OwnerSubject,
+        SemanticGraphCause,
     };
     use serde_json::json;
 

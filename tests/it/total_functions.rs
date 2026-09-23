@@ -22,10 +22,12 @@ use quire_spec_language::check::{
 };
 use quire_spec_language::family::FamilyOutcome;
 use quire_spec_language::model::object_environment::ObjectEnvironment;
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_spec_language::value::{
-    CatalogRole, CheckedPackage, CheckedPackageEvaluation, CompositeDeclaration, CompositeShape,
-    DefinitionLock, DefinitionReference, DefinitionRevision, Evaluation, FieldDeclaration,
-    LocatedLoss, ObjectTypeDeclaration, QualifiedName, TypeEnvironment, ValueLoss,
+    CatalogRole, CheckedPackage, CheckedPackageEvaluation, DefinitionLock, DefinitionReference,
+    DefinitionRevision, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};

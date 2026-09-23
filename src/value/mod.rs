@@ -8,19 +8,19 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`](quire_exact::Text), [`EnumValue`] and FR-142
-//!    `quire_exact::Quantity` values read against a [`UnitTable`] over an
+//!    [`Text`](quire_exact::Text), [`EnumValue`](enumeration::EnumValue) and FR-142
+//!    `quire_exact::Quantity` values read against a [`UnitTable`](quantity::UnitTable) over an
 //!    admitted [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
 //!    (FR-140), [`divide`] and [`modulo`] (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
-//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`]
-//!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
+//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`](enumeration::compare_enum)
+//!    (FR-141), [`evaluate_quantity`](quantity::evaluate_quantity) and [`convert_quantity`](quantity::convert_quantity) (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive
 //!    [`Value`](quire_exact::Value)s over a
-//!    [`TypeEnvironment`], the FR-149 equality matrix
-//!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
+//!    [`TypeEnvironment`](declaration::TypeEnvironment), the FR-149 equality matrix
+//!    ([`TypeEnvironment::check_equality`](declaration::TypeEnvironment::check_equality)) and FR-144 bounded
 //!    [`CollectionValue`](quire_exact::CollectionValue)s
 //!    ([`construct_collection`](quire_exact::construct_collection)) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
@@ -119,12 +119,12 @@
 //    `crate::value::<submodule>` paths, never `super::`.
 //
 // Layer 3's submodules are named by their real, submodule-qualified path
-// (`crate::value::quantity::UnitTable`, not the flat
-// `crate::value::UnitTable` aggregate) wherever `check` imports them, which
-// FR-068-AC-6's layer rule requires. The `pub` ones are those a later layer
-// imports by submodule path: `declaration`, `enumeration`, `quantity`,
-// `model_query` and `stop` are the evaluator's (`value::expression`), and
-// `definition` and `semantic_node` are `check`'s and `model`'s.
+// (`crate::value::quantity::UnitTable`) wherever `check` imports them, which
+// FR-068-AC-6's layer rule requires. The `pub` ones are those the layer-5
+// evaluator (`value::expression`) imports by submodule path:
+// `declaration`, `enumeration`, `quantity`, `model_query` and `stop`.
+// `definition` and `semantic_node` stay `pub(crate)`: their consumers
+// outside `value` are the layer-3 `check`, `model` and `library`.
 // QSL-131 O3 deleted `decimal`, `ieee`, `numeric` and `text`; their former
 // items are imported from `quire_exact` directly.
 
@@ -169,24 +169,18 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
+// `declaration`, `enumeration` and `quantity` are `pub` modules, so their
+// items have one public path, the submodule one
+// (`value::declaration::TypeEnvironment`); this module does not re-export
+// them flat as well (QSL-181 X-6a, the same one-path rule as QSL-131 O3).
 // `declaration` owns the FR-143 registry, the FR-149 check-level equality
 // layer and QSL's name-keyed `FieldDeclaration`/`Component`/
 // `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
 // (ADR-011 §6.1).
-pub use declaration::{
-    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule,
-    FieldDeclaration, FieldExpression, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
-    TypeEnvironment,
-};
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
     PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
-};
-pub use enumeration::{
-    compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
-    EnumMemberPreimage, EnumValue,
 };
 // QSL-131 O3: `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
@@ -220,10 +214,6 @@ pub use member::Member;
 // narrowed to `pub(crate)` since its only consumers are inside
 // `value::expression` (rust-review "narrow API" bar: `pub` only for what
 // consumers outside the crate use).
-pub use quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
-    QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
-};
 pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     OwnerSubject, SemanticGraphCause,

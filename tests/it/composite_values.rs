@@ -28,12 +28,14 @@ use quire_spec_language::library::{
 use quire_spec_language::model::object_environment::{
     ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
 };
-use quire_spec_language::value::{
+use quire_spec_language::value::declaration::{
     Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator, FieldDeclaration,
-    FieldExpression, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
-    InvalidDeclaration, ObjectTypeDeclaration, QualifiedName, RecursionEdges, TypeEnvironment,
-    ValueGraph,
+    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+};
+use quire_spec_language::value::enumeration::EnumMemberIndex;
+use quire_spec_language::value::{
+    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, QualifiedName, ValueGraph,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

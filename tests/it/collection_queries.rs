@@ -19,10 +19,10 @@ use quire_spec_language::check::{
 };
 use quire_spec_language::family::FamilyOutcome;
 use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::value::{
-    CheckedPackage, CheckedPackageEvaluation, CompositeDeclaration, CompositeShape,
-    FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_spec_language::value::{CheckedPackage, CheckedPackageEvaluation};
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

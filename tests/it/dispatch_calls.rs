@@ -44,9 +44,10 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::model::object_environment::ObjectEnvironment;
+use quire_spec_language::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_spec_language::value::{
     decode_function_package_v2, CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation,
-    InputRefusal, ObjectTypeDeclaration, QualifiedName, TypeEnvironment,
+    InputRefusal, QualifiedName,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type

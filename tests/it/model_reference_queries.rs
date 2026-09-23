@@ -48,10 +48,12 @@ use quire_spec_language::model::population::{
     InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
     PopulationMember,
 };
+use quire_spec_language::value::declaration::{
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_spec_language::value::{
-    CallFailure, CheckedPackage, CheckedPackageEvaluation, CompositeDeclaration, CompositeShape,
-    DeclarationCause, Evaluation, FieldDeclaration, InputRefusal, ObjectTypeDeclaration,
-    QualifiedName, TypeEnvironment,
+    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

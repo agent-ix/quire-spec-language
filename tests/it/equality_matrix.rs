@@ -36,14 +36,19 @@ use quire_spec_language::check::{
 };
 use quire_spec_language::family::FamilyOutcome;
 use quire_spec_language::model::object_environment::ObjectEnvironment;
+use quire_spec_language::value::declaration::{
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
+use quire_spec_language::value::enumeration::{
+    EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
+};
+use quire_spec_language::value::quantity::UnitTable;
 use quire_spec_language::value::{
-    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckedEquality, CheckedPackage,
-    CheckedPackageEvaluation, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DefinitionLock, DefinitionReference, DefinitionRevision,
-    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
-    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FieldDeclaration,
-    FieldExpression, LocatedLoss, NodeOwner, ObjectTypeDeclaration, OwnerSelection, OwnerSubject,
-    TypeEnvironment, UnitGraph, UnitPreimage, UnitTable, ValueLoss,
+    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckedPackage, CheckedPackageEvaluation,
+    DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage, Evaluation,
+    LocatedLoss, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -204,7 +209,10 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
     .unwrap()
 }
 
-fn enum_value(declaration: &EnumDeclaration, case: &str) -> quire_spec_language::value::EnumValue {
+fn enum_value(
+    declaration: &EnumDeclaration,
+    case: &str,
+) -> quire_spec_language::value::enumeration::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),

@@ -336,9 +336,9 @@ pub struct DispatchRoot {
 /// Every declared object type's own `supertypes` (H1, #204 round 1),
 /// translated from `domain_package.records`' [`DeclarationKey`]s into their
 /// [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
-/// the exact shape [`crate::value::ObjectTypeDeclaration::with_supertypes`]
+/// the exact shape [`crate::value::declaration::ObjectTypeDeclaration::with_supertypes`]
 /// needs (ADR-013 O-05). No production code builds a
-/// [`crate::value::TypeEnvironment`] yet (only test scaffolding does), so
+/// [`crate::value::declaration::TypeEnvironment`] yet (only test scaffolding does), so
 /// this is test-support infrastructure today; #131's own real intake can
 /// call it exactly as tests do.
 pub fn object_type_supertypes(
