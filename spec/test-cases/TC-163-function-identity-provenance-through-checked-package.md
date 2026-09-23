@@ -14,8 +14,8 @@ Verify that the function packaging/lowering public API accepts only checked
 objects or verified checked-package bytes, that a function declaration's
 identity and a call's source occurrence survive checking, linking and v2
 emission unchanged, and that the `infer_form` function arms are reduced to
-one call each with no inline branching. Scope: FR-065-AC-1 through
-FR-065-AC-4.
+one call each with no inline branching, and that the identities equal
+QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
 
 ## Test Procedure
 
@@ -37,6 +37,9 @@ FR-065-AC-4.
 6. Inspect the `infer_form` function-declaration and function-application
    arms' source: count calls into `Value` family check code and count any
    other conditional, lookup or loop statement present directly in the arm.
+7. Check a fixture function declaration and a fixture node whose body
+   contains a call, both taken from QSpec's `node-identity-vectors.json` and
+   FR-322 application-node vectors, and read each checked identity.
 
 ## Expected Results
 
@@ -53,8 +56,13 @@ FR-065-AC-4.
 - Step 6: each arm contains exactly one call into `Value`'s family check
   code and no other conditional, lookup or loop; a code-shape check against a
   fixed budget fails if either arm regains inline branching.
+- Step 7: each identity equals its QSpec vector's digest in domain
+  `quire.checked-semantic-node/v1`.
 
 ## Status
+
+Step 7 (FR-065-AC-8) is unbacked until QSL-156 slice A4b switches the
+checker's minter to the FR-322 preimages.
 
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
 `identity_survives_v2_round_trip` and

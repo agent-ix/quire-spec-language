@@ -18,7 +18,7 @@ relationships:
 
 ## Status
 
-Accepted, 2026-09-23 (proposed 2026-09-19). The ADR-011 §6.1 crate
+Accepted, 2026-09-23 (proposed 2026-09-19). The §7.3 crate
 extraction X-1 to X-10 has landed, and ADR-011-OQ-2 is ruled. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
 epic #205, Layer 1. Acceptance is tested by the change-scenario gate #212.
 Supersedes nothing.
@@ -1211,6 +1211,10 @@ To QSpec (wire owner):
 
 ## Ruling (2026-09-23): ADR-011-OQ-2
 
+ADR-011-OQ-2 is this record's own open question. It is distinct from OQ-2 of
+the 2026-09-22 M-6a rulings below (spine `compile` input). The owner ruled it
+on QSL-193.
+
 - **ADR-011-OQ-2: `NativePackage` and `runtime` under native `run`.**
   `lowering` and IT-010 are deleted in M-6a. `NativePackage` and `runtime`
   retire with native `run` in M-6c (§6.2, §7.3). Reason: native `run`
@@ -1218,7 +1222,10 @@ To QSpec (wire owner):
   (`src/command.rs`, `run_bytes`), the OQ-1 ruling keeps native `run` until
   M-6c, and the 2026-09-19 no-gap ruling forbids removing working function
   before its spine replacement exists. The OQ-3 ruling below and FR-065 state
-  the same placement.
+  the same placement. It also settles #216's "backend artifact" wording:
+  after M-6a, native `run` builds a `NativePackage` in process and writes no
+  package bytes and no backend artifact, so no M-6a checked-package producer
+  remains for #216 to find.
 
 ## Owner rulings (2026-09-19)
 

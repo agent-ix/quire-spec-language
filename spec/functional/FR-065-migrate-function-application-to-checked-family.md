@@ -116,10 +116,14 @@ span before and after the checked-package boundary: the occurrence-keyed
 source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
-The identity is the ADR-013 O-04 checked node id: the digest of the RFC 8785
-encoding of the QSpec FR-322 node-identity preimage. It is computed from the
-declaration's or call's checked content and its owner, so it does not depend
-on the order of unrelated declarations (AC-2).
+Each identity is an ADR-013 O-04 checked node id: the
+`quire.checked-semantic-node/v1` digest of the RFC 8785 encoding of the node's
+QSpec FR-322 preimage. A function declaration is keyed by the node-identity
+preimage, which names its `SourceOwner` (O-04), and a node whose body contains
+a call by the `quire.application-node/v1` preimage. Neither preimage names a
+`package_id` or any unrelated declaration, so the identity does not depend on
+their order (AC-2), and it equals the QSpec vector for the same node (AC-8).
+QSL-156 slice A4b switches the checker's minter to these preimages.
 
 ### The composed function checker is deleted in this change
 
@@ -197,6 +201,7 @@ for the function family.
 | FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 | FR-065-AC-7 | Checking the declaration `g() -> Boolean = 1` (an `Integer` body against a declared `Boolean` result) through the `Value` family's contract `check` hook returns `StageFailure::Refused` whose cause is `ill_typed` / `type-mismatch`, and the diagnostic sink holds no entry afterwards. Checking the well-typed declaration `f() -> Boolean = true` through the same hook returns the checked declaration, whose identity equals the identity minted for `f`. | Test (TC-380) |
+| FR-065-AC-8 | For a fixture function declaration and a fixture node whose body contains a call, the checked identity equals the value QSpec's `node-identity-vectors.json` and FR-322 application-node vectors give for the same node in domain `quire.checked-semantic-node/v1`. | Test (TC-163) |
 
 ## Dependencies
 
@@ -257,9 +262,7 @@ emitter, both exist.
 **Scope of what #214 delivers, and what stays unbacked (PR #262 review
 headline finding; rescoping decision recorded against #262, not an
 amendment to this requirement's own target design above -- see the
-correction notes under "Identity and provenance survive checking and
-package conversion" and on `infer_form`'s/`Self::call`'s doc in
-`check.rs`).** This requirement's own text -- "check... exclusively through
+note on `infer_form`'s/`Self::call`'s doc in `check.rs`).** This requirement's own text -- "check... exclusively through
 that contract" -- is the correct target design and is not narrowed here.
 What #214 actually delivers against it: identity and provenance for both
 forms mint exclusively through the checked-family contract
@@ -364,11 +367,15 @@ delivered code today:
   `value_function_family_checks_through_the_contract` (admission half,
   `qsl-eval/src/value/expression/family.rs`), are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
+- FR-065-AC-8: unbacked. The checker mints each identity from a
+  length-prefixed preimage in `qsl-semantics/src/check/family.rs` that
+  includes the package identity. Owner: QSL-156 slice A4b, which switches it
+  to the FR-322 preimages built by `qsl-semantics/src/value/application_key.rs`.
 
-Two of this requirement's seven Acceptance Criteria are backed (AC-2,
+Two of this requirement's eight Acceptance Criteria are backed (AC-2,
 identity/provenance; AC-7, the contract `check` hook's typing verdict); AC-4
 is true by inspection but not backed by a test that could catch its own
-regression; the other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
+regression; the other five (AC-1, AC-3, AC-5, AC-6, AC-8) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
 migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
 in the delivered code. `TC-164` keeps its own zero-test procedure (see its
 Status section); the criterion it targets, AC-5, stays unbacked (see the

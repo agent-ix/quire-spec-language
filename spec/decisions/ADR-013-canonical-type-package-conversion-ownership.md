@@ -113,13 +113,18 @@ ADR-011 E9, the one exception R-06 names.
 | normalized | Equal iff the digests over a canonical encoding are equal under the same digest domain. The canonical encoding is RFC 8785 JCS of a closed preimage schema. | checked node id, `package_id`, `EffectiveId`, domain-package `sha256-jcs` digest |
 | semantic | Equal by meaning under a published law. | kernel `Value` equality under the QSpec operation catalog, `quire.op.ieee.numeric_equal` |
 
-One RFC 8785 JCS implementation produces every canonical encoding: the
-`quire-canonical` crate (`agent-ix/quire-canonical`). Every normalized identity
-above and every lexical comparison over an RFC 8785 encoding (O-24, O-26, O-27)
-encodes through it, in QSL, Contract IR, quoin and FCD alike. It orders object
-members by UTF-16 code unit itself, so its bytes do not depend on how a JSON map
-type is backed or on any Cargo feature. A digest domain stays separate by its
-domain label and golden vectors, never by a second encoder.
+One RFC 8785 JCS implementation produces every RFC 8785 encoding: the
+`quire-canonical` crate (`agent-ix/quire-canonical`; implementing ticket
+PLAT-987, adopted by QSL-194, IR-274 and PLAT-989). Every normalized identity
+above and every lexical comparison over an RFC 8785 encoding (O-24, O-26,
+O-27) encodes through it, in every repository that produces or reads one. It
+orders object members by UTF-16 code unit itself, so its bytes do not depend
+on how a JSON map type is backed or on any Cargo feature. Two RFC 8785 digest
+domains differ by their domain label and golden vectors, never by their
+encoder. The FR-021 `NativePackageIdentity` (`quire.native.bound-package/v1`)
+is not an RFC 8785 encoding: it hashes a typed-record encoding of a
+lane-private type (O-02, §6, R-09) and retires with `NativePackage` in
+ADR-011 §7.3 M-6c.
 
 ### 3. Canonical owners
 
