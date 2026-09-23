@@ -8,10 +8,13 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`], [`EnumValue`] and FR-142 `quire_exact::Quantity` values read
-//!    against a [`UnitTable`] over an admitted [`UnitGraph`];
-//! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
-//!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
+//!    [`Text`](quire_exact::Text), [`EnumValue`] and FR-142
+//!    `quire_exact::Quantity` values read against a [`UnitTable`] over an
+//!    admitted [`UnitGraph`];
+//! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
+//!    (FR-140), [`divide`] and [`modulo`] (FR-147),
+//!    [`admit_text`](quire_exact::admit_text),
+//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
@@ -20,17 +23,20 @@
 //!    [`CollectionValue`]s ([`construct_collection`]) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
 //!    (FR-087, #213 S-3a);
-//! 4. [`order_numbers`] compares one [`OrderedOperands`](quire_exact::OrderedOperands)
+//! 4. [`order_numbers`](quire_exact::order_numbers) compares one
+//!    [`OrderedOperands`](quire_exact::OrderedOperands)
 //!    pair (`Integer`, `Rational` or `Decimal`) under one
 //!    [`OrderingOperator`](quire_exact::OrderingOperator);
-//!    [`evaluate_integer_arithmetic`] evaluates add/subtract/multiply/negate
+//!    [`evaluate_integer_arithmetic`](quire_exact::evaluate_integer_arithmetic)
+//!    evaluates add/subtract/multiply/negate
 //!    over [`IntegerArithmetic`](quire_exact::IntegerArithmetic) operands
 //!    (integer division is rational division of `n`/`1`, so it has no
-//!    `Divide` variant here) and [`evaluate_rational_arithmetic`] evaluates
-//!    add/subtract/multiply/divide/negate over
+//!    `Divide` variant here) and
+//!    [`evaluate_rational_arithmetic`](quire_exact::evaluate_rational_arithmetic)
+//!    evaluates add/subtract/multiply/divide/negate over
 //!    [`RationalArithmetic`](quire_exact::RationalArithmetic) operands;
-//!    [`evaluate_boolean`] evaluates the QSL connectives
-//!    `and`/`or`/`implies`/`not` over
+//!    [`evaluate_boolean`](quire_exact::evaluate_boolean) evaluates the QSL
+//!    connectives `and`/`or`/`implies`/`not` over
 //!    [`BooleanConnective`](quire_exact::BooleanConnective) operands — all
 //!    under `quire.value.accounting/v1` (QSL #119);
 //! 5. the distinct evaluator [`Outcome`](quire_exact::Outcome) with typed
@@ -40,8 +46,13 @@
 //! 6. `quire.value.accounting/v1` metering through
 //!    [`Meter`](quire_exact::Meter).
 //!
-//! FR-148 IEEE binary32/binary64 profiles ([`evaluate_ieee`], [`compare_ieee`])
-//! operate on exact bit patterns with soft-float arithmetic over big integers.
+//! FR-148 IEEE binary32/binary64 profiles
+//! ([`evaluate_ieee`](quire_exact::evaluate_ieee),
+//! [`compare_ieee`](quire_exact::compare_ieee)) operate on exact bit patterns
+//! with soft-float arithmetic over big integers. QSL-131 O3 deleted this
+//! module's byte-identical `decimal`/`ieee`/`numeric`/`text` engine copies;
+//! every one of the operation-table items above now names its `quire_exact`
+//! definition directly, not a re-export from here.
 //!
 //! Profile selection and misuse are refused at semantic admission by
 //! [`DefinitionLock`]. No host floating-point arithmetic or narrowing integer
@@ -93,38 +104,36 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-// PR #282 review, F2: these twelve submodules are `pub(crate)`, not private
+// PR #282 review, F2: these nine submodules are `pub(crate)`, not private
 // `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
 // layer-3 sibling imports `check.rs` keeps") can name them by their real,
-// submodule-qualified crate-absolute path (`crate::value::numeric::
-// ArithmeticOperator`, not the flat `crate::value::ArithmeticOperator`
+// submodule-qualified crate-absolute path (`crate::value::quantity::
+// UnitTable`, not the flat `crate::value::UnitTable`
 // aggregate) -- FR-068:280-283 prescribes this form explicitly, and only
 // this form keeps AC-6's two-tier allow-list legible to a textual scan of
 // `check`'s own `use` lines (a flat import carries no tier information: it
 // reads identically whether the item is tier 1, tier 2, or the forbidden
 // tier 3). Every other `value::` submodule stays private; `check` imports
-// nothing from them.
+// nothing from them. QSL-131 O3 deleted `decimal`, `ieee`, `numeric` and
+// `text` from this list; `check` now imports their former items from
+// `quire_exact` directly.
 mod application_key;
 pub(crate) mod collection;
 pub(crate) mod composite;
 mod containment;
-pub(crate) mod decimal;
 pub(crate) mod declaration;
 pub(crate) mod definition;
 pub(crate) mod enumeration;
 pub(crate) mod equality;
 mod expression;
-pub(crate) mod ieee;
 mod key;
 mod member;
 mod model_query;
-pub(crate) mod numeric;
 pub(crate) mod quantity;
 pub(crate) mod rational;
 mod reference;
 pub(crate) mod semantic_node;
 mod stop;
-pub(crate) mod text;
 mod unit;
 
 // QSL-166: `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
@@ -146,7 +155,14 @@ pub use composite::{
     FieldExpression, FieldValue, OptionValue, Value, ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
-pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
+// QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
+// `evaluate_decimal` were this module's own `decimal` submodule, a
+// byte-identical duplicate of `quire_exact`'s (V4 had already moved unit
+// placement onto the kernel's `DecimalType::placement`; only the type and
+// its evaluation engine were left). That submodule is deleted; every former
+// consumer now imports `quire_exact::{DecimalType, DecimalLoss,
+// DecimalResult, evaluate_decimal}` directly -- one definition, one import
+// path, no re-export standing in for the deleted module.
 // `declaration` owns the FR-143 registry and the FR-149 check-level
 // equality layer; neither is a kernel type (ADR-011 §6.1).
 pub use declaration::{
@@ -197,15 +213,26 @@ pub use expression::{
     FamilyOutcome, FamilyResult, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
     ValueLoss,
 };
-pub use ieee::{
-    compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeOperand,
-    IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue, IEEE_DEFINITION,
-};
+// QSL-131 O3: `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
+// `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
+// `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and
+// the private rounding/arithmetic engine beneath them were this module's
+// own `ieee` submodule, a byte-identical duplicate of `quire_exact`'s
+// (`IeeeWidth`, `IeeeValue`, `IeeeFlag`, `IeeeFlags`, `IeeeComparison`,
+// `IeeeOperationKind`, `ieee_intrinsic_identities`, `IeeeExactLoss`,
+// `IeeeOperation` and `IEEE_DEFINITION` were already re-exported straight
+// from `quire_exact`, not duplicated). That submodule is deleted; every
+// former consumer now imports the whole set from `quire_exact` directly.
 pub use member::Member;
-pub use numeric::{
-    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-};
+// QSL-131 O3: `evaluate_boolean`, `evaluate_integer_arithmetic`,
+// `evaluate_rational_arithmetic` and `order_numbers` were this module's own
+// `numeric` submodule, a byte-identical duplicate of `quire_exact`'s
+// (`ArithmeticOperator`, `OrderingOperator`, `OrderedOperands`,
+// `IntegerArithmetic`, `RationalArithmetic` and `BooleanConnective` were
+// already re-exported straight from `quire_exact`). That submodule is
+// deleted; every former consumer now imports `quire_exact::{evaluate_boolean,
+// evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers}`
+// directly.
 // QSL-131 O2: `Outcome`, `Undefined` and `Refusal` were this module's own
 // `outcome` submodule, a byte-identical duplicate of `quire_exact`'s O-16
 // kernel types (ADR-011 §6.1's K row), re-exported from here. That
@@ -230,7 +257,20 @@ pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     OwnerSubject, SemanticGraphCause,
 };
-pub use text::{admit_text, compare_text, InvalidTextLiteral, Text, TextPayload};
+// QSL-131 O3: `admit_text`, `compare_text`, `Text`, `TextPayload` and
+// `InvalidTextLiteral` were this module's own `text` submodule, a
+// byte-identical duplicate of `quire_exact`'s except for
+// `TextPayload::from_source_literal`'s JSON-decode convenience, which the
+// kernel deliberately excludes (a source-lexer concern, not a kernel one --
+// `quire_exact::text`'s module doc). That submodule is deleted; every
+// former consumer now imports `quire_exact::{admit_text, compare_text, Text,
+// TextPayload}` directly. `InvalidTextLiteral` has no successor: nothing
+// outside this crate's own now-deleted tests called
+// `TextPayload::from_source_literal`'s fallible JSON decode, so
+// `tests/it/text_enum_identity.rs` keeps that one decode step as a
+// test-local helper, calling the kernel's new
+// `quire_exact::TextPayload::from_source_literal(text, spelling)`
+// constructor (infallible, over already-decoded text) to tag the result.
 pub use unit::{
     CompoundUnit, CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage,
     InvalidCompoundUnit, NotAUnitKey, Unit, UnitEdge, UnitGraph, UnitPreimage,

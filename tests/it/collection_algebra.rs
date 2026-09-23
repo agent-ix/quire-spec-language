@@ -5,17 +5,17 @@ use ix_trace_rs::trace;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
-    BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextProfile, TextType,
+    admit_text, BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextPayload,
+    TextProfile, TextType,
 };
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
 use quire_spec_language::value::{
-    admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
-    CompositeShape, Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome,
-    FieldDeclaration, FieldValue, ObjectTypeDeclaration, OptionValue, TextPayload, TypeEnvironment,
-    Value, ValueType,
+    construct_collection, form_collection, CollectionType, CompositeDeclaration, CompositeShape,
+    Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome, FieldDeclaration,
+    FieldValue, ObjectTypeDeclaration, OptionValue, TypeEnvironment, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 

@@ -51,7 +51,6 @@ use super::refusal::{
 };
 use crate::value::collection::CollectionType;
 use crate::value::composite::{Value, ValueType};
-use crate::value::decimal::DecimalType;
 use crate::value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator, TypeEnvironment,
 };
@@ -63,6 +62,7 @@ use qsl_forms::{
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
+use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::EnumShape;

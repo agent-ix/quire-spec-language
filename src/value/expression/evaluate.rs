@@ -12,22 +12,15 @@ use std::sync::Arc;
 
 use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
 use super::super::composite::{retain_composite, FieldValue, OptionValue, Value, ValueType};
-use super::super::decimal::{evaluate_decimal, DecimalLoss, DecimalType};
 use super::super::declaration::{operand_value, CompositeShape};
 use super::super::enumeration::{compare_enum, EnumMemberIndex};
-use super::super::ieee::{evaluate_ieee, ieee_to_exact, IeeeExactTarget};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use super::super::numeric::{
-    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    retain_boolean,
-};
 use super::super::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
 use super::super::reference::ObjectEnvironment;
 use super::super::stop::{outcome_from_stop, outcome_into_stop, Stop};
-use super::super::text::compare_text;
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
@@ -40,18 +33,23 @@ use crate::check::{
 use crate::family::FamilyResult;
 use crate::model::population::PopulationBinding;
 use qsl_foundation::diagnostic::InternalFault;
-use quire_exact::ComparisonOperator;
 use quire_exact::Rational;
+use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
-    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
-    RationalArithmetic,
+    evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
+    retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
+    OrderingOperator, RationalArithmetic,
+};
+use quire_exact::{
+    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType, RoundingMode,
+};
+use quire_exact::{
+    evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
 };
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
 };
-use quire_exact::{Decimal, DecimalOperation, RoundingMode};
-use quire_exact::{IeeeExactLoss, IeeeFlags, IeeeOperation};
 use quire_exact::{Outcome, Refusal, Undefined};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation

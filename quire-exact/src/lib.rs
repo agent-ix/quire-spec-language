@@ -175,8 +175,8 @@ pub use location::{Location, Origin, Role};
 pub use node::{is_identifier, Identifier, InvalidIdentifier, NodeKey, NODE_KEY_DOMAIN};
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    rational_arithmetic_bits, ArithmeticOperator, BooleanConnective, IntegerArithmetic,
-    OrderedOperands, OrderingOperator, RationalArithmetic,
+    rational_arithmetic_bits, retain_boolean, ArithmeticOperator, BooleanConnective,
+    IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
 pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
 pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, QuantityArithmetic};

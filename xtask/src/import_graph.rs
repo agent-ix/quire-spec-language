@@ -471,15 +471,13 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "family",
     // The `value` K-copy modules, each only while it exists (this list
     // only shrinks; a module leaves it in the change that deletes that
-    // module's QSL copy).
+    // module's QSL copy). `value::decimal`, `value::ieee`, `value::numeric`
+    // and `value::text` left this list under QSL-131 O3, which deleted the
+    // four modules.
     "value::collection",
     "value::composite",
-    "value::decimal",
     "value::equality",
-    "value::ieee",
-    "value::numeric",
     "value::rational",
-    "value::text",
 ];
 
 /// FR-068-AC-6's MUST NOT list (closed): a later layer, forbidden including
@@ -1286,12 +1284,8 @@ mod tests {
             "semantic_node",
             "collection",
             "composite",
-            "decimal",
             "equality",
-            "ieee",
-            "numeric",
             "rational",
-            "text",
             "model_query",
             "member",
         ] {

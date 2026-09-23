@@ -20,6 +20,14 @@
 //! which one, is a real kernel-observable fact; only the JSON-based decode
 //! convenience was QSL's job, not the kernel's.
 //!
+//! QSL-131 O3 deleted QSL's own `value::text` engine copy (`admit_text`,
+//! `compare_text`, `Text`, `TextPayload` all port verbatim, unchanged from
+//! S-1). Its test-only JSON decode helper still needs to tag a decoded
+//! literal with `SourceLiteral` provenance, and `TextPayload`'s fields are
+//! private, so [`TextPayload::from_source_literal`] adds that one
+//! constructor back -- infallible, over an already-decoded `text`, with no
+//! JSON dependency in this crate.
+//!
 //! QSL-131 K1 widened four items from `fn`-private/`pub(crate)` to `pub`:
 //! [`TextProfile::length`], [`TextProfile::order`], [`TextType::admits`] and
 //! [`NormalizationForm::apply`]. `quire_spec_language::value::text`'s own
@@ -287,6 +295,22 @@ impl TextPayload {
             text: text.into(),
             provenance: TextProvenance::Runtime,
         })
+    }
+
+    /// An already-decoded scalar sequence tagged with the exact source
+    /// literal `spelling` it came from.
+    ///
+    /// QSL-131 O3: decoding a source-lexer literal's escapes (JSON string
+    /// grammar) stays a QSL source-stage concern, per this module's own
+    /// doc -- this constructor takes the already-decoded `text`, so no
+    /// decode step or fallible path exists here. `quire_spec_language`'s
+    /// test-only decode helper calls this after it validates and decodes a
+    /// literal's escapes itself.
+    pub fn from_source_literal(text: impl Into<Box<str>>, spelling: impl Into<Box<str>>) -> Self {
+        Self {
+            text: text.into(),
+            provenance: TextProvenance::SourceLiteral(spelling.into()),
+        }
     }
 
     /// The payload bytes.

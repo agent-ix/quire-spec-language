@@ -18,12 +18,12 @@
 //! `RationalDomain::result_of` takes `quire_exact::ArithmeticOperator`
 //! directly.
 //!
-//! `value::decimal`'s own evaluation engine (`evaluate_decimal` and
-//! everything beneath it) stays local: it returns `quire_exact`'s own
-//! `Outcome`/`Refusal` directly (QSL-131 O2 deleted the byte-identical
-//! `value::outcome` copy), and constructs `DecimalResult`/`DecimalLoss` only
-//! through their own private struct literals -- neither type has a public
-//! constructor in `quire_exact` -- so that engine cannot be cut until one
-//! exists (QSL-131 O3).
+//! `value::decimal`'s own evaluation engine was a byte-identical duplicate
+//! of `quire_exact::evaluate_decimal`'s: QSL-131 O3 deleted it, since
+//! nothing in this crate ever constructed a `DecimalResult`/`DecimalLoss`
+//! directly (only through `evaluate_decimal`'s own return value), so no
+//! public constructor was needed to make the cut. Every caller now imports
+//! `quire_exact::{evaluate_decimal, DecimalType, DecimalResult,
+//! DecimalLoss}` directly.
 
 pub use quire_exact::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};

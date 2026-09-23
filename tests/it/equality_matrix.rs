@@ -17,26 +17,26 @@ use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::NodeKey;
 use quire_exact::{
+    admit_text, compare_ieee, convert_ieee_width, Decimal, DecimalType, IeeeComparison,
+    IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped, IllTypedCause, ObjectId,
+    ObjectReference, Outcome, Presence, Quantity, Rational, Refusal, RoundingMode, Text,
+    TextPayload, TextProfile, TextType, Undefined, UnitDomain, UnitId, UniverseId,
+};
+use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
-use quire_exact::{
-    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, ObjectId, ObjectReference, Outcome,
-    Presence, Quantity, Rational, Refusal, RoundingMode, TextProfile, TextType, Undefined,
-    UnitDomain, UnitId, UniverseId,
-};
 use quire_spec_language::value::{
-    admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
-    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause, CheckMode, CheckRefusal,
-    CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
-    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
-    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
-    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome,
-    FieldDeclaration, FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue,
-    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue,
-    OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain, Text, TextPayload,
-    TypeEnvironment, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss, ValueType,
+    form_collection, plan_equality, AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause,
+    CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimits, CollectionType, Component, CompositeDeclaration,
+    CompositeShape, ConstructionCause, ConstructionRefusal, DefinitionLock, DefinitionReference,
+    DefinitionRevision, DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage,
+    EnumMemberIndex, EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation,
+    FamilyOutcome, FieldDeclaration, FieldExpression, FieldValue, LocatedLoss, NodeOwner,
+    ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue, OwnerSelection,
+    OwnerSubject, PackageDeclarations, RationalDomain, TypeEnvironment, UnitGraph, UnitPreimage,
+    UnitTable, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

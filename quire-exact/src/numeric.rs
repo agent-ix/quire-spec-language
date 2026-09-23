@@ -411,7 +411,16 @@ pub fn evaluate_boolean(connective: BooleanConnective, meter: &mut Meter) -> Out
 }
 
 /// Charge `boolean.result-retain` for a decided connective result.
-pub(crate) fn retain_boolean(
+///
+/// `pub`, not `pub(crate)` (QSL-131 O3): `quire_spec_language::value::
+/// expression::evaluate`'s own `and`/`or` short-circuit evaluation, which
+/// cannot call the full [`evaluate_boolean`] dispatch because it may not
+/// have evaluated its second operand, retains its already-decided `bool`
+/// through this function directly -- the same `OrderingOperator::holds`/
+/// `TextProfile::length` reasoning QSL-131 K1 already applied: a pure
+/// metering charge over an already-decided value, so widening it exposes no
+/// unmetered computation.
+pub fn retain_boolean(
     result: bool,
     meter: &mut Meter,
 ) -> Result<bool, crate::accounting::Incomplete> {
