@@ -161,9 +161,13 @@ fn validate(
         });
     }
     for (parameter, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
-        if !value_type.admits(argument) {
-            return Err(InputRefusal::WrongValueKind { parameter });
-        }
+        // FR-089-AC-6 (QSL-131 V5): kernel `ValueType::admits` refuses every
+        // `(Population, Population)` pair outright -- the declared-maximum
+        // comparison is this QSL-layer check (FR-089-AC-5), not a
+        // generic-admission side effect. `Population<T>[N]` is reachable
+        // only as a bare parameter type (FR-153's own restriction), so this
+        // is the one call site that needs to special-case it: every other
+        // parameter type still goes through kernel `admits()` unchanged.
         if let (ValueType::Population(maximum), Value::Population(population_id)) =
             (value_type, argument)
         {
@@ -173,6 +177,8 @@ fn validate(
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter });
             }
+        } else if !value_type.admits(argument) {
+            return Err(InputRefusal::WrongValueKind { parameter });
         }
         let mut pending = vec![argument];
         while let Some(value) = pending.pop() {

@@ -14,17 +14,18 @@ Verify FR-089-AC-5: the QSL layer treats `ValueType::Population(maximum)` as
 admitting a `Value::Population(population_id)` exactly when the binding that
 `population_id` resolves to, through `model`'s recorded correspondence, has a
 declared maximum equal to `maximum` -- the pairing
-`src/value/composite.rs:104` performs between
+`CheckedPackage::call`/`evaluate`'s own argument-admission `validate`
+(`src/value/expression/mod.rs`) performs between
 `ValueType::Population(maximum)` and `Value::Population(binding)`. The kernel
 `ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297); this
 comparison is the QSL layer's. Scope: FR-089-AC-5.
 
-Implemented (QSL-131 Slice B): `ValueType::admits` (`src/value/composite.rs`)
-has no access to the recorded correspondence (it takes no
-`ObjectEnvironment`), so it admits a `Value::Population` by presence alone;
-the real comparison this criterion names runs in
-`CheckedPackage::call`/`evaluate`'s own argument-admission `validate`
-(`src/value/expression/mod.rs`), which does receive the environment,
+Implemented (QSL-131 V5): `ValueType::admits` is `quire_exact`'s own kernel
+function now, which has no access to the recorded correspondence and refuses
+every `(Population, Population)` pair outright (FR-089-AC-6), so `validate`
+special-cases `ValueType::Population`/`Value::Population` ahead of its
+generic `admits()` call rather than after it, performing the whole
+comparison this criterion names itself: it does receive the environment,
 resolves `population_id` through it, and refuses
 (`InputRefusal::WrongValueKind`) when the resolved binding's declared
 maximum differs from the checked parameter's `maximum` -- whether or not

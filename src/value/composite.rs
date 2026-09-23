@@ -1,336 +1,55 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-143 records, tuples and finite recursive values over producer-assigned
-//! declaration keys.
+//! FR-143 records, tuples and finite recursive values: the K3 registry's own
+//! field metadata and construction-refusal reporting, over `quire_exact`'s
+//! kernel `Value`/`ValueType` (QSL-131 V5).
 //!
-//! `ValueType`, `Value`, `OptionValue`, `FieldValue`, `FieldDeclaration` and
-//! `CompositeValue`, and the construction functions over them (`fill_slots`,
-//! `retain_composite`, the crate-internal `composite`/`match_names`/`refuse`), are
-//! the K-designated shadow of `quire_exact::value`: this crate's own cut,
-//! parameterized over this module's own `ValueType`/`Value`, not
-//! `quire_exact`'s. `ValueType::Enum` and `Value::Enum` are no longer a
-//! locally redesigned cut: this module reuses `quire_exact::EnumShape` and
-//! `quire_exact::EnumMember` directly (ADR-013 O-14, T-6, OQ-D and OQ-F
-//! rulings), exactly as it already reused `quire_exact::UnitId` for
-//! `ValueType::Quantity` and `quire_exact::EffectiveId` for
-//! `ValueType::Reference` before this change -- the kernel is a leaf with no
-//! declaration lookup, so ordered-enum comparison and case lookup are
-//! `semantic_value`'s own job, through the checked `VariantId ->
-//! (declaration, position, ordered, case)` index
-//! ([`super::enumeration::EnumMemberIndex`]) rather than a field on the
-//! value itself (ADR-013 T-6, last sentence). `ValueType::Reference` carries
-//! the kernel `EffectiveId` in both (ADR-013 O-05: FR-143 makes a
-//! reference's type component an effective-declaration identity, never a
-//! checked node id). `Presence` has no divergence -- it names only
-//! `Required`/`Optional` and touches neither `Value` nor `ValueType` -- so it
-//! is `quire_exact`'s type here, and the quantity payloads are already the
-//! kernel's: `ValueType::Quantity` carries a `UnitId` and `Value::Quantity` a
-//! `quire_exact::Quantity`, with the unit graph behind `value::quantity`'s
-//! unit table (ADR-013 T-6).
+//! `Value`, `ValueType`, `OptionValue`, `CompositeValue`, `FieldValue` and
+//! [`Deferred`] are `quire_exact`'s own K-designated types now (ADR-011
+//! §6.1's K row); this module re-exports them rather than duplicating them.
+//! [`FieldDeclaration`], [`Component`], [`ConstructionCause`] and
+//! [`ConstructionRefusal`] stay QSL's own, non-kernel types (ADR-011 §6.1;
+//! ADR-013 O-15): a field is identified here by its declared *name* (a
+//! `str`-keyed lookup, [`match_names`]/[`fill_slots`]), not by the kernel's
+//! opaque `MemberId` (`quire_exact::FieldDeclaration`'s own key) -- adopting
+//! `MemberId` here needs the ADR-013 O-06 member-identity resolution that
+//! `check`'s `CheckedGraph` (ADR-013 T-1, S-3) has not yet landed
+//! (`value::member`'s own doc comment: "No production caller constructs a
+//! `Member` yet"). `ConstructionCause` also carries `UnknownDeclaration`,
+//! which the kernel's own `ConstructionCause` has no need of: the kernel's
+//! `record`/`tuple` take their declared shape directly, with no registry
+//! lookup to fail, while `value::declaration`'s `TypeEnvironment::record`/
+//! `tuple`/`evaluate_record`/`evaluate_tuple` look a `NodeKey` up in the
+//! registry first and must report that lookup's own failure. Because of
+//! this, `TypeEnvironment` cannot call the kernel's checked `record`/`tuple`
+//! constructors either (they need the kernel's `MemberId`-keyed
+//! `FieldDeclaration`); it does its own name-keyed checking exactly as
+//! before, through this module's [`fill_slots`]/[`match_names`], and then
+//! calls the kernel's trusted, unchecked
+//! [`from_admitted_slots`](quire_exact::from_admitted_slots) to materialize
+//! the result -- mirroring `quire_exact::OptionValue::from_admitted`'s
+//! identical bypass role, which `value::expression::evaluate` already calls
+//! directly.
 //!
-//! The registry that admits a closed set of these declarations
-//! (`TypeEnvironment`, `ObjectTypeDeclaration` and friends) and the FR-149
-//! check-level equality layer are not kernel types (ADR-013 O-15; ADR-011
-//! §6.1); `value::declaration` owns them. `composite`, `match_names`,
-//! `fill_slots`, `retain_composite` and `refuse` are `pub(crate)` because
-//! `declaration`'s `TypeEnvironment` construction methods call them:
-//! `composite` is the only place that can build a [`CompositeValue`]'s
-//! private fields.
+//! FR-089-AC-6 (QSL-131 V5): kernel `ValueType::admits` refuses every
+//! `(ValueType::Population, Value::Population)` pair outright -- the
+//! declared-maximum comparison (FR-089-AC-5) is the QSL layer's own check.
+//! `Population` is FR-153's own restriction: it is never nested inside a
+//! record field, tuple position, option payload or collection element (every
+//! such context is refused earlier, at declaration admission, by
+//! `value::declaration::TypeEnvironment::type_refusal`), so none of this
+//! module's `admits()` calls (`fill_slots`'s field check) ever receive a
+//! `Population` pair; only `value::expression::validate`'s top-level
+//! parameter-admission loop needs the FR-089-AC-5 compensation, since
+//! `Population<T>[N]` is reachable there directly as a bare parameter type.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
-use super::collection::{CollectionType, CollectionValue};
-use super::stop::Stop;
-use quire_exact::Decimal;
-use quire_exact::DecimalType;
-use quire_exact::EffectiveId;
-use quire_exact::EnumMember;
-use quire_exact::EnumShape;
-use quire_exact::IeeeWidth;
-use quire_exact::IllTyped;
-use quire_exact::NodeKey;
-use quire_exact::ObjectReference;
-use quire_exact::Outcome;
-use quire_exact::Rational;
-use quire_exact::Text;
-use quire_exact::TextType;
-use quire_exact::{
-    Charge, ChargePoint, IeeeValue, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
-    Presence, Quantity, RationalDomain, UnitId,
+use quire_exact::{Charge, ChargePoint, IllTyped, LimitKind, Meter, NodeKey, Presence};
+pub use quire_exact::{
+    from_admitted_slots, CompositeValue, Deferred, FieldValue, OptionValue, Value, ValueType,
 };
 
-/// A declared complete-V1 value type. Two types are the same type exactly when
-/// they are equal, collection bounds included.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueType {
-    /// `Boolean`.
-    Boolean,
-    /// The unbounded mathematical `Integer`.
-    Integer,
-    /// A bounded `Int[lo, hi]`.
-    Int(IntegerInterval),
-    /// A `Rational[n1, n2; d1, d2]` domain.
-    Rational(RationalDomain),
-    /// An FR-140 `Decimal[lo, hi; smin, smax; mode]`.
-    Decimal(DecimalType),
-    /// An FR-148 `Float32` or `Float64`.
-    Float(IeeeWidth),
-    /// An FR-142 quantity in exactly the unit with this id (ADR-013 T-6);
-    /// `value::quantity`'s unit table holds the unit itself.
-    Quantity(UnitId),
-    /// An FR-141 `Text[min, max; profile]`.
-    Text(TextType),
-    /// An `Enum` type admitting exactly this inline, ranked variant set
-    /// (ADR-013 O-14).
-    Enum(EnumShape),
-    /// `Option<T>`: `none` or a present `T`.
-    Option(Box<ValueType>),
-    /// The record or tuple declaration with this node key.
-    Composite(NodeKey),
-    /// A bounded collection type `K<T>[min, max]`.
-    Collection(Box<CollectionType>),
-    /// `Reference<T>` to an object of the model object type with this
-    /// effective-declaration identity (ADR-013 O-05).
-    Reference(EffectiveId),
-    /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
-    /// maximum an admitted
-    /// [`PopulationBinding`](crate::model::population::PopulationBinding)
-    /// must carry (never `T` itself, which
-    /// `allInstances<T>(p)`/`lookup<T>(p, r)` name separately at each call,
-    /// per FR-153's own table).
-    Population(u64),
-}
-
-impl ValueType {
-    /// `K<element>[bound]`.
-    pub fn collection(collection_type: CollectionType) -> Self {
-        Self::Collection(Box::new(collection_type))
-    }
-
-    /// `Option<payload>`.
-    pub fn option(payload: Self) -> Self {
-        Self::Option(Box::new(payload))
-    }
-
-    /// Whether `value` is a member of this declared type. Composite, option
-    /// and collection values carry their declared type, which must be this
-    /// type; their contents were admitted at construction.
-    pub fn admits(&self, value: &Value) -> bool {
-        match (self, value) {
-            (Self::Boolean, Value::Boolean(_)) | (Self::Integer, Value::Integer(_)) => true,
-            (Self::Int(interval), Value::Integer(integer)) => interval.contains(integer),
-            (Self::Rational(domain), Value::Rational(rational)) => domain.contains(rational),
-            (Self::Decimal(declared), Value::Decimal(decimal)) => declared.contains(decimal),
-            (Self::Float(width), Value::Float(float)) => float.width() == *width,
-            (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
-            (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
-            (Self::Enum(shape), Value::Enum(member)) => {
-                shape.rank(member.variant()) == Some(member.rank())
-            }
-            (Self::Option(payload), Value::Option(option)) => option.payload_type() == &**payload,
-            (Self::Composite(declaration), Value::Composite(composite)) => {
-                composite.declaration() == *declaration
-            }
-            (Self::Collection(declared), Value::Collection(collection)) => {
-                collection.collection_type() == &**declared
-            }
-            (Self::Reference(object_type), Value::Reference(reference)) => {
-                reference.object_type() == *object_type
-            }
-            // FR-089: `Value::Population` carries only the opaque
-            // `PopulationId` a `model` admission minted, never the
-            // `PopulationBinding` itself, so this structural check cannot
-            // compare `maximum` against a resolved binding's own declared
-            // maximum -- that comparison needs the recorded
-            // `PopulationId` -> `PopulationBinding` correspondence, which
-            // only `ObjectEnvironment` has access to. Presence is admitted
-            // here (mirroring FR-153's own restriction of `Population<T>[N]`
-            // to a bare parameter type: no nested context ever reaches this
-            // arm); the declared-maximum comparison itself happens in two
-            // places instead: argument admission's `validate`
-            // (`value/expression/mod.rs`) checks it against every
-            // `Population<T>[N]` parameter at call time (FR-089-AC-4/AC-5), and
-            // `Machine::resolve_population` (`value/expression/evaluate.rs`)
-            // checks it again at the `allInstances`/`lookup` sites that
-            // consume the identity (FR-089-AC-3/AC-4/AC-5), refusing a
-            // mismatch in either place instead.
-            (Self::Population(_), Value::Population(_)) => true,
-            (
-                Self::Boolean
-                | Self::Integer
-                | Self::Int(_)
-                | Self::Rational(_)
-                | Self::Decimal(_)
-                | Self::Float(_)
-                | Self::Quantity(_)
-                | Self::Text(_)
-                | Self::Enum(_)
-                | Self::Option(_)
-                | Self::Composite(_)
-                | Self::Collection(_)
-                | Self::Reference(_)
-                | Self::Population(_),
-                _,
-            ) => false,
-        }
-    }
-}
-
-/// A completed complete-V1 value. It deliberately has no structural
-/// `PartialEq`: equality is the FR-149 relation of
-/// [`CheckedEquality::evaluate`](super::CheckedEquality::evaluate).
-#[derive(Clone, Debug)]
-pub enum Value {
-    /// A Boolean.
-    Boolean(bool),
-    /// A mathematical integer of `Integer` or `Int[..]`.
-    Integer(Integer),
-    /// An exact reduced rational.
-    Rational(Rational),
-    /// An exact decimal.
-    Decimal(Decimal),
-    /// An IEEE bit pattern.
-    Float(IeeeValue),
-    /// A kernel quantity: its magnitude and its unit's id.
-    Quantity(Quantity),
-    /// A text value of its declared type.
-    Text(Text),
-    /// A bare enum member identity and its canonical rank (ADR-013 T-6,
-    /// OQ-D): ordered comparison and case lookup resolve through
-    /// [`super::enumeration::EnumMemberIndex`], not a field here.
-    Enum(EnumMember),
-    /// An option value.
-    Option(Arc<OptionValue>),
-    /// A record or tuple value.
-    Composite(Arc<CompositeValue>),
-    /// A collection value.
-    Collection(Arc<CollectionValue>),
-    /// A terminal object reference.
-    Reference(ObjectReference),
-    /// FR-089: the opaque `PopulationId` a `model` admission
-    /// (`admit_binding`/`admit_invocation`) minted for its admitted
-    /// `PopulationBinding` -- never the binding itself, which stays a
-    /// `model` type. The evaluator resolves this identity to its binding by
-    /// lookup in `model`'s recorded correspondence
-    /// (`ObjectEnvironment::resolve_population`), never by decoding the
-    /// identity's own bytes.
-    Population(PopulationId),
-}
-
-impl Value {
-    /// `occ(v)` of `quire.value.accounting/v1`: one for the value itself plus
-    /// every nested occurrence, with `absent` and `null` slots counting zero
-    /// and a bag occurrence counted once per multiplicity.
-    pub fn occ(&self) -> Integer {
-        match self {
-            Self::Option(option) => option.occ.clone(),
-            Self::Composite(composite) => composite.occ.clone(),
-            Self::Collection(collection) => collection.occ().clone(),
-            Self::Boolean(_)
-            | Self::Integer(_)
-            | Self::Rational(_)
-            | Self::Decimal(_)
-            | Self::Float(_)
-            | Self::Quantity(_)
-            | Self::Text(_)
-            | Self::Enum(_)
-            | Self::Reference(_)
-            | Self::Population(_) => Integer::one(),
-        }
-    }
-}
-
-/// `none` or a present value of one declared payload type.
-#[derive(Clone, Debug)]
-pub struct OptionValue {
-    payload_type: ValueType,
-    payload: Option<Value>,
-    occ: Integer,
-}
-
-impl OptionValue {
-    /// `none` of `Option<payload_type>`.
-    pub fn none(payload_type: ValueType) -> Value {
-        Value::Option(Arc::new(Self {
-            payload_type,
-            payload: None,
-            occ: Integer::one(),
-        }))
-    }
-
-    /// A present `payload` of `Option<payload_type>`.
-    pub fn present(payload_type: ValueType, payload: Value) -> Result<Value, ConstructionRefusal> {
-        if !payload_type.admits(&payload) {
-            return Err(ConstructionRefusal {
-                component: Component::Payload,
-                cause: ConstructionCause::TypeMismatch,
-            });
-        }
-        let occ = Integer::one().add(&payload.occ());
-        Ok(Value::Option(Arc::new(Self {
-            payload_type,
-            payload: Some(payload),
-            occ,
-        })))
-    }
-
-    /// Materialize an already-admitted `payload` as `Option<payload_type>`,
-    /// checking no structural `admits()` match. FR-153's `lookup<T>(p, r)
-    /// absent empty` (`crate::value::model_query::evaluate_lookup`) calls
-    /// this for a present result `found`, whose `object_type` is `r`'s own
-    /// runtime most-specific type `F` (FR-143's own identity triple), not the
-    /// queried `T`. Soundness does not rest on
-    /// `crate::model::population::lookup`'s `type_conforms` call proving `F`
-    /// conforms to `T` directly -- it checks `r`'s *declared* static type `S`
-    /// against `T`, never `F` against `T`. It rests on chaining two
-    /// invariants: admission guarantees `F` conforms to `S`, never `F == S`
-    /// -- `S` is `r`'s declared static type, and `r` may itself be the
-    /// result of an earlier upcast lookup, so `S` can already be a proper
-    /// supertype of `F`. Example: `lookup<A>(p, lookup<A>(p, rb) absent
-    /// refused) absent empty` has `S = A` (the outer call's declared static
-    /// type) and `F = B` (`rb`'s own most-specific type, preserved through
-    /// the inner call by this same soundness chain). `lookup`'s
-    /// `type_conforms(S, T)` call then gives `S` conforms to `T`; so `F`
-    /// conforms to `T` transitively (`F` conforms to `S` conforms to `T`).
-    /// [`Self::present`]'s own `admits()` call cannot verify that chain
-    /// itself -- it is exact object-type equality with no model-conformance
-    /// knowledge, so it cannot tell a genuine upcast (`F` a proper subtype of
-    /// `T`) from a real type mismatch -- which is why this bypasses it.
-    /// Mirrors [`crate::value::collection::from_admitted`]'s same role for
-    /// `allInstances`.
-    pub(crate) fn from_admitted(payload_type: ValueType, payload: Option<Value>) -> Value {
-        let occ = match &payload {
-            Some(payload) => Integer::one().add(&payload.occ()),
-            None => Integer::one(),
-        };
-        Value::Option(Arc::new(Self {
-            payload_type,
-            payload,
-            occ,
-        }))
-    }
-
-    /// The declared payload type.
-    pub fn payload_type(&self) -> &ValueType {
-        &self.payload_type
-    }
-
-    /// The present payload, or `None` for `none`.
-    pub fn payload(&self) -> Option<&Value> {
-        self.payload.as_ref()
-    }
-}
-
-/// The state of one field slot.
-#[derive(Clone, Debug)]
-pub enum FieldValue {
-    /// A present value.
-    Present(Value),
-    /// `absent`: the `?` field was omitted.
-    Absent,
-    /// Explicit `null`, distinct from `absent`.
-    Null,
-}
+use super::stop::Stop;
 
 /// A declaration-owned named field; its identity is (declaration key, name).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,9 +85,6 @@ impl FieldDeclaration {
     }
 }
 
-/// A deferred expression: it runs only when construction reaches it.
-pub type Deferred<'a> = Box<dyn FnOnce(&mut Meter) -> Outcome<Value> + 'a>;
-
 /// A record field in a record value expression. Omitting a `?` field
 /// constructs `absent`.
 pub enum FieldExpression<'a> {
@@ -387,7 +103,13 @@ impl std::fmt::Debug for FieldExpression<'_> {
     }
 }
 
-/// Charge `composite.result-retain` with `occ(result)`, then expose it.
+/// Charge `composite.result-retain` with `occ(result)`, then expose it. Not
+/// reusable from `quire_exact` (its own `retain_composite` is
+/// `pub(crate)` there, since the kernel's checked `record`/`tuple`/
+/// `evaluate_record`/`evaluate_tuple` are its only callers); this module's
+/// callers are `value::declaration`'s name-keyed `evaluate_record`/
+/// `evaluate_tuple`, which is why this one small charge-and-return helper
+/// stays QSL's own rather than a K-copy of kernel logic.
 pub(crate) fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     let occ = value.occ();
     meter.charge(
@@ -512,43 +234,14 @@ pub(crate) fn fill_slots(
     Ok(slots.into_boxed_slice())
 }
 
-/// `1 + occ` of every present slot.
-pub(crate) fn slots_occ(slots: &[FieldValue]) -> Integer {
-    slots.iter().fold(Integer::one(), |occ, slot| match slot {
-        FieldValue::Present(value) => occ.add(&value.occ()),
-        FieldValue::Absent | FieldValue::Null => occ,
-    })
-}
-
-/// Build a composite value of `declaration` from its slots. This is the only
-/// constructor of [`CompositeValue`], whose fields are private to this
-/// module; `value::declaration`'s `TypeEnvironment` construction methods
-/// call it.
+/// Build a composite value of `declaration` from already name-checked
+/// slots, through the kernel's trusted
+/// [`from_admitted_slots`](quire_exact::from_admitted_slots) bypass:
+/// `value::declaration`'s `TypeEnvironment` construction methods have
+/// already checked every slot against its own declared shape, so no second,
+/// kernel-side check is needed (and the kernel's own checked `record`/
+/// `tuple` are not reachable here, since they take `MemberId`-keyed
+/// declarations this module does not have -- see the module doc comment).
 pub(crate) fn composite(declaration: NodeKey, slots: Box<[FieldValue]>) -> Value {
-    let occ = slots_occ(&slots);
-    Value::Composite(Arc::new(CompositeValue {
-        declaration,
-        slots,
-        occ,
-    }))
-}
-
-/// A record or tuple value.
-#[derive(Clone, Debug)]
-pub struct CompositeValue {
-    declaration: NodeKey,
-    slots: Box<[FieldValue]>,
-    occ: Integer,
-}
-
-impl CompositeValue {
-    /// The declaration node key.
-    pub fn declaration(&self) -> NodeKey {
-        self.declaration
-    }
-
-    /// Field or position states in declaration order.
-    pub fn slots(&self) -> &[FieldValue] {
-        &self.slots
-    }
+    from_admitted_slots(declaration, slots)
 }
