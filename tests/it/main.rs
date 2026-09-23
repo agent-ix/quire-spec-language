@@ -71,6 +71,7 @@ mod dispatch_calls;
 mod equality_matrix;
 mod exact_decimals;
 mod extracted_command;
+mod family_outcome_layering;
 mod finite_simulation;
 mod fixture_audit;
 mod formal_source;

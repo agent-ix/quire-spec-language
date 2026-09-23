@@ -64,4 +64,7 @@ Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Steps 1 to 3: `l14_lookup_expression_undefined_mode`, in
+`tests/it/model_reference_queries.rs`, which also asserts `e.location` at
+the `lookup` node. Step 4: `l16_lookup_expression_refused_mode`. Step 5:
+`quire-exact/src/outcome.rs`'s `Undefined` has no `AbsentKey` variant.

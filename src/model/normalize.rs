@@ -237,6 +237,15 @@ pub struct ModelRefusal {
     pub detail: String,
 }
 
+impl ModelRefusal {
+    /// ADR-013 O-17 (FR-090-AC-8): this refusal's catalog code, its cause's
+    /// own [`ModelRefusalCause::catalog_code`]. Reads the cause alone, never
+    /// the native-v1 `code` (ADR-013 R-09).
+    pub fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
+        self.cause.catalog_code()
+    }
+}
+
 /// A non-empty [`ModelRefusal`] list (L1 finding, PR #228 review):
 /// `value-accounting.md:505-511`'s "every refusal that work exposes is
 /// reported, in charge order, when its stage ends" means a real defect

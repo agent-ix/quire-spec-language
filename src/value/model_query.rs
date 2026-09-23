@@ -83,28 +83,48 @@ use qsl_foundation::diagnostic::Code;
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
 use super::node::NodeKey;
-use super::outcome::{ModelQueryRefusal, Refusal, Stop, Undefined};
+use super::outcome::{Refusal, Stop};
 use super::reference::{ObjectIdentity, ObjectReference, UniverseIdentity};
-use quire_exact::Meter;
+use quire_exact::{Incomplete, Meter, PopulationId};
+
+/// Why a population query stopped without a value. The evaluator
+/// (`value::expression`, layer 5) turns `Refused` and `AbsentKey` into the
+/// `StateModel` family's own evaluation-time results (FR-090-AC-8,
+/// AC-12); this layer names no `check`-core outcome type (ADR-011 §6.2).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ModelQueryHalt {
+    /// An ordinary evaluator stop.
+    Stop(Stop),
+    /// `model::population` refused the query. Boxed: `ModelRefusal` is
+    /// large, and this is the cold path.
+    Refused(Box<ModelRefusal>),
+    /// A `lookup<T>(p, r) absent undefined` query found no member of `r`'s
+    /// key in the population bound to `p`.
+    AbsentKey {
+        /// The population bound to `p`.
+        population: PopulationId,
+        /// `r`'s object identity bytes, exactly as supplied.
+        key: Vec<u8>,
+    },
+}
+
+impl From<Incomplete> for ModelQueryHalt {
+    fn from(record: Incomplete) -> Self {
+        Self::Stop(Stop::Incomplete(record))
+    }
+}
 
 /// A reference's identity triple could not be bridged; unreachable for an
 /// admitted program (see the module docs).
-fn invariant() -> Stop {
-    Stop::Refused(Refusal::CheckedInvariant)
-}
-
-fn model_refusal(refusal: ModelRefusal) -> Stop {
-    Stop::Refused(Refusal::Model(ModelQueryRefusal {
-        code: refusal.code,
-        cause: refusal.cause.as_str(),
-    }))
+fn invariant() -> ModelQueryHalt {
+    ModelQueryHalt::Stop(Stop::Refused(Refusal::CheckedInvariant))
 }
 
 /// The direct FR-143 byte transfer of a model [`ReferenceKey`] into its
 /// `crate::value` [`ObjectReference`]. Fails only when a component's bytes
 /// are empty, which an admitted [`PopulationBinding`] never produces (a
 /// checked invariant).
-fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, Stop> {
+fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQueryHalt> {
     let universe = UniverseIdentity::new(key.universe.as_bytes()).map_err(|_| invariant())?;
     let object_type = NodeKey::from_digest(*key.type_identity.as_bytes());
     let identity = ObjectIdentity::new(key.object.as_bytes()).map_err(|_| invariant())?;
@@ -152,17 +172,17 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
 fn resolve_target(
     catalog: &HashMap<EffectiveId, DeclarationKey>,
     target: NodeKey,
-) -> Result<DeclarationKey, Stop> {
+) -> Result<DeclarationKey, ModelQueryHalt> {
     let target_id = EffectiveId::from_digest(*target.as_bytes());
     catalog.get(&target_id).cloned().ok_or_else(|| {
-        model_refusal(ModelRefusal {
+        ModelQueryHalt::Refused(Box::new(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!(
                 "{} is not a declared type of this population's model",
                 target_id
             ),
-        })
+        }))
     })
 }
 
@@ -174,7 +194,7 @@ pub(crate) fn evaluate_all_instances(
     binding: &PopulationBinding,
     collection_type: &CollectionType,
     meter: &mut Meter,
-) -> Result<Value, Stop> {
+) -> Result<Value, ModelQueryHalt> {
     let ValueType::Reference(target_key) = collection_type.element() else {
         return Err(invariant());
     };
@@ -188,8 +208,8 @@ pub(crate) fn evaluate_all_instances(
             }
             Ok(collection::from_admitted(collection_type.clone(), elements))
         }
-        AllInstancesOutcome::Refused(refusal) => Err(model_refusal(refusal)),
-        AllInstancesOutcome::Incomplete(incomplete) => Err(Stop::Incomplete(incomplete)),
+        AllInstancesOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
+        AllInstancesOutcome::Incomplete(incomplete) => Err(incomplete.into()),
     }
 }
 
@@ -207,7 +227,7 @@ pub(crate) fn evaluate_lookup(
     absence: AbsenceMode,
     result_type: &ValueType,
     meter: &mut Meter,
-) -> Result<Value, Stop> {
+) -> Result<Value, ModelQueryHalt> {
     let Value::Reference(reference) = reference else {
         return Err(invariant());
     };
@@ -241,13 +261,16 @@ pub(crate) fn evaluate_lookup(
             option_payload(result_type)?,
             None,
         )),
-        LookupOutcome::Undefined => Err(Stop::Undefined(Undefined::AbsentKey)),
-        LookupOutcome::Refused(refusal) => Err(model_refusal(refusal)),
-        LookupOutcome::Incomplete(incomplete) => Err(Stop::Incomplete(incomplete)),
+        LookupOutcome::Undefined => Err(ModelQueryHalt::AbsentKey {
+            population: binding.population_id(),
+            key: lookup_key.object,
+        }),
+        LookupOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
+        LookupOutcome::Incomplete(incomplete) => Err(incomplete.into()),
     }
 }
 
-fn option_payload(result_type: &ValueType) -> Result<ValueType, Stop> {
+fn option_payload(result_type: &ValueType) -> Result<ValueType, ModelQueryHalt> {
     match result_type {
         ValueType::Option(payload) => Ok((**payload).clone()),
         _ => Err(invariant()),

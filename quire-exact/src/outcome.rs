@@ -102,10 +102,6 @@ pub enum Undefined {
     /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
     /// expression can meet it.
     NoneValue,
-    /// A population-lookup query's `absent-key` reason: the queried
-    /// reference is not a member of the bound population, and the query
-    /// names no mathematical value for that case.
-    AbsentKey,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.

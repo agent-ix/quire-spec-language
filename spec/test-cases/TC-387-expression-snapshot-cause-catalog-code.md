@@ -41,4 +41,7 @@ Tag the test `#[trace("FR-090-AC-6", "TC-387")]`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Steps 1 and 2: `protocol_clause_snapshot_catalog_code`,
+in `src/value/expression/causes.rs`. Step 3: the seam-probe list names
+`ProtocolClauseSnapshot::catalog_code`, and `WrongSnapshotCause` has a
+`#[cfg(seam_probe)]` variant.

@@ -493,49 +493,37 @@ undefined cause type.
 
 ## Status
 
-Specified under QSL-174 (ADR-013 O-16, O-17, T-4, T-6). `FamilyOutcome`
-appears under `src/` only in doc comments; the provisional
-`family::EvaluateRefusal` stand-in this ticket introduced first is deleted
-again (below), since FR-090-AC-3's own seam raises `InternalFault` directly
-and never needed a refusal-shaped type of its own. F `diagnostic` still has
-no catalog-code-to-category map, and `model::normalize::ModelRefusal` still
-has no `catalog_code()` (it carries the native-v1 `Code` instead), though
-O-17 requires one. `quire_exact::Meter::charge` is public (QSL-153 and
-QSL-166 are Done), so FR-090-AC-1's `Incomplete` case is constructible.
+Implemented under QSL-174 (ADR-013 O-16, O-17, T-4, T-6), all open
+questions ruled.
 
-FR-090-AC-3 and FR-090-AC-10 implement (TC-384, TC-391; both
-`✅ Passed locally`): `CheckedPackage::call` and `CheckedPackage::evaluate`
-return `Result<Evaluation, CallFailure>`, with `CallFailure { Input(
-InputRefusal), Fault(qsl_foundation::diagnostic::InternalFault) }`
-(`src/value/expression/mod.rs`). The seam itself --
-`ValueFunctionFamily::evaluate` (`src/value/expression/family.rs`) -- raises
-`EvaluateFailure::Fault(InternalFault)` directly, naming stage `"S6a"` and a
-stable invariant identifier, for both a consumed evaluation environment and
-a checked identity the package does not resolve; `call`'s `map_evaluate_
-failure` only forwards that `Fault` into `CallFailure::Fault`, deriving
-nothing itself. `Machine::resolve_population` (`src/value/expression/
-evaluate.rs`) raises the same kind of fault for an unresolved or mismatched-
-maximum population argument past admission, carried out of `Machine`'s own
-task loop by a crate-private `Halt` type (never by the shared `Stop` every
-other evaluator computation converts through `Outcome::from_stop`), so
-`Machine::run` is the only place that can ever produce this `Err`. None of
-these three conditions panics, and none is reported as a family result or
-a kernel `Refused` outcome. `Refusal::UnresolvedPopulation`/`Refusal::
-PopulationMaximumMismatch` and the provisional `family::EvaluateRefusal`
-this ticket introduced first are deleted (`src/value/outcome.rs`,
-`src/family/contract.rs`): FR-090-AC-10 already places both of admission's
-production call sites at `CheckedPackage::call`'s own `validate`, so neither
-had a reachable production constructor left.
+`FamilyOutcome<T>` has two arms, `Evaluated(quire_exact::Outcome<T>)` and
+`FamilyEvaluated(FamilyResult)`: S6a admits no `Relation`
+(`src/family/evaluation.rs`). `EvalOutcome<T> { Kernel(Outcome<T>),
+Family(FamilyResult) }` is the `evaluate` hook's return shape.
+`Evaluation { outcome: FamilyOutcome<Value>, location, losses }` is
+`CheckedPackage::call`'s and `CheckedPackage::evaluate`'s result
+(`src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
+records `location` and `losses` as owned fields of its `EvaluationEnv` on
+every `Ok` return, and `call` builds the `Evaluation` from them.
 
-`Evaluation` exists (`src/value/expression/evaluate.rs`) with `outcome:
-Outcome<Value>`, the kernel copy's outcome, not yet `FamilyOutcome<Value>`.
-`FamilyResult`, `EvalOutcome`, `CatalogCoded`, `UndefinedCoded`,
-`UndefinedRecord` and `UndefinedReason` do not exist yet.
-`Undefined::PreconditionFalse` is still a variant of QSL's kernel copy in
-`src/value/outcome.rs`, and its `Evaluation.location` is the evaluated
-expression's root, not the dispatched call node: `Machine::run` falls back to
-the root location for the `DispatchGuard` task that raises it
-(`src/value/expression/evaluate.rs`). `quire_exact::Undefined::AbsentKey`
-and the kernel copy's `Undefined::AbsentKey` still exist, and
-`src/value/model_query.rs` returns the kernel variant for an `absent
-undefined` lookup. Remaining work: QSL-174 implementation.
+The family cause types are defined in `value::expression`
+(`src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
+`StateModelUndefined { PreconditionFalse, AbsentKey { binding, key } }` and
+`ModelQueryRefusal { cause, detail }`, the model-query refusal S6a carries,
+which holds no native-v1 `Code`. `value::model_query` returns a
+model-layer `ModelQueryHalt`, and the evaluator turns it into a
+`FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
+with no `_` arm (`src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
+delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
+O-16 category. `quire_exact::Undefined` and `Refusal`, and QSL's kernel copy
+in `src/value/outcome.rs`, have no `PreconditionFalse`, `AbsentKey`,
+`WrongSnapshot` or `Model` variant.
+
+FR-090-AC-1, AC-3 and AC-5 to AC-12 (TC-382, TC-384, TC-386 to TC-391,
+TC-407, TC-408) are `✅ Passed locally`.
+
+FR-090-AC-4 (TC-385) is open. Missing: the S6a family kind (`FamilyKind`
+without `Relation`, in the `check` core), an S6a seam dispatch over it with
+one hand-written arm per variant and no `_` arm, and `evaluate` hooks for
+`StateModel`, `SumCase`, `TemporalTrace` and `ProtocolClause`; only `Value`
+implements `ReferenceEvaluation` today. Remaining work: QSL-174.

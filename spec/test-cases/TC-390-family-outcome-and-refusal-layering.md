@@ -43,8 +43,9 @@ which turns `FamilyResult` back into a shared cause list.
 2. Resolve every `use` edge and every inline path under `src/forms/`,
    `src/model/`, `src/library/`, the `semantic_value` modules
    (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
-   ADR-011 §6.2) and `qsl-cst/src/`, and check whether any of them names one
-   of the three types.
+   ADR-011 §6.2), `src/value/model_query.rs` (layer 3 `model`),
+   `src/value/outcome.rs` (layer K) and `qsl-cst/src/`, and check whether
+   any of them names one of the three types.
 3. Resolve every `use` edge and every inline path under the `check` core, and
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.
@@ -67,4 +68,6 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Backed by the four tests in
+`tests/it/family_outcome_layering.rs`, over `xtask::definition_scan::scan_dirs`
+and `xtask::import_graph::resolved_paths`.

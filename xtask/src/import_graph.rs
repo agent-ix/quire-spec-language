@@ -906,75 +906,143 @@ impl<'ast> Visit<'ast> for ShippedEdgeVisitor<'_> {
     }
 }
 
+/// One file's shipped `use` edges and inline paths, each inline path
+/// resolved to zero or more crate-relative paths.
+///
+/// An inline path is resolved when it is rooted at `crate`, `super` or
+/// `self`, or when its first segment is a name some shipped `use` in the
+/// same file binds: `use crate::value;` followed by `value::Presence` is
+/// resolved as `crate::value::Presence`. A binding is tracked file-wide,
+/// whatever block its `use` sits in, and a name bound more than once is
+/// resolved against every binding -- both over-approximate, never hide.
+struct FileEdges {
+    current_module: Vec<String>,
+    uses: Vec<UseEdge>,
+    inline: Vec<(usize, Vec<String>)>,
+}
+
+fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
+    let parsed = parse_file(workspace_root, file)?;
+    let current_module = module_segments_of(file);
+    let mut visitor = ShippedEdgeVisitor {
+        file,
+        uses: Vec::new(),
+        paths: Vec::new(),
+    };
+    visitor.visit_file(&parsed);
+    let mut bindings: BTreeMap<&str, Vec<Vec<String>>> = BTreeMap::new();
+    for edge in &visitor.uses {
+        if !edge.is_glob {
+            bindings
+                .entry(edge.binding.as_str())
+                .or_default()
+                .push(resolve_relative_path(&edge.bound_path(), &current_module));
+        }
+    }
+    let mut inline = Vec::new();
+    for path in &visitor.paths {
+        let Some((first, rest)) = path.segments.split_first() else {
+            continue;
+        };
+        if matches!(first.as_str(), "crate" | "super" | "self") {
+            inline.push((
+                path.line,
+                resolve_relative_path(&path.segments, &current_module),
+            ));
+        } else {
+            for bound in bindings.get(first.as_str()).into_iter().flatten() {
+                inline.push((path.line, bound.iter().chain(rest).cloned().collect()));
+            }
+        }
+    }
+    let uses = visitor.uses;
+    Ok(FileEdges {
+        current_module,
+        uses,
+        inline,
+    })
+}
+
 /// FR-068-AC-6/TC-175: every shipped `use` edge and inline path under
 /// `src/check/`, classified against the module-level layer rule, so one scan
 /// covers both `value`'s submodules and the `package`/`checked_package`/
-/// `route`/`replay`/`lowering` forbidden list.
-///
-/// An inline path is classified when it is rooted at `crate`, `super` or
-/// `self`, or when its first segment is a name some shipped `use` in the
-/// same file binds: `use crate::value;` followed by `value::Presence` is
-/// classified as `crate::value::Presence`. A binding is tracked file-wide,
-/// whatever block its `use` sits in, and a name bound more than once is
-/// classified against every binding -- both over-approximate, never hide.
+/// `route`/`replay`/`lowering` forbidden list. Inline paths resolve as
+/// `file_edges` describes.
 pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
     let mut edges = Vec::new();
     for file in files_in_recursive(workspace_root, "src/check")? {
-        let parsed = parse_file(workspace_root, &file)?;
-        let current_module = module_segments_of(&file);
-        let mut visitor = ShippedEdgeVisitor {
-            file: &file,
-            uses: Vec::new(),
-            paths: Vec::new(),
-        };
-        visitor.visit_file(&parsed);
-        let mut bindings: BTreeMap<&str, Vec<Vec<String>>> = BTreeMap::new();
-        for edge in &visitor.uses {
-            if !edge.is_glob {
-                bindings
-                    .entry(edge.binding.as_str())
-                    .or_default()
-                    .push(resolve_relative_path(&edge.bound_path(), &current_module));
-            }
-        }
-        for edge in &visitor.uses {
+        let file_edges = file_edges(workspace_root, &file)?;
+        for edge in &file_edges.uses {
             edges.extend(classify_use_edge(
                 workspace_root,
                 &submodule_reexports,
-                &current_module,
+                &file_edges.current_module,
                 edge,
             ));
         }
-        for inline in &visitor.paths {
-            let Some((first, rest)) = inline.segments.split_first() else {
-                continue;
-            };
-            let resolved_paths: Vec<Vec<String>> =
-                if matches!(first.as_str(), "crate" | "super" | "self") {
-                    vec![resolve_relative_path(&inline.segments, &current_module)]
-                } else {
-                    bindings
-                        .get(first.as_str())
-                        .into_iter()
-                        .flatten()
-                        .map(|bound| bound.iter().chain(rest).cloned().collect())
-                        .collect()
-                };
-            for resolved in resolved_paths {
-                edges.extend(classify_resolved(
-                    workspace_root,
-                    &submodule_reexports,
-                    &file,
-                    inline.line,
-                    &resolved,
-                    false,
-                ));
-            }
+        for (line, resolved) in &file_edges.inline {
+            edges.extend(classify_resolved(
+                workspace_root,
+                &submodule_reexports,
+                &file,
+                *line,
+                resolved,
+                false,
+            ));
         }
     }
     edges.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Ok(edges)
+}
+
+/// One resolved path from a shipped `use` edge or inline path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedPath {
+    /// The file the path was found in, relative to the workspace root.
+    pub file: String,
+    /// 1-based source line.
+    pub line: usize,
+    /// The resolved segments: crate-relative for a `crate`/`super`/`self`
+    /// root, as written otherwise. A `use` edge's segments end with the
+    /// name it binds; a glob's end with the module it globs.
+    pub segments: Vec<String>,
+    /// Whether the path came from a glob `use`.
+    pub is_glob: bool,
+}
+
+/// FR-090-AC-9/TC-390: every shipped `use` edge and inline path in each of
+/// `roots` (a `.rs` file or a directory, scanned recursively, relative to
+/// `workspace_root`), resolved as `file_edges` describes.
+pub fn resolved_paths(workspace_root: &Path, roots: &[&str]) -> Result<Vec<ResolvedPath>> {
+    let mut paths = Vec::new();
+    for root in roots {
+        let files = if workspace_root.join(root).is_dir() {
+            files_in_recursive(workspace_root, root)?
+        } else {
+            vec![(*root).to_owned()]
+        };
+        for file in files {
+            let file_edges = file_edges(workspace_root, &file)?;
+            for edge in &file_edges.uses {
+                paths.push(ResolvedPath {
+                    file: file.clone(),
+                    line: edge.line,
+                    segments: resolve_relative_path(&edge.bound_path(), &file_edges.current_module),
+                    is_glob: edge.is_glob,
+                });
+            }
+            for (line, segments) in file_edges.inline {
+                paths.push(ResolvedPath {
+                    file: file.clone(),
+                    line,
+                    segments,
+                    is_glob: false,
+                });
+            }
+        }
+    }
+    Ok(paths)
 }
 
 #[cfg(test)]

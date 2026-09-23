@@ -14,9 +14,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use quire_exact::IllTypedCause;
-use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, ScalarLimits};
+use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
@@ -34,10 +34,10 @@ use quire_spec_language::value::{
     decode_function_package_v2, BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
-    DispatchTable, Expression, FunctionDeclaration, InputRefusal, InvalidDispatchDeclaration,
-    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Origin, Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment,
-    TypeForm, Undefined, UniverseIdentity, Value, ValueType,
+    DispatchTable, Evaluation, Expression, FamilyOutcome, FamilyResult, FunctionDeclaration,
+    InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
+    TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -104,6 +104,28 @@ fn objects(receiver_type: NodeKey, identity: &str) -> ObjectEnvironment {
         [(receiver_reference(receiver_type, identity), vec![])],
     )
     .unwrap()
+}
+
+/// Unwraps a completed kernel evaluation, panicking with the actual shape on
+/// any family-owned refusal/undefined result -- the completed-value tests in
+/// this file assert only on `Outcome`, never on a family cause (TC-386/OQ
+/// concrete-cause assertions belong to the producing family's own unit
+/// tests, per FR-090's own AC).
+fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    }
+}
+
+/// Unwraps a family-owned `Undefined` result's [`UndefinedRecord`] -- the
+/// seam-level assertion FR-090-AC-11/AC-12 call for (reason + fields), never
+/// the concrete producing type.
+fn undefined_record(evaluation: Evaluation) -> UndefinedRecord {
+    match evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => cause.undefined_record(),
+        other => panic!("expected FamilyOutcome::FamilyEvaluated(Undefined(_)), got {other:?}"),
+    }
 }
 
 fn dispatch_expression_on(receiver: &str) -> Expression {
@@ -1086,7 +1108,7 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
+    match evaluated(evaluation) {
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
         other => panic!("expected a completed Integer(2) (B's own body), got {other:?}"),
     }
@@ -1106,7 +1128,7 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
 /// refused `Undefined::PreconditionFalse`, and the candidate body's own
 /// `function.call` never charges: only `dispatch.select`'s own charge is
 /// consumed.
-#[trace("TC-196", "FR-151-AC-7", "FR-151-AC-8")]
+#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-151-AC-8", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
     let a_type = key("model.A");
@@ -1135,23 +1157,92 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
-        Outcome::Undefined(Undefined::PreconditionFalse(failure)) => {
-            assert_eq!(
-                *failure,
-                PreconditionFailure {
-                    operation: "size".to_owned(),
-                    selected: "model.A.size".to_owned(),
-                    receiver: receiver_reference(a_type, "a1"),
-                }
-            );
+    // The dispatched `receiver.member(args)` call is this checked clause
+    // expression's own root (`dispatch_expression()` is a bare `self.size()`
+    // call, nothing wraps it), so `precondition-false`'s locus is the root
+    // location `check_clause_expression` itself uses: `Origin::Expression`,
+    // an empty path. The call is the root here, so this does not by itself
+    // tell the call's locus from the root's -- see the sibling test below,
+    // which nests the dispatch call one level deep so the two differ.
+    assert_eq!(
+        evaluation.location,
+        Some(Location {
+            origin: Origin::Expression,
+            path: Vec::new(),
+        })
+    );
+    assert_eq!(
+        undefined_record(evaluation),
+        UndefinedRecord {
+            reason: UndefinedReason::PreconditionFalse,
+            fields: BTreeMap::from([
+                ("operation", "size".to_owned()),
+                ("selected", "model.A.size".to_owned()),
+                ("receiver", "a1".to_owned()),
+            ]),
         }
-        other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
-    }
+    );
     // Only `dispatch.select` charges (sized by the family's two distinct
     // candidates); the candidate body's own `function.call` never runs.
     assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 2);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
+}
+
+/// FR-090-AC-11/TC-407: a dispatched `receiver.member(args)` call nested
+/// one level inside a wrapping expression (`0 + self.size()`, the dispatch
+/// call as `Binary`'s `right` child, path `[1]`) reports `precondition-
+/// false`'s locus as the dispatch call itself, never the whole checked
+/// clause expression's own root (`Origin::Expression`, path `[]`).
+/// `DispatchGuard` carries the dispatch node's own location, set at push
+/// time from the `NodeKind::Dispatch` node the D06 tests above dispatch
+/// through (`src/value/expression/evaluate.rs`).
+#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
+#[test]
+fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
+    let a_type = key("model.A");
+    let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
+
+    let objects = objects(a_type, "a1");
+    let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
+    let nested = Expression::Binary {
+        operator: BinaryOperator::Add,
+        left: Box::new(Expression::Integer(Integer::from(0_i64))),
+        right: Box::new(dispatch_expression()),
+    };
+    let checked = package
+        .graph()
+        .check_clause_expression(
+            parameters,
+            &nested,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![Value::Reference(receiver_reference(a_type, "a1"))],
+            &objects,
+            &mut meter,
+        )
+        .unwrap();
+    assert_eq!(
+        evaluation.location,
+        Some(Location {
+            origin: Origin::Expression,
+            path: vec![1],
+        }),
+        "expected the dispatch call's own locus (path [1], the Binary's \
+         right child), not the whole expression's root"
+    );
+    assert_eq!(
+        undefined_record(evaluation).reason,
+        UndefinedReason::PreconditionFalse
+    );
 }
 
 /// Two distinct dispatch operations (`size`, `weight`) that happen to share
@@ -1161,7 +1252,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 /// (set once, at `check.rs`'s `dispatch_call`) rather than being re-derived
 /// at evaluation time by searching `dispatch_operations` for whichever
 /// operation happens to name the same `table` first.
-#[trace("TC-196", "FR-151-AC-7")]
+#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched() {
     let receiver_type = key("model.dispatch-calls.Receiver");
@@ -1247,19 +1338,17 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
-        Outcome::Undefined(Undefined::PreconditionFalse(failure)) => {
-            assert_eq!(
-                *failure,
-                PreconditionFailure {
-                    operation: "weight".to_owned(),
-                    selected: "shared.body".to_owned(),
-                    receiver: receiver_reference(receiver_type, "r1"),
-                }
-            );
+    assert_eq!(
+        undefined_record(evaluation),
+        UndefinedRecord {
+            reason: UndefinedReason::PreconditionFalse,
+            fields: BTreeMap::from([
+                ("operation", "weight".to_owned()),
+                ("selected", "shared.body".to_owned()),
+                ("receiver", "r1".to_owned()),
+            ]),
         }
-        other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
-    }
+    );
 }
 
 /// D08 (FR-151-AC-3): a strongly connected component reached only through a
@@ -1312,7 +1401,7 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
 /// (ancestor) precondition also `false`, is refused
 /// `Undefined::PreconditionFalse` naming `model.B.size` — never falling back
 /// to the less-specific `model.A.size` the ancestor term belongs to.
-#[trace("TC-196", "FR-151-AC-7")]
+#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
     let b_type = key("model.B");
@@ -1345,19 +1434,17 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
-        Outcome::Undefined(Undefined::PreconditionFalse(failure)) => {
-            assert_eq!(
-                *failure,
-                PreconditionFailure {
-                    operation: "size".to_owned(),
-                    selected: "model.B.size".to_owned(),
-                    receiver: receiver_reference(b_type, "b1"),
-                }
-            );
+    assert_eq!(
+        undefined_record(evaluation),
+        UndefinedRecord {
+            reason: UndefinedReason::PreconditionFalse,
+            fields: BTreeMap::from([
+                ("operation", "size".to_owned()),
+                ("selected", "model.B.size".to_owned()),
+                ("receiver", "b1".to_owned()),
+            ]),
         }
-        other => panic!("expected Undefined(PreconditionFalse), got {other:?}"),
-    }
+    );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
 }
 
@@ -1402,7 +1489,7 @@ fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
+    match evaluated(evaluation) {
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
         other => panic!("expected a completed Integer(2) (B's own body), got {other:?}"),
     }
@@ -1603,7 +1690,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
+    match evaluated(evaluation) {
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(2_i64)),
         other => panic!(
             "expected a completed Integer(2) (B's own body) — A's ancestor term reduces to \
@@ -1801,7 +1888,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
             &mut meter_a,
         )
         .unwrap();
-    match evaluation_a.outcome {
+    match evaluated(evaluation_a) {
         Outcome::Completed(Value::Integer(value)) => assert_eq!(value, Integer::from(1_i64)),
         other => panic!("expected a completed Integer(1) for an A receiver, got {other:?}"),
     }
