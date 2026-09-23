@@ -56,5 +56,5 @@ from `CheckedPackage::call`:
 `evaluate_declaration`, `S6aFamilyKind::family` and
 `ValueFunctionFamily::evaluate`, and `S6aFamilyKind` and `FamilyOutcome`
 each have a `#[cfg(seam_probe)]` variant. A compile-time check in
-`src/family/mod.rs` rejects an S6a family kind that maps to
+`src/value/expression/s6a.rs` rejects an S6a family kind that maps to
 `FamilyKind::Relation` or shares a `FamilyKind` with another.

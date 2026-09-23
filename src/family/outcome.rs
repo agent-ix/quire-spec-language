@@ -28,7 +28,7 @@
 /// does that when a stage entry genuinely raises a warning, not as a hollow
 /// shell restored speculatively.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Staged<T> {
+pub struct Staged<T> {
     pub(crate) value: T,
 }
 
@@ -69,7 +69,7 @@ pub(crate) enum StageLimitKind {
 /// A reached stage limit (ADR-013 T-4), distinct in type from a refusal, a
 /// checked node and `Incomplete` (FR-062-AC-5).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct LimitExceeded {
+pub struct LimitExceeded {
     pub(crate) kind: StageLimitKind,
     pub(crate) configured_bound: u64,
 }
@@ -129,12 +129,14 @@ impl LimitExceeded {
 /// QSL-152's remaining scope is a per-family `Cause` enum for the *other*
 /// five families, once they migrate, not this one.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum StageFailure<C> {
+pub enum StageFailure<C> {
+    /// A configured stage limit was reached first.
     Limit(LimitExceeded),
+    /// The family refused the form with its own typed cause.
     Refused(C),
 }
 
 /// ADR-013 T-4's `Result<Staged<T>, StageFailure<C>>`: every S1-S4 stage
 /// hook's return shape (FR-062 "structured outcome"), generic over the
 /// family's own refusal cause `C` (see [`StageFailure`]'s own doc).
-pub(crate) type CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>>;
+pub type CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>>;

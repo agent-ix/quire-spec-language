@@ -26,12 +26,13 @@
 mod causes;
 mod evaluate;
 mod family;
+mod s6a;
 
-use crate::family::{ReferenceEvaluation, S6aFamilyKind};
 use crate::model::object_environment::ObjectEnvironment;
 use evaluate::{Callable, Machine};
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
+use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
@@ -373,7 +374,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
         validate(callable.parameters, &arguments, objects)?;
         // FR-062/FR-065: this family's own `evaluate` hook
-        // (`crate::family::ReferenceEvaluation`) is the one path that runs
+        // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
         // `Machine` call beside it.
         let identity = callable.identity;

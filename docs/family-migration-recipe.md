@@ -53,7 +53,7 @@ FR-066-AC-2's three categories, per family:
    converting a checked node plus its typing-context `Env` into the
    family's `Observed` outcome, or the family's `Refused` reason. In the
    same change, reach it from S6a: add the family's `S6aFamilyKind` variant
-   to the `s6a_family_kinds!` list in `src/family/mod.rs` (which also puts
+   to the `s6a_family_kinds!` list in `src/value/expression/s6a.rs` (which also puts
    it in `S6aFamilyKind::ALL`), its `S6aFamilyKind::family` arm, its
    `evaluate_declaration` arm in `src/value/expression/mod.rs`, and its arm
    in TC-385's `s6a_family_name` match. `Relation` has no evaluator: S6a's
@@ -158,7 +158,10 @@ above.
   scratch buffer nothing read, then built its real returned bytes
   independently, so the hook had no consumer.
 - Evaluator: `impl ReferenceEvaluation for ValueFunctionFamily` in
-  `src/value/expression/family.rs` (`evaluate`), reached through the S6a
+  `src/value/expression/family.rs` (`evaluate`); the trait is layer 5's, in
+  `src/value/expression/s6a.rs` beside `S6aFamilyKind`, so the impl sits in
+  the trait's crate (the orphan rule) while `ValueFunctionFamily` stays in
+  layer-3 `check`. It is reached through the S6a
   seam `evaluate_declaration` in `src/value/expression/mod.rs`, which
   `CheckedPackage::call` calls.
 - Requirement derivation: deferred for this family, per this document's own

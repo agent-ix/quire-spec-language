@@ -99,7 +99,7 @@ use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
 pub use check::Scope;
-pub use family::ValueFunctionFamily;
+pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
 // `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
 // family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
 // permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
@@ -305,11 +305,11 @@ pub struct FunctionState<'a> {
 /// One callable function's evaluation-visible identity and signature --
 /// what `value::expression::CheckedPackageEvaluation::call` needs to route a
 /// runtime `QualifiedName` lookup through
-/// `crate::family::ReferenceEvaluation::evaluate` and validate its
+/// `value::expression`'s `ReferenceEvaluation::evaluate` and validate its
 /// caller's arguments, without a direct field read.
 #[non_exhaustive]
 pub struct CallableFunction<'a> {
-    /// The minted identity `crate::family::ReferenceEvaluation::evaluate`
+    /// The minted identity `value::expression`'s `ReferenceEvaluation::evaluate`
     /// resolves against.
     pub identity: quire_exact::NodeKey,
     /// The declared parameters, for argument admission.
@@ -1056,7 +1056,7 @@ impl CheckedGraph {
 
     /// One admitted function's evaluation-visible state, by its minted
     /// identity -- the accessor
-    /// `crate::family::ReferenceEvaluation::evaluate`'s `Value` family
+    /// `value::expression`'s `ReferenceEvaluation::evaluate`'s `Value` family
     /// implementation (`value::expression::family`) resolves a checked call
     /// against.
     pub fn function_by_identity(

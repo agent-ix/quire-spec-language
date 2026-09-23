@@ -40,7 +40,8 @@
 //! emit/decode codec: `CheckedPackage::call`'s public signature and the v2
 //! wire format are evaluation/emission-side concerns FR-068 leaves at layer
 //! 5, and this module does not duplicate them. `ValueFunctionFamily`'s
-//! evaluation half ([`crate::family::ReferenceEvaluation`]) stays there too,
+//! evaluation half (layer 5's `ReferenceEvaluation`, `value::expression::s6a`)
+//! stays there too,
 //! importing this module's [`ValueFunctionFamily`] back through
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
@@ -1229,7 +1230,7 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 /// the preimage's own node count (`StageLimits::node_count`'s own doc); it
 /// does not substitute for this one and does not accumulate across
 /// declarations.
-pub(crate) struct ValueDeclarations<'a> {
+pub struct ValueDeclarations<'a> {
     pub(crate) package_identity: &'a str,
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a [Signature],
@@ -1250,7 +1251,7 @@ pub(crate) struct ValueDeclarations<'a> {
 /// the real checked body [`check_declaration_body`] produces, returned
 /// through `check`'s own `Ok` rather than a side channel.
 ///
-/// This is distinct from [`crate::family::ReferenceEvaluation::Key`], the
+/// This is distinct from layer 5's `ReferenceEvaluation::Key`, the
 /// type `evaluate` is looked up and called by at runtime: `evaluate`'s one
 /// real caller (`CheckedPackage::call`, `value::expression::mod.rs`) only
 /// ever has a bare identity, resolved out of `CheckedPackage`'s own,
@@ -1260,7 +1261,7 @@ pub(crate) struct ValueDeclarations<'a> {
 /// carry the richer, check-time-only payload without breaking `evaluate`'s
 /// existing calling convention.
 #[derive(Debug)]
-pub(crate) struct CheckedDeclaration {
+pub struct CheckedDeclaration {
     pub(crate) identity: NodeKey,
     pub(crate) body: CheckedDeclarationBody,
 }
@@ -1271,7 +1272,7 @@ pub(crate) struct CheckedDeclaration {
 /// associated function over `Self::Form`/`Self::Checked`, with no instance
 /// state (ADR-012 §2's contract is static, dispatched through closed enums,
 /// not through an object). Its evaluation half
-/// (`crate::family::ReferenceEvaluation`) is implemented in
+/// (layer 5's `ReferenceEvaluation`, `value::expression::s6a`) is implemented in
 /// `value::expression::family`, over this type re-exported through
 /// `crate::check`.
 pub struct ValueFunctionFamily;

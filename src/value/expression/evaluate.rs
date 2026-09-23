@@ -1470,9 +1470,9 @@ impl<'a, 'm> Machine<'a, 'm> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::s6a::ReferenceEvaluation;
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations};
-    use crate::family::ReferenceEvaluation;
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::dispatch::GeneralizationClosure;
     use crate::model::domain_package::{

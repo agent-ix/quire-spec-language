@@ -467,7 +467,10 @@ undefined cause type.
 ## Dependencies
 
 - **Upstream:** [FR-062](FR-062-implement-checked-family-contract.md) owns
-  `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`. The S6a family
+  `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`. `FamilyContract`
+  and `FamilyKind` are layer-3 `family`; `ReferenceEvaluation` and the S6a
+  family kind are layer-5 `value::expression::s6a` (ADR-011 §6.2 `family`
+  row, amended by QSL-181). The S6a family
   kind has one variant for each `FamilyKind` that implements
   `ReferenceEvaluation`. FR-090-AC-4 is the precise form of FR-062-AC-6.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
@@ -522,8 +525,10 @@ QSL's kernel copy, before QSL-131 O2 deleted `src/value/outcome.rs` and
 repointed every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
 directly.
 
-The S6a family kind is `S6aFamilyKind { Value }` (`src/family/mod.rs`):
-`Value` is the family that implements `ReferenceEvaluation`. The S6a seam
+The S6a family kind is `S6aFamilyKind { Value }`
+(`src/value/expression/s6a.rs`, layer 5, beside the `ReferenceEvaluation`
+trait since QSL-181): `Value` is the family that implements
+`ReferenceEvaluation`. The S6a seam
 `evaluate_declaration` (`src/value/expression/mod.rs`) matches it with one
 arm per variant and no `_` arm, and `CheckedPackage::call` evaluates
 through it (QSL-191).

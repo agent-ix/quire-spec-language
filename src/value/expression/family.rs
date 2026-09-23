@@ -5,7 +5,7 @@
 //! This module holds `QualifiedName` (the layer-6 `replay`/[`super::
 //! CheckedPackage::call`] lookup key), S4 linking
 //! (`link_function_identity`), the v2 emit/decode codec, and
-//! [`ValueFunctionFamily`]'s [`crate::family::ReferenceEvaluation`] half.
+//! [`ValueFunctionFamily`]'s [`super::s6a::ReferenceEvaluation`] half.
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
 //! half -- identity minting, [`crate::check::PackageDeclarations::check`]'s
 //! own [`crate::family::FamilyContract`] hook, and the `OccurrenceMap`
@@ -302,7 +302,7 @@ impl<'a> EvaluationEnv<'a> {
     }
 }
 
-impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
+impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     type Observed = Value;
     type Env<'a> = EvaluationEnv<'a>;
     type Key = NodeKey;
@@ -433,15 +433,14 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 
 #[cfg(test)]
 mod family_contract_tests {
+    use super::super::s6a::ReferenceEvaluation;
     use super::*;
     use crate::check::{
         declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
         root_location, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
         SCALAR_LIMITS_UNLIMITED,
     };
-    use crate::family::{
-        CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
-    };
+    use crate::family::{CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
     use crate::model::object_environment::ObjectEnvironment;
     use crate::value::declaration::TypeEnvironment;
     use ix_trace_rs::trace;

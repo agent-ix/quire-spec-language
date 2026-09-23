@@ -168,7 +168,8 @@ that inconsistency is recorded, not resolved, here.
   `value::expression` itself, since `check.rs`'s `Typer::call` already
   depended on this content and `value::expression::family` keeps
   `QualifiedName`, S4 linking, the v2 emit/decode codec, and
-  `ValueFunctionFamily`'s `crate::family::ReferenceEvaluation` implementation
+  `ValueFunctionFamily`'s `ReferenceEvaluation` implementation (the trait
+  itself is layer 5's, `value::expression::s6a`, since QSL-181)
   (the evaluation half) at layer 5; the check-cause
   content of `refusal.rs` (`CheckCause`, `CheckRefusal`, `Obligation`,
   `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`,
