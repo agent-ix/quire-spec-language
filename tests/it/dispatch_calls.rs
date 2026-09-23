@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use quire_exact::IllTypedCause;
+use quire_exact::NodeKey;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
@@ -35,7 +36,7 @@ use quire_spec_language::value::{
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
     DispatchTable, Evaluation, Expression, FamilyOutcome, FamilyResult, FunctionDeclaration,
-    InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
+    InputRefusal, InvalidDispatchDeclaration, Location, ObjectEnvironment, ObjectIdentity,
     ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
     TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueType,
 };

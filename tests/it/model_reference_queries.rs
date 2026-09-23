@@ -19,6 +19,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
+use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
@@ -42,7 +43,7 @@ use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
     CompositeShape, DeclarationCause, Evaluation, Expression, FamilyOutcome, FamilyResult,
-    FieldDeclaration, FunctionDeclaration, InputRefusal, Location, NodeKey, ObjectEnvironment,
+    FieldDeclaration, FunctionDeclaration, InputRefusal, Location, ObjectEnvironment,
     ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations,
     QualifiedName, TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueType,
     WrongSnapshotCause,
