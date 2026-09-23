@@ -113,6 +113,23 @@ pub(crate) enum FamilyKind {
     __SeamProbe,
 }
 
+/// The S6a family kind (FR-090-AC-4, ADR-012 §5.1 S1): the closed family
+/// set the S6a seam dispatches over. It has one variant per family that
+/// implements [`ReferenceEvaluation`], and never a `Relation` variant, so no
+/// S6a call can name a `Relation` declaration (ADR-013 O-16). A family gains
+/// its variant, and its seam arm, in the change that implements its
+/// `ReferenceEvaluation` hook. `#[cfg(seam_probe)]` adds one probe-only
+/// variant (FR-063) that no non-probe code constructs or matches.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum S6aFamilyKind {
+    /// `Value`, through `ValueFunctionFamily`'s `evaluate` hook.
+    Value,
+    /// FR-063: exists only so `--cfg seam_probe` makes the S6a seam's
+    /// `match` non-exhaustive. Never constructed outside the probe build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
+}
+
 impl FamilyKind {
     /// The `catalog_code()` family prefix (ADR-012 §5.1 S1: "the `FamilyKind`
     /// prefix arm of `catalog_code()`"). No two families share a prefix.
