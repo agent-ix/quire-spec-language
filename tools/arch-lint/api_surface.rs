@@ -185,11 +185,10 @@ pub(crate) const RULES: &[Rule] = &[
         // (ADR-013 O-04), including `check::family`'s
         // `mint_declaration_identity`/`mint_call_identity`.
         allowed_caller_prefixes: &["check"],
-        // The allowed caller's own module root. Genuinely unreachable for
-        // the same reason as T12-C's, below: the marker path's presence is
-        // all this check tests.
-        requires_path: Some("src/check/mod.rs"),
-        pending_reason: "unreachable: src/check/mod.rs already exists on origin/main",
+        // No marker: the kernel `NodeKey` constructor exists, so T12-B is
+        // always live once a root is given.
+        requires_path: None,
+        pending_reason: "",
         scope_note: Some(
             "scoped to QSL's own tree only; does not scan quire-contract-runtime's \
              independently defined NodeKey type or quire-contract-codegen's generated call \
@@ -703,6 +702,42 @@ fn scan_shipped_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(Call
     Ok(sites)
 }
 
+/// Every module declared out of line as `#[cfg(test)] mod name;`, as the
+/// module path of its file (`parent::name`) -- FR-060 Behavior, "T12-B and
+/// T12-C: shipped code and debt lists". Such a file, and every module under
+/// it, is test-only even though the file itself carries no `#[cfg(test)]`.
+/// A declaration with a `#[path]` attribute is not resolved, so its file is
+/// still scanned.
+fn cfg_test_module_declarations(modules: &[(PathBuf, String)]) -> Result<BTreeSet<String>> {
+    fn collect(items: &[syn::Item], prefix: &str, in_test: bool, out: &mut BTreeSet<String>) {
+        for item in items {
+            let syn::Item::Mod(module) = item else {
+                continue;
+            };
+            let path = if prefix.is_empty() {
+                module.ident.to_string()
+            } else {
+                format!("{prefix}::{}", module.ident)
+            };
+            let is_test = in_test || has_cfg_test(&module.attrs);
+            match &module.content {
+                Some((_, inner)) => collect(inner, &path, is_test, out),
+                None if is_test && !module.attrs.iter().any(|a| a.path().is_ident("path")) => {
+                    out.insert(path);
+                }
+                None => {}
+            }
+        }
+    }
+    let mut declared = BTreeSet::new();
+    for (file, module) in modules {
+        let text = fs::read_to_string(file).map_err(|error| Error::io(file, error))?;
+        let parsed = syn::parse_file(&text).map_err(|source| Error::source_parse(file, source))?;
+        collect(&parsed.items, module, false, &mut declared);
+    }
+    Ok(declared)
+}
+
 fn walk_rs_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let entries = fs::read_dir(root).map_err(|error| Error::io(root, error))?;
     for entry in entries {
@@ -771,12 +806,29 @@ pub(crate) fn evaluate(
         }
         let mut files = Vec::new();
         walk_rs_files(&src_root, &mut files)?;
-        for file in files {
-            let relative = file
-                .strip_prefix(&src_root)
-                .expect("walked file is under src_root")
-                .to_path_buf();
-            let module = module_path_of(&relative);
+        let modules: Vec<(PathBuf, String)> = files
+            .into_iter()
+            .map(|file| {
+                let relative = file
+                    .strip_prefix(&src_root)
+                    .expect("walked file is under src_root")
+                    .to_path_buf();
+                let module = module_path_of(&relative);
+                (file, module)
+            })
+            .collect();
+        let test_modules = if rule.shipped_only {
+            cfg_test_module_declarations(&modules)?
+        } else {
+            BTreeSet::new()
+        };
+        for (file, module) in modules {
+            let under = |ancestor: &String| {
+                module == *ancestor || module.starts_with(&format!("{ancestor}::"))
+            };
+            if test_modules.iter().any(under) {
+                continue;
+            }
             let sites = if rule.shipped_only {
                 scan_shipped_file(&file, &module, rule)?
             } else {
@@ -915,7 +967,10 @@ mod tests {
     #[trace("TC-157")]
     #[test]
     fn tc_arch_lint_api_surface_001_module_path_mapping() {
-        assert_eq!(module_path_of(Path::new("value/node.rs")), "value::node");
+        assert_eq!(
+            module_path_of(Path::new("value/semantic_node.rs")),
+            "value::semantic_node"
+        );
         assert_eq!(
             module_path_of(Path::new("value/expression/mod.rs")),
             "value::expression"
@@ -1047,6 +1102,33 @@ mod tests {
         assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
         assert_eq!(outcome.violations[0].module, "value::enumeration");
         assert_eq!(outcome.violations[0].function, "an_unlisted_caller");
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_022: a file declared out of line as
+    /// `#[cfg(test)] mod tests;`, and a module under it, is test-only, so
+    /// its mints are excluded like any other `#[cfg(test)]` item. The same
+    /// declaration without `#[cfg(test)]` is shipped code, and its mint is a
+    /// violation (negative control).
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_022_cfg_test_mod_declaration_excludes_its_file() {
+        let mint = "pub fn f() { let _ = NodeKey::from_digest([0; 32]); }\n";
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let rule = &RULES[1]; // T12-B
+        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
+        write(
+            dir.path(),
+            "src/value/widget.rs",
+            "#[cfg(test)]\nmod tests;\nmod shipped;\n",
+        );
+        write(dir.path(), "src/value/widget/tests.rs", "mod nested;\n");
+        write(dir.path(), "src/value/widget/tests/nested.rs", mint);
+        write(dir.path(), "src/value/widget/shipped.rs", mint);
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].module, "value::widget::shipped");
         assert!(!outcome.passed());
     }
 

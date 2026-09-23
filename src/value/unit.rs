@@ -509,10 +509,11 @@ impl UnitGraph {
                 },
             );
         }
-        let dimensions = dimension_maps(&admitted_dimensions)?;
+        let dimension_ids = wire_index(admitted_dimensions.keys().copied());
+        let dimensions = dimension_maps(&admitted_dimensions, &dimension_ids)?;
         let unit_ids = wire_index(admitted_units.keys().copied());
         let units = unit_paths(
-            &resolve_units(&admitted_units, &dimensions, &unit_ids)?,
+            &resolve_units(&admitted_units, &dimension_ids, &unit_ids)?,
             &dimensions,
         )?;
         if provenance.iter().any(|node| !owners.contains(&node.owner)) {
@@ -572,8 +573,8 @@ impl UnitGraph {
 /// each resolved by lookup among the admitted dimension keys.
 fn dimension_maps(
     dimensions: &BTreeMap<NodeKey, AdmittedDimension>,
+    ids: &BTreeMap<WireNodeId, NodeKey>,
 ) -> Result<BTreeMap<NodeKey, Dimension>, InvalidSemanticGraph> {
-    let ids = wire_index(dimensions.keys().copied());
     dimensions
         .iter()
         .map(|(key, node)| {
@@ -583,7 +584,7 @@ fn dimension_maps(
             let mut terms = BTreeMap::new();
             for (term, exponent) in &node.terms {
                 let base =
-                    resolve(&ids, *term).ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
+                    resolve(ids, *term).ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
                 if dimensions
                     .get(&base)
                     .is_some_and(|base| !base.terms.is_empty())
@@ -601,13 +602,12 @@ fn dimension_maps(
 /// the admitted keys.
 fn resolve_units(
     units: &BTreeMap<NodeKey, AdmittedUnit>,
-    dimensions: &BTreeMap<NodeKey, Dimension>,
+    dimension_ids: &BTreeMap<WireNodeId, NodeKey>,
     unit_ids: &BTreeMap<WireNodeId, NodeKey>,
 ) -> Result<BTreeMap<NodeKey, ResolvedUnit>, InvalidSemanticGraph> {
-    let dimension_ids = wire_index(dimensions.keys().copied());
     let resolved_dimensions = units
         .values()
-        .map(|unit| resolve(&dimension_ids, unit.dimension))
+        .map(|unit| resolve(dimension_ids, unit.dimension))
         .collect::<Option<Vec<_>>>()
         .ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
     units

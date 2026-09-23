@@ -21,7 +21,7 @@ impl<'de> Deserialize<'de> for NodeRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         NodeIdDocument::deserialize(deserializer)?
             .wire_id()
-            .map(|id| NodeRef(node_key(*id.as_bytes())))
+            .map(|id| NodeRef(NodeKey::from_digest(*id.as_bytes())))
             .ok_or_else(|| D::Error::custom("not a canonical checked-semantic-node reference"))
     }
 }
@@ -155,13 +155,8 @@ impl<'de> Deserialize<'de> for OperationMode {
 // published vector has `declaration: null` and `recursion: null`).
 // ---------------------------------------------------------------------
 
-/// A test fixture key over `digest`.
-fn node_key(digest: [u8; 32]) -> NodeKey {
-    NodeKey::from_digest(digest)
-}
-
 fn key(fill: u8) -> NodeKey {
-    node_key([fill; 32])
+    NodeKey::from_digest([fill; 32])
 }
 
 fn reference(fill: u8) -> SemanticTerm {

@@ -118,7 +118,9 @@ mint. A reference passed as a function value, such as
 ### T12-B and T12-C: shipped code and debt lists
 
 T12-B and T12-C scan shipped code only: items under `#[cfg(test)]` are
-excluded, and so is a pattern match inside a comment or a doc comment. A test
+excluded, including a file declared out of line as `#[cfg(test)] mod name;`
+and every module under it, and so is a pattern match inside a comment or a
+doc comment. A test
 fixture that builds a `NodeKey` or `EffectiveId` from literal bytes, or a doc
 comment that names the constructor, is not an identity the crate mints.
 
@@ -246,10 +248,9 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-B reports its two debt-list functions as debt:
   `value/model_query.rs` and `value/expression/family.rs`. QSL-131 K4
   removed the six `value::enumeration`, `value::unit` and `value::node`
-  entries by deleting their mints. T12-B fails on the
-  `value::application_key` mints QSL-156 A4a added (#356), which are on no
-  list; `application_key/tests.rs` is `#[cfg(test)]` only through its `mod`
-  declaration, which the per-file scan does not see.
+  entries by deleting their mints. T12-B fails on the one
+  `value::application_key` mint QSL-156 A4a added (#356,
+  `application_node_key`), which is on no list.
 - T12-C passes. Its two debt-list functions are reported as debt:
   `value/model_query.rs` 124 and 156.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`

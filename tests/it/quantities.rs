@@ -523,6 +523,20 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
         unknown.admit().unwrap_err().cause,
         SemanticGraphCause::UnknownDimension
     );
+    // A derived dimension whose term names a dimension that is not admitted:
+    // the term's wire id resolves to no admitted key.
+    let never_admitted = fixture_key(&base_dimension("example-model", "Absent"));
+    let mut unknown_term = base.nodes.clone();
+    unknown_term.dimension(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner_json("example-model"),
+        "qualified_declaration": ["Example", "Dangling"],
+        "terms": [{"dimension_node_id": node_id(never_admitted), "exponent": "1"}],
+    }));
+    assert_eq!(
+        unknown_term.admit().unwrap_err().cause,
+        SemanticGraphCause::UnknownDimension
+    );
 }
 
 // ---- compound-unit fixtures ---------------------------------------------------
@@ -603,6 +617,14 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     // A term must name an admitted canonical root unit.
     assert_eq!(
         graph.compound_unit(&compound(&[(cm, "1")])),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::NotRootUnit
+        })
+    );
+    // A term whose unit id resolves to no admitted unit.
+    let not_in_graph = NodeKey::from_digest([0xab; 32]);
+    assert_eq!(
+        graph.compound_unit(&compound(&[(not_in_graph, "1")])),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::NotRootUnit
         })

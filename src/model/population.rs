@@ -521,7 +521,7 @@ pub struct PopulationBinding {
     /// rather than discarded): the FR-143 reference-identity bridge
     /// (`crate::value::model_query`) needs this exact
     /// correspondence to translate a checked `Reference<T>`'s `T`
-    /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
+    /// (a `quire_exact::NodeKey`, the same 32 bytes as an `EffectiveId`)
     /// back into the `DeclarationKey` [`all_instances`]/[`lookup`] take, for
     /// every declared type, not only ones a current member happens to name.
     type_catalog: BTreeMap<DeclarationKey, EffectiveId>,
