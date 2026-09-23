@@ -271,7 +271,7 @@ fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
 /// environment's one real (non-test) constructor.
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
-    pub(crate) objects: &'a super::super::reference::ObjectEnvironment,
+    pub(crate) objects: &'a crate::model::object_environment::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<Value>>,
     pub(crate) local_meter: &'a mut quire_exact::Meter,
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
@@ -287,7 +287,7 @@ impl<'a> EvaluationEnv<'a> {
     /// losses recorded.
     pub(crate) fn new(
         package: &'a super::CheckedPackage,
-        objects: &'a super::super::reference::ObjectEnvironment,
+        objects: &'a crate::model::object_environment::ObjectEnvironment,
         arguments: Vec<Value>,
         local_meter: &'a mut quire_exact::Meter,
     ) -> Self {
@@ -388,10 +388,10 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
         env.location = evaluation.location;
         env.losses = evaluation.losses;
         match evaluation.outcome {
-            super::FamilyOutcome::Evaluated(outcome) => {
+            crate::family::FamilyOutcome::Evaluated(outcome) => {
                 Ok(crate::family::EvalOutcome::Kernel(outcome))
             }
-            super::FamilyOutcome::FamilyEvaluated(result) => {
+            crate::family::FamilyOutcome::FamilyEvaluated(result) => {
                 Ok(crate::family::EvalOutcome::Family(result))
             }
         }
@@ -443,8 +443,8 @@ mod family_contract_tests {
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
         StageLimits,
     };
+    use crate::model::object_environment::ObjectEnvironment;
     use crate::value::declaration::TypeEnvironment;
-    use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use quire_exact::Meter;

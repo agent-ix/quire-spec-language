@@ -15,12 +15,22 @@
 //! `ObjectEnvironment` (a closed reference graph checked against a
 //! `TypeEnvironment`) stays a QSL type: it is a declaration-registry
 //! concern, layer 3 per ADR-013 O-15, not the kernel.
+//!
+//! This module is layer-3 `model`, not `semantic_value` (QSL-181 X-6a): an
+//! `ObjectEnvironment` also records FR-089's `PopulationId` ->
+//! [`PopulationBinding`] correspondence, and the `PopulationBinding` a
+//! `PopulationId` names is `model`'s (ADR-011 §6.1, "K is a leaf"). ADR-011
+//! §6.1 orders layer 3 `semantic_value < model`, so the module sits in
+//! `model`, above the `value::declaration` registry it reads, instead of
+//! importing `model` upward from `semantic_value`.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::declaration::{fill_slots, ConstructionRefusal, ObjectTypeDeclaration, TypeEnvironment};
 use crate::model::population::PopulationBinding;
+use crate::value::declaration::{
+    fill_slots, ConstructionRefusal, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
 use quire_exact::{FieldValue, Value};

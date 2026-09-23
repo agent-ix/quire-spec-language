@@ -27,6 +27,11 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_spec_language::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
+    PackageDeclarations, WrongSnapshotCause,
+};
+use quire_spec_language::family::{FamilyOutcome, FamilyResult};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -37,17 +42,16 @@ use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
 use quire_spec_language::model::normalize::{
     normalize, object_universe, EffectiveView, NormalizeOutcome,
 };
+use quire_spec_language::model::object_environment::ObjectEnvironment;
 use quire_spec_language::model::population::{
     admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
     InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
     PopulationMember,
 };
 use quire_spec_language::value::{
-    CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CompositeDeclaration, CompositeShape,
-    DeclarationCause, Evaluation, FamilyOutcome, FamilyResult, FieldDeclaration, InputRefusal,
-    Location, ObjectEnvironment, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
-    TypeEnvironment, WrongSnapshotCause,
+    CallFailure, CheckedPackage, CheckedPackageEvaluation, CompositeDeclaration, CompositeShape,
+    DeclarationCause, Evaluation, FieldDeclaration, InputRefusal, ObjectTypeDeclaration,
+    QualifiedName, TypeEnvironment,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

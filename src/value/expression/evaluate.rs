@@ -10,25 +10,25 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::declaration::{operand_value, CompositeShape};
-use super::super::enumeration::{compare_enum, EnumMemberIndex};
-use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use super::super::quantity::{
-    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
-};
-use super::super::reference::ObjectEnvironment;
-use super::super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
 };
-use super::FamilyOutcome;
 use crate::check::{
     enum_member_index, Arithmetic, Connective, DispatchTable, Location, Node, NodeKind,
     OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
+use crate::family::FamilyOutcome;
 use crate::family::FamilyResult;
+use crate::model::object_environment::ObjectEnvironment;
 use crate::model::population::PopulationBinding;
+use crate::value::declaration::{operand_value, CompositeShape};
+use crate::value::enumeration::{compare_enum, EnumMemberIndex};
+use crate::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use crate::value::quantity::{
+    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+};
+use crate::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Rational;
 use quire_exact::{

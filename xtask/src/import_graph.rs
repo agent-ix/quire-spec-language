@@ -458,7 +458,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::enumeration",
     "value::unit",
     "value::quantity",
-    "value::reference",
     "value::containment",
     "value::semantic_node",
     "value::declaration",
@@ -1221,14 +1220,17 @@ mod tests {
         );
     }
 
-    /// `value_reexports` against the real tree finds both aggregate blocks
-    /// non-empty, confirming this resolver is reading `value::mod.rs`'s
-    /// actual current content, not silently matching nothing.
+    /// `value_reexports` against the real tree finds the `expression`
+    /// aggregate block non-empty, confirming this resolver is reading
+    /// `value::mod.rs`'s actual current content, not silently matching
+    /// nothing. The `crate::check` block is empty: QSL-181 X-6a removed
+    /// `value`'s re-export of `check` items, since layer-3 `value`
+    /// (`semantic_value`) sits before `check` in ADR-011 §6.1's order.
     #[test]
     fn real_value_reexports_are_non_empty() {
         let reexports = value_reexports(&workspace_root()).expect("scan runs");
         assert!(reexports.expression.contains("Evaluation"));
-        assert!(reexports.check.contains("DispatchTable"));
+        assert!(reexports.check.is_empty(), "{:?}", reexports.check);
     }
 
     // -------------------------------------------------------------------

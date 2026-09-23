@@ -38,7 +38,7 @@
 //! lookup time. What remains representable, and what [`lookup`] still
 //! decides, is a *foreign* reference: a well-formed universe or object
 //! identity that simply names no member of the bound population.
-//! [`bridge_lookup_key`] never substitutes a derived value for either
+//! `bridge_lookup_key` never substitutes a derived value for either
 //! component and never classifies it itself: it hands [`LookupKey`] `r`'s
 //! own bytes exactly as supplied, and [`lookup`] alone decides the outcome,
 //! in its own single order (`type_conforms(S, T)`, then `lookup.key`, then
@@ -93,7 +93,7 @@ use quire_exact::{
 /// `StateModel` family's own evaluation-time results (FR-090-AC-8,
 /// AC-12); this layer names no `check`-core outcome type (ADR-011 §6.2).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModelQueryHalt {
+pub enum ModelQueryHalt {
     /// An ordinary evaluator stop.
     Stop(Stop),
     /// `model::population` refused the query. Boxed: `ModelRefusal` is
@@ -192,7 +192,7 @@ fn resolve_target(
 /// checked `Set<Reference<T>>[0,N]` result type
 /// (`crate::value::expression::ir::NodeKind::AllInstances`'s node's own
 /// `value_type`); its element names `T`.
-pub(crate) fn evaluate_all_instances(
+pub fn evaluate_all_instances(
     binding: &PopulationBinding,
     collection_type: &CollectionType,
     meter: &mut Meter,
@@ -221,7 +221,7 @@ pub(crate) fn evaluate_all_instances(
 /// `result_type` is this call's own checked result type (a bare
 /// `Reference<T>` for `undefined`/`refused`, an `Option<Reference<T>>` for
 /// `empty`, per FR-153's own table).
-pub(crate) fn evaluate_lookup(
+pub fn evaluate_lookup(
     binding: &PopulationBinding,
     target: EffectiveId,
     static_type: EffectiveId,

@@ -27,6 +27,12 @@ use quire_spec_language::check::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     OperationClauses,
 };
+use quire_spec_language::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits, CheckingStage,
+    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    InvalidDispatchDeclaration, Location, Origin, PackageDeclarations,
+};
+use quire_spec_language::family::{FamilyOutcome, FamilyResult};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -37,12 +43,10 @@ use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
+use quire_spec_language::model::object_environment::ObjectEnvironment;
 use quire_spec_language::value::{
-    decode_function_package_v2, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, DispatchCandidate,
-    DispatchFunctionRole, DispatchOperation, DispatchTable, Evaluation, FamilyOutcome,
-    FamilyResult, InputRefusal, InvalidDispatchDeclaration, Location, ObjectEnvironment,
-    ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName, TypeEnvironment,
+    decode_function_package_v2, CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation,
+    InputRefusal, ObjectTypeDeclaration, QualifiedName, TypeEnvironment,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type

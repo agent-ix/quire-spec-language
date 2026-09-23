@@ -3,7 +3,7 @@
 //!
 //! Every QSL semantic family (`Value`, `StateModel`, `SumCase`,
 //! `TemporalTrace`, `ProtocolClause`, `Relation`; ADR-012 §1) implements
-//! [`FamilyContract`] (and, except `Relation`, [`ReferenceEvaluation`])
+//! `FamilyContract` (and, except `Relation`, `ReferenceEvaluation`)
 //! exactly once. This module is the "check core" ADR-012 §13.1 places the
 //! contract in.
 //!
@@ -42,7 +42,7 @@
 //! `Stage`'s own "no `Requirements` stage" doc note is deleted along with
 //! `Stage`.
 //!
-//! **Provisional types.** [`outcome`] (`Staged`/`StageFailure`/
+//! **Provisional types.** `outcome` (`Staged`/`StageFailure`/
 //! `LimitExceeded`) implements a shape ADR-013 T-4 already decides, but
 //! whose canonical Rust home (`#213` S-5's `diagnostic` crate) had not
 //! landed when this module was first written. `src/diagnostic.rs` has

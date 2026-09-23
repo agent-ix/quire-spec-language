@@ -27,13 +27,12 @@ mod causes;
 mod evaluate;
 mod family;
 
-use super::reference::ObjectEnvironment;
 use crate::family::{ReferenceEvaluation, S6aFamilyKind};
+use crate::model::object_environment::ObjectEnvironment;
 use evaluate::{Callable, Machine};
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 
-pub use crate::family::{FamilyOutcome, FamilyResult};
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
 
@@ -448,7 +447,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
 mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-    use crate::family::EvalOutcome;
+    use crate::family::{EvalOutcome, FamilyOutcome};
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;

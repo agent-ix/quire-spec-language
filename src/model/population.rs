@@ -51,7 +51,7 @@
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components
 //! (kernel [`quire_exact::UniverseId`]/[`quire_exact::ObjectId`],
-//! `crate::value::reference`) belong to FR-143's own closed object
+//! `crate::model::object_environment`) belong to FR-143's own closed object
 //! environment, so this rung's typed wrappers stay in `crate::model`'s own
 //! identity domain rather than constructing that type themselves.
 //! `crate::value::model_query` is the documented canonical encoding this
@@ -546,7 +546,7 @@ pub struct PopulationBinding {
     /// (`Direct`/`Pre`/`Post`) -- see [`mint_population_id`]. The evaluator
     /// carries this identity alone as `Value::Population`, resolving it
     /// back to this binding through the caller's own recorded
-    /// correspondence (`crate::value::ObjectEnvironment::resolve_population`).
+    /// correspondence (`crate::model::object_environment::ObjectEnvironment::resolve_population`).
     population_id: PopulationId,
 }
 
@@ -651,7 +651,7 @@ impl AdmissionRole {
 /// differ only in document content or declared maximum, admitted under the
 /// same package/key/role within one evaluation -- an open spec question
 /// (Linear QSL-131) recorded, not resolved, here.
-/// [`ObjectEnvironment::with_population`](crate::value::ObjectEnvironment::with_population)
+/// [`ObjectEnvironment::with_population`](crate::model::object_environment::ObjectEnvironment::with_population)
 /// is the interim guard: it refuses a second, unequal binding recorded
 /// under an id already bound to a different one, rather than silently
 /// letting the later admission win.

@@ -15,7 +15,7 @@ pub mod checked_package;
 pub mod checking;
 pub mod command;
 pub mod complete;
-pub(crate) mod family;
+pub mod family;
 pub mod formal_source;
 pub mod format;
 pub mod library;

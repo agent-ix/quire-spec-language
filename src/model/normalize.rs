@@ -591,7 +591,7 @@ impl ObjectUniverse {
 /// rather than recurse without bound.
 ///
 /// #141 P2: this bounds a distinct recursion (the FR-150 generalization
-/// ancestor-path walk over a [`DomainPackage`]) from [`crate::value::MAX_CHECKING_DEPTH`]
+/// ancestor-path walk over a [`DomainPackage`]) from `crate::check::MAX_CHECKING_DEPTH`
 /// (Complete-V1 expression-checking recursion, `src/value/expression/check.rs`).
 /// Both happen to be 128 because both were
 /// chosen as "a safe bound well inside the host stack" for their own

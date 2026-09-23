@@ -18,7 +18,7 @@
 //! The equality layer lives here because it is parameterized over a
 //! `TypeEnvironment` and a checked `ValueType`. The occurrence-pair walk it
 //! schedules is [`quire_exact::planned_equality`]/[`quire_exact::plan_equality`],
-//! called directly by [`CheckedEquality::run`]: the kernel's own `plan_pairs` is `pub(crate)`
+//! called directly by `CheckedEquality::run`: the kernel's own `plan_pairs` is `pub(crate)`
 //! there, and this layer never needs the lower-level pair count that
 //! `value::expression::evaluate`'s `Machine` gets straight from
 //! `quire_exact::member_equal` (QSL-131 V5b).
@@ -27,7 +27,7 @@
 //! [`ConstructionRefusal`] (QSL-131 V5b, moved here from the now-deleted
 //! `value::composite`) are QSL's own, non-kernel types (ADR-011 §6.1; ADR-013
 //! O-15): a field is identified here by its declared *name* (a `str`-keyed
-//! lookup, [`match_names`]/[`fill_slots`]), not by the kernel's opaque
+//! lookup, `match_names`/`fill_slots`), not by the kernel's opaque
 //! `MemberId` (`quire_exact::FieldDeclaration`'s own key) -- adopting
 //! `MemberId` here needs the ADR-013 O-06 member-identity resolution that
 //! `check`'s `CheckedGraph` (ADR-013 T-1, S-3) has not yet landed
@@ -41,9 +41,9 @@
 //! `TypeEnvironment` cannot call the kernel's checked `record`/`tuple`
 //! constructors either (they need the kernel's `MemberId`-keyed
 //! `FieldDeclaration`); it does its own name-keyed checking exactly as
-//! before, through [`fill_slots`]/[`match_names`], and then calls the
+//! before, through `fill_slots`/`match_names`, and then calls the
 //! kernel's trusted, unchecked
-//! [`from_admitted_slots`](quire_exact::from_admitted_slots) to materialize
+//! [`from_admitted_slots`] to materialize
 //! the result -- mirroring `quire_exact::OptionValue::from_admitted`'s
 //! identical bypass role, which `value::expression::evaluate` already calls
 //! directly.
@@ -1392,7 +1392,7 @@ fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -
 
 /// The comparison value of one operand after its admitted conversion, with
 /// quantity units read from `units`.
-pub(crate) fn operand_value(
+pub fn operand_value(
     operand: &EqualityOperand,
     value: &Value,
     units: &UnitScope<'_>,
