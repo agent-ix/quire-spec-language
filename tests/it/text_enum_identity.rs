@@ -12,6 +12,7 @@ use std::cmp::Ordering;
 use ix_trace_rs::trace;
 use qsl_cst::{Limits, ParsedSource};
 use qsl_foundation::{Code, SourceIdentity};
+use quire_exact::NodeKey;
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, ScalarLimits,
 };
@@ -19,10 +20,11 @@ use quire_exact::{
     ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause, InvalidUtf8, TextProfile,
     TextProvenance, TextType, NODE_KEY_DOMAIN,
 };
+use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
     admit_text, compare_enum, compare_text, EnumDeclaration, EnumDeclarationPreimage,
-    EnumMemberPreimage, EnumValue, InvalidSemanticGraph, NodeKey, NodeOwner, Outcome,
-    OwnerSelection, OwnerSubject, Refusal, SemanticGraphCause, Text, TextPayload,
+    EnumMemberPreimage, EnumValue, InvalidSemanticGraph, NodeOwner, Outcome, OwnerSelection,
+    OwnerSubject, Refusal, SemanticGraphCause, Text, TextPayload,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -472,15 +474,15 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         let preimage = declaration_preimage(qualified, ordered, members);
         let key = fixture_key(&preimage);
         let parsed = EnumDeclarationPreimage::from_json(preimage.clone()).unwrap();
-        assert_eq!(parsed.node_key().unwrap(), key, "{qualified:?}");
+        assert_eq!(parsed.digest().unwrap(), *key.as_bytes(), "{qualified:?}");
         assert_eq!(declaration(&preimage, key).unwrap().key(), key);
     }
     let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
     let ready_preimage = member_preimage(status.key(), "READY");
     let ready_key = fixture_key(&ready_preimage);
     let parsed = EnumMemberPreimage::from_json(ready_preimage.clone()).unwrap();
-    assert_eq!(parsed.node_key().unwrap(), ready_key);
-    assert_eq!(parsed.declaration(), status.key());
+    assert_eq!(parsed.digest().unwrap(), *ready_key.as_bytes());
+    assert_eq!(parsed.declaration().as_bytes(), status.key().as_bytes());
     let ready = status.admit_member(&parsed, ready_key).unwrap();
     assert_eq!(
         (ready.declaration(), ready.member()),
@@ -582,7 +584,10 @@ fn enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse() {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    assert_eq!(escaped.node_key().unwrap().to_string(), digest);
+    assert_eq!(
+        NodeKey::from_digest(escaped.digest().unwrap()).to_string(),
+        digest
+    );
 }
 
 #[trace("TC-186", "FR-141-AC-2")]

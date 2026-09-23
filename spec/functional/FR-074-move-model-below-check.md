@@ -158,7 +158,7 @@ declared interim edge (four names for `checked_dispatch.rs`, nine for
 *where* those non-interim imports are written (from `crate::value::{...}`'s
 flat form, valid inside `model`, to the crate-absolute, submodule-qualified
 form `check`'s own files already use — `crate::forms::{...}`,
-`crate::value::composite::{...}`, `crate::value::node::NodeKey`,
+`crate::value::composite::{...}`, `quire_exact::NodeKey`,
 `crate::value::numeric::OrderingOperator` — per the existing FR-068-AC-6
 tier rule for `check`'s own shipped `value` imports, which now applies to
 these files for the first time because they are now under `src/check/`) but

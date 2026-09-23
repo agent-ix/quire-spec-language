@@ -82,9 +82,9 @@ use qsl_foundation::diagnostic::Code;
 
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
-use super::node::NodeKey;
 use super::outcome::{Refusal, Stop};
 use super::reference::{ObjectIdentity, ObjectReference, UniverseIdentity};
+use quire_exact::NodeKey;
 use quire_exact::{Incomplete, Meter, PopulationId};
 
 /// Why a population query stopped without a value. The evaluator

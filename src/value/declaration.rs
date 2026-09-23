@@ -33,13 +33,13 @@ use super::composite::{
 use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::compare_enum;
 use super::equality::planned_equality;
-use super::node::NodeKey;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, Quantity, QuantityTarget,
 };
 use super::text::compare_text;
 use quire_exact::CollectionKind;
+use quire_exact::NodeKey;
 
 /// The shape of a composite declaration. Complete V1 has no variant or sum
 /// declaration.

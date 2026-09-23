@@ -377,7 +377,7 @@ mod tests {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
         write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");
-        write(root, "src/value/node.rs", "pub struct NodeKey;\n");
+        write(root, "src/check/mod.rs", "pub struct NodeKey;\n");
         write(root, "src/model/key.rs", "pub struct EffectiveId;\n");
         write(
             root,

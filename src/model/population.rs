@@ -449,7 +449,7 @@ pub struct PopulationDocument {
 /// constructor) precisely so a caller cannot assert a false classification
 /// for well-formed bytes and force a present member to read as absent, or
 /// the reverse. `type_identity` is always well-formed
-/// (`crate::value::node::NodeKey` is a fixed 32-byte digest already, so
+/// (`quire_exact::NodeKey` is a fixed 32-byte digest already, so
 /// there is nothing to bridge).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {
@@ -521,7 +521,7 @@ pub struct PopulationBinding {
     /// rather than discarded): the FR-143 reference-identity bridge
     /// (`crate::value::model_query`) needs this exact
     /// correspondence to translate a checked `Reference<T>`'s `T`
-    /// (a `crate::value::NodeKey`, the same 32 bytes as an `EffectiveId`)
+    /// (a `quire_exact::NodeKey`, the same 32 bytes as an `EffectiveId`)
     /// back into the `DeclarationKey` [`all_instances`]/[`lookup`] take, for
     /// every declared type, not only ones a current member happens to name.
     type_catalog: BTreeMap<DeclarationKey, EffectiveId>,

@@ -10,15 +10,17 @@
 use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
 use num_traits::Pow;
+use quire_exact::NodeKey;
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
     ScalarLimits,
 };
 use quire_exact::{ComparisonOperator, Decimal, IllTyped, IllTypedCause, Rational, RoundingMode};
+use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
     compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
     ConvertedValue, DecimalType, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    InvalidSemanticGraph, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
+    InvalidSemanticGraph, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined,
     UnitGraph, UnitPreimage,
 };
@@ -353,9 +355,9 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             DimensionPreimage::from_json(preimage.clone())
                 .unwrap()
-                .node_key()
+                .digest()
                 .unwrap(),
-            *key
+            *key.as_bytes()
         );
     }
     for (preimage, key) in &units {
@@ -363,9 +365,9 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             UnitPreimage::from_json(preimage.clone())
                 .unwrap()
-                .node_key()
+                .digest()
                 .unwrap(),
-            *key
+            *key.as_bytes()
         );
     }
 
@@ -521,6 +523,20 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
         unknown.admit().unwrap_err().cause,
         SemanticGraphCause::UnknownDimension
     );
+    // A derived dimension whose term names a dimension that is not admitted:
+    // the term's wire id resolves to no admitted key.
+    let never_admitted = fixture_key(&base_dimension("example-model", "Absent"));
+    let mut unknown_term = base.nodes.clone();
+    unknown_term.dimension(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner_json("example-model"),
+        "qualified_declaration": ["Example", "Dangling"],
+        "terms": [{"dimension_node_id": node_id(never_admitted), "exponent": "1"}],
+    }));
+    assert_eq!(
+        unknown_term.admit().unwrap_err().cause,
+        SemanticGraphCause::UnknownDimension
+    );
 }
 
 // ---- compound-unit fixtures ---------------------------------------------------
@@ -601,6 +617,14 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     // A term must name an admitted canonical root unit.
     assert_eq!(
         graph.compound_unit(&compound(&[(cm, "1")])),
+        Err(InvalidCompoundUnit {
+            cause: CompoundUnitCause::NotRootUnit
+        })
+    );
+    // A term whose unit id resolves to no admitted unit.
+    let not_in_graph = NodeKey::from_digest([0xab; 32]);
+    assert_eq!(
+        graph.compound_unit(&compound(&[(not_in_graph, "1")])),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::NotRootUnit
         })

@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
+use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
@@ -14,10 +15,9 @@ use quire_spec_language::value::{
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
     CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock, DefinitionReference,
     DefinitionRevision, Evaluation, FamilyOutcome, FieldDeclaration, FieldValue, IeeeValue,
-    LocatedLoss, Location, MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations,
-    ProvedInterval, QualifiedName, RationalDomain, TypeEnvironment, UniverseIdentity, Value,
-    ValueLoss, ValueType,
+    LocatedLoss, Location, MeasureObligation, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval,
+    QualifiedName, RationalDomain, TypeEnvironment, UniverseIdentity, Value, ValueLoss, ValueType,
 };
 
 use sha2::{Digest, Sha256};

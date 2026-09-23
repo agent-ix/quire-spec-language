@@ -37,10 +37,10 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `family`, `model` and `value::model_query`, `library`, the §6.2
 `semantic_value` modules (`value::definition`, `value::enumeration`,
 `value::unit`, `value::quantity`, `value::key`, `value::reference`,
-`value::containment`) and `value::declaration`, and the `value` K-copy
+`value::containment`, `value::semantic_node`) and `value::declaration`, and the `value` K-copy
 modules while each exists (`value::collection`,
 `value::composite`, `value::decimal`, `value::equality`,
-`value::ieee`, `value::node`, `value::numeric`, `value::outcome`,
+`value::ieee`, `value::numeric`, `value::outcome`,
 `value::rational`, `value::text`). `check` imports nothing from a later
 layer: `checked_package`, `package`, `value::expression`, `route`, `replay`
 or `lowering`. Every `value` import names its submodule.

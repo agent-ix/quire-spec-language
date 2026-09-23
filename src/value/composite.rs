@@ -30,7 +30,6 @@ use std::sync::Arc;
 use super::collection::{CollectionType, CollectionValue};
 use super::decimal::DecimalType;
 use super::enumeration::EnumValue;
-use super::node::NodeKey;
 use super::outcome::{Outcome, Stop};
 use super::quantity::{Quantity, QuantityUnit};
 use super::reference::ObjectReference;
@@ -38,6 +37,7 @@ use super::text::Text;
 use quire_exact::Decimal;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTyped;
+use quire_exact::NodeKey;
 use quire_exact::Rational;
 use quire_exact::TextType;
 use quire_exact::{

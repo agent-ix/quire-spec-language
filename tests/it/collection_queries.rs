@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
+use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
@@ -12,7 +13,7 @@ use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::value::{
     CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
     CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
-    FamilyOutcome, FieldDeclaration, FieldValue, NodeKey, ObjectEnvironment, ObjectIdentity,
+    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectIdentity,
     ObjectReference, ObjectTypeDeclaration, Obligation, PackageDeclarations, ProvedInterval,
     TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
