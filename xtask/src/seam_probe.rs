@@ -37,7 +37,7 @@
 //! `crate::check::Capability` (defined in `capability.rs` itself, which also
 //! carries its own match's probe arm and so is not a seam-probe location)
 //! makes both non-exhaustive under the probe build: `requests::families`
-//! (requirement derivation per family) and `route.rs`'s `advertises_kind`
+//! (requirement derivation per family) and `qsl-route`'s `advertises_kind`
 //! helper `same_kind` (registry advertisement check). The CG `negotiate_*`
 //! arm is quire-contract-codegen#86's own seam, not probed here.
 //!
@@ -97,7 +97,7 @@ pub struct SeamLocation {
 /// outside `capability.rs` itself (which owns the probe variant and its
 /// own arm, so is not a seam-probe location) -- `requests::families`
 /// (requirement derivation per family, `src/linking/composed/requests.rs`)
-/// and `route.rs`'s `advertises_kind` helper `same_kind` (registry
+/// and `qsl-route`'s `advertises_kind` helper `same_kind` (registry
 /// advertisement check). Both item names were confirmed empirically by
 /// running this tool under `--cfg seam_probe` and reading the reported
 /// `E0004` locations, not assumed from the source layout: `same_kind` is a
@@ -126,7 +126,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "families".to_owned(),
         },
         SeamLocation {
-            file: "src/route.rs".to_owned(),
+            file: "qsl-route/src/lib.rs".to_owned(),
             item: "same_kind".to_owned(),
         },
         SeamLocation {
@@ -333,15 +333,23 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// own seam, and then the root crate under `--cfg seam_probe --cfg
 /// seam_probe_downstream`, where the downstream cfg gives each lower crate's
 /// own seam its probe arm so that crate compiles and the root crate's seams
-/// are reached. Each build must fail; together they must report exactly the
-/// checked-in list.
-const PROBE_BUILDS: [(&str, &str); 2] = [
+/// are reached. `qsl-route` (QSL-184) gets a downstream build of its own:
+/// the root crate names it only as a dev dependency, so building the root
+/// crate's `--lib` never compiles it. Each build must fail; together they
+/// must report exactly the checked-in list.
+const PROBE_BUILDS: [(&str, &str); 3] = [
     ("qsl-semantics", "--cfg seam_probe"),
     (
         "quire-spec-language",
         "--cfg seam_probe --cfg seam_probe_downstream",
     ),
+    ("qsl-route", "--cfg seam_probe --cfg seam_probe_downstream"),
 ];
+
+/// The normal builds, with no probe cfg: the root crate, which builds every
+/// crate it depends on, and `qsl-route`, which it does not (see
+/// [`PROBE_BUILDS`]).
+const NORMAL_BUILDS: [&str; 2] = ["quire-spec-language", "qsl-route"];
 
 /// `cargo xtask seam-probe`: FR-063's two required assertions (probe builds
 /// that fail with exactly the checked-in `E0004` locations, and a normal
@@ -351,24 +359,25 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     // FR-063 constraint: assert the probe build fails AND the normal build
     // succeeds -- one without the other is half a test. If `--cfg
     // seam_probe` silently stopped being applied, only checking the normal
-    // build would never notice. The normal build of the root crate builds
-    // every crate below it too.
-    let (normal_succeeded, normal_locations, normal_stderr) =
-        build_and_collect_e0004(workspace_root, "quire-spec-language", "")?;
-    if !normal_succeeded {
-        if offline_registry_unavailable(&normal_stderr) {
-            return Err(Error::SeamProbeOfflineRegistryUnavailable {
+    // build would never notice.
+    for package in NORMAL_BUILDS {
+        let (normal_succeeded, normal_locations, normal_stderr) =
+            build_and_collect_e0004(workspace_root, package, "")?;
+        if !normal_succeeded {
+            if offline_registry_unavailable(&normal_stderr) {
+                return Err(Error::SeamProbeOfflineRegistryUnavailable {
+                    stderr: normal_stderr,
+                });
+            }
+            return Err(Error::SeamProbeNormalBuildFailed {
                 stderr: normal_stderr,
             });
         }
-        return Err(Error::SeamProbeNormalBuildFailed {
-            stderr: normal_stderr,
-        });
-    }
-    if !normal_locations.is_empty() {
-        return Err(Error::SeamProbeNormalBuildHasE0004 {
-            locations: format!("{normal_locations:?}"),
-        });
+        if !normal_locations.is_empty() {
+            return Err(Error::SeamProbeNormalBuildHasE0004 {
+                locations: format!("{normal_locations:?}"),
+            });
+        }
     }
     let mut probe_locations = BTreeSet::new();
     for (package, rustflags) in PROBE_BUILDS {
@@ -395,7 +404,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     }
     Ok(format!(
         "seam-probe: {} checked-in S1/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe \
-         (qsl-semantics, then quire-spec-language); normal build has none. `stage_hooks`'s former \
+         (qsl-semantics, then quire-spec-language and qsl-route); normal builds have none. `stage_hooks`'s former \
          second S1 location is deleted (PR #262 review F7). S2/S3 (QSL-143) and S4 (no \
          cause-bearing family yet) are not covered by this checked-in list.\n",
         checked_in.len()

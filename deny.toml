@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # FR-080-AC-2 / TC-205: `cargo deny check bans` denies `inventory`, `linkme`
 # and `ctor` outright. ADR-012 §5.3's registry evidence: the `#185` registry
-# (`src/route.rs`) is an ordinary value, never populated through a
+# (`qsl-route/src/lib.rs`) is an ordinary value, never populated through a
 # link-time/plugin-discovery mechanism, and this is the positive-fail gate
 # that would catch a future contributor reintroducing one -- it is not
 # satisfied merely by the crate graph's current absence of the three crates.

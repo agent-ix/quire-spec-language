@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL-46 (FR-080-AC-3): `cargo xtask route-lint` -- scans the `#185`
-//! registry module (`src/route.rs`) for a `static`, `OnceLock`,
+//! registry module (`qsl-route/src/lib.rs`) for a `static`, `OnceLock`,
 //! `thread_local!` or `lazy_static!` item and fails when it finds one.
 //!
 //! ADR-012 §5.3's registry evidence requires "a lint gate that finds no
@@ -30,7 +30,7 @@ use crate::error::{Error, Result};
 /// The registry module this gate scans, relative to the workspace root.
 /// FR-080-AC-3's own scope: "the registry module (the module implementing
 /// FR-075)".
-pub const REGISTRY_MODULE_PATH: &str = "src/route.rs";
+pub const REGISTRY_MODULE_PATH: &str = "qsl-route/src/lib.rs";
 
 /// One finding: a `static`, `OnceLock`-typed `static`, `thread_local!` or
 /// `lazy_static!` item, named and located.
@@ -120,7 +120,7 @@ fn type_mentions_ident(ty: &syn::Type, ident: &str) -> bool {
 
 /// Scan `source` (already-read Rust source text) for `static`, `OnceLock`,
 /// `thread_local!` and `lazy_static!` items. Pure function, used both by
-/// the real gate (over `src/route.rs` on disk) and by this module's own
+/// the real gate (over `qsl-route/src/lib.rs` on disk) and by this module's own
 /// tests (over literal injected source strings).
 pub fn scan_source(source: &str) -> std::result::Result<Vec<Finding>, syn::Error> {
     let parsed = syn::parse_file(source)?;
@@ -170,7 +170,7 @@ mod tests {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("xtask is one level under the workspace root");
-        let outcome = run(workspace_root).expect("the real route.rs must pass this gate");
+        let outcome = run(workspace_root).expect("the real registry module must pass this gate");
         assert!(outcome.contains("no static, OnceLock, thread_local! or lazy_static!"));
     }
 

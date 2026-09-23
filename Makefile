@@ -49,7 +49,7 @@ seam-probe:
 string-edge:
 	cargo xtask string-edge
 
-# QSL-46 (FR-080-AC-3): scans the #185 registry module (src/route.rs) for a
+# QSL-46 (FR-080-AC-3): scans the #185 registry module (qsl-route/src/lib.rs) for a
 # static, OnceLock or thread_local! item -- ADR-012 §5.3's registry evidence
 # requires the registry stay an ordinary value, never ambient state.
 route-lint:
