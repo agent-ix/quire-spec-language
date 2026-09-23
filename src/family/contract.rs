@@ -78,7 +78,7 @@ impl ScopeStack {
 /// deleted these, along with `work_budget`: nothing in #214's one migrated
 /// stage entry produced or read them. QSL-153 restores them with a real
 /// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
-/// row for this ticket), matching the shape [`CheckContext::enter_nesting`]
+/// row for this ticket), matching the shape `CheckContext::enter_nesting`
 /// already established for `nesting_depth`:
 ///
 /// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
@@ -90,10 +90,10 @@ impl ScopeStack {
 ///   the pass writes, not read back from the buffer afterward -- see
 ///   `Preimage`'s own doc for why); `node_count` is the number of
 ///   `Expression` nodes the same pass visits.
-/// - **Consumer**: [`CheckContext::check_input_bytes`] and
-///   [`CheckContext::check_node_count`] each compare their metric against
+/// - **Consumer**: `CheckContext::check_input_bytes` and
+///   `CheckContext::check_node_count` each compare their metric against
 ///   this struct's matching field and return
-///   [`StageLimitKind`](super::outcome::StageLimitKind)'s matching variant
+///   `StageLimitKind`'s matching variant
 ///   on the first one exceeded, exactly like `enter_nesting`'s own
 ///   `NestingDepth` case -- `ValueFunctionFamily::check`
 ///   (`crate::check::family`) calls both before minting succeeds, so a
@@ -108,7 +108,7 @@ impl ScopeStack {
 /// meaningful sense; two declarations of equal real complexity could differ
 /// in write count for reasons internal to the encoding, not to any resource
 /// a caller actually wants to bound. `StageLimitKind::WorkBudget` is
-/// restored instead through [`CheckContext::meter`] -- the *shared kernel*
+/// restored instead through `CheckContext::meter` -- the *shared kernel*
 /// budget every family's `check` already receives (FR-062 "checked input"):
 /// `ValueFunctionFamily::check` charges it one `ChargePoint::
 /// DeclarationCheck`, sized by the same preimage pass's field-write count,

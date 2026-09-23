@@ -736,7 +736,7 @@ pub(crate) fn mint_declaration_identity(
 }
 
 /// [`StageLimits`](crate::family::StageLimits)'s restored real producer
-/// values (QSL-153), read back from one real [`mint_declaration_identity`]
+/// values (QSL-153), read back from one real `mint_declaration_identity`
 /// pass rather than a second, parallel traversal. `input_bytes` and
 /// `node_count` are `StageLimits` fields, compared by
 /// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
@@ -1768,8 +1768,8 @@ pub mod fixtures {
             dispatch_operations: Vec::new(),
         }
     }
-    /// A [`ValueDeclarations`] for tests exercising [`check_declaration_body`]
-    /// or [`ValueFunctionFamily::check`] directly (PR #303 review round 3,
+    /// A [`ValueDeclarations`] for tests exercising `check_declaration_body`
+    /// or `ValueFunctionFamily::check` directly (PR #303 review round 3,
     /// finding F6: the one real definition, shared the same way
     /// [`empty_scope`]/[`root_location`] are -- this used to be defined a
     /// second time, with a different parameter shape, in
