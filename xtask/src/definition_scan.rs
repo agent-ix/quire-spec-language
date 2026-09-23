@@ -284,11 +284,12 @@ mod tests {
 
     /// TC-170 step 2: `value::expression::mod.rs` declares none of `check`,
     /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
-    /// module's own doc): its *only* declarations are the two the post-move
-    /// tree keeps (`evaluate`, `family` -- `family` stays split, since
-    /// `value::expression::family.rs` keeps the evaluation half and
-    /// `check::family.rs` keeps the checking half, PR #282 review F4), so an
-    /// unexpected fifth module cannot be hiding a renamed leftover here.
+    /// module's own doc): its *only* declarations are `evaluate`, `family`
+    /// (`value::expression::family.rs` keeps the evaluation half and
+    /// `check::family.rs` keeps the checking half, PR #282 review F4) and
+    /// `causes` (FR-090's family evaluation causes, defined beside the
+    /// evaluator), so an unexpected module cannot be hiding a renamed
+    /// leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
@@ -301,11 +302,11 @@ mod tests {
             );
         }
         let expected: std::collections::BTreeSet<&str> =
-            ["evaluate", "family"].into_iter().collect();
+            ["causes", "evaluate", "family"].into_iter().collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond evaluate/family"
+            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family"
         );
     }
 
