@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Resolves a `forms::TypeForm` -- S2's syntactic declared type, with no
+//! Resolves a `qsl_forms::TypeForm` -- S2's syntactic declared type, with no
 //! semantic identity (ADR-011 §1's stage table; §2.2 row E2) -- to the
 //! kernel `ValueType` at E3 (ADR-013 O-14/C-26: "Checked type node ->
 //! kernel `ValueType` (QSL checker)").
@@ -13,11 +13,11 @@
 
 use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal, Location};
-use crate::forms::{BuiltinType, TypeForm, TypeFormHead};
 use crate::value::collection::CollectionType;
 use crate::value::composite::ValueType;
 use crate::value::decimal::DecimalType;
 use crate::value::rational::RationalDomain;
+use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use quire_exact::{
     CardinalityBound, IeeeWidth, IllTypedCause, Integer, IntegerInterval, RoundingMode,
     TextProfile, TextType,

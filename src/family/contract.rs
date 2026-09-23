@@ -82,7 +82,7 @@ impl ScopeStack {
 ///
 /// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
 ///   preimage pass already builds a length-prefixed byte buffer
-///   over the declaration's structure and walks every [`crate::forms::
+///   over the declaration's structure and walks every [`qsl_forms::
 ///   Expression`] node in it to do so -- real work this contract already
 ///   does, not a synthetic counter added only to satisfy this struct.
 ///   `input_bytes` is that buffer's own logical byte length (accumulated as

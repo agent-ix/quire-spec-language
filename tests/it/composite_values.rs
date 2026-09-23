@@ -686,11 +686,12 @@ fn malformed_declarations_refuse_at_admission() {
 /// Rows that need the FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
+    use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
     use quire_exact::BoundViolation;
     use quire_spec_language::value::{
-        BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression, FieldInitializer,
-        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal, TypeForm,
+        CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+        CheckedPackageEvaluation, CheckingLimits, InputRefusal, Obligation, PackageDeclarations,
+        Refusal,
     };
 
     fn name(spelling: &str) -> Expression {

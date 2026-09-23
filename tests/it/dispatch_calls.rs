@@ -14,6 +14,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use qsl_forms::{
+    BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
+};
 use qsl_foundation::diagnostic::Code;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, ScalarLimits};
@@ -31,13 +34,13 @@ use quire_spec_language::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use quire_spec_language::value::{
-    decode_function_package_v2, BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
-    DispatchTable, Expression, FunctionDeclaration, InputRefusal, InvalidDispatchDeclaration,
-    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Origin, Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment,
-    TypeForm, Undefined, UniverseIdentity, Value, ValueType,
+    decode_function_package_v2, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, DispatchCandidate,
+    DispatchFunctionRole, DispatchOperation, DispatchTable, InputRefusal,
+    InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
+    PreconditionFailure, QualifiedName, TypeEnvironment, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type

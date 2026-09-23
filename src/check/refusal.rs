@@ -35,7 +35,7 @@ pub struct Location {
     pub origin: Origin,
     /// Child indices from the root, as [`Expression::children`] numbers them.
     ///
-    /// [`Expression::children`]: crate::forms::Expression::children
+    /// [`Expression::children`]: qsl_forms::Expression::children
     pub path: Vec<usize>,
 }
 

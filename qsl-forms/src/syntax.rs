@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The S2 parsed value-expression and declaration forms (ADR-011 §6.2
-//! module map: `value::expression::syntax` moves to layer-2 `forms`, M-3a),
-//! as a typed tree over source names.
+//! module map, layer-2 `forms`), as a typed tree over source names.
 //!
 //! Names are unresolved source spellings: a parameter, `let` or binder name,
 //! a qualified enum member `E::m`, or a qualified call target. A location in
@@ -216,12 +215,10 @@ pub enum ClauseKind {
 
 /// The [`ClauseKind`] a [`FunctionDeclaration::clause`] entry may declare.
 /// [`ClauseKind::Postcondition`] has no variant here: `pre(...)` legality
-/// belongs to `CheckedGraph::check_postcondition_expression`'s own
+/// belongs to `check`'s `CheckedGraph::check_postcondition_expression`'s own
 /// `pre_anchor`/population wiring, which no `PackageDeclarations::functions`
 /// entry ever has, so the type itself rules the case out instead of a
 /// runtime check on an otherwise-valid `ClauseKind` value.
-///
-/// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclaredClauseKind {
     /// A model invariant clause.
@@ -509,7 +506,8 @@ impl Expression {
 /// [`ClauseKind::Body`], since a dispatched call is admitted inside a
 /// precondition but not inside an operation body (TC-196 D06/D07/D08).
 ///
-/// `clause_kind` and `callable_by_name` are crate-private: neither is a bare
+/// `clause_kind` and `callable_by_name` are private fields, read through
+/// [`Self::clause_kind`] and [`Self::callable_by_name`]: neither is a bare
 /// mutable field a caller can set independently of the other, and a
 /// synthesized FR-151 dispatch candidate body or precondition clause is
 /// never itself reachable through an ordinary named [`Expression::Call`]
@@ -517,7 +515,7 @@ impl Expression {
 /// candidate directly instead of dispatching to it). Build one with
 /// [`Self::new`] (an ordinary named function, name-callable) or
 /// [`Self::clause`] (an invariant/precondition/postcondition clause, or a
-/// crate-internal synthesized dispatch candidate, never name-callable).
+/// synthesized dispatch candidate, never name-callable).
 #[derive(Clone, Debug)]
 pub struct FunctionDeclaration {
     /// The declared name.
@@ -532,14 +530,14 @@ pub struct FunctionDeclaration {
     pub body: Expression,
     /// The clause this declaration's body is checked as. Every ordinary
     /// named function is [`ClauseKind::Body`].
-    pub(crate) clause_kind: ClauseKind,
+    clause_kind: ClauseKind,
     /// Whether an ordinary named [`Expression::Call`] elsewhere in the same
     /// package may resolve to this declaration. `false` for every
-    /// crate-internal FR-151 synthesized function (TC-196 D07's bypass:
+    /// FR-151 synthesized function (TC-196 D07's bypass:
     /// closing the clause-kind restriction off syntax alone still leaves a
     /// candidate's body or precondition callable by plain name unless this
     /// is also `false`).
-    pub(crate) callable_by_name: bool,
+    callable_by_name: bool,
 }
 
 impl FunctionDeclaration {
@@ -565,19 +563,17 @@ impl FunctionDeclaration {
 
     /// A declaration checked as `clause_kind`, never reachable through an
     /// ordinary named [`Expression::Call`]: an invariant or precondition
-    /// clause, or (crate-internal) a synthesized FR-151 dispatch candidate
+    /// clause, or a synthesized FR-151 dispatch candidate
     /// body or effective precondition. `clause_kind` is
     /// [`DeclaredClauseKind`], not [`ClauseKind`]: admitting
     /// `ClauseKind::Postcondition` here would let any caller assembling a
     /// package hand an ordinary function `pre(...)` legality it never
     /// earned — `pre(...)` is legal only behind a real postcondition's own
     /// `pre_anchor`/population wiring
-    /// ([`CheckedGraph::check_postcondition_expression`], a standalone
+    /// (`check`'s `CheckedGraph::check_postcondition_expression`, a standalone
     /// expression check outside `PackageDeclarations::functions` entirely),
     /// which no package function has — so `DeclaredClauseKind` leaves that
     /// case unrepresentable rather than accepting it and refusing later.
-    ///
-    /// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
         parameters: Vec<(String, TypeForm)>,
@@ -596,6 +592,19 @@ impl FunctionDeclaration {
             callable_by_name: false,
         }
     }
+
+    /// The clause this declaration's body is checked as:
+    /// [`ClauseKind::Body`] for [`Self::new`], the declared kind for
+    /// [`Self::clause`].
+    pub fn clause_kind(&self) -> ClauseKind {
+        self.clause_kind
+    }
+
+    /// Whether an ordinary named [`Expression::Call`] may resolve to this
+    /// declaration: `true` for [`Self::new`], `false` for [`Self::clause`].
+    pub fn callable_by_name(&self) -> bool {
+        self.callable_by_name
+    }
 }
 
 #[cfg(test)]
@@ -603,21 +612,19 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    /// TC-169 / FR-067-AC-9 / FR-067-CON-3: this move relocates the eight
-    /// types' defining module only, adding, removing or renaming no
-    /// variant, field or method. An exhaustive match with every field named
+    /// TC-169 / FR-067-AC-9 / FR-067-CON-3: every variant, field and
+    /// method of the parsed-form types is the fixed set below. An exhaustive match with every field named
     /// (no `..`) fails to compile the moment a variant or a field is added,
     /// removed or renamed — E0004 (non-exhaustive match) for a variant,
     /// E0026/E0027 (unknown/missing field) for a field — so this test is
     /// itself the shape check, not just evidence run under it.
     ///
-    /// Two residual limits, both covered in practice by this crate's own
+    /// Two residual limits, both covered in practice by the root crate's
     /// live callers rather than by this test: binding a field with `_`
     /// names it but does not check its *type* (TC-169 step 4's stated
     /// scope), and `FunctionDeclaration::clause` is never called here.
-    /// `check::checked_dispatch`'s `checked_dispatch_operation` (moved from
-    /// `model::checked_dispatch` by FR-074, ADR-011 §7.3 M-2) exercises
-    /// both today, at its own `FunctionDeclaration::clause` call sites — a
+    /// `check::checked_dispatch`'s `checked_dispatch_operation` exercises
+    /// both, at its own `FunctionDeclaration::clause` call sites — a
     /// type-shape change on a bound-`_` field, or a `clause` signature
     /// change, still fails to compile there.
     #[trace("TC-169", "FR-067-AC-9", "FR-067-CON-3")]
@@ -711,10 +718,7 @@ mod tests {
         let declaration = FunctionDeclaration::new(
             "f",
             Vec::new(),
-            TypeForm::builtin(
-                crate::forms::BuiltinType::Boolean,
-                Span { start: 0, end: 0 },
-            ),
+            TypeForm::builtin(crate::BuiltinType::Boolean, Span { start: 0, end: 0 }),
             None,
             Expression::Boolean(true),
         );
@@ -820,36 +824,9 @@ mod tests {
         assert_eq!(expression(&Expression::Boolean(true)), "Boolean");
         assert_eq!(expression(&declaration.body), "Boolean");
 
-        // `Expression::children` (the one method besides construction this
-        // requirement's move must leave callable, per this module's own doc)
-        // still exists and still walks direct subexpressions.
+        // `Expression::children` (the one method besides construction, per
+        // this module's own doc) walks direct subexpressions.
         let nested = Expression::Not(Box::new(Expression::Boolean(false)));
         assert_eq!(nested.children().len(), 1);
-    }
-
-    /// TC-169 step 1 / FR-067-AC-9: `value::expression::syntax` is absent
-    /// from the module tree, checked directly against this repository's
-    /// file-per-module convention (`value::expression::mod`'s own `mod X;`
-    /// declarations map 1:1 to `src/value/expression/X.rs`), rather than
-    /// only through the public-API `compile_fail` doctest on this crate's
-    /// `forms` module doc, which cannot by itself distinguish "absent" from
-    /// "still present but private".
-    #[trace("TC-169", "FR-067-AC-9")]
-    #[test]
-    fn value_expression_syntax_is_absent_from_the_module_tree() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert!(
-            !manifest_dir.join("src/value/expression/syntax.rs").exists(),
-            "src/value/expression/syntax.rs still exists on disk"
-        );
-        let mod_rs = std::fs::read_to_string(manifest_dir.join("src/value/expression/mod.rs"))
-            .expect("src/value/expression/mod.rs exists");
-        let declares_syntax_module = mod_rs
-            .lines()
-            .any(|line| line.trim() == "mod syntax;" || line.trim() == "pub mod syntax;");
-        assert!(
-            !declares_syntax_module,
-            "value::expression::mod still declares a syntax submodule"
-        );
     }
 }

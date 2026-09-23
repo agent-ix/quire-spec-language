@@ -3,20 +3,20 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
+use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, ScalarLimits,
 };
 use quire_exact::{IeeeWidth, IllTypedCause, Presence, Rational};
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference,
-    DefinitionRevision, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
-    MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome, PackageDeclarations,
-    ProvedInterval, QualifiedName, RationalDomain, Refusal, TypeEnvironment, TypeForm, Undefined,
-    UniverseIdentity, Value, ValueType,
+    CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
+    CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference, DefinitionRevision,
+    FieldDeclaration, FieldValue, IeeeValue, MeasureObligation, NodeKey, ObjectEnvironment,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin,
+    Outcome, PackageDeclarations, ProvedInterval, QualifiedName, RationalDomain, Refusal,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -136,7 +136,7 @@ fn param_type_form(value_type: &ValueType) -> TypeForm {
             crate::support::type_form::named_type_form("Obj")
         }
         ValueType::Option(payload) => TypeForm::builtin(
-            quire_spec_language::value::BuiltinType::Option,
+            qsl_forms::BuiltinType::Option,
             crate::support::type_form::SPAN,
         )
         .with_arguments(vec![param_type_form(payload)]),

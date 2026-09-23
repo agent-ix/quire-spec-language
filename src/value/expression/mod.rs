@@ -10,6 +10,18 @@
 //! [`CheckedPackage::evaluate`] run already-checked code under a
 //! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
+//!
+//! The parsed-form types (`Expression` and its siblings) are defined once,
+//! in the layer-2 `qsl-forms` crate; this module has no `syntax` submodule
+//! (FR-067-AC-9, TC-169 step 1). The `use` below fails to compile, but not
+//! as proof of absence by itself: this module is private, so the same `use`
+//! would fail the same way for a `syntax` submodule that existed but stayed
+//! private. `tests::value_expression_syntax_is_absent_from_the_module_tree`
+//! carries the real absence check, against the file-per-module convention:
+//!
+//! ```compile_fail
+//! use quire_spec_language::value::expression::syntax::Expression;
+//! ```
 
 mod evaluate;
 mod family;
@@ -407,8 +419,8 @@ fn map_evaluate_failure(
 mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
     use quire_exact::{Integer, NodeKey};
 
@@ -416,7 +428,7 @@ mod tests {
     fn identity_function() -> FunctionDeclaration {
         let bound = || {
             TypeForm::builtin(
-                crate::forms::BuiltinType::Int,
+                qsl_forms::BuiltinType::Int,
                 qsl_foundation::Span { start: 0, end: 0 },
             )
             .with_bounds(vec!["0".to_owned(), "10".to_owned()])
@@ -538,6 +550,32 @@ mod tests {
             consumed_fault.invariant(),
             unknown_fault.invariant(),
             "the two invariant identifiers must differ"
+        );
+    }
+
+    /// TC-169 step 1 / FR-067-AC-9: `value::expression::syntax` is absent
+    /// from the module tree, checked directly against this repository's
+    /// file-per-module convention (`value::expression::mod`'s own `mod X;`
+    /// declarations map 1:1 to `src/value/expression/X.rs`), rather than
+    /// only through the `compile_fail` doctest on this module's doc, which
+    /// cannot by itself distinguish "absent" from "still present but
+    /// private".
+    #[trace("TC-169", "FR-067-AC-9")]
+    #[test]
+    fn value_expression_syntax_is_absent_from_the_module_tree() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            !manifest_dir.join("src/value/expression/syntax.rs").exists(),
+            "src/value/expression/syntax.rs still exists on disk"
+        );
+        let mod_rs = std::fs::read_to_string(manifest_dir.join("src/value/expression/mod.rs"))
+            .expect("src/value/expression/mod.rs exists");
+        let declares_syntax_module = mod_rs
+            .lines()
+            .any(|line| line.trim() == "mod syntax;" || line.trim() == "pub mod syntax;");
+        assert!(
+            !declares_syntax_module,
+            "value::expression::mod still declares a syntax submodule"
         );
     }
 }

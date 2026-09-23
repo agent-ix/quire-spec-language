@@ -416,10 +416,9 @@ pub fn model_check_edges(workspace_root: &Path) -> Result<Vec<ModelCheckEdge>> {
 
 /// Every name `value::mod.rs` re-exports from one of its own *sibling*
 /// submodules via a bare (non-`crate`-rooted) `pub use <submodule>::{...}`
-/// line -- `crate::check`'s and `crate::forms`'s cross-module re-exports
-/// have a two-segment path (`crate::X`) and are excluded by construction,
-/// since TC-175 cares which `value::` submodule an item belongs to, not
-/// `check`'s or `forms`'s own re-exports.
+/// line -- `crate::check`'s cross-module re-exports have a two-segment path
+/// (`crate::X`) and are excluded by construction, since TC-175 cares which
+/// `value::` submodule an item belongs to, not `check`'s own re-exports.
 fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, String>> {
     let parsed = parse_file(workspace_root, "src/value/mod.rs")?;
     let edges = use_edges_in_file(&parsed, "src/value/mod.rs");
@@ -449,8 +448,8 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // K, F.
     "quire_exact",
     "qsl_foundation",
-    // Layer 2.
-    "forms",
+    // Layer 2: the `qsl-forms` crate (ADR-011 §7.3 X-5).
+    "qsl_forms",
     // Layer 3, before `check` core (ADR-011 §6.1: `semantic_value < model <
     // library < check core`).
     "value::definition",
@@ -548,12 +547,17 @@ fn is_real_value_submodule(workspace_root: &Path, name: &str) -> bool {
 }
 
 /// Whether `top` (a resolved path's first segment) is in FR-068-AC-6's
-/// scope at all: `quire_exact`/`qsl_foundation` by name, or any other real
-/// module of this crate. `std` and every other third-party crate are out of
-/// scope and return `false`.
+/// scope at all: the workspace layer crates `check` may name
+/// ([`LAYER_CRATES`]) by name, or any other real module of this crate. `std`
+/// and every other third-party crate are out of scope and return `false`.
 fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
-    top == "quire_exact" || top == "qsl_foundation" || is_real_crate_module(workspace_root, top)
+    LAYER_CRATES.contains(&top) || is_real_crate_module(workspace_root, top)
 }
+
+/// The workspace crates, by their Rust name, whose edges from `check` the
+/// layer rule classifies: K, F and layer 2. Each is also on
+/// [`LAYER_PERMITTED_MODULES`].
+const LAYER_CRATES: &[&str] = &["quire_exact", "qsl_foundation", "qsl_forms"];
 
 /// Resolve `top` (a resolved path's first segment) and `next` (its second,
 /// if any) into FR-068-AC-6's module label and whether the edge names its
@@ -598,7 +602,7 @@ fn resolve_layer_module(
 /// relative to the file (FR-068-AC-6: "A `super::` or `self::` path is
 /// resolved relative to its file"). `self` may be followed by `super`s
 /// (`self::super::x`). A path rooted at anything else (an extern crate name,
-/// `quire_exact`/`qsl_foundation` included) is returned unchanged -- it
+/// the [`LAYER_CRATES`] included) is returned unchanged -- it
 /// needs no crate-relative substitution.
 fn resolve_relative_path(raw: &[String], current_module: &[String]) -> Vec<String> {
     let (mut base, mut rest) = match raw.split_first() {
@@ -651,8 +655,8 @@ impl LayerEdge {
 
 /// Classify one already-resolved path (crate-relative, `crate`/`super`/`self`
 /// substituted) found at `file:line` under `src/check/`. `None` when the
-/// path's root is `std` or a third-party crate other than
-/// `quire_exact`/`qsl_foundation` -- out of FR-068-AC-6's scope entirely, not
+/// path's root is `std` or a crate other than the [`LAYER_CRATES`] -- out of
+/// FR-068-AC-6's scope entirely, not
 /// a finding. `next_is_module_by_syntax`: see [`resolve_layer_module`].
 fn classify_resolved(
     workspace_root: &Path,
@@ -1198,7 +1202,6 @@ mod tests {
         for module in [
             "model",
             "library",
-            "forms",
             "family",
             "checked_package",
             "package",
@@ -1272,6 +1275,26 @@ mod tests {
         assert_eq!(edges[0].class, LayerClass::Forbidden);
         assert_eq!(edges[0].line, 1);
         assert!(edges[0].is_violation());
+    }
+
+    /// TC-175: layer 2 is the `qsl-forms` crate, so a shipped
+    /// `use qsl_forms::Expression;` under `src/check/` is classified, and
+    /// permitted, as the `qsl_forms` module rather than skipped as an
+    /// external crate.
+    #[trace("TC-175", "FR-068-AC-6")]
+    #[test]
+    fn qsl_forms_use_edge_is_permitted() {
+        let dir = layer_fixture_root();
+        write(
+            dir.path(),
+            "src/check/fixture.rs",
+            "use qsl_forms::Expression;\n",
+        );
+        let edges = check_layer_edges(dir.path()).expect("scan runs");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].module, "qsl_forms");
+        assert_eq!(edges[0].class, LayerClass::Permitted);
+        assert!(!edges[0].is_violation());
     }
 
     /// TC-175 step 6: a shipped inline `use crate::package::*;` glob fails

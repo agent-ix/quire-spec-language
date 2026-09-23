@@ -27,7 +27,8 @@ Every fixture unit below starts with the complete-V1 header
 alias is `v`.
 
 1. Resolve every `use` edge and inline path in the `Value` builder module
-   under `src/forms/`.
+   under `qsl-forms/src/`, and read `qsl-forms/Cargo.toml`'s
+   `[dependencies]`.
 2. Scan the field types of every `Value` parsed form type, of the type form,
    and of every `Expression` variant in FR-091's mapping table.
 3. With `syn`, parse the dispatch function, the `Value` expression-mapping
@@ -46,6 +47,18 @@ Tag the test `#[trace("FR-091-AC-11", "TC-398")]`.
   result.
 - Step 3 finds no `_` or catch-all arm.
 
+## Crate boundary
+
+`forms` is the `qsl-forms` crate (ADR-011 §7.3 X-5). A path in it that
+leaves the crate resolves into one of its `[dependencies]`, and the root
+crate depends on `qsl-forms`, so Cargo refuses an edge from `qsl-forms` to
+`crate::check`, `crate::value` or `crate::model`. That half of step 1 is
+backed by the crate boundary: `qsl-forms/tests/it/layering.rs` asserts the
+manifest names exactly `qsl-cst`, `qsl-foundation` and `quire-exact`.
+
 ## Status
 
-Planned; no test backs this case.
+Partial: step 1's crate edges pass locally
+(`qsl-forms/tests/it/layering.rs`). Step 1's family-module edges, and
+steps 2 and 3, are planned under QSL-141, which adds the `Value` builder
+module.

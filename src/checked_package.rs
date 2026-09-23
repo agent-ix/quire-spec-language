@@ -15,7 +15,7 @@
 //! Nothing here may depend back on `package`.
 //!
 //! Two test-only imports predate this doc and do not yet satisfy that
-//! allow-list: `emit`'s tests reach `crate::forms` (layer 2) and the root
+//! allow-list: `emit`'s tests reach `qsl_forms` (layer 2) and the root
 //! `crate::value` (K's copy is pending QSL-131). Both must change when this
 //! tree becomes a real crate root (QSL-182 X-7); recorded here as a plain
 //! fact, not a plan.

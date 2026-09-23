@@ -40,7 +40,7 @@ which turns `FamilyResult` back into a shared cause list.
    `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
-2. Resolve every `use` edge and every inline path under `src/forms/`,
+2. Resolve every `use` edge and every inline path under `qsl-forms/src/`,
    `src/model/`, `src/library/`, the `semantic_value` modules
    (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
    ADR-011 §6.2) and `qsl-cst/src/`, and check whether any of them names one

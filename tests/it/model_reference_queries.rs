@@ -17,6 +17,7 @@
 //! exactly as `crate::value::model_query` does.
 
 use ix_trace_rs::trace;
+use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits,
@@ -38,12 +39,11 @@ use quire_spec_language::model::population::{
     PopulationMember,
 };
 use quire_spec_language::value::{
-    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
-    CompositeShape, DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration,
-    InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Outcome, PackageDeclarations, QualifiedName, Refusal, TypeEnvironment,
-    TypeForm, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
+    DeclarationCause, FieldDeclaration, InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, QualifiedName, Refusal,
+    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

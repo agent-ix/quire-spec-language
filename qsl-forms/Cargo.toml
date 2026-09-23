@@ -1,0 +1,37 @@
+[package]
+name = "qsl-forms"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core's closed dispatch entry table, the parsed-form contract and the shared parsed-form types."
+
+# ADR-011 §6.1 layer 2 depends on "1, F, K" only. `tests/it/layering.rs`
+# (TC-398) asserts this table names exactly these three crates.
+[dependencies]
+qsl-cst = { path = "../qsl-cst" }
+qsl-foundation = { path = "../qsl-foundation" }
+quire-exact = { path = "../quire-exact" }
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# `dispatch`'s unit tests build CSTs with `LosslessCst::fixture`, gated on
+# `qsl-cst`'s own `test-support` feature; resolver 2 turns it on only when a
+# test target is built, so it never reaches the production lib.
+qsl-cst = { path = "../qsl-cst", features = ["test-support"] }
+# `dispatch`'s TC-167 test parses its own source to inspect the dispatch
+# `match`.
+syn = { version = "=2.0.119", features = ["full"] }
+toml = "=1.1.6"
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

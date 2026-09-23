@@ -189,7 +189,7 @@ pub(crate) fn emit_package(package: &CheckedPackage) -> Result<Infallible, EmitR
 mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations};
-    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
 
     /// An empty checked package: no functions. `CheckedPackage::link`'s
     /// dependency closure always starts empty today (S-3a review fix); M-4
@@ -206,7 +206,7 @@ mod tests {
             name,
             Vec::new(),
             TypeForm::builtin(
-                crate::forms::BuiltinType::Boolean,
+                qsl_forms::BuiltinType::Boolean,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,

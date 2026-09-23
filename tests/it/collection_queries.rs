@@ -3,16 +3,16 @@
 //! checker and evaluator boundary (FR-145).
 
 use ix_trace_rs::trace;
+use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
 use quire_exact::{BoundViolation, IllTypedCause, Presence};
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, ScalarLimits,
 };
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CollectionLoss, CollectionProperty, CollectionType,
-    CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
-    FunctionDeclaration, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
+    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
+    FieldDeclaration, FieldValue, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, ProvedInterval, Refusal,
     TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
 };

@@ -12,8 +12,9 @@
 //! string it used to derive that `NodeKey` (see each declared type's own
 //! registration), rather than through [`type_form`] here.
 
+use qsl_forms::TypeForm;
 use quire_exact::IeeeWidth;
-use quire_spec_language::value::{CollectionType, TypeForm, ValueType};
+use quire_spec_language::value::{CollectionType, ValueType};
 
 /// A placeholder span: `TypeForm`'s own span carries no identity
 /// (ADR-011 §2.2 row E2, "identity: none: forms carry position only"), so
@@ -59,19 +60,19 @@ fn collection_type_form(collection: &CollectionType) -> TypeForm {
 pub fn type_form(value_type: &ValueType) -> TypeForm {
     match value_type {
         ValueType::Boolean => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Boolean, SPAN)
+            TypeForm::builtin(qsl_forms::BuiltinType::Boolean, SPAN)
         }
         ValueType::Integer => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Integer, SPAN)
+            TypeForm::builtin(qsl_forms::BuiltinType::Integer, SPAN)
         }
         ValueType::Int(interval) => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Int, SPAN).with_bounds(vec![
+            TypeForm::builtin(qsl_forms::BuiltinType::Int, SPAN).with_bounds(vec![
                 interval.lower().to_string(),
                 interval.upper().to_string(),
             ])
         }
         ValueType::Rational(domain) => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Rational, SPAN).with_bounds(
+            TypeForm::builtin(qsl_forms::BuiltinType::Rational, SPAN).with_bounds(
                 vec![
                     domain.numerator().lower().to_string(),
                     domain.numerator().upper().to_string(),
@@ -81,7 +82,7 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
             )
         }
         ValueType::Decimal(decimal) => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Decimal, SPAN).with_bounds(
+            TypeForm::builtin(qsl_forms::BuiltinType::Decimal, SPAN).with_bounds(
                 vec![
                     decimal.lower().to_string(),
                     decimal.upper().to_string(),
@@ -93,13 +94,13 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
         }
         ValueType::Float(width) => TypeForm::builtin(
             match width {
-                IeeeWidth::Binary32 => quire_spec_language::value::BuiltinType::Float32,
-                IeeeWidth::Binary64 => quire_spec_language::value::BuiltinType::Float64,
+                IeeeWidth::Binary32 => qsl_forms::BuiltinType::Float32,
+                IeeeWidth::Binary64 => qsl_forms::BuiltinType::Float64,
             },
             SPAN,
         ),
         ValueType::Text(text) => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Text, SPAN).with_bounds(
+            TypeForm::builtin(qsl_forms::BuiltinType::Text, SPAN).with_bounds(
                 vec![
                     text.min().to_string(),
                     text.max().to_string(),
@@ -108,12 +109,12 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
             )
         }
         ValueType::Option(payload) => {
-            TypeForm::builtin(quire_spec_language::value::BuiltinType::Option, SPAN)
+            TypeForm::builtin(qsl_forms::BuiltinType::Option, SPAN)
                 .with_arguments(vec![type_form(payload)])
         }
         ValueType::Collection(collection) => collection_type_form(collection),
         ValueType::Population(maximum) => {
-            TypeForm::new(quire_spec_language::value::TypeFormHead::Population, SPAN)
+            TypeForm::new(qsl_forms::TypeFormHead::Population, SPAN)
                 .with_bounds(vec![maximum.to_string()])
         }
         ValueType::Composite(_) | ValueType::Enum(_) | ValueType::Reference(_) => {
