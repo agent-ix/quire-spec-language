@@ -33,7 +33,6 @@ use super::composite::{
     ConstructionRefusal, Deferred, FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
 };
 use super::enumeration::{compare_enum, EnumMemberIndex};
-use super::equality::planned_equality;
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
@@ -1071,7 +1070,7 @@ impl CheckedEquality {
                 compare_quantity(operator, l, r, meter)
             }
             (EqualitySchedule::Plan, _, _) => {
-                let equal = planned_equality(&left, &right, meter)?;
+                let equal = outcome_into_stop(quire_exact::planned_equality(&left, &right, meter))?;
                 return Ok(equal == (self.operator == EqualityOperator::Equal));
             }
             (

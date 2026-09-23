@@ -104,8 +104,9 @@ exactly the `Value::Population(population_id)` values whose resolved
 binding's own declared maximum equals `maximum`: QSL `model`/the evaluator
 resolves `population_id` to its `PopulationBinding` through the recorded
 correspondence, then compares that binding's declared maximum with `maximum`.
-This is the pairing `src/value/composite.rs:104` performs at the QSL layer
-between `ValueType::Population(maximum)` and `Value::Population(binding)`.
+QSL performs this pairing in argument admission (`value::expression::validate`,
+`src/value/expression/mod.rs`), before the kernel `ValueType::admits` runs. The
+kernel `admits` refuses every `(Population, Population)` pair (FR-089-AC-6).
 
 The kernel is a leaf under ADR-011 §6.1's K-leaf rule: the
 `PopulationId` → `PopulationBinding` correspondence and every binding's

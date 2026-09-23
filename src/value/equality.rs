@@ -1,66 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `plan_pairs`/`plan_equality`/`planned_equality`: forming the FR-149
-//! occurrence-pair plan over two completed values of one type, walked
-//! iteratively so value depth never reaches the host stack and over the
-//! occurrence tree so DAG sharing never changes the plan.
+//! `plan_pairs`: forming the FR-149 occurrence-pair plan over two completed
+//! values of one type, walked iteratively so value depth never reaches the
+//! host stack and over the occurrence tree so DAG sharing never changes the
+//! plan.
 //!
-//! `quire_exact::equality` (QSL-131) has its own `plan_pairs`/`plan_equality`/
-//! `planned_equality` over `quire_exact`'s own `Value`, a distinct type from
-//! this module's (`value::composite`'s module doc). Only `EqualityPlan`
-//! itself is `quire_exact`'s type here: it wraps an `Integer` pair count with
-//! no dependency on either crate's `Value`.
+//! `quire_exact::equality` (QSL-131) has its own, `pub(crate)`
+//! `plan_pairs` over `quire_exact`'s own `Value` -- now the same `Value`
+//! this module's does, since QSL-131 V5 retyped `value::composite` onto the
+//! kernel type. `plan_pairs` still cannot be re-exported from there, though:
+//! the kernel keeps it `pub(crate)` (only its own `planned_equality`,
+//! `plan_equality` and `crate::collection::coalesce` call it internally), so
+//! this crate's own [`value::collection`](super::collection)'s
+//! `member_equal` -- which needs a pair count and an equality Boolean under
+//! the *collection* `collection.member-walk`/`collection.member-test`
+//! charge points, not `planned_equality`'s `equality.*` ones -- still needs
+//! its own copy. [`plan_equality`](quire_exact::plan_equality) and
+//! [`planned_equality`](quire_exact::planned_equality) themselves *are*
+//! `pub` kernel functions with identical behavior to this module's own
+//! former copies, so both are re-exported directly rather than duplicated;
+//! `value::declaration`'s `CheckedEquality::run` calls
+//! `quire_exact::planned_equality` directly for the same reason.
 //!
-//! These functions take only a pair of completed `Value`s. The type-checked
-//! layer built on them (`EqualityOperator`, `EqualityOperand`,
-//! `EqualitySchedule`, `CheckedEquality`, `TypeEnvironment::check_equality`,
-//! `admits_equality_conversion`, `operand_value`) is parameterized over a
-//! `TypeEnvironment` and a checked `ValueType`, so `value::declaration` owns
-//! it.
+//! The type-checked layer built on `plan_pairs` (`EqualityOperator`,
+//! `EqualityOperand`, `EqualitySchedule`, `CheckedEquality`,
+//! `TypeEnvironment::check_equality`, `admits_equality_conversion`,
+//! `operand_value`) is parameterized over a `TypeEnvironment` and a checked
+//! `ValueType`, so `value::declaration` owns it.
+
+use quire_exact::{Integer, Refusal};
+
+// `EqualityPlan` and `plan_equality` are `quire_exact`'s own canonical items
+// (QSL-131): `EqualityPlan` wraps nothing but an `Integer` pair count, with
+// no dependency on `Value`/`ValueType`, and `plan_equality` is unmetered,
+// computing only from `plan_pairs`, so both are reused directly rather than
+// duplicated.
+pub use quire_exact::{plan_equality, EqualityPlan};
 
 use super::composite::{FieldValue, Value};
-use super::stop::Stop;
-use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter, Refusal};
-
-// `EqualityPlan` is `quire_exact`'s own canonical type (QSL-131): it wraps
-// nothing but an `Integer` pair count, so it carries no dependency on
-// `Value`/`ValueType` either way. `EqualityPlan::new` is `quire_exact`'s own
-// widening (QSL-131) of what was a private struct literal, since the field
-// is unreachable once the type is foreign.
-pub use quire_exact::EqualityPlan;
-
-/// Form the plan of two completed operands of one type, without charge. A
-/// reference pair of different universes refuses with `foreign_reference`.
-pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusal> {
-    plan_pairs(left, right).map(|plan| EqualityPlan::new(plan.pairs))
-}
-
-/// The equality schedule over completed operands of one type.
-/// `value::declaration`'s `CheckedEquality::run` uses it for the
-/// `EqualitySchedule::Plan` schedule.
-pub(crate) fn planned_equality(
-    left: &Value,
-    right: &Value,
-    meter: &mut Meter,
-) -> Result<bool, Stop> {
-    let (left_occ, right_occ) = (left.occ(), right.occ());
-    meter.charge(
-        Charge::new(ChargePoint::EqualityPlanForm)
-            .exact_size(
-                LimitKind::ValueOccurrences,
-                left_occ.clone().max(right_occ.clone()),
-            )
-            .work(left_occ.add(&right_occ)),
-    )?;
-    let plan = plan_pairs(left, right).map_err(Stop::Refused)?;
-    meter.charge_plan(&plan.pairs)?;
-    let mut remaining = plan.pairs;
-    while !remaining.is_zero() {
-        meter.charge(Charge::new(ChargePoint::EqualityPair))?;
-        remaining = remaining.sub(&Integer::one());
-    }
-    meter.charge(Charge::new(ChargePoint::EqualityResultRetain).results(1))?;
-    Ok(plan.equal)
-}
 
 /// A formed plan: its pair count and the relation's Boolean.
 pub(crate) struct PlannedPairs {

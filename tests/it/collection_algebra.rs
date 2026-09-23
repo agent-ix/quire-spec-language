@@ -566,10 +566,9 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
         &mut Meter::new(UNLIMITED),
     )
     .unwrap_err();
-    assert_eq!(
-        refused.component,
-        quire_spec_language::value::Component::Element(1)
-    );
+    // `form_collection` is `quire_exact`'s own function now (QSL-131 V5), so
+    // its refusal is the kernel's own `Component`, not QSL's name-keyed one.
+    assert_eq!(refused.component, quire_exact::Component::Element(1));
 }
 
 /// Rows that need the FR-145/FR-146 checker and evaluator boundary.

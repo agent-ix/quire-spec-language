@@ -149,6 +149,18 @@ mod unit;
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own types; this
 // module does not re-export them (QSL-131 S-1b), so consumers import them from
 // `quire_exact` directly.
+// QSL-131 V5: `Value`, `ValueType`, `OptionValue`, `CompositeValue`,
+// `FieldValue`, `CollectionType` and `CollectionValue` are `quire_exact`'s
+// own kernel types now (ADR-011 §6.1's K row), re-exported from `composite`/
+// `collection` rather than duplicated. `FieldDeclaration`, `Component`,
+// `ConstructionCause` and `ConstructionRefusal` stay QSL's own, name-keyed
+// types: the kernel's own versions key a field by its opaque `MemberId`
+// (ADR-013 O-06), which needs the `check::CheckedGraph` member-identity
+// resolution `value::member`'s own doc marks as not yet landed
+// ("No production caller constructs a `Member` yet") -- adopting them here
+// is remaining work, gated on that landing, not on this crate's own choice.
+// `value::composite`'s and `value::collection`'s own module docs give the
+// full per-item accounting.
 pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
 pub use composite::{
     Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, FieldDeclaration,
