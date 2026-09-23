@@ -18,7 +18,8 @@ relationships:
 
 ## Status
 
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
+Accepted, 2026-09-23 (proposed 2026-09-19). The §7.3 crate
+extraction X-1 to X-10 has landed, and ADR-011-OQ-2 is ruled. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
 epic #205, Layer 1. Acceptance is tested by the change-scenario gate #212.
 Supersedes nothing.
 
@@ -1208,17 +1209,23 @@ To QSpec (wire owner):
   QSL's fixture test compares only what the fixtures pin: IR admits QSL's
   emission of equivalent source, and QSL's I2 reader admits the fixtures.
 
-## Open questions for the owner
+## Ruling (2026-09-23): ADR-011-OQ-2
 
-- **ADR-011-OQ-2: `NativePackage` and `runtime` under native `run`.** The
-  2026-09-22 OQ-3 ruling deletes `package::NativePackage`, `lowering`,
-  `runtime` and IT-010 in the last M-6a change. The OQ-1 ruling keeps native
-  `run` until M-6c, and native `run` executes clauses through
-  `runtime::execute` over a `NativePackage` (`src/command.rs`, `run_bytes`).
-  Deleting either in M-6a removes native `run`, which the no-gap ruling
-  forbids. This record deletes `lowering` and IT-010 in M-6a and retires
-  `NativePackage` and `runtime` with native `run` in M-6c (§7.3). Open:
-  whether the owner confirms that placement.
+ADR-011-OQ-2 is this record's own open question. It is distinct from OQ-2 of
+the 2026-09-22 M-6a rulings below (spine `compile` input). The owner ruled it
+on QSL-193.
+
+- **ADR-011-OQ-2: `NativePackage` and `runtime` under native `run`.**
+  `lowering` and IT-010 are deleted in M-6a. `NativePackage` and `runtime`
+  retire with native `run` in M-6c (§6.2, §7.3). Reason: native `run`
+  executes clauses through `runtime::execute` over a `NativePackage`
+  (`src/command.rs`, `run_bytes`), the OQ-1 ruling keeps native `run` until
+  M-6c, and the 2026-09-19 no-gap ruling forbids removing working function
+  before its spine replacement exists. The OQ-3 ruling below and FR-065 state
+  the same placement. It also settles #216's "backend artifact" wording:
+  after M-6a, native `run` builds a `NativePackage` in process and writes no
+  package bytes and no backend artifact, so no M-6a checked-package producer
+  remains for #216 to find.
 
 ## Owner rulings (2026-09-19)
 
@@ -1265,8 +1272,8 @@ sections it names.
   nothing working is removed early. IT-010 is the only Kani
   proof-and-replay check in `make ci`, so gating its deletion on its
   replacement keeps that coverage continuous, and native `run` executes
-  through the modules that stay. ADR-011-OQ-2 stays open for the owner. With
-  it, the §6.2 `lowering` row, the §7.3 lane table
+  through the modules that stay. ADR-011-OQ-2 (2026-09-23) confirms that
+  placement. With it, the §6.2 `lowering` row, the §7.3 lane table
   and #216's "backend artifact" wording agree. ADR-011-OQ-2 records its
   interaction with OQ-1. FR-079's criteria guard a catalog replacement that
   no longer happens: they hold until `lowering` is deleted and retire with
