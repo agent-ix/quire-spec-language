@@ -33,7 +33,7 @@ use super::composite::{
     ConstructionRefusal, Deferred, FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
 };
 use super::decimal::{evaluate_decimal, DecimalType};
-use super::enumeration::compare_enum;
+use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::equality::planned_equality;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
@@ -901,18 +901,38 @@ pub struct CheckedEquality {
     /// The unit of every top-level quantity type the operands name, resolved
     /// at checking, so evaluation reads no package table.
     units: UnitTable,
+    /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
+    /// index, captured at checking so `Self::evaluate` needs no extra
+    /// argument. Empty and never consulted unless `schedule` is
+    /// `EqualitySchedule::Enum`.
+    enum_members: EnumMemberIndex,
 }
 
 impl TypeEnvironment {
     /// Type-check `left op right` against this environment's unit table.
-    /// Every refusal is made before any charge.
+    /// Every refusal is made before any charge. `enum_members` is the
+    /// ADR-013 T-6 (last sentence) checked `VariantId -> EnumValue` index:
+    /// `TypeEnvironment` itself holds no enum declarations (those are
+    /// `check::Scope::enums`', ADR-011 §6.1's own module split), so a
+    /// caller checking an `Enum`-scheduled equality supplies it here, once,
+    /// rather than [`CheckedEquality::evaluate`] taking it as an extra
+    /// argument every caller -- including every non-enum test -- would
+    /// otherwise need to thread through. An empty index is correct for any
+    /// caller that never checks an enum equality.
     pub fn check_equality(
         &self,
         operator: EqualityOperator,
         left: EqualityOperand,
         right: EqualityOperand,
+        enum_members: &EnumMemberIndex,
     ) -> Result<CheckedEquality, IllTyped> {
-        self.check_equality_in(&UnitScope::new(&self.units), operator, left, right)
+        self.check_equality_in(
+            &UnitScope::new(&self.units),
+            operator,
+            left,
+            right,
+            enum_members,
+        )
     }
 
     /// [`Self::check_equality`] against one checking stage's units, which
@@ -923,6 +943,7 @@ impl TypeEnvironment {
         operator: EqualityOperator,
         left: EqualityOperand,
         right: EqualityOperand,
+        enum_members: &EnumMemberIndex,
     ) -> Result<CheckedEquality, IllTyped> {
         let ill_typed = |cause| Err(IllTyped { cause });
         for operand in [&left, &right] {
@@ -990,6 +1011,11 @@ impl TypeEnvironment {
             right,
             schedule,
             units: resolved,
+            enum_members: if schedule == EqualitySchedule::Enum {
+                enum_members.clone()
+            } else {
+                EnumMemberIndex::default()
+            },
         })
     }
 }
@@ -1001,7 +1027,12 @@ impl CheckedEquality {
     }
 
     /// Evaluate over the two completed operand values, left conversion first.
-    /// Neither source value is changed.
+    /// Neither source value is changed. For the `Enum` schedule, a bare
+    /// kernel `Value::Enum` (ADR-013 O-14/OQ-D) carries only its `VariantId`
+    /// and rank, so this resolves each side back to its full declaration/
+    /// ordered/case data through the `enum_members` index captured at
+    /// checking (ADR-013 T-6, last sentence) before calling [`compare_enum`],
+    /// which needs none of the other schedules' declaration or unit data.
     pub fn evaluate(&self, left: &Value, right: &Value, meter: &mut Meter) -> Outcome<bool> {
         Outcome::from_stop(self.run(left, right, meter))
     }
@@ -1016,6 +1047,12 @@ impl CheckedEquality {
                 compare_text(operator, l, r, meter)
             }
             (EqualitySchedule::Enum, Value::Enum(l), Value::Enum(r)) => {
+                let (Some(l), Some(r)) = (
+                    self.enum_members.resolve(l.variant()),
+                    self.enum_members.resolve(r.variant()),
+                ) else {
+                    return Err(invariant());
+                };
                 compare_enum(operator, l, r, meter)
             }
             (EqualitySchedule::Quantity, Value::Quantity(l), Value::Quantity(r)) => {

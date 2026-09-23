@@ -138,19 +138,26 @@ pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     ResolvedSignatures, MAX_CHECKING_DEPTH,
 };
+// Crate-internal only (unlike the list above, `value::mod.rs` does not
+// re-export this): `value::expression::evaluate::Machine` is the one
+// consumer outside `check` itself.
+pub(crate) use check::enum_member_index;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
-// PR #300 review finding 4: `mint_type_declaration_identity` and
-// `mint_variant_id` are `pub(super)` in `identity` (visible to `check`,
-// which calls them from `PackageDeclarations::check` below), not `pub` --
-// they are not part of this re-export list, since no consumer outside
-// `check` mints an identity.
+// PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
+// in `identity` for the same reason: no consumer outside `check` minted an
+// identity directly. `mint_variant_id` itself has since moved to
+// `crate::value::enumeration` (OQ-F ruling): it is `pub` there because
+// `check.rs`'s own literal resolution (`Typer::name`) mints a `VariantId` for
+// an enum-member literal the same way `identity::to_kernel_value_type`'s C-26
+// conversion does, and both are `check`-core call sites of one canonical
+// function rather than two.
 pub use identity::{
-    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, DuplicateSumVariant, Frame,
-    FrameSubjects, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape, SumVariant,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, Frame, FrameSubjects,
+    InvalidSumVariants, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape, SumVariant,
     SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
@@ -638,10 +645,15 @@ impl PackageDeclarations {
                         )
                 })
                 .collect();
-            let variants = identity::SumVariants::new(variants).expect(
+            let variants = identity::SumVariants::new(
+                variants,
+                enum_binding.declaration.preimage().is_ordered(),
+            )
+            .expect(
                 "an EnumBinding's own EnumDeclaration admission already refuses two \
-                 members sharing one declared case name before this declaration ever \
-                 reaches `check`",
+                 members sharing one declared case name, and already refuses an \
+                 unordered declaration whose members are not sorted by case, before \
+                 this declaration ever reaches `check`",
             );
             type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
         }
@@ -1358,7 +1370,10 @@ mod tests {
             panic!("the sum form must convert to ValueType::Enum");
         };
         for case in ["Active", "Closed"] {
-            assert!(shape.contains(identity::mint_variant_id(declaration_key, case)));
+            assert!(shape.contains(crate::value::enumeration::mint_variant_id(
+                declaration_key,
+                case
+            )));
         }
     }
 

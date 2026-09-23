@@ -81,19 +81,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use sha2::{Digest, Sha256};
-
 use quire_exact::{
     DecimalType, EnumShape, Identifier, IeeeWidth, IntegerInterval, NodeKey, RationalDomain,
-    TextType, UnitId, ValueType, VariantId,
+    TextType, UnitId, ValueType,
 };
 
-use super::family::Preimage;
 use crate::model::key::DeclarationKey;
-
-fn sha256(bytes: &[u8]) -> [u8; 32] {
-    Sha256::digest(bytes).into()
-}
+use crate::value::enumeration::mint_variant_id;
 
 // ---------------------------------------------------------------------
 // O-10: clause kind
@@ -383,9 +377,9 @@ pub enum ScalarShape {
 }
 
 /// One declared member of a sum-type checked node: its own name, which
-/// `mint_variant_id` (`pub(super)`, so not doc-linked from here) combines
-/// with the declaring sum's node id to compute the member's `VariantId`
-/// (ADR-013 O-14 "Sum types", QC-15).
+/// [`crate::value::enumeration::mint_variant_id`] combines with the
+/// declaring sum's node id to compute the member's `VariantId` (ADR-013 O-14
+/// "Sum types", QC-15).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SumVariant {
     name: Identifier,
@@ -404,48 +398,76 @@ impl SumVariant {
 }
 
 /// [`CheckedTypeNode::Sum`]'s own declared variants (PR #300 review finding
-/// 6). Private field: the only way to build one is [`Self::new`], which
-/// refuses two variants sharing one declared name rather than silently
-/// admitting both (a duplicate would make two different `VariantId`s answer
-/// to the same case name, or -- worse -- collapse under some future
-/// name-keyed lookup; O-06 member identity is declared, `(declaring node
-/// id, name)`, so a name collision within one declaring sum is exactly the
-/// case that identity rule cannot resolve).
+/// 6), plus whether the declaration selects `ordered enum` semantics
+/// (ADR-013 O-14/OQ-D). Private fields: the only way to build one is
+/// [`Self::new`], which refuses two variants sharing one declared name
+/// rather than silently admitting both (a duplicate would make two different
+/// `VariantId`s answer to the same case name, or -- worse -- collapse under
+/// some future name-keyed lookup; O-06 member identity is declared,
+/// `(declaring node id, name)`, so a name collision within one declaring sum
+/// is exactly the case that identity rule cannot resolve), and, when
+/// `ordered` is `false`, refuses a declared order that is not already sorted
+/// by name -- the same invariant `value::enumeration::EnumDeclaration::admit`
+/// enforces over the same FR-141 canonical-member-list rule (declaration
+/// order for an ordered enum, case-identifier byte order otherwise).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SumVariants(Vec<SumVariant>);
+pub struct SumVariants {
+    ordered: bool,
+    variants: Vec<SumVariant>,
+}
 
-/// [`SumVariants::new`]'s refusal: two variants declared the same name.
+/// [`SumVariants::new`]'s refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("duplicate sum variant name: {0}")]
-pub struct DuplicateSumVariant(String);
+pub enum InvalidSumVariants {
+    /// Two variants declared the same name.
+    #[error("duplicate sum variant name: {0}")]
+    Duplicate(String),
+    /// An unordered sum's declared variants are not sorted by name (ADR-013
+    /// O-14/OQ-D: the FR-141 canonical member list of an unordered
+    /// declaration is case-identifier byte order).
+    #[error("unordered sum variants are not sorted by name")]
+    Unsorted,
+}
 
 impl SumVariants {
-    /// Admit `variants` as one sum's declared members, in declaration
-    /// order, refusing a duplicate declared name.
-    pub fn new(variants: Vec<SumVariant>) -> Result<Self, DuplicateSumVariant> {
+    /// Admit `variants` as one sum's declared members, refusing a duplicate
+    /// declared name and, for `ordered: false`, a declared order that is not
+    /// already sorted by name (ADR-013 O-14/OQ-D).
+    pub fn new(variants: Vec<SumVariant>, ordered: bool) -> Result<Self, InvalidSumVariants> {
         let mut seen = BTreeSet::new();
         for variant in &variants {
             if !seen.insert(variant.name()) {
-                return Err(DuplicateSumVariant(variant.name().to_owned()));
+                return Err(InvalidSumVariants::Duplicate(variant.name().to_owned()));
             }
         }
-        Ok(Self(variants))
+        if !ordered && !variants.is_sorted_by(|a, b| a.name() <= b.name()) {
+            return Err(InvalidSumVariants::Unsorted);
+        }
+        Ok(Self { ordered, variants })
     }
 
-    /// The declared variants, in declaration order.
+    /// The declared variants, in FR-141 canonical order (declaration order
+    /// when [`Self::is_ordered`], case-identifier byte order otherwise --
+    /// [`Self::new`] already refused an unordered declaration whose variants
+    /// arrived in any other order).
     pub fn iter(&self) -> impl Iterator<Item = &SumVariant> {
-        self.0.iter()
+        self.variants.iter()
+    }
+
+    /// Whether this sum selects `ordered enum` semantics.
+    pub fn is_ordered(&self) -> bool {
+        self.ordered
     }
 
     /// The declared variant count.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.variants.len()
     }
 
     /// Whether this sum declares no variant (never a real sum in practice,
     /// but not this type's own concern to refuse).
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.variants.is_empty()
     }
 }
 
@@ -512,9 +534,12 @@ impl CheckedTypeNode {
 /// form, the source node's own id is never re-minted (it simply is not read
 /// into the kernel shape at all, so there is nothing here that could
 /// re-mint it), and each variant's `VariantId` is computed by
-/// `mint_variant_id` (`pub(super)`, so not doc-linked from here) from the
-/// declaring sum and that variant's own member, never from its position in
-/// `variants` (FR-088-AC-10).
+/// [`crate::value::enumeration::mint_variant_id`] from the declaring sum and
+/// that variant's own name (OQ-F ruling), never from its position in
+/// `variants` (FR-088-AC-10). The kernel `EnumShape` additionally carries
+/// each variant's canonical rank (ADR-013 O-14/OQ-D): `variants` is already
+/// in FR-141 canonical order ([`SumVariants::new`] refused any other order
+/// for an unordered sum), so the rank is exactly each variant's index here.
 // PR #300 review finding 11: a checked-in `deny`, not only ADR-011 §5's
 // documented convention -- adding a `CheckedTypeNode` form without a
 // matching arm below now fails `cargo clippy` (and `-D warnings` promotes
@@ -534,45 +559,12 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
         CheckedTypeNode::Composite { node } => ValueType::Composite(*node),
         CheckedTypeNode::BoundedDomain { bound, .. } => ValueType::Int(bound.clone()),
         CheckedTypeNode::Sum { node, variants } => ValueType::Enum(EnumShape::new(
+            variants.is_ordered(),
             variants
                 .iter()
                 .map(|variant| mint_variant_id(*node, variant.name())),
         )),
     }
-}
-
-/// ADR-013 O-14/QC-15: a sum variant's `VariantId`, computed from the
-/// declaring sum's own node id and the variant's own name -- never from its
-/// position in a declared list (FR-088-AC-10).
-///
-/// PR #300 review round 2 (HIGH-1): the declaring sum's node id is now the
-/// declaration's own existing key (`EnumDeclaration::key()`, passed in by
-/// `check` as `sum`), never a second, parallel identity this module mints
-/// from the declared name and shape -- see this module's own doc for why the
-/// former `mint_type_declaration_identity` minter is gone.
-///
-/// `u64::MAX` (PR #300 review finding, MEDIUM-2): this function has no
-/// `StageLimits` budget to charge against, unlike `ValueFunctionFamily::check`
-/// (see `Preimage::new`'s own doc), because it has no `CheckingLimits` in
-/// scope at either call site. The `check`-stage caller (`PackageDeclarations::
-/// check`) never calls this function at all -- it only stores the declared
-/// `SumVariants` on `CheckedTypeNode::Sum`, so `check`'s own QSL-153 budget
-/// is charged, if at all, against the declaration this variant's case name
-/// was already read from before `check` ever saw it (`EnumDeclarationPreimage`/
-/// `EnumMemberPreimage` admission, `value/enumeration.rs`). The other call
-/// site, C-26's own [`to_kernel_value_type`], is a pure, total, post-check
-/// conversion with no admission step of its own to charge against (its
-/// caller supplies an already-admitted `CheckedTypeNode`). Either way the
-/// preimage this function writes is bounded by an already-admitted
-/// declaration's own member count and case-name lengths -- work linear in
-/// content the checker already bounded once, not a fresh amplification
-/// vector this function introduces.
-pub(super) fn mint_variant_id(sum: NodeKey, member_name: &str) -> VariantId {
-    let mut preimage = Preimage::new(u64::MAX);
-    preimage.write_str("sum-variant-member");
-    preimage.write_bytes(sum.as_bytes());
-    preimage.write_str(member_name);
-    VariantId::from_digest(sha256(&preimage.finish()))
 }
 
 #[cfg(test)]
@@ -818,13 +810,27 @@ mod tests {
     /// PR #300 review finding 5: a golden digest vector for
     /// `mint_variant_id`, mirroring `check::family::
     /// mint_declaration_identity_matches_a_checked_in_digest`'s own
-    /// convention -- this catches a reordered `write_str` or a renamed tag
-    /// an equality-only test (comparing two identities minted in the same
+    /// convention -- this catches a reordered field or a renamed tag an
+    /// equality-only test (comparing two identities minted in the same
     /// process) cannot, since both sides would move together and stay
     /// green. Regenerate the constant only when the preimage grammar change
     /// is the one actually intended, and say so in the commit (this
     /// repository's own digest-freshness rule, `CLAUDE.md`), never to make a
     /// red test green.
+    ///
+    /// **This digest moved under OQ-F (ADR-013 §8, ruled 2026-09-22).**
+    /// `mint_variant_id` no longer computes the private, QSpec-unowned
+    /// `"sum-variant-member"` preimage this test used to pin
+    /// (`sha256("sum-variant-member" || sum-node-bytes || "Active")`); it
+    /// now computes QSpec FR-141's own enum-member node key,
+    /// `quire.checked-semantic-node/v1` over `{version: "quire.enum-
+    /// member-node/v1", declaration_node_id: {domain: "quire.checked-
+    /// semantic-node/v1", digest: sum}, case: "Active"}` -- the same
+    /// preimage `value::enumeration::EnumMemberPreimage::digest` recomputes
+    /// at admission, verified against QSpec's own
+    /// `proposals/checked-package-v2/node-identity-vectors.json` fixture.
+    /// Every occurrence of the old digest was this one test (grep found no
+    /// other golden or vector pinned to it); no other test or fixture moved.
     ///
     /// PR #300 review round 2, L9: retagged `TC-252`/`FR-088-AC-10` (this
     /// function's own owning pair per `spec/tests.md`) -- the prior
@@ -837,7 +843,7 @@ mod tests {
         let variant_id = mint_variant_id(sum, "Active");
         assert_eq!(
             variant_id.to_string(),
-            "25f808ee82e3446d65360b5e87ef36350a58cc6085f3bf3d2200cab7c0998030",
+            "e72a0028859b92eaefee0e78eb414a49a58ede1b610cc4233dd2724b3dfc5bdc",
             "the preimage byte grammar changed -- see this test's own doc \
              before regenerating this constant"
         );
@@ -869,19 +875,19 @@ mod tests {
     }
 
     /// TC-252 (FR-088-AC-10): the sum form's own node id is unaffected by
-    /// conversion, each variant's `VariantId` is computed from the
-    /// declaring sum and that variant's member -- not its position -- and
-    /// the converted kernel shape carries no `NodeKey`. A sum value carries
-    /// its `VariantId`, never a bare index.
+    /// conversion, each variant's `VariantId` is computed from the declaring
+    /// sum and that variant's name -- not its position -- and the converted
+    /// kernel shape carries no `NodeKey`. A sum value carries its
+    /// `(VariantId, rank)` pair (ADR-013 O-14/OQ-D), never a bare index.
     #[trace("TC-252", "FR-088-AC-10")]
     #[test]
-    fn c26_sum_preserves_node_id_and_mints_position_independent_variant_ids() {
+    fn c26_sum_preserves_node_id_and_mints_name_derived_variant_ids() {
         let sum_node = node_key(4);
         let active = SumVariant::new(identifier("Active"));
         let closed = SumVariant::new(identifier("Closed"));
         let sum = CheckedTypeNode::Sum {
             node: sum_node,
-            variants: SumVariants::new(vec![active.clone(), closed.clone()]).unwrap(),
+            variants: SumVariants::new(vec![active.clone(), closed.clone()], false).unwrap(),
         };
 
         let converted = to_kernel_value_type(&sum);
@@ -897,16 +903,71 @@ mod tests {
         assert!(shape.contains(active_id));
         assert!(shape.contains(closed_id));
 
-        // Reordering the declared variants changes no variant's VariantId
-        // (a digest over sum + member, never an index).
-        let reordered = CheckedTypeNode::Sum {
-            node: sum_node,
-            variants: SumVariants::new(vec![closed, active]).unwrap(),
-        };
-        assert_eq!(to_kernel_value_type(&reordered), converted);
+        // A sum value carries its (VariantId, rank) pair, at the rank the
+        // (already case-sorted, unordered) shape assigns it -- never a bare
+        // index of its own choosing.
+        assert_eq!(shape.rank(active_id), Some(0));
+        assert_eq!(shape.rank(closed_id), Some(1));
+        assert!(converted.admits(&Value::Enum(quire_exact::EnumMember::new(active_id, 0))));
+        assert!(!converted.admits(&Value::Enum(quire_exact::EnumMember::new(active_id, 1))));
+    }
 
-        // A sum value carries its VariantId, never a bare index.
-        assert!(converted.admits(&Value::Enum(active_id)));
+    /// ADR-013 O-14/OQ-D (mutation proof): identity (`VariantId`) never
+    /// depends on declared order, but *rank* does, for an ordered sum --
+    /// exactly the property `quire_exact::key::compare_keys`'s FR-144
+    /// canonical-key ordering now relies on. An implementation that dropped
+    /// `SumVariants`' `ordered` flag and always case-sorted (the bug this
+    /// test catches) would give both declared orders the same rank for
+    /// "Active", making this assertion fail.
+    #[trace("TC-252", "FR-088-AC-10")]
+    #[test]
+    fn c26_ordered_sum_rank_follows_declared_order_not_identity() {
+        let sum_node = node_key(4);
+        let active = SumVariant::new(identifier("Active"));
+        let closed = SumVariant::new(identifier("Closed"));
+        let declared = CheckedTypeNode::Sum {
+            node: sum_node,
+            variants: SumVariants::new(vec![active.clone(), closed.clone()], true).unwrap(),
+        };
+        let reversed = CheckedTypeNode::Sum {
+            node: sum_node,
+            variants: SumVariants::new(vec![closed, active], true).unwrap(),
+        };
+
+        let ValueType::Enum(declared_shape) = to_kernel_value_type(&declared) else {
+            panic!("sum form must convert to ValueType::Enum");
+        };
+        let ValueType::Enum(reversed_shape) = to_kernel_value_type(&reversed) else {
+            panic!("sum form must convert to ValueType::Enum");
+        };
+
+        let active_id = mint_variant_id(sum_node, "Active");
+        let closed_id = mint_variant_id(sum_node, "Closed");
+
+        // Identity never depends on declared order.
+        assert!(declared_shape.contains(active_id) && reversed_shape.contains(active_id));
+        assert!(declared_shape.contains(closed_id) && reversed_shape.contains(closed_id));
+
+        // Rank does, for an ordered sum.
+        assert_eq!(declared_shape.rank(active_id), Some(0));
+        assert_eq!(declared_shape.rank(closed_id), Some(1));
+        assert_eq!(reversed_shape.rank(closed_id), Some(0));
+        assert_eq!(reversed_shape.rank(active_id), Some(1));
+        assert_ne!(declared_shape, reversed_shape);
+    }
+
+    /// ADR-013 O-14/OQ-D: an unordered sum's declared variants must already
+    /// be sorted by name -- the same invariant
+    /// `value::enumeration::EnumDeclaration::admit` enforces -- so a caller
+    /// cannot silently mis-rank an unordered enum by declaring it out of
+    /// order.
+    #[trace("TC-252", "FR-088-AC-10")]
+    #[test]
+    fn sum_variants_refuses_an_unsorted_unordered_declaration() {
+        let closed = SumVariant::new(identifier("Closed"));
+        let active = SumVariant::new(identifier("Active"));
+        let refusal = SumVariants::new(vec![closed, active], false).unwrap_err();
+        assert_eq!(refusal, InvalidSumVariants::Unsorted);
     }
 
     /// PR #300 review finding 6: two variants sharing one declared name
@@ -916,7 +977,10 @@ mod tests {
     fn sum_variants_refuses_a_duplicate_declared_name() {
         let first = SumVariant::new(identifier("Active"));
         let duplicate = SumVariant::new(identifier("Active"));
-        let refusal = SumVariants::new(vec![first, duplicate]).unwrap_err();
-        assert_eq!(refusal, DuplicateSumVariant("Active".to_owned()));
+        let refusal = SumVariants::new(vec![first, duplicate], false).unwrap_err();
+        assert_eq!(
+            refusal,
+            InvalidSumVariants::Duplicate("Active".to_owned())
+        );
     }
 }

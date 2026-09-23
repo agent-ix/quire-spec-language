@@ -21,17 +21,19 @@
 //! that would stop this key on a Float pair also stops the first
 //! two-element membership comparison there.
 //!
-//! One adaptation against the original: `Value::Enum` is a bare
-//! [`crate::identity::VariantId`] digest here (ADR-013 T-6), not a
-//! declaration-aware `EnumValue` with a position and case. Two enum values
-//! of the *same* enum therefore key-order by raw digest bytes rather than by
-//! declared position/case order; a declaration-ordered enum's canonical
-//! collection order is something the layer that still holds the enum
-//! declaration (QSL `model`) must reproduce on top of this, not something
-//! this kernel key can give it. This is unrelated to `ValueType::Enum`'s own
-//! shape (see `crate::value`'s module doc comment): that type gained back an
-//! inline `EnumShape` variant set for admission checking, but the bare
-//! `Value::Enum` payload this key compares is unchanged either way.
+//! One adaptation against the original: `Value::Enum` is [`crate::value::
+//! EnumMember`] here (ADR-013 T-6, OQ-D ruling) -- a bare [`crate::identity::
+//! VariantId`] paired with its zero-based canonical rank -- not a
+//! declaration-aware `EnumValue` carrying a live position/case lookup. FR-144's
+//! enumeration key row (FR-144-AC-9) fixes canonical order as declaration
+//! position for an `ordered enum` and case-identifier byte order otherwise;
+//! because `EnumMember::rank` is already that canonical-list index (the
+//! shape that admitted it fixed it there, `crate::value::EnumShape::rank`),
+//! comparing two same-enum members' ranks numerically reproduces FR-144's
+//! order for *both* cases at once, with no declaration lookup and no
+//! case-name string needed here. This corrects the prior digest-ordered
+//! comparison this file carried (`quire-exact/src/key.rs:103` before this
+//! change), which did not conform to FR-144 (ADR-013 O-14).
 
 use std::cmp::Ordering;
 
@@ -100,7 +102,7 @@ fn leaf<'a>(
         (Value::Text(left), Value::Text(right)) => {
             left.retained().as_bytes().cmp(right.retained().as_bytes())
         }
-        (Value::Enum(left), Value::Enum(right)) => left.cmp(right),
+        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {

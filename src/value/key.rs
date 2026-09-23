@@ -73,13 +73,13 @@ fn leaf<'a>(
         (Value::Text(left), Value::Text(right)) => {
             left.retained().as_bytes().cmp(right.retained().as_bytes())
         }
-        (Value::Enum(left), Value::Enum(right)) if left.declaration() == right.declaration() => {
-            if left.is_ordered() {
-                left.position().cmp(&right.position())
-            } else {
-                left.case().as_bytes().cmp(right.case().as_bytes())
-            }
-        }
+        // FR-144-AC-9: declaration position for an ordered enum, case-byte
+        // order otherwise. `rank` (ADR-013 O-14/OQ-D) already *is* that
+        // canonical-list index either way -- the shape that admitted this
+        // value fixed it there (declaration order when ordered, case-sorted
+        // order otherwise) -- so comparing ranks numerically reproduces
+        // FR-144's rule for both cases at once, with no declaration lookup.
+        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {

@@ -22,12 +22,10 @@ use super::outcome::{Refusal, Stop};
 use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter};
 
 // `EqualityPlan` is `quire_exact`'s own canonical type (QSL-131): it wraps
-// nothing but an `Integer` pair count, so it carries no dependency on the
-// diverged `Value`/`ValueType` kernel types below (QSL-131's 2026-09-21
-// comment: `ValueType::Enum`'s payload and `ValueType::Reference`'s payload
-// differ between this crate and `quire_exact`). `EqualityPlan::new` is
-// `quire_exact`'s own widening (QSL-131) of what was a private struct
-// literal, since the field is unreachable once the type is foreign.
+// nothing but an `Integer` pair count, so it carries no dependency on
+// `Value`/`ValueType` either way. `EqualityPlan::new` is `quire_exact`'s own
+// widening (QSL-131) of what was a private struct literal, since the field
+// is unreachable once the type is foreign.
 pub use quire_exact::EqualityPlan;
 
 /// Form the plan of two completed operands of one type, without charge. A
@@ -108,9 +106,13 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
             {
                 l.retained() == r.retained()
             }
-            (Value::Enum(l), Value::Enum(r)) if l.declaration() == r.declaration() => {
-                l.member() == r.member()
-            }
+            // ADR-013 O-14: "Identity and equality use the `VariantId` only"
+            // -- the paired rank (OQ-D) is ignored, and no declaration guard
+            // is needed: a checked program never brings enum values of two
+            // different declarations together here (FR-141-AC-2 refuses that
+            // at type checking), exactly as the other leaf arms above rely on
+            // their own declared type rather than re-checking it per pair.
+            (Value::Enum(l), Value::Enum(r)) => l.variant() == r.variant(),
             (Value::Reference(l), Value::Reference(r)) => {
                 if l.universe() != r.universe() {
                     return Err(Refusal::ForeignReference);

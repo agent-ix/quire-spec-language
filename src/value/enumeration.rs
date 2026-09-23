@@ -16,7 +16,7 @@
 //! [`WireNodeId`] until `admit_member` resolves it against the admitted
 //! declaration's key.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +28,7 @@ use super::semantic_node::{
 };
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NodeKey;
+use quire_exact::VariantId;
 use quire_exact::{is_identifier, Charge, ChargePoint, LimitKind, Meter};
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
@@ -248,7 +249,7 @@ impl EnumDeclaration {
 }
 
 /// An enumeration value: (declaration identity, member identity).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumValue {
     declaration: NodeKey,
     member: NodeKey,
@@ -268,8 +269,14 @@ impl EnumValue {
         self.member
     }
 
-    /// Zero-based declaration position of the member.
-    pub(crate) fn position(&self) -> usize {
+    /// Zero-based FR-141 canonical-list position of the member: the same
+    /// value ADR-013 O-14/OQ-D's `EnumMember::rank` carries once a caller
+    /// pairs it with this member's [`Self::variant`]. Widened from
+    /// `pub(crate)` (this change): an external caller building an
+    /// `EnumShape`/`Value::Enum` from an admitted [`EnumValue`] -- exactly
+    /// what `check::check::Typer::name` and `check::EnumBinding::shape` do
+    /// inside this crate -- needs it too.
+    pub fn position(&self) -> usize {
         self.position
     }
 
@@ -281,6 +288,68 @@ impl EnumValue {
     /// The case identifier.
     pub fn case(&self) -> &str {
         &self.case
+    }
+
+    /// This member's kernel `VariantId` (ADR-013 O-14, OQ-F ruling): the same
+    /// `quire.checked-semantic-node/v1` bytes as [`Self::member`], retyped.
+    /// [`Self::member`]'s bytes are already the OQ-F-ruled `quire.enum-
+    /// member-node/v1` preimage digest -- verified against that exact
+    /// preimage at [`EnumDeclaration::admit_member`] -- so this needs no
+    /// fresh computation, only the kernel's own opaque wrapper.
+    pub fn variant(&self) -> VariantId {
+        VariantId::from_digest(*self.member.as_bytes())
+    }
+}
+
+/// Mint the FR-141/OQ-F enum-member `VariantId` of a member `case` of the
+/// enum declaration keyed by `declaration`: the node-key digest over
+/// `{version: quire.enum-member-node/v1, declaration_node_id, case}`
+/// (ADR-013 O-14 "Sum types", OQ-F ruling). This is the exact preimage
+/// [`EnumMemberPreimage::digest`] recomputes at admission over a retained
+/// key; this function mints one directly for a caller with no already-
+/// admitted member node to retain a key from, such as `check::identity`'s
+/// checked-type-node conversion (ADR-013 C-26). Replaces the private
+/// `"sum-variant-member"` preimage `check/identity.rs:570` carried before
+/// this change, which did not conform to FR-141's member identity.
+pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
+    let digest = preimage_digest(&CanonicalMember {
+        case,
+        declaration_node_id: declaration.into(),
+        version: MEMBER_VERSION,
+    })
+    .expect(
+        "a declaration NodeKey and a validated case identifier are always \
+         representable as canonical JSON",
+    );
+    VariantId::from_digest(digest)
+}
+
+/// ADR-013 T-6 (last sentence): the checked `VariantId` -> [`EnumValue`]
+/// index, built once as `check` admits each enum member and consulted
+/// wherever an evaluated kernel `Value::Enum` (a bare `VariantId` and rank,
+/// ADR-013 O-14/OQ-D) needs its declaration, ordered flag, position or case
+/// name back. The kernel is a leaf and carries none of this (`quire_exact::
+/// value`'s own module doc); the FR-141 enum-specific `=`/ordering schedule
+/// ([`compare_enum`], `value::declaration::CheckedEquality`'s `Enum`
+/// schedule, and `value::expression::evaluate`'s `OrderedKind::Enums` arm)
+/// resolves a `VariantId` back to its full [`EnumValue`] through this index
+/// rather than the kernel ever holding one.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EnumMemberIndex(BTreeMap<VariantId, EnumValue>);
+
+impl EnumMemberIndex {
+    /// Record one admitted member, keyed by its own `VariantId`. The last
+    /// write for a given `VariantId` wins; two structurally identical
+    /// members (same declaration, same case) always share one `VariantId`
+    /// (content-addressed, ADR-013 O-04), so recording either is equivalent.
+    pub fn record(&mut self, member: EnumValue) {
+        self.0.insert(member.variant(), member);
+    }
+
+    /// The full checked member `variant` names, or `None` when it was never
+    /// recorded -- never re-derived by any other means (R-05).
+    pub fn resolve(&self, variant: VariantId) -> Option<&EnumValue> {
+        self.0.get(&variant)
     }
 }
 
