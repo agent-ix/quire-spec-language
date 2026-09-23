@@ -352,7 +352,7 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
         // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
         // than re-deriving one from the unit's internal dimension/edge
         // graph: those identities are this codebase's own established
-        // stable-identity mechanism (RFC 8785 JCS preimages, `value::node`),
+        // stable-identity mechanism (RFC 8785 JCS preimages, `value::semantic_node`),
         // not `Debug`.
         QuantityUnit::Declared(unit) => {
             out.write_str("declared");
@@ -376,7 +376,7 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
 // schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
 // `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
 // etc.) -- a real, enforced, round-tripping contract, not a Debug-style
-// dump of whatever fields happen to exist. `src/value/node.rs`'s own
+// dump of whatever fields happen to exist. `src/value/semantic_node.rs`'s own
 // `CanonicalRational` already relies on exactly this contract for this
 // codebase's other content-addressed digest (RFC 8785 JCS preimages).
 // Repointing these leaves at a bespoke byte encoding would introduce a

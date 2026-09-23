@@ -19,6 +19,7 @@ use qsl_forms::{
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use quire_exact::IllTypedCause;
+use quire_exact::NodeKey;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
@@ -37,7 +38,7 @@ use quire_spec_language::value::{
     decode_function_package_v2, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, DispatchCandidate,
     DispatchFunctionRole, DispatchOperation, DispatchTable, Evaluation, FamilyOutcome,
-    FamilyResult, InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment,
+    FamilyResult, InputRefusal, InvalidDispatchDeclaration, Location, ObjectEnvironment,
     ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations,
     QualifiedName, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };

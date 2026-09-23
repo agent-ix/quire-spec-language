@@ -1535,7 +1535,7 @@ mod tests {
             })
             .map(|entry| entry.effective_id)
             .expect("model.A has a type-level effective declaration");
-        let node_a = crate::value::node::NodeKey::from_digest(*a.as_bytes());
+        let node_a = quire_exact::NodeKey::from_digest(*a.as_bytes());
         let types = crate::value::declaration::TypeEnvironment::new(
             [],
             [crate::value::declaration::ObjectTypeDeclaration::new(

@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use super::composite::{fill_slots, ConstructionRefusal, FieldValue, Value};
 use super::declaration::{ObjectTypeDeclaration, TypeEnvironment};
-use super::node::NodeKey;
 use crate::model::population::PopulationBinding;
+use quire_exact::NodeKey;
 use quire_exact::PopulationId;
 
 /// A universe identity in its canonical identity bytes.

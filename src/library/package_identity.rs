@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use crate::value::node::is_qualified_name;
+use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NODE_KEY_DOMAIN;
 

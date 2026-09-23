@@ -108,11 +108,11 @@ use crate::model::domain_package::{DomainPackage, DomainPackageRecord, Operation
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::composite::ValueType;
-use crate::value::node::NodeKey;
 use qsl_forms::{
     BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::diagnostic::Code;
+use quire_exact::NodeKey;
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
 /// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared

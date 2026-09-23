@@ -9,14 +9,12 @@
 //! targetless canonical root; each edge maps
 //! `target_value = scale × source_value + offset` exactly.
 //!
-//! `UnitGraph::admit` mints these node ids the same way `value::expression::
-//! check` mints checked-expression node ids (ADR-013 O-04), but this module
-//! is not itself a `check`-stage implementer: no `src/` caller builds a
-//! `UnitGraph` today (#118 scoped this module to I04/I05 identity semantics
-//! only, never a check-stage wiring), so this is outside ADR-011 §6.1's
-//! "only `check` calls the kernel `NodeKey` constructor" rule (ADR-011
-//! FB-13, #211). Today it is exercised only by this crate's own tests.
-//! Remaining work: #131 wires a check-stage caller.
+//! This module computes the preimage digests ([`NodeIdentityPreimage`]) and
+//! compares each retained key's bytes with them at admission. It never
+//! constructs a `NodeKey`: only `check` mints one (ADR-011 §6.1, ADR-013
+//! O-04). A node id read from a preimage document stays a
+//! [`WireNodeId`] until `UnitGraph::admit` or `UnitGraph::compound_unit`
+//! resolves it by lookup among the admitted nodes' retained keys.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -24,13 +22,13 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::node::{
-    check_terms, is_qualified_name, node_key_of, refuse, CanonicalNodeId, CanonicalOwner,
-    CanonicalRational, InvalidSemanticGraph, NodeIdDocument, NodeKey, NodeOwner, OwnerSelection,
-    RationalDocument, SemanticGraphCause,
+use super::semantic_node::{
+    check_terms, is_qualified_name, preimage_digest, refuse, resolve, retains, wire_index,
+    CanonicalNodeId, CanonicalOwner, CanonicalRational, InvalidSemanticGraph, NodeIdDocument,
+    NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument, SemanticGraphCause,
 };
-use quire_exact::Integer;
-use quire_exact::Rational;
+use qsl_foundation::digest::WireNodeId;
+use quire_exact::{Integer, NodeKey, Rational};
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";
@@ -123,7 +121,7 @@ struct DimensionDocument {
     terms: Vec<DimensionTermDocument>,
 }
 
-// JCS preimages: fields are declared in ascending key order (see `node`).
+// JCS preimages: fields are declared in ascending key order (see `semantic_node`).
 #[derive(Serialize)]
 struct CanonicalDimensionTerm {
     dimension_node_id: CanonicalNodeId,
@@ -141,10 +139,10 @@ struct CanonicalDimension<'a> {
 /// Read schema terms: canonical node ids and integer spellings, in order.
 fn read_terms<'a>(
     terms: impl IntoIterator<Item = (&'a NodeIdDocument, &'a str)>,
-) -> Option<Vec<(NodeKey, Integer)>> {
+) -> Option<Vec<(WireNodeId, Integer)>> {
     terms
         .into_iter()
-        .map(|(id, exponent)| Some((id.key()?, exponent.parse().ok()?)))
+        .map(|(id, exponent)| Some((id.wire_id()?, exponent.parse().ok()?)))
         .collect()
 }
 
@@ -154,7 +152,7 @@ fn read_terms<'a>(
 pub struct DimensionPreimage {
     owner: NodeOwner,
     qualified_declaration: Vec<String>,
-    terms: Vec<(NodeKey, Integer)>,
+    terms: Vec<(WireNodeId, Integer)>,
 }
 
 impl DimensionPreimage {
@@ -193,7 +191,7 @@ impl DimensionPreimage {
     }
 
     /// Retained `(base dimension, exponent)` terms, as spelled.
-    pub fn terms(&self) -> &[(NodeKey, Integer)] {
+    pub fn terms(&self) -> &[(WireNodeId, Integer)] {
         &self.terms
     }
 
@@ -201,17 +199,18 @@ impl DimensionPreimage {
     pub fn is_base(&self) -> bool {
         self.terms.is_empty()
     }
+}
 
-    /// The node key this content determines.
-    pub fn node_key(&self) -> Result<NodeKey, InvalidSemanticGraph> {
-        node_key_of(&CanonicalDimension {
+impl NodeIdentityPreimage for DimensionPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&CanonicalDimension {
             owner: self.owner.canonical(),
             qualified_declaration: &self.qualified_declaration,
             terms: self
                 .terms
                 .iter()
-                .map(|(key, exponent)| CanonicalDimensionTerm {
-                    dimension_node_id: (*key).into(),
+                .map(|(id, exponent)| CanonicalDimensionTerm {
+                    dimension_node_id: (*id).into(),
                     exponent: exponent.to_string(),
                 })
                 .collect(),
@@ -255,8 +254,8 @@ type SpelledRational = (Integer, Integer);
 pub struct UnitPreimage {
     owner: NodeOwner,
     qualified_declaration: Vec<String>,
-    dimension: NodeKey,
-    target: Option<NodeKey>,
+    dimension: WireNodeId,
+    target: Option<WireNodeId>,
     scale: SpelledRational,
     offset: SpelledRational,
 }
@@ -271,7 +270,7 @@ impl UnitPreimage {
             reference => Some(
                 serde_json::from_value::<NodeIdDocument>(reference)
                     .ok()
-                    .and_then(|id| id.key())
+                    .and_then(|id| id.wire_id())
                     .ok_or(non_canonical)?,
             ),
         };
@@ -279,7 +278,7 @@ impl UnitPreimage {
             && document.owner.is_well_formed()
             && is_qualified_name(&document.qualified_declaration);
         match (
-            document.dimension_node_id.key(),
+            document.dimension_node_id.wire_id(),
             document.scale.parts(),
             document.offset.parts(),
         ) {
@@ -305,19 +304,20 @@ impl UnitPreimage {
         &self.qualified_declaration
     }
 
-    /// The unit's dimension node key.
-    pub fn dimension(&self) -> NodeKey {
+    /// The unit's dimension node id, as read.
+    pub fn dimension(&self) -> WireNodeId {
         self.dimension
     }
 
-    /// The target unit key, or `None` for a canonical root.
-    pub fn target(&self) -> Option<NodeKey> {
+    /// The target unit node id as read, or `None` for a canonical root.
+    pub fn target(&self) -> Option<WireNodeId> {
         self.target
     }
+}
 
-    /// The node key this content determines.
-    pub fn node_key(&self) -> Result<NodeKey, InvalidSemanticGraph> {
-        node_key_of(&CanonicalUnit {
+impl NodeIdentityPreimage for UnitPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&CanonicalUnit {
             dimension_node_id: self.dimension.into(),
             offset: CanonicalRational::new(&self.offset.0, &self.offset.1),
             owner: self.owner.canonical(),
@@ -327,7 +327,9 @@ impl UnitPreimage {
             version: UNIT_VERSION,
         })
     }
+}
 
+impl UnitPreimage {
     /// Refuse an unreduced rational, a zero scale, then a non-identity root.
     fn check_semantics(&self) -> Result<(Rational, Rational), SemanticGraphCause> {
         let reduced = |(numerator, denominator): &SpelledRational| {
@@ -424,25 +426,34 @@ impl Unit {
 pub struct UnitGraph {
     dimensions: BTreeMap<NodeKey, Dimension>,
     units: BTreeMap<NodeKey, Unit>,
+    /// Resolves a wire unit node id to an admitted unit's key.
+    unit_ids: BTreeMap<WireNodeId, NodeKey>,
 }
 
 /// A dimension node after its per-node semantic checks.
 struct AdmittedDimension {
-    terms: Vec<(NodeKey, Integer)>,
+    terms: Vec<(WireNodeId, Integer)>,
 }
 
-/// A unit node after its per-node semantic checks.
+/// A unit node after its per-node semantic checks, as read.
 struct AdmittedUnit {
+    dimension: WireNodeId,
+    target: Option<WireNodeId>,
+    edge: UnitEdge,
+}
+
+/// A unit node whose dimension and target resolved to admitted keys.
+struct ResolvedUnit {
     dimension: NodeKey,
     target: Option<NodeKey>,
     edge: UnitEdge,
 }
 
-/// The owner and recomputed key of a node, checked after topology.
+/// The owner of a node and whether its retained key is the one its content
+/// determines, checked after topology.
 struct Provenance {
     owner: NodeOwner,
-    retained: NodeKey,
-    recomputed: NodeKey,
+    key_matches: bool,
 }
 
 impl UnitGraph {
@@ -469,9 +480,8 @@ impl UnitGraph {
                 return Err(refuse(SemanticGraphCause::DuplicateNode));
             }
             provenance.push(Provenance {
-                recomputed: preimage.node_key()?,
+                key_matches: retains(key, &preimage)?,
                 owner: preimage.owner,
-                retained: key,
             });
             admitted_dimensions.insert(
                 key,
@@ -487,8 +497,7 @@ impl UnitGraph {
                 return Err(refuse(SemanticGraphCause::DuplicateNode));
             }
             provenance.push(Provenance {
-                recomputed: preimage.node_key()?,
-                retained: key,
+                key_matches: retains(key, &preimage)?,
                 owner: preimage.owner,
             });
             admitted_units.insert(
@@ -500,18 +509,24 @@ impl UnitGraph {
                 },
             );
         }
-        let dimensions = dimension_maps(&admitted_dimensions)?;
-        let units = unit_paths(&admitted_units, &dimensions)?;
+        let dimension_ids = wire_index(admitted_dimensions.keys().copied());
+        let dimensions = dimension_maps(&admitted_dimensions, &dimension_ids)?;
+        let unit_ids = wire_index(admitted_units.keys().copied());
+        let units = unit_paths(
+            &resolve_units(&admitted_units, &dimension_ids, &unit_ids)?,
+            &dimensions,
+        )?;
         if provenance.iter().any(|node| !owners.contains(&node.owner)) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected));
         }
-        if provenance
-            .iter()
-            .any(|node| node.recomputed != node.retained)
-        {
+        if provenance.iter().any(|node| !node.key_matches) {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
-        Ok(Self { dimensions, units })
+        Ok(Self {
+            dimensions,
+            units,
+            unit_ids,
+        })
     }
 
     /// The normalized map of an admitted dimension node.
@@ -539,24 +554,26 @@ impl UnitGraph {
             },
         })?;
         let mut dimension = Dimension::dimensionless();
-        for (key, exponent) in &preimage.terms {
-            let root = self.units.get(key).filter(|unit| unit.root == *key).ok_or(
-                InvalidCompoundUnit {
+        let mut terms = BTreeMap::new();
+        for (id, exponent) in &preimage.terms {
+            let (key, root) = resolve(&self.unit_ids, *id)
+                .and_then(|key| Some((key, self.units.get(&key)?)))
+                .filter(|(key, unit)| unit.root == *key)
+                .ok_or(InvalidCompoundUnit {
                     cause: CompoundUnitCause::NotRootUnit,
-                },
-            )?;
+                })?;
             dimension = dimension.multiply(&root.dimension.power(exponent));
+            terms.insert(key, exponent.clone());
         }
-        Ok(CompoundUnit {
-            terms: preimage.terms.iter().cloned().collect(),
-            dimension,
-        })
+        Ok(CompoundUnit { terms, dimension })
     }
 }
 
-/// A base dimension maps to itself; a derived dimension to its base terms.
+/// A base dimension maps to itself; a derived dimension to its base terms,
+/// each resolved by lookup among the admitted dimension keys.
 fn dimension_maps(
     dimensions: &BTreeMap<NodeKey, AdmittedDimension>,
+    ids: &BTreeMap<WireNodeId, NodeKey>,
 ) -> Result<BTreeMap<NodeKey, Dimension>, InvalidSemanticGraph> {
     dimensions
         .iter()
@@ -564,35 +581,61 @@ fn dimension_maps(
             if node.terms.is_empty() {
                 return Ok((*key, Dimension([(*key, Integer::one())].into())));
             }
-            for (term, _) in &node.terms {
-                match dimensions.get(term) {
-                    None => return Err(refuse(SemanticGraphCause::UnknownDimension)),
-                    Some(base) if !base.terms.is_empty() => {
-                        return Err(refuse(SemanticGraphCause::NonBaseDimensionTerm));
-                    }
-                    Some(_) => {}
+            let mut terms = BTreeMap::new();
+            for (term, exponent) in &node.terms {
+                let base =
+                    resolve(ids, *term).ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
+                if dimensions
+                    .get(&base)
+                    .is_some_and(|base| !base.terms.is_empty())
+                {
+                    return Err(refuse(SemanticGraphCause::NonBaseDimensionTerm));
                 }
+                terms.insert(base, exponent.clone());
             }
-            Ok((*key, Dimension(node.terms.iter().cloned().collect())))
+            Ok((*key, Dimension(terms)))
+        })
+        .collect()
+}
+
+/// Resolve every unit's dimension, then every unit's target, by lookup among
+/// the admitted keys.
+fn resolve_units(
+    units: &BTreeMap<NodeKey, AdmittedUnit>,
+    dimension_ids: &BTreeMap<WireNodeId, NodeKey>,
+    unit_ids: &BTreeMap<WireNodeId, NodeKey>,
+) -> Result<BTreeMap<NodeKey, ResolvedUnit>, InvalidSemanticGraph> {
+    let resolved_dimensions = units
+        .values()
+        .map(|unit| resolve(dimension_ids, unit.dimension))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(refuse(SemanticGraphCause::UnknownDimension))?;
+    units
+        .iter()
+        .zip(resolved_dimensions)
+        .map(|((key, unit), dimension)| {
+            let target = unit
+                .target
+                .map(|id| resolve(unit_ids, id).ok_or(refuse(SemanticGraphCause::UnknownTarget)))
+                .transpose()?;
+            Ok((
+                *key,
+                ResolvedUnit {
+                    dimension,
+                    target,
+                    edge: unit.edge.clone(),
+                },
+            ))
         })
         .collect()
 }
 
 /// Check unit graph topology and compose each unit's exact path to its root.
 fn unit_paths(
-    units: &BTreeMap<NodeKey, AdmittedUnit>,
+    units: &BTreeMap<NodeKey, ResolvedUnit>,
     dimensions: &BTreeMap<NodeKey, Dimension>,
 ) -> Result<BTreeMap<NodeKey, Unit>, InvalidSemanticGraph> {
-    if units
-        .values()
-        .any(|unit| !dimensions.contains_key(&unit.dimension))
-    {
-        return Err(refuse(SemanticGraphCause::UnknownDimension));
-    }
     let targets = || units.values().filter_map(|unit| Some((unit, unit.target?)));
-    if targets().any(|(_, target)| !units.contains_key(&target)) {
-        return Err(refuse(SemanticGraphCause::UnknownTarget));
-    }
     if targets().any(|(unit, target)| {
         units
             .get(&target)
@@ -731,15 +774,15 @@ struct CanonicalCompound {
     version: &'static str,
 }
 
-fn compound_identity<'a>(
-    terms: impl IntoIterator<Item = (&'a NodeKey, &'a Integer)>,
+fn compound_identity<'a, K: Into<CanonicalNodeId>>(
+    terms: impl IntoIterator<Item = (K, &'a Integer)>,
 ) -> CompoundUnitIdentity {
     let preimage = CanonicalCompound {
         terms: terms
             .into_iter()
-            .map(|(key, exponent)| CanonicalCompoundTerm {
+            .map(|(unit, exponent)| CanonicalCompoundTerm {
                 exponent: exponent.to_string(),
-                unit_node_id: (*key).into(),
+                unit_node_id: unit.into(),
             })
             .collect(),
         version: COMPOUND_UNIT_DOMAIN,
@@ -752,7 +795,7 @@ fn compound_identity<'a>(
 /// A schema-valid `quire.value.compound-unit/v1` preimage, as spelled.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompoundUnitPreimage {
-    terms: Vec<(NodeKey, Integer)>,
+    terms: Vec<(WireNodeId, Integer)>,
 }
 
 impl CompoundUnitPreimage {
@@ -776,7 +819,7 @@ impl CompoundUnitPreimage {
 
     /// The identity of exactly these spelled terms.
     pub fn identity(&self) -> CompoundUnitIdentity {
-        compound_identity(self.terms.iter().map(|(key, exponent)| (key, exponent)))
+        compound_identity(self.terms.iter().map(|(id, exponent)| (*id, exponent)))
     }
 }
 
@@ -814,7 +857,7 @@ impl CompoundUnit {
 
     /// The `quire.value.compound-unit/v1` identity.
     pub fn identity(&self) -> CompoundUnitIdentity {
-        compound_identity(&self.terms)
+        compound_identity(self.terms())
     }
 
     pub(crate) fn multiply(&self, other: &Self) -> Self {

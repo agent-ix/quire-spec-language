@@ -9,24 +9,25 @@
 //! `invalid_semantic_graph`. Display text and source loci are not part of
 //! either preimage.
 //!
-//! `EnumDeclaration::admit`/`admit_member` mint these node ids the same way
-//! `value::expression::check` mints checked-expression node ids (ADR-013
-//! O-04), but this module is not itself a `check`-stage implementer: no
-//! `src/` caller builds an `EnumDeclaration` today (#118 scoped this module
-//! to I04/I05 identity semantics only, never a check-stage wiring), so this
-//! is outside ADR-011 §6.1's "only `check` calls the kernel `NodeKey`
-//! constructor" rule (ADR-011 FB-13, #211). Today it is exercised only by
-//! this crate's own tests. Remaining work: #131 wires a check-stage caller.
+//! This module computes both preimage digests ([`NodeIdentityPreimage`]) and
+//! compares a retained key's bytes with them at admission. It never
+//! constructs a `NodeKey`: only `check` mints one (ADR-011 §6.1, ADR-013
+//! O-04). A member preimage's `declaration_node_id` stays a
+//! [`WireNodeId`] until `admit_member` resolves it against the admitted
+//! declaration's key.
 
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::node::{
-    is_qualified_name, node_key_of, refuse, CanonicalNodeId, CanonicalOwner, InvalidSemanticGraph,
-    NodeIdDocument, NodeKey, NodeOwner, OwnerSelection, SemanticGraphCause,
-};
 use super::outcome::{Outcome, Stop};
+use super::semantic_node::{
+    is_qualified_name, preimage_digest, refuse, retains, CanonicalNodeId, CanonicalOwner,
+    InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+    SemanticGraphCause,
+};
+use qsl_foundation::digest::WireNodeId;
+use quire_exact::NodeKey;
 use quire_exact::{is_identifier, Charge, ChargePoint, LimitKind, Meter};
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
@@ -51,7 +52,7 @@ struct MemberDocument {
     case: String,
 }
 
-// JCS preimages: fields are declared in ascending key order (see `node`).
+// JCS preimages: fields are declared in ascending key order (see `semantic_node`).
 #[derive(Serialize)]
 struct CanonicalDeclaration<'a> {
     members: &'a [String],
@@ -120,10 +121,11 @@ impl EnumDeclarationPreimage {
     pub fn members(&self) -> &[String] {
         &self.members
     }
+}
 
-    /// The node key this content determines.
-    pub fn node_key(&self) -> Result<NodeKey, InvalidSemanticGraph> {
-        node_key_of(&CanonicalDeclaration {
+impl NodeIdentityPreimage for EnumDeclarationPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&CanonicalDeclaration {
             members: &self.members,
             ordered: self.ordered,
             owner: self.owner.canonical(),
@@ -136,7 +138,7 @@ impl EnumDeclarationPreimage {
 /// A `quire.enum-member-node/v1` preimage that satisfies the preimage schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumMemberPreimage {
-    declaration: NodeKey,
+    declaration: WireNodeId,
     case: String,
 }
 
@@ -147,7 +149,7 @@ impl EnumMemberPreimage {
             .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))?;
         let declaration = document
             .declaration_node_id
-            .key()
+            .wire_id()
             .filter(|_| document.version == MEMBER_VERSION && is_identifier(&document.case))
             .ok_or(refuse(SemanticGraphCause::NonCanonicalPreimage))?;
         Ok(Self {
@@ -156,8 +158,8 @@ impl EnumMemberPreimage {
         })
     }
 
-    /// The referenced declaration node key.
-    pub fn declaration(&self) -> NodeKey {
+    /// The referenced declaration node id, as read.
+    pub fn declaration(&self) -> WireNodeId {
         self.declaration
     }
 
@@ -165,10 +167,11 @@ impl EnumMemberPreimage {
     pub fn case(&self) -> &str {
         &self.case
     }
+}
 
-    /// The node key this content determines.
-    pub fn node_key(&self) -> Result<NodeKey, InvalidSemanticGraph> {
-        node_key_of(&CanonicalMember {
+impl NodeIdentityPreimage for EnumMemberPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&CanonicalMember {
             case: &self.case,
             declaration_node_id: self.declaration.into(),
             version: MEMBER_VERSION,
@@ -198,7 +201,7 @@ impl EnumDeclaration {
         if !owners.contains(&preimage.owner) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected));
         }
-        if preimage.node_key()? != key {
+        if !retains(key, &preimage)? {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
         Ok(Self { key, preimage })
@@ -220,7 +223,9 @@ impl EnumDeclaration {
         preimage: &EnumMemberPreimage,
         key: NodeKey,
     ) -> Result<EnumValue, InvalidSemanticGraph> {
-        if preimage.declaration != self.key {
+        // Resolve the member's wire declaration id by lookup against this
+        // declaration's own key (ADR-013 O-04).
+        if preimage.declaration.as_bytes() != self.key.as_bytes() {
             return Err(refuse(SemanticGraphCause::ForeignDeclaration));
         }
         let position = self
@@ -229,7 +234,7 @@ impl EnumDeclaration {
             .iter()
             .position(|case| *case == preimage.case)
             .ok_or(refuse(SemanticGraphCause::UndeclaredCase))?;
-        if preimage.node_key()? != key {
+        if !retains(key, preimage)? {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
         Ok(EnumValue {

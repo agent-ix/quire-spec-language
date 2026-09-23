@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! I04 nominal semantic-node identity shared by enum, dimension and unit nodes.
+//! I04 nominal semantic-node preimages shared by enum, dimension and unit
+//! nodes (ADR-011 §6.2: layer 3 `semantic_value`).
 //!
 //! A node key is the SHA-256 of the RFC 8785 JCS encoding of the node's
-//! preimage in the `quire.checked-semantic-node/v1` domain. The strict reader
-//! recomputes it from admitted content and refuses a mismatch with
-//! `invalid_semantic_graph`.
+//! preimage in the `quire.checked-semantic-node/v1` domain. This module owns
+//! the preimage side: the owner projection, the canonical JCS field order and
+//! the digest ([`NodeIdentityPreimage::digest`]). It never constructs a
+//! `NodeKey`: only `check` wraps a preimage digest into the kernel `NodeKey`
+//! (ADR-011 §6.1, ADR-013 O-04). The strict reader
+//! here compares a retained key's bytes with the recomputed digest and
+//! refuses a mismatch with `invalid_semantic_graph`.
+//!
+//! A node id read from a preimage document is a [`WireNodeId`]. It resolves
+//! to a `NodeKey` only by lookup among the admitted nodes' retained keys
+//! (ADR-013 O-04, R-10), never by wrapping the parsed digest.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use quire_exact::Integer;
-
-// `NodeKey` and `NODE_KEY_DOMAIN` are `quire_exact`'s own types: the kernel
-// type's sole public constructor is `from_digest`, which wraps an
-// already-computed digest and performs no hashing. Wire-digest hex parsing
-// (`NodeIdDocument::key`) lives in `qsl_foundation::digest::parse_lower_hex32`;
-// this module does the SHA-256/JCS hashing (`node_key_of`) that QSL's own
-// preimage checking needs, then wraps the resulting bytes with the kernel
-// constructor -- the kernel type never parses or hashes on QSL's behalf.
-pub use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+use qsl_foundation::digest::WireNodeId;
+use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
 
 /// The stable subject projection of the exact admitted owner of a nominal
 /// declaration.
@@ -182,21 +183,24 @@ pub(crate) struct NodeIdDocument {
 }
 
 impl NodeIdDocument {
-    /// The referenced key when the domain and digest spelling are canonical.
-    ///
-    /// Named debt (FR-060 T12-B's named-debt list, entry
-    /// `value::node::NodeIdDocument::key`): `NodeIdDocument` is read from
-    /// caller-supplied JSON through the public
-    /// `DimensionPreimage`/`UnitPreimage`/`EnumMemberPreimage::from_json`, so
-    /// this is a wire-read node id. ADR-013 O-04 says a wire-read node id
-    /// becomes a `NodeKey` only by lookup in a checked package, never by
-    /// parsing a digest string directly; this wraps the parsed bytes into a
-    /// `NodeKey` directly instead, not this design's sanctioned path.
-    pub(crate) fn key(&self) -> Option<NodeKey> {
-        qsl_foundation::digest::parse_lower_hex32(&self.digest)
-            .filter(|_| self.domain == NODE_KEY_DOMAIN)
-            .map(NodeKey::from_digest)
+    /// The referenced wire node id when the domain and digest spelling are
+    /// canonical. It stays a [`WireNodeId`]: the caller resolves it against
+    /// admitted keys with [`resolve`] (ADR-013 O-04).
+    pub(crate) fn wire_id(&self) -> Option<WireNodeId> {
+        WireNodeId::from_hex(&self.digest).filter(|_| self.domain == NODE_KEY_DOMAIN)
     }
+}
+
+/// The index that resolves a wire node id to one of `keys` by lookup.
+pub(crate) fn wire_index(keys: impl IntoIterator<Item = NodeKey>) -> BTreeMap<WireNodeId, NodeKey> {
+    keys.into_iter()
+        .map(|key| (WireNodeId::from_digest(*key.as_bytes()), key))
+        .collect()
+}
+
+/// The admitted key `id` names, or `None` when no admitted node has it.
+pub(crate) fn resolve(index: &BTreeMap<WireNodeId, NodeKey>, id: WireNodeId) -> Option<NodeKey> {
+    index.get(&id).copied()
 }
 
 /// A schema `Rational`: canonical integer numerator and positive denominator
@@ -246,6 +250,15 @@ impl From<NodeKey> for CanonicalNodeId {
     }
 }
 
+impl From<WireNodeId> for CanonicalNodeId {
+    fn from(id: WireNodeId) -> Self {
+        Self {
+            digest: id.to_string(),
+            domain: NODE_KEY_DOMAIN,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub(crate) struct CanonicalRational {
     denominator: String,
@@ -269,18 +282,32 @@ pub(crate) fn is_qualified_name(segments: &[String]) -> bool {
             .all(|segment| quire_exact::is_identifier(segment))
 }
 
-/// The node key of a canonical (JCS field-ordered) preimage. QSL computes
-/// the SHA-256 digest itself; the kernel `NodeKey` only wraps the finished
-/// bytes (`from_digest`), never hashes.
-pub(crate) fn node_key_of(value: &impl Serialize) -> Result<NodeKey, InvalidSemanticGraph> {
+/// A `node-identity-preimage.schema.json` preimage whose SHA-256 digest is its
+/// node key's bytes.
+pub trait NodeIdentityPreimage {
+    /// The SHA-256 digest of this preimage's RFC 8785 JCS encoding.
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph>;
+}
+
+/// The digest of a canonical (JCS field-ordered) preimage. QSL computes the
+/// SHA-256 digest here; `check` alone wraps it into a `NodeKey`.
+pub(crate) fn preimage_digest(value: &impl Serialize) -> Result<[u8; 32], InvalidSemanticGraph> {
     serde_json::to_vec(value)
-        .map(|bytes| NodeKey::from_digest(Sha256::digest(bytes).into()))
+        .map(|bytes| Sha256::digest(bytes).into())
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
+}
+
+/// Whether `retained` is the node key `preimage` determines.
+pub(crate) fn retains(
+    retained: NodeKey,
+    preimage: &impl NodeIdentityPreimage,
+) -> Result<bool, InvalidSemanticGraph> {
+    Ok(preimage.digest()? == *retained.as_bytes())
 }
 
 /// Refuse terms that are zero, repeated or not strictly ascending, in that
 /// order.
-pub(crate) fn check_terms(terms: &[(NodeKey, Integer)]) -> Result<(), SemanticGraphCause> {
+pub(crate) fn check_terms<K: Ord>(terms: &[(K, Integer)]) -> Result<(), SemanticGraphCause> {
     if terms.iter().any(|(_, exponent)| exponent.is_zero()) {
         return Err(SemanticGraphCause::ZeroExponent);
     }
