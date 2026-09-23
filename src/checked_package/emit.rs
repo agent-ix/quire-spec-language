@@ -205,8 +205,8 @@ mod tests {
         FunctionDeclaration::new(
             name,
             Vec::new(),
-            TypeForm::keyword(
-                qsl_cst::token::Kind::BooleanType,
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Boolean,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,

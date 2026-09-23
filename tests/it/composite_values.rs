@@ -723,7 +723,7 @@ mod checked {
         }
     }
 
-    /// QSL-180 K5: `crate::support::type_form::type_form` can't recover a
+    /// `crate::support::type_form::type_form` can't recover a
     /// declared composite's own name from `ValueType::Composite`'s bare
     /// digest, so this file's own fixtures (whose only two composite
     /// parameter types are "P::R" and "P") map the two back explicitly

@@ -136,8 +136,8 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// that impossible regardless of what the string contains). Every tag
 /// written is an explicit `&'static str` literal chosen at its `match` arm,
 /// never a derived discriminant, and every `match` below (`encode_expression`,
-/// `encode_type_form`, and their small closed-enum helpers) is exhaustive:
-/// adding a variant to `Expression`, `TypeForm` or any nested enum this
+/// `encode_value_type`, and their small closed-enum helpers) is exhaustive:
+/// adding a variant to `Expression`, `ValueType` or any nested enum this
 /// preimage reads is a compile error here, forcing this file to pick an
 /// explicit new tag, not a silent reinterpretation of the old bytes.
 ///
@@ -324,55 +324,159 @@ fn collection_kind_tag(kind: CollectionKind) -> &'static str {
     }
 }
 
-/// QSL-180 K5: encodes a `forms::TypeForm` (S2's syntactic declared type)
-/// into the declaration/expression preimage, in the position a `ValueType`
-/// encoder occupied there before this cut retyped `FunctionDeclaration`'s
-/// parameters/result and `Expression::{Convert, AllInstances, Lookup}`'s
-/// target from `ValueType` to `TypeForm`. The span
-/// carries no identity (ADR-011 §2.2 row E2:
-/// "identity: none: forms carry position only"), so it is not written here,
-/// matching `encode_expression`'s own doc for why identity is minted from
-/// parsed structure, not from where in the source it was written.
-fn encode_type_form(out: &mut Preimage, form: &crate::forms::TypeForm) {
-    use crate::forms::TypeFormHead;
-    match &form.head {
-        TypeFormHead::Keyword(kind) => {
-            out.write_str("keyword");
-            out.write_str(kind.description());
-        }
-        TypeFormHead::Collection(kind) => {
-            out.write_str("collection");
-            out.write_str(collection_kind_tag(*kind));
-        }
-        TypeFormHead::Name(name) => {
-            out.write_str("name");
-            out.write_str(name);
-        }
-    }
-    out.write_u64(form.arguments.len() as u64);
-    for argument in &form.arguments {
-        encode_type_form(out, argument);
-    }
-    out.write_u64(form.bounds.len() as u64);
-    for bound in &form.bounds {
-        out.write_str(bound);
+fn rounding_mode_tag(mode: RoundingMode) -> &'static str {
+    match mode {
+        RoundingMode::Exact => "exact",
+        RoundingMode::TowardZero => "toward-zero",
+        RoundingMode::TowardPositive => "toward-positive",
+        RoundingMode::TowardNegative => "toward-negative",
+        RoundingMode::NearestEven => "nearest-even",
+        RoundingMode::NearestAway => "nearest-away",
     }
 }
 
-fn encode_field_initializer(out: &mut Preimage, initializer: &FieldInitializer) {
+fn text_profile_tag(profile: TextProfile) -> &'static str {
+    match profile {
+        TextProfile::UnicodeScalars => "unicode-scalars",
+        TextProfile::Nfc => "nfc",
+        TextProfile::Nfd => "nfd",
+        TextProfile::Nfkc => "nfkc",
+        TextProfile::Nfkd => "nfkd",
+        TextProfile::BinaryUtf8 => "binary-utf8",
+    }
+}
+
+fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
+    match unit {
+        // Both arms read the unit's own already-content-addressed identity
+        // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
+        // than re-deriving one from the unit's internal dimension/edge
+        // graph: those identities are this codebase's own established
+        // stable-identity mechanism (RFC 8785 JCS preimages, `value::node`),
+        // not `Debug`.
+        QuantityUnit::Declared(unit) => {
+            out.write_str("declared");
+            out.write_str(&unit.key().to_string());
+        }
+        QuantityUnit::Compound(unit) => {
+            out.write_str("compound");
+            out.write_str(&unit.identity().to_string());
+        }
+    }
+}
+
+// PR #262 review, round 2: this function and `encode_expression` write
+// several `quire_exact::Integer` leaves through `.to_string()`
+// (`Int`/`Rational`/`Decimal` bounds below; `Expression::Integer`/
+// `Rational` literals in `encode_expression`) -- `Display`, the same
+// mechanism `{:?}` (`Debug`) was rejected for elsewhere in this file. The
+// two are not equivalent here: `Integer`'s `Display` is not incidental
+// formatting `std` warns is unstable, it is `quire_exact::integer::
+// Integer`'s own documented "canonical wire spelling used by complete-V1
+// schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
+// `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
+// etc.) -- a real, enforced, round-tripping contract, not a Debug-style
+// dump of whatever fields happen to exist. `src/value/node.rs`'s own
+// `CanonicalRational` already relies on exactly this contract for this
+// codebase's other content-addressed digest (RFC 8785 JCS preimages).
+// Repointing these leaves at a bespoke byte encoding would introduce a
+// second, parallel integer serialization where one canonical, tested one
+// already exists and is already trusted for identity purposes -- so they
+// are left on `Integer::to_string()` deliberately, not as an oversight.
+fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
+    match value_type {
+        ValueType::Boolean => out.write_str("boolean"),
+        ValueType::Integer => out.write_str("integer"),
+        ValueType::Int(interval) => {
+            out.write_str("int");
+            out.write_str(&interval.lower().to_string());
+            out.write_str(&interval.upper().to_string());
+        }
+        ValueType::Rational(domain) => {
+            out.write_str("rational");
+            out.write_str(&domain.numerator().lower().to_string());
+            out.write_str(&domain.numerator().upper().to_string());
+            out.write_str(&domain.denominator().lower().to_string());
+            out.write_str(&domain.denominator().upper().to_string());
+        }
+        ValueType::Decimal(decimal) => {
+            out.write_str("decimal");
+            out.write_str(&decimal.lower().to_string());
+            out.write_str(&decimal.upper().to_string());
+            out.write_u64(u64::from(decimal.min_scale()));
+            out.write_u64(u64::from(decimal.max_scale()));
+            out.write_str(rounding_mode_tag(decimal.rounding()));
+        }
+        ValueType::Float(width) => {
+            out.write_str("float");
+            out.write_str(match width {
+                IeeeWidth::Binary32 => "binary32",
+                IeeeWidth::Binary64 => "binary64",
+            });
+        }
+        ValueType::Quantity(unit) => {
+            out.write_str("quantity");
+            encode_quantity_unit(out, unit);
+        }
+        ValueType::Text(text_type) => {
+            out.write_str("text");
+            out.write_u64(text_type.min());
+            out.write_u64(text_type.max());
+            out.write_str(text_profile_tag(text_type.profile()));
+        }
+        ValueType::Enum(key) => {
+            out.write_str("enum");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Option(payload) => {
+            out.write_str("option");
+            encode_value_type(out, payload);
+        }
+        ValueType::Composite(key) => {
+            out.write_str("composite");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Collection(collection_type) => {
+            out.write_str("collection");
+            out.write_str(collection_kind_tag(collection_type.kind()));
+            encode_value_type(out, collection_type.element());
+            out.write_u64(collection_type.bound().minimum());
+            out.write_u64(collection_type.bound().maximum());
+        }
+        ValueType::Reference(key) => {
+            out.write_str("reference");
+            out.write_str(&key.to_string());
+        }
+        ValueType::Population(maximum) => {
+            out.write_str("population");
+            out.write_u64(*maximum);
+        }
+    }
+}
+
+fn encode_field_initializer(
+    out: &mut Preimage,
+    initializer: &FieldInitializer,
+    targets: &TargetTypes<'_>,
+) -> Result<(), CheckRefusal> {
     match initializer {
         FieldInitializer::Value(expression) => {
             out.write_str("value");
-            encode_expression(out, expression);
+            encode_expression(out, expression, targets)?;
         }
         FieldInitializer::Null => out.write_str("null"),
     }
+    Ok(())
 }
 
 // `Expression::Integer`/`Rational`'s `.to_string()` below: same
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
-fn encode_expression(out: &mut Preimage, expr: &Expression) {
+fn encode_expression(
+    out: &mut Preimage,
+    expr: &Expression,
+    targets: &TargetTypes<'_>,
+) -> Result<(), CheckRefusal> {
     out.enter_node();
     match expr {
         Expression::Boolean(value) => {
@@ -395,8 +499,8 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
         Expression::Let { name, value, body } => {
             out.write_str("let");
             out.write_str(name);
-            encode_expression(out, value);
-            encode_expression(out, body);
+            encode_expression(out, value, targets)?;
+            encode_expression(out, body, targets)?;
         }
         Expression::If {
             condition,
@@ -404,9 +508,9 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             otherwise,
         } => {
             out.write_str("if");
-            encode_expression(out, condition);
-            encode_expression(out, then);
-            encode_expression(out, otherwise);
+            encode_expression(out, condition, targets)?;
+            encode_expression(out, then, targets)?;
+            encode_expression(out, otherwise, targets)?;
         }
         Expression::Binary {
             operator,
@@ -415,40 +519,40 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
         } => {
             out.write_str("binary");
             out.write_str(binary_operator_tag(*operator));
-            encode_expression(out, left);
-            encode_expression(out, right);
+            encode_expression(out, left, targets)?;
+            encode_expression(out, right, targets)?;
         }
         Expression::Negate(operand) => {
             out.write_str("negate");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Not(operand) => {
             out.write_str("not");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Field { operand, field } => {
             out.write_str("field");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
             out.write_str(field);
         }
         Expression::Present(operand) => {
             out.write_str("present");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Value(operand) => {
             out.write_str("value");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Deref(operand) => {
             out.write_str("deref");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Call { name, arguments } => {
             out.write_str("call");
             out.write_str(name);
             out.write_u64(arguments.len() as u64);
             for argument in arguments {
-                encode_expression(out, argument);
+                encode_expression(out, argument, targets)?;
             }
         }
         Expression::Record { name, fields } => {
@@ -457,7 +561,7 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_u64(fields.len() as u64);
             for (field_name, initializer) in fields {
                 out.write_str(field_name);
-                encode_field_initializer(out, initializer);
+                encode_field_initializer(out, initializer, targets)?;
             }
         }
         Expression::Collection { kind, elements } => {
@@ -465,13 +569,13 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_str(collection_kind_tag(*kind));
             out.write_u64(elements.len() as u64);
             for element in elements {
-                encode_expression(out, element);
+                encode_expression(out, element, targets)?;
             }
         }
         Expression::Convert { target, operand } => {
             out.write_str("convert");
-            encode_type_form(out, target);
-            encode_expression(out, operand);
+            encode_value_type(out, &targets.resolve(target)?);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Query {
             query,
@@ -482,12 +586,12 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_str("query");
             out.write_str(binder_query_tag(*query));
             out.write_str(binder);
-            encode_expression(out, source);
-            encode_expression(out, body);
+            encode_expression(out, source, targets)?;
+            encode_expression(out, body, targets)?;
         }
         Expression::Flatten(operand) => {
             out.write_str("flatten");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Accumulate {
             form,
@@ -503,11 +607,11 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_str(accumulator_type);
             out.write_str(accumulator);
             out.write_str(binder);
-            encode_expression(out, source);
-            encode_expression(out, step);
+            encode_expression(out, source, targets)?;
+            encode_expression(out, step, targets)?;
             out.write_bool(identity.is_some());
             if let Some(identity) = identity {
-                encode_expression(out, identity);
+                encode_expression(out, identity, targets)?;
             }
         }
         Expression::Count {
@@ -519,8 +623,8 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_str("count");
             out.write_str(result_type);
             out.write_str(binder);
-            encode_expression(out, source);
-            encode_expression(out, predicate);
+            encode_expression(out, source, targets)?;
+            encode_expression(out, predicate, targets)?;
         }
         Expression::Sum {
             result_type,
@@ -531,22 +635,22 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             out.write_str("sum");
             out.write_str(result_type);
             out.write_str(binder);
-            encode_expression(out, source);
-            encode_expression(out, summand);
+            encode_expression(out, source, targets)?;
+            encode_expression(out, summand, targets)?;
         }
         Expression::Size(operand) => {
             out.write_str("size");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
         Expression::Contains { collection, item } => {
             out.write_str("contains");
-            encode_expression(out, collection);
-            encode_expression(out, item);
+            encode_expression(out, collection, targets)?;
+            encode_expression(out, item, targets)?;
         }
         Expression::AllInstances { target, population } => {
             out.write_str("all-instances");
-            encode_type_form(out, target);
-            encode_expression(out, population);
+            encode_value_type(out, &targets.resolve(target)?);
+            encode_expression(out, population, targets)?;
         }
         Expression::Lookup {
             target,
@@ -555,9 +659,9 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             absence,
         } => {
             out.write_str("lookup");
-            encode_type_form(out, target);
-            encode_expression(out, population);
-            encode_expression(out, reference);
+            encode_value_type(out, &targets.resolve(target)?);
+            encode_expression(out, population, targets)?;
+            encode_expression(out, reference, targets)?;
             out.write_str(absence_mode_tag(*absence));
         }
         Expression::Dispatch {
@@ -566,18 +670,19 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             arguments,
         } => {
             out.write_str("dispatch");
-            encode_expression(out, receiver);
+            encode_expression(out, receiver, targets)?;
             out.write_str(member);
             out.write_u64(arguments.len() as u64);
             for argument in arguments {
-                encode_expression(out, argument);
+                encode_expression(out, argument, targets)?;
             }
         }
         Expression::Pre(operand) => {
             out.write_str("pre");
-            encode_expression(out, operand);
+            encode_expression(out, operand, targets)?;
         }
     }
+    Ok(())
 }
 
 /// Mint a function declaration's identity (FR-062: "content-addressed...
@@ -585,6 +690,16 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
 /// a SHA-256 over the package identity and the declaration's own **parsed**
 /// structure -- name, parameters, result, measure and body, as authored,
 /// before any name is resolved to a `Vec` index.
+///
+/// Every declared type in that structure is written as its resolved
+/// `ValueType`, never as its `TypeForm` spelling: the parameters and result
+/// come from `signature` (the declaration's own resolved signature), and
+/// each `Convert`/`AllInstances`/`Lookup` target is resolved through
+/// `targets`. ADR-013 O-04: equal ids mean structurally identical nodes, so
+/// two spellings of one type (`Text[1,100]`, `Text[1,100;unicode-scalars]`,
+/// an alias of either) mint one identity, and a declared record's content
+/// reaches every function declared over it. A target that does not resolve
+/// is refused here with the same refusal the checker would give it.
 ///
 /// Hashing the parsed form, not the checked/typed tree, is what makes this
 /// identity independent of unrelated declarations' order (FR-065-AC-2): a
@@ -614,30 +729,32 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
 pub(crate) fn mint_declaration_identity(
     package_identity: &str,
     declaration: &FunctionDeclaration,
+    signature: &Signature,
+    targets: &TargetTypes<'_>,
     input_bytes_limit: u64,
-) -> (NodeKey, IdentityPreimageMetrics) {
+) -> Result<(NodeKey, IdentityPreimageMetrics), CheckRefusal> {
     let mut preimage = Preimage::new(input_bytes_limit);
     preimage.write_str("value.function-declaration");
     preimage.write_str(package_identity);
     preimage.write_str(&declaration.name);
-    preimage.write_u64(declaration.parameters.len() as u64);
-    for (name, type_form) in &declaration.parameters {
+    preimage.write_u64(signature.parameters.len() as u64);
+    for (name, value_type) in &signature.parameters {
         preimage.write_str(name);
-        encode_type_form(&mut preimage, type_form);
+        encode_value_type(&mut preimage, value_type);
     }
-    encode_type_form(&mut preimage, &declaration.result);
+    encode_value_type(&mut preimage, &signature.result);
     preimage.write_bool(declaration.measure.is_some());
     if let Some(measure) = &declaration.measure {
-        encode_expression(&mut preimage, measure);
+        encode_expression(&mut preimage, measure, targets)?;
     }
-    encode_expression(&mut preimage, &declaration.body);
+    encode_expression(&mut preimage, &declaration.body, targets)?;
     let metrics = IdentityPreimageMetrics {
         input_bytes: preimage.input_bytes,
         node_count: preimage.nodes,
         work_budget: preimage.writes,
     };
     let identity = NodeKey::from_digest(sha256(&preimage.bytes));
-    (identity, metrics)
+    Ok((identity, metrics))
 }
 
 /// [`StageLimits`](crate::family::StageLimits)'s restored real producer
@@ -667,7 +784,8 @@ pub(crate) fn mint_call_identity(
     package_identity: &str,
     callee_name: &str,
     arguments: &[Expression],
-) -> NodeKey {
+    targets: &TargetTypes<'_>,
+) -> Result<NodeKey, CheckRefusal> {
     // Not `StageLimits`-bound (that mechanism is `check`'s own,
     // per-declaration bound, not this call-occurrence identity mint), so
     // `Preimage`'s own short-circuit never engages here.
@@ -677,9 +795,28 @@ pub(crate) fn mint_call_identity(
     preimage.write_str(callee_name);
     preimage.write_u64(arguments.len() as u64);
     for argument in arguments {
-        encode_expression(&mut preimage, argument);
+        encode_expression(&mut preimage, argument, targets)?;
     }
-    NodeKey::from_digest(sha256(&preimage.bytes))
+    Ok(NodeKey::from_digest(sha256(&preimage.bytes)))
+}
+
+/// Resolves the `Convert`/`AllInstances`/`Lookup` target type forms an
+/// identity preimage writes, against the package's [`Scope`], so the
+/// preimage carries resolved types (see [`mint_declaration_identity`]).
+pub(crate) struct TargetTypes<'a> {
+    scope: &'a Scope,
+    location: &'a CheckLocation,
+}
+
+impl<'a> TargetTypes<'a> {
+    /// Resolve targets against `scope`, refusing at `location`.
+    pub(crate) fn new(scope: &'a Scope, location: &'a CheckLocation) -> Self {
+        Self { scope, location }
+    }
+
+    fn resolve(&self, target: &crate::forms::TypeForm) -> Result<ValueType, CheckRefusal> {
+        super::type_form::resolve_type_form(self.scope, target, self.location)
+    }
 }
 
 /// QSL-148: `Value`'s family check code for function application
@@ -763,7 +900,12 @@ pub(crate) fn check_application(
         // `function` (a position-dependent index into `typer.signatures()`
         // that shifts when unrelated declarations reorder) -- see
         // `mint_call_identity`'s doc.
-        let identity = mint_call_identity(DEFAULT_PACKAGE_IDENTITY, name, arguments);
+        let identity = mint_call_identity(
+            DEFAULT_PACKAGE_IDENTITY,
+            name,
+            arguments,
+            &TargetTypes::new(typer.scope(), location),
+        )?;
         return Ok(Node {
             kind: super::ir::NodeKind::Call {
                 identity,
@@ -937,11 +1079,8 @@ pub(crate) fn check_declaration_body(
     form: &FunctionDeclaration,
 ) -> Result<CheckedDeclarationBody, CheckRefusal> {
     let mut nodes = input.nodes_used;
-    // QSL-180 K5: parameter/result `ValueType`s come from `input.
-    // own_signature` (already resolved, before this function ever runs),
-    // not from `form.parameters`/`form.result` -- those are S2 syntax
-    // (`TypeForm`) post-K5, not the kernel type `bind_parameters`/
-    // `check_as` need.
+    // The declaration's resolved parameter and result types; `form`'s own
+    // are type forms.
     let parameters = &input.own_signature.parameters;
     let result = &input.own_signature.result;
     let mut typer = Typer::new(
@@ -1117,13 +1256,9 @@ pub(crate) struct ValueDeclarations<'a> {
     pub(crate) package_identity: &'a str,
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a [Signature],
-    /// QSL-180 K5: the declaration currently being checked's own resolved
-    /// signature (`check::mod`'s per-declaration loop already has it, at
-    /// `signatures[index]`, from resolving `form`'s own `TypeForm`
-    /// parameters/result before this loop starts). `check_declaration_body`
-    /// reads parameter/result `ValueType`s from here, never from `form`
-    /// directly: `form.parameters`/`form.result` are syntax post-K5, not the
-    /// kernel type `bind_parameters`/`check_as` need.
+    /// The resolved signature of the declaration being checked
+    /// (`signatures[index]`). `check_declaration_body` types against it, and
+    /// its identity is minted over it.
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
@@ -1202,8 +1337,21 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
         let declarations = cx.declarations();
-        let (identity, metrics) =
-            mint_declaration_identity(declarations.package_identity, form, cx.limits().input_bytes);
+        let minted = mint_declaration_identity(
+            declarations.package_identity,
+            form,
+            declarations.own_signature,
+            &TargetTypes::new(declarations.scope, declarations.location),
+            cx.limits().input_bytes,
+        );
+        let (identity, metrics) = match minted {
+            Ok(minted) => minted,
+            Err(refusal) => {
+                cx.scopes.leave();
+                cx.leave_nesting();
+                return Err(crate::family::StageFailure::Refused(refusal));
+            }
+        };
         // PR #262 review (F7): an earlier version of this function
         // recomputed `mint_declaration_identity` a second time here and
         // returned `StageFailure::Fault` on a mismatch, framed as a
@@ -1326,56 +1474,56 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
+    use super::checking_tests::{empty_scope, mint_resolved, root_location};
     use super::*;
-    use crate::value::collection::CollectionType;
-    use quire_exact::CardinalityBound;
-    // `TextType`: this golden-digest test was moved here verbatim from
-    // `value::expression::family` (PR #282 review F4) and its own doc
-    // deliberately exercises `ValueType::Text` as part of the fixture's
-    // grammar coverage -- a real, pre-existing dependency this move makes
-    // visible under `check` for the first time. `TextType` is `quire_exact`'s
-    // own kernel item, imported directly.
-    use quire_exact::TextType;
+    use crate::forms::{BuiltinType, TypeForm};
+    use crate::value::composite::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
+    use ix_trace_rs::trace;
+    use quire_exact::{Presence, TextType};
 
-    /// PR #262 review, round 2 (moved here from `value::expression::family`
-    /// under QSL-139's review, since this identity-minting content itself
-    /// moved to `check`): the other tests exercising this module either
-    /// compare two identities minted in the same process, or round-trip
-    /// through `value::expression::family`'s `emit_v2`/`decode_v2` -- none
-    /// of them can catch a change to the preimage's own byte grammar.
-    /// `encode_expression`/`encode_type_form`'s
-    /// exhaustive `match`es only force a compile error for a *new* variant;
-    /// reordering two `write_str` calls, or renaming a tag (`"add"` to
-    /// `"plus"`), recompiles clean and passes every other test in this file
-    /// while silently changing every identity this preimage mints. This
-    /// fixture exercises `Let`, `If`, `Binary`, `Call`, `Collection` and
-    /// `Convert` on the `Expression` side, and (QSL-180 K5) keyword heads
-    /// with and without bounds, and a collection head with a type argument
-    /// -- `Int[0,10]`, `Text[1,100;profile]`, `Integer` and
-    /// `Sequence<Int[0,10]>[0,5]` -- on the
-    /// `TypeForm` side, enough surface that a reordered write or a renamed
-    /// tag anywhere in either `match` moves the digest below. A failure here
-    /// means the wire preimage grammar changed; regenerate the constant only
-    /// when that change is the one actually intended (and say so in the
-    /// commit, per this repository's own digest-freshness rule in
-    /// `CLAUDE.md`), never to make a red test green.
+    const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+    fn int_0_10() -> TypeForm {
+        TypeForm::builtin(BuiltinType::Int, SPAN).with_bounds(vec!["0".to_owned(), "10".to_owned()])
+    }
+
+    fn text(bounds: &[&str]) -> TypeForm {
+        TypeForm::builtin(BuiltinType::Text, SPAN)
+            .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
+    }
+
+    fn mint(scope: &Scope, declaration: &FunctionDeclaration) -> NodeKey {
+        mint_resolved(scope, DEFAULT_PACKAGE_IDENTITY, declaration, u64::MAX).0
+    }
+
+    fn unary(parameter: TypeForm) -> FunctionDeclaration {
+        FunctionDeclaration::new(
+            "f",
+            vec![("x".to_owned(), parameter)],
+            TypeForm::builtin(BuiltinType::Boolean, SPAN),
+            None,
+            Expression::Boolean(true),
+        )
+    }
+
+    /// The preimage byte grammar is pinned: `encode_expression`/
+    /// `encode_value_type`'s exhaustive `match`es only force a compile error
+    /// for a *new* variant, while reordering two writes or renaming a tag
+    /// recompiles clean and silently changes every identity. The fixture
+    /// exercises `Let`, `If`, `Binary`, `Call`, `Collection` and `Convert` on
+    /// the `Expression` side and `Int`, `Text` and `Collection` (with a
+    /// nested `Int` element) on the resolved `ValueType` side. Identity is
+    /// minted over resolved types, so this is the same digest the
+    /// `ValueType`-typed declaration minted before type forms existed.
+    /// Regenerate it only for an intended grammar change.
     #[test]
     fn mint_declaration_identity_matches_a_checked_in_digest() {
-        let span = qsl_foundation::Span { start: 0, end: 0 };
-        let int_type_form = crate::forms::TypeForm::keyword(qsl_cst::token::Kind::IntType, span)
-            .with_bounds(vec!["0".to_owned(), "10".to_owned()]);
-        let text_type_form = crate::forms::TypeForm::keyword(qsl_cst::token::Kind::TextType, span)
-            .with_bounds(vec![
-                "1".to_owned(),
-                "100".to_owned(),
-                "UnicodeScalars".to_owned(),
-            ]);
         let parameters = vec![
-            ("n".to_owned(), int_type_form.clone()),
-            ("label".to_owned(), text_type_form),
+            ("n".to_owned(), int_0_10()),
+            ("label".to_owned(), text(&["1", "100", "unicode-scalars"])),
         ];
-        let result = crate::forms::TypeForm::collection(CollectionKind::Sequence, span)
-            .with_arguments(vec![int_type_form])
+        let result = TypeForm::collection(CollectionKind::Sequence, SPAN)
+            .with_arguments(vec![int_0_10()])
             .with_bounds(vec!["0".to_owned(), "5".to_owned()]);
         let body = Expression::Let {
             name: "x".to_owned(),
@@ -1391,10 +1539,7 @@ mod tests {
                     arguments: vec![Expression::Name("x".to_owned())],
                 }),
                 otherwise: Box::new(Expression::Convert {
-                    target: crate::forms::TypeForm::keyword(
-                        qsl_cst::token::Kind::IntegerType,
-                        span,
-                    ),
+                    target: TypeForm::builtin(BuiltinType::Integer, SPAN),
                     operand: Box::new(Expression::Collection {
                         kind: CollectionKind::Sequence,
                         elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
@@ -1403,21 +1548,123 @@ mod tests {
             }),
         };
         let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
-        let (identity, _) =
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
-        // QSL-180 K5: `FunctionDeclaration`'s parameters/result and
-        // `Expression::Convert`'s target retyped from `ValueType` to
-        // `TypeForm` (`forms::syntax`), so the preimage now encodes each
-        // through `encode_type_form`, not `encode_value_type` -- the wire
-        // grammar genuinely changed, and this digest is regenerated to
-        // match, per this test's own doc above and this repository's
-        // digest-freshness rule.
         assert_eq!(
-            identity.to_string(),
-            "d48e10f28383c6877d787fbfd64c663c017b548991d1b438adc81b37b2a78c8c",
+            mint(&empty_scope(), &declaration).to_string(),
+            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
             "the preimage byte grammar changed -- see this test's own doc \
              before regenerating this constant"
         );
+    }
+
+    /// ADR-013 O-04: equal ids mean structurally identical nodes. Three
+    /// spellings of one type -- defaulted profile, explicit profile, and an
+    /// alias -- mint one identity; so do two spellings of a `Convert`
+    /// target.
+    #[trace("TC-160", "FR-062-AC-2")]
+    #[test]
+    fn spellings_of_one_resolved_type_mint_one_identity() {
+        let mut scope = empty_scope();
+        scope.aliases.push((
+            "Label".to_owned(),
+            ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
+        ));
+        let defaulted = mint(&scope, &unary(text(&["1", "100"])));
+        assert_eq!(
+            defaulted,
+            mint(&scope, &unary(text(&["1", "100", "unicode-scalars"])))
+        );
+        assert_eq!(
+            defaulted,
+            mint(&scope, &unary(TypeForm::name("Label", SPAN)))
+        );
+        assert_ne!(defaulted, mint(&scope, &unary(text(&["1", "100", "nfc"]))));
+
+        let converting = |target: TypeForm| {
+            FunctionDeclaration::new(
+                "g",
+                Vec::new(),
+                TypeForm::builtin(BuiltinType::Integer, SPAN),
+                None,
+                Expression::Convert {
+                    target,
+                    operand: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+                },
+            )
+        };
+        assert_eq!(
+            mint(&scope, &converting(text(&["1", "100"]))),
+            mint(&scope, &converting(TypeForm::name("Label", SPAN)))
+        );
+    }
+
+    /// A function declared over a record carries that record's resolved
+    /// identity: a `Point` with different fields (and so a different node
+    /// key) gives `f(p: Point)` a different identity, though `Point` is
+    /// spelled the same.
+    #[trace("TC-160", "FR-062-AC-2")]
+    #[test]
+    fn a_changed_record_changes_the_identity_of_functions_over_it() {
+        let scope_with = |label: &str, field_type: ValueType| {
+            let mut scope = empty_scope();
+            scope.types = TypeEnvironment::new(
+                [CompositeDeclaration::new(
+                    NodeKey::from_digest(sha256(label.as_bytes())),
+                    "Point",
+                    CompositeShape::Record(vec![FieldDeclaration::new(
+                        "x",
+                        field_type,
+                        Presence::Required,
+                    )]),
+                )],
+                [],
+            )
+            .unwrap();
+            scope
+        };
+        let over_point = unary(TypeForm::name("Point", SPAN));
+        assert_ne!(
+            mint(
+                &scope_with("Point{x: Integer}", ValueType::Integer),
+                &over_point
+            ),
+            mint(
+                &scope_with("Point{x: Boolean}", ValueType::Boolean),
+                &over_point
+            )
+        );
+    }
+
+    /// A `Convert` target that does not resolve is refused while minting,
+    /// with the checker's own missing-name refusal, not hashed as spelling.
+    #[test]
+    fn an_unresolved_target_is_refused_while_minting() {
+        let scope = empty_scope();
+        let location = root_location();
+        let declaration = FunctionDeclaration::new(
+            "g",
+            Vec::new(),
+            TypeForm::builtin(BuiltinType::Integer, SPAN),
+            None,
+            Expression::Convert {
+                target: TypeForm::name("Nowhere", SPAN),
+                operand: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+            },
+        );
+        let signature = Signature {
+            name: "g".to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Integer,
+            callable_by_name: true,
+        };
+        let refusal = mint_declaration_identity(
+            DEFAULT_PACKAGE_IDENTITY,
+            &declaration,
+            &signature,
+            &TargetTypes::new(&scope, &location),
+            u64::MAX,
+        )
+        .unwrap_err();
+        assert!(matches!(refusal.cause, CheckCause::MissingName(name) if name == "Nowhere"));
     }
 }
 
@@ -1433,6 +1680,33 @@ pub(crate) mod checking_tests {
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
     use ix_trace_rs::trace;
+
+    /// `declaration`'s identity as `ValueFunctionFamily::check` mints it:
+    /// over its signature resolved against `scope`.
+    pub(crate) fn mint_resolved(
+        scope: &Scope,
+        package_identity: &str,
+        declaration: &FunctionDeclaration,
+        input_bytes_limit: u64,
+    ) -> (NodeKey, IdentityPreimageMetrics) {
+        let location = root_location();
+        let (parameters, result) = super::super::resolve_signature(scope, declaration, &location)
+            .expect("the fixture's signature resolves");
+        let signature = Signature {
+            name: declaration.name.clone(),
+            parameters,
+            result,
+            callable_by_name: true,
+        };
+        mint_declaration_identity(
+            package_identity,
+            declaration,
+            &signature,
+            &TargetTypes::new(scope, &location),
+            input_bytes_limit,
+        )
+        .expect("the fixture's targets resolve")
+    }
 
     /// PR #303 review, finding N7b: `pub(crate)`, not private -- this is
     /// the one real definition `check::mod`'s own `#[cfg(test)]`-gated
@@ -1457,24 +1731,22 @@ pub(crate) mod checking_tests {
         }
     }
 
-    /// QSL-180 K5: a bare `Boolean` `TypeForm`, for tests building a
-    /// `FunctionDeclaration` directly (`forms::FunctionDeclaration`'s
-    /// `parameters`/`result` are syntax post-K5, not `ValueType`).
+    /// A bare `Boolean` type form.
     fn boolean_type_form() -> crate::forms::TypeForm {
-        crate::forms::TypeForm::keyword(
-            qsl_cst::token::Kind::BooleanType,
+        crate::forms::TypeForm::builtin(
+            crate::forms::BuiltinType::Boolean,
             qsl_foundation::Span { start: 0, end: 0 },
         )
     }
 
-    /// QSL-180 K5: an `Option<Integer>` `TypeForm`.
+    /// An `Option<Integer>` type form.
     fn option_integer_type_form() -> crate::forms::TypeForm {
-        crate::forms::TypeForm::keyword(
-            qsl_cst::token::Kind::OptionType,
+        crate::forms::TypeForm::builtin(
+            crate::forms::BuiltinType::Option,
             qsl_foundation::Span { start: 0, end: 0 },
         )
-        .with_arguments(vec![crate::forms::TypeForm::keyword(
-            qsl_cst::token::Kind::IntegerType,
+        .with_arguments(vec![crate::forms::TypeForm::builtin(
+            crate::forms::BuiltinType::Integer,
             qsl_foundation::Span { start: 0, end: 0 },
         )])
     }
@@ -1639,11 +1911,8 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls() {
         let scope = empty_scope();
-        // `f`'s own declaration is not built here: post-K5, `resolve_signature`
-        // (`check::mod`) is what turns a `FunctionDeclaration`'s `TypeForm`s
-        // into a `Signature`, and this test's `input` is built directly from
-        // an already-resolved `signatures` list below, matching how
-        // `check_declaration_body` actually receives it in the real pipeline.
+        // `f` is represented only by its resolved signature below, which is
+        // how `check_declaration_body` receives its callees.
         let caller = FunctionDeclaration::new(
             "g",
             Vec::new(),
@@ -1753,8 +2022,8 @@ pub(crate) mod checking_tests {
         let form = FunctionDeclaration::new(
             "v",
             vec![("o".to_owned(), option_integer_type_form())],
-            crate::forms::TypeForm::keyword(
-                qsl_cst::token::Kind::IntegerType,
+            crate::forms::TypeForm::builtin(
+                crate::forms::BuiltinType::Integer,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,

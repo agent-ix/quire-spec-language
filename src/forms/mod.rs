@@ -47,6 +47,6 @@ mod syntax;
 
 pub use dispatch::{build_form, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm};
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
-    FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
+    Accumulation, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclaredClauseKind,
+    Expression, FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
 };

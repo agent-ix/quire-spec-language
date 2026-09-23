@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-180 K5 test support: encodes a plain `ValueType` shape as the
-//! `forms::TypeForm` syntax `check::Typer::resolve_type` resolves back to
+//! Test support: encodes a plain `ValueType` shape as the
+//! `forms::TypeForm` syntax `check`'s type-form resolution maps back to
 //! that exact `ValueType` -- the exact inverse of that resolution. Lets a
 //! fixture keep describing its intended type by the `ValueType` shape it
 //! wants, while still handing the checker only syntax (ADR-011 §1: S2 has
@@ -12,7 +12,8 @@
 //! string it used to derive that `NodeKey` (see each declared type's own
 //! registration), rather than through [`type_form`] here.
 
-use quire_spec_language::value::{CollectionType, IeeeWidth, TypeForm, ValueType};
+use quire_exact::IeeeWidth;
+use quire_spec_language::value::{CollectionType, TypeForm, ValueType};
 
 /// A placeholder span: `TypeForm`'s own span carries no identity
 /// (ADR-011 §2.2 row E2, "identity: none: forms carry position only"), so
@@ -21,24 +22,24 @@ pub const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 }
 
 fn rounding_mode_text(mode: quire_exact::RoundingMode) -> &'static str {
     match mode {
-        quire_exact::RoundingMode::Exact => "Exact",
-        quire_exact::RoundingMode::TowardZero => "TowardZero",
-        quire_exact::RoundingMode::TowardPositive => "TowardPositive",
-        quire_exact::RoundingMode::TowardNegative => "TowardNegative",
-        quire_exact::RoundingMode::NearestEven => "NearestEven",
-        quire_exact::RoundingMode::NearestAway => "NearestAway",
+        quire_exact::RoundingMode::Exact => "exact",
+        quire_exact::RoundingMode::TowardZero => "toward-zero",
+        quire_exact::RoundingMode::TowardPositive => "toward-positive",
+        quire_exact::RoundingMode::TowardNegative => "toward-negative",
+        quire_exact::RoundingMode::NearestEven => "nearest-even",
+        quire_exact::RoundingMode::NearestAway => "nearest-away",
     }
 }
 
-fn text_profile_text(profile: quire_spec_language::value::TextProfile) -> &'static str {
-    use quire_spec_language::value::TextProfile;
+fn text_profile_text(profile: quire_exact::TextProfile) -> &'static str {
+    use quire_exact::TextProfile;
     match profile {
-        TextProfile::UnicodeScalars => "UnicodeScalars",
-        TextProfile::Nfc => "Nfc",
-        TextProfile::Nfd => "Nfd",
-        TextProfile::Nfkc => "Nfkc",
-        TextProfile::Nfkd => "Nfkd",
-        TextProfile::BinaryUtf8 => "BinaryUtf8",
+        TextProfile::UnicodeScalars => "unicode-scalars",
+        TextProfile::Nfc => "nfc",
+        TextProfile::Nfd => "nfd",
+        TextProfile::Nfkc => "nfkc",
+        TextProfile::Nfkd => "nfkd",
+        TextProfile::BinaryUtf8 => "binary-utf8",
     }
 }
 
@@ -57,46 +58,63 @@ fn collection_type_form(collection: &CollectionType) -> TypeForm {
 /// panic).
 pub fn type_form(value_type: &ValueType) -> TypeForm {
     match value_type {
-        ValueType::Boolean => TypeForm::keyword(qsl_cst::token::Kind::BooleanType, SPAN),
-        ValueType::Integer => TypeForm::keyword(qsl_cst::token::Kind::IntegerType, SPAN),
-        ValueType::Int(interval) => TypeForm::keyword(qsl_cst::token::Kind::IntType, SPAN)
-            .with_bounds(vec![
+        ValueType::Boolean => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Boolean, SPAN)
+        }
+        ValueType::Integer => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Integer, SPAN)
+        }
+        ValueType::Int(interval) => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Int, SPAN).with_bounds(vec![
                 interval.lower().to_string(),
                 interval.upper().to_string(),
-            ]),
-        ValueType::Rational(domain) => TypeForm::keyword(qsl_cst::token::Kind::RationalType, SPAN)
-            .with_bounds(vec![
-                domain.numerator().lower().to_string(),
-                domain.numerator().upper().to_string(),
-                domain.denominator().lower().to_string(),
-                domain.denominator().upper().to_string(),
-            ]),
-        ValueType::Decimal(decimal) => TypeForm::keyword(qsl_cst::token::Kind::DecimalType, SPAN)
-            .with_bounds(vec![
-                decimal.lower().to_string(),
-                decimal.upper().to_string(),
-                decimal.min_scale().to_string(),
-                decimal.max_scale().to_string(),
-                rounding_mode_text(decimal.rounding()).to_owned(),
-            ]),
-        ValueType::Float(width) => TypeForm::keyword(
+            ])
+        }
+        ValueType::Rational(domain) => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Rational, SPAN).with_bounds(
+                vec![
+                    domain.numerator().lower().to_string(),
+                    domain.numerator().upper().to_string(),
+                    domain.denominator().lower().to_string(),
+                    domain.denominator().upper().to_string(),
+                ],
+            )
+        }
+        ValueType::Decimal(decimal) => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Decimal, SPAN).with_bounds(
+                vec![
+                    decimal.lower().to_string(),
+                    decimal.upper().to_string(),
+                    decimal.min_scale().to_string(),
+                    decimal.max_scale().to_string(),
+                    rounding_mode_text(decimal.rounding()).to_owned(),
+                ],
+            )
+        }
+        ValueType::Float(width) => TypeForm::builtin(
             match width {
-                IeeeWidth::Binary32 => qsl_cst::token::Kind::Float32Type,
-                IeeeWidth::Binary64 => qsl_cst::token::Kind::Float64Type,
+                IeeeWidth::Binary32 => quire_spec_language::value::BuiltinType::Float32,
+                IeeeWidth::Binary64 => quire_spec_language::value::BuiltinType::Float64,
             },
             SPAN,
         ),
-        ValueType::Text(text) => TypeForm::keyword(qsl_cst::token::Kind::TextType, SPAN)
-            .with_bounds(vec![
-                text.min().to_string(),
-                text.max().to_string(),
-                text_profile_text(text.profile()).to_owned(),
-            ]),
-        ValueType::Option(payload) => TypeForm::keyword(qsl_cst::token::Kind::OptionType, SPAN)
-            .with_arguments(vec![type_form(payload)]),
+        ValueType::Text(text) => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Text, SPAN).with_bounds(
+                vec![
+                    text.min().to_string(),
+                    text.max().to_string(),
+                    text_profile_text(text.profile()).to_owned(),
+                ],
+            )
+        }
+        ValueType::Option(payload) => {
+            TypeForm::builtin(quire_spec_language::value::BuiltinType::Option, SPAN)
+                .with_arguments(vec![type_form(payload)])
+        }
         ValueType::Collection(collection) => collection_type_form(collection),
         ValueType::Population(maximum) => {
-            TypeForm::name("Population", SPAN).with_bounds(vec![maximum.to_string()])
+            TypeForm::new(quire_spec_language::value::TypeFormHead::Population, SPAN)
+                .with_bounds(vec![maximum.to_string()])
         }
         ValueType::Composite(_) | ValueType::Enum(_) | ValueType::Reference(_) => {
             panic!(
@@ -106,9 +124,8 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
             )
         }
         ValueType::Quantity(_) => panic!(
-            "type_form: {value_type:?} has no declared-type syntax -- qsl_cst's keyword \
-             vocabulary has no QuantityType token (see forms/syntax.rs's own K5 doc), so no \
-             fixture can build this TypeForm today; a caller reaching this arm wants \
+            "type_form: {value_type:?} has no declared-type syntax -- forms::BuiltinType \
+             has no quantity head, so no fixture can build this TypeForm today; a caller reaching this arm wants \
              `value::equality::EqualityOperand`'s own `ValueType`-based API instead, not a \
              `TypeForm`"
         ),

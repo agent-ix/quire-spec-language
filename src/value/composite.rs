@@ -595,11 +595,8 @@ impl TypeEnvironment {
         self.object_types.get(&key)
     }
 
-    /// Every admitted object type in key order (QSL-180 K5:
-    /// `check::type_form::resolve_named_type`'s own name search, alongside
-    /// [`Self::composites`]/enum members, so a `TypeForm` naming a declared
-    /// object type resolves to `ValueType::Reference` the same way one
-    /// naming a record, tuple or enum resolves to `Composite`/`Enum`).
+    /// Every admitted object type in key order, for resolving a type name
+    /// to `ValueType::Reference` alongside [`Self::composites`].
     pub(crate) fn object_types(&self) -> impl Iterator<Item = &ObjectTypeDeclaration> {
         self.object_types.values()
     }

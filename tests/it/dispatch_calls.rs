@@ -64,7 +64,7 @@ fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
-/// QSL-180 K5: this file's `types(receiver_type)` always registers
+/// This file's `types(receiver_type)` always registers
 /// `receiver_type` under the fixed declared name "Receiver" -- see that
 /// function's own `ObjectTypeDeclaration::new` call -- so a
 /// `FunctionDeclaration`'s own `self` parameter names it this way,

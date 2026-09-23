@@ -599,7 +599,7 @@ fn population_name() -> Expression {
     Expression::Name("p".to_owned())
 }
 
-/// QSL-180 K5: `all_instances`/`lookup`'s own `target` is always a
+/// `all_instances`/`lookup`'s own `target` is always a
 /// `ValueType::Reference` naming one of this file's own fixed object types
 /// ("M::A", "M::B", or the one-off foreign "M::C" fixture,
 /// `all_instances_expression_target_declared_but_not_in_model_is_type_mismatch`'s

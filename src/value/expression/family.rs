@@ -396,9 +396,9 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::*;
     use crate::check::{
-        declarations_for, empty_scope, mint_declaration_identity, root_location, CheckCause,
-        CheckingLimitKind, CheckingLimits, PackageDeclarations, Signature,
-        DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+        declarations_for, empty_scope, mint_resolved, root_location, CheckCause, CheckingLimitKind,
+        CheckingLimits, PackageDeclarations, Signature, DEFAULT_PACKAGE_IDENTITY,
+        SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvaluateFailure, FamilyContract, ReferenceEvaluation,
@@ -425,11 +425,10 @@ mod family_contract_tests {
         }
     }
 
-    /// QSL-180 K5: a bare `Boolean` `TypeForm` (`forms::FunctionDeclaration`'s
-    /// `result` is syntax post-K5, not `ValueType`).
+    /// A bare `Boolean` type form.
     fn boolean_type_form() -> TypeForm {
-        TypeForm::keyword(
-            qsl_cst::token::Kind::BooleanType,
+        TypeForm::builtin(
+            crate::forms::BuiltinType::Boolean,
             qsl_foundation::Span { start: 0, end: 0 },
         )
     }
@@ -438,12 +437,8 @@ mod family_contract_tests {
         FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
     }
 
-    /// QSL-180 K5: the resolved [`Signature`] every [`declaration`] fixture
-    /// in this module needs as `declarations_for`'s `own_signature` --
-    /// `declaration`'s own no-parameters, `Boolean`-result shape, already
-    /// resolved (`check_declaration_body` reads it instead of a
-    /// `FunctionDeclaration`'s `parameters`/`result`, which are syntax
-    /// post-K5).
+    /// The resolved signature of a [`declaration`] fixture (no parameters,
+    /// `Boolean` result), for `declarations_for`'s `own_signature`.
     fn declaration_signature(name: &str) -> Signature {
         Signature {
             name: name.to_owned(),
@@ -491,7 +486,7 @@ mod family_contract_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (expected, _) = mint_declaration_identity(&package_identity, &form, u64::MAX);
+        let (expected, _) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
         let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(staged.value.identity, expected);
         assert_eq!(diagnostics.entries().len(), 1);
@@ -912,7 +907,7 @@ mod family_contract_tests {
             &location,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (_, metrics) = mint_declaration_identity(&package_identity, &form, u64::MAX);
+        let (_, metrics) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
         assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
         let base = StageLimits {
@@ -1149,7 +1144,7 @@ mod family_contract_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
+    use crate::check::{empty_scope, mint_resolved, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
     use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
 
@@ -1157,8 +1152,8 @@ mod tests {
         FunctionDeclaration::new(
             name,
             Vec::new(),
-            TypeForm::keyword(
-                qsl_cst::token::Kind::BooleanType,
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Boolean,
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,
@@ -1175,12 +1170,12 @@ mod tests {
         let b = declaration("f", Expression::Boolean(true));
         let c = declaration("g", Expression::Boolean(true));
         assert_eq!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
         );
         assert_ne!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
         );
     }
 
@@ -1233,8 +1228,12 @@ mod tests {
     #[test]
     fn identity_survives_v2_round_trip() {
         let declaration = declaration("f", Expression::Boolean(true));
-        let (after_check, _) =
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
+        let (after_check, _) = mint_resolved(
+            &empty_scope(),
+            DEFAULT_PACKAGE_IDENTITY,
+            &declaration,
+            u64::MAX,
+        );
         let name = QualifiedName::unqualified("f").unwrap();
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
@@ -1251,12 +1250,14 @@ mod tests {
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
         let name = QualifiedName::unqualified("f").unwrap();
-        let (first, _) = mint_declaration_identity(
+        let (first, _) = mint_resolved(
+            &empty_scope(),
             DEFAULT_PACKAGE_IDENTITY,
             &declaration("f", Expression::Boolean(true)),
             u64::MAX,
         );
-        let (second, _) = mint_declaration_identity(
+        let (second, _) = mint_resolved(
+            &empty_scope(),
             "other-package@1.0.0",
             &declaration("f", Expression::Boolean(true)),
             u64::MAX,

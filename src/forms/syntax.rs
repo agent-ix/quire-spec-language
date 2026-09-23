@@ -12,40 +12,67 @@ use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
-/// A [`TypeForm`]'s head: a layer-1 keyword the grammar already recognizes
-/// (`qsl_cst`'s `token::Kind`, e.g. `Boolean`, `Int`), a collection kind,
-/// or a qualified name that `check` resolves against a declared alias,
-/// record/tuple, enum or model object type
-/// (`check::type_form::resolve_named_type`).
+/// A builtin type keyword a [`TypeForm`] can be headed by, other than a
+/// collection kind (see [`TypeFormHead::Collection`]). Closed: `check`'s
+/// resolution matches it exhaustively (FR-091-CON-2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BuiltinType {
+    /// `Boolean`.
+    Boolean,
+    /// `Integer`: unbounded.
+    Integer,
+    /// `Int[lower, upper]`.
+    Int,
+    /// `Rational[numerator lower, numerator upper; denominator lower,
+    /// denominator upper]`.
+    Rational,
+    /// `Decimal[lower, upper; min scale, max scale; rounding mode]`.
+    Decimal,
+    /// `Float32`, carrying no width payload: FR-091-OQ-4 puts the rounding
+    /// mode in the floating type, so the head names the keyword only.
+    Float32,
+    /// `Float64`; see [`Self::Float32`].
+    Float64,
+    /// `Text[min, max; profile]`.
+    Text,
+    /// `Option<T>`.
+    Option,
+    /// `Reference<T>`.
+    Reference,
+}
+
+/// A [`TypeForm`]'s head.
 #[derive(Clone, Debug)]
 pub enum TypeFormHead {
     /// A builtin keyword type.
-    Keyword(qsl_cst::token::Kind),
+    Builtin(BuiltinType),
     /// A collection type (`Sequence`, `Set`, `Bag`, `OrderedSet`), carried
     /// as the kernel [`CollectionKind`] the same way
     /// [`Expression::Collection`] carries it (ADR-011 §6.1: layer 2 depends
     /// on "1, F, K"; ADR-013 OQ-A).
     Collection(CollectionKind),
-    /// A qualified name.
+    /// `Population<T>[N]` (FR-153): its one argument is the named element
+    /// type `T`, its one bound the declared maximum `N`.
+    Population,
+    /// A qualified name that `check` resolves against a declared alias,
+    /// record or tuple, enum or model object type.
     Name(String),
 }
 
-/// A declared type as spelled in source (S2 (QSL-180 K5); ADR-011 §1's stage
-/// table: "Unchecked syntactic forms per family, each with a span. No
-/// semantic identity."; §2.2 row E2: identity "none: forms carry position
-/// only", proof metadata "Declared bounds and extents carried as syntax").
+/// A declared type as spelled in source (ADR-011 §1's stage table:
+/// "Unchecked syntactic forms per family, each with a span. No semantic
+/// identity."; §2.2 row E2: "Declared bounds and extents carried as
+/// syntax").
 ///
-/// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11): [`Self::head`]
-/// is a bare keyword, a kernel collection kind or a name, [`Self::arguments`] are
-/// this same syntactic type recursively (an element or payload type), and
-/// [`Self::bounds`] are declared bound or extent literals, spelled exactly
-/// as written (e.g. `Int[0, 10]`'s `"0"`, `"10"`; `Population<M::A>[3]`'s
-/// `"3"`) -- never a parsed `Integer` or `u64`. `check::Typer::resolve_type`
-/// (E3) resolves this to the kernel `ValueType` (ADR-013 O-14/C-26: "Checked
-/// type node -> kernel `ValueType` (QSL checker)"), the same E2/E3 split
-/// this file's own `Accumulate.accumulator_type`/`Count.result_type`/
-/// `Sum.result_type` already draw with a qualified-name `String` resolved
-/// at E3 by `Typer::type_named`.
+/// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11). [`Self::head`]
+/// is a builtin keyword, a kernel collection kind, `Population` or a name.
+/// [`Self::arguments`] are this same syntactic type recursively (an element
+/// or payload type). [`Self::bounds`] are declared bound or extent literals,
+/// spelled exactly as written (e.g. `Int[0, 10]`'s `"0"`, `"10"`;
+/// `Text[1, 100; nfc]`'s `"nfc"`); FR-091-OQ-9 is open on whether they
+/// become kernel values. `check` resolves a type form to the kernel
+/// `ValueType` at E3 (ADR-013 O-14/C-26), and declaration identity is
+/// minted over that resolved type, never over this spelling.
 #[derive(Clone, Debug)]
 pub struct TypeForm {
     /// The type's head.
@@ -62,36 +89,31 @@ pub struct TypeForm {
 }
 
 impl TypeForm {
-    /// A bare keyword type with no arguments or bounds, e.g. `Boolean`.
-    pub fn keyword(kind: qsl_cst::token::Kind, span: Span) -> Self {
+    /// A type form headed by `head`, with no arguments or bounds yet.
+    pub fn new(head: TypeFormHead, span: Span) -> Self {
         Self {
-            head: TypeFormHead::Keyword(kind),
+            head,
             arguments: Vec::new(),
             bounds: Vec::new(),
             span,
         }
     }
 
-    /// A collection type of `kind` with no element argument or bounds yet,
-    /// e.g. `Sequence`.
+    /// A builtin keyword type with no arguments or bounds yet, e.g.
+    /// `Boolean`.
+    pub fn builtin(builtin: BuiltinType, span: Span) -> Self {
+        Self::new(TypeFormHead::Builtin(builtin), span)
+    }
+
+    /// A collection type of `kind` with no element argument or bounds yet.
     pub fn collection(kind: CollectionKind, span: Span) -> Self {
-        Self {
-            head: TypeFormHead::Collection(kind),
-            arguments: Vec::new(),
-            bounds: Vec::new(),
-            span,
-        }
+        Self::new(TypeFormHead::Collection(kind), span)
     }
 
-    /// A bare qualified name with no arguments or bounds, e.g. a record,
-    /// tuple, enum or model object type's own declared name.
+    /// A bare qualified name, e.g. a record, tuple, enum or model object
+    /// type's own declared name.
     pub fn name(name: impl Into<String>, span: Span) -> Self {
-        Self {
-            head: TypeFormHead::Name(name.into()),
-            arguments: Vec::new(),
-            bounds: Vec::new(),
-            span,
-        }
+        Self::new(TypeFormHead::Name(name.into()), span)
     }
 
     /// This type's own declared type arguments, in source order.
@@ -689,7 +711,10 @@ mod tests {
         let declaration = FunctionDeclaration::new(
             "f",
             Vec::new(),
-            TypeForm::keyword(qsl_cst::token::Kind::BooleanType, Span { start: 0, end: 0 }),
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Boolean,
+                Span { start: 0, end: 0 },
+            ),
             None,
             Expression::Boolean(true),
         );

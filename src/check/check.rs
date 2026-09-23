@@ -188,15 +188,37 @@ pub struct EnumBinding {
     pub members: Vec<EnumValue>,
 }
 
-/// QSL-180 K5: a function's checked signature -- its parameters' names
-/// paired with each one's resolved `ValueType`, and the resolved result
-/// type -- once a `FunctionDeclaration`'s `TypeForm`s have been resolved
-/// (`type_form::resolve_type_form`) or, for a `check::checked_dispatch`
-/// synthesized entry, supplied directly. Named so the shape appears once,
-/// not repeated at every site that resolves or overrides one
-/// (`PackageDeclarations::resolved_signatures`, `resolve_signature`,
-/// `checked_dispatch`'s own override map).
+/// A function's resolved signature: its parameters' names paired with each
+/// one's resolved `ValueType`, and the resolved result type.
 pub(crate) type ResolvedSignature = (Vec<(String, ValueType)>, ValueType);
+
+/// Resolved signatures that stand in for resolving some `functions`
+/// entries' own `TypeForm`s, keyed by index into
+/// [`PackageDeclarations::functions`]. Only `check::checked_dispatch` can
+/// populate it: its FR-151 synthesized clauses come from an
+/// already-resolved model signature, not from parsed source. Every other
+/// caller holds the empty default.
+#[derive(Clone, Debug, Default)]
+pub struct ResolvedSignatures(std::collections::BTreeMap<usize, ResolvedSignature>);
+
+impl ResolvedSignatures {
+    pub(crate) fn insert(&mut self, index: usize, signature: ResolvedSignature) {
+        self.0.insert(index, signature);
+    }
+
+    pub(crate) fn get(&self, index: usize) -> Option<&ResolvedSignature> {
+        self.0.get(&index)
+    }
+
+    /// The first index at or past `function_count`, if any: an entry naming
+    /// no function.
+    pub(crate) fn first_out_of_range(&self, function_count: usize) -> Option<usize> {
+        self.0
+            .range(function_count..)
+            .next()
+            .map(|(index, _)| *index)
+    }
+}
 
 /// The closed declarations of one package that expressions resolve against.
 #[derive(Clone, Debug, Default)]
@@ -241,18 +263,9 @@ pub struct PackageDeclarations {
     /// than a hand-built `ModelCorrespondence` (`check/mod.rs`'s own test
     /// module).
     pub model_correspondence: Vec<(quire_exact::NodeKey, crate::model::key::DeclarationKey)>,
-    /// QSL-180 K5: a check-owned resolved signature for a `functions` entry
-    /// that carries no real S2 syntax for its own parameters/result, keyed
-    /// by that entry's index into `functions`. `check::checked_dispatch`'s
-    /// FR-151 synthesized clauses are the one caller today: they are built
-    /// directly from an already-resolved model signature
-    /// (`OperationClauses`), so an entry here overrides resolving that
-    /// index's `FunctionDeclaration::parameters`/`result` `TypeForm`s
-    /// through `Typer::type_named` -- layer 3 never renders a resolved
-    /// `ValueType` back into syntax merely to parse it again. Every index
-    /// absent here resolves the ordinary way. Always empty from every other
-    /// caller.
-    pub resolved_signatures: std::collections::BTreeMap<usize, ResolvedSignature>,
+    /// Resolved signatures standing in for some `functions` entries' own
+    /// type forms; see [`ResolvedSignatures`].
+    pub resolved_signatures: ResolvedSignatures,
 }
 
 /// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
@@ -738,7 +751,7 @@ impl<'a> Typer<'a> {
     }
 
     /// Resolve a declared `TypeForm` (S2) to the kernel `ValueType` (E3,
-    /// QSL-180 K5, ADR-013 O-14/C-26). The one production entry into
+    /// ADR-013 O-14/C-26). The one production entry into
     /// [`super::type_form::resolve_type_form`], which [`Self::type_named`]
     /// above's [`super::type_form::resolve_named_type`] also backs for the
     /// qualified-name case.

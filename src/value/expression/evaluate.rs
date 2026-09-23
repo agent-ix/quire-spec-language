@@ -1390,8 +1390,6 @@ mod tests {
     use crate::family::ReferenceEvaluation;
     use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::model::accounting::ModelNormalizationLimits;
-    // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
-    const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
     use crate::model::dispatch::GeneralizationClosure;
     use crate::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
@@ -1405,6 +1403,9 @@ mod tests {
     };
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::Category;
+
+    // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
+    const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
     /// The shared minimal one-type (`model.A`), one-population
     /// (`model.pop.p1`) domain package [`population_binding`] and
@@ -1503,11 +1504,11 @@ mod tests {
                 "F",
                 vec![(
                     "p".to_owned(),
-                    TypeForm::name("Population", SPAN)
+                    TypeForm::new(crate::forms::TypeFormHead::Population, SPAN)
                         .with_arguments(vec![TypeForm::name("M::A", SPAN)])
                         .with_bounds(vec!["3".to_owned()]),
                 )],
-                TypeForm::keyword(qsl_cst::token::Kind::IntegerType, SPAN),
+                TypeForm::builtin(crate::forms::BuiltinType::Integer, SPAN),
                 None,
                 Expression::Size(Box::new(Expression::AllInstances {
                     target: TypeForm::name("M::A", SPAN),

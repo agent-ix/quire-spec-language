@@ -118,7 +118,7 @@ fn value(operand: Expression) -> Expression {
     Expression::Value(Box::new(operand))
 }
 
-/// QSL-180 K5: `crate::support::type_form::type_form` can't recover a
+/// `crate::support::type_form::type_form` can't recover a
 /// declared composite/object type's own name from a bare `ValueType::
 /// Composite`/`Reference` digest, so this file's own fixtures (whose only
 /// three such parameter/result types are "Node", "Box" and the object type
@@ -135,8 +135,8 @@ fn param_type_form(value_type: &ValueType) -> TypeForm {
         ValueType::Reference(k) if *k == key("M::Obj") => {
             crate::support::type_form::named_type_form("Obj")
         }
-        ValueType::Option(payload) => TypeForm::keyword(
-            qsl_cst::token::Kind::OptionType,
+        ValueType::Option(payload) => TypeForm::builtin(
+            quire_spec_language::value::BuiltinType::Option,
             crate::support::type_form::SPAN,
         )
         .with_arguments(vec![param_type_form(payload)]),

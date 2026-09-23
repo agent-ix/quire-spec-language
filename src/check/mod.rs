@@ -86,12 +86,9 @@ mod type_form;
 use std::collections::BTreeMap;
 
 use check::{bind_parameters, Typer};
-// QSL-180 K5: re-exported (not just `use`d) so `value::expression::family`'s
-// own `#[cfg(test)]` modules can build a `Signature` directly for
-// `declarations_for`'s `own_signature` parameter (`check_declaration_body`
-// reads a declaration's own resolved parameters/result from there now,
-// never from a `FunctionDeclaration`'s `parameters`/`result`, which are
-// syntax post-K5).
+// Re-exported so `value::expression::family`'s `#[cfg(test)]` modules can
+// build the resolved `Signature` `declarations_for` takes as
+// `own_signature`.
 pub(crate) use check::Signature;
 use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
@@ -102,7 +99,7 @@ use crate::value::composite::ValueType;
 
 pub(crate) use check::Scope;
 pub(crate) use family::ValueFunctionFamily;
-// `mint_declaration_identity`, `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
+// `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
 // and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
 // family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
 // permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
@@ -118,9 +115,7 @@ pub(crate) use family::ValueFunctionFamily;
 // caller's own configured limits (`*meter.limits()`) instead, so this
 // constant has no production reader left.
 #[cfg(test)]
-pub(crate) use family::{
-    mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
-};
+pub(crate) use family::{OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -132,13 +127,15 @@ pub(crate) use family::{
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
 #[cfg(test)]
-pub(crate) use family::checking_tests::{declarations_for, empty_scope, root_location};
+pub(crate) use family::checking_tests::{
+    declarations_for, empty_scope, mint_resolved, root_location,
+};
 pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
-    MAX_CHECKING_DEPTH,
+    ResolvedSignatures, MAX_CHECKING_DEPTH,
 };
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
@@ -336,14 +333,9 @@ fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> C
 /// exists (valid `index`) is located at its own real
 /// [`Origin::Body`]; an out-of-range `index` names no real declaration to
 /// point at, so it is located at [`Origin::Expression`] instead.
-/// QSL-180 K5: takes `signatures` (each function's own resolved
-/// `ValueType` parameters/result, `check`'s own already-built
-/// `Vec<Signature>`, index-aligned with `self.functions`) rather than
-/// `&[FunctionDeclaration]` -- a dispatch candidate's declared parameter and
-/// result types are compared against `operation.parameters`/`.result`
-/// (already-resolved `ValueType`s), and a `FunctionDeclaration`'s own
-/// `parameters`/`result` are syntactic `TypeForm`s post-K5, not directly
-/// comparable.
+/// `signatures` are the functions' resolved signatures, index-aligned with
+/// `functions`, so a candidate's parameter and result types compare
+/// directly with `operation.parameters`/`.result`.
 fn validate_dispatch_function(
     signatures: &[Signature],
     index: usize,
@@ -395,7 +387,7 @@ fn validate_dispatch_function(
     Ok(())
 }
 
-/// QSL-180 K5: resolve one declared function's own `TypeForm` parameters and
+/// Resolve one declared function's own `TypeForm` parameters and
 /// result to the kernel `ValueType` (E3, `check::type_form::
 /// resolve_type_form`), collecting every refusal across the whole signature
 /// rather than stopping at the first, matching this module's own
@@ -458,17 +450,8 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        // QSL-180 K5: `scope` (and `dispatch_tables`) move out of `self`
-        // here, ahead of the dispatch-operation validation below, so every
-        // remaining step reads them from one place. This also gives the
-        // signature-resolution pass right after a `Scope` to resolve each
-        // declared function's own `TypeForm` parameters/result against
-        // (aliases, composites, enums, object types), before dispatch
-        // validation needs the *resolved* signatures to compare -- a
-        // `FunctionDeclaration`'s `parameters`/`result` are syntax
-        // (`TypeForm`) post-K5, not directly comparable to
-        // `DispatchOperation`'s already-resolved `ValueType`s the way they
-        // were before this cut.
+        // Every declared signature is resolved against the package `Scope`
+        // before dispatch validation, which compares resolved types.
         let scope = Scope {
             types: self.types,
             enums: self.enums,
@@ -478,10 +461,19 @@ impl PackageDeclarations {
             dispatch_operations: self.dispatch_operations,
         };
         let dispatch_tables = self.dispatch_tables;
+        if let Some(index) = self
+            .resolved_signatures
+            .first_out_of_range(self.functions.len())
+        {
+            return Err(vec![invalid_dispatch(
+                root(Origin::Expression),
+                InvalidDispatchDeclaration::ResolvedSignatureOutOfRange { index },
+            )]);
+        }
         let mut signatures: Vec<Signature> = Vec::with_capacity(self.functions.len());
         for (index, function) in self.functions.iter().enumerate() {
             let location = body_location(index, &function.name);
-            let resolved = match self.resolved_signatures.get(&index) {
+            let resolved = match self.resolved_signatures.get(index) {
                 // `check::checked_dispatch`'s synthesized clauses: already
                 // resolved from a model signature, never rendered back into
                 // syntax (see that module's own doc).
@@ -768,11 +760,7 @@ impl PackageDeclarations {
                     nodes_used = checked.body.nodes_used;
                     functions.push(CheckedFunction {
                         identity: checked.identity,
-                        // QSL-180 K5: `signatures[index]` is already this
-                        // declaration's own resolved `Signature` (built
-                        // above, before this loop) -- `function.parameters`/
-                        // `.result` are syntax (`TypeForm`) post-K5, not a
-                        // second copy of the same `ValueType` data.
+                        // This declaration's resolved signature.
                         signature: signatures[index].clone(),
                         body: checked.body.body,
                         measure: checked.body.measure,
@@ -1399,8 +1387,8 @@ mod tests {
             FunctionDeclaration::new(
                 name,
                 Vec::new(),
-                crate::forms::TypeForm::keyword(
-                    qsl_cst::token::Kind::BooleanType,
+                crate::forms::TypeForm::builtin(
+                    crate::forms::BuiltinType::Boolean,
                     qsl_foundation::Span { start: 0, end: 0 },
                 ),
                 None,
@@ -1421,8 +1409,15 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let call_identity =
-            family::mint_call_identity(family::DEFAULT_PACKAGE_IDENTITY, "helper", &[]);
+        let scope = family::checking_tests::empty_scope();
+        let location = family::checking_tests::root_location();
+        let call_identity = family::mint_call_identity(
+            family::DEFAULT_PACKAGE_IDENTITY,
+            "helper",
+            &[],
+            &family::TargetTypes::new(&scope, &location),
+        )
+        .expect("a call with no arguments has no target to resolve");
         let first = Origin::new(Role::new("reference"), 0);
         let second = Origin::new(Role::new("reference"), 1);
         let first_location = graph
@@ -1471,5 +1466,28 @@ mod tests {
             Some(&first_location),
             "the diagnostic location's own embedded function name is expected to change"
         );
+    }
+
+    /// A resolved-signature entry keyed past `functions` stands in for no
+    /// declaration, and is refused rather than ignored.
+    #[test]
+    fn an_out_of_range_resolved_signature_is_refused() {
+        let mut resolved_signatures = check::ResolvedSignatures::default();
+        resolved_signatures.insert(0, (Vec::new(), ValueType::Boolean));
+        let refusals = PackageDeclarations {
+            resolved_signatures,
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect_err("index 0 names no function");
+        assert!(matches!(
+            refusals.as_slice(),
+            [CheckRefusal {
+                cause: CheckCause::InvalidDispatchDeclaration(
+                    InvalidDispatchDeclaration::ResolvedSignatureOutOfRange { index: 0 }
+                ),
+                ..
+            }]
+        ));
     }
 }

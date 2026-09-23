@@ -366,6 +366,12 @@ pub enum InvalidDispatchDeclaration {
         /// The shared member name.
         member: String,
     },
+    /// A [`super::ResolvedSignatures`] entry is keyed by an index past the
+    /// package's own `functions`, so it stands in for no declaration.
+    ResolvedSignatureOutOfRange {
+        /// The out-of-range function index.
+        index: usize,
+    },
 }
 
 impl CheckCause {

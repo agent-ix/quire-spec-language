@@ -415,8 +415,8 @@ mod tests {
     /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
     fn identity_function() -> FunctionDeclaration {
         let bound = || {
-            TypeForm::keyword(
-                qsl_cst::token::Kind::IntType,
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Int,
                 qsl_foundation::Span { start: 0, end: 0 },
             )
             .with_bounds(vec!["0".to_owned(), "10".to_owned()])

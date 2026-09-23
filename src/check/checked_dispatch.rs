@@ -278,17 +278,13 @@ fn require_expression(
         .ok_or_else(|| missing(operation, field))
 }
 
-/// QSL-180 K5: the `TypeForm` every synthesized `FunctionDeclaration` this
-/// module builds carries in place of a real declared type. `check` never
-/// resolves it: `checked_dispatch_operation`'s own `PackageDeclarations::
-/// resolved_signatures` entry (recorded alongside every `functions.push`
-/// call, keyed by that same index) overrides resolution with the real,
-/// already-resolved `ValueType` `OperationClauses` supplied. A synthesized
-/// clause is not real S2 syntax to begin with -- its types come straight
-/// from a model signature bridge, not from parsed source -- so rendering
-/// the resolved `ValueType` back into a `TypeForm` merely to have `check`
-/// parse it straight back out would be exactly the "layer 3 renders a
-/// resolved type back into syntax" the K5 plan (§2.3) rules out.
+/// The `TypeForm` every synthesized `FunctionDeclaration` this module builds
+/// carries in place of a declared type. `check` never resolves it:
+/// `checked_dispatch_operation`'s `PackageDeclarations::resolved_signatures`
+/// entry for the same index supplies the resolved signature
+/// `OperationClauses` gave, and identity is minted over that resolved
+/// signature. A synthesized clause is not parsed source, so layer 3 does not
+/// render its resolved types back into syntax to parse them again.
 fn opaque_type_form() -> crate::forms::TypeForm {
     crate::forms::TypeForm::name(
         "check::checked_dispatch synthesized (never resolved; see resolved_signatures)",
@@ -870,14 +866,10 @@ pub fn checked_dispatch_operation(
     // One shared checked function per authored clause, in source declaration
     // order, built before any candidate body or combinator.
     let mut functions: Vec<FunctionDeclaration> = Vec::new();
-    // QSL-180 K5: every synthesized `FunctionDeclaration` pushed below
-    // carries an opaque `TypeForm` (never resolved -- see
-    // `opaque_type_form`'s own doc); this map records the real, already-
-    // resolved signature `OperationClauses` supplied, keyed by that
-    // declaration's index into `functions`, for
-    // `PackageDeclarations::resolved_signatures` to override resolution
-    // with.
-    let mut resolved_signatures: BTreeMap<usize, super::check::ResolvedSignature> = BTreeMap::new();
+    // Every synthesized `FunctionDeclaration` pushed below carries
+    // `opaque_type_form`; this records its resolved signature by index into
+    // `functions`.
+    let mut resolved_signatures = super::check::ResolvedSignatures::default();
     let mut authored_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for member in &authored {
         let (parameters, _) = require_signature(clauses, member)?;
