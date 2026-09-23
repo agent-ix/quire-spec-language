@@ -19,8 +19,9 @@
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::diagnostic::UndefinedReason;
 use quire_exact::{
-    CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits,
+    CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
 use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
@@ -41,9 +42,10 @@ use quire_spec_language::model::population::{
 use quire_spec_language::value::{
     CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
     CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
-    DeclarationCause, FieldDeclaration, InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Outcome, PackageDeclarations, QualifiedName, Refusal,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    DeclarationCause, Evaluation, FamilyOutcome, FamilyResult, FieldDeclaration, InputRefusal,
+    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    Origin, PackageDeclarations, QualifiedName, TypeEnvironment, UniverseIdentity, Value,
+    ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -561,6 +563,30 @@ fn fixed_key(byte: u8) -> NodeKey {
     NodeKey::from_digest([byte; 32])
 }
 
+/// Unwraps a completed kernel evaluation, panicking on any family-owned
+/// refusal/undefined result. Every call site in this file that reaches a
+/// family cause (an absent-key lookup, a `pre(..)` anchor refusal) uses
+/// [`run_family`]/[`run_postcondition_family`] instead, so this panic never
+/// fires on those paths.
+fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    }
+}
+
+/// Unwraps a family-owned `Refused` result's catalog code -- every
+/// `crate::model::population::lookup`/`allInstances` refusal (foreign
+/// universe, absent-key-refused, type-mismatch on an undeclared model type)
+/// is carried in `FamilyResult::Refused`, not the kernel's own
+/// `Outcome::Refused` (ADR-013 O-16).
+fn refused_catalog_code(evaluation: Evaluation) -> qsl_foundation::diagnostic::CatalogCode {
+    match evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => cause.catalog_code(),
+        other => panic!("expected FamilyOutcome::FamilyEvaluated(Refused(_)), got {other:?}"),
+    }
+}
+
 fn run(
     package: &CheckedPackage,
     parameters: &[(&str, ValueType)],
@@ -569,12 +595,29 @@ fn run(
     limits: ScalarLimits,
     objects: &ObjectEnvironment,
 ) -> (Outcome<Value>, Meter) {
+    let (evaluation, meter) =
+        run_family(package, parameters, expression, arguments, limits, objects);
+    (evaluated(evaluation), meter)
+}
+
+/// Like [`run`], returning the raw [`Evaluation`] instead of unwrapping its
+/// `outcome`, for the call sites that assert on a family-owned cause
+/// (`FamilyResult::Undefined`/`FamilyResult::Refused`) rather than a kernel
+/// `Outcome`, or on `location`.
+fn run_family(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+    objects: &ObjectEnvironment,
+) -> (Evaluation, Meter) {
     let checked = check(package, parameters, expression);
     let mut meter = Meter::new(limits);
     let evaluation = package
         .evaluate(&checked, arguments, objects, &mut meter)
         .unwrap();
-    (evaluation.outcome, meter)
+    (evaluation, meter)
 }
 
 /// Like [`run`], checked as a postcondition (via [`check_postcondition`])
@@ -587,12 +630,27 @@ fn run_postcondition(
     limits: ScalarLimits,
     objects: &ObjectEnvironment,
 ) -> (Outcome<Value>, Meter) {
+    let (evaluation, meter) =
+        run_postcondition_family(package, parameters, expression, arguments, limits, objects);
+    (evaluated(evaluation), meter)
+}
+
+/// Like [`run_postcondition`], returning the raw [`Evaluation`] -- see
+/// [`run_family`].
+fn run_postcondition_family(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+    objects: &ObjectEnvironment,
+) -> (Evaluation, Meter) {
     let checked = check_postcondition(package, parameters, expression);
     let mut meter = Meter::new(limits);
     let evaluation = package
         .evaluate(&checked, arguments, objects, &mut meter)
         .unwrap();
-    (evaluation.outcome, meter)
+    (evaluation, meter)
 }
 
 fn population_name() -> Expression {
@@ -809,7 +867,7 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
 /// (per-mode presence) and FR-153-AC-4 (typed present-result Outputs) at the
 /// expression layer.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("TC-198", "TC-408", "FR-153-AC-2", "FR-153-AC-4", "FR-090-AC-12")]
 fn l14_lookup_expression_undefined_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -846,7 +904,7 @@ fn l14_lookup_expression_undefined_mode() {
         ("p", ValueType::Population(3)),
         ("r", ValueType::Reference(node_key(&scenario.a))),
     ];
-    let (absent, _) = run(
+    let (absent, _) = run_family(
         &package,
         &parameters_absent,
         &lookup(
@@ -860,9 +918,29 @@ fn l14_lookup_expression_undefined_mode() {
         SCALAR_UNLIMITED,
         &objects(&scenario),
     );
-    match absent {
-        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::AbsentKey),
-        other => panic!("expected Undefined(AbsentKey) for an absent key, got {other:?}"),
+    // The lookup is the checked expression's root, so its locus is the
+    // root's: `Origin::Expression`, an empty path.
+    assert_eq!(
+        absent.location,
+        Some(Location {
+            origin: Origin::Expression,
+            path: Vec::new(),
+        })
+    );
+    match absent.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
+            let record = cause.undefined_record();
+            assert_eq!(record.reason, UndefinedReason::AbsentKey);
+            assert_eq!(record.fields.get("key").map(String::as_str), Some("c9"));
+            let binding = scenario.binding.population_id().to_string();
+            assert_eq!(
+                record.fields.get("binding").map(String::as_str),
+                Some(binding.as_str())
+            );
+        }
+        other => panic!(
+            "expected FamilyEvaluated(Undefined(AbsentKey)) for an absent key, got {other:?}"
+        ),
     }
 }
 
@@ -938,7 +1016,7 @@ fn l15_lookup_expression_empty_mode() {
 /// through the identity bridge's refusal path
 /// (`crate::value::model_query::model_refusal`), not only its success path.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("TC-198", "TC-408", "FR-153-AC-2", "FR-153-AC-4", "FR-090-AC-12")]
 fn l16_lookup_expression_refused_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -950,7 +1028,7 @@ fn l16_lookup_expression_refused_mode() {
     ];
     let expression = lookup(target, AbsenceMode::Refused);
 
-    let (outcome, _) = run(
+    let (outcome, _) = run_family(
         &package,
         &parameters,
         &expression,
@@ -961,13 +1039,9 @@ fn l16_lookup_expression_refused_mode() {
         SCALAR_UNLIMITED,
         &objects(&scenario),
     );
-    match outcome {
-        Outcome::Refused(refusal) => {
-            assert_eq!(refusal.code(), Some("invalid_runtime_input"));
-            assert_eq!(refusal.cause(), Some("absent-key"));
-        }
-        other => panic!("expected a refused absent-key lookup, got {other:?}"),
-    }
+    let code = refused_catalog_code(outcome);
+    assert_eq!(code.code(), "invalid_runtime_input");
+    assert_eq!(code.cause(), "absent-key");
 }
 
 /// FR-153 names a population binding only as the direct operand of
@@ -1161,7 +1235,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     let parameters = [("p", ValueType::Population(3))];
     let expression = all_instances(ValueType::Reference(foreign_key));
 
-    let (outcome, _) = run(
+    let (outcome, _) = run_family(
         &package,
         &parameters,
         &expression,
@@ -1169,15 +1243,9 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         SCALAR_UNLIMITED,
         &population_environment(&scenario),
     );
-    match outcome {
-        Outcome::Refused(refusal) => {
-            assert_eq!(refusal.code(), Some("ill_typed"));
-            assert_eq!(refusal.cause(), Some("type-mismatch"));
-        }
-        other => {
-            panic!("expected a refused type-mismatch for an undeclared model type, got {other:?}")
-        }
-    }
+    let code = refused_catalog_code(outcome);
+    assert_eq!(code.code(), "ill_typed");
+    assert_eq!(code.cause(), "type-mismatch");
 }
 
 /// FR-153-AC-3: `lookup`'s own `type_conforms(S, T)` runs "before any
@@ -1216,7 +1284,7 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
             .with_population(scenario.binding.clone())
             .unwrap();
 
-    let (outcome, meter) = run(
+    let (outcome, meter) = run_family(
         &package,
         &parameters,
         &expression,
@@ -1227,13 +1295,9 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
         SCALAR_UNLIMITED,
         &object_world,
     );
-    match outcome {
-        Outcome::Refused(refusal) => {
-            assert_eq!(refusal.code(), Some("foreign_reference"));
-            assert_eq!(refusal.cause(), Some("foreign-universe"));
-        }
-        other => panic!("expected a refused foreign-universe lookup, got {other:?}"),
-    }
+    let code = refused_catalog_code(outcome);
+    assert_eq!(code.code(), "foreign_reference");
+    assert_eq!(code.cause(), "foreign-universe");
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
 }
 
@@ -1345,7 +1409,7 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
             .with_population(scenario.binding.clone())
             .unwrap();
 
-    let (undefined_outcome, _) = run(
+    let (undefined_outcome, _) = run_family(
         &package,
         &parameters,
         &lookup(target.clone(), AbsenceMode::Undefined),
@@ -1356,12 +1420,14 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         SCALAR_UNLIMITED,
         &object_world,
     );
-    match undefined_outcome {
-        Outcome::Undefined(reason) => assert_eq!(reason, Undefined::AbsentKey),
-        other => panic!("expected Undefined(AbsentKey), got {other:?}"),
+    match undefined_outcome.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
+            assert_eq!(cause.undefined_record().reason, UndefinedReason::AbsentKey);
+        }
+        other => panic!("expected FamilyEvaluated(Undefined(AbsentKey)), got {other:?}"),
     }
 
-    let (refused_outcome, _) = run(
+    let (refused_outcome, _) = run_family(
         &package,
         &parameters,
         &lookup(target.clone(), AbsenceMode::Refused),
@@ -1372,13 +1438,9 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         SCALAR_UNLIMITED,
         &object_world,
     );
-    match refused_outcome {
-        Outcome::Refused(refusal) => {
-            assert_eq!(refusal.code(), Some("invalid_runtime_input"));
-            assert_eq!(refusal.cause(), Some("absent-key"));
-        }
-        other => panic!("expected a refused absent-key lookup, got {other:?}"),
-    }
+    let code = refused_catalog_code(refused_outcome);
+    assert_eq!(code.code(), "invalid_runtime_input");
+    assert_eq!(code.cause(), "absent-key");
 
     let (empty_outcome, _) = run(
         &package,
@@ -1439,7 +1501,7 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
         AbsenceMode::Refused,
         AbsenceMode::Empty,
     ] {
-        let (outcome, meter) = run(
+        let (outcome, meter) = run_family(
             &package,
             &parameters,
             &lookup(target.clone(), absence),
@@ -1450,15 +1512,12 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
             SCALAR_UNLIMITED,
             &object_world,
         );
-        match outcome {
-            Outcome::Refused(refusal) => {
-                assert_eq!(refusal.code(), Some("foreign_reference"));
-                assert_eq!(refusal.cause(), Some("foreign-universe"));
-            }
-            other => panic!(
-                "expected a refused foreign-universe lookup in {absence:?} mode, got {other:?}"
-            ),
-        }
+        let code = refused_catalog_code(outcome);
+        assert_eq!(
+            (code.code(), code.cause()),
+            ("foreign_reference", "foreign-universe"),
+            "expected a refused foreign-universe lookup in {absence:?} mode"
+        );
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
     }
 }
@@ -1469,23 +1528,26 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
 /// This table proves well-formed-absent and malformed references are
 /// indistinguishable: a well-formed reference naming an object the binding
 /// never admitted, and a malformed reference that can never name one either
-/// (a non-UTF-8 identity, or a universe some length other than 32), reach
-/// byte-identical `Outcome<Value>`s and a byte-identical `Meter` at every
-/// combination this table drives -- three absence modes and three scalar
-/// budgets (unlimited; zero work units, denying before the first charge; one
-/// work unit, enough for `lookup.key` but not a second charge), against
-/// three reference-kind pairs: a malformed identity in the binding's own
-/// universe, a malformed identity in a foreign universe, and a malformed
-/// (5-byte) universe compared against that same well-formed foreign-universe
-/// reference. The evaluator boundary's own `ModelQueryRefusal`
-/// (`crate::value::outcome`) carries only a refusal's closed `code`/`cause`
-/// tags, never the model refusal's free-text `detail` that reports the
-/// caller's own bytes, so a direct `Outcome<Value>` comparison is exact
-/// here, not merely a same-shape comparison; `Meter` derives `PartialEq`, so
-/// one `assert_eq!` on the whole meter also covers every accounting field a
-/// narrower, field-by-field comparison could still miss.
+/// (a non-UTF-8 identity, or a universe some length other than 32), reach the
+/// same outcome shape and a byte-identical `Meter` at every combination this
+/// table drives -- three absence modes and three scalar budgets (unlimited;
+/// zero work units, denying before the first charge; one work unit, enough
+/// for `lookup.key` but not a second charge), against three reference-kind
+/// pairs: a malformed identity in the binding's own universe, a malformed
+/// identity in a foreign universe, and a malformed (5-byte) universe compared
+/// against that same well-formed foreign-universe reference. `Refused` and
+/// `Empty` mode reach a byte-identical `FamilyOutcome` Debug rendering, since
+/// `ModelRefusal::catalog_code()` and a completed `Option::none` carry no
+/// caller-supplied bytes. `Undefined` mode's `FamilyResult::Undefined`
+/// (FR-090-AC-12) carries `fields["key"]`, the requested reference key
+/// itself, rendered lossily for a malformed identity -- exactly the kind of
+/// caller-supplied detail this test's indistinguishability property is
+/// about, so that one mode compares only `reason` and `fields["binding"]`,
+/// never `fields["key"]`. `Meter` derives `PartialEq`, so one `assert_eq!` on
+/// the whole meter also covers every accounting field a narrower,
+/// field-by-field comparison could still miss.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
+#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4", "FR-090-AC-12")]
 fn lookup_expression_malformed_and_absent_well_formed_references_are_indistinguishable() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1575,7 +1637,7 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
         ] {
             let expression = lookup(target.clone(), absence);
             for (budget_label, limits) in budgets {
-                let (outcome_wf, meter_wf) = run(
+                let (outcome_wf, meter_wf) = run_family(
                     &package,
                     &parameters,
                     &expression,
@@ -1586,7 +1648,7 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
                     limits,
                     &object_world,
                 );
-                let (outcome_other, meter_other) = run(
+                let (outcome_other, meter_other) = run_family(
                     &package,
                     &parameters,
                     &expression,
@@ -1598,12 +1660,66 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
                     &object_world,
                 );
 
-                assert_eq!(
-                    format!("{outcome_wf:?}"),
-                    format!("{outcome_other:?}"),
-                    "{case_label} / {absence:?} / {budget_label}: outcome diverged \
-                     between an absent well-formed reference and the other one"
-                );
+                match (outcome_wf.outcome, outcome_other.outcome) {
+                    // FR-090-AC-12 gives `AbsentKey` a `fields["key"]` payload
+                    // (the requested reference key, rendered lossily for a
+                    // malformed identity) that the pre-FR-090 payload-free
+                    // kernel `Undefined::AbsentKey` never carried -- exactly
+                    // the free-text detail this test's own doc comment says a
+                    // well-formed-absent and a malformed reference must stay
+                    // indistinguishable on. So for `Undefined` mode this test
+                    // compares only the `reason` and `binding` (both are
+                    // genuinely shape, not caller-supplied bytes); `key` is
+                    // allowed, and expected, to diverge.
+                    (
+                        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause_wf)),
+                        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause_other)),
+                    ) => {
+                        let record_wf = cause_wf.undefined_record();
+                        let record_other = cause_other.undefined_record();
+                        assert_eq!(
+                            record_wf.reason, record_other.reason,
+                            "{case_label} / {absence:?} / {budget_label}: undefined reason \
+                             diverged between an absent well-formed reference and the other one"
+                        );
+                        assert_eq!(
+                            record_wf.fields.get("binding"),
+                            record_other.fields.get("binding"),
+                            "{case_label} / {absence:?} / {budget_label}: undefined binding \
+                             diverged between an absent well-formed reference and the other one"
+                        );
+                    }
+                    // `ModelRefusal`'s own `Debug` derive (unlike its
+                    // `catalog_code()`) still shows the free-text `detail`
+                    // and raw key bytes O-17's `RefusalRecord` never exposes
+                    // a caller -- so `Refused` mode compares the catalog code
+                    // only, the one thing a caller outside the family ever
+                    // reads (FR-090's "A family result is an in-process trait
+                    // object").
+                    (
+                        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause_wf)),
+                        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause_other)),
+                    ) => {
+                        assert_eq!(
+                            (
+                                cause_wf.catalog_code().code(),
+                                cause_wf.catalog_code().cause()
+                            ),
+                            (
+                                cause_other.catalog_code().code(),
+                                cause_other.catalog_code().cause()
+                            ),
+                            "{case_label} / {absence:?} / {budget_label}: catalog code diverged \
+                             between an absent well-formed reference and the other one"
+                        );
+                    }
+                    (outcome_wf, outcome_other) => assert_eq!(
+                        format!("{outcome_wf:?}"),
+                        format!("{outcome_other:?}"),
+                        "{case_label} / {absence:?} / {budget_label}: outcome diverged \
+                         between an absent well-formed reference and the other one"
+                    ),
+                }
                 assert_eq!(
                     meter_wf, meter_other,
                     "{case_label} / {absence:?} / {budget_label}: meter diverged \
@@ -1670,7 +1786,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
             &mut meter,
         )
         .unwrap();
-    match evaluation.outcome {
+    match evaluated(evaluation) {
         Outcome::Completed(value) => {
             let elements = reference_elements(&value);
             assert_eq!(elements.len(), 1);
@@ -2419,26 +2535,26 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
     }
 }
 
-/// PR #168 review round 2, finding 2: evaluating `pre(allInstances(p))`
-/// against a population admitted directly by [`admit_binding`] (never
-/// through [`admit_invocation`], so it carries no `pre_anchor` at all) is a
-/// real, caller-input-reachable `Refusal::WrongSnapshot(WrongAnchor)` --
-/// never `Refusal::CheckedInvariant`, which is reserved for a genuinely
-/// broken evaluator invariant. The checker only gates `pre(...)`'s own
-/// syntax (clause context, operand eligibility -- this file's
+/// FR-090-AC-7 (TC-388): evaluating `pre(allInstances(p))` against a population admitted directly
+/// by [`admit_binding`] (never through [`admit_invocation`], so it carries
+/// no `pre_anchor` at all) is a real, caller-input-reachable
+/// `FamilyResult::Refused` naming `wrong_snapshot`/`wrong-anchor` -- never
+/// `Refusal::CheckedInvariant`, which is reserved for a genuinely broken
+/// evaluator invariant. The checker only gates `pre(...)`'s own syntax
+/// (clause context, operand eligibility -- this file's
 /// `check_postcondition`); it has no way to see, at checking time, which
 /// admission path a caller's runtime population argument will actually
 /// take, so `select_anchor`'s missing-pre-anchor case is exactly the one
 /// `wrong-anchor` case this crate's checker cannot decide for itself.
 #[test]
-#[trace("FR-042-AC-4", "TC-198")]
+#[trace("FR-090-AC-7", "FR-042-AC-4", "TC-198", "TC-388")]
 fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
     let scenario = scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(node_key(&scenario.a));
     let parameters = [("p", ValueType::Population(3))];
 
-    let (outcome, _) = run_postcondition(
+    let (outcome, _) = run_postcondition_family(
         &package,
         &parameters,
         &pre(all_instances(target)),
@@ -2446,13 +2562,12 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
         SCALAR_UNLIMITED,
         &population_environment(&scenario),
     );
-    assert!(
-        matches!(
-            outcome,
-            Outcome::Refused(Refusal::WrongSnapshot(WrongSnapshotCause::WrongAnchor))
-        ),
-        "expected Refused(WrongSnapshot(WrongAnchor)) for a pre(..) anchor with no admitted pre \
-         binding, got {outcome:?}"
+    let code = refused_catalog_code(outcome);
+    assert_eq!(
+        (code.code(), code.cause()),
+        ("wrong_snapshot", "wrong-anchor"),
+        "expected a family-owned Refused(wrong_snapshot/wrong-anchor) for a pre(..) anchor with \
+         no admitted pre binding"
     );
 }
 
@@ -2987,4 +3102,70 @@ fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
         meter.admitted_charges().is_empty(),
         "admission refuses before any charge"
     );
+}
+
+/// TC-389 (FR-090-AC-8): a closed `p: Population<A>[1]` whose binding holds
+/// two `A` members. `allInstances<A>(p)` through `CheckedPackage::evaluate`
+/// is `FamilyEvaluated(Refused(cause))` whose catalog code is
+/// `cardinality_out_of_bound`/`above-maximum`, the same code
+/// `model::population::all_instances`'s own `ModelRefusal` gives for that
+/// binding, and never a kernel `Evaluated(Refused(_))`. Step 4 (the carried
+/// refusal holds no native-v1 `Code`) is
+/// `value::expression::causes`'s `model_query_refusal_carries_no_native_code`.
+#[test]
+#[trace("FR-090-AC-8", "TC-389")]
+fn model_query_refusal_reaches_the_caller_with_its_own_code() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("a1", "model.A"), member("a2", "model.A")],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let scenario = Scenario {
+        universe: object_universe(&domain_package).unwrap().identity(),
+        a: type_id(&view, "model.A"),
+        b: type_id(&view, "model.B"),
+        binding,
+    };
+    let package = package(&scenario);
+
+    let mut direct_meter = Meter::new(SCALAR_UNLIMITED);
+    let direct = match quire_spec_language::model::population::all_instances(
+        &scenario.binding,
+        &DeclarationKey::fixture("model.A"),
+        &mut direct_meter,
+    ) {
+        quire_spec_language::model::population::AllInstancesOutcome::Refused(refusal) => {
+            refusal.catalog_code()
+        }
+        other => panic!("expected all_instances to refuse two members above [0,1], got {other:?}"),
+    };
+
+    let (evaluation, _) = run_family(
+        &package,
+        &[("p", ValueType::Population(1))],
+        &all_instances(ValueType::Reference(node_key(&scenario.a))),
+        vec![population_argument(&scenario)],
+        SCALAR_UNLIMITED,
+        &population_environment(&scenario),
+    );
+    let code = refused_catalog_code(evaluation);
+    assert_eq!(
+        code,
+        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+    );
+    assert_eq!(code, direct);
 }

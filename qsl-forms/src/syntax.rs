@@ -501,7 +501,7 @@ impl Expression {
 ///
 /// Also used for a checked FR-151 dispatch candidate's own body or effective
 /// precondition, so both share the FR-146 call-graph and termination
-/// machinery: [`clause_kind`](Self::clause) then reads
+/// machinery: [`clause_kind`](Self::clause_kind) then reads
 /// [`ClauseKind::Precondition`] instead of the default
 /// [`ClauseKind::Body`], since a dispatched call is admitted inside a
 /// precondition but not inside an operation body (TC-196 D06/D07/D08).

@@ -2,7 +2,7 @@
 //! FR-148 `quire.value.ieee754-2019-default/v1`: binary32/binary64 bit-pattern
 //! values, the five IEEE rounding directions plus strict `exact`, deterministic
 //! NaN propagation, operation-local exception flags, the three distinct
-//! comparison intrinsics, explicit conversions and package admission.
+//! comparison intrinsics and explicit conversions.
 //!
 //! Every value is an exact bit pattern. Arithmetic decodes finite operands into
 //! exact dyadic integers, forms the exact real intermediate with arbitrary
@@ -17,30 +17,24 @@
 //! below rather than duplicated. Because those types are foreign to this
 //! module, their private fields, private methods and any would-be new
 //! inherent impl are all unreachable here (Rust visibility and orphan
-//! rules), so six free functions stand in: `format_of`, `try_map_operation`,
-//! `operation_arity` and `operation_operands` are verbatim ports of the
-//! private methods they replace; `flags_with` and `make_ieee_value` are
-//! rewrites onto the surviving public API (`iter`/`FromIterator`, and
-//! `binary32`/`binary64`) that are behaviour-equivalent, not verbatim.
+//! rules), so six free functions stand in over their public API:
+//! `format_of`, `try_map_operation`, `operation_arity`, `operation_operands`,
+//! `flags_with` and `make_ieee_value`.
 //!
-//! Everything else below still carries its own definition: `ExactScalar`,
-//! `IeeeOperand`, `IeeeProvenance`, `IeeeResult`, `IeeeExact`,
-//! `IeeeExactTarget`, the five profile-checked entry points
+//! This module defines `ExactScalar`, `IeeeOperand`, `IeeeProvenance`,
+//! `IeeeResult`, `IeeeExact`, `IeeeExactTarget`, the five entry points
 //! (`evaluate_ieee`/`compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/
 //! `exact_to_ieee`) and the private rounding/arithmetic engine beneath them.
 //! Each returns this crate's own `Outcome`/`Refusal`/`Undefined`
-//! (`value::outcome`) -- a strict superset of `quire_exact`'s kernel
-//! `Outcome`/`Refusal`, not yet unified -- or is parameterized over this
-//! crate's own `DecimalType` (which carries declaration-bound state
-//! `quire_exact` deliberately excludes) or, for `AdmittedIeeeProfile`, this
-//! crate's own package-catalog module (`value::definition`). `RationalDomain`,
-//! `RoundingMode`, `Decimal`, `Rational`, `IllTyped` and `IllTypedCause` are
-//! `quire_exact`'s own canonical items, imported directly. Linear QSL-131 owns
-//! the remaining cut, unifying `value::outcome` with `quire_exact::outcome`;
-//! once that lands, these five entry points reduce to thin
-//! `&AdmittedIeeeProfile` wrappers around `quire_exact`'s own
-//! `evaluate_ieee`/`compare_ieee`/etc., and the private engine and the six
-//! helpers above go away.
+//! (`value::outcome`), or is parameterized over this crate's own
+//! `DecimalType`, which carries declaration-bound state `quire_exact`
+//! excludes. `RationalDomain`, `RoundingMode`, `Decimal`, `Rational`,
+//! `IllTyped` and `IllTypedCause` are `quire_exact`'s own canonical items,
+//! imported directly.
+//!
+//! Package admission of the IEEE profile is `value::definition`'s
+//! `DefinitionLock::admit_ieee_profile`. `check` refuses an IEEE operation in
+//! a package with no admitted profile, so these entry points take none.
 
 use std::cmp::Ordering;
 
@@ -49,10 +43,6 @@ use num_integer::Integer as _;
 use num_traits::{One, Zero};
 
 use super::decimal::DecimalType;
-use super::definition::{
-    CatalogRole, DefinitionLock, DefinitionReference, PackageCause, PackageRefusal,
-    PackageRefusalCode, DIGEST_DOMAIN,
-};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
 use quire_exact::Rational;
 pub use quire_exact::{
@@ -271,77 +261,6 @@ impl IeeeExact {
     }
 }
 
-/// An IEEE package whose profile definition closure was admitted. Only
-/// [`DefinitionLock::admit_ieee_profile`] constructs it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct AdmittedIeeeProfile {
-    definition: DefinitionReference,
-}
-
-impl AdmittedIeeeProfile {
-    /// The retained, admitted DefinitionRef.
-    pub fn definition(&self) -> &DefinitionReference {
-        &self.definition
-    }
-}
-
-impl DefinitionLock {
-    /// Admit a checked package's IEEE profile closure.
-    ///
-    /// `retained` lists every DefinitionRef the package retains as IEEE policy;
-    /// `declarations` lists the qualified identities of user declarations. A
-    /// missing, repeated or mismatched profile, or a user declaration bound to a
-    /// reserved intrinsic identity, is `refused { code: invalid_package }`.
-    pub fn admit_ieee_profile(
-        &self,
-        retained: &[DefinitionReference],
-        declarations: &[&str],
-    ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
-        let expected = self
-            .entry(CatalogRole::IeeeProfile)
-            .ok_or(invalid_package(PackageCause::MissingMember))?;
-        for reference in retained {
-            let cause = if reference.identity != expected.identity
-                || reference.authority != expected.authority
-            {
-                Some(PackageCause::IncompatibleDefinition)
-            } else if reference.revision.namespace != expected.revision_namespace
-                || reference.revision.value != expected.revision_value
-            {
-                Some(PackageCause::RevisionMismatch)
-            } else if reference.digest_domain != DIGEST_DOMAIN {
-                Some(PackageCause::DigestDomainMismatch)
-            } else {
-                None
-            };
-            if let Some(cause) = cause {
-                return Err(invalid_package(cause));
-            }
-        }
-        let definition = match retained {
-            [] => return Err(invalid_package(PackageCause::MissingMember)),
-            [definition] => definition.clone(),
-            [_, _, ..] => return Err(invalid_package(PackageCause::ConflictingDefinition)),
-        };
-        // FR-148: a user declaration bound to a reserved intrinsic identity is
-        // `invalid_package` with cause `conflicting-definition`.
-        if declarations
-            .iter()
-            .any(|declared| ieee_intrinsic_identities().any(|reserved| reserved == *declared))
-        {
-            return Err(invalid_package(PackageCause::ConflictingDefinition));
-        }
-        Ok(AdmittedIeeeProfile { definition })
-    }
-}
-
-fn invalid_package(cause: PackageCause) -> PackageRefusal {
-    PackageRefusal {
-        code: PackageRefusalCode::InvalidPackage,
-        cause,
-    }
-}
-
 /// Evaluate one arithmetic operation under `rounding`.
 ///
 /// Operands of different widths, or an exact operand, are ill-typed and
@@ -349,7 +268,6 @@ fn invalid_package(cause: PackageCause) -> PackageRefusal {
 /// strict-`exact` refusal carrying only the would-be flags, or incomplete with
 /// no bits or flags.
 pub fn evaluate_ieee<'a, O: Into<IeeeOperand<'a>>>(
-    _profile: &AdmittedIeeeProfile,
     operation: IeeeOperation<O>,
     rounding: RoundingMode,
     meter: &mut Meter,
@@ -365,7 +283,6 @@ pub fn evaluate_ieee<'a, O: Into<IeeeOperand<'a>>>(
 /// Evaluate one comparison intrinsic. Cross-width or exact operands are
 /// ill-typed and consume nothing.
 pub fn compare_ieee<'a>(
-    _profile: &AdmittedIeeeProfile,
     comparison: IeeeComparison,
     left: impl Into<IeeeOperand<'a>>,
     right: impl Into<IeeeOperand<'a>>,
@@ -409,7 +326,6 @@ fn compare(
 /// payload, is quieted, and raises `invalid` when signaling. A payload the
 /// target cannot hold is refused rather than truncated.
 pub fn convert_ieee_width(
-    _profile: &AdmittedIeeeProfile,
     value: IeeeValue,
     target: IeeeWidth,
     rounding: RoundingMode,
@@ -436,7 +352,6 @@ pub enum IeeeExactTarget<'a> {
 /// outside the target domain is refused before it is retained. A direct
 /// `Decimal`, `Integer` or `Int[..]` target is ill-typed with no charge.
 pub fn ieee_to_exact(
-    _profile: &AdmittedIeeeProfile,
     value: IeeeValue,
     target: IeeeExactTarget<'_>,
     meter: &mut Meter,
@@ -495,7 +410,6 @@ fn to_exact(
 /// `rounding`, reporting loss through the IEEE flags; strict `exact` refuses
 /// any loss.
 pub fn exact_to_ieee<'a>(
-    _profile: &AdmittedIeeeProfile,
     source: impl Into<ExactScalar<'a>>,
     width: IeeeWidth,
     rounding: RoundingMode,

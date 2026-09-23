@@ -23,9 +23,20 @@ use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
     CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, InputRefusal, ObjectEnvironment, Outcome,
-    PackageDeclarations, QualifiedName, Value, ValueType,
+    CheckedPackageEvaluation, CheckingLimits, Evaluation, FamilyOutcome, InputRefusal,
+    ObjectEnvironment, Outcome, PackageDeclarations, QualifiedName, Value, ValueType,
 };
+
+/// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
+/// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
+/// file completes, so extracting `Evaluated`'s kernel outcome is all these
+/// tests need.
+fn evaluated(evaluation: Evaluation) -> quire_exact::Outcome<Value> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    }
+}
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -126,7 +137,7 @@ fn call_resolves_by_name_regardless_of_declaration_order() {
             )
             .unwrap();
         assert_eq!(
-            format!("{:?}", one.outcome),
+            format!("{:?}", evaluated(one)),
             format!(
                 "{:?}",
                 Outcome::Completed(Value::Integer(Integer::from(5_i64)))
@@ -145,7 +156,7 @@ fn call_resolves_by_name_regardless_of_declaration_order() {
             )
             .unwrap();
         assert_eq!(
-            format!("{:?}", two.outcome),
+            format!("{:?}", evaluated(two)),
             format!(
                 "{:?}",
                 Outcome::Completed(Value::Integer(Integer::from(7_i64)))
@@ -206,7 +217,7 @@ fn evaluated_call_slots_are_stable_across_declaration_order() {
             .evaluate(&call_one, Vec::new(), &objects, &mut meter)
             .unwrap();
         assert_eq!(
-            format!("{:?}", one.outcome),
+            format!("{:?}", evaluated(one)),
             format!(
                 "{:?}",
                 Outcome::Completed(Value::Integer(Integer::from(5_i64)))
@@ -218,7 +229,7 @@ fn evaluated_call_slots_are_stable_across_declaration_order() {
             .evaluate(&call_two, Vec::new(), &objects, &mut meter)
             .unwrap();
         assert_eq!(
-            format!("{:?}", two.outcome),
+            format!("{:?}", evaluated(two)),
             format!(
                 "{:?}",
                 Outcome::Completed(Value::Integer(Integer::from(7_i64)))

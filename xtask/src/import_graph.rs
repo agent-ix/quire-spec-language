@@ -443,7 +443,9 @@ fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, S
 /// module is allowed. A `value::<submodule>` entry names one specific
 /// submodule; every other entry is matched by its own name and all of its
 /// descendants (`check` and its descendants; `library` and its
-/// descendants; and so on) -- see [`module_or_descendant`].
+/// descendants; and so on) -- see [`module_or_descendant`]. The K, F and
+/// layer-2 entries are workspace crates, named by their Rust crate name;
+/// [`in_layer_rule_scope`] reads them from here.
 const LAYER_PERMITTED_MODULES: &[&str] = &[
     // K, F.
     "quire_exact",
@@ -472,7 +474,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::collection",
     "value::composite",
     "value::decimal",
-    "value::division",
     "value::equality",
     "value::ieee",
     "value::node",
@@ -547,17 +548,12 @@ fn is_real_value_submodule(workspace_root: &Path, name: &str) -> bool {
 }
 
 /// Whether `top` (a resolved path's first segment) is in FR-068-AC-6's
-/// scope at all: the workspace layer crates `check` may name
-/// ([`LAYER_CRATES`]) by name, or any other real module of this crate. `std`
-/// and every other third-party crate are out of scope and return `false`.
+/// scope at all: a crate named on [`LAYER_PERMITTED_MODULES`] (`quire_exact`,
+/// `qsl_foundation`, `qsl_forms`), or any real module of this crate. `std`
+/// and every other crate are out of scope and return `false`.
 fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
-    LAYER_CRATES.contains(&top) || is_real_crate_module(workspace_root, top)
+    LAYER_PERMITTED_MODULES.contains(&top) || is_real_crate_module(workspace_root, top)
 }
-
-/// The workspace crates, by their Rust name, whose edges from `check` the
-/// layer rule classifies: K, F and layer 2. Each is also on
-/// [`LAYER_PERMITTED_MODULES`].
-const LAYER_CRATES: &[&str] = &["quire_exact", "qsl_foundation", "qsl_forms"];
 
 /// Resolve `top` (a resolved path's first segment) and `next` (its second,
 /// if any) into FR-068-AC-6's module label and whether the edge names its
@@ -602,7 +598,7 @@ fn resolve_layer_module(
 /// relative to the file (FR-068-AC-6: "A `super::` or `self::` path is
 /// resolved relative to its file"). `self` may be followed by `super`s
 /// (`self::super::x`). A path rooted at anything else (an extern crate name,
-/// the [`LAYER_CRATES`] included) is returned unchanged -- it
+/// the crates on [`LAYER_PERMITTED_MODULES`] included) is returned unchanged -- it
 /// needs no crate-relative substitution.
 fn resolve_relative_path(raw: &[String], current_module: &[String]) -> Vec<String> {
     let (mut base, mut rest) = match raw.split_first() {
@@ -655,8 +651,8 @@ impl LayerEdge {
 
 /// Classify one already-resolved path (crate-relative, `crate`/`super`/`self`
 /// substituted) found at `file:line` under `src/check/`. `None` when the
-/// path's root is `std` or a crate other than the [`LAYER_CRATES`] -- out of
-/// FR-068-AC-6's scope entirely, not
+/// path's root is `std` or a crate not on [`LAYER_PERMITTED_MODULES`] -- out
+/// of FR-068-AC-6's scope entirely, not
 /// a finding. `next_is_module_by_syntax`: see [`resolve_layer_module`].
 fn classify_resolved(
     workspace_root: &Path,
@@ -911,75 +907,143 @@ impl<'ast> Visit<'ast> for ShippedEdgeVisitor<'_> {
     }
 }
 
+/// One file's shipped `use` edges and inline paths, each inline path
+/// resolved to zero or more crate-relative paths.
+///
+/// An inline path is resolved when it is rooted at `crate`, `super` or
+/// `self`, or when its first segment is a name some shipped `use` in the
+/// same file binds: `use crate::value;` followed by `value::Presence` is
+/// resolved as `crate::value::Presence`. A binding is tracked file-wide,
+/// whatever block its `use` sits in, and a name bound more than once is
+/// resolved against every binding -- both over-approximate, never hide.
+struct FileEdges {
+    current_module: Vec<String>,
+    uses: Vec<UseEdge>,
+    inline: Vec<(usize, Vec<String>)>,
+}
+
+fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
+    let parsed = parse_file(workspace_root, file)?;
+    let current_module = module_segments_of(file);
+    let mut visitor = ShippedEdgeVisitor {
+        file,
+        uses: Vec::new(),
+        paths: Vec::new(),
+    };
+    visitor.visit_file(&parsed);
+    let mut bindings: BTreeMap<&str, Vec<Vec<String>>> = BTreeMap::new();
+    for edge in &visitor.uses {
+        if !edge.is_glob {
+            bindings
+                .entry(edge.binding.as_str())
+                .or_default()
+                .push(resolve_relative_path(&edge.bound_path(), &current_module));
+        }
+    }
+    let mut inline = Vec::new();
+    for path in &visitor.paths {
+        let Some((first, rest)) = path.segments.split_first() else {
+            continue;
+        };
+        if matches!(first.as_str(), "crate" | "super" | "self") {
+            inline.push((
+                path.line,
+                resolve_relative_path(&path.segments, &current_module),
+            ));
+        } else {
+            for bound in bindings.get(first.as_str()).into_iter().flatten() {
+                inline.push((path.line, bound.iter().chain(rest).cloned().collect()));
+            }
+        }
+    }
+    let uses = visitor.uses;
+    Ok(FileEdges {
+        current_module,
+        uses,
+        inline,
+    })
+}
+
 /// FR-068-AC-6/TC-175: every shipped `use` edge and inline path under
 /// `src/check/`, classified against the module-level layer rule, so one scan
 /// covers both `value`'s submodules and the `package`/`checked_package`/
-/// `route`/`replay`/`lowering` forbidden list.
-///
-/// An inline path is classified when it is rooted at `crate`, `super` or
-/// `self`, or when its first segment is a name some shipped `use` in the
-/// same file binds: `use crate::value;` followed by `value::Presence` is
-/// classified as `crate::value::Presence`. A binding is tracked file-wide,
-/// whatever block its `use` sits in, and a name bound more than once is
-/// classified against every binding -- both over-approximate, never hide.
+/// `route`/`replay`/`lowering` forbidden list. Inline paths resolve as
+/// `file_edges` describes.
 pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
     let mut edges = Vec::new();
     for file in files_in_recursive(workspace_root, "src/check")? {
-        let parsed = parse_file(workspace_root, &file)?;
-        let current_module = module_segments_of(&file);
-        let mut visitor = ShippedEdgeVisitor {
-            file: &file,
-            uses: Vec::new(),
-            paths: Vec::new(),
-        };
-        visitor.visit_file(&parsed);
-        let mut bindings: BTreeMap<&str, Vec<Vec<String>>> = BTreeMap::new();
-        for edge in &visitor.uses {
-            if !edge.is_glob {
-                bindings
-                    .entry(edge.binding.as_str())
-                    .or_default()
-                    .push(resolve_relative_path(&edge.bound_path(), &current_module));
-            }
-        }
-        for edge in &visitor.uses {
+        let file_edges = file_edges(workspace_root, &file)?;
+        for edge in &file_edges.uses {
             edges.extend(classify_use_edge(
                 workspace_root,
                 &submodule_reexports,
-                &current_module,
+                &file_edges.current_module,
                 edge,
             ));
         }
-        for inline in &visitor.paths {
-            let Some((first, rest)) = inline.segments.split_first() else {
-                continue;
-            };
-            let resolved_paths: Vec<Vec<String>> =
-                if matches!(first.as_str(), "crate" | "super" | "self") {
-                    vec![resolve_relative_path(&inline.segments, &current_module)]
-                } else {
-                    bindings
-                        .get(first.as_str())
-                        .into_iter()
-                        .flatten()
-                        .map(|bound| bound.iter().chain(rest).cloned().collect())
-                        .collect()
-                };
-            for resolved in resolved_paths {
-                edges.extend(classify_resolved(
-                    workspace_root,
-                    &submodule_reexports,
-                    &file,
-                    inline.line,
-                    &resolved,
-                    false,
-                ));
-            }
+        for (line, resolved) in &file_edges.inline {
+            edges.extend(classify_resolved(
+                workspace_root,
+                &submodule_reexports,
+                &file,
+                *line,
+                resolved,
+                false,
+            ));
         }
     }
     edges.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Ok(edges)
+}
+
+/// One resolved path from a shipped `use` edge or inline path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedPath {
+    /// The file the path was found in, relative to the workspace root.
+    pub file: String,
+    /// 1-based source line.
+    pub line: usize,
+    /// The resolved segments: crate-relative for a `crate`/`super`/`self`
+    /// root, as written otherwise. A `use` edge's segments end with the
+    /// name it binds; a glob's end with the module it globs.
+    pub segments: Vec<String>,
+    /// Whether the path came from a glob `use`.
+    pub is_glob: bool,
+}
+
+/// FR-090-AC-9/TC-390: every shipped `use` edge and inline path in each of
+/// `roots` (a `.rs` file or a directory, scanned recursively, relative to
+/// `workspace_root`), resolved as `file_edges` describes.
+pub fn resolved_paths(workspace_root: &Path, roots: &[&str]) -> Result<Vec<ResolvedPath>> {
+    let mut paths = Vec::new();
+    for root in roots {
+        let files = if workspace_root.join(root).is_dir() {
+            files_in_recursive(workspace_root, root)?
+        } else {
+            vec![(*root).to_owned()]
+        };
+        for file in files {
+            let file_edges = file_edges(workspace_root, &file)?;
+            for edge in &file_edges.uses {
+                paths.push(ResolvedPath {
+                    file: file.clone(),
+                    line: edge.line,
+                    segments: resolve_relative_path(&edge.bound_path(), &file_edges.current_module),
+                    is_glob: edge.is_glob,
+                });
+            }
+            for (line, segments) in file_edges.inline {
+                paths.push(ResolvedPath {
+                    file: file.clone(),
+                    line,
+                    segments,
+                    is_glob: false,
+                });
+            }
+        }
+    }
+    Ok(paths)
 }
 
 #[cfg(test)]
@@ -1223,7 +1287,6 @@ mod tests {
             "collection",
             "composite",
             "decimal",
-            "division",
             "equality",
             "ieee",
             "node",

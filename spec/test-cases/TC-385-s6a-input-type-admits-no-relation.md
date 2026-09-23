@@ -46,4 +46,7 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Planned; no test backs this case. Missing code: the S6a family kind
+(`FamilyKind` without `Relation`, in the `check` core), an S6a seam dispatch
+over it with one hand-written arm per variant and no `_` arm, and `evaluate`
+hooks for `StateModel`, `SumCase`, `TemporalTrace` and `ProtocolClause`.

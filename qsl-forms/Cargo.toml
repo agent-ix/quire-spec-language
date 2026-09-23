@@ -7,8 +7,9 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core's closed dispatch entry table, the parsed-form contract and the shared parsed-form types."
 
-# ADR-011 §6.1 layer 2 depends on "1, F, K" only. `tests/it/layering.rs`
-# (TC-398) asserts this table names exactly these three crates.
+# ADR-011 §6.1 layer 2 depends on "1, F, K" only. The root crate's
+# `tests/it/family_outcome_layering.rs` (TC-398) asserts that this table and
+# `[dev-dependencies]` name no other workspace crate.
 [dependencies]
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
@@ -21,9 +22,10 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # test target is built, so it never reaches the production lib.
 qsl-cst = { path = "../qsl-cst", features = ["test-support"] }
 # `dispatch`'s TC-167 test parses its own source to inspect the dispatch
-# `match`.
-syn = { version = "=2.0.119", features = ["full"] }
-toml = "=1.1.6"
+# `match`; `tests/it/identity_free_forms.rs` (TC-398) walks every field type.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+# Line numbers in that walk's findings, the same way `xtask` reads them.
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 
 [[test]]
 name = "it"

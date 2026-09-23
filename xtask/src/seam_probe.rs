@@ -103,6 +103,11 @@ pub struct SeamLocation {
 /// `E0004` locations, not assumed from the source layout: `same_kind` is a
 /// bare `fn` nested inside `advertises_kind`'s body, not an `impl` method,
 /// so it resolves unqualified.
+///
+/// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
+/// `catalog_code()` match over `crate::check::WrongSnapshotCause`, whose
+/// `#[cfg(seam_probe)]` variant has an arm only in `WrongSnapshotCause::
+/// as_str`.
 pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
     [
         SeamLocation {
@@ -116,6 +121,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "src/route.rs".to_owned(),
             item: "same_kind".to_owned(),
+        },
+        SeamLocation {
+            file: "src/value/expression/causes.rs".to_owned(),
+            item: "ProtocolClauseSnapshot::catalog_code".to_owned(),
         },
     ]
     .into_iter()
@@ -337,7 +346,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         });
     }
     Ok(format!(
-        "seam-probe: {} checked-in S1/S7 locations confirmed under RUSTFLAGS=--cfg seam_probe; \
+        "seam-probe: {} checked-in S1/S7/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe; \
          normal build has none. `stage_hooks`'s former second S1 location is deleted (PR #262 \
          review F7). S2/S3 (QSL-143) and S4 (no cause-bearing family yet) are not covered by \
          this checked-in list.\n",
@@ -374,6 +383,10 @@ mod tests {
                 SeamLocation {
                     file: "src/route.rs".to_owned(),
                     item: "same_kind".to_owned(),
+                },
+                SeamLocation {
+                    file: "src/value/expression/causes.rs".to_owned(),
+                    item: "ProtocolClauseSnapshot::catalog_code".to_owned(),
                 },
             ]
             .into_iter()

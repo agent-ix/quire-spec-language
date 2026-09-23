@@ -67,7 +67,7 @@ use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
 use super::{CheckingLimits, DispatchTable, Scope};
-use crate::value::composite::CompositeShape;
+use crate::value::declaration::CompositeShape;
 use quire_exact::IllTypedCause;
 // `QuantityUnit` and `TextProfile`: PR #282 review, F3. FR-068-AC-6/TC-175's
 // tier (b) originally bounded to five items across two modules
@@ -1476,7 +1476,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 mod tests {
     use super::checking_tests::{empty_scope, mint_resolved, root_location};
     use super::*;
-    use crate::value::composite::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
+    use crate::value::composite::FieldDeclaration;
+    use crate::value::declaration::{CompositeDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
     use quire_exact::{Presence, TextType};
@@ -1755,7 +1756,7 @@ pub(crate) mod checking_tests {
     /// one real definition, re-exported rather than duplicated.
     pub(crate) fn empty_scope() -> Scope {
         Scope {
-            types: crate::value::composite::TypeEnvironment::default(),
+            types: crate::value::declaration::TypeEnvironment::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
             model_operations: Vec::new(),

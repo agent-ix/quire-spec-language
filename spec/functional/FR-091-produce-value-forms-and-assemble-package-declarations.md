@@ -300,8 +300,9 @@ The `Value` family form builder is a module under `forms`, in the
 `qsl-forms` crate (`qsl-forms/src/`). ADR-011 §6.1 allows layer 2 to depend
 on layer 1 (`qsl-cst`), F (`qsl-foundation`) and K (`quire-exact`), and on
 its own layer's `forms` core. `qsl-forms`'s `[dependencies]` name exactly
-those three crates, so no path in the builder can reach layers 3 to 6. The builder depends on
-no other family module and on nothing in layers 3 to 6. No `Value` parsed
+those three crates, so no shipped path in the builder can reach layers 3
+to 6. The builder depends on no other family module and on nothing in
+layers 3 to 6. No `Value` parsed
 form, type form, parsed-unit selection or `Expression` variant in the
 mapping table has a field of type `ValueType` or `NodeKey`.
 

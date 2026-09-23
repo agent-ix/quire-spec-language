@@ -91,7 +91,7 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-// PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
+// PR #282 review, F2: these twelve submodules are `pub(crate)`, not private
 // `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
 // layer-3 sibling imports `check.rs` keeps") can name them by their real,
 // submodule-qualified crate-absolute path (`crate::value::numeric::
@@ -107,8 +107,8 @@ pub(crate) mod collection;
 pub(crate) mod composite;
 mod containment;
 pub(crate) mod decimal;
-mod definition;
-mod division;
+pub(crate) mod declaration;
+pub(crate) mod definition;
 pub(crate) mod enumeration;
 pub(crate) mod equality;
 mod expression;
@@ -140,26 +140,27 @@ mod unit;
 // `quire_exact` directly.
 pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
 pub use composite::{
-    Component, CompositeDeclaration, CompositeShape, CompositeValue, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, Deferred, FieldDeclaration, FieldExpression, FieldValue,
-    InvalidDeclaration, ObjectTypeDeclaration, OptionValue, RecursionEdges, TypeEnvironment, Value,
-    ValueType,
+    Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, FieldDeclaration,
+    FieldExpression, FieldValue, OptionValue, Value, ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
-pub use definition::{
-    AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
-    DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
-    SelectionRefusalCode, Trigger,
+// `declaration` owns the FR-143 registry and the FR-149 check-level
+// equality layer; neither is a kernel type (ADR-011 §6.1).
+pub use declaration::{
+    admits_equality_conversion, CheckedEquality, CompositeDeclaration, CompositeShape,
+    DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule, InvalidDeclaration,
+    ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
 };
-pub use division::{divide, modulo, QuotientRemainder};
+pub use definition::{
+    divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
+    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
+    PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
+};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
-pub use equality::{
-    admits_equality_conversion, plan_equality, CheckedEquality, EqualityOperand, EqualityOperator,
-    EqualityPlan, EqualitySchedule,
-};
+pub use equality::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
@@ -190,13 +191,13 @@ pub use expression::CheckedPackage;
 // beside the v2 codec it wraps.
 pub use expression::{
     decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
-    InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
+    FamilyOutcome, FamilyResult, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
+    ValueLoss,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget,
-    IeeeFlag, IeeeOperand, IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue,
-    IEEE_DEFINITION,
+    ieee_to_exact, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeOperand,
+    IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue, IEEE_DEFINITION,
 };
 pub use member::Member;
 pub use node::{
