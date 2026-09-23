@@ -476,16 +476,18 @@ undefined cause type.
   owns the population-identity admission checks FR-090-AC-10 routes through
   `CallFailure::Input`. F `diagnostic`'s `CatalogCode`, `Category` and
   `InternalFault` landed with ADR-013 §7 S-5a.
-- **Downstream:** QSL-131's removal of `src/value/outcome.rs`'s kernel copy
-  in favour of `quire_exact::{Outcome, Refusal}` needs FR-090-AC-7,
-  FR-090-AC-8, FR-090-AC-10, FR-090-AC-11 and FR-090-AC-12, because that
-  copy's `WrongSnapshot`, `Model`, `UnresolvedPopulation` and
-  `PopulationMaximumMismatch` refusal variants and its
-  `Undefined::PreconditionFalse` and `Undefined::AbsentKey` variants are ones
-  the target `quire_exact` does not have. In the other direction,
-  FR-090-AC-1's `Evaluated` payload is `quire_exact::Outcome<T>`, which the
-  `Value` evaluator produces once that copy is gone. The two changes are
-  coupled in both directions.
+- **Downstream:** none. QSL-131's removal of `src/value/outcome.rs`'s kernel
+  copy in favour of `quire_exact::{Outcome, Refusal, Undefined}` needs no
+  FR-090-AC change: QSL-174 already stripped that copy down to the kernel's
+  own variant set before this removal, so it carried no `WrongSnapshot`,
+  `Model`, `UnresolvedPopulation` or `PopulationMaximumMismatch` refusal
+  variant, and no `Undefined::PreconditionFalse` or `Undefined::AbsentKey`
+  variant, for the removal to affect (see Status, "`quire_exact::Undefined`
+  and `Refusal`, and QSL's kernel copy ... have no `PreconditionFalse`,
+  `AbsentKey`, `WrongSnapshot` or `Model` variant"). FR-090-AC-1's `Evaluated`
+  payload was already `quire_exact::Outcome<T>`; QSL-131 O2 is exactly the
+  removal that lets the `Value` evaluator produce it directly, with no
+  coupled change on either side.
 - ADR-012 §14.1 lists `Relation`'s non-native evaluability under QSL-152
   (FR-062-AC-6). FR-090-AC-4 specifies it as a property of S6a's input type;
   which ticket builds that type is a ticketing question, not a design one.
