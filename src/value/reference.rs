@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Typed `Reference<T>` values and closed object environments (FR-143).
+//! Closed object environments over the kernel [`ObjectReference`] (FR-143).
 //!
 //! A reference is terminal: its identity is the snapshot-supplied FR-009/FR-204
 //! triple (universe, object-type declaration identity, object identity), and
 //! equality never inspects the referenced state. No source form creates one.
 //! Cycles between objects are representable only through references resolved
 //! in an [`ObjectEnvironment`].
+//!
+//! The identity triple itself -- [`quire_exact::UniverseId`],
+//! [`quire_exact::EffectiveId`], [`quire_exact::ObjectId`] and
+//! [`quire_exact::ObjectReference`] -- is the kernel's own (ADR-013 T-6, §8
+//! OQ-C and OQ-E rulings): this module no longer defines a QSL-local
+//! `UniverseIdentity`/`ObjectIdentity`/`ObjectReference` (Linear QSL-131).
+//! `ObjectEnvironment` (a closed reference graph checked against a
+//! `TypeEnvironment`) stays a QSL type: it is a declaration-registry
+//! concern, layer 3 per ADR-013 O-15, not the kernel.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -13,98 +22,22 @@ use std::sync::Arc;
 use super::composite::{fill_slots, ConstructionRefusal, FieldValue, Value};
 use super::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use crate::model::population::PopulationBinding;
-use quire_exact::EffectiveId;
+use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
 
-/// A universe identity in its canonical identity bytes.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UniverseIdentity(Box<[u8]>);
-
-/// A declared object identity in its canonical identity bytes.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObjectIdentity(Box<[u8]>);
-
-/// An identity component with no canonical identity bytes.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("an identity component has at least one canonical identity byte")]
-pub struct InvalidObjectIdentity;
-
-fn identity_bytes(bytes: &[u8]) -> Result<Box<[u8]>, InvalidObjectIdentity> {
-    if bytes.is_empty() {
-        return Err(InvalidObjectIdentity);
-    }
-    Ok(bytes.into())
-}
-
-impl UniverseIdentity {
-    /// A universe from its canonical identity bytes.
-    pub fn new(bytes: &[u8]) -> Result<Self, InvalidObjectIdentity> {
-        identity_bytes(bytes).map(Self)
-    }
-
-    /// The canonical identity bytes.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl ObjectIdentity {
-    /// An object identity from its canonical identity bytes.
-    pub fn new(bytes: &[u8]) -> Result<Self, InvalidObjectIdentity> {
-        identity_bytes(bytes).map(Self)
-    }
-
-    /// The canonical identity bytes.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-/// A `Reference<T>` value: its identity triple.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObjectReference {
-    universe: UniverseIdentity,
-    object_type: EffectiveId,
-    identity: ObjectIdentity,
-}
-
-impl ObjectReference {
-    /// The reference `(universe, object_type, identity)` supplied by a bound
-    /// model snapshot.
-    pub fn new(
-        universe: UniverseIdentity,
-        object_type: EffectiveId,
-        identity: ObjectIdentity,
-    ) -> Self {
-        Self {
-            universe,
-            object_type,
-            identity,
-        }
-    }
-
-    /// The universe identity.
-    pub fn universe(&self) -> &UniverseIdentity {
-        &self.universe
-    }
-
-    /// The object type's effective-declaration identity (ADR-013 O-05).
-    pub fn object_type(&self) -> EffectiveId {
-        self.object_type
-    }
-
-    /// The declared object identity.
-    pub fn identity(&self) -> &ObjectIdentity {
-        &self.identity
-    }
-}
-
 /// Why an object environment is not closed.
+///
+/// `object` is boxed: `ObjectReference` grew past a fixed-size 32-byte
+/// `UniverseId` (ADR-013 §8 OQ-C ruling, replacing the previous
+/// pointer-sized `UniverseIdentity`), which pushed this refusal's stack size
+/// over `clippy::result_large_err`'s threshold on the cold refusal path
+/// (mirroring `crate::value::model_query::ModelQueryHalt::Refused`'s
+/// identical boxing, for the identical reason).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("object environment refused at {object:?}: {cause:?}")]
 pub struct ObjectEnvironmentRefusal {
     /// The object where the refusal originates.
-    pub object: ObjectReference,
+    pub object: Box<ObjectReference>,
     /// The typed cause.
     pub cause: ObjectEnvironmentCause,
 }
@@ -159,10 +92,10 @@ impl ObjectEnvironment {
         let mut admitted = BTreeMap::new();
         for (reference, attributes) in objects {
             let refuse = |cause| ObjectEnvironmentRefusal {
-                object: reference.clone(),
+                object: Box::new(reference.clone()),
                 cause,
             };
-            let Some(declaration) = types.object_type(reference.object_type) else {
+            let Some(declaration) = types.object_type(reference.object_type()) else {
                 return Err(refuse(ObjectEnvironmentCause::UnknownObjectType));
             };
             let slots = fill_slots(declaration.attributes(), attributes)
@@ -239,7 +172,7 @@ impl ObjectEnvironment {
         reference: &ObjectReference,
         name: &str,
     ) -> Option<&FieldValue> {
-        let declaration: &ObjectTypeDeclaration = types.object_type(reference.object_type)?;
+        let declaration: &ObjectTypeDeclaration = types.object_type(reference.object_type())?;
         let position = declaration
             .attributes()
             .iter()
@@ -257,7 +190,7 @@ impl ObjectEnvironment {
             match value {
                 Value::Reference(reference) if !self.objects.contains_key(reference) => {
                     return Err(ObjectEnvironmentRefusal {
-                        object: owner.clone(),
+                        object: Box::new(owner.clone()),
                         cause: ObjectEnvironmentCause::DanglingReference(Box::new(
                             reference.clone(),
                         )),

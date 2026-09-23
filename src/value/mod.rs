@@ -211,8 +211,7 @@ pub use quantity::{
 };
 pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
-    InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectIdentity, ObjectReference, PopulationConflict, UniverseIdentity,
+    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal, PopulationConflict,
 };
 pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,

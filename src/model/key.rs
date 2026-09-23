@@ -316,3 +316,12 @@ pub(super) fn digest_of(value: &Value) -> EffectiveId {
 fn digest_of_bytes(bytes: &[u8]) -> EffectiveId {
     EffectiveId::from_digest(Sha256::digest(bytes).into())
 }
+
+/// The SHA-256 digest of `value`'s JCS bytes, as a
+/// [`quire_exact::UniverseId`] (ADR-013 §8 OQ-C ruling). Shares
+/// [`jcs_bytes`] with [`digest_of`]: the two differ only in which digest
+/// domain's preimage `value` already encodes (`OBJECT_UNIVERSE_DOMAIN` vs.
+/// `EFFECTIVE_DECLARATION_DOMAIN`), not in the SHA-256 computation itself.
+pub(super) fn universe_digest_of(value: &Value) -> quire_exact::UniverseId {
+    quire_exact::UniverseId::from_digest(Sha256::digest(jcs_bytes(value)).into())
+}

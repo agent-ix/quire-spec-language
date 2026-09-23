@@ -16,7 +16,8 @@ use quire_spec_language::model::domain_package::{
 };
 use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use quire_spec_language::model::normalize::{
-    normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome, Refusals,
+    normalize, normalize_with_meter, object_universe, object_universe_of, object_universes,
+    ModelRefusal, ModelRefusalCause, NormalizeOutcome, ObjectUniverse, Refusals,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -902,6 +903,100 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
     }
     assert_ne!(view.identity().to_string(), selection_digest);
     assert_ne!(universe.identity().to_string(), selection_digest);
+}
+
+/// ADR-013 §8 OQ-E identity proof: F1 (`A`, `B -> A`, one connected
+/// component) and F2 (`A`, `B -> A`, `C -> A`, `D -> B`/`D -> C`, still one
+/// connected component) each hash to exactly the digest `object_universe`
+/// produced before OQ-E's per-connected-component partition existed --
+/// computed on this branch's own pre-fix commit
+/// (`git worktree add --detach <tmp> HEAD`, then a throwaway test printing
+/// `object_universe(&fixture_f1()).identity()` /
+/// `object_universe(&fixture_f2()).identity()`). A model with a single
+/// connected component has exactly one root-type set either way (every
+/// declared type belongs to the one component), so this is not a
+/// coincidence: it is the one case OQ-E's fix is required not to change.
+#[trace("TC-195", "FR-150-AC-6")]
+#[test]
+fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
+    let f1_universe = object_universe(&fixture_f1()).unwrap();
+    assert_eq!(
+        f1_universe.identity().to_string(),
+        "91320bde391435b02cd2c5c7bd7ef1ab77f3b3d369ff1130c949d5df33f33469",
+        "F1's universe digest must not move for a model with one connected component"
+    );
+
+    let f2_universe = object_universe(&fixture_f2()).unwrap();
+    assert_eq!(
+        f2_universe.identity().to_string(),
+        "749e472d8614a59dda09e59b561091abe7e05ea6986bedfda065b839e5232a19",
+        "F2's universe digest must not move for a model with one connected component"
+    );
+}
+
+/// ADR-013 §8 OQ-E: a domain package whose object-type supertype graph has
+/// two connected components -- F1's `A`/`B` (`B -> A`) and a wholly
+/// unrelated `E` (no supertype, no subtype) -- normalizes to two distinct
+/// `quire.model.object-universe/v1` universes, each carrying only its own
+/// component's root types, and every declared type maps to its own
+/// component's universe (`object_universe_of`), never the whole package's.
+///
+/// Mutation used: collapsing `build`'s per-component partition back to one
+/// universe over every root type in the domain package (the pre-fix
+/// behavior) turns this test red -- `object_universes` then returns a
+/// `Vec` of length 1, and `object_universe_of` returns the same identity for
+/// `A` and `E`.
+#[trace("TC-195", "FR-150-AC-6")]
+#[test]
+fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
+    let mut domain_package = fixture_f1();
+    domain_package
+        .records
+        .push(object_type("ix://test/orders/E", vec![]));
+
+    let universes = object_universes(&domain_package).unwrap();
+    assert_eq!(
+        universes.len(),
+        2,
+        "one universe per connected component: {{A, B}} and {{E}}"
+    );
+
+    let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let type_a = find_type(&view, "ix://test/orders/A").effective_id;
+    let type_e = find_type(&view, "ix://test/orders/E").effective_id;
+
+    let ab_universe = object_universe_of(
+        &domain_package,
+        &DeclarationKey::fixture("ix://test/orders/A"),
+    )
+    .unwrap();
+    let e_universe = object_universe_of(
+        &domain_package,
+        &DeclarationKey::fixture("ix://test/orders/E"),
+    )
+    .unwrap();
+    assert_ne!(
+        ab_universe.identity(),
+        e_universe.identity(),
+        "A's and E's components have distinct universes"
+    );
+    assert_eq!(ab_universe.root_types, vec![type_a]);
+    assert_eq!(e_universe.root_types, vec![type_e]);
+
+    // `B`'s own universe agrees with `A`'s: they share a component.
+    let b_universe = object_universe_of(
+        &domain_package,
+        &DeclarationKey::fixture("ix://test/orders/B"),
+    )
+    .unwrap();
+    assert_eq!(b_universe.identity(), ab_universe.identity());
+
+    // Every returned universe is one of the two per-type universes above --
+    // `object_universes` and `object_universe_of` agree.
+    let identities: std::collections::BTreeSet<_> =
+        universes.iter().map(ObjectUniverse::identity).collect();
+    assert!(identities.contains(&ab_universe.identity()));
+    assert!(identities.contains(&e_universe.identity()));
 }
 
 #[trace("TC-195")]
@@ -2133,6 +2228,12 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeDeclaration,
         NormalizeHash,
         NormalizeDeclaration,
+        NormalizeHash,
+        // ADR-013 §8 OQ-E: `A` and `B` declare no supertype relation to one
+        // another, so this domain package's object-type supertype graph has
+        // two connected components -- one `normalize.hash` per object
+        // universe (`value-accounting.md`:495), ascending by each universe's
+        // own first root type identity, then the effective view.
         NormalizeHash,
         NormalizeHash,
         NormalizeHash,

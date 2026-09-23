@@ -21,6 +21,7 @@ use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
+use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_spec_language::check::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     OperationClauses,
@@ -40,8 +41,8 @@ use quire_spec_language::value::{
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, DispatchCandidate,
     DispatchFunctionRole, DispatchOperation, DispatchTable, Evaluation, FamilyOutcome,
     FamilyResult, InputRefusal, InvalidDispatchDeclaration, Location, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations,
-    QualifiedName, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName, TypeEnvironment, Value,
+    ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -112,16 +113,12 @@ fn types(receiver_type: EffectiveId) -> TypeEnvironment {
     .unwrap()
 }
 
-fn universe() -> UniverseIdentity {
-    UniverseIdentity::new(b"dispatch-calls-universe").unwrap()
+fn universe() -> UniverseId {
+    UniverseId::from_digest(Sha256::digest(b"dispatch-calls-universe").into())
 }
 
 fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectReference {
-    ObjectReference::new(
-        universe(),
-        receiver_type,
-        ObjectIdentity::new(identity.as_bytes()).unwrap(),
-    )
+    ObjectReference::new(universe(), receiver_type, ObjectId::new(identity).unwrap())
 }
 
 fn objects(receiver_type: EffectiveId, identity: &str) -> ObjectEnvironment {

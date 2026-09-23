@@ -157,8 +157,8 @@ pub use decimal::{
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};
 pub use identity::{
-    EffectiveId, MemberId, ObjectId, PopulationId, UnitDomain, UnitId, UniverseId, VariantId,
-    COMPOUND_UNIT_DOMAIN, EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN,
+    EffectiveId, EmptyObjectIdentity, MemberId, ObjectId, PopulationId, UnitDomain, UnitId,
+    UniverseId, VariantId, COMPOUND_UNIT_DOMAIN, EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN,
     POPULATION_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
 };
 pub use ieee::{

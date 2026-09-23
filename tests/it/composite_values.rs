@@ -18,7 +18,9 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
 };
-use quire_exact::{IllTyped, IllTypedCause, Presence};
+use quire_exact::{
+    EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
+};
 use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
@@ -27,9 +29,8 @@ use quire_spec_language::value::{
     ConstructionRefusal, DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator,
     FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId,
     GraphRefusal, GraphSlot, InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause,
-    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
-    Outcome, QualifiedName, RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph,
-    ValueType,
+    ObjectEnvironmentRefusal, ObjectTypeDeclaration, OptionValue, Outcome, QualifiedName,
+    RecursionEdges, TypeEnvironment, Value, ValueGraph, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -418,11 +419,15 @@ fn node_environment() -> TypeEnvironment {
     .unwrap()
 }
 
+fn universe_id(tag: &[u8]) -> UniverseId {
+    UniverseId::from_digest(Sha256::digest(tag).into())
+}
+
 fn node_reference(name: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseIdentity::new(b"snapshot-1").unwrap(),
+        universe_id(b"snapshot-1"),
         object_type("M::Node"),
-        ObjectIdentity::new(name.as_bytes()).unwrap(),
+        ObjectId::new(name).unwrap(),
     )
 }
 
@@ -461,14 +466,11 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
     assert_eq!(
         ObjectEnvironment::new(&env, [(node_reference("o1"), peer("missing"))]).unwrap_err(),
         ObjectEnvironmentRefusal {
-            object: node_reference("o1"),
+            object: Box::new(node_reference("o1")),
             cause: ObjectEnvironmentCause::DanglingReference(Box::new(node_reference("missing"))),
         }
     );
-    assert_eq!(
-        ObjectIdentity::new(b"").map(|_| ()),
-        Err(quire_spec_language::value::InvalidObjectIdentity)
-    );
+    assert_eq!(ObjectId::new("").map(|_| ()), Err(EmptyObjectIdentity));
 }
 
 #[trace("TC-188", "FR-143-AC-8")]

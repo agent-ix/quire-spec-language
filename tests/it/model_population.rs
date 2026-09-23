@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits};
+use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -183,6 +183,44 @@ fn fixture_f1_with_second_population() -> DomainPackage {
     domain_package
 }
 
+/// A second population's identity, declared over [`fixture_two_components`]'s
+/// own `model.E` -- an object type wholly unrelated to `model.A`/`model.B`
+/// (no supertype, no subtype): ADR-013 §8 OQ-E's own second connected
+/// component.
+const E_POPULATION: &str = "model.pop.e";
+
+/// [`E_POPULATION`]'s own declaration key.
+fn e_population_key() -> DeclarationKey {
+    DeclarationKey::fixture(E_POPULATION)
+}
+
+/// [`fixture_f1`] plus a wholly unrelated object type `model.E` (no
+/// supertype, no subtype) and its own closed population [`E_POPULATION`]:
+/// ADR-013 §8 OQ-E's own two-connected-component domain package, `{A, B}`
+/// and `{E}`. Before OQ-E's per-component partition, both populations'
+/// bindings shared one whole-package universe; after it, each binds its own
+/// component's universe (`crate::model::population::admit_binding_as`'s own
+/// `population.member_types.first()` lookup).
+fn fixture_two_components() -> DomainPackage {
+    let mut domain_package = fixture_f1();
+    domain_package.records.push(object_type("model.E", vec![]));
+    domain_package.records.push(population_record(
+        E_POPULATION,
+        &["model.E"],
+        Extent::Closed,
+    ));
+    domain_package
+}
+
+/// [`E_POPULATION`]'s own single-member FCD FR-121 document: `e1` of
+/// `model.E`.
+fn p_e(model_identity: &str) -> PopulationDocument {
+    PopulationDocument {
+        model_identity: model_identity.to_owned(),
+        members: vec![member("e1", "model.E")],
+    }
+}
+
 /// TC-195 F1 (domain package `bundle.n01`), imported as `M` by TC-198: types
 /// `A`, `B`; field `A.x` of `A`; generalization `B -> A`; plus its own FR-153
 /// population declaration [`P1_POPULATION`] (member types `A`, `B`), at the
@@ -293,11 +331,7 @@ fn p1(model_identity: &str) -> PopulationDocument {
     }
 }
 
-fn reference_key(
-    universe: &EffectiveId,
-    type_identity: &EffectiveId,
-    object: &str,
-) -> ReferenceKey {
+fn reference_key(universe: &UniverseId, type_identity: &EffectiveId, object: &str) -> ReferenceKey {
     ReferenceKey {
         universe: *universe,
         type_identity: *type_identity,
@@ -313,7 +347,7 @@ fn reference_key(
 /// well-formedness from these same bytes.
 fn lookup_key(
     static_type: DeclarationKey,
-    universe: &EffectiveId,
+    universe: &UniverseId,
     type_identity: &EffectiveId,
     object: &str,
 ) -> LookupKey {
@@ -889,6 +923,144 @@ fn l04_lookup_foreign_universe_refuses() {
         other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
     }
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+}
+
+/// TC-198 L04's byte-comparison layer: a `LookupKey.universe` of some length
+/// other than 32 (never a well-formed `quire_exact::UniverseId`, ADR-013 §8
+/// OQ-C ruling) still refuses `foreign_reference`/`foreign-universe`,
+/// reporting the caller's own raw bytes as `actual` rather than a
+/// substituted or truncated identity -- `lookup`'s own
+/// `r.universe.as_slice() != binding.universe().as_bytes().as_slice()`
+/// comparison is a plain byte-slice inequality, which Rust never panics on
+/// for a length mismatch, so this is memory-safe and refuses exactly like a
+/// well-formed-but-different universe does. Constructed directly through
+/// `LookupKey` (bypassing `ObjectReference`, which cannot represent a
+/// wrong-length universe at all after ADR-013 §8's fix) -- exactly the
+/// direct-construction path `crate::value::model_query`'s own module docs
+/// cite as this byte-level defense's real test.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let a = type_id(&view, "model.A");
+    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+
+    let wrong_length_universe = vec![0x07; 31];
+    let rx = LookupKey {
+        static_type: DeclarationKey::fixture("model.A"),
+        universe: wrong_length_universe.clone(),
+        type_identity: a,
+        object: b"a1".to_vec(),
+    };
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &binding,
+        &DeclarationKey::fixture("model.A"),
+        &rx,
+        AbsenceMode::Empty,
+        &mut meter,
+    );
+    match outcome {
+        LookupOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignUniverse {
+                    actual: wrong_length_universe,
+                    expected: *binding.universe(),
+                }
+            );
+        }
+        other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
+    }
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+}
+
+/// ADR-013 §8 OQ-E: one domain package's two connected components --
+/// [`fixture_two_components`]'s `{A, B}` and `{E}` -- bind two distinct
+/// `quire.model.object-universe/v1` universes, never the one whole-package
+/// universe every domain package produced before this fix. A reference
+/// minted in `E`'s own population is then a *foreign* universe against the
+/// `{A, B}` population's binding -- exactly [`l04_lookup_foreign_universe_refuses`]'s
+/// scenario, but from a reference that is perfectly well-formed under this
+/// very domain package's own other population, not an unrelated domain
+/// package.
+///
+/// Mutation used: collapsing `build`'s per-component partition back to one
+/// universe over every root type in the domain package (the pre-fix
+/// behavior) turns this test red -- `ab_binding.universe()` and
+/// `e_binding.universe()` become equal, so the lookup below no longer
+/// refuses as foreign at all (it would instead reach `AbsentKey`, `e1` not
+/// being a member of the `{A, B}` binding).
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
+    let domain_package = fixture_two_components();
+    let view = view_of(&domain_package);
+
+    let mut ab_admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let ab_binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut ab_admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted {{A, B}} binding, got {other:?}"),
+    };
+
+    let mut e_admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let e_binding = match admit_binding(
+        &domain_package,
+        &view,
+        &p_e("test/orders"),
+        &e_population_key(),
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut e_admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted {{E}} binding, got {other:?}"),
+    };
+
+    assert_ne!(
+        ab_binding.universe(),
+        e_binding.universe(),
+        "the {{A, B}} and {{E}} components must bind distinct universes"
+    );
+
+    let e = type_id(&view, "model.E");
+    let rx = lookup_key(
+        DeclarationKey::fixture("model.E"),
+        e_binding.universe(),
+        &e,
+        "e1",
+    );
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = lookup(
+        &ab_binding,
+        &DeclarationKey::fixture("model.E"),
+        &rx,
+        AbsenceMode::Empty,
+        &mut meter,
+    );
+    match outcome {
+        LookupOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ForeignReference);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ForeignUniverse {
+                    actual: e_binding.universe().as_bytes().to_vec(),
+                    expected: *ab_binding.universe(),
+                }
+            );
+        }
+        other => panic!("expected Refused(foreign_reference/foreign-universe), got {other:?}"),
+    }
 }
 
 /// TC-198 L05: two member records naming the same object with different

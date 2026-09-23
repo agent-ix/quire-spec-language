@@ -18,6 +18,7 @@ use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef}
 use crate::model::key::{DeclarationKey, EffectiveId};
 use qsl_foundation::diagnostic::CatalogCode;
 use qsl_foundation::source::LocatedSpan;
+use quire_exact::UniverseId;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay
@@ -314,8 +315,9 @@ pub enum ModelRefusalCause {
         /// the caller actually supplied rather than a substituted or
         /// truncated identity.
         actual: Vec<u8>,
-        /// The binding's universe.
-        expected: EffectiveId,
+        /// The binding's universe (ADR-013 §8 OQ-C ruling: a `UniverseId`,
+        /// not an `EffectiveId`).
+        expected: UniverseId,
     },
     /// A reference key is not a member of the bound population.
     AbsentKey {
@@ -808,6 +810,7 @@ pub(crate) mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::CatalogCode;
     use qsl_foundation::source::{LocatedSpan, Position};
+    use quire_exact::UniverseId;
 
     fn key(identity: &str) -> DeclarationKey {
         DeclarationKey::fixture(identity)
@@ -815,6 +818,10 @@ pub(crate) mod tests {
 
     fn effective_id() -> crate::model::key::EffectiveId {
         digest_of(&Value::Null)
+    }
+
+    fn universe_id() -> UniverseId {
+        UniverseId::from_digest(*effective_id().as_bytes())
     }
 
     fn multiplicity() -> Multiplicity {
@@ -953,7 +960,7 @@ pub(crate) mod tests {
         },
         ForeignUniverse => ModelRefusalCause::ForeignUniverse {
             actual: effective_id().as_bytes().to_vec(),
-            expected: effective_id(),
+            expected: universe_id(),
         },
         AbsentKey => ModelRefusalCause::AbsentKey { key: Vec::new() },
         WrongExport => ModelRefusalCause::WrongExport,

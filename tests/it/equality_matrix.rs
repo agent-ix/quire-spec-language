@@ -21,8 +21,9 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_exact::{
-    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, Presence, Quantity, Rational,
-    RoundingMode, TextProfile, TextType, UnitDomain, UnitId,
+    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, ObjectId, ObjectReference,
+    Presence, Quantity, Rational, RoundingMode, TextProfile, TextType, UnitDomain, UnitId,
+    UniverseId,
 };
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
@@ -33,10 +34,10 @@ use quire_spec_language::value::{
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
     EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome,
     FieldDeclaration, FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue,
-    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
-    PackageDeclarations, RationalDomain, Refusal, Text, TextPayload, TypeEnvironment, Undefined,
-    UnitGraph, UnitPreimage, UnitTable, UniverseIdentity, Value, ValueLoss, ValueType,
+    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue,
+    Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain, Refusal, Text,
+    TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -910,11 +911,15 @@ fn object_environment() -> TypeEnvironment {
     .unwrap()
 }
 
+fn universe_id(tag: &str) -> UniverseId {
+    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+}
+
 fn reference(universe: &str, identity: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseIdentity::new(universe.as_bytes()).unwrap(),
+        universe_id(universe),
         object_type("M::Obj"),
-        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+        ObjectId::new(identity).unwrap(),
     )
 }
 
