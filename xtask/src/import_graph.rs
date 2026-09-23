@@ -458,7 +458,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::enumeration",
     "value::unit",
     "value::quantity",
-    "value::key",
     "value::reference",
     "value::containment",
     "value::semantic_node",
@@ -469,15 +468,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // Layer 3, `check` core itself.
     "check",
     "family",
-    // The `value` K-copy modules, each only while it exists (this list
-    // only shrinks; a module leaves it in the change that deletes that
-    // module's QSL copy). `value::decimal`, `value::ieee`, `value::numeric`
-    // and `value::text` left this list under QSL-131 O3, which deleted the
-    // four modules.
-    "value::collection",
-    "value::composite",
-    "value::equality",
-    "value::rational",
 ];
 
 /// FR-068-AC-6's MUST NOT list (closed): a later layer, forbidden including
@@ -562,9 +552,9 @@ fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
 /// is a real module segment because the source syntax itself guarantees it
 /// (a `use` edge's own path, where every segment but the bound leaf is a
 /// module by construction); it is `false` for an inline path, where syntax
-/// alone cannot tell a submodule segment (`composite` in
-/// `crate::value::composite::Presence`) apart from a flat aggregate item
-/// (`Presence` in `crate::value::Presence::Optional`) -- that case falls
+/// alone cannot tell a submodule segment (`quantity` in
+/// `crate::value::quantity::UnitTable`) apart from a flat aggregate item
+/// (`UnitTable` in `crate::value::UnitTable`) -- that case falls
 /// back to a filesystem check and then `value::mod.rs`'s own re-export
 /// table, the same two-step resolution the flat-`use` case already needed.
 fn resolve_layer_module(
@@ -624,7 +614,7 @@ pub struct LayerEdge {
     pub file: String,
     /// 1-based source line.
     pub line: usize,
-    /// The resolved module label (e.g. `"value::composite"`, `"model"`).
+    /// The resolved module label (e.g. `"value::quantity"`, `"model"`).
     pub module: String,
     /// Permitted, forbidden, or unlisted.
     pub class: LayerClass,
@@ -639,8 +629,8 @@ impl LayerEdge {
     /// Whether this edge violates FR-068-AC-6: its module is not permitted,
     /// or it is a `value` edge that does not name its submodule. The flat
     /// form fails even when the submodule it actually reaches is itself
-    /// permitted (TC-175: `crate::value::Rational` still fails, though
-    /// `value::rational` is a K-copy module).
+    /// permitted (TC-175: `crate::value::UnitTable` still fails, though
+    /// `value::quantity` is a permitted `semantic_value` module).
     pub fn is_violation(&self) -> bool {
         self.class != LayerClass::Permitted || !self.submodule_qualified
     }
@@ -685,7 +675,7 @@ fn classify_resolved(
 /// crate::{package, route};` and `use super::super::route;`, which bind a
 /// module by name, are classified on that module. Every resolved segment but
 /// a named leaf is a module by syntax; a named leaf may itself be a module
-/// (`use crate::value::composite;`), which [`resolve_layer_module`] tells
+/// (`use crate::value::quantity;`), which [`resolve_layer_module`] tells
 /// apart from a flat aggregate item.
 fn classify_use_edge(
     workspace_root: &Path,
@@ -1253,11 +1243,11 @@ mod tests {
 
     /// A minimal QSL-shaped fixture tree: a bare marker file for every
     /// non-`value` module FR-068-AC-6 names (so [`is_real_crate_module`]
-    /// can tell each apart from an external crate), every named `value`
-    /// submodule (K-copy and `semantic_value` alike), plus `value::member`
-    /// and `value::expression` -- two real submodules the rule deliberately
-    /// leaves off both lists (the first permanently unlisted, the second
-    /// forbidden).
+    /// can tell each apart from an external crate) and every named
+    /// `semantic_value` `value` submodule, plus `value::member` and
+    /// `value::expression` -- two
+    /// real submodules the rule deliberately leaves off both lists (the
+    /// first permanently unlisted, the second forbidden).
     fn layer_fixture_root() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         for module in [
@@ -1278,14 +1268,9 @@ mod tests {
             "enumeration",
             "unit",
             "quantity",
-            "key",
             "reference",
             "containment",
             "semantic_node",
-            "collection",
-            "composite",
-            "equality",
-            "rational",
             "model_query",
             "member",
         ] {
@@ -1389,10 +1374,11 @@ mod tests {
         assert!(edges[0].is_violation());
     }
 
-    /// TC-175 step 6: a shipped `use crate::value::Rational;` (the flat
-    /// aggregate) fails even though `value::rational` -- the submodule it
-    /// actually reaches -- is itself a permitted K-copy module. The flat
-    /// form itself is what FR-068-AC-6 forbids, independent of the target.
+    /// TC-175 step 6: a shipped `use crate::value::UnitTable;` (the flat
+    /// aggregate) fails even though `value::quantity` -- the submodule it
+    /// actually reaches -- is itself a permitted `semantic_value` module.
+    /// The flat form itself is what FR-068-AC-6 forbids, independent of the
+    /// target.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn flat_value_use_import_is_a_violation_even_when_the_target_is_permitted() {
@@ -1400,25 +1386,25 @@ mod tests {
         write(
             dir.path(),
             "src/value/mod.rs",
-            "pub use rational::Rational;\n",
+            "pub use quantity::UnitTable;\n",
         );
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "use crate::value::Rational;\n",
+            "use crate::value::UnitTable;\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::rational");
+        assert_eq!(edges[0].module, "value::quantity");
         assert_eq!(edges[0].class, LayerClass::Permitted);
         assert!(!edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
     }
 
     /// TC-175's own flat-inline-path fixture: a shipped inline flat path
-    /// `crate::value::Presence::Optional` fails, resolved to
-    /// `value::composite` (the module `Presence` actually belongs to)
-    /// through `value::mod.rs`'s own re-export table.
+    /// `crate::value::UnitTable` fails, resolved to `value::quantity` (the
+    /// module `UnitTable` actually belongs to) through `value::mod.rs`'s own
+    /// re-export table.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn flat_inline_value_path_is_a_violation() {
@@ -1426,16 +1412,16 @@ mod tests {
         write(
             dir.path(),
             "src/value/mod.rs",
-            "pub use composite::Presence;\n",
+            "pub use quantity::UnitTable;\n",
         );
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "pub fn f() -> u8 {\n    match crate::value::Presence::Optional {\n        _ => 0,\n    }\n}\n",
+            "pub fn f(_: &crate::value::UnitTable) {}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::composite");
+        assert_eq!(edges[0].module, "value::quantity");
         assert!(!edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
     }
@@ -1584,8 +1570,8 @@ mod tests {
     }
 
     /// TC-175 step 6: `{self}` imports bind the module they name.
-    /// `use crate::lowering::{self};` fails; `use crate::value::composite::
-    /// {self};` names a permitted submodule and passes.
+    /// `use crate::lowering::{self};` fails; `use crate::value::quantity::
+    /// {self};` names a permitted `semantic_value` submodule and passes.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn self_import_binds_the_named_module() {
@@ -1593,20 +1579,20 @@ mod tests {
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "use crate::lowering::{self};\nuse crate::value::composite::{self as c};\n",
+            "use crate::lowering::{self};\nuse crate::value::quantity::{self as q};\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 2, "{edges:?}");
         assert_eq!(edges[0].module, "lowering");
         assert!(edges[0].is_violation());
-        assert_eq!(edges[1].module, "value::composite");
+        assert_eq!(edges[1].module, "value::quantity");
         assert!(!edges[1].is_violation());
     }
 
     /// TC-175 step 6: `use crate::value;` binds `value`'s flat aggregate. The
     /// `use` fails (it names no submodule), and so does a later
-    /// `value::Presence::Optional`, resolved through the tracked binding to
-    /// `value::composite` without naming it.
+    /// `value::UnitTable::foo`, resolved through the tracked binding to
+    /// `value::quantity` without naming it.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn use_binding_value_and_later_flat_paths_are_violations() {
@@ -1614,23 +1600,23 @@ mod tests {
         write(
             dir.path(),
             "src/value/mod.rs",
-            "pub use composite::Presence;\n",
+            "pub use quantity::UnitTable;\n",
         );
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "use crate::value;\npub fn f() -> bool {\n    matches!(g(), value::Presence::Optional)\n}\n",
+            "use crate::value;\npub fn f() -> bool {\n    matches!(g(), value::UnitTable::Foo)\n}\n",
         );
         assert_eq!(
             violations_of(dir.path()),
-            vec![("value".to_owned(), 1), ("value::composite".to_owned(), 3)]
+            vec![("value".to_owned(), 1), ("value::quantity".to_owned(), 3)]
         );
     }
 
     /// TC-175 step 6: a module bound by a `use`, renamed or not, is tracked:
     /// `use crate::checked_package as cp;` then `cp::CheckedPackage::new()`
-    /// fails on both lines, while `use crate::value::composite;` then
-    /// `composite::Presence` resolves to the permitted, named submodule.
+    /// fails on both lines, while `use crate::value::quantity;` then
+    /// `quantity::UnitTable` resolves to the permitted, named submodule.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn later_paths_through_a_bound_module_are_classified() {
@@ -1638,8 +1624,8 @@ mod tests {
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "use crate::checked_package as cp;\nuse crate::value::composite;\n\
-             pub fn f() {\n    let _ = cp::CheckedPackage::new();\n    let _ = composite::Presence::Optional;\n}\n",
+            "use crate::checked_package as cp;\nuse crate::value::quantity;\n\
+             pub fn f() {\n    let _ = cp::CheckedPackage::new();\n    let _ = quantity::UnitTable::default();\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         let lines = |module: &str| -> Vec<(usize, bool)> {
@@ -1650,7 +1636,7 @@ mod tests {
                 .collect()
         };
         assert_eq!(lines("checked_package"), vec![(1, true), (4, true)]);
-        assert_eq!(lines("value::composite"), vec![(2, false), (5, false)]);
+        assert_eq!(lines("value::quantity"), vec![(2, false), (5, false)]);
     }
 
     /// TC-175 step 6: a `use` inside a function body is shipped code and is

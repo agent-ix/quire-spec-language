@@ -39,9 +39,7 @@
 //! Several real, deliberate capability losses at this kernel boundary are
 //! documented where they occur rather than silently absorbed:
 //! - the `key` and `equality` modules: `Value::Population` has no key and
-//!   compares under neither, matching QSL's own `value::equality`/
-//!   `value::key`, which refuse a population as an equality operand or key
-//!   participant today -- a population binding is a direct operand of
+//!   compares under neither -- a population binding is a direct operand of
 //!   `allInstances`/`lookup` only, never an equality or key operand. (A
 //!   same-enum check *is* still available: `ValueType::Enum(EnumShape)`'s
 //!   admission already guarantees both operands share one enum's variant
@@ -115,8 +113,9 @@ mod value;
 // H-5: every submodule above is private and its public surface is exposed
 // only through this curated facade, mirroring `src/value/mod.rs`'s pattern
 // (private `mod`s behind selective `pub use` re-exports) rather than
-// `pub mod` wholesale. `crate::key::compare_keys` is deliberately absent
-// below: it is reachable only from inside this crate. `rational::
+// `pub mod` wholesale. `key::compare_keys` is `pub` and exported below:
+// QSL's evaluator groups adjacent equal elements with the kernel's own key,
+// so grouping and canonical sort cannot drift apart. `rational::
 // divided_by_power_of_ten`/`divided_by_power_of_two`, `decimal::
 // DecimalRepresentation::to_rational`, `decimal::compare_shifted`,
 // `decimal::power_of_ten_bits`/`sbits`/`sdigits`, `decimal::DecimalType::
@@ -145,8 +144,8 @@ pub use accounting::{
     length_amount, Charge, ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits,
 };
 pub use collection::{
-    construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
-    CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
+    construct_collection, form, form_collection, form_grouped, from_admitted, member_equal,
+    CardinalityBound, CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{
@@ -171,6 +170,7 @@ pub use integer::{
     BoundedInteger, EmptyInterval, Integer, IntegerDomain, IntegerInterval, NonCanonicalInteger,
     OutOfDomain,
 };
+pub use key::compare_keys;
 pub use location::{Location, Origin, Role};
 pub use node::{is_identifier, Identifier, InvalidIdentifier, NodeKey, NODE_KEY_DOMAIN};
 pub use numeric::{
@@ -187,7 +187,8 @@ pub use text::{
     TextProfile, TextProvenance, TextType, UNICODE_TEXT_DEFINITION, UNICODE_VERSION,
 };
 pub use value::{
-    evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, tuple, Component,
-    CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumMember, EnumShape,
-    FieldDeclaration, FieldExpression, FieldValue, OptionValue, Presence, Value, ValueType,
+    evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, retain_composite,
+    tuple, Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumMember,
+    EnumShape, FieldDeclaration, FieldExpression, FieldValue, OptionValue, Presence, Value,
+    ValueType,
 };

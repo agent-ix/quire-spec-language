@@ -25,6 +25,7 @@ use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
+use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
@@ -43,10 +44,10 @@ use quire_spec_language::model::population::{
 };
 use quire_spec_language::value::{
     CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
+    CheckedPackageEvaluation, CheckingLimits, CompositeDeclaration, CompositeShape,
     DeclarationCause, Evaluation, FamilyOutcome, FamilyResult, FieldDeclaration, InputRefusal,
     Location, ObjectEnvironment, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
-    TypeEnvironment, Value, ValueType, WrongSnapshotCause,
+    TypeEnvironment, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -1392,7 +1393,7 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
 /// triple and FR-153's Outputs both require the most-specific type (TC-198
 /// L01); `OptionValue::from_admitted`'s soundness chain (its own doc comment)
 /// is exactly why this collection-literal path is sound too --
-/// `crate::value::collection::from_admitted` bypasses `admits()` the same way
+/// `quire_exact::from_admitted` bypasses `admits()` the same way
 /// for the identical reason.
 #[test]
 #[trace("TC-198", "FR-143", "FR-153-AC-5")]

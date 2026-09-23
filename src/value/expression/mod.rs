@@ -27,12 +27,11 @@ mod causes;
 mod evaluate;
 mod family;
 
-use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
 use crate::family::{ReferenceEvaluation, S6aFamilyKind};
 use evaluate::{Callable, Machine};
 use qsl_foundation::diagnostic::InternalFault;
-use quire_exact::{Meter, NodeKey};
+use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 
 pub use crate::family::{FamilyOutcome, FamilyResult};
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
@@ -191,9 +190,8 @@ fn validate(
                 Value::Option(option) => pending.extend(option.payload()),
                 Value::Composite(composite) => {
                     pending.extend(composite.slots().iter().filter_map(|slot| match slot {
-                        super::composite::FieldValue::Present(value) => Some(value),
-                        super::composite::FieldValue::Absent
-                        | super::composite::FieldValue::Null => None,
+                        FieldValue::Present(value) => Some(value),
+                        FieldValue::Absent | FieldValue::Null => None,
                     }));
                 }
                 Value::Collection(collection) => pending.extend(collection.elements()),

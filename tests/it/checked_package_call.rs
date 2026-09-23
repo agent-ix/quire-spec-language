@@ -21,10 +21,11 @@
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
+use quire_exact::{Value, ValueType};
 use quire_spec_language::value::{
     CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
     CheckedPackageEvaluation, CheckingLimits, Evaluation, FamilyOutcome, InputRefusal,
-    ObjectEnvironment, PackageDeclarations, QualifiedName, Value, ValueType,
+    ObjectEnvironment, PackageDeclarations, QualifiedName,
 };
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:

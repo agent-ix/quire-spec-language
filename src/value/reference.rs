@@ -19,11 +19,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::composite::{fill_slots, ConstructionRefusal, FieldValue, Value};
-use super::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+use super::declaration::{fill_slots, ConstructionRefusal, ObjectTypeDeclaration, TypeEnvironment};
 use crate::model::population::PopulationBinding;
 use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
+use quire_exact::{FieldValue, Value};
 
 /// Why an object environment is not closed.
 ///

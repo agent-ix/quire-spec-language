@@ -17,10 +17,12 @@
 //!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
-//! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
+//! 3. FR-143 records, tuples and finite recursive
+//!    [`Value`](quire_exact::Value)s over a
 //!    [`TypeEnvironment`], the FR-149 equality matrix
 //!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
-//!    [`CollectionValue`]s ([`construct_collection`]) (QSL #119); FR-307
+//!    [`CollectionValue`](quire_exact::CollectionValue)s
+//!    ([`construct_collection`](quire_exact::construct_collection)) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
 //!    (FR-087, #213 S-3a);
 //! 4. [`order_numbers`](quire_exact::order_numbers) compares one
@@ -118,19 +120,14 @@
 // `text` from this list; `check` now imports their former items from
 // `quire_exact` directly.
 mod application_key;
-pub(crate) mod collection;
-pub(crate) mod composite;
 mod containment;
 pub(crate) mod declaration;
 pub(crate) mod definition;
 pub(crate) mod enumeration;
-pub(crate) mod equality;
 mod expression;
-mod key;
 mod member;
 mod model_query;
 pub(crate) mod quantity;
-pub(crate) mod rational;
 mod reference;
 pub(crate) mod semantic_node;
 mod stop;
@@ -149,23 +146,9 @@ mod unit;
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own types; this
 // module does not re-export them (QSL-131 S-1b), so consumers import them from
 // `quire_exact` directly.
-// QSL-131 V5: `Value`, `ValueType`, `OptionValue`, `CompositeValue`,
-// `FieldValue`, `CollectionType` and `CollectionValue` are `quire_exact`'s
-// own kernel types now (ADR-011 §6.1's K row), re-exported from `composite`/
-// `collection` rather than duplicated. `FieldDeclaration`, `Component`,
-// `ConstructionCause` and `ConstructionRefusal` stay QSL's own, name-keyed
-// types: the kernel's own versions key a field by its opaque `MemberId`
-// (ADR-013 O-06), which needs the `check::CheckedGraph` member-identity
-// resolution `value::member`'s own doc marks as not yet landed
-// ("No production caller constructs a `Member` yet") -- adopting them here
-// is remaining work, gated on that landing, not on this crate's own choice.
-// `value::composite`'s and `value::collection`'s own module docs give the
-// full per-item accounting.
-pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
-pub use composite::{
-    Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, FieldDeclaration,
-    FieldExpression, FieldValue, OptionValue, Value, ValueType,
-};
+// The kernel's `Value`, `ValueType`, collection, equality and rational items
+// (ADR-011 §6.1's K row) are not re-exported here: every consumer imports
+// them from `quire_exact`, the one definition (ADR-011 §7.2).
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 // QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
 // `evaluate_decimal` were this module's own `decimal` submodule, a
@@ -175,11 +158,14 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
-// `declaration` owns the FR-143 registry and the FR-149 check-level
-// equality layer; neither is a kernel type (ADR-011 §6.1).
+// `declaration` owns the FR-143 registry, the FR-149 check-level equality
+// layer and QSL's name-keyed `FieldDeclaration`/`Component`/
+// `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
+// (ADR-011 §6.1).
 pub use declaration::{
-    CheckedEquality, CompositeDeclaration, CompositeShape, DeclarationCause, EqualityOperand,
-    EqualityOperator, EqualitySchedule, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule,
+    FieldDeclaration, FieldExpression, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
     TypeEnvironment,
 };
 pub use definition::{
@@ -191,7 +177,6 @@ pub use enumeration::{
     compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
     EnumMemberPreimage, EnumValue,
 };
-pub use equality::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
@@ -261,7 +246,6 @@ pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
     QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
 };
-pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
     ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal, PopulationConflict,
 };

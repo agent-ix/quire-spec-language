@@ -9,13 +9,16 @@ use quire_exact::{
     TextProfile, TextType,
 };
 use quire_exact::{
+    construct_collection, form_collection, CollectionType, Deferred, FieldValue, OptionValue,
+    Value, ValueType,
+};
+use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
 use quire_spec_language::value::{
-    construct_collection, form_collection, CollectionType, CompositeDeclaration, CompositeShape,
-    Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome, FieldDeclaration,
-    FieldValue, ObjectTypeDeclaration, OptionValue, TypeEnvironment, Value, ValueType,
+    CompositeDeclaration, CompositeShape, EnumMemberIndex, EqualityOperand, EqualityOperator,
+    FamilyOutcome, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 use sha2::{Digest, Sha256};
 
@@ -774,7 +777,7 @@ mod checked {
     }
 
     fn formed(value_type: &CollectionType, values: Vec<Value>) -> Value {
-        quire_spec_language::value::form_collection(value_type, values, &mut Meter::new(UNLIMITED))
+        quire_exact::form_collection(value_type, values, &mut Meter::new(UNLIMITED))
             .unwrap()
             .completed()
             .unwrap()

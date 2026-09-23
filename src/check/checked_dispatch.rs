@@ -108,12 +108,12 @@ use crate::model::dispatch::{
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
-use crate::value::composite::ValueType;
 use qsl_forms::{
     BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::diagnostic::Code;
 use quire_exact::EffectiveId;
+use quire_exact::ValueType;
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
 /// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared
@@ -1075,8 +1075,8 @@ mod tests {
     };
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
-    use crate::value::ValueType;
     use qsl_forms::Expression;
+    use quire_exact::ValueType;
 
     /// `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
     /// rather than silently truncating the closure. A straight redefinition

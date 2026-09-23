@@ -49,8 +49,6 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
-use crate::value::collection::CollectionType;
-use crate::value::composite::{Value, ValueType};
 use crate::value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator, TypeEnvironment,
 };
@@ -70,7 +68,8 @@ use quire_exact::IllTypedCause;
 use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
-use quire_exact::{CardinalityBound, CollectionKind, Integer};
+use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{Value, ValueType};
 
 /// The largest expression nesting depth a checker may declare. It keeps every
 /// recursive checking pass well inside the host stack.

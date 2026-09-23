@@ -28,16 +28,11 @@
 //! constructor back -- infallible, over an already-decoded `text`, with no
 //! JSON dependency in this crate.
 //!
-//! QSL-131 K1 widened four items from `fn`-private/`pub(crate)` to `pub`:
 //! [`TextProfile::length`], [`TextProfile::order`], [`TextType::admits`] and
-//! [`NormalizationForm::apply`]. `quire_spec_language::value::text`'s own
-//! `admit`/`compare`/`prepare`/`check_length` engine stays local -- it
-//! returns that crate's own `Outcome`, a strict superset not yet unified
-//! with this crate's -- and calls these four directly rather than porting a
-//! second copy. Each is a pure predicate or streaming decode over an
-//! already-retained/admitted sequence; none charges or materializes
-//! anything unmetered, so widening exposes no new unmetered-arithmetic risk
-//! (the #330 precedent). `apply` returns `impl Iterator<Item = char>`, not
+//! [`NormalizationForm::apply`] are `pub`. Each is a pure predicate or
+//! streaming decode over an already-retained/admitted sequence; none charges
+//! or materializes anything unmetered, so exposing them exposes no
+//! unmetered-arithmetic risk (the #330 precedent). `apply` returns `impl Iterator<Item = char>`, not
 //! its concrete `Normalized` enum: that enum stays private to this module,
 //! so `unicode_normalization`'s own `Recompositions`/`Decompositions` types
 //! never appear in this crate's public API.

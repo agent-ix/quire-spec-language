@@ -10,11 +10,8 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
-use super::super::composite::{retain_composite, FieldValue, OptionValue, Value, ValueType};
 use super::super::declaration::{operand_value, CompositeShape};
 use super::super::enumeration::{compare_enum, EnumMemberIndex};
-use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use super::super::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
@@ -34,6 +31,10 @@ use crate::family::FamilyResult;
 use crate::model::population::PopulationBinding;
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Rational;
+use quire_exact::{
+    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
+    OptionValue, Value, ValueType,
+};
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
@@ -535,10 +536,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// admitted `PopulationBinding` this evaluation's own recorded
     /// correspondence (`self.objects`, `model`'s
     /// `admit_binding`/`admit_invocation` mint into) recorded it against, by
-    /// lookup alone -- never by decoding `population_id`'s own bytes. The
-    /// pairing this checks is the one `ValueType::admits` performed directly
-    /// when `Value::Population` still carried the binding itself
-    /// (`value::composite`'s own doc, before this identity replaced it).
+    /// lookup alone -- never by decoding `population_id`'s own bytes.
     ///
     /// **FR-090-AC-10: an invariant break, not a `Refusal` (ADR-013 T-4).**
     /// `CheckedPackage::call`'s own `validate` (`expression/mod.rs`) admits
@@ -964,7 +962,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .types
                     .tuple(*declaration, arguments)
                     .map_err(|_| invariant())?;
-                retain_composite(value, self.meter)?
+                outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Record { declaration, slots } => {
                 let present = slots
@@ -996,14 +994,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .types
                     .record(*declaration, fields)
                     .map_err(|_| invariant())?;
-                retain_composite(value, self.meter)?
+                outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Collection {
                 collection_type,
                 elements,
             } => {
                 let occurrences = self.pop_many(elements.len())?;
-                form(collection_type, occurrences, self.meter)?
+                outcome_into_stop(form(collection_type, occurrences, self.meter))?
             }
             NodeKind::ConvertCollection { target, .. } => {
                 let source = self.pop_collection()?;
@@ -1024,9 +1022,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 if source_kind == CollectionKind::Sequence
                     && target.kind() != CollectionKind::Sequence
                 {
-                    form(target, produced, self.meter)?
+                    outcome_into_stop(form(target, produced, self.meter))?
                 } else {
-                    form_grouped(target, produced, self.meter)?
+                    outcome_into_stop(form_grouped(target, produced, self.meter))?
                 }
             }
             NodeKind::ConvertScalar(operand, _) => {
@@ -1068,7 +1066,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         produced.push(element.clone());
                     }
                 }
-                form(result_type, produced, self.meter)?
+                outcome_into_stop(form(result_type, produced, self.meter))?
             }
             NodeKind::Size(_) => {
                 let collection = self.pop_collection()?;
@@ -1092,7 +1090,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     if repeated {
                         continue;
                     }
-                    if member_equal(&item, member, self.meter)? {
+                    if outcome_into_stop(member_equal(&item, member, self.meter))? {
                         found = true;
                         break;
                     }
@@ -1431,9 +1429,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                         return Err(invariant());
                     };
                     if *visit == Visit::Map {
-                        form(result_type, iteration.results, self.meter)?
+                        outcome_into_stop(form(result_type, iteration.results, self.meter))?
                     } else {
-                        form_grouped(result_type, iteration.results, self.meter)?
+                        outcome_into_stop(form_grouped(result_type, iteration.results, self.meter))?
                     }
                 }
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,

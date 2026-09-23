@@ -45,10 +45,10 @@ use crate::model::conformance::{
 use crate::model::domain_package::{DomainPackage, PostconditionClause};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::value::composite::{Value, ValueType};
 use qsl_foundation::diagnostic::Code;
 use quire_exact::OrderingOperator;
 use quire_exact::{Integer, IntegerInterval};
+use quire_exact::{Value, ValueType};
 
 /// `self`, bound as local slot 0, for every synthetic guard tree
 /// [`self_field_node`] builds — the one variable a [`PostconditionClause`]

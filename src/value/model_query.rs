@@ -53,7 +53,7 @@
 //! # The TypeEnvironment island
 //!
 //! This module bridges identities, never model *conformance*, on its own:
-//! `crate::value`'s `TypeEnvironment` (`crate::value::composite`) admits no
+//! `crate::value`'s `TypeEnvironment` (`crate::value::declaration`) admits no
 //! generalization graph, so nothing on this side of the bridge can decide
 //! whether one object type conforms to another by itself -- only
 //! `crate::model::conformance` (reachable from a runtime
@@ -82,10 +82,11 @@ use crate::model::population::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 
-use super::collection::{self, CollectionType};
-use super::composite::{OptionValue, Value, ValueType};
 use super::stop::Stop;
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, PopulationId, Refusal};
+use quire_exact::{
+    from_admitted, CollectionType, Incomplete, Meter, ObjectId, ObjectReference, OptionValue,
+    PopulationId, Refusal, Value, ValueType,
+};
 
 /// Why a population query stopped without a value. The evaluator
 /// (`value::expression`, layer 5) turns `Refused` and `AbsentKey` into the
@@ -207,7 +208,7 @@ pub(crate) fn evaluate_all_instances(
             for key in set.members() {
                 elements.push(Value::Reference(to_object_reference(key)?));
             }
-            Ok(collection::from_admitted(collection_type.clone(), elements))
+            Ok(from_admitted(collection_type.clone(), elements))
         }
         AllInstancesOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
         AllInstancesOutcome::Incomplete(incomplete) => Err(incomplete.into()),

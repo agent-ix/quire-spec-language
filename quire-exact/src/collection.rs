@@ -16,6 +16,19 @@
 //! crate's modules; [`from_admitted`] is widened from `pub(crate)` to `pub`
 //! since its caller (QSL's own `model::population::all_instances`, which
 //! this comment used to name directly) is now a separate crate.
+//!
+//! QSL-131 V5b widens two more trusted, no-recheck primitives from
+//! `pub(crate)` to `pub`, each as an `Outcome`-returning wrapper around its
+//! existing `Stop`-based body (the same split [`form_grouped`] already used):
+//! [`form`] (QSL's `value::expression::evaluate` `Machine` builds occurrences
+//! from a checked, already-typed expression and forms them with no
+//! re-admission check) and [`member_equal`] (the same `Machine` needs one
+//! charged membership comparison for `Contains`, under these same
+//! `collection.member-walk`/`collection.member-test` charge points). Neither
+//! kernel `Stop` (this crate's own private early-exit carrier) nor
+//! `bound_and_retain`/`coalesce`/`sort_by_key` (their private helpers) are
+//! exposed: QSL adapts the `Outcome` return with its own `value::stop`
+//! helpers, the same way it already adapts [`form_grouped`].
 
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -212,7 +225,7 @@ fn construct(
         }
         occurrences.push(value);
     }
-    form(collection_type, occurrences, meter)
+    form_stop(collection_type, occurrences, meter)
 }
 
 /// Form a collection of `collection_type` from completed occurrences in
@@ -233,14 +246,31 @@ pub fn form_collection(
             cause: ConstructionCause::TypeMismatch,
         });
     }
-    Ok(Outcome::from_stop(form(
+    Ok(Outcome::from_stop(form_stop(
         collection_type,
         occurrences,
         meter,
     )))
 }
 
-pub(crate) fn form(
+/// Form a collection of `collection_type` from completed occurrences in
+/// source or visiting order: membership comparisons, `collection.bound`,
+/// the bound check, canonical order and `collection.result-retain`. The
+/// caller must already have admitted every occurrence against
+/// `collection_type`'s element type; nothing here re-checks it. An
+/// occurrence outside the element type is kept as it is, and a sequence's
+/// occurrences are not compared at all. [`form_collection`] is the checked
+/// alternative. `pub`: QSL's expression evaluator's `Machine` forms
+/// occurrences of a checked, already-evaluated expression.
+pub fn form(
+    collection_type: &CollectionType,
+    occurrences: Vec<Value>,
+    meter: &mut Meter,
+) -> Outcome<Value> {
+    Outcome::from_stop(form_stop(collection_type, occurrences, meter))
+}
+
+fn form_stop(
     collection_type: &CollectionType,
     occurrences: Vec<Value>,
     meter: &mut Meter,
@@ -333,7 +363,7 @@ fn coalesce(
     for candidate in occurrences {
         let mut equal_member = None;
         for (index, (member, _)) in members.iter().enumerate() {
-            if member_equal(&candidate, member, meter)? {
+            if member_equal_stop(&candidate, member, meter)? {
                 equal_member = Some(index);
                 break;
             }
@@ -353,12 +383,15 @@ fn coalesce(
         .collect())
 }
 
-/// One charged membership comparison of candidate `c` with member `m`.
-pub(crate) fn member_equal(
-    candidate: &Value,
-    member: &Value,
-    meter: &mut Meter,
-) -> Result<bool, Stop> {
+/// One charged membership comparison of candidate `c` with member `m`,
+/// under `collection.member-walk`/`collection.member-test`. `pub`, not
+/// `pub(crate)`: its caller (QSL's own expression evaluator's `Machine`,
+/// for `Contains`) is a separate crate from this one.
+pub fn member_equal(candidate: &Value, member: &Value, meter: &mut Meter) -> Outcome<bool> {
+    Outcome::from_stop(member_equal_stop(candidate, member, meter))
+}
+
+fn member_equal_stop(candidate: &Value, member: &Value, meter: &mut Meter) -> Result<bool, Stop> {
     let (candidate_occ, member_occ) = (candidate.occ(), member.occ());
     meter.charge(
         Charge::new(ChargePoint::CollectionMemberWalk)

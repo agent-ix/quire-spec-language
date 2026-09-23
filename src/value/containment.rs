@@ -8,9 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::composite::{Component, ConstructionCause, ConstructionRefusal, FieldValue, Value};
-use super::declaration::TypeEnvironment;
-use quire_exact::NodeKey;
+use super::declaration::{Component, ConstructionCause, ConstructionRefusal, TypeEnvironment};
+use quire_exact::{FieldValue, NodeKey, Value};
 
 /// A graph-local node name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

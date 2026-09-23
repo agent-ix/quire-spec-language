@@ -36,15 +36,12 @@ FR-068-AC-6's module-level layer rule. `check` may import any item of a
 permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `family`, `model` and `value::model_query`, `library`, the §6.2
 `semantic_value` modules (`value::definition`, `value::enumeration`,
-`value::unit`, `value::quantity`, `value::key`, `value::reference`,
-`value::containment`, `value::semantic_node`) and `value::declaration`, and the `value` K-copy
-modules while each exists (`value::collection`,
-`value::composite`, `value::equality`, `value::rational`;
-`value::outcome` left this list under QSL-131 O2, which deleted the module;
-`value::decimal`, `value::ieee`, `value::numeric` and `value::text` left it
-under QSL-131 O3, which deleted the four modules). `check` imports nothing
-from a later layer: `checked_package`, `package`, `value::expression`,
-`route`, `replay` or `lowering`. Every `value` import names its submodule.
+`value::unit`, `value::quantity`, `value::reference`,
+`value::containment`, `value::semantic_node`, `value::declaration`). There
+is no `value` K-copy module; `check` reaches every kernel item through
+`quire_exact`. `check` imports nothing from a later layer:
+`checked_package`, `package`, `value::expression`, `route`, `replay` or
+`lowering`. Every `value` import names its submodule.
 
 The failure this catches is a later-layer edge into `check`, the direction
 ADR-011 §6.1 forbids. An extra item from an already-permitted module is not a

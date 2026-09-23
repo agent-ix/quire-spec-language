@@ -705,46 +705,18 @@ Rules that close the ADR-010 OBS-016 cycles:
   with it (M-6). The locus is ADR-013 T-5's `Locus` (`Region`, `Occurrence`,
   `Artifact`), which uses the kernel `Location` (DA-13).
 - **K is a leaf.** `quire-exact` depends on no QSL module and no ecosystem
-  crate. Today the kernel `Value` and `ValueType` carry `Quantity`, `Enum`,
-  `Reference` and `Population` variants whose payload types live in
-  `quantity`, `enumeration`, `reference` and `model::population`
-  (`value/composite.rs:22-31,132-158`). `Refusal` carries
-  `expression::WrongSnapshotCause` and `diagnostic::Code`
-  (`value/outcome.rs:10,13`). `collection` and `equality` import `key`,
-  `enumeration` and `quantity`. X-1 must cut every
-  one of these edges: each payload type either moves into K as part of an
-  AD-016 row type, or its variant leaves the kernel type. Which one, per type,
-  is decided in ADR-013 T-6 against the AD-016 Shared-type row as amended
-  by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8): the `Reference`, `Quantity`
-  and `Enum` payloads move in as kernel shapes, `ValueType::Population` keeps
-  its count only, `Value::Population`'s payload becomes the opaque
-  `PopulationId` digest newtype (QC-21), which moves in as a kernel shape —
-  the `PopulationBinding` it names stays in QSL `model` — `WrongSnapshotCause`
-  leaves `Refusal`, and `diagnostic::Code`
-  leaves: the kernel `Refusal` carries the kernel's own typed cause, and F
-  `diagnostic`, which holds `CatalogCode`, maps it to a code (ADR-013 T-6,
-  O-17). The constraint this record decides
-  is that K depends on nothing, so K → `model` → K cannot exist.
-  `TypeEnvironment` and `ObjectTypeDeclaration` in `composite` are not
-  kernel types and stay in layer 3.
-
-  **This requirement was not met by the change that was supposed to meet
-  it.** #213 S-1 (X-1, PR #254) did not cut these edges: its own summary
-  states "No file under `src/value/` or `src/model/` is touched here." The
-  cuts remain outstanding, and **QSL-131** (#213 S-1b) now owns them. Until
-  QSL-131 lands, `collection`, `equality`, `composite` and `outcome`
-  continue to import `key`, `enumeration`, `quantity` and `reference` from
-  `value` — an
-  edge reaching *up* into layer 3, which this leaf rule forbids in every
-  version of the target, not only during the present transition. This is not
-  the same shape as a `semantic_value`-owned module reaching down into a
-  not-yet-relocated K submodule (self-heals when QSL-131 lands, because the
-  direction is already correct); this is the opposite direction, and it does
-  not self-heal by relocation. It is cut, not moved: QSL-131's end state has
-  `quire-exact`'s own `composite`/`collection`/`equality`/`division`/`ieee`/
-  `outcome` use `quire-exact`'s own already-built narrow `quantity.rs`/
-  `reference.rs`/`key.rs` (present today under `quire-exact/src/`), never
-  `semantic_value`'s full declaration types.
+  crate, so K → `model` → K cannot exist. Each kernel `Value` and `ValueType`
+  payload is a kernel shape (ADR-013 T-6, against the AD-016 Shared-type row
+  as amended by QC-15, QC-21 and QC-22): `Value::Quantity` carries the
+  kernel `Quantity` (a magnitude and a `UnitId`), `Value::Enum` carries an
+  `EnumMember` (a `VariantId` and its rank), `Value::Reference` carries an
+  `ObjectReference`, and `Value::Population` carries the opaque `PopulationId`
+  digest newtype (QC-21). `ValueType::Population` carries its count only. The
+  `PopulationBinding` a `PopulationId` names is QSL `model`'s. The kernel
+  `Refusal` carries the kernel's own typed causes; F `diagnostic`, which
+  holds `CatalogCode`, maps each one to a code (ADR-013 T-6, O-17).
+  `TypeEnvironment` and `ObjectTypeDeclaration` are not kernel types: they
+  are in `value::declaration`, at layer 3.
 - **Layer 2 holds kernel types.** `forms` depends on K and carries kernel
   types directly as parsed-form payloads, for example
   `quire_exact::Integer` for an integer literal and
@@ -771,9 +743,9 @@ Rules that close the ADR-010 OBS-016 cycles:
   unchanged; **QSL-166** owns finishing that consolidation for
   `value::accounting` alone (§7.3). QSL value modules
   outside the kernel row move to `semantic_value` (QSL-165), a separate
-  change blocked by QSL-131 cutting the edges named above, not by M-2 or
-  M-5. After M-2 and QSL-165, `model` depends on `semantic_value`, F and K
-  only. This breaks SCC S2.
+  change. After M-2 and
+  QSL-165, `model` depends on `semantic_value`, F and K only. This breaks
+  SCC S2.
 - **The temporal evaluator, under `value::expression`, sits below orchestration
   and never imports a wire module.** Wire emission and reading live in S4
   `package`, and temporal evaluation lives in S6a. This breaks SCC S3.
@@ -847,8 +819,9 @@ Module table:
 | `lowering` | SEAM-1 | `lowering` as a whole, including `lowering::target`, its `ProjectionTarget` enum and the `--target` argument, is deleted in M-6a once the skeleton spine (§1.1) is green. The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). |
 | crate `qsl-source` | I3 | the extraction adapter stops at S0: verified body bytes plus their document `SourceMap`. The native compile join is in `command::extraction` (SEAM-1). `qsl-source` builds the clause-only Quire context (`clause_context`) and re-exports the Quire result and failure types `command` renders; the root crate names no quire-rs dependency. |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1; the v2 emitter and the I2 byte reader are new in M-4. Until X-7 extracts `qsl-package`, layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — lives in the top-level module `checked_package`, and the module named `package` holds only SEAM-1. Every rule this ADR states for layer-4 `package` applies to `checked_package`. |
-| `value` kernel submodules: `numeric`, `integer` (QSL's copy is a `value/mod.rs` `pub use` re-export, not a module; QSL-146 owns it), `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. #213 S-1 (X-1) added these as new `quire-exact` types; its own PR summary states no file under `src/value/` or `src/model/` was touched (§6.1's "K is a leaf" bullet), so removing the matching QSL copies was a separate step. That step is now mostly done: `accounting` is gone (QSL-166), `outcome` is gone (QSL-131 O2), `division` is gone (QSL-131 K2, #339; QSL calls `quire_exact::divide`/`modulo` directly), and `decimal`, `ieee`, `numeric` and `text` are gone (QSL-131 O3). What remains as a live QSL copy under `src/value/`, confirmed still needed for removal (QSL-131, same K-leaf bullet): `collection`, `composite`, `equality` and `rational`. |
-| `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `key`, `reference` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (QSL-165) |
+| `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. QSL has no `value::` copy of any of these thirteen: every QSL caller imports the kernel item from `quire_exact`. |
+| `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `reference`, `declaration`, `stop`, `member` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (QSL-165). `declaration` holds the FR-143 registry (`TypeEnvironment`, `ObjectTypeDeclaration`) and the FR-149 check-level equality layer; it imports only K and its `semantic_value` siblings `enumeration`, `quantity` and `stop`, and `check`, `model` (`value::model_query`) and S6a consume it. `stop` is the early-exit carrier that `declaration`, `enumeration`, `quantity`, `model_query` and S6a convert to and from the kernel `Outcome`; it imports only K, and its lowest consumers are `semantic_value` modules. `member` is ADR-013 O-06's structured checked member identity; it imports only F and K. |
+| `value::application_key` | 3 `check` | the FR-322 checked application-node key (QSL-156). It imports `check`'s `MAX_CHECKING_DEPTH` as its body-depth bound, so it cannot sit below `check` core. |
 | `value::semantic_node` | 3 `semantic_value` | the I04 node-identity preimage machinery (owner projection, JCS digest, `WireNodeId` lookup) shared by `enumeration` and `unit`; moved out of the deleted K-copy `value::node`, whose only kernel types, `NodeKey` and `NODE_KEY_DOMAIN`, are imported from `quire_exact` (QSL-131 K4) |
 | `value::division::negotiate_*`, `value::ieee::negotiate_*` | RT | AD-016 Shared-type row: the `negotiate_*` predicates stay in RT, and CG negotiates (arrow 3). AD-016 WP7 decides the predicate list (OBS-004). #213 S-1 (X-1) moved `division` and `ieee` into K but left the QSL copies of `negotiate_*` in place; QSL-131 Slice A (PR #290) removed them. Both modules are now gone entirely, not merely edited: QSL-131 K2 (#339) deleted `value::division` and QSL-131 O3 deleted `value::ieee`, so there is no file or line left to cite for either — every caller reaches the evaluation functions through `quire_exact` directly. |
 | `value::expression::syntax` | 2 `forms` | M-3a |
@@ -997,20 +970,14 @@ The actual constraint is a dependency: M-2's two moves (below) each need a
   `Location`/`Origin`/`ProvedInterval` (`value/expression/refusal.rs`).
 
 `semantic_value` is a separate change (**QSL-165**, split out of M-2's
-original scope): it needs the K-designated `value` submodules (`composite`,
-`collection`, `equality`, `outcome`) to stop importing the non-kernel
-submodules it takes (`enumeration`, `quantity`, `key`, `reference`;
-`definition` is imported by none of them, and `unit` is clean, imported only
-by `quantity`, which moves with it). Cutting those edges is QSL-131's scope.
-This is a different edge from the one `semantic_value` itself creates by
-depending on those K submodules' current, not-yet-relocated location (that
-direction self-heals when QSL-131 lands; this direction does not — §6.1's
-"K is a leaf" bullet).
+original scope). Its submodules import only K, F and each other; no
+K-designated `value` submodule is left to import them back (§6.1's "K is a
+leaf" bullet).
 
 M-5 does not depend on QSL-165 or on QSL-131: `value::expression`'s
 check-stage submodules (`check`, `facts`, `ir`, `refusal`, `termination`)
 import only K-designated `value` siblings, and, in `check.rs`'s case
-(`value/expression/check.rs:15,20`), two of the six `semantic_value`-bound
+(`value/expression/check.rs:15,20`), two of the `semantic_value`-bound
 submodules (`enumeration`, `quantity`) — in the allowed direction, layer-3
 `check` depending on layer-3 `semantic_value`, later in the layer's order
 depending on earlier. Nothing in that submodule set requires `semantic_value`
@@ -1019,17 +986,17 @@ to exist first.
 The real order is **X-1 → M-3a → M-5 (QSL-139) → M-2 (QSL-7)**, and,
 independently, **QSL-131 → QSL-165**. M-3a depends only on X-1 and landed
 correctly ahead of M-2; its only contact point with M-2 is
-`src/value/mod.rs`, where both remove submodule declarations. **QSL-131
-is unstaffed**, blocking QSL-165.
+`src/value/mod.rs`, where both remove submodule declarations. QSL-165 is
+not blocked.
 
 | ID | Change | Direction | Public API | Order | Compatibility disposition |
 |---|---|---|---|---|---|
-| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. X-1 was to make the edge cuts that keep it a leaf (§6.1 kernel rule); it did not — the cuts are outstanding, owned by QSL-131 (§6.1's "K is a leaf" bullet). | The AD-016 Shared-type row types as amended by QC-15, QC-21 and QC-22, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56. On the QSL side, #213 S-1 builds `quire-exact` and cuts the kernel's own internal edges (T-6) but leaves the QSL `value` kernel copies in place, including the redesigned `ValueType`/`Value` (`negotiate_*` in `division` and `ieee` was removed by QSL-131 Slice A, PR #290 — `src/value/division.rs:223`, `src/value/ieee.rs:882` no longer define it). QSL-146 (below) owns the byte-identical subset (`CollectionKind`, `Integer`, `IntegerInterval`) and the `AbsenceMode` move; QSL-131 (#213 S-1b) owns the rest except the accounting types (`Meter`, `Incomplete`, `LimitKind`), which QSL-166 (below) owns — `ValueType`/`Value` are QSL-131's. |
+| X-1 | Extract crate `quire-exact` (AD-016 Owner decision 2) | Leaf: it depends on no ecosystem crate. QSL, RT and CG depend on it. QSL-131 made the edge cuts that keep it a leaf (§6.1's "K is a leaf" bullet). | The AD-016 Shared-type row types as amended by QC-15, QC-21 and QC-22, and the scalar and collection operations over them | 1st: #213 S-1, blocked by the AD-016 amendment (TK-10, QC-15), which lands after agent-ix/quire-contract-ir#139 (merged, 954c2f2). RT and CG adopt the crate under TK-03 (agent-ix/quire-contract-runtime#56, agent-ix/quire-contract-codegen#89); T-9 (agent-ix/quire-contract-runtime#55) then retargets RT `qsl-agreement` to it | none: the RT `src/exact` kernel parts are replaced in agent-ix/quire-contract-runtime#56. On the QSL side, #213 S-1 builds `quire-exact` and cuts the kernel's own internal edges (T-6) but leaves the QSL `value` kernel copies in place, including the redesigned `ValueType`/`Value` (`negotiate_*` in `division` and `ieee` was removed by QSL-131 Slice A, PR #290 — `src/value/division.rs:223`, `src/value/ieee.rs:882` no longer define it). QSL-146 (below) owns the byte-identical subset (`CollectionKind`, `Integer`, `IntegerInterval`) and the `AbsenceMode` move; QSL-131 (#213 S-1b) owns the rest except the accounting types (`Meter`, `Incomplete`, `LimitKind`), which QSL-166 (below) owns — `ValueType`/`Value` are QSL-131's. |
 | M-1 | Make `diagnostic` a foundation module | F | codes, typed causes, locus | with #213 | none |
 | QSL-146 | Remove the QSL `value` kernel's byte-identical duplicates of the `quire-exact` types (`CollectionKind`, `Integer`, `IntegerInterval`) and move `AbsenceMode` into F (`absence`) | F (`absence`); the removed types' consumers repoint at `quire-exact` | `quire-exact` widens 17 `Integer`/`IntegerInterval` methods (`add`, `sub`, `mul`, `neg`, `gcd`, `abs`, `pow`, `exact_div`, `div_rem_truncating`, `div_mod_floor`, `power_of_ten`, `power_product_bits`, `spanning`, `from_big`, `as_big`, `split_factor_two`, `shifted_left`) from `pub(crate)` to `pub`, each verified against a real cross-crate call site (§7.2 criterion 2's narrow-API bar), since their QSL callers are now a separate crate; `quire_spec_language::value` narrows, removing 8 `pub use` re-exports (`CollectionKind`, `Integer`, `IntegerInterval`, `BoundedInteger`, `IntegerDomain`, `EmptyInterval`, `NonCanonicalInteger`, `OutOfDomain`) whose one remaining definition is `quire-exact`'s | after X-1 and M-3a | none: QSL-146 removes exactly the byte-identical copies. `quire-exact`'s `ValueType`/`Value` are not byte-identical to the QSL copy they'd replace -- their `Enum`, `Reference` and `Quantity` payloads are a redesigned target shape (`quire-exact/src/quantity.rs`, `reference.rs` document this as a deliberate, non-verbatim cut), and `quire-exact`'s `Value` has no `Population` variant at all. Consolidating `ValueType`/`Value` is therefore not a mechanical duplicate removal; QSL-131 (#213 S-1b) owns it. |
 | QSL-166 | `value::accounting` duplicates eight `quire-exact` items byte-for-byte — `length_amount` (`:18`), `ScalarLimits` (`:26`), `LimitKind` (`:51`), `ChargePoint` (`:143`), `Incomplete` (`:392`), `InjectedDenial` (`:410`), `Charge` (`:419`) and `Meter` (`:465`); consolidate all eight onto the kernel definitions and delete `value::accounting` and its `mod accounting;` declaration (`value/mod.rs:41`), then repoint every consumer at the kernel definitions: the 19 modules that import directly from `accounting::` (this row's Public API cell), plus `model/key.rs`, `model/normalize.rs` and `model/population.rs`, which reach the same types only through the `value` re-export — 22 modules in the repoint scope. `model::accounting` (`Meter`, `Incomplete`, `LimitKind`, `ModelNormalizationLimits`) is a separate layer-3 `model` rung meter over its own disjoint counters, not a kernel type, and is out of this ticket's scope (QSL-164) | K `quire-exact` for `value::accounting`'s eight duplicated types; `model::accounting` is untouched and stays in `model` | `Charge` (`quire-exact/src/accounting.rs:424`, `pub(crate)`) and `length_amount` (`:24`, `pub(crate)`) are outside `quire-exact`'s public facade (`lib.rs:127` exports only `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`, `Meter`, `ScalarLimits`); 15 of the 19 `accounting::`-importers use `Charge` directly and three (`decimal.rs`, `text.rs`, `collection.rs`) use `length_amount` directly. Three more modules reach the same types only through the `value` re-export and are not among the 19: `model/key.rs:17` and `model/normalize.rs:220` each take `length_amount` alone, and `model/population.rs:147-150` takes six symbols in one aliased block — `length_amount`, `Charge as ScalarCharge`, `ChargePoint as ScalarChargePoint`, `Incomplete as ScalarIncomplete`, `LimitKind as ScalarLimitKind` and `Meter as ScalarMeter` — through both `value/mod.rs:67` and `:74`. `Charge`'s true consumer count is 16 (the 15 plus `population.rs`'s alias) and `length_amount`'s is six (the three direct plus `key.rs`, `normalize.rs` and `population.rs`); both widen to `pub`, each verified against a real cross-crate call site (§7.2 criterion 2's narrow-API bar), as QSL-146's row above does for its 17 methods. The API narrows too: deleting `value::accounting` removes the six-name `pub use accounting::{ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits}` re-export (`value/mod.rs:67`) and the `pub(crate) use accounting::{length_amount, Charge}` re-export (`value/mod.rs:74`) that the widening replaces, taking `population.rs`'s `Scalar*` aliases with it | after X-1; independent of QSL-131 and QSL-146 (disjoint scope — none of `value::accounting`'s eight items or `model::accounting`'s `Meter`/`Incomplete`/`LimitKind` collide with QSL-146's `CollectionKind`/`Integer`/`IntegerInterval`/`AbsenceMode` or QSL-131's `ValueType`/`Value`/`negotiate_*`/K-leaf edges) | none: no shim, no alias module, no re-export |
 | M-2 | Move `model` below `check` (§6.1): move `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` (with its seven exclusive helpers and one exclusive const -- `CLAUSE_SELF_SLOT`, `clause_location`, `self_field_node`, `field_domain_type`, `presence_condition`, `comparison_condition`, `established_facts` and `format_interval`) to `check`, widening `ConformanceIndex` (the struct, its `build` constructor, and its `fields`, `operations` and `scalars` members) and `missing_member` to `pub(crate)` (`AxisFailure`/`ConformanceOutcome` stay `pub`, unchanged) so `check` (which sits above `model`) can call back into them | 3 | `model`, `model::intake` | after M-5 (QSL-139) (corrected 2026-09-20; was "after X-1") | none |
-| QSL-165 | Create `semantic_value` from `value`'s six non-kernel submodules (`definition`, `enumeration`, `unit`, `quantity`, `key`, `reference`); split out of M-2's original scope (2026-09-20) | 3 | `semantic_value` | blocked by QSL-131: four of the six submodules (all but `unit` and `definition`) are imported back by K-designated `value` siblings (`composite`, `collection`, `equality`, `outcome`) that stay in `value` until QSL-131 cuts those edges (§6.1's "K is a leaf" bullet) | none |
+| QSL-165 | Create `semantic_value` from `value`'s non-kernel submodules (`definition`, `enumeration`, `unit`, `quantity`, `reference`, `declaration`, `stop`, `member`); split out of M-2's original scope (2026-09-20) | 3 | `semantic_value` | Not blocked. No K-designated `value` submodule is left to import these back (§6.1's "K is a leaf" bullet). | none |
 | M-3a | Add the `forms` core: the closed dispatch entry table, retire SEAM-5, delete `LoweredSourceGraph`, and move `value::expression::syntax` | 2 | `forms` core dispatch and the parsed-form/leading-token-kind enums (ADR-012 §4.3, §5.1 S2) | QSL-138, after X-1 (corrected 2026-09-20; was "after M-2", which is now circular since M-2 depends on M-5 and M-5 depends on M-3a) | none: `LoweredSourceGraph` is deleted in the same change |
 | M-3b | Add each family's parsed-form type: its grammar-production function and its `Expression` enum variant, landing incrementally, one per family's own migration ticket, alongside M-6c to M-6e | 2 | parsed form types per family (#210) | per family, tracked under QSL-141 | none |
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |

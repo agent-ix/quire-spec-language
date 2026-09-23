@@ -3,15 +3,14 @@
 //! evaluator runs.
 
 use super::refusal::Location;
-use crate::value::collection::CollectionType;
-use crate::value::composite::{Value, ValueType};
 use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
-use quire_exact::{CollectionKind, IntegerInterval, RationalDomain};
+use quire_exact::{CollectionKind, CollectionType, IntegerInterval, RationalDomain};
+use quire_exact::{Value, ValueType};
 use std::collections::BTreeSet;
 
 /// FR-062/FR-065: a checked function-application node's identity (ADR-013

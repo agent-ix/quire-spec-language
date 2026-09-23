@@ -15,10 +15,9 @@ use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKi
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
 };
-use crate::value::collection::CollectionType;
-use crate::value::composite::{Value, ValueType};
 use crate::value::declaration::EqualityOperator;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
+use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
 
 /// One step of a stable path.

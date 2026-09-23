@@ -11,12 +11,13 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ObjectId, ObjectReference, Outcome, Refusal, ScalarLimits,
     Undefined, UniverseId,
 };
+use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::value::{
     CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
-    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
-    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectTypeDeclaration,
-    Obligation, PackageDeclarations, ProvedInterval, TypeEnvironment, Value, ValueType,
+    CollectionLoss, CollectionProperty, CompositeDeclaration, CompositeShape, FamilyOutcome,
+    FieldDeclaration, ObjectEnvironment, ObjectTypeDeclaration, Obligation, PackageDeclarations,
+    ProvedInterval, TypeEnvironment,
 };
 use sha2::{Digest, Sha256};
 
@@ -165,6 +166,17 @@ fn check(
     parameters: &[(&str, ValueType)],
     expression: &Expression,
 ) -> Result<quire_spec_language::value::CheckedExpression, CheckRefusal> {
+    check_as(package, parameters, expression, None)
+}
+
+/// [`check`] against an expected type, which a collection literal needs to
+/// fix its bound.
+fn check_as(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    expected: Option<&ValueType>,
+) -> Result<quire_spec_language::value::CheckedExpression, CheckRefusal> {
     let parameters = parameters
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
@@ -172,7 +184,7 @@ fn check(
     package.graph().check_expression(
         parameters,
         expression,
-        None,
+        expected,
         CheckMode::Kernel,
         CheckingLimits::default(),
     )
@@ -197,7 +209,7 @@ fn collection(value_type: &ValueType, values: Vec<Value>) -> Value {
     let ValueType::Collection(collection_type) = value_type else {
         panic!("a collection type");
     };
-    quire_spec_language::value::form_collection(collection_type, values, &mut Meter::new(UNLIMITED))
+    quire_exact::form_collection(collection_type, values, &mut Meter::new(UNLIMITED))
         .unwrap()
         .completed()
         .unwrap()
@@ -235,9 +247,19 @@ fn run_in(
     objects: &ObjectEnvironment,
 ) -> Run {
     let checked = check(package, parameters, expression).unwrap();
+    evaluate_checked(package, &checked, arguments, limits, objects)
+}
+
+fn evaluate_checked(
+    package: &CheckedPackage,
+    checked: &quire_spec_language::value::CheckedExpression,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+    objects: &ObjectEnvironment,
+) -> Run {
     let mut meter = Meter::new(limits);
     let evaluation = package
-        .evaluate(&checked, arguments, objects, &mut meter)
+        .evaluate(checked, arguments, objects, &mut meter)
         .unwrap();
     let outcome = match evaluation.outcome {
         FamilyOutcome::Evaluated(outcome) => outcome,
@@ -1051,5 +1073,89 @@ fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
     assert_eq!(
         ill_typed(&package, &[("q", sequence)], &sum("Flag", "q", name("x"))),
         IllTypedCause::TypeMismatch
+    );
+}
+
+/// A collection literal's `form` call keeps an `Incomplete` outcome intact:
+/// a meter denied at `collection.result-retain` stops the literal
+/// `Incomplete`, not refused.
+#[trace("TC-190", "FR-145-AC-8")]
+#[test]
+fn q14_collection_literal_formation_stops_incomplete_at_result_retain() {
+    let package = plain();
+    let literal = Expression::Collection {
+        kind: CollectionKind::Set,
+        elements: vec![name("a"), name("b")],
+    };
+    let parameters = [("a", ValueType::Integer), ("b", ValueType::Integer)];
+    let expected = integers(CollectionKind::Set, 0, 2);
+    let checked = check_as(&package, &parameters, &literal, Some(&expected)).unwrap();
+    let evaluate = |limits| {
+        evaluate_checked(
+            &package,
+            &checked,
+            vec![int(2), int(1)],
+            limits,
+            &ObjectEnvironment::default(),
+        )
+    };
+    let result = evaluate(UNLIMITED);
+    assert_elements(&result, &[1, 2]);
+    assert_eq!((result.work, result.results), (7, 3));
+
+    let limited = evaluate(work_limit(6));
+    assert_eq!(
+        format!("{:?}", limited.outcome),
+        incomplete(6, 1, ChargePoint::CollectionResultRetain)
+    );
+}
+
+/// A sequence-to-set conversion's `form` call keeps an `Incomplete` outcome
+/// intact at `collection.result-retain`.
+#[trace("TC-190", "FR-145-AC-8")]
+#[test]
+fn q15_sequence_to_set_conversion_stops_incomplete_at_result_retain() {
+    let package = plain();
+    let sequence = integers(CollectionKind::Sequence, 0, 3);
+    let expression = convert(integers(CollectionKind::Set, 0, 3), "q");
+    let parameters = [("q", sequence.clone())];
+    let limited = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![collection(&sequence, ints(&[1, 2, 1]))],
+        work_limit(10),
+    );
+    assert_eq!(
+        format!("{:?}", limited.outcome),
+        incomplete(10, 1, ChargePoint::CollectionResultRetain)
+    );
+}
+
+/// `flatten`'s `form` call keeps an `Incomplete` outcome intact at
+/// `collection.result-retain`.
+#[trace("TC-190", "FR-145-AC-8")]
+#[test]
+fn q16_flatten_stops_incomplete_at_result_retain() {
+    let package = plain();
+    let inner_type = integers(CollectionKind::Sequence, 0, 2);
+    let outer_type = of(CollectionKind::Sequence, inner_type.clone(), 0, 2);
+    let flatten = Expression::Flatten(Box::new(name("c")));
+    let parameters = [("c", outer_type.clone())];
+    let arguments = || {
+        let inner = vec![
+            collection(&inner_type, ints(&[1, 2])),
+            collection(&inner_type, ints(&[2])),
+        ];
+        vec![collection(&outer_type, inner)]
+    };
+    let result = run(&package, &parameters, &flatten, arguments(), UNLIMITED);
+    assert_elements(&result, &[1, 2, 2]);
+    assert_eq!((result.work, result.results), (7, 4));
+
+    let limited = run(&package, &parameters, &flatten, arguments(), work_limit(6));
+    assert_eq!(
+        format!("{:?}", limited.outcome),
+        incomplete(6, 1, ChargePoint::CollectionResultRetain)
     );
 }

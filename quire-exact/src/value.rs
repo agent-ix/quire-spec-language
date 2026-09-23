@@ -545,10 +545,10 @@ pub fn evaluate_record(
         };
         slots.push(slot);
     }
-    Ok(Outcome::from_stop(retain_composite(
+    Ok(retain_composite(
         composite(declaration, slots.into_boxed_slice()),
         meter,
-    )))
+    ))
 }
 
 /// Evaluate a tuple call `T(e, ...)` against its declared `shape`: the arity
@@ -577,10 +577,10 @@ pub fn evaluate_tuple(
             Err(stop) => return Ok(Outcome::from_stop(Err(stop))),
         }
     }
-    Ok(Outcome::from_stop(retain_composite(
+    Ok(retain_composite(
         composite(declaration, slots.into_boxed_slice()),
         meter,
-    )))
+    ))
 }
 
 /// A deferred expression: it runs only when construction reaches it.
@@ -616,7 +616,15 @@ fn admitted(value_type: &ValueType, outcome: Outcome<Value>) -> Result<Value, St
 }
 
 /// Charge `composite.result-retain` with `occ(result)`, then expose it.
-pub(crate) fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
+/// `pub`, not `pub(crate)`: QSL's name-keyed `TypeEnvironment::
+/// evaluate_record`/`evaluate_tuple` and its expression evaluator's
+/// `Machine` build composites outside this crate and charge the same point
+/// through this one function.
+pub fn retain_composite(value: Value, meter: &mut Meter) -> Outcome<Value> {
+    Outcome::from_stop(retain_composite_stop(value, meter))
+}
+
+fn retain_composite_stop(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
     let occ = value.occ();
     meter.charge(
         Charge::new(ChargePoint::CompositeResultRetain)

@@ -95,8 +95,8 @@ use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
-use crate::value::composite::ValueType;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
+use quire_exact::ValueType;
 
 pub(crate) use check::Scope;
 pub(crate) use family::ValueFunctionFamily;
@@ -1224,7 +1224,7 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
-        use crate::value::composite::FieldDeclaration;
+        use crate::value::declaration::FieldDeclaration;
         use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
 
@@ -1266,7 +1266,7 @@ mod tests {
     #[trace("TC-252", "FR-088-AC-9")]
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
-        use crate::value::composite::FieldDeclaration;
+        use crate::value::declaration::FieldDeclaration;
         use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
 

@@ -400,8 +400,8 @@ opaque `PopulationId` type and `Value::Population(PopulationId)` in
 `quire-exact`. Kernel `ValueType::admits` returns `false` for every
 `(ValueType::Population(_), Value::Population(_))` pair, `plan_pairs` refuses
 a population pair with `Refusal::CheckedInvariant`, and `compare_keys` yields
-no key for one (FR-089-AC-6), matching QSL's own
-`value::equality`/`value::key`. TC-297 is `✅ Passed locally`, backed by
+no key for one (FR-089-AC-6). QSL has no equality or key of its own: it
+calls `quire_exact::member_equal` and `quire_exact::compare_keys`. TC-297 is `✅ Passed locally`, backed by
 `value::tests::admits_refuses_a_population_pair`,
 `equality::tests::plan_pairs_refuses_a_population_pair` and
 `key::tests::compare_keys_yields_no_key_for_a_population_pair`. The
