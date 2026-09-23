@@ -6,10 +6,12 @@ mod compilation;
 pub mod extraction;
 mod output;
 mod projection_error;
+mod source_package;
 mod wire;
 
 pub use output::NativeResult;
 pub use projection_error::{ProjectionLocation, ProjectionSource};
+pub use source_package::{resolve_parsed_source, SourcePackageRefusal};
 
 use crate::formal_source::FormalSource;
 use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};

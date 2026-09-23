@@ -73,6 +73,20 @@ use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub use witness::SupportedV2Wire;
 
+/// Test fixtures for the layer-4 reader's tests, which reach `library`
+/// across the QSL-181 crate boundary through `test-support`. Never compiled
+/// into a production build.
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
+    use super::{LibraryName, PinnedRequest, Selection};
+
+    /// A pinned request with one entry, through `PinnedRequest::new`
+    /// (`pub(crate)`: no production caller yet).
+    pub fn single_pin(library: LibraryName, selection: Selection) -> PinnedRequest {
+        PinnedRequest::new([(library, selection)]).expect("one entry never conflicts")
+    }
+}
+
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LibraryName(Box<[String]>);
@@ -648,18 +662,22 @@ pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 /// `package_id`s for one library identity (ADR-011 I2's second rule).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("two pins for one library identity select different packages")]
-pub struct ConflictingPin {
+pub(crate) struct ConflictingPin {
     /// The library identity pinned twice.
-    pub library: LibraryName,
+    pub(crate) library: LibraryName,
     /// The earlier entry, then the later, conflicting one.
-    pub selections: Box<[Selection; 2]>,
+    pub(crate) selections: Box<[Selection; 2]>,
 }
 
 impl PinnedRequest {
     /// A pinned request from `entries`. A repeated identity with an equal
     /// selection is one pin; a repeated identity with a different
     /// selection is refused.
-    pub fn new(
+    #[allow(
+        dead_code,
+        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
+    )]
+    pub(crate) fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,
     ) -> Result<Self, ConflictingPin> {
         let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();

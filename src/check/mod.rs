@@ -78,7 +78,13 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
+// `imports` has no production caller yet (E3 imported-name resolution,
+// FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
+// only under `test-support` (QSL-181: no test-only `pub`).
+#[cfg(any(test, feature = "test-support"))]
 pub mod imports;
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) mod imports;
 mod ir;
 mod refusal;
 mod termination;
@@ -87,10 +93,13 @@ mod type_form;
 use std::collections::BTreeMap;
 
 use check::{bind_parameters, Typer};
-// Re-exported so `value::expression::family`'s `#[cfg(test)]` modules can
-// build the resolved `Signature` `declarations_for` takes as
-// `own_signature`.
+// `Signature` is public only under `test-support`: the layer-5 evaluator's
+// tests build the resolved `Signature` `declarations_for` takes as
+// `own_signature`; no shipped caller outside `check` names it (QSL-181).
+#[cfg(any(test, feature = "test-support"))]
 pub use check::Signature;
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) use check::Signature;
 use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
 
@@ -99,13 +108,10 @@ use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
 pub use check::Scope;
-pub use family::{
-    CheckedDeclaration, IdentityPreimageMetrics, ValueDeclarations, ValueFunctionFamily,
-};
-// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are `check`'s own
-// constants, also read by the layer-5 evaluator's tests (QSL-181: across the
-// `qsl-semantics` crate boundary, so `pub`).
-pub use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
+pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
+// Named only by `fixtures::mint_resolved`'s return type.
+#[cfg(any(test, feature = "test-support"))]
+pub use family::IdentityPreimageMetrics;
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -116,10 +122,16 @@ pub use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // `declarations_for` joined this list in PR #303 review round 3 (finding
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
+//
+// QSL-181: `check_context`, `staged_identity` and the two constants are
+// test-support views of `pub(crate)` items (`CheckContext::new`,
+// `Staged::value`, `DEFAULT_PACKAGE_IDENTITY`, `SCALAR_LIMITS_UNLIMITED`),
+// so the layer-5 evaluator's tests reach them without widening the items.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
-    declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
-    root_location,
+    check_context, declaration, declaration_signature, declarations_for, empty_scope, limits,
+    mint_resolved, root_location, staged_identity, DEFAULT_PACKAGE_IDENTITY,
+    SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 

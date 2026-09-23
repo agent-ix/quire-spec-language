@@ -716,10 +716,13 @@ impl ResolutionCause {
 
 /// Resolve exact source selections into a dependency-closed complete bundle.
 ///
-/// `selections` are the selections of the source `authority` names, as an
-/// admitted parse recovered them. Parsing, and refusing a source whose parse
-/// is not admissible, is the caller's step (layer 6 or a tool, QSL-181): this
-/// layer sees no syntax.
+/// Obligation on the caller: `authority` and `selections` come from one and
+/// the same admitted parse. This layer sees no syntax (QSL-181), so it can
+/// check neither; both are plain values a caller could pair wrongly, and a
+/// wrong pair resolves one source's selections under another's authority.
+/// The shipped caller step, `command::resolve_parsed_source` (layer 6),
+/// refuses an inadmissible parse and derives both from the parse it is
+/// given; call that rather than this function.
 pub fn resolve_source_package(
     authority: SourceAuthority,
     selections: &SourceSelections,

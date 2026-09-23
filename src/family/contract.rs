@@ -155,9 +155,7 @@ pub struct CheckContext<'a, D> {
 }
 
 impl<'a, D> CheckContext<'a, D> {
-    /// A context over `declarations`, bounded by `limits`, writing through
-    /// `meter`, `diagnostics` and `scopes`.
-    pub fn new(
+    pub(crate) fn new(
         declarations: &'a D,
         limits: StageLimits,
         meter: &'a mut Meter,

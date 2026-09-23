@@ -82,7 +82,7 @@ use quire_exact::{UnitDomain, UnitId};
 /// layer); every caller of `PackageDeclarations::check` (including its
 /// ~40 existing test call sites) keeps using the unchanged `check` entry
 /// point and gets this default.
-pub const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
+pub(crate) const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
 
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
@@ -93,7 +93,7 @@ pub const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversi
 /// review, nit): each copy was a fact -- "this call site does not want a
 /// scalar limit" -- restated by hand in ten fields, with nothing checking
 /// the six copies stayed identical.
-pub const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
     integer_bits: u64::MAX,
     decimal_digits: u64::MAX,
     scale_expansion: u64::MAX,
@@ -1266,13 +1266,6 @@ pub struct CheckedDeclaration {
     pub(crate) body: CheckedDeclarationBody,
 }
 
-impl CheckedDeclaration {
-    /// The minted identity of the checked declaration.
-    pub fn identity(&self) -> NodeKey {
-        self.identity
-    }
-}
-
 /// `Value`'s checked-package producer for the function-declaration form
 /// (FR-062, FR-065): the one family slice migrated onto the
 /// `crate::family` contract. A marker type -- every method is a bare
@@ -1700,7 +1693,32 @@ mod tests {
 pub mod fixtures {
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
-    use crate::family::StageLimits;
+    use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits, Staged};
+    use quire_exact::Meter;
+
+    /// `check`'s default declaring-package identity (`pub(crate)`).
+    pub const DEFAULT_PACKAGE_IDENTITY: &str = super::DEFAULT_PACKAGE_IDENTITY;
+
+    /// `check`'s unbounded scalar limits (`pub(crate)`).
+    pub const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = super::SCALAR_LIMITS_UNLIMITED;
+
+    /// A family check context, through `CheckContext::new` (`pub(crate)`).
+    pub fn check_context<'a, D>(
+        declarations: &'a D,
+        limits: StageLimits,
+        meter: &'a mut Meter,
+        diagnostics: &'a mut DiagnosticSink,
+        scopes: &'a mut ScopeStack,
+    ) -> CheckContext<'a, D> {
+        CheckContext::new(declarations, limits, meter, diagnostics, scopes)
+    }
+
+    /// The minted identity a successful `ValueFunctionFamily::check`
+    /// staged (`Staged::value` and `CheckedDeclaration::identity` are
+    /// `pub(crate)`).
+    pub fn staged_identity(staged: &Staged<CheckedDeclaration>) -> NodeKey {
+        staged.value.identity
+    }
 
     /// `declaration`'s identity as `ValueFunctionFamily::check` mints it:
     /// over its signature resolved against `scope`.
@@ -1827,7 +1845,10 @@ pub(crate) mod checking_tests {
     //! (Peter, 2026-09-22, relayed by the QSL team lead) -- these tests
     //! exercise real accept/refuse outcomes over real fixtures, not the
     //! code's shape or where it lives.
-    use super::fixtures::*;
+    use super::fixtures::{
+        boolean_signature, boolean_type_form, declaration, declaration_signature, declarations_for,
+        empty_scope, limits, mint_resolved, root_location,
+    };
     use super::*;
     use crate::check::CheckingLimitKind;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};

@@ -15,17 +15,29 @@ use crate::library::{ImportView, PackageNodeKey};
 
 use super::refusal::CheckCause;
 
-/// One imported package's exports, indexed by exported name. `pub` for the
-/// layer-4 v2 reader's tests across the QSL-181 crate boundary; its
-/// production caller is E3 imported-name resolution (FR-087-AC-13, TC-379).
+/// One imported package's exports, indexed by exported name.
 ///
 /// Each name maps to one node. `library` admits a package only if its
 /// identity preimage declares each name at most once (it refuses
 /// `ambiguous-name` as a malformed preimage), so a view never carries two
 /// entries with one name.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(
+        dead_code,
+        reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
+    )
+)]
 pub struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
 
+#[cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(
+        dead_code,
+        reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
+    )
+)]
 impl<'a> ImportedNames<'a> {
     /// The name index of `view`'s entries.
     pub fn of(view: &'a ImportView) -> Self {

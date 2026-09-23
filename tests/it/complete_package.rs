@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Complete-V1 package resolution over parsed source (TC-180). Each test
-//! takes the caller's step -- parse the source, refuse an inadmissible parse,
-//! and hand its selections and source authority to layer 3 -- and then calls
-//! `complete::resolve_source_package`, which takes foundation-typed
-//! selections, not a `ParsedSource` (QSL-181). Gated on `test-support` for
-//! `ReaderAuthority::fixture`.
+//! Complete-V1 package resolution over parsed source (TC-180), through the
+//! shipped caller step `command::resolve_parsed_source`, which refuses an
+//! inadmissible parse and hands layer-3 `complete::resolve_source_package`
+//! the authority and selections of one admitted parse (QSL-181). Gated on
+//! `test-support` for `ReaderAuthority::fixture`.
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_cst::{parse, CompleteCause, CompleteDiagnostic, Limits, ParsedSource};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
 use qsl_foundation::{Code, SourceIdentity};
+use quire_spec_language::command::{resolve_parsed_source, SourcePackageRefusal};
 use quire_spec_language::complete::{
     self, resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole,
     Facet, ModelArtifact, ModelCatalog, PackageError, PackageLimits, PackageRefusal,
@@ -140,22 +140,19 @@ fn resolved_source(definitions: &[Definition], model: &ModelArtifact) -> ParsedS
     parse_fixture("test:resolved-package", "resolved.native", &source)
 }
 
-/// The caller's step (layer 6 or a tool): only an admissible parse reaches
-/// resolution, as its source authority and its recovered selections.
+/// The shipped caller step over an admissible fixture: its outcome is a
+/// resolved package or a layer-3 resolution refusal.
 fn resolve_parsed(
     parsed: &ParsedSource,
     catalog: &DefinitionCatalog,
     models: &ModelCatalog,
     limits: PackageLimits,
 ) -> Result<ResolvedSourcePackage, PackageRefusal> {
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    resolve_source_package(
-        SourceAuthority::of(parsed.source()),
-        parsed.selections(),
-        catalog,
-        models,
-        limits,
-    )
+    match resolve_parsed_source(parsed, catalog, models, limits) {
+        Ok(package) => Ok(package),
+        Err(SourcePackageRefusal::Resolution(refusal)) => Err(refusal),
+        Err(refusal) => panic!("an admissible fixture was refused before resolution: {refusal}"),
+    }
 }
 
 fn resolved_package(definitions: &[Definition]) -> ResolvedSourcePackage {
@@ -233,19 +230,35 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
     assert_eq!(unknown.code, Code::UnknownProfile);
     assert_eq!(unknown.cause_tag, ResolutionCause::UnsupportedSelection);
 
-    // An inadmissible parse never reaches resolution: the caller refuses it
-    // with the parse's own first diagnostic.
+    // An inadmissible parse is refused before resolution, with the parse's
+    // own first diagnostic and the refused source's own authority.
     let broken_text = format!(
         "{}\nrecord Broken {{ value: Integer }}",
         parsed.source().text()
     );
     let broken = parse_fixture("test:broken-source", "broken.native", &broken_text);
-    assert!(!broken.is_admissible());
-    let first = &broken.diagnostics()[0];
+    let refused = resolve_parsed_source(
+        &broken,
+        &unknown_catalog,
+        &ModelCatalog::new(vec![model.clone()]).unwrap(),
+        PackageLimits::default(),
+    )
+    .unwrap_err();
+    let SourcePackageRefusal::Inadmissible {
+        authority,
+        diagnostic,
+    } = refused
+    else {
+        panic!("expected an inadmissible-source refusal, got {refused:?}")
+    };
     assert_eq!(
-        (first.code, first.cause),
+        (diagnostic.code, diagnostic.cause),
         (Code::InvalidSyntax, CompleteCause::UnexpectedToken)
     );
+    assert_eq!(*diagnostic, broken.diagnostics()[0]);
+    assert_eq!(*authority, SourceAuthority::of(broken.source()));
+    assert_eq!(authority.identity.identity, "test:broken-source");
+    assert_eq!(authority.path, "broken.native");
     assert_eq!(unknown.span, parsed.selections().profiles[0].identity_span);
     assert_refusal_authority(&unknown, &parsed);
 
@@ -456,7 +469,7 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
 
     // These public types are the complete parser/resolver authority surface;
     // neither admits backend installation or capability state as an input.
-    let resolver: fn(
+    let _: fn(
         SourceAuthority,
         &qsl_foundation::selection::SourceSelections,
         &DefinitionCatalog,
@@ -464,15 +477,58 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
         PackageLimits,
     ) -> Result<ResolvedSourcePackage, PackageRefusal> = resolve_source_package;
     let source = resolved_source(&definitions, &model);
-    let admitted = resolver(
-        SourceAuthority::of(source.source()),
-        source.selections(),
+    let caller_step: fn(
+        &ParsedSource,
+        &DefinitionCatalog,
+        &ModelCatalog,
+        PackageLimits,
+    ) -> Result<ResolvedSourcePackage, SourcePackageRefusal> = resolve_parsed_source;
+    let admitted = caller_step(
+        &source,
         &DefinitionCatalog::new(definitions).unwrap(),
         &ModelCatalog::new(vec![model]).unwrap(),
         PackageLimits::default(),
     )
     .unwrap();
-    assert_eq!(*admitted.authority(), SourceAuthority::of(source.source()));
+    // The caller step derives the authority and the selections from the one
+    // parse it is given: the package names this source and holds exactly
+    // this source's selected definitions and models.
+    assert_eq!(admitted.authority().identity, *source.source().identity());
+    assert_eq!(admitted.authority().path, source.source().path());
+    assert_eq!(
+        admitted.authority().digest.digest(),
+        source.source().digest()
+    );
+    let selected_definitions: BTreeSet<DefinitionRef> = source
+        .selections()
+        .profiles
+        .iter()
+        .map(|selection| selection.definition.clone())
+        .chain(
+            source
+                .selections()
+                .imports
+                .iter()
+                .map(|selection| selection.definition.clone()),
+        )
+        .collect();
+    assert_eq!(
+        admitted
+            .definitions()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        selected_definitions
+    );
+    assert_eq!(
+        admitted.models().keys().cloned().collect::<Vec<_>>(),
+        source
+            .selections()
+            .models
+            .iter()
+            .map(|selection| selection.model.clone())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[trace("TC-180", "FR-131-AC-2")]
@@ -726,26 +782,22 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     );
 }
 
-/// The layer-1 cause of the same name as `cause`. Exhaustive over
-/// `ResolutionCause`, so a new variant fails to compile until it is paired.
-fn complete_cause_of(cause: ResolutionCause) -> CompleteCause {
-    match cause {
-        ResolutionCause::UnsupportedSelection => CompleteCause::UnsupportedSelection,
-        ResolutionCause::RevisionMismatch => CompleteCause::RevisionMismatch,
-        ResolutionCause::ByteDigestMismatch => CompleteCause::ByteDigestMismatch,
-        ResolutionCause::InsufficientNextCharge => CompleteCause::InsufficientNextCharge,
-        ResolutionCause::MissingSelection => CompleteCause::MissingSelection,
-        ResolutionCause::AmbiguousName => CompleteCause::AmbiguousName,
-        ResolutionCause::ConflictingAuthority => CompleteCause::ConflictingAuthority,
-        ResolutionCause::DuplicateMember => CompleteCause::DuplicateMember,
-        ResolutionCause::InvalidValue => CompleteCause::InvalidValue,
-        ResolutionCause::DefinitionCycle => CompleteCause::DefinitionCycle,
-        ResolutionCause::FeatureSetMismatch => CompleteCause::FeatureSetMismatch,
-        ResolutionCause::UnknownFeature => CompleteCause::UnknownFeature,
-        ResolutionCause::UnsupportedFeature => CompleteCause::UnsupportedFeature,
-        ResolutionCause::WrongModelSelection => CompleteCause::WrongModelSelection,
-        ResolutionCause::ConflictingBinding => CompleteCause::ConflictingBinding,
-    }
+/// Every `ResolutionCause` paired with the layer-1 `CompleteCause` of the
+/// same name. The macro builds an exhaustive `match` over the listed
+/// variants with no `_` arm, so a variant left out of the list fails to
+/// compile (E0004), and the list is the one the test iterates.
+macro_rules! resolution_causes {
+    ($($variant:ident),+ $(,)?) => {{
+        fn covered(cause: ResolutionCause) {
+            match cause {
+                $(ResolutionCause::$variant => {})+
+            }
+        }
+        vec![$({
+            covered(ResolutionCause::$variant);
+            (ResolutionCause::$variant, CompleteCause::$variant)
+        }),+]
+    }};
 }
 
 /// Layer 3's resolution cause tags are a subset of layer 1's complete cause
@@ -754,24 +806,24 @@ fn complete_cause_of(cause: ResolutionCause) -> CompleteCause {
 #[trace("TC-180", "FR-131-AC-2")]
 #[test]
 fn resolution_causes_match_the_complete_cause_catalog() {
-    for resolution in [
-        ResolutionCause::UnsupportedSelection,
-        ResolutionCause::RevisionMismatch,
-        ResolutionCause::ByteDigestMismatch,
-        ResolutionCause::InsufficientNextCharge,
-        ResolutionCause::MissingSelection,
-        ResolutionCause::AmbiguousName,
-        ResolutionCause::ConflictingAuthority,
-        ResolutionCause::DuplicateMember,
-        ResolutionCause::InvalidValue,
-        ResolutionCause::DefinitionCycle,
-        ResolutionCause::FeatureSetMismatch,
-        ResolutionCause::UnknownFeature,
-        ResolutionCause::UnsupportedFeature,
-        ResolutionCause::WrongModelSelection,
-        ResolutionCause::ConflictingBinding,
-    ] {
-        let complete = complete_cause_of(resolution);
+    let pairs = resolution_causes![
+        UnsupportedSelection,
+        RevisionMismatch,
+        ByteDigestMismatch,
+        InsufficientNextCharge,
+        MissingSelection,
+        AmbiguousName,
+        ConflictingAuthority,
+        DuplicateMember,
+        InvalidValue,
+        DefinitionCycle,
+        FeatureSetMismatch,
+        UnknownFeature,
+        UnsupportedFeature,
+        WrongModelSelection,
+        ConflictingBinding,
+    ];
+    for (resolution, complete) in pairs {
         assert_eq!(resolution.as_str(), complete.as_str());
         for code in Code::all() {
             assert_eq!(

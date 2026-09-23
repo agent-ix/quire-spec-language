@@ -80,9 +80,14 @@ mod contract;
 mod evaluation;
 mod outcome;
 
-pub use contract::{
-    CheckContext, Diagnostic, DiagnosticSink, FamilyContract, ScopeStack, StageLimits,
-};
+pub use contract::{CheckContext, FamilyContract};
+// Public only under `test-support`: the layer-5 evaluator's tests build a
+// `CheckContext` through `check::check_context`; no shipped caller outside
+// layer 3 names them (QSL-181).
+#[cfg(any(test, feature = "test-support"))]
+pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub(crate) use outcome::StageLimitKind;
 pub use outcome::{CheckOutcome, LimitExceeded, StageFailure, Staged};
