@@ -120,7 +120,10 @@ impl EnumShape {
         self.variants
             .iter()
             .position(|candidate| *candidate == variant)
-            .map(|position| u32::try_from(position).expect("an admitted enum has far fewer than u32::MAX variants"))
+            .map(|position| {
+                u32::try_from(position)
+                    .expect("an admitted enum has far fewer than u32::MAX variants")
+            })
     }
 
     /// The admitted variants, in canonical (rank) order.

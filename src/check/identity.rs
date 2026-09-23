@@ -978,9 +978,6 @@ mod tests {
         let first = SumVariant::new(identifier("Active"));
         let duplicate = SumVariant::new(identifier("Active"));
         let refusal = SumVariants::new(vec![first, duplicate], false).unwrap_err();
-        assert_eq!(
-            refusal,
-            InvalidSumVariants::Duplicate("Active".to_owned())
-        );
+        assert_eq!(refusal, InvalidSumVariants::Duplicate("Active".to_owned()));
     }
 }

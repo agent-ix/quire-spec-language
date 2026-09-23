@@ -25,11 +25,11 @@ use quire_spec_language::library::{
 use quire_spec_language::value::{
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator,
-    FieldDeclaration,
-    FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
-    InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, QualifiedName,
-    RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph, ValueType,
+    FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId,
+    GraphRefusal, GraphSlot, InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause,
+    ObjectEnvironmentRefusal, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue,
+    Outcome, QualifiedName, RecursionEdges, TypeEnvironment, UniverseIdentity, Value, ValueGraph,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

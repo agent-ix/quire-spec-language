@@ -32,12 +32,11 @@ use quire_spec_language::value::{
     ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
     EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome,
-    FieldDeclaration,
-    FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner,
-    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
-    OptionValue, Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain,
-    Refusal, Text, TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable,
-    UniverseIdentity, Value, ValueLoss, ValueType,
+    FieldDeclaration, FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue,
+    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
+    PackageDeclarations, RationalDomain, Refusal, Text, TextPayload, TypeEnvironment, Undefined,
+    UnitGraph, UnitPreimage, UnitTable, UniverseIdentity, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -198,10 +197,7 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
     .unwrap()
 }
 
-fn enum_value(
-    declaration: &EnumDeclaration,
-    case: &str,
-) -> quire_spec_language::value::EnumValue {
+fn enum_value(declaration: &EnumDeclaration, case: &str) -> quire_spec_language::value::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),
@@ -325,7 +321,12 @@ fn check_with_enums(
     right: &ValueType,
     enum_members: &EnumMemberIndex,
 ) -> Result<CheckedEquality, IllTyped> {
-    env.check_equality(EqualityOperator::Equal, typed(left), typed(right), enum_members)
+    env.check_equality(
+        EqualityOperator::Equal,
+        typed(left),
+        typed(right),
+        enum_members,
+    )
 }
 
 /// `left = right` for parameters of the declared types, under unlimited limits.
@@ -612,10 +613,11 @@ fn e07_enumerations_by_declaration_node_and_case() {
     let mut index = EnumMemberIndex::default();
     let a_type = enum_shape(&a, &["DONE", "READY"], &mut index);
     let b_type = enum_shape(&b, &["DONE", "READY"], &mut index);
-    let equal_enum = |left_type: &ValueType, left: &Value, right_type: &ValueType, right: &Value| {
-        check_with_enums(&env, left_type, right_type, &index)
-            .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
-    };
+    let equal_enum =
+        |left_type: &ValueType, left: &Value, right_type: &ValueType, right: &Value| {
+            check_with_enums(&env, left_type, right_type, &index)
+                .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+        };
     let ready = member(&a, "READY");
     assert_eq!(
         equal_enum(&a_type, &ready, &a_type, &member(&a, "READY")),

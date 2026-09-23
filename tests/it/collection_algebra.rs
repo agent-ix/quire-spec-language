@@ -15,7 +15,8 @@ use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
     CompositeShape, Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome,
     FieldDeclaration, FieldValue, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    OptionValue, Outcome, Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    OptionValue, Outcome, Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
