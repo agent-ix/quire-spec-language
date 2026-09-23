@@ -23,7 +23,9 @@ use super::super::numeric::{
     retain_boolean,
 };
 use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
-use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
+use super::super::quantity::{
+    compare_quantity, evaluate_quantity, result_unit, QuantityOperation, UnitOperation, UnitScope,
+};
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
 use super::causes::{
@@ -292,6 +294,9 @@ pub(crate) struct Machine<'a, 'm> {
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
     /// it for its operand and `Task::RestoreAnchor` restores it after.
     anchor: Anchor,
+    /// The package's quantity units, then every compound unit a product or
+    /// quotient formed during this evaluation.
+    units: UnitScope<'a>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -313,6 +318,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
+            units: UnitScope::new(scope.types.units()),
         }
     }
 
@@ -841,17 +847,30 @@ impl<'a, 'm> Machine<'a, 'm> {
                 else {
                     return Err(invariant());
                 };
-                let operation = match operator {
-                    ArithmeticOperator::Add => QuantityOperation::Add(&left, &right),
-                    ArithmeticOperator::Subtract => QuantityOperation::Subtract(&left, &right),
-                    ArithmeticOperator::Multiply => QuantityOperation::Multiply(&left, &right),
-                    ArithmeticOperator::Divide => QuantityOperation::Divide(&left, &right),
+                let (Some(l), Some(r)) = (self.units.resolve(&left), self.units.resolve(&right))
+                else {
+                    return Err(invariant());
                 };
-                Value::Quantity(
-                    evaluate_quantity(operation, self.meter)
-                        .map_err(|_| invariant())?
-                        .into_stop()?,
-                )
+                let (unit_operation, operation) = match operator {
+                    ArithmeticOperator::Add => (UnitOperation::Add, QuantityOperation::Add(l, r)),
+                    ArithmeticOperator::Subtract => {
+                        (UnitOperation::Subtract, QuantityOperation::Subtract(l, r))
+                    }
+                    ArithmeticOperator::Multiply => {
+                        (UnitOperation::Multiply, QuantityOperation::Multiply(l, r))
+                    }
+                    ArithmeticOperator::Divide => {
+                        (UnitOperation::Divide, QuantityOperation::Divide(l, r))
+                    }
+                };
+                let unit =
+                    result_unit(unit_operation, l.unit(), r.unit()).map_err(|_| invariant())?;
+                let quantity = evaluate_quantity(operation, self.meter)
+                    .map_err(|_| invariant())?
+                    .into_stop()?;
+                // A later operation reads this result's unit by its id.
+                self.units.form(unit);
+                Value::Quantity(quantity)
             }
             NodeKind::Order(operator, kind, _, _) => {
                 let right = self.pop()?;
@@ -1004,7 +1023,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
-                operand_value(operand, &value, self.meter)?
+                operand_value(operand, &value, &self.units, self.meter)?
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
@@ -1241,6 +1260,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .map_err(Into::into);
             }
             (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
+                let (Some(l), Some(r)) = (self.units.resolve(l), self.units.resolve(r)) else {
+                    return Err(invariant());
+                };
                 return compare_quantity(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
                     .into_stop()

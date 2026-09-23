@@ -57,7 +57,7 @@ use crate::value::declaration::{
 };
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
-use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
+use crate::value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -352,6 +352,9 @@ pub(crate) struct Typer<'a> {
     /// operations" -- and refused `wrong_snapshot`/`wrong-anchor` in every
     /// other clause kind, including a standalone `check_expression` call).
     clause_kind: ClauseKind,
+    /// The package's quantity units, then every compound unit this pass
+    /// formed as a product or quotient type.
+    units: UnitScope<'a>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -482,6 +485,7 @@ impl<'a> Typer<'a> {
             locals: Vec::new(),
             slots: 0,
             clause_kind,
+            units: UnitScope::new(scope.types.units()),
         }
     }
 
@@ -1125,7 +1129,8 @@ impl<'a> Typer<'a> {
                 let item = self.check_as(item, &element, &location.child(1))?;
                 self.scope
                     .types
-                    .check_equality(
+                    .check_equality_in(
+                        &self.units,
                         EqualityOperator::Equal,
                         EqualityOperand::typed(element.clone()),
                         EqualityOperand::typed(element),
@@ -1374,7 +1379,7 @@ impl<'a> Typer<'a> {
         let checked = self
             .scope
             .types
-            .check_equality(operator, left_operand, right_operand)
+            .check_equality_in(&self.units, operator, left_operand, right_operand)
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(
             NodeKind::Equality(operator, Box::new(checked), Box::new(left), Box::new(right)),
@@ -1420,6 +1425,9 @@ impl<'a> Typer<'a> {
                 OrderedKind::Texts
             }
             (ValueType::Quantity(l), ValueType::Quantity(r)) => {
+                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                    return Err(mismatch(location));
+                };
                 check_comparable(l, r)
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 OrderedKind::Quantities
@@ -1548,11 +1556,14 @@ impl<'a> Typer<'a> {
                     ArithmeticOperator::Multiply => UnitOperation::Multiply,
                     ArithmeticOperator::Divide => UnitOperation::Divide,
                 };
+                let (Some(l), Some(r)) = (self.units.get(*l), self.units.get(*r)) else {
+                    return Err(mismatch(location));
+                };
                 let unit = result_unit(operation, l, r)
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 (
                     NodeKind::Quantity(operator, left_box, right_box),
-                    ValueType::Quantity(unit),
+                    ValueType::Quantity(self.units.form(unit)),
                 )
             }
             _ => return Err(mismatch(location)),
@@ -1975,7 +1986,7 @@ impl<'a> Typer<'a> {
                 ))
             }
             (ValueType::Rational(_) | ValueType::Decimal(_), ValueType::Decimal(decimal))
-                if !admits_equality_conversion(&operand.value_type, target) =>
+                if !admits_equality_conversion(&operand.value_type, target, &self.units) =>
             {
                 Ok(node(
                     NodeKind::ConvertDecimal(Box::new(operand), decimal.clone()),
@@ -1985,7 +1996,7 @@ impl<'a> Typer<'a> {
             }
             (source, _) => {
                 if matches!(source, ValueType::Float(_))
-                    || !admits_equality_conversion(source, target)
+                    || !admits_equality_conversion(source, target, &self.units)
                 {
                     return Err(mismatch(location));
                 }

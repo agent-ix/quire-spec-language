@@ -15,9 +15,14 @@
 //! O-04). A node id read from a preimage document stays a
 //! [`WireNodeId`] until `UnitGraph::admit` or `UnitGraph::compound_unit`
 //! resolves it by lookup among the admitted nodes' retained keys.
+//!
+//! It mints every kernel [`UnitId`] (ADR-013 T-6, OQ-B): a declared unit's is
+//! its admitted node key under the `quire.checked-semantic-node/v1` label
+//! ([`Unit::id`], and C-30's [`UnitGraph::declared_unit_id`], which refuses
+//! any key that is not an admitted unit's), and a compound unit's is its
+//! `quire.value.compound-unit/v1` digest ([`CompoundUnit::id`]).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -28,13 +33,10 @@ use super::semantic_node::{
     NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument, SemanticGraphCause,
 };
 use qsl_foundation::digest::WireNodeId;
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";
-
-/// Domain and preimage version of a compound-unit value identity.
-pub const COMPOUND_UNIT_DOMAIN: &str = "quire.value.compound-unit/v1";
 
 // ---- dimensions --------------------------------------------------------------
 
@@ -388,6 +390,12 @@ impl Unit {
         self.key
     }
 
+    /// The declared-arm [`UnitId`]: this admitted unit's node key under the
+    /// `quire.checked-semantic-node/v1` label (ADR-013 T-6, OQ-B).
+    pub fn id(&self) -> UnitId {
+        UnitId::declared(self.key)
+    }
+
     /// The unit's dimension node key.
     pub fn dimension_node(&self) -> NodeKey {
         self.dimension_node
@@ -539,6 +547,19 @@ impl UnitGraph {
         self.units.get(&key)
     }
 
+    /// Every admitted unit, ascending by node key.
+    pub fn units(&self) -> impl Iterator<Item = &Unit> {
+        self.units.values()
+    }
+
+    /// ADR-013 C-30: a unit node key as a declared-arm [`UnitId`]. Only the
+    /// key of an admitted unit converts, and admission checked that key
+    /// against its `quire.unit-node/v1` preimage; any other node key, such
+    /// as a dimension's, is refused.
+    pub fn declared_unit_id(&self, key: NodeKey) -> Result<UnitId, NotAUnitKey> {
+        self.unit(key).map(Unit::id).ok_or(NotAUnitKey { key })
+    }
+
     /// Construct a compound unit from a schema-valid preimage: every term must
     /// name an admitted canonical root unit with a nonzero exponent, strictly
     /// ascending by key.
@@ -565,8 +586,16 @@ impl UnitGraph {
             dimension = dimension.multiply(&root.dimension.power(exponent));
             terms.insert(key, exponent.clone());
         }
-        Ok(CompoundUnit { terms, dimension })
+        Ok(CompoundUnit::new(terms, dimension))
     }
+}
+
+/// C-30's refusal: the node key names no admitted unit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+#[error("node key {key} names no admitted unit")]
+pub struct NotAUnitKey {
+    /// The refused node key.
+    pub key: NodeKey,
 }
 
 /// A base dimension maps to itself; a derived dimension to its base terms,
@@ -701,30 +730,6 @@ fn unit_paths(
 
 // ---- compound units ----------------------------------------------------------
 
-/// An evaluator-owned `quire.value.compound-unit/v1` identity digest. It is not
-/// an I04 semantic node key.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CompoundUnitIdentity([u8; 32]);
-
-impl CompoundUnitIdentity {
-    /// The raw digest.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-impl fmt::Display for CompoundUnitIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for CompoundUnitIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CompoundUnitIdentity({self})")
-    }
-}
-
 /// Why a compound-unit preimage was refused at construction.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 #[error("invalid compound unit: {cause:?}")]
@@ -774,9 +779,11 @@ struct CanonicalCompound {
     version: &'static str,
 }
 
-fn compound_identity<'a, K: Into<CanonicalNodeId>>(
+/// The compound-arm [`UnitId`] of exactly these terms: the SHA-256 of their
+/// JCS `quire.value.compound-unit/v1` preimage.
+fn compound_id<'a, K: Into<CanonicalNodeId>>(
     terms: impl IntoIterator<Item = (K, &'a Integer)>,
-) -> CompoundUnitIdentity {
+) -> UnitId {
     let preimage = CanonicalCompound {
         terms: terms
             .into_iter()
@@ -789,7 +796,7 @@ fn compound_identity<'a, K: Into<CanonicalNodeId>>(
     };
     let bytes = serde_json::to_vec(&preimage)
         .expect("a struct of strings, vectors and a constant always serializes to JSON");
-    CompoundUnitIdentity(Sha256::digest(bytes).into())
+    UnitId::compound(Sha256::digest(bytes).into())
 }
 
 /// A schema-valid `quire.value.compound-unit/v1` preimage, as spelled.
@@ -817,32 +824,41 @@ impl CompoundUnitPreimage {
         Ok(Self { terms })
     }
 
-    /// The identity of exactly these spelled terms.
-    pub fn identity(&self) -> CompoundUnitIdentity {
-        compound_identity(self.terms.iter().map(|(id, exponent)| (*id, exponent)))
+    /// The compound-arm [`UnitId`] of exactly these spelled terms.
+    pub fn id(&self) -> UnitId {
+        compound_id(self.terms.iter().map(|(id, exponent)| (*id, exponent)))
     }
 }
 
 /// A normalized compound unit: canonical root-unit keys to nonzero exponents.
 /// The empty map is the sole dimensionless unit.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CompoundUnit {
     terms: BTreeMap<NodeKey, Integer>,
     dimension: Dimension,
+    /// The `quire.value.compound-unit/v1` identity of `terms`, computed once
+    /// when the terms are fixed.
+    id: UnitId,
 }
 
 impl CompoundUnit {
+    fn new(terms: BTreeMap<NodeKey, Integer>, dimension: Dimension) -> Self {
+        let id = compound_id(terms.iter().map(|(key, exponent)| (*key, exponent)));
+        Self {
+            terms,
+            dimension,
+            id,
+        }
+    }
+
     /// The dimensionless unit.
     pub fn dimensionless() -> Self {
-        Self::default()
+        Self::new(BTreeMap::new(), Dimension::dimensionless())
     }
 
     /// The single-term compound unit `root^1` of a declared unit's root.
     pub(crate) fn of_root(unit: &Unit) -> Self {
-        Self {
-            terms: [(unit.root, Integer::one())].into(),
-            dimension: unit.dimension.clone(),
-        }
+        Self::new([(unit.root, Integer::one())].into(), unit.dimension.clone())
     }
 
     /// Ascending `(root unit, exponent)` terms.
@@ -855,29 +871,30 @@ impl CompoundUnit {
         &self.dimension
     }
 
-    /// The `quire.value.compound-unit/v1` identity.
-    pub fn identity(&self) -> CompoundUnitIdentity {
-        compound_identity(self.terms())
+    /// The compound-arm [`UnitId`]: the `quire.value.compound-unit/v1`
+    /// digest of the terms (ADR-013 T-6, OQ-B).
+    pub fn id(&self) -> UnitId {
+        self.id
     }
 
     pub(crate) fn multiply(&self, other: &Self) -> Self {
-        Self {
-            terms: combine(&self.terms, &other.terms, Integer::add),
-            dimension: self.dimension.multiply(&other.dimension),
-        }
+        Self::new(
+            combine(&self.terms, &other.terms, Integer::add),
+            self.dimension.multiply(&other.dimension),
+        )
     }
 
     pub(crate) fn divide(&self, other: &Self) -> Self {
-        Self {
-            terms: combine(&self.terms, &other.terms, Integer::sub),
-            dimension: self.dimension.divide(&other.dimension),
-        }
+        Self::new(
+            combine(&self.terms, &other.terms, Integer::sub),
+            self.dimension.divide(&other.dimension),
+        )
     }
 
     pub(crate) fn power(&self, exponent: &Integer) -> Self {
-        Self {
-            terms: scale_exponents(&self.terms, exponent),
-            dimension: self.dimension.power(exponent),
-        }
+        Self::new(
+            scale_exponents(&self.terms, exponent),
+            self.dimension.power(exponent),
+        )
     }
 }

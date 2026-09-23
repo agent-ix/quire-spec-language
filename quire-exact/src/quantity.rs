@@ -166,7 +166,7 @@ mod tests {
     fn unit(byte: u8) -> UnitId {
         let mut bytes = [0_u8; 32];
         bytes[31] = byte;
-        UnitId::from_digest(bytes)
+        UnitId::compound(bytes)
     }
 
     /// TC-319: adding two quantities in the same unit completes with the

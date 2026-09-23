@@ -209,8 +209,9 @@ fn integer_arithmetic_bits(operation: IntegerArithmetic<'_>) -> Integer {
 
 /// The `integer_bits` amount of `rational-arithmetic.arithmetic` for `a/b`
 /// and `c/d`: `max(N,D)`, with `N` and `D` bounding the unreduced parts, and
-/// `max(bits(a),bits(b))` for unary `-`. `unit.rational-arithmetic` reuses it.
-pub(crate) fn rational_arithmetic_bits(operation: RationalArithmetic<'_>) -> Integer {
+/// `max(bits(a),bits(b))` for unary `-`. QSL `value::quantity`'s
+/// `unit.rational-arithmetic` charge reuses it, sized before the event.
+pub fn rational_arithmetic_bits(operation: RationalArithmetic<'_>) -> Integer {
     let (numerator, denominator) = match operation {
         RationalArithmetic::Multiply(left, right) => (
             bits(left.numerator()).add(&bits(right.numerator())),

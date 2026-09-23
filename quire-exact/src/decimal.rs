@@ -6,14 +6,13 @@
 //! floating-point value exists anywhere on this path.
 //!
 //! Ported from QSL `value::decimal` as part of QSL#213 S-1 (ADR-011 X-1).
-//! One adaptation: `DecimalType::placement`/`round_at_target`, the
-//! `Placement` enum and its `materialize`, `terminating_scale` and
-//! `Placed::into_integer` are dropped. Their only caller anywhere in the
-//! original QSL codebase is `value::quantity`'s full unit-graph module
-//! (converting a quantity's magnitude to a `Decimal` target) -- QSL's own
-//! `Quantity`/`QuantityUnit`, not the bare, unit-graph-free
-//! `crate::quantity::Quantity` this kernel carries (ADR-013 T-6). With that
-//! caller outside the kernel, these had no caller left in this crate.
+//! [`DecimalType::placement`], [`Placement::materialize`] and the public
+//! [`Placed`] methods place an exact rational at a decimal target's scale
+//! for a caller that meters the placement itself: QSL `value::quantity`'s
+//! unit conversion into a `Decimal` or integer target, which charges
+//! `unit.target-domain` rather than any `decimal.*` point (QSL-131 V4). Like
+//! [`sbits`] and [`sdigits`], they are unmetered exact arithmetic, so the
+//! caller charges or bounds the sizes before [`Placement::materialize`].
 
 use std::cmp::Ordering;
 
@@ -773,10 +772,103 @@ fn evaluate(
 
 /// An exact rational placed at a target's maximum scale `T`, before target
 /// membership and retention.
-pub(crate) struct Placed {
+#[derive(Debug)]
+pub struct Placed {
     coefficient: Integer,
     scale: u32,
     loss: Option<DecimalLoss>,
+}
+
+impl DecimalType {
+    /// Decide how `value` is placed at `T` under the target rounding mode and
+    /// the exact retained sizes of that placement, without materializing a
+    /// coefficient larger than the inputs. Strict `exact` refuses a nonzero
+    /// discarded digit.
+    pub fn placement(&self, value: &Rational) -> Result<Placement, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        let terminating = terminating_scale(denominator)
+            .and_then(|scale| u32::try_from(scale).ok())
+            .filter(|scale| *scale <= self.max_scale);
+        if let Some(scale) = terminating {
+            // `n/d = n × (10^k / d) × 10^-k` with `k <= bits(d)`.
+            let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
+            return Ok(Placement(Placing::Placed(Placed {
+                coefficient: numerator.mul(&factor),
+                scale,
+                loss: None,
+            })));
+        }
+        // A reduced value that is not a multiple of `10^-T` always discards a
+        // nonzero digit.
+        if self.rounding == RoundingMode::Exact {
+            return Err(Refusal::InexactDecimal);
+        }
+        Ok(Placement(Placing::Deferred(value.clone())))
+    }
+
+    /// Round `value × 10^T` to an integer coefficient at `T`, recording the
+    /// loss. The caller has charged or bounded its size.
+    fn round_at_target(&self, value: &Rational) -> Result<Placed, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        // A reduced denominator is positive, so the division exists.
+        let units = Rational::from_integer(
+            numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
+        )
+        .div(&Rational::from_integer(denominator.clone()))
+        .ok_or(Refusal::InexactDecimal)?;
+        let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
+        Ok(Placed {
+            loss: Some(DecimalLoss {
+                exact: ExactLossValue::scaled(value, 0),
+                rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
+                mode: self.rounding,
+            }),
+            coefficient: rounded,
+            scale: self.max_scale,
+        })
+    }
+}
+
+/// A decided placement at `T` ([`DecimalType::placement`]), before its
+/// coefficient is sized and retained.
+#[derive(Debug)]
+pub struct Placement(Placing);
+
+#[derive(Debug)]
+enum Placing {
+    /// A coefficient already bounded by the inputs.
+    Placed(Placed),
+    /// A rounded coefficient whose materialization waits for its charge.
+    Deferred(Rational),
+}
+
+impl Placement {
+    /// Materialize the placed coefficient after its sizes were charged.
+    pub fn materialize(self, target: &DecimalType) -> Result<Placed, Refusal> {
+        match self.0 {
+            Placing::Placed(placed) => Ok(placed),
+            Placing::Deferred(value) => target.round_at_target(&value),
+        }
+    }
+}
+
+/// The least `k` with `denominator | 10^k`, or `None` when the positive
+/// `denominator` has a prime factor other than two or five.
+fn terminating_scale(denominator: &Integer) -> Option<u64> {
+    let mut remaining = denominator.clone();
+    let mut counts = [0_u64; 2];
+    for (count, prime) in counts.iter_mut().zip([2_i64, 5]) {
+        let prime = Integer::from(prime);
+        loop {
+            let (quotient, remainder) = remaining.div_mod_floor(&prime);
+            if !remainder.is_zero() {
+                break;
+            }
+            remaining = quotient;
+            *count += 1;
+        }
+    }
+    (remaining == Integer::one()).then(|| counts[0].max(counts[1]))
 }
 
 impl Placed {
@@ -795,7 +887,7 @@ impl Placed {
     }
 
     /// Refuse a value outside the target's declared membership.
-    pub(crate) fn check_membership(&self, target: &DecimalType) -> Result<(), Refusal> {
+    pub fn check_membership(&self, target: &DecimalType) -> Result<(), Refusal> {
         if target.contains(&Decimal::new(self.coefficient.clone(), self.scale)) {
             Ok(())
         } else {
@@ -803,8 +895,13 @@ impl Placed {
         }
     }
 
+    /// The scale-zero coefficient and loss record of an integer target.
+    pub fn into_integer(self) -> (Integer, Option<DecimalLoss>) {
+        (self.coefficient, self.loss)
+    }
+
     /// The completed result retaining `(v × 10^T, T)`.
-    pub(crate) fn retain(self, target: &DecimalType) -> DecimalResult {
+    pub fn retain(self, target: &DecimalType) -> DecimalResult {
         let lift = u64::from(target.max_scale) - u64::from(self.scale);
         DecimalResult {
             value: Decimal::new(expand_one((&self.coefficient, lift)), target.max_scale),

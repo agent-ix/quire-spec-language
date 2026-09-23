@@ -263,5 +263,6 @@ work: QSL-156. AC-5 is enforced for its
 `QualifiedName` half only (TC-251); the "or a bare string" half is
 investigated and documented as a gap, not enforced (see
 `tests/it/name_resolution_confinement.rs`'s own module doc). AC-6 (TC-258)
-and AC-8 (TC-260) remain unimplemented, out of #300's scope. AC-11 (TC-409)
-and AC-12 (TC-411) are not implemented. Remaining work: QSL-131.
+and AC-8 (TC-260) remain unimplemented, out of #300's scope. AC-12 (TC-411)
+is implemented by QSL-131 V4. AC-11 (TC-409) is not implemented. Remaining
+work: QSL-131.

@@ -21,8 +21,9 @@
 //! digest identity here ([`NodeKey`] and the seven digest identities,
 //! [`EffectiveId`], [`UniverseId`], [`ObjectId`], [`UnitId`], [`VariantId`],
 //! [`MemberId`], [`PopulationId`]) is minted by wrapping an already-computed
-//! digest through its one public `from_digest` constructor (ADR-013 T-6),
-//! never by hashing internally.
+//! digest -- through its one public `from_digest` constructor, or for the
+//! two-domain [`UnitId`] through its one constructor per domain (ADR-013
+//! T-6, QC-22) -- never by hashing internally.
 //!
 //! [`Value`]/[`ValueType`]: `ValueType::admits` never pairs
 //! `ValueType::Population(u64)` with `Value::Population(PopulationId)`
@@ -118,8 +119,10 @@ mod value;
 // below: it is reachable only from inside this crate. `rational::
 // divided_by_power_of_ten`/`divided_by_power_of_two`, `decimal::
 // DecimalRepresentation::to_rational`, `decimal::compare_shifted`,
-// `decimal::power_of_ten_bits`/`sbits`/`sdigits`, `decimal::DecimalLoss::
-// exact`/`exact_denominator` and `equality::plan_equality` are all `pub`
+// `decimal::power_of_ten_bits`/`sbits`/`sdigits`, `decimal::DecimalType::
+// placement` with `Placement`/`Placed`, `numeric::rational_arithmetic_bits`,
+// `decimal::DecimalLoss::exact`/`exact_denominator` and
+// `equality::plan_equality` are all `pub`
 // and exported below: each is unmetered exact arithmetic or comparison --
 // the same discipline `Integer`'s own arithmetic carries -- so a caller
 // charges or bounds its inputs before calling any of them.
@@ -148,14 +151,15 @@ pub use collection::{
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{
     compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal, DecimalLoss,
-    DecimalOperation, DecimalRepresentation, DecimalResult, DecimalType, RoundingMode,
+    DecimalOperation, DecimalRepresentation, DecimalResult, DecimalType, Placed, Placement,
+    RoundingMode,
 };
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};
 pub use identity::{
-    EffectiveId, MemberId, ObjectId, PopulationId, UnitId, UniverseId, VariantId,
-    EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN, POPULATION_ID_DOMAIN, UNIT_ID_DOMAIN,
-    UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
+    EffectiveId, MemberId, ObjectId, PopulationId, UnitDomain, UnitId, UniverseId, VariantId,
+    COMPOUND_UNIT_DOMAIN, EFFECTIVE_ID_DOMAIN, MEMBER_ID_DOMAIN, OBJECT_ID_DOMAIN,
+    POPULATION_ID_DOMAIN, UNIVERSE_ID_DOMAIN, VARIANT_ID_DOMAIN,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -171,8 +175,8 @@ pub use location::{Location, Origin, Role};
 pub use node::{is_identifier, Identifier, InvalidIdentifier, NodeKey, NODE_KEY_DOMAIN};
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
-    RationalArithmetic,
+    rational_arithmetic_bits, ArithmeticOperator, BooleanConnective, IntegerArithmetic,
+    OrderedOperands, OrderingOperator, RationalArithmetic,
 };
 pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
 pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, QuantityArithmetic};

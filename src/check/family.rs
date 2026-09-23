@@ -67,25 +67,13 @@ use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
 use super::{CheckingLimits, DispatchTable, Scope};
-use crate::value::declaration::CompositeShape;
-use quire_exact::IllTypedCause;
-// `QuantityUnit` and `TextProfile`: PR #282 review, F3. FR-068-AC-6/TC-175's
-// tier (b) originally bounded to five items across two modules
-// (`EnumDeclaration`, `EnumValue` from `enumeration`; `check_comparable`,
-// `result_unit`, `UnitOperation` from `quantity`) and could not pass as
-// written against any conforming implementation: `encode_value_type`'s
-// exhaustive match over `ValueType::Quantity`/`ValueType::Text` has always
-// needed both (this function, and the need for both types, predate this
-// ticket -- they were already imported by the original, unsplit
-// `value::expression::family.rs`). FR-068 now amends tier (b) to seven items
-// across three modules, admitting `QuantityUnit` (`value::quantity`) and
-// `TextProfile` (`value::text`) explicitly -- see FR-068's Behavior section,
-// "The layer-3 sibling imports `check.rs` keeps," and this module's own doc.
 use crate::value::composite::ValueType;
-use crate::value::quantity::QuantityUnit;
+use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
+use quire_exact::IllTypedCause;
 use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
+use quire_exact::{UnitDomain, UnitId};
 
 /// The declaring package's `name@version` a checked node's identity
 /// preimage includes (ADR-013 O-04). Complete-V1's `PackageDeclarations` has
@@ -346,23 +334,16 @@ fn text_profile_tag(profile: TextProfile) -> &'static str {
     }
 }
 
-fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
-    match unit {
-        // Both arms read the unit's own already-content-addressed identity
-        // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
-        // than re-deriving one from the unit's internal dimension/edge
-        // graph: those identities are this codebase's own established
-        // stable-identity mechanism (RFC 8785 JCS preimages, `value::semantic_node`),
-        // not `Debug`.
-        QuantityUnit::Declared(unit) => {
-            out.write_str("declared");
-            out.write_str(&unit.key().to_string());
-        }
-        QuantityUnit::Compound(unit) => {
-            out.write_str("compound");
-            out.write_str(&unit.identity().to_string());
-        }
-    }
+fn encode_quantity_unit(out: &mut Preimage, unit: UnitId) {
+    // The unit's own content-addressed identity: a declared unit's node key
+    // or a compound unit's `quire.value.compound-unit/v1` digest (ADR-013
+    // OQ-B), tagged by its domain -- never a re-derivation from the unit's
+    // internal dimension/edge graph, and never `Debug`.
+    out.write_str(match unit.domain() {
+        UnitDomain::Declared => "declared",
+        UnitDomain::Compound => "compound",
+    });
+    out.write_str(&unit.to_string());
 }
 
 // PR #262 review, round 2: this function and `encode_expression` write
@@ -416,7 +397,7 @@ fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
         }
         ValueType::Quantity(unit) => {
             out.write_str("quantity");
-            encode_quantity_unit(out, unit);
+            encode_quantity_unit(out, *unit);
         }
         ValueType::Text(text_type) => {
             out.write_str("text");

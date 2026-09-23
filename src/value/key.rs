@@ -68,7 +68,7 @@ fn leaf<'a>(
         (Value::Rational(left), Value::Rational(right)) => left.cmp(right),
         (Value::Decimal(left), Value::Decimal(right)) => left.compare(right),
         (Value::Quantity(left), Value::Quantity(right)) if left.unit() == right.unit() => {
-            left.value().cmp(right.value())
+            left.magnitude().cmp(right.magnitude())
         }
         (Value::Text(left), Value::Text(right)) => {
             left.retained().as_bytes().cmp(right.retained().as_bytes())
