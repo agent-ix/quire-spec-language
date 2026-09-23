@@ -29,9 +29,10 @@ mod family;
 
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
-use crate::family::{EvalOutcome, ReferenceEvaluation};
+use crate::family::{ReferenceEvaluation, S6aFamilyKind};
 use evaluate::{Callable, Machine};
-use quire_exact::Meter;
+use qsl_foundation::diagnostic::InternalFault;
+use quire_exact::{Meter, NodeKey};
 
 pub use crate::family::{FamilyOutcome, FamilyResult};
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
@@ -231,6 +232,48 @@ fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
         .collect()
 }
 
+/// The ADR-011 S6a seam for a checked declaration (FR-090, ADR-012 §5.1 S1):
+/// one hand-written arm per [`S6aFamilyKind`] variant, each calling that
+/// family's `evaluate` hook, and no `_` arm. `S6aFamilyKind` has no
+/// `Relation` variant, so no `Relation` declaration reaches S6a
+/// (FR-090-AC-4).
+///
+/// The seam passes the hook's result through unchanged
+/// (`EvalOutcome::Kernel(o)` as `FamilyOutcome::Evaluated(o)`,
+/// `EvalOutcome::Family(r)` as `FamilyOutcome::FamilyEvaluated(r)`,
+/// `Err(fault)` as `Err(fault)`) and builds the [`Evaluation`] from it and
+/// the `location` and `losses` the hook recorded in `env` (FR-090-OQ-3
+/// ruling). An `identity` the package does not resolve is
+/// `Err(InternalFault)` naming stage S6a (FR-090-AC-3).
+///
+/// `identity` and `env` are `Value`'s `ReferenceEvaluation::Key` and `Env`,
+/// because `Value` is the one S6a family. The next family to gain an
+/// `S6aFamilyKind` variant brings its own `Key` and `Env`, and reshapes these
+/// parameters in that change.
+///
+/// FR-063 seam: adding an `S6aFamilyKind` variant with no arm here fails
+/// `--cfg seam_probe` with `E0004`.
+#[deny(clippy::wildcard_enum_match_arm)]
+#[deny(clippy::match_wildcard_for_single_variants)]
+fn evaluate_declaration(
+    family: S6aFamilyKind,
+    identity: &NodeKey,
+    env: &mut family::EvaluationEnv<'_>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let outcome = match family {
+        S6aFamilyKind::Value => crate::check::ValueFunctionFamily::evaluate(identity, env, meter)?,
+        // FR-063: no arm for `S6aFamilyKind::__SeamProbe` -- under
+        // `--cfg seam_probe` this match is deliberately non-exhaustive
+        // (`E0004`). Do not add a catch-all to make it compile.
+    };
+    Ok(Evaluation {
+        outcome: outcome.into(),
+        location: env.location.take(),
+        losses: std::mem::take(&mut env.losses),
+    })
+}
+
 /// `call`, `evaluate` and `emit_function_package_v2` over a
 /// [`CheckedPackage`] (ADR-011 §4, ADR-013 T-1, AD-016 Owner decision 6).
 /// Once `CheckedPackage` is `qsl-package`'s own foreign type (X-7), an
@@ -355,20 +398,13 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // denied it.
         let mut contract_meter = Meter::new(*meter.limits());
         let mut env = family::EvaluationEnv::new(self, objects, arguments, meter);
-        let outcome = match crate::check::ValueFunctionFamily::evaluate(
+        evaluate_declaration(
+            S6aFamilyKind::Value,
             &identity,
             &mut env,
             &mut contract_meter,
-        ) {
-            Ok(EvalOutcome::Kernel(outcome)) => FamilyOutcome::Evaluated(outcome),
-            Ok(EvalOutcome::Family(result)) => FamilyOutcome::FamilyEvaluated(result),
-            Err(fault) => return Err(CallFailure::Fault(fault)),
-        };
-        Ok(Evaluation {
-            outcome,
-            location: env.location,
-            losses: env.losses,
-        })
+        )
+        .map_err(CallFailure::Fault)
     }
 
     fn evaluate(
@@ -408,6 +444,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
 mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+    use crate::family::EvalOutcome;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
@@ -524,6 +561,95 @@ mod tests {
             consumed_fault.invariant(),
             unknown_fault.invariant(),
             "the two invariant identifiers must differ"
+        );
+    }
+
+    /// TC-385 step 1: an exhaustive `match` with no `_` arm over the S6a
+    /// family kind, one arm per `ReferenceEvaluation` family and no
+    /// `Relation` arm. A new `S6aFamilyKind` variant fails this to compile
+    /// (`E0004`), and a `Relation` variant cannot be added without an arm
+    /// here naming it.
+    fn s6a_family_name(family: S6aFamilyKind) -> &'static str {
+        match family {
+            S6aFamilyKind::Value => "Value",
+        }
+    }
+
+    /// TC-385 step 2: an exhaustive `match` with no `_` arm over a
+    /// `FamilyOutcome<Value>`, naming exactly `Evaluated` and
+    /// `FamilyEvaluated`. A third variant fails this to compile (`E0004`).
+    fn outcome_arm(outcome: &FamilyOutcome<Value>) -> &'static str {
+        match outcome {
+            FamilyOutcome::Evaluated(_) => "Evaluated",
+            FamilyOutcome::FamilyEvaluated(_) => "FamilyEvaluated",
+        }
+    }
+
+    /// TC-385 (FR-090-AC-4): the S6a family kind has no `Relation` variant
+    /// and the seam's family parameter has that type; `FamilyOutcome` has
+    /// exactly two arms. Each S6a family kind, passed to the seam with a
+    /// package that declares no item of that family, returns
+    /// `Err(InternalFault)` naming S6a for the unresolved identity, not a
+    /// panic. A declared identity passed through the same seam returns
+    /// `FamilyOutcome::Evaluated`; `tests/it/model_reference_queries.rs`'s
+    /// TC-385 test takes the `FamilyEvaluated` arm through the seam.
+    #[trace("FR-090-AC-4", "TC-385")]
+    #[test]
+    fn s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms() {
+        let empty = crate::checked_package::CheckedPackage::link(
+            PackageDeclarations::default()
+                .check(CheckingLimits::default())
+                .expect("an empty package checks cleanly"),
+        );
+        let objects = ObjectEnvironment::default();
+        let undeclared = NodeKey::from_digest([0xAB; 32]);
+        for kind in S6aFamilyKind::ALL {
+            let name = s6a_family_name(kind);
+            let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+            let mut env =
+                family::EvaluationEnv::new(&empty, &objects, Vec::new(), &mut local_meter);
+            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+            let fault = evaluate_declaration(kind, &undeclared, &mut env, &mut meter)
+                .expect_err("a package that declares no item of the family resolves no identity");
+            assert_eq!(fault.stage(), "S6a", "{name}");
+            assert_eq!(fault.category(), Category::InternalFailure, "{name}");
+            assert_eq!(
+                fault.invariant(),
+                "checked-identity-not-resolved-by-package",
+                "{name}"
+            );
+        }
+
+        let graph = PackageDeclarations {
+            functions: vec![identity_function()],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
+        let identity = graph
+            .function_identity("id")
+            .expect("id is declared in this package");
+        let package = crate::checked_package::CheckedPackage::link(graph);
+        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut env = family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Integer(Integer::from(3_i64))],
+            &mut local_meter,
+        );
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let evaluation =
+            evaluate_declaration(S6aFamilyKind::Value, &identity, &mut env, &mut meter)
+                .expect("a declared identity evaluates");
+        assert_eq!(outcome_arm(&evaluation.outcome), "Evaluated");
+        assert!(
+            matches!(
+                &evaluation.outcome,
+                FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Integer(value)))
+                    if *value == Integer::from(3_i64)
+            ),
+            "{:?}",
+            evaluation.outcome
         );
     }
 

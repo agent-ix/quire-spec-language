@@ -91,9 +91,9 @@ QSL crate (ADR-012 §1), one `seam_probe` build reports all of them. The
 checked-in seam-function list SHALL include, at minimum, one entry for each
 of:
 
-- the `FamilyKind` prefix arm of `catalog_code()` and the stage-participation
-  table that names which hook each family has at each stage, including the
-  explicit `Relation` evaluation arm;
+- the `FamilyKind` prefix arm of `catalog_code()`;
+- the S6a seam's `match` over the S6a family kind (`evaluate_declaration`),
+  which has no `Relation` arm (FR-090-AC-4);
 - the parser's leading-token-kind entry table and the check seam over the
   parsed form enum;
 - the checked node enum's evaluator, v2 emitter and requirement-derivation
@@ -101,8 +101,8 @@ of:
 - each family `Cause` enum's `catalog_code()`.
 
 **Correction to merged spec (stage-participation table deleted, PR #262
-review, finding F7).** #214's first implementation pass built the
-stage-participation table this section describes --
+review, finding F7).** #214's first implementation pass built a
+stage-participation table --
 `stage_hooks(FamilyKind, Stage) -> HookStatus` in `src/family/mod.rs` -- as
 its own checked-in S1 location, distinct from `catalog_code_prefix`'s prefix
 arm. Review found that table's only non-test callers were three
@@ -114,17 +114,11 @@ dead code a caller, not a real one. With those three call sites deleted
 (correctly), `stage_hooks` itself has no real reader left: nothing in this
 ticket's runtime asks "what hook status does family X have at stage Y" to
 make an actual decision. It is deleted along with them, rather than kept
-alive by more fabricated callers or `#[allow(dead_code)]`. The checked-in
-seam-function list therefore has, for now, only one entry -- the
-`FamilyKind` prefix arm of `catalog_code()` -- not two; the
-stage-participation-table bullet above is not currently satisfiable by
-anything this crate ships, and FR-063-AC-6's stage-participation-table
-category (below) is unbacked until a real, non-fabricated caller for a
-stage-participation table exists (most plausibly the first sibling family
-ticket that genuinely needs to ask that question at runtime, which adds the
-table back with a real caller in the same change). This is a narrowing
-`xtask/src/seam_probe.rs`'s own `checked_in_locations()` and its module doc
-also record.
+alive by more fabricated callers or `#[allow(dead_code)]`. The list above
+therefore names no stage-participation table. The evaluation-stage entry is
+the S6a seam's `match` over the S6a family kind (`evaluate_declaration`,
+QSL-191), which has one arm per family that implements
+`ReferenceEvaluation` and no `Relation` arm (FR-090-AC-4).
 
 ### No wildcard arm, and no `#[non_exhaustive]` enum
 
@@ -168,7 +162,7 @@ comment.
 | FR-063-AC-3 | Building the QSL crate with no `RUSTFLAGS=--cfg seam_probe` set (the normal build) compiles cleanly, with `xtask seam-probe` confirming both that this build succeeds and that it reports zero `E0004` locations -- a probe variant reachable from a non-probe code path would surface as an `E0004` in this same build, not merely as an absent Cargo feature. A test inspects the repository for anything that could set `seam_probe` outside `xtask seam-probe`'s own build invocation -- a `[features]` table entry, `build.rs`, `.cargo/config.toml`, or a `RUSTFLAGS`/`rustflags` setting in any `Makefile` target or CI workflow -- and asserts none exists; this is a grep-shaped check over those specific files, not a proof that no code path anywhere could set the cfg (a `build.rs` added later, for instance, would need this check re-run, not exempt it from the pattern it greps for). | Test (TC-161) |
 | FR-063-AC-4 | `xtask seam-probe` runs to completion and exits non-zero when the checked-in list and the actual `E0004` location set differ in either direction (extra or missing), and exits zero only when the two sets are equal; a test with a deliberately wrong checked-in list (one entry removed) demonstrates the non-zero exit with a concrete example, not only an assertion that the tool "checks" the list. | Test (TC-161) |
 | FR-063-AC-5 | The full gate invokes `xtask seam-probe`, and a test that stubs the gate's target list shows the gate fails when `xtask seam-probe` exits non-zero. | Test (TC-161) |
-| FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the stage-participation table, including the explicit `Relation` evaluation arm; the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that still has an `E0004` at that category's location (the source is unchanged), causes `xtask seam-probe` to fail, naming that category's location as present in the build but absent from the list (unexpected-but-present). | Test (TC-161) |
+| FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the S6a seam's `match` over the S6a family kind (`evaluate_declaration`); the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that still has an `E0004` at that category's location (the source is unchanged), causes `xtask seam-probe` to fail, naming that category's location as present in the build but absent from the list (unexpected-but-present). | Test (TC-161) |
 | FR-063-AC-7 | A `match` at an S1 to S4 seam that carries a `_ => unsupported(...)` fallback arm produces no `E0004` for that seam under `RUSTFLAGS=--cfg seam_probe` and is therefore invisible to `xtask seam-probe` alone; `cargo clippy` over that seam's module fails on `clippy::wildcard_enum_match_arm` (or `clippy::match_wildcard_for_single_variants`, for the enum that trips it instead), so the lint gate, not the seam probe, is what catches this case. A test reintroduces such a fallback arm in a fixture module and asserts the clippy lint fires. A separate test inspects the definition of `FamilyKind`, the parsed form enum, the checked node enum and each family `Cause` enum and asserts none carries `#[non_exhaustive]`. | Test (TC-161) |
 
 ## Dependencies
@@ -204,24 +198,18 @@ tags as they exist in the delivered code today:** none carries a
 - FR-063-AC-6: unbacked (untagged, PR #262 review, coordinator round 3,
   finding 6; previously misrecorded as backed). It requires at least one
   checked-in entry for *each of* five categories; the checked-in list has
-  one (the S1 `FamilyKind::catalog_code_prefix` prefix arm -- see the
-  "Correction to merged spec" note above, which already concedes the
-  stage-participation-table category is unbacked). A criterion cannot be
-  backed while its own Status text says it is not. Its three previously-
-  tagged tests in `xtask/src/seam_probe.rs` made this worse, not better:
-  `checked_in_locations_are_the_one_family_kind_match` asserts the function
-  returns the literal it hardcodes three lines above -- a constant compared
-  to itself -- and the other two exercise `enclosing_item_name`, the F14
-  line-to-item-name helper, which is not this criterion's subject. All
-  three are now untagged; they remain as real tests of what they actually
-  verify (the literal's shape, and the F14 helper), not of AC-6. Owner:
+  the S1 `FamilyKind::catalog_code_prefix` prefix arm and the S6a seam
+  `evaluate_declaration`, but not the S2, S3 and S4 categories. A criterion
+  cannot be backed while its own Status text says it is not. The
+  untagged tests in `xtask/src/seam_probe.rs` check that each checked-in
+  location names a function holding a `match`
+  (`checked_in_locations_name_functions_that_hold_a_match`) and exercise
+  `enclosing_item_name`, the F14 line-to-item-name helper; neither is
+  evidence for AC-6's category coverage. Owner:
   QSL-149, which owns this criterion alongside AC-1/2/3/4/7 (above) even
-  though it stays unbacked regardless of who owns it: the five categories
-  this criterion names land under three different tickets -- the S2/S3
-  categories under QSL-143, the S4 (family `Cause` `catalog_code()`)
-  category under QSL-152, and the stage-participation-table category only
-  when `stage_hooks` (deleted, PR #262 review finding F7) returns with a
-  real caller -- so QSL-149 tracks the criterion's own probe-mechanism
+  though it stays unbacked regardless of who owns it: the S2/S3 categories
+  land under QSL-143 and the S4 (family `Cause` `catalog_code()`) category
+  under QSL-152, so QSL-149 tracks the criterion's own probe-mechanism
   coverage, not a promise that landing QSL-149 alone backs AC-6.
 
 Zero of this requirement's seven Acceptance Criteria are backed by a

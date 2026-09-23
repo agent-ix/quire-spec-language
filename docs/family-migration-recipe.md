@@ -51,9 +51,13 @@ FR-066-AC-2's three categories, per family:
    `quire.checked-package/v2` bytes (ADR-013 O-17).
 2. **The evaluator**: the family's `evaluate` hook (`ReferenceEvaluation`),
    converting a checked node plus its typing-context `Env` into the
-   family's `Observed` outcome, or the family's `Refused` reason. `Relation`
-   has no evaluator: S6a's input type has no `Relation` variant (ADR-012 §2,
-   FR-090-AC-4).
+   family's `Observed` outcome, or the family's `Refused` reason. In the
+   same change, reach it from S6a: add the family's `S6aFamilyKind` variant
+   to the `s6a_family_kinds!` list in `src/family/mod.rs` (which also puts
+   it in `S6aFamilyKind::ALL`), its `S6aFamilyKind::family` arm, its
+   `evaluate_declaration` arm in `src/value/expression/mod.rs`, and its arm
+   in TC-385's `s6a_family_name` match. `Relation` has no evaluator: S6a's
+   input type has no `Relation` variant (ADR-012 §2, FR-090-AC-4).
 3. **Requirement derivation**: the family's pure `requirements()` function
    from a checked node to zero or one `Requirements` value (FR-062-AC-4);
    see this document's own note below on when this function has anything
@@ -153,8 +157,9 @@ above.
   scratch buffer nothing read, then built its real returned bytes
   independently, so the hook had no consumer.
 - Evaluator: `impl ReferenceEvaluation for ValueFunctionFamily` in
-  `src/value/expression/family.rs` (`evaluate`), reached from
-  `CheckedPackage::call` in `src/value/expression/mod.rs`.
+  `src/value/expression/family.rs` (`evaluate`), reached through the S6a
+  seam `evaluate_declaration` in `src/value/expression/mod.rs`, which
+  `CheckedPackage::call` calls.
 - Requirement derivation: deferred for this family, per this document's own
   note above.
 

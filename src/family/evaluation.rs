@@ -41,11 +41,29 @@ pub(crate) enum EvalOutcome<T> {
 }
 
 /// ADR-013 O-16's S6a seam result. Two arms: S6a's input admits no
-/// `Relation` (FR-090, O-16).
+/// `Relation` (FR-090, O-16). `#[cfg(seam_probe)]` adds one probe-only
+/// variant (FR-063) that no non-probe code constructs or matches.
 #[derive(Debug)]
 pub enum FamilyOutcome<T> {
     /// The kernel evaluation outcome, unchanged.
     Evaluated(quire_exact::Outcome<T>),
     /// The family ran and produced its own evaluation-time result.
     FamilyEvaluated(FamilyResult),
+    /// FR-063: exists only so `--cfg seam_probe` makes every `match` over
+    /// `FamilyOutcome` non-exhaustive. Never constructed outside the probe
+    /// build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
+}
+
+/// The S6a seam's pass-through (FR-090, ADR-012 §2): `Kernel(o)` becomes
+/// `Evaluated(o)` and `Family(r)` becomes `FamilyEvaluated(r)`, each
+/// unchanged.
+impl<T> From<EvalOutcome<T>> for FamilyOutcome<T> {
+    fn from(outcome: EvalOutcome<T>) -> Self {
+        match outcome {
+            EvalOutcome::Kernel(outcome) => Self::Evaluated(outcome),
+            EvalOutcome::Family(result) => Self::FamilyEvaluated(result),
+        }
+    }
 }
