@@ -8,8 +8,8 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`], [`EnumValue`] and FR-142 [`Quantity`] over an admitted
-//!    [`UnitGraph`];
+//!    [`Text`], [`EnumValue`] and FR-142 `quire_exact::Quantity` values read
+//!    against a [`UnitTable`] over an admitted [`UnitGraph`];
 //! 2. explicit operation tables: [`evaluate_decimal`] (FR-140), [`divide`] and
 //!    [`modulo`] (FR-147), [`admit_text`], [`compare_text`] and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
@@ -148,9 +148,9 @@ pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
 // `declaration` owns the FR-143 registry and the FR-149 check-level
 // equality layer; neither is a kernel type (ADR-011 §6.1).
 pub use declaration::{
-    admits_equality_conversion, CheckedEquality, CompositeDeclaration, CompositeShape,
-    DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule, InvalidDeclaration,
-    ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+    CheckedEquality, CompositeDeclaration, CompositeShape, DeclarationCause, EqualityOperand,
+    EqualityOperator, EqualitySchedule, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
+    TypeEnvironment,
 };
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
@@ -205,8 +205,8 @@ pub use numeric::{
 };
 pub use outcome::{Outcome, PreconditionFailure, Refusal, Undefined};
 pub use quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue, Quantity,
-    QuantityOperation, QuantityTarget, QuantityUnit,
+    compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
+    QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
 };
 pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
@@ -218,7 +218,6 @@ pub use semantic_node::{
 };
 pub use text::{admit_text, compare_text, InvalidTextLiteral, Text, TextPayload};
 pub use unit::{
-    CompoundUnit, CompoundUnitCause, CompoundUnitIdentity, CompoundUnitPreimage, Dimension,
-    DimensionPreimage, InvalidCompoundUnit, Unit, UnitEdge, UnitGraph, UnitPreimage,
-    COMPOUND_UNIT_DOMAIN,
+    CompoundUnit, CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage,
+    InvalidCompoundUnit, NotAUnitKey, Unit, UnitEdge, UnitGraph, UnitPreimage,
 };

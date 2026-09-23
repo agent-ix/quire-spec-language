@@ -1,40 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QC-15/QC-21 opaque value-component identities (ADR-013 QC-15, QC-21, T-6).
+//! QC-15/QC-21/QC-22 value-component identities (ADR-013 QC-15, QC-21,
+//! QC-22, T-6).
 //!
-//! Six digest newtypes and one authored-string newtype appear as bare
-//! payload inside kernel `Value`s wherever ADR-013 T-6 cuts a payload down to
-//! "just the id": `EffectiveId` (declaration identity, O-05), `UniverseId`
-//! and `ObjectId` (a `Reference` payload, T-6), `UnitId` (a `Quantity`
-//! payload, T-6), `VariantId` (an `Enum` payload, T-6), `MemberId` (O-06) and
-//! `PopulationId` (a `Population` payload, O-13 Population row, QC-21,
-//! QSL-172). Every one but `ObjectId` is an opaque 32-byte digest with
-//! exactly one public constructor, `from_digest` (each type's own, e.g.
+//! Seven identities appear as bare payload inside kernel `Value`s wherever
+//! ADR-013 T-6 cuts a payload down to "just the id": `EffectiveId`
+//! (declaration identity, O-05), `UniverseId` and `ObjectId` (a `Reference`
+//! payload, T-6), `UnitId` (a `Quantity` payload, T-6), `VariantId` (an `Enum`
+//! payload, T-6), `MemberId` (O-06) and `PopulationId` (a `Population`
+//! payload, O-13 Population row, QC-21, QSL-172). Five of the seven --
+//! `EffectiveId`, `UniverseId`, `VariantId`, `MemberId`, `PopulationId` --
+//! are single-domain opaque 32-byte digests with exactly one public
+//! constructor, `from_digest` (each type's own, e.g.
 //! [`EffectiveId::from_digest`]), mirroring [`crate::NodeKey::from_digest`]:
-//! the kernel wraps an already-computed digest and never hashes. QSL's
-//! `check`/`model` compute each digest over their own preimage schema and
-//! mint the id; this crate holds no preimage knowledge for any of them.
-//! [`ObjectId`] is different in kind, not degree (ADR-013 §8 OQ-C ruling):
+//! the kernel wraps an already-computed digest and never hashes. QSL
+//! computes each digest over its own preimage schema and mints the id; this
+//! crate holds no preimage knowledge for any of them. They share one shape
+//! (`Eq`/`Ord`/`Hash`, hex `Display`/`Debug`), so the `digest_identity!`
+//! macro below generates all five from one macro body ("one fact, one
+//! place"). `UnitId` and `ObjectId` are the other two, and each differs for
+//! its own ruling: [`UnitId`] (ADR-013 OQ-B ruling) is a domain-labelled
+//! digest record over the two unit identities QSpec FR-142 defines, with one
+//! constructor per domain (QC-22), so it is written out by hand below.
+//! [`ObjectId`] (ADR-013 §8 OQ-C ruling) is different in kind, not degree:
 //! QSpec FR-204 states a declared object identity is "authored, not
 //! digested", so `ObjectId` wraps the object's own exact UTF-8 bytes
 //! directly, with one public constructor, `new`, that takes the string
 //! itself and refuses only when it is empty (QSpec FR-035) -- never a digest,
-//! never a hash. The ADR-011 T-12 `arch-lint api-surface` check enforces
-//! "only `model` calls `EffectiveId::from_digest`" (T12-C) and "only `model`
-//! calls `PopulationId::from_digest`" (T12-D, ADR-013 QC-21) by scanning
-//! QSL's tree for each call pattern (#213 S-2 fixed T12-C's pattern to match
-//! this crate's real `from_digest`, in place of the pre-migration
-//! `from_digest_bytes(` name); which callers it allows for `UniverseId`,
-//! `ObjectId`, `UnitId`, `VariantId` and `MemberId` stays open (ADR-013
-//! QC-22).
-//! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) scans
-//! QSL's tree for `NodeKey::from_digest` the same way.
+//! never a hash -- and is likewise written out by hand, immediately after
+//! `PopulationId` below.
 //!
-//! The six digest types share one shape (an opaque 32-byte digest,
-//! `Eq`/`Ord`/`Hash`, hex `Display`/`Debug`), so the `digest_identity!` macro
-//! below generates all six from one macro body rather than repeating the
-//! impls six times ("one fact, one place"). `ObjectId` has its own shape
-//! (an opaque non-empty UTF-8 string) and its own impls, immediately after
-//! the macro-generated types.
+//! The ADR-011 T-12 `arch-lint api-surface` check enforces "only `model`
+//! calls `EffectiveId::from_digest`" (T12-C) and "only `model` calls
+//! `PopulationId::from_digest`" (T12-D, ADR-013 QC-21) by scanning QSL's
+//! tree for each call pattern. `NodeKey`'s own T12-B rule (see the `node`
+//! module's doc comment) scans QSL's tree for `NodeKey::from_digest` the
+//! same way. Which callers may mint the other identities is open (QC-22).
 //!
 //! **Domain strings.** `EffectiveId`'s domain, `quire.model.effective-
 //! declaration/v1`, is the real value already live at
@@ -43,25 +43,28 @@
 //! `quire.model.object-universe/v1`, is likewise the real value already live
 //! at `src/model/key.rs:42-43`'s `OBJECT_UNIVERSE_DOMAIN` (ADR-013 §8 OQ-C
 //! ruling, confirmed against QSpec `model-complete.md`'s "Object universe"
-//! and FR-201's `quire.model.object-universe/v1` row). `ObjectId` carries no
-//! digest domain at all: OQ-C settles it as the authored UTF-8 object
-//! identity (QSpec FR-204, "authored, not digested"; non-empty per QSpec
-//! FR-035), never hashed, so [`ObjectId`] is not one of this module's digest
-//! newtypes -- see its own definition below. The four remaining domain
-//! strings (`UnitId`, `VariantId`, `MemberId`, `PopulationId`) do not appear
-//! anywhere in `spec/` or `src/` today -- there is no existing canonical
-//! value to copy the way there was for `EffectiveId` and `UniverseId`. They
-//! are placeholders, not settled product semantics: ADR-013 QC-2 requires an
+//! and FR-201's `quire.model.object-universe/v1` row). `UnitId`'s two
+//! domains are QSpec FR-142's: [`crate::NODE_KEY_DOMAIN`] for a declared
+//! unit's node key and [`COMPOUND_UNIT_DOMAIN`] for a compound unit (ADR-013
+//! OQ-B). `ObjectId` carries no digest domain at all: OQ-C settles it as the
+//! authored UTF-8 object identity (QSpec FR-204, "authored, not digested";
+//! non-empty per QSpec FR-035), never hashed. The three remaining domain
+//! strings (`VariantId`, `MemberId`, `PopulationId`) do not appear anywhere
+//! in `spec/` or `src/` today -- there is no existing canonical value to
+//! copy the way there was for `EffectiveId` and `UniverseId`. They are
+//! placeholders, not settled product semantics: ADR-013 QC-2 requires an
 //! FR-201 amendment to list the model digest domains, scoped to #213 S-2,
-//! not this slice. Each of the four types they belong to is genuinely used
-//! elsewhere in this crate ([`crate::quantity::Quantity`] and
-//! `ValueType::Quantity` for `UnitId`, `Value::Enum` and `ValueType`'s enum
-//! sum shape for `VariantId`, [`crate::value::FieldDeclaration`] for
-//! `MemberId`, `Value::Population` and `ValueType::Population` for
-//! `PopulationId`) -- kept for that reason -- but their domain *strings* are
-//! not to be treated as ratified until the FR-201 amendment lands.
+//! not this slice. Each of the three types they belong to is genuinely used
+//! elsewhere in this crate (`Value::Enum` and `ValueType`'s enum sum shape
+//! for `VariantId`, [`crate::value::FieldDeclaration`] for `MemberId`,
+//! `Value::Population` and `ValueType::Population` for `PopulationId`) --
+//! kept for that reason -- but their domain *strings* are not to be treated
+//! as ratified until the FR-201 amendment lands.
 
+use std::cmp::Ordering;
 use std::fmt;
+
+use crate::node::{NodeKey, NODE_KEY_DOMAIN};
 
 macro_rules! digest_identity {
     (
@@ -129,13 +132,107 @@ digest_identity!(
     "quire.model.object-universe/v1"
 );
 
-digest_identity!(
-    /// An opaque `quire.unit/v1` identity: a `Quantity` payload's unit,
-    /// carried "with no reference to quantity declarations" (ADR-013 T-6).
-    UnitId,
-    UNIT_ID_DOMAIN,
-    "quire.unit/v1"
-);
+/// Digest domain and preimage version of a compound unit's [`UnitId`]: QSpec
+/// FR-142's evaluator-owned `quire.value.compound-unit/v1` value identity
+/// (ADR-013 T-6, OQ-B ruling).
+pub const COMPOUND_UNIT_DOMAIN: &str = "quire.value.compound-unit/v1";
+
+/// Which of QSpec FR-142's two unit identities a [`UnitId`] carries (ADR-013
+/// OQ-B ruling). No other domain is admitted (T-6).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnitDomain {
+    /// A declared unit: its node key, in [`NODE_KEY_DOMAIN`]
+    /// (`quire.checked-semantic-node/v1` over the `quire.unit-node/v1`
+    /// preimage).
+    Declared,
+    /// A compound unit: its [`COMPOUND_UNIT_DOMAIN`] digest.
+    Compound,
+}
+
+impl UnitDomain {
+    /// The digest-domain label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Declared => NODE_KEY_DOMAIN,
+            Self::Compound => COMPOUND_UNIT_DOMAIN,
+        }
+    }
+}
+
+/// A `Quantity` payload's unit (ADR-013 T-6, OQ-B ruling): a domain-labelled
+/// digest record with O-18's shape over the two unit identities QSpec FR-142
+/// defines. A declared unit carries its node key as opaque bytes under the
+/// [`NODE_KEY_DOMAIN`] label, and a compound unit carries its
+/// [`COMPOUND_UNIT_DOMAIN`] digest. The kernel names no declaration type and
+/// computes neither digest: QSL `semantic_value` mints every `UnitId`.
+///
+/// Equality and order are lexical on the domain label, then on the bytes
+/// (R-04), so a declared unit and a compound unit are never equal whatever
+/// their bytes.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct UnitId {
+    domain: UnitDomain,
+    digest: [u8; 32],
+}
+
+impl UnitId {
+    /// The declared-unit arm: `key` is the unit's node key. The caller
+    /// admits only a key minted over a `quire.unit-node/v1` preimage
+    /// (ADR-013 C-30); this type cannot tell one node key from another.
+    pub fn declared(key: NodeKey) -> Self {
+        Self {
+            domain: UnitDomain::Declared,
+            digest: *key.as_bytes(),
+        }
+    }
+
+    /// The compound-unit arm: wrap an already-computed
+    /// `quire.value.compound-unit/v1` digest.
+    pub fn compound(digest: [u8; 32]) -> Self {
+        Self {
+            domain: UnitDomain::Compound,
+            digest,
+        }
+    }
+
+    /// The domain this identity is labelled with.
+    pub fn domain(&self) -> UnitDomain {
+        self.domain
+    }
+
+    /// The raw digest bytes, meaningful only under [`Self::domain`].
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.digest
+    }
+}
+
+impl Ord for UnitId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.domain.label(), &self.digest).cmp(&(other.domain.label(), &other.digest))
+    }
+}
+
+impl PartialOrd for UnitId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// The digest bytes as 64 lowercase hex digits; the domain is not rendered
+/// (see [`UnitId::domain`]).
+impl fmt::Display for UnitId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.digest
+            .iter()
+            .try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+impl fmt::Debug for UnitId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "UnitId({}, {self})", self.domain.label())
+    }
+}
 
 digest_identity!(
     /// An opaque `quire.enum-variant/v1` identity: a bare `Enum` payload
@@ -221,14 +318,16 @@ mod tests {
         bytes
     }
 
-    /// TC-302 (H-7/H-8, strengthened): each of the six digest identities
-    /// (QC-15's five other than `ObjectId`, plus QC-21's `PopulationId`)
-    /// treats equal digest bytes as interchangeable ids -- not just `==`,
-    /// but hashing equal (either stands in for the other as a set/map key)
-    /// -- and distinct digests as distinct, differently ordered ids
-    /// (ADR-013 QC-15, QC-21). `ObjectId` is not a digest (ADR-013 §8 OQ-C
-    /// ruling) and has its own equivalent coverage below
-    /// (`tc_302b_equal_object_identity_bytes_mint_interchangeable_identities`).
+    /// TC-302 (H-7/H-8, strengthened): each of the five single-domain digest
+    /// identities (`EffectiveId`, `UniverseId`, `VariantId`, `MemberId`,
+    /// `PopulationId`) treats equal digest bytes as interchangeable ids --
+    /// not just `==`, but hashing equal (either stands in for the other as a
+    /// set/map key) -- and distinct digests as distinct, differently
+    /// ordered ids (ADR-013 QC-15, QC-21). `UnitId` (ADR-013 OQ-B ruling)
+    /// and `ObjectId` (ADR-013 §8 OQ-C ruling) are each hand-written, not
+    /// macro-generated, and have their own equivalent coverage below
+    /// (`tc_411_unit_id_is_a_two_domain_record_compared_on_label_then_bytes`,
+    /// `tc_302b_equal_object_identity_bytes_mint_interchangeable_identities`).
     #[trace("TC-302")]
     #[test]
     fn tc_302_equal_digest_bytes_mint_interchangeable_identities() {
@@ -245,7 +344,6 @@ mod tests {
         }
         check!(EffectiveId);
         check!(UniverseId);
-        check!(UnitId);
         check!(VariantId);
         check!(MemberId);
         check!(PopulationId);
@@ -280,11 +378,12 @@ mod tests {
     }
 
     /// TC-303 (H-7/H-8, strengthened): each identity's domain constant is
-    /// distinct, so no two of the six digest identities (QC-15's five other
-    /// than `ObjectId`, plus QC-21's `PopulationId`) can be confused by
-    /// domain string (ADR-013 QC-15, QC-21). Also pins `EFFECTIVE_ID_DOMAIN`
-    /// and `UNIVERSE_ID_DOMAIN` against the literals this module's own doc
-    /// comment claims to match (`src/model/key.rs:26,43`'s
+    /// distinct, so no two of the identities (`EffectiveId`, `UniverseId`,
+    /// `VariantId`, `MemberId`, `PopulationId`, and QC-22's compound-unit arm
+    /// of `UnitId`) can be confused by domain string (ADR-013 QC-15, QC-21).
+    /// Also pins `EFFECTIVE_ID_DOMAIN` and `UNIVERSE_ID_DOMAIN` against the
+    /// literals this module's own doc comment claims to match
+    /// (`src/model/key.rs:26,43`'s
     /// `EFFECTIVE_DECLARATION_DOMAIN`/`OBJECT_UNIVERSE_DOMAIN`, per H-2).
     /// `ObjectId` has no digest domain to include (ADR-013 §8 OQ-C ruling).
     ///
@@ -308,7 +407,7 @@ mod tests {
         let domains = [
             EFFECTIVE_ID_DOMAIN,
             UNIVERSE_ID_DOMAIN,
-            UNIT_ID_DOMAIN,
+            COMPOUND_UNIT_DOMAIN,
             VARIANT_ID_DOMAIN,
             MEMBER_ID_DOMAIN,
             POPULATION_ID_DOMAIN,
@@ -320,8 +419,33 @@ mod tests {
         }
     }
 
-    /// TC-304: a digest identity's `Display` renders exactly 64 lowercase
-    /// hex digits.
+    /// TC-411 (kernel half): a `UnitId` is labelled with one of its two
+    /// domains; equality and order are lexical on the label, then the bytes,
+    /// so a declared and a compound unit over identical bytes are unequal,
+    /// and every declared unit orders before every compound unit
+    /// (`quire.checked-semantic-node/v1` < `quire.value.compound-unit/v1`).
+    #[trace("FR-088-AC-12", "TC-411")]
+    #[test]
+    fn tc_411_unit_id_is_a_two_domain_record_compared_on_label_then_bytes() {
+        let declared = UnitId::declared(NodeKey::from_digest(digest(2)));
+        let compound = UnitId::compound(digest(2));
+        assert_eq!(declared.as_bytes(), compound.as_bytes());
+        assert_ne!(declared, compound);
+        assert_eq!(
+            std::collections::HashSet::from([declared, compound]).len(),
+            2
+        );
+        assert_eq!(declared.domain(), UnitDomain::Declared);
+        assert_eq!(declared.domain().label(), NODE_KEY_DOMAIN);
+        assert_eq!(compound.domain(), UnitDomain::Compound);
+        assert_eq!(compound.domain().label(), COMPOUND_UNIT_DOMAIN);
+        assert!(declared < compound);
+        assert!(UnitId::declared(NodeKey::from_digest(digest(9))) < UnitId::compound(digest(1)));
+        assert!(UnitId::compound(digest(1)) < UnitId::compound(digest(2)));
+        assert_eq!(declared, UnitId::declared(NodeKey::from_digest(digest(2))));
+    }
+
+    /// TC-304: `Display` renders exactly 64 lowercase hex digits.
     #[trace("TC-304")]
     #[test]
     fn tc_304_display_is_64_lowercase_hex_digits() {

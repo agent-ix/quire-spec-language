@@ -101,7 +101,7 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
             (Value::Rational(l), Value::Rational(r)) => l == r,
             (Value::Decimal(l), Value::Decimal(r)) => l.numerically_equal(r),
             (Value::Quantity(l), Value::Quantity(r)) if l.unit() == r.unit() => {
-                l.value() == r.value()
+                l.magnitude() == r.magnitude()
             }
             (Value::Text(l), Value::Text(r))
                 if l.text_type().profile() == r.text_type().profile() =>

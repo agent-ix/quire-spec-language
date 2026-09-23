@@ -7,7 +7,9 @@
 //! `RecursionEdges`, `DeclarationCause`) and the check-level equality layer
 //! (`EqualityOperator`, `EqualityOperand`, `EqualitySchedule`,
 //! `CheckedEquality`, `TypeEnvironment::check_equality`,
-//! `admits_equality_conversion`, `operand_value`). None of these are kernel
+//! `admits_equality_conversion`, `operand_value`). The environment also
+//! carries the package's quantity [`UnitTable`], since a `ValueType::Quantity`
+//! names its unit only by id. None of these are kernel
 //! types (ADR-011 §6.1: "`TypeEnvironment` and `ObjectTypeDeclaration` ...
 //! are not kernel types and stay in layer 3"), so this is a layer-3
 //! `semantic_value` module, over this crate's own `Value`/`ValueType`
@@ -23,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
     Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Presence,
-    Rational,
+    Quantity, Rational,
 };
 
 use super::composite::{
@@ -35,7 +37,7 @@ use super::enumeration::compare_enum;
 use super::equality::planned_equality;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
-    compare_quantity, convert_quantity, ConvertedValue, Quantity, QuantityTarget,
+    compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
 use super::text::compare_text;
 use quire_exact::CollectionKind;
@@ -228,6 +230,8 @@ pub struct TypeEnvironment {
     /// [`TypeEnvironment::new`], after the supertypes graph is known
     /// acyclic, so [`Self::conforms`] is a plain set lookup.
     ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>>,
+    /// The units a `ValueType::Quantity` of this package names by id.
+    units: UnitTable,
 }
 
 /// One containment edge of the recursion rule.
@@ -281,6 +285,17 @@ impl TypeEnvironment {
         environment.check_supertypes()?;
         environment.ancestors = environment.compute_ancestors();
         Ok(environment)
+    }
+
+    /// This environment with `units` as its quantity unit table.
+    pub fn with_units(mut self, units: UnitTable) -> Self {
+        self.units = units;
+        self
+    }
+
+    /// The quantity units this package's types name by id.
+    pub fn units(&self) -> &UnitTable {
+        &self.units
     }
 
     /// The admitted record or tuple declaration with this key.
@@ -883,12 +898,28 @@ pub struct CheckedEquality {
     left: EqualityOperand,
     right: EqualityOperand,
     schedule: EqualitySchedule,
+    /// The unit of every top-level quantity type the operands name, resolved
+    /// at checking, so evaluation reads no package table.
+    units: UnitTable,
 }
 
 impl TypeEnvironment {
-    /// Type-check `left op right`. Every refusal is made before any charge.
+    /// Type-check `left op right` against this environment's unit table.
+    /// Every refusal is made before any charge.
     pub fn check_equality(
         &self,
+        operator: EqualityOperator,
+        left: EqualityOperand,
+        right: EqualityOperand,
+    ) -> Result<CheckedEquality, IllTyped> {
+        self.check_equality_in(&UnitScope::new(&self.units), operator, left, right)
+    }
+
+    /// [`Self::check_equality`] against one checking stage's units, which
+    /// add the compound units its expressions formed.
+    pub(crate) fn check_equality_in(
+        &self,
+        units: &UnitScope<'_>,
         operator: EqualityOperator,
         left: EqualityOperand,
         right: EqualityOperand,
@@ -896,9 +927,25 @@ impl TypeEnvironment {
         let ill_typed = |cause| Err(IllTyped { cause });
         for operand in [&left, &right] {
             if let Some(target) = &operand.target {
-                if !admits_equality_conversion(&operand.source, target) {
+                if !admits_equality_conversion(&operand.source, target, units) {
                     return ill_typed(IllTypedCause::TypeMismatch);
                 }
+            }
+        }
+        // Every top-level quantity type resolves, or the operands name a unit
+        // this package has not admitted (as an unknown enum declaration is a
+        // type mismatch at checking).
+        let mut resolved = UnitTable::default();
+        for value_type in [&left.source, &right.source]
+            .into_iter()
+            .chain(left.target.iter())
+            .chain(right.target.iter())
+        {
+            if let ValueType::Quantity(id) = value_type {
+                let Some(unit) = units.get(*id) else {
+                    return ill_typed(IllTypedCause::TypeMismatch);
+                };
+                resolved.insert(unit.clone());
             }
         }
         let (left_type, right_type) = (left.comparison_type(), right.comparison_type());
@@ -914,7 +961,12 @@ impl TypeEnvironment {
                 return ill_typed(IllTypedCause::DistinctEnumDeclarations)
             }
             (ValueType::Enum(_), ValueType::Enum(_)) => EqualitySchedule::Enum,
-            (ValueType::Quantity(l), ValueType::Quantity(r)) if !l.has_dimension_of(r) => {
+            (ValueType::Quantity(l), ValueType::Quantity(r))
+                if resolved
+                    .get(*l)
+                    .zip(resolved.get(*r))
+                    .is_some_and(|(l, r)| !l.has_dimension_of(r)) =>
+            {
                 return ill_typed(IllTypedCause::IncompatibleDimensions)
             }
             (ValueType::Quantity(l), ValueType::Quantity(r)) if l != r => {
@@ -937,6 +989,7 @@ impl TypeEnvironment {
             left,
             right,
             schedule,
+            units: resolved,
         })
     }
 }
@@ -954,8 +1007,9 @@ impl CheckedEquality {
     }
 
     fn run(&self, left: &Value, right: &Value, meter: &mut Meter) -> Result<bool, Stop> {
-        let left = operand_value(&self.left, left, meter)?;
-        let right = operand_value(&self.right, right, meter)?;
+        let units = UnitScope::new(&self.units);
+        let left = operand_value(&self.left, left, &units, meter)?;
+        let right = operand_value(&self.right, right, &units, meter)?;
         let operator = self.operator.comparison();
         let scheduled = match (self.schedule, &left, &right) {
             (EqualitySchedule::Text, Value::Text(l), Value::Text(r)) => {
@@ -965,6 +1019,9 @@ impl CheckedEquality {
                 compare_enum(operator, l, r, meter)
             }
             (EqualitySchedule::Quantity, Value::Quantity(l), Value::Quantity(r)) => {
+                let (Some(l), Some(r)) = (units.resolve(l), units.resolve(r)) else {
+                    return Err(invariant());
+                };
                 compare_quantity(operator, l, r, meter)
             }
             (EqualitySchedule::Plan, _, _) => {
@@ -986,8 +1043,14 @@ fn invariant() -> Stop {
 }
 
 /// Whether (`source`, `target`) is a row of the closed FR-149
-/// equality-conversion table, decided from declared bounds alone.
-pub fn admits_equality_conversion(source: &ValueType, target: &ValueType) -> bool {
+/// equality-conversion table, decided from declared bounds alone and, for a
+/// quantity pair, from the units `units` resolves; an unresolved unit admits
+/// no conversion.
+pub(crate) fn admits_equality_conversion(
+    source: &ValueType,
+    target: &ValueType,
+    units: &UnitScope<'_>,
+) -> bool {
     match (source, target) {
         (source, target) if source == target => true,
         (ValueType::Int(interval), target) => {
@@ -1032,7 +1095,10 @@ pub fn admits_equality_conversion(source: &ValueType, target: &ValueType) -> boo
         {
             integer_source_admits(from.lower(), from.upper(), target)
         }
-        (ValueType::Quantity(from), ValueType::Quantity(to)) => from.converts_to(to),
+        (ValueType::Quantity(from), ValueType::Quantity(to)) => units
+            .get(*from)
+            .zip(units.get(*to))
+            .is_some_and(|(from, to)| from.converts_to(to)),
         _ => false,
     }
 }
@@ -1067,10 +1133,12 @@ fn integer_source_admits(lower: &Integer, upper: &Integer, target: &ValueType) -
     }
 }
 
-/// The comparison value of one operand after its admitted conversion.
+/// The comparison value of one operand after its admitted conversion, with
+/// quantity units read from `units`.
 pub(crate) fn operand_value(
     operand: &EqualityOperand,
     value: &Value,
+    units: &UnitScope<'_>,
     meter: &mut Meter,
 ) -> Result<Value, Stop> {
     if !operand.source.admits(value) {
@@ -1113,12 +1181,15 @@ pub(crate) fn operand_value(
             Value::Integer(rational.numerator().clone())
         }
         (_, ValueType::Quantity(unit), Value::Quantity(quantity)) => {
-            let conversion = convert_quantity(quantity, unit, &QuantityTarget::Exact, meter)
+            let (Some(source), Some(target)) = (units.resolve(quantity), units.get(*unit)) else {
+                return Err(invariant());
+            };
+            let conversion = convert_quantity(source, target, &QuantityTarget::Exact, meter)
                 .map_err(|_| invariant())?
                 .into_stop()?;
             match conversion.value() {
                 ConvertedValue::Exact(exact) => {
-                    Value::Quantity(Quantity::new(exact.clone(), unit.clone()))
+                    Value::Quantity(Quantity::new(exact.clone(), *unit))
                 }
                 ConvertedValue::Decimal(_) | ConvertedValue::Integer { .. } => {
                     return Err(invariant())

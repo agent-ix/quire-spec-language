@@ -15,14 +15,18 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
     ScalarLimits,
 };
-use quire_exact::{ComparisonOperator, Decimal, IllTyped, IllTypedCause, Rational, RoundingMode};
+use quire_exact::{
+    ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
+    RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
+};
+use quire_spec_language::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
 use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
     compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
-    ConvertedValue, DecimalType, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    InvalidSemanticGraph, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
-    QuantityOperation, QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined,
-    UnitGraph, UnitPreimage,
+    ConvertedValue, Dimension, DimensionPreimage, InvalidCompoundUnit, InvalidSemanticGraph,
+    NodeOwner, NotAUnitKey, Outcome, OwnerSelection, OwnerSubject, QuantityOperation,
+    QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined, UnitGraph, UnitPreimage,
+    UnitQuantity, UnitTable,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -169,6 +173,7 @@ impl Nodes {
 struct Fixture {
     nodes: Nodes,
     graph: UnitGraph,
+    units: UnitTable,
     length: NodeKey,
     time: NodeKey,
     m: NodeKey,
@@ -219,6 +224,7 @@ fn fixture() -> Fixture {
     let graph = nodes.admit().unwrap();
     Fixture {
         nodes,
+        units: UnitTable::declared(&graph),
         graph,
         length,
         time,
@@ -238,7 +244,12 @@ impl Fixture {
     }
 
     fn quantity(&self, value: Rational, key: NodeKey) -> Quantity {
-        Quantity::new(value, self.unit(key))
+        Quantity::new(value, self.graph.declared_unit_id(key).unwrap())
+    }
+
+    /// `quantity` read against this fixture's declared units.
+    fn at<'a>(&'a self, quantity: &'a Quantity) -> UnitQuantity<'a> {
+        self.units.resolve(quantity).expect("a declared unit")
     }
 }
 
@@ -270,7 +281,7 @@ fn exact(outcome: Outcome<Quantity>) -> Quantity {
 }
 
 fn converted(
-    source: &Quantity,
+    source: UnitQuantity<'_>,
     unit: &QuantityUnit,
     target: &QuantityTarget,
     meter: &mut Meter,
@@ -578,9 +589,10 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     ] {
         let expected_digest = digest_hex(&preimage);
         let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
-        assert_eq!(parsed.identity().to_string(), expected_digest);
+        assert_eq!(parsed.id().to_string(), expected_digest);
         let unit = graph.compound_unit(&parsed).unwrap();
-        assert_eq!(unit.identity().to_string(), expected_digest);
+        assert_eq!(unit.id().to_string(), expected_digest);
+        assert_eq!(unit.id().domain(), UnitDomain::Compound);
         assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
     }
     assert_ne!(
@@ -639,6 +651,106 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     );
 }
 
+// ---- TC-411: the two-domain UnitId ---------------------------------------------
+
+/// TC-411: a declared unit's `UnitId` is its node key under the
+/// `quire.checked-semantic-node/v1` label (C-30, here through the admitted
+/// graph), a compound unit's is its `quire.value.compound-unit/v1` digest,
+/// the two never compare equal, `km` is not collapsed onto its root `m`, and
+/// C-30 refuses a node key that names no unit.
+#[trace("FR-088-AC-12", "TC-411")]
+#[test]
+fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
+    let mut nodes = Nodes::default();
+    let length = nodes.dimension(base_dimension("example-model", "Length"));
+    let m = nodes.unit(root_json("m", length));
+    let km = nodes.unit(unit_json("km", length, Some(m), ("1000", "1"), ("0", "1")));
+    let graph = nodes.admit().unwrap();
+
+    let metre = graph.declared_unit_id(m).unwrap();
+    let kilometre = graph.declared_unit_id(km).unwrap();
+    let compound_metre = graph.compound_unit(&compound(&[(m, "1")])).unwrap().id();
+    for (a, b) in [
+        (metre, kilometre),
+        (metre, compound_metre),
+        (kilometre, compound_metre),
+    ] {
+        assert_ne!(a, b);
+    }
+    assert_eq!(metre.domain(), UnitDomain::Declared);
+    assert_eq!(metre.domain().label(), NODE_KEY_DOMAIN);
+    assert_eq!(metre.as_bytes(), m.as_bytes());
+    assert_eq!(compound_metre.domain(), UnitDomain::Compound);
+    assert_eq!(compound_metre.domain().label(), COMPOUND_UNIT_DOMAIN);
+    assert_eq!(
+        compound_metre.to_string(),
+        digest_hex(&compound_preimage(&[(m, "1")]))
+    );
+    // `m` and `m^1` share a root and a dimension, and still differ as units.
+    let table = UnitTable::declared(&graph);
+    assert_eq!(
+        table.get(metre).unwrap().dimension(),
+        graph
+            .compound_unit(&compound(&[(m, "1")]))
+            .unwrap()
+            .dimension()
+    );
+    // C-26 carries the id into the kernel type unchanged.
+    assert_eq!(
+        to_kernel_value_type(&CheckedTypeNode::Scalar {
+            node: m,
+            shape: ScalarShape::Quantity(metre),
+        }),
+        quire_exact::ValueType::Quantity(metre)
+    );
+    // C-30 admits only a unit's node key.
+    assert_eq!(
+        graph.declared_unit_id(length),
+        Err(NotAUnitKey { key: length })
+    );
+    assert!(table.get(UnitId::declared(length)).is_none());
+}
+
+/// TC-411 step 3: every compound-unit vector QSpec publishes, read at run time
+/// from `$QSPEC_DIR/proposals/quire-v1/definitions/value-compound-unit-vectors.json`,
+/// mints the vector's digest under the compound label. Skipped (and passing)
+/// when `QSPEC_DIR` is unset; nothing of QSpec is copied into this repository.
+#[trace("FR-088-AC-12", "TC-411")]
+#[test]
+fn tc_411_compound_unit_ids_match_qspec_vectors() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/quire-v1/definitions/value-compound-unit-vectors.json");
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let document: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let vectors = document["vectors"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{} has no vectors array", path.display()));
+    assert!(
+        !vectors.is_empty(),
+        "{} publishes no vectors",
+        path.display()
+    );
+    for vector in vectors {
+        let name = vector["name"].as_str().expect("vector name is a string");
+        let id = CompoundUnitPreimage::from_json(vector["preimage"].clone())
+            .unwrap_or_else(|refusal| panic!("{name}: {refusal}"))
+            .id();
+        assert_eq!(id.domain(), UnitDomain::Compound, "{name}");
+        assert_eq!(
+            Some(id.to_string().as_str()),
+            vector["sha256"].as_str(),
+            "{name}"
+        );
+    }
+    println!("conformance: {} compound-unit vectors", vectors.len());
+}
+
 // ---- U01–U13 -----------------------------------------------------------------
 
 #[trace("TC-187", "FR-142-AC-1", "FR-142-AC-5")]
@@ -647,10 +759,13 @@ fn u01_exact_conversion_then_arithmetic() {
     let f = fixture();
     let source = f.quantity(whole(250), f.cm);
     let mut meter = unlimited();
-    let Outcome::Completed(conversion) =
-        convert_quantity(&source, &f.unit(f.m), &QuantityTarget::Exact, &mut meter)
-            .expect("well-typed conversion")
-    else {
+    let Outcome::Completed(conversion) = convert_quantity(
+        f.at(&source),
+        &f.unit(f.m),
+        &QuantityTarget::Exact,
+        &mut meter,
+    )
+    .expect("well-typed conversion") else {
         panic!("conversion did not complete");
     };
     assert_eq!(conversion.source(), &source);
@@ -658,12 +773,16 @@ fn u01_exact_conversion_then_arithmetic() {
     assert_eq!(conversion.value(), &ConvertedValue::Exact(ratio(5, 2)));
     assert_eq!(conversion.unit(), &f.unit(f.m));
     let sum = exact(evaluated(
-        QuantityOperation::Add(&f.quantity(ratio(5, 2), f.m), &f.quantity(whole(1), f.m)),
+        QuantityOperation::Add(
+            f.at(&f.quantity(ratio(5, 2), f.m)),
+            f.at(&f.quantity(whole(1), f.m)),
+        ),
         &mut unlimited(),
     ));
-    assert_eq!(sum.value(), &ratio(7, 2));
-    assert_eq!(sum.unit(), &f.unit(f.m));
-    let dimension: Vec<_> = sum
+    assert_eq!(sum.magnitude(), &ratio(7, 2));
+    assert_eq!(sum.unit(), f.unit(f.m).id());
+    let dimension: Vec<_> = f
+        .at(&sum)
         .unit()
         .dimension()
         .exponents()
@@ -673,7 +792,7 @@ fn u01_exact_conversion_then_arithmetic() {
     // Conversion never occurs implicitly.
     assert_eq!(
         evaluate_quantity(
-            QuantityOperation::Add(&source, &f.quantity(whole(1), f.m)),
+            QuantityOperation::Add(f.at(&source), f.at(&f.quantity(whole(1), f.m))),
             &mut unlimited()
         ),
         typed(IllTypedCause::DistinctUnits)
@@ -701,8 +820,8 @@ fn u03_incompatible_dimensions_refuse_before_arithmetic() {
     let f = fixture();
     let (metre, second) = (f.quantity(whole(1), f.m), f.quantity(whole(1), f.s));
     for operation in [
-        QuantityOperation::Add(&metre, &second),
-        QuantityOperation::Subtract(&metre, &second),
+        QuantityOperation::Add(f.at(&metre), f.at(&second)),
+        QuantityOperation::Subtract(f.at(&metre), f.at(&second)),
     ] {
         let mut meter = unlimited();
         assert_eq!(
@@ -713,7 +832,7 @@ fn u03_incompatible_dimensions_refuse_before_arithmetic() {
     }
     assert_eq!(
         convert_quantity(
-            &metre,
+            f.at(&metre),
             &f.unit(f.s),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -728,7 +847,7 @@ fn u04_affine_conversions_compose_through_the_root() {
     let f = fixture();
     for (value, unit) in [(whole(0), f.deg_c), (whole(32), f.deg_f)] {
         let Outcome::Completed(conversion) = convert_quantity(
-            &f.quantity(value, unit),
+            f.at(&f.quantity(value, unit)),
             &f.unit(f.kelvin),
             &QuantityTarget::Exact,
             &mut unlimited(),
@@ -742,7 +861,7 @@ fn u04_affine_conversions_compose_through_the_root() {
     // Back through the inverse target mapping.
     assert_eq!(
         converted(
-            &f.quantity(whole(0), f.deg_c),
+            f.at(&f.quantity(whole(0), f.deg_c)),
             &f.unit(f.deg_f),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -761,13 +880,13 @@ fn u05_affine_arithmetic_refuses() {
         let kelvin = f.quantity(whole(1), f.kelvin);
         let metre = f.quantity(whole(1), f.m);
         for operation in [
-            QuantityOperation::Add(&point, &point),
-            QuantityOperation::Subtract(&point, &point),
-            QuantityOperation::Add(&kelvin, &point),
-            QuantityOperation::Multiply(&point, &metre),
-            QuantityOperation::Multiply(&metre, &point),
-            QuantityOperation::Divide(&point, &point),
-            QuantityOperation::Power(&point, &two),
+            QuantityOperation::Add(f.at(&point), f.at(&point)),
+            QuantityOperation::Subtract(f.at(&point), f.at(&point)),
+            QuantityOperation::Add(f.at(&kelvin), f.at(&point)),
+            QuantityOperation::Multiply(f.at(&point), f.at(&metre)),
+            QuantityOperation::Multiply(f.at(&metre), f.at(&point)),
+            QuantityOperation::Divide(f.at(&point), f.at(&point)),
+            QuantityOperation::Power(f.at(&point), &two),
         ] {
             let mut meter = unlimited();
             assert_eq!(
@@ -812,7 +931,7 @@ fn u07_lossy_decimal_conversion_reports_or_refuses() {
     let mut meter = unlimited();
     assert_eq!(
         converted(
-            &inch,
+            f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut meter
@@ -821,7 +940,7 @@ fn u07_lossy_decimal_conversion_reports_or_refuses() {
     );
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
     let Outcome::Completed(conversion) = convert_quantity(
-        &inch,
+        f.at(&inch),
         &f.unit(f.m),
         &decimal_type(-1000, 1000, 2, RoundingMode::NearestEven),
         &mut unlimited(),
@@ -862,7 +981,7 @@ fn u08_target_domain_endpoints_admit_and_one_over_refuses() {
         let mut meter = unlimited();
         assert_eq!(
             converted(
-                &f.quantity(whole(value), f.m),
+                f.at(&f.quantity(whole(value), f.m)),
                 &f.unit(f.m),
                 &target,
                 &mut meter
@@ -887,7 +1006,7 @@ fn value_of(value: &Decimal) -> i64 {
 
 fn value_of_decimal(f: &Fixture, value: i64, target: &QuantityTarget) -> i64 {
     match converted(
-        &f.quantity(whole(value), f.m),
+        f.at(&f.quantity(whole(value), f.m)),
         &f.unit(f.m),
         target,
         &mut unlimited(),
@@ -913,16 +1032,21 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
     ));
     let graph = nodes.admit().unwrap();
     assert_ne!(other_length, f.length);
+    let units = UnitTable::declared(&graph);
+    let at = |quantity| units.resolve(quantity).expect("a declared unit");
     let declared = |key| QuantityUnit::Declared(Box::new(graph.unit(key).unwrap().clone()));
-    let metre = Quantity::new(whole(1), declared(f.m));
-    let other = Quantity::new(whole(1), declared(other_metre));
+    let metre = Quantity::new(whole(1), declared(f.m).id());
+    let other = Quantity::new(whole(1), declared(other_metre).id());
     assert_eq!(
-        evaluate_quantity(QuantityOperation::Add(&metre, &other), &mut unlimited()),
+        evaluate_quantity(
+            QuantityOperation::Add(at(&metre), at(&other)),
+            &mut unlimited()
+        ),
         typed(IllTypedCause::IncompatibleDimensions)
     );
     assert_eq!(
         convert_quantity(
-            &other,
+            at(&other),
             &declared(f.m),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -930,10 +1054,10 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
         typed(IllTypedCause::IncompatibleDimensions)
     );
 
-    let aliased = Quantity::new(whole(7), declared(alias));
+    let aliased = Quantity::new(whole(7), declared(alias).id());
     assert_eq!(
         converted(
-            &aliased,
+            at(&aliased),
             &declared(f.m),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -942,7 +1066,10 @@ fn u09_u09b_identity_is_the_node_key_not_the_shape() {
     );
     assert_ne!(declared(alias), declared(f.m));
     assert_eq!(
-        evaluate_quantity(QuantityOperation::Add(&aliased, &metre), &mut unlimited()),
+        evaluate_quantity(
+            QuantityOperation::Add(at(&aliased), at(&metre)),
+            &mut unlimited()
+        ),
         typed(IllTypedCause::DistinctUnits)
     );
 }
@@ -965,7 +1092,8 @@ const U10: ScalarLimits = ScalarLimits {
 fn u10_exact_bound_accounting_and_named_denials() {
     let f = fixture();
     let source = f.quantity(whole(100), f.cm);
-    let run = |meter: &mut Meter| converted(&source, &f.unit(f.m), &QuantityTarget::Exact, meter);
+    let run =
+        |meter: &mut Meter| converted(f.at(&source), &f.unit(f.m), &QuantityTarget::Exact, meter);
     let mut meter = Meter::new(U10);
     assert_eq!(
         run(&mut meter),
@@ -1114,82 +1242,82 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     let two = int(2);
     let cases = [
         (
-            QuantityOperation::Multiply(&two_m, &three_s),
+            QuantityOperation::Multiply(f.at(&two_m), f.at(&three_s)),
             6,
             compound_unit(&f, &[(f.m, "1"), (f.s, "1")]),
         ),
         (
-            QuantityOperation::Divide(&six_m, &two_s),
+            QuantityOperation::Divide(f.at(&six_m), f.at(&two_s)),
             3,
             compound_unit(&f, &[(f.m, "1"), (f.s, "-1")]),
         ),
         (
-            QuantityOperation::Power(&two_m, &two),
+            QuantityOperation::Power(f.at(&two_m), &two),
             4,
             compound_unit(&f, &[(f.m, "2")]),
         ),
         (
-            QuantityOperation::Divide(&five_m, &five_m),
+            QuantityOperation::Divide(f.at(&five_m), f.at(&five_m)),
             1,
             compound_unit(&f, &[]),
         ),
     ];
     for (operation, value, unit) in cases {
         let result = exact(evaluated(operation, &mut unlimited()));
-        assert_eq!(result.value(), &whole(value), "{operation:?}");
-        assert_eq!(result.unit(), &unit, "{operation:?}");
+        assert_eq!(result.magnitude(), &whole(value), "{operation:?}");
+        assert_eq!(result.unit(), unit.id(), "{operation:?}");
     }
-    let QuantityUnit::Compound(per_second) = exact(evaluated(
-        QuantityOperation::Divide(&six_m, &two_s),
+    // The evaluator's own compound-unit identity matches an independently
+    // recomputed content digest over the same terms, under the compound
+    // label.
+    let per_second = exact(evaluated(
+        QuantityOperation::Divide(f.at(&six_m), f.at(&two_s)),
         &mut unlimited(),
     ))
-    .unit()
-    .clone() else {
-        panic!("expected a compound unit");
-    };
-    // The evaluator's own compound-unit identity matches an independently
-    // recomputed content digest over the same terms.
+    .unit();
+    assert_eq!(per_second.domain(), UnitDomain::Compound);
     assert_eq!(
-        per_second.identity().to_string(),
+        per_second.to_string(),
         digest_hex(&compound_preimage(&[(f.m, "1"), (f.s, "-1")]))
     );
-    let QuantityUnit::Compound(dimensionless) = exact(evaluated(
-        QuantityOperation::Divide(&five_m, &five_m),
+    let dimensionless = exact(evaluated(
+        QuantityOperation::Divide(f.at(&five_m), f.at(&five_m)),
         &mut unlimited(),
     ))
-    .unit()
-    .clone() else {
-        panic!("expected a compound unit");
-    };
+    .unit();
+    assert_eq!(dimensionless.domain(), UnitDomain::Compound);
     assert_eq!(
-        dimensionless.identity().to_string(),
+        dimensionless.to_string(),
         digest_hex(&compound_preimage(&[]))
     );
-    assert!(dimensionless.dimension().is_dimensionless());
+    assert!(compound_unit(&f, &[]).dimension().is_dimensionless());
 
     // A non-root operand converts to its root first: `150 cm * 2 s = 3 m*s`.
     let mut meter = unlimited();
     let product = exact(evaluated(
-        QuantityOperation::Multiply(&f.quantity(whole(150), f.cm), &two_s),
+        QuantityOperation::Multiply(f.at(&f.quantity(whole(150), f.cm)), f.at(&two_s)),
         &mut meter,
     ));
-    assert_eq!(product.value(), &whole(3));
-    assert_eq!(
-        product.unit(),
-        &compound_unit(&f, &[(f.m, "1"), (f.s, "1")])
-    );
+    assert_eq!(product.magnitude(), &whole(3));
+    let metre_second = compound_unit(&f, &[(f.m, "1"), (f.s, "1")]);
+    assert_eq!(product.unit(), metre_second.id());
     assert_eq!(meter.consumed(LimitKind::UnitEdges), 1);
+    // A compound operand reads its unit from a table that holds it.
+    let mut units = f.units.clone();
+    units.insert(metre_second);
+    let metre = compound_unit(&f, &[(f.m, "1")]);
+    units.insert(metre.clone());
     // Multiplication and division are inverse on normalized units.
     let back = exact(evaluated(
-        QuantityOperation::Divide(&product, &two_s),
+        QuantityOperation::Divide(units.resolve(&product).unwrap(), f.at(&two_s)),
         &mut unlimited(),
     ));
-    assert_eq!(back.value(), &ratio(3, 2));
-    assert_eq!(back.unit(), &compound_unit(&f, &[(f.m, "1")]));
-    assert_eq!(back.unit().dimension(), f.unit(f.m).dimension());
+    assert_eq!(back.magnitude(), &ratio(3, 2));
+    assert_eq!(back.unit(), metre.id());
+    assert_eq!(metre.dimension(), f.unit(f.m).dimension());
     assert_eq!(
         converted(
-            &back,
+            units.resolve(&back).unwrap(),
             &f.unit(f.cm),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -1199,14 +1327,14 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     // Division by a zero quantity is undefined.
     assert_eq!(
         evaluated(
-            QuantityOperation::Divide(&two_m, &q(0, f.s)),
+            QuantityOperation::Divide(f.at(&two_m), f.at(&q(0, f.s))),
             &mut unlimited()
         ),
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(
         evaluated(
-            QuantityOperation::Power(&q(0, f.m), &int(-1)),
+            QuantityOperation::Power(f.at(&q(0, f.m)), &int(-1)),
             &mut unlimited()
         ),
         Outcome::Undefined(Undefined::DivisionByZero)
@@ -1234,7 +1362,7 @@ fn u13_huge_power_is_incomplete_before_computing() {
     let next: Integer = "36893488147419103232".parse().unwrap();
     assert_eq!(
         evaluated(
-            QuantityOperation::Power(&f.quantity(whole(2), f.m), &exponent),
+            QuantityOperation::Power(f.at(&f.quantity(whole(2), f.m)), &exponent),
             &mut Meter::new(limits)
         ),
         Outcome::Incomplete(Incomplete {
@@ -1272,9 +1400,12 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
         (&quarter, RoundingMode::Exact),
     ] {
         let mut meter = Meter::new(limits);
-        let Outcome::Incomplete(record) =
-            converted(source, &f.unit(f.m), &wide_decimal(scale, mode), &mut meter)
-        else {
+        let Outcome::Incomplete(record) = converted(
+            f.at(source),
+            &f.unit(f.m),
+            &wide_decimal(scale, mode),
+            &mut meter,
+        ) else {
             panic!("expected incomplete for {mode:?}");
         };
         assert_eq!(record.charge_point, ChargePoint::UnitTargetDomain);
@@ -1287,7 +1418,7 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
     let mut meter = Meter::new(limits);
     assert_eq!(
         converted(
-            &third,
+            f.at(&third),
             &f.unit(f.m),
             &wide_decimal(scale, RoundingMode::Exact),
             &mut meter
@@ -1319,7 +1450,7 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
     ];
     for (numerator, denominator) in fractions {
         let source = f.quantity(ratio(numerator, denominator), f.m);
-        let input_bits = source.value().max_part_bits();
+        let input_bits = source.magnitude().max_part_bits();
         let magnitude = BigInt::from(numerator).magnitude().clone();
         let numerator_digits = u64::try_from(magnitude.to_string().len()).unwrap();
         for scale in 0..64_u64 {
@@ -1335,7 +1466,8 @@ fn rounded_target_sizes_bound_the_materialized_coefficient() {
             let digits = numerator_digits + scale;
             for mode in RoundingMode::ALL.into_iter().skip(1) {
                 let target = wide_decimal(scale, mode);
-                let run = |meter: &mut Meter| converted(&source, &f.unit(f.m), &target, meter);
+                let run =
+                    |meter: &mut Meter| converted(f.at(&source), &f.unit(f.m), &target, meter);
                 let Outcome::Completed(ConvertedValue::Decimal(result)) = run(&mut unlimited())
                 else {
                     panic!("{numerator}/{denominator} at {scale} {mode:?} did not complete");
@@ -1441,6 +1573,7 @@ fn work_denied(limit: u64, point: ChargePoint) -> Incomplete {
 struct Extended {
     base: Fixture,
     graph: UnitGraph,
+    units: UnitTable,
     kg: NodeKey,
     n_m: NodeKey,
     joule: NodeKey,
@@ -1458,7 +1591,12 @@ impl Extended {
     }
 
     fn quantity(&self, value: Rational, key: NodeKey) -> Quantity {
-        Quantity::new(value, self.unit(key))
+        Quantity::new(value, self.graph.declared_unit_id(key).unwrap())
+    }
+
+    /// `quantity` read against this fixture's declared units.
+    fn at<'a>(&'a self, quantity: &'a Quantity) -> UnitQuantity<'a> {
+        self.units.resolve(quantity).expect("a declared unit")
     }
 }
 
@@ -1502,6 +1640,7 @@ fn extended() -> Extended {
     assert_eq!(graph.dimension(torque), graph.dimension(energy));
     Extended {
         base,
+        units: UnitTable::declared(&graph),
         graph,
         kg,
         n_m,
@@ -1526,24 +1665,24 @@ fn u14_static_refusals_precede_every_charge() {
     // incompatible dimensions, then affine arithmetic, then distinct units.
     let cases = [
         (
-            QuantityOperation::Add(&metre, &second),
+            QuantityOperation::Add(f.at(&metre), f.at(&second)),
             IllTypedCause::IncompatibleDimensions,
         ),
         (
-            QuantityOperation::Add(&celsius, &second),
+            QuantityOperation::Add(f.at(&celsius), f.at(&second)),
             IllTypedCause::IncompatibleDimensions,
         ),
         (
-            QuantityOperation::Add(&celsius, &celsius),
+            QuantityOperation::Add(f.at(&celsius), f.at(&celsius)),
             IllTypedCause::AffineUnitArithmetic,
         ),
         // Refused statically as affine, never reaching the zero divisor.
         (
-            QuantityOperation::Divide(&celsius, &zero_celsius),
+            QuantityOperation::Divide(f.at(&celsius), f.at(&zero_celsius)),
             IllTypedCause::AffineUnitArithmetic,
         ),
         (
-            QuantityOperation::Add(&centimetre, &metre),
+            QuantityOperation::Add(f.at(&centimetre), f.at(&metre)),
             IllTypedCause::DistinctUnits,
         ),
     ];
@@ -1558,11 +1697,21 @@ fn u14_static_refusals_precede_every_charge() {
     }
     let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
-        compare_quantity(ComparisonOperator::Equal, &metre, &centimetre, &mut meter),
+        compare_quantity(
+            ComparisonOperator::Equal,
+            f.at(&metre),
+            f.at(&centimetre),
+            &mut meter
+        ),
         typed(IllTypedCause::DistinctUnits)
     );
     assert_eq!(
-        compare_quantity(ComparisonOperator::Less, &metre, &second, &mut meter),
+        compare_quantity(
+            ComparisonOperator::Less,
+            f.at(&metre),
+            f.at(&second),
+            &mut meter
+        ),
         typed(IllTypedCause::IncompatibleDimensions)
     );
     assert!(meter.admitted_charges().is_empty());
@@ -1573,7 +1722,8 @@ fn u14_static_refusals_precede_every_charge() {
 fn u15_every_edge_is_charged_before_the_first_rational_event() {
     let f = fixture();
     let inch = f.quantity(whole(1), f.inch);
-    let run = |meter: &mut Meter| converted(&inch, &f.unit(f.cm), &QuantityTarget::Exact, meter);
+    let run =
+        |meter: &mut Meter| converted(f.at(&inch), &f.unit(f.cm), &QuantityTarget::Exact, meter);
     let mut meter = limits(15, 0, 2, 1, 9, 1);
     assert_eq!(
         run(&mut meter),
@@ -1626,7 +1776,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
     let mut meter = limits(15, 5, 1, 1, 6, 1);
     assert_eq!(
         converted(
-            &inch,
+            f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut meter
@@ -1639,7 +1789,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
         .contains(&ChargePoint::UnitTargetDomain));
     assert_eq!(
         converted(
-            &inch,
+            f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut limits(15, 5, 1, 1, 4, 1)
@@ -1649,7 +1799,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
     let nearest = decimal_type(-1000, 1000, 2, RoundingMode::NearestEven);
     let mut meter = limits(15, 5, 1, 1, 6, 1);
     let Outcome::Completed(ConvertedValue::Decimal(result)) =
-        converted(&inch, &f.unit(f.m), &nearest, &mut meter)
+        converted(f.at(&inch), &f.unit(f.m), &nearest, &mut meter)
     else {
         panic!("nearest-even did not complete");
     };
@@ -1659,7 +1809,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
 
     assert_eq!(
         converted(
-            &inch,
+            f.at(&inch),
             &f.unit(f.m),
             &nearest,
             &mut limits(15, 5, 1, 1, 4, 1)
@@ -1676,7 +1826,7 @@ fn u17_membership_refuses_after_the_target_domain() {
     let target = decimal_type(-2, 2, 0, RoundingMode::Exact);
     let mut meter = limits(2, 1, 0, 1, 2, 0);
     assert_eq!(
-        converted(&three, &f.unit(f.m), &target, &mut meter),
+        converted(f.at(&three), &f.unit(f.m), &target, &mut meter),
         Outcome::Refused(Refusal::DecimalOutOfDomain)
     );
     assert_eq!(
@@ -1684,7 +1834,12 @@ fn u17_membership_refuses_after_the_target_domain() {
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
     );
     assert_eq!(
-        converted(&three, &f.unit(f.m), &target, &mut limits(2, 1, 0, 1, 1, 0)),
+        converted(
+            f.at(&three),
+            &f.unit(f.m),
+            &target,
+            &mut limits(2, 1, 0, 1, 1, 0)
+        ),
         Outcome::Incomplete(work_denied(1, ChargePoint::UnitTargetDomain))
     );
 }
@@ -1698,7 +1853,7 @@ fn u18_huge_target_scale_is_sized_analytically() {
     );
     assert_eq!(
         converted(
-            &f.quantity(whole(1), f.m),
+            f.at(&f.quantity(whole(1), f.m)),
             &f.unit(f.m),
             &target,
             &mut limits(u64::MAX, 64, 0, 1, 2, 1)
@@ -1718,7 +1873,7 @@ fn u18_huge_target_scale_is_sized_analytically() {
 fn u19_rational_target_charges_one_work_unit_and_no_size() {
     let f = fixture();
     let (two, three) = (f.quantity(whole(2), f.m), f.quantity(whole(3), f.m));
-    let operation = QuantityOperation::Add(&two, &three);
+    let operation = QuantityOperation::Add(f.at(&two), f.at(&three));
     let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(operation, &mut meter),
@@ -1747,12 +1902,15 @@ fn u20_affinity_is_the_composed_offset() {
     let q = |value, key| x.quantity(whole(value), key);
     let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
-        evaluate_quantity(QuantityOperation::Add(&q(1, x.u1), &q(2, x.u1)), &mut meter),
+        evaluate_quantity(
+            QuantityOperation::Add(x.at(&q(1, x.u1)), x.at(&q(2, x.u1))),
+            &mut meter
+        ),
         typed(IllTypedCause::AffineUnitArithmetic)
     );
     assert_eq!(
         evaluate_quantity(
-            QuantityOperation::Multiply(&q(1, x.u3), &q(1, x.base.m)),
+            QuantityOperation::Multiply(x.at(&q(1, x.u3)), x.at(&q(1, x.base.m))),
             &mut meter
         ),
         typed(IllTypedCause::AffineUnitArithmetic)
@@ -1760,7 +1918,10 @@ fn u20_affinity_is_the_composed_offset() {
     assert!(meter.admitted_charges().is_empty());
     let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
-        evaluated(QuantityOperation::Add(&q(1, x.u2), &q(2, x.u2)), &mut meter),
+        evaluated(
+            QuantityOperation::Add(x.at(&q(1, x.u2)), x.at(&q(2, x.u2))),
+            &mut meter
+        ),
         Outcome::Completed(q(3, x.u2))
     );
     assert!(!meter.admitted_charges().contains(&ChargePoint::UnitEdge));
@@ -1773,11 +1934,11 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     let zero = f.quantity(whole(0), f.m);
     let mut meter = limits(1, 0, 0, 1, 4, 1);
     let result = exact(evaluated(
-        QuantityOperation::Power(&zero, &int(0)),
+        QuantityOperation::Power(f.at(&zero), &int(0)),
         &mut meter,
     ));
-    assert_eq!(result.value(), &whole(1));
-    assert_eq!(result.unit(), &compound_unit(&f, &[]));
+    assert_eq!(result.magnitude(), &whole(1));
+    assert_eq!(result.unit(), compound_unit(&f, &[]).id());
     assert_eq!(
         meter.admitted_charges(),
         [
@@ -1790,13 +1951,13 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     let negative = int(-1);
     let mut meter = limits(1, 0, 0, 1, 1, 0);
     assert_eq!(
-        evaluated(QuantityOperation::Power(&zero, &negative), &mut meter),
+        evaluated(QuantityOperation::Power(f.at(&zero), &negative), &mut meter),
         Outcome::Undefined(Undefined::DivisionByZero)
     );
     assert_eq!(meter.admitted_charges(), [ChargePoint::UnitIdentityRead]);
     assert_eq!(
         evaluated(
-            QuantityOperation::Power(&zero, &negative),
+            QuantityOperation::Power(f.at(&zero), &negative),
             &mut limits(1, 0, 0, 1, 0, 0)
         ),
         Outcome::Incomplete(work_denied(0, ChargePoint::UnitIdentityRead))
@@ -1811,7 +1972,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     let mut meter = limits(0, 0, 0, 0, 0, 0);
     assert_eq!(
         convert_quantity(
-            &one_n_m,
+            x.at(&one_n_m),
             &x.unit(x.joule),
             &QuantityTarget::Exact,
             &mut meter
@@ -1821,7 +1982,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     assert!(meter.admitted_charges().is_empty());
     assert_eq!(
         evaluate_quantity(
-            QuantityOperation::Add(&one_n_m, &x.quantity(whole(1), x.joule)),
+            QuantityOperation::Add(x.at(&one_n_m), x.at(&x.quantity(whole(1), x.joule))),
             &mut unlimited()
         ),
         // The nominal rule guards only direct conversion; addition compares
@@ -1829,12 +1990,24 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         typed(IllTypedCause::DistinctUnits)
     );
     let square = exact(evaluated(
-        QuantityOperation::Power(&x.quantity(whole(2), x.base.m), &int(2)),
+        QuantityOperation::Power(x.at(&x.quantity(whole(2), x.base.m)), &int(2)),
         &mut unlimited(),
+    ));
+    // A compound operand reads its unit from a table that holds it.
+    let mut units = x.units.clone();
+    units.insert(QuantityUnit::Compound(
+        x.graph
+            .compound_unit(&compound(&[(x.base.m, "2")]))
+            .unwrap(),
     ));
     let mut meter = limits(3, 0, 0, 1, 3, 1);
     assert_eq!(
-        converted(&square, &x.unit(x.m2), &QuantityTarget::Exact, &mut meter),
+        converted(
+            units.resolve(&square).unwrap(),
+            &x.unit(x.m2),
+            &QuantityTarget::Exact,
+            &mut meter
+        ),
         Outcome::Completed(ConvertedValue::Exact(whole(4)))
     );
     assert_eq!(
@@ -1845,8 +2018,14 @@ fn u22_declared_conversion_requires_one_dimension_node() {
             ChargePoint::UnitResultRetain,
         ]
     );
-    let to_cm2 =
-        |meter: &mut Meter| converted(&square, &x.unit(x.cm2), &QuantityTarget::Exact, meter);
+    let to_cm2 = |meter: &mut Meter| {
+        converted(
+            units.resolve(&square).unwrap(),
+            &x.unit(x.cm2),
+            &QuantityTarget::Exact,
+            meter,
+        )
+    };
     let mut meter = limits(17, 0, 1, 1, 6, 1);
     assert_eq!(
         to_cm2(&mut meter),
@@ -1881,7 +2060,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     terms.sort_by_key(|(key, _)| *key);
     let compound = QuantityUnit::Compound(x.graph.compound_unit(&compound(&terms)).unwrap());
     let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
-        &x.quantity(whole(5), x.n_m),
+        x.at(&x.quantity(whole(5), x.n_m)),
         &compound,
         &QuantityTarget::Exact,
         &mut unlimited(),
@@ -1889,9 +2068,11 @@ fn u22_declared_conversion_requires_one_dimension_node() {
         panic!("declared to compound did not complete");
     };
     assert_eq!(pivot, whole(5));
+    let pivot = Quantity::new(pivot, compound.id());
+    units.insert(compound);
     assert_eq!(
         converted(
-            &Quantity::new(pivot, compound),
+            units.resolve(&pivot).unwrap(),
             &x.unit(x.joule),
             &QuantityTarget::Exact,
             &mut unlimited()
@@ -1908,7 +2089,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
     let (one, two) = (q(1, x.base.deg_c), q(2, x.base.deg_c));
     let mut meter = limits(15, 0, 2, 2, 9, 1);
     assert_eq!(
-        compare_quantity(ComparisonOperator::Less, &one, &two, &mut meter),
+        compare_quantity(ComparisonOperator::Less, x.at(&one), x.at(&two), &mut meter),
         Ok(Outcome::Completed(true))
     );
     assert_eq!(
@@ -1928,8 +2109,8 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
     assert_eq!(
         compare_quantity(
             ComparisonOperator::Less,
-            &one,
-            &two,
+            x.at(&one),
+            x.at(&two),
             &mut limits(15, 0, 2, 2, 8, 1)
         ),
         Ok(Outcome::Incomplete(work_denied(
@@ -1941,8 +2122,8 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
     assert_eq!(
         compare_quantity(
             ComparisonOperator::Less,
-            &one_rev,
-            &two_rev,
+            x.at(&one_rev),
+            x.at(&two_rev),
             &mut unlimited()
         ),
         Ok(Outcome::Completed(false))
@@ -1952,20 +2133,25 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
         .zip([false, true, false, false, true, true])
     {
         assert_eq!(
-            compare_quantity(operator, &one_rev, &two_rev, &mut unlimited()),
+            compare_quantity(operator, x.at(&one_rev), x.at(&two_rev), &mut unlimited()),
             Ok(Outcome::Completed(expected)),
             "{operator:?}"
         );
     }
     assert_eq!(
-        compare_quantity(ComparisonOperator::Equal, &one, &one, &mut unlimited()),
+        compare_quantity(
+            ComparisonOperator::Equal,
+            x.at(&one),
+            x.at(&one),
+            &mut unlimited()
+        ),
         Ok(Outcome::Completed(true))
     );
     let (zero_c, thirty_two_f) = (q(0, x.base.deg_c), q(32, x.base.deg_f));
     let mut meter = limits(0, 0, 0, 0, 0, 0);
     for operator in [ComparisonOperator::Less, ComparisonOperator::Equal] {
         assert_eq!(
-            compare_quantity(operator, &zero_c, &thirty_two_f, &mut meter),
+            compare_quantity(operator, x.at(&zero_c), x.at(&thirty_two_f), &mut meter),
             typed(IllTypedCause::DistinctUnits)
         );
     }
@@ -1979,7 +2165,10 @@ fn u24_identical_unit_addition_traverses_no_edge() {
     let mut meter = limits(4, 0, 0, 2, 5, 1);
     assert_eq!(
         evaluated(
-            QuantityOperation::Add(&f.quantity(whole(1), f.cm), &f.quantity(whole(2), f.cm)),
+            QuantityOperation::Add(
+                f.at(&f.quantity(whole(1), f.cm)),
+                f.at(&f.quantity(whole(2), f.cm))
+            ),
             &mut meter
         ),
         Outcome::Completed(f.quantity(whole(3), f.cm))
@@ -2010,7 +2199,7 @@ fn u25_compound_pivot_between_nominal_dimensions() {
     ];
     let mut meter = limits(1, 0, 0, 1, 3, 1);
     let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
-        &x.quantity(whole(1), x.n_m),
+        x.at(&x.quantity(whole(1), x.n_m)),
         &compound,
         &QuantityTarget::Exact,
         &mut meter,
@@ -2018,10 +2207,13 @@ fn u25_compound_pivot_between_nominal_dimensions() {
         panic!("N_m to the compound unit did not complete");
     };
     assert_eq!(meter.admitted_charges(), no_edge);
+    let pivot = Quantity::new(pivot, compound.id());
+    let mut units = x.units.clone();
+    units.insert(compound);
     let mut meter = limits(1, 0, 0, 1, 3, 1);
     assert_eq!(
         converted(
-            &Quantity::new(pivot, compound),
+            units.resolve(&pivot).unwrap(),
             &x.unit(x.joule),
             &QuantityTarget::Exact,
             &mut meter
@@ -2036,7 +2228,8 @@ fn u25_compound_pivot_between_nominal_dimensions() {
 fn u26_conversion_has_no_common_ancestor_shortcut() {
     let x = extended();
     let one = x.quantity(whole(1), x.u2);
-    let run = |meter: &mut Meter| converted(&one, &x.unit(x.u1), &QuantityTarget::Exact, meter);
+    let run =
+        |meter: &mut Meter| converted(x.at(&one), &x.unit(x.u1), &QuantityTarget::Exact, meter);
     let mut meter = limits(6, 0, 3, 1, 12, 1);
     assert_eq!(
         run(&mut meter),
@@ -2064,7 +2257,7 @@ fn u26_conversion_has_no_common_ancestor_shortcut() {
 fn u27_zero_divisor_is_undefined_after_the_reads() {
     let f = fixture();
     let (one, zero) = (f.quantity(whole(1), f.cm), f.quantity(whole(0), f.cm));
-    let operation = QuantityOperation::Divide(&one, &zero);
+    let operation = QuantityOperation::Divide(f.at(&one), f.at(&zero));
     let mut meter = limits(1, 0, 0, 2, 2, 0);
     assert_eq!(
         evaluated(operation, &mut meter),
@@ -2085,11 +2278,11 @@ fn u27_zero_divisor_is_undefined_after_the_reads() {
 fn u28_multiplication_charges_left_then_right_then_the_product() {
     let f = fixture();
     let (cm, inch) = (f.quantity(whole(1), f.cm), f.quantity(whole(1), f.inch));
-    let operation = QuantityOperation::Multiply(&cm, &inch);
+    let operation = QuantityOperation::Multiply(f.at(&cm), f.at(&inch));
     let mut meter = limits(20, 0, 2, 2, 11, 1);
     let product = exact(evaluated(operation, &mut meter));
-    assert_eq!(product.value(), &ratio(127, 500_000));
-    assert_eq!(product.unit(), &compound_unit(&f, &[(f.m, "2")]));
+    assert_eq!(product.magnitude(), &ratio(127, 500_000));
+    assert_eq!(product.unit(), compound_unit(&f, &[(f.m, "2")]).id());
     let mut expected = vec![ChargePoint::UnitIdentityRead; 2];
     expected.extend([ChargePoint::UnitEdge; 2]);
     expected.extend([ChargePoint::UnitRationalArithmetic; 5]);
@@ -2121,7 +2314,7 @@ fn u29_integer_target_charges_integer_bits_only() {
     let inch = f.quantity(whole(1), f.inch);
     let run = |source: &Quantity, rounding, meter: &mut Meter| {
         converted(
-            source,
+            f.at(source),
             &f.unit(f.m),
             &integer_target(-2, 2, rounding),
             meter,
@@ -2186,7 +2379,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     let f = fixture();
     let centimetres = f.quantity(whole(250), f.cm);
     let run = |target: &QuantityTarget, meter: &mut Meter| {
-        converted(&centimetres, &f.unit(f.m), target, meter)
+        converted(f.at(&centimetres), &f.unit(f.m), target, meter)
     };
     let mut meter = unlimited();
     assert_eq!(
@@ -2231,7 +2424,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     let mut meter = unlimited();
     assert_eq!(
         converted(
-            &exact_three,
+            f.at(&exact_three),
             &f.unit(f.m),
             &integer_target(-2, 2, RoundingMode::Exact),
             &mut meter
@@ -2244,7 +2437,7 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     );
     assert_eq!(
         converted(
-            &exact_three,
+            f.at(&exact_three),
             &f.unit(f.m),
             &integer_target(-3, 3, RoundingMode::Exact),
             &mut unlimited()
@@ -2355,6 +2548,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
             assert_eq!(unit.root(), root);
             assert_eq!(unit.is_affine(), offset.0 != 0);
         }
+        let units = UnitTable::declared(&graph);
         let declared = |key| QuantityUnit::Declared(Box::new(graph.unit(key).unwrap().clone()));
         for (source, source_scale, source_offset) in &maps {
             for (target, target_scale, target_offset) in &maps {
@@ -2373,10 +2567,11 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     canonical.1 * target_offset.1,
                 );
                 let expected = reduce(lifted.0 * target_scale.1, lifted.1 * target_scale.0);
-                let quantity = Quantity::new(as_rational(value), declared(*source));
+                let quantity = Quantity::new(as_rational(value), declared(*source).id());
+                let at = |quantity| units.resolve(quantity).expect("a declared unit");
                 let mut meter = unlimited();
                 let Outcome::Completed(conversion) = convert_quantity(
-                    &quantity,
+                    at(&quantity),
                     &declared(*target),
                     &QuantityTarget::Exact,
                     &mut meter,
@@ -2413,7 +2608,7 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                     });
                     assert_eq!(
                         converted(
-                            &quantity,
+                            at(&quantity),
                             &declared(*target),
                             &QuantityTarget::Exact,
                             &mut denied
@@ -2430,33 +2625,33 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                 }
 
                 // Arithmetic in the source unit.
-                let other = Quantity::new(whole(3), declared(*source));
-                let sum =
-                    evaluate_quantity(QuantityOperation::Add(&quantity, &other), &mut unlimited());
+                let other = Quantity::new(whole(3), declared(*source).id());
+                let sum = evaluate_quantity(
+                    QuantityOperation::Add(at(&quantity), at(&other)),
+                    &mut unlimited(),
+                );
                 if source_offset.0 != 0 {
                     assert_eq!(sum, typed(IllTypedCause::AffineUnitArithmetic));
                     continue;
                 }
                 let sum = exact(sum.expect("well-typed operation"));
                 assert_eq!(
-                    sum.value(),
+                    sum.magnitude(),
                     &as_rational(reduce(value.0 + 3 * value.1, value.1))
                 );
                 let product = exact(evaluated(
-                    QuantityOperation::Multiply(&quantity, &other),
+                    QuantityOperation::Multiply(at(&quantity), at(&other)),
                     &mut unlimited(),
                 ));
                 // Both operands convert to the root: canonical(v)*canonical(3).
                 let three = reduce(3 * source_scale.0, source_scale.1);
                 assert_eq!(
-                    product.value(),
+                    product.magnitude(),
                     &as_rational(reduce(canonical.0 * three.0, canonical.1 * three.1))
                 );
                 assert_eq!(
                     product.unit(),
-                    &QuantityUnit::Compound(
-                        graph.compound_unit(&compound(&[(root, "2")])).unwrap()
-                    )
+                    graph.compound_unit(&compound(&[(root, "2")])).unwrap().id()
                 );
             }
         }
