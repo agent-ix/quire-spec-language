@@ -93,18 +93,20 @@ fn syntax_clause_kind_variant_list_is_unchanged() {
 
 /// Step 4 (bounded, see this file's own doc): the literal fully-qualified
 /// spelling `syntax::ClauseKind` occurs in exactly as many `.rs` files
-/// under `src/` and `qsl-semantics/src/` as it did when this test was written -- a plain count, so
+/// under `src/`, `qsl-semantics/src/` and `qsl-eval/src/` as it did when this test was written -- a plain count, so
 /// a new file spelling it out (a new consumer treating the lane-private
 /// enum as canonical) is caught, within this scan's own documented bound.
 #[trace("TC-257", "FR-088-AC-1")]
 #[test]
 fn syntax_clause_kind_qualified_spelling_gains_no_new_consumer_file() {
     // The root crate's `src/` and the layer-3 crate's (QSL-181 moved
-    // `check` there).
+    // `check` there), and the layer-5 crate's (QSL-183 moved the evaluator
+    // there; it names the spelling in no file).
     let mut files_naming_it = Vec::new();
     let mut pending = vec![
         workspace_root().join("src"),
         workspace_root().join("qsl-semantics/src"),
+        workspace_root().join("qsl-eval/src"),
     ];
     while let Some(dir) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {

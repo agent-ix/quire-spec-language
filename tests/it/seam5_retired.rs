@@ -68,7 +68,8 @@ fn no_source_or_build_input_file_references_the_retired_seam() {
     let mut offending = Vec::new();
     let mut scanned = 0_usize;
     // `src/`, `tests/`, `xtask/`, `examples/`, `qsl-forms/` (the S2
-    // forms crate, ADR-011 §7.3 X-5) and `qsl-semantics/` (layer 3, X-6),
+    // forms crate, ADR-011 §7.3 X-5), `qsl-semantics/` (layer 3, X-6) and
+    // `qsl-eval/` (layer 5, X-8),
     // not `src/` alone; `benches/` does not
     // exist in this repository, and `files_under` treats that as zero
     // files, not an error. This scan does not reach `spec/` or `docs/`,
@@ -81,6 +82,7 @@ fn no_source_or_build_input_file_references_the_retired_seam() {
         "examples",
         "qsl-forms",
         "qsl-semantics",
+        "qsl-eval",
     ] {
         let mut files = Vec::new();
         files_under(&manifest_dir.join(root), &mut files);

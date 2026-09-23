@@ -16,7 +16,7 @@
 //! a `struct`, `enum`, `fn`, `const` or `type` item's own identifier, and an
 //! `impl` method's `(Self type, method name)` pair. It does not compare two
 //! *differently named* items' shapes for structural equivalence (TC-170's
-//! own hypothetical "a stray `src/value/expression/typing.rs` still
+//! own hypothetical "a stray `qsl-eval/src/value/expression/typing.rs` still
 //! defining a second `Typer`-adjacent type under a different name") --
 //! that would need a general structural-similarity engine, which is
 //! speculative build cost against a scenario this module's
@@ -213,15 +213,21 @@ pub struct CrateDefinitions {
     pub methods: BTreeMap<(String, String), Vec<Definition>>,
 }
 
-/// Scan the QSL crate's `src/` tree and its extracted layer-3 and layer-4
-/// crates' (`qsl-semantics/src/`, QSL-181; `qsl-package/src/`, QSL-182),
-/// once, as one set of definitions: `check`, `model`, `library` and the S4
-/// `CheckedPackage` moved there, and the checks below still ask where in the
-/// QSL crate family an item is defined.
+/// Scan the QSL crate's `src/` tree and its extracted layer-3, layer-4 and
+/// layer-5 crates' (`qsl-semantics/src/`, QSL-181; `qsl-package/src/`,
+/// QSL-182; `qsl-eval/src/`, QSL-183), once, as one set of definitions:
+/// `check`, `model`, `library`, the S4 `CheckedPackage` and the S6a
+/// `value::expression` moved there, and the checks below still ask where in
+/// the QSL crate family an item is defined.
 pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
     scan_dirs(
         workspace_root,
-        &["src", "qsl-semantics/src", "qsl-package/src"],
+        &[
+            "src",
+            "qsl-semantics/src",
+            "qsl-package/src",
+            "qsl-eval/src",
+        ],
     )
 }
 
@@ -301,8 +307,8 @@ mod tests {
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
-        let mods =
-            mod_declarations(&workspace_root(), "src/value/expression/mod.rs").expect("scan runs");
+        let mods = mod_declarations(&workspace_root(), "qsl-eval/src/value/expression/mod.rs")
+            .expect("scan runs");
         for forbidden in ["check", "facts", "ir", "termination"] {
             assert!(
                 !mods.iter().any(|name| name == forbidden),
@@ -330,7 +336,7 @@ mod tests {
     }
 
     /// Asserts `name` is defined exactly once under `qsl-semantics/src/check/` and not at
-    /// all under `src/value/expression/` -- TC-170's own actual intent ("no
+    /// all under `qsl-eval/src/value/expression/` -- TC-170's own actual intent ("no
     /// leftover in `value::expression`, no duplicate under `check`"), not a
     /// literal crate-wide uniqueness claim. Some CON-3/TC-173 names (e.g.
     /// `Obligation`) collide, by plain English word, with unrelated,
@@ -345,13 +351,13 @@ mod tests {
             .iter()
             .filter(|location| {
                 location.file.starts_with("qsl-semantics/src/check/")
-                    || location.file.starts_with("src/value/expression/")
+                    || location.file.starts_with("qsl-eval/src/value/expression/")
             })
             .collect();
         assert_eq!(
             relevant.len(),
             1,
-            "{name} has {} defining location(s) under qsl-semantics/src/check/ or src/value/expression/: {relevant:?} (all locations: {locations:?})",
+            "{name} has {} defining location(s) under qsl-semantics/src/check/ or qsl-eval/src/value/expression/: {relevant:?} (all locations: {locations:?})",
             relevant.len()
         );
         assert!(
@@ -496,7 +502,9 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(locations.len(), 1, "{locations:?}");
         assert!(
-            locations[0].file.starts_with("src/value/expression/"),
+            locations[0]
+                .file
+                .starts_with("qsl-eval/src/value/expression/"),
             "InputRefusal: {locations:?}"
         );
         assert!(!locations[0].file.starts_with("qsl-semantics/src/check/"));

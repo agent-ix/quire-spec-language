@@ -11,6 +11,7 @@
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
+use qsl_eval::value::QualifiedName;
 use qsl_semantics::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
@@ -36,7 +37,6 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
 };
-use qsl_eval::value::QualifiedName;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -738,6 +738,7 @@ mod checked {
     // `BoundViolation` the outer module's glob import brings in -- these
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
     use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
@@ -745,7 +746,6 @@ mod checked {
         PackageDeclarations,
     };
     use quire_exact::{BoundViolation, Outcome, Refusal};
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
 
     fn name(spelling: &str) -> Expression {
         Expression::Name(spelling.to_owned())

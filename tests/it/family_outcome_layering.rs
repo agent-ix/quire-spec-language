@@ -63,6 +63,8 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
             "qsl-cst/src",
             "qsl-forms/src",
             "qsl-semantics/src",
+            "qsl-package/src",
+            "qsl-eval/src",
         ],
     )
     .expect("the definition scan runs cleanly");
@@ -254,7 +256,11 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// its `[dev-dependencies]` may also name `quire-exact` and the lower layer
 /// `qsl-forms`, so K is a test-only edge there. `qsl-route` (layer R,
 /// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
-/// in `[dependencies]`, and has no `[build-dependencies]`. Every other
+/// in `[dependencies]`, and has no `[build-dependencies]`. `qsl-eval` (layer
+/// 5, QSL-183) names exactly `qsl-attrs`, `qsl-foundation`, `qsl-package`,
+/// `qsl-semantics`, `quire-exact`, `serde`, `serde_json` and `thiserror` in
+/// `[dependencies]`; its `[dev-dependencies]` may also name the lower layer
+/// `qsl-forms`. Every other
 /// workspace crate, `qsl-source` and this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
 /// dev-dependency one, so the dev table is checked here.
@@ -283,6 +289,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         "qsl-semantics",
         "qsl-package",
         "qsl-route",
+        "qsl-eval",
     ] {
         assert!(
             workspace_crates.contains(&required),
@@ -312,6 +319,17 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             "qsl-route",
             &["qsl-foundation", "qsl-semantics"][..],
             &[][..],
+        ),
+        (
+            "qsl-eval",
+            &[
+                "qsl-attrs",
+                "qsl-foundation",
+                "qsl-package",
+                "qsl-semantics",
+                "quire-exact",
+            ][..],
+            &["qsl-forms"][..],
         ),
     ] {
         let package = packages
@@ -366,6 +384,30 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-contract-model",
+                    "serde_json",
+                    "thiserror"
+                ],
+                "{crate_name}'s [dependencies]"
+            );
+        }
+        if crate_name == "qsl-eval" {
+            // Layer 5 (QSL-183): "4, 3, F, K". The whole shipped table is
+            // fixed: the four layer crates, `qsl-attrs` for the FR-064
+            // `#[string_edge]` marker (a proc-macro identity transform), and
+            // the three third-party crates the shipped code calls -- `serde`
+            // and `serde_json` for the prototype v2 function-package codec,
+            // `thiserror` for its error types.
+            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
+            normal.sort_unstable();
+            assert_eq!(
+                normal,
+                [
+                    "qsl-attrs",
+                    "qsl-foundation",
+                    "qsl-package",
+                    "qsl-semantics",
+                    "quire-exact",
+                    "serde",
                     "serde_json",
                     "thiserror"
                 ],

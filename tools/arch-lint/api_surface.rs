@@ -111,6 +111,19 @@ pub(crate) struct AllowedCaller {
     pub(crate) module_prefix: &'static str,
 }
 
+/// One entry of a rule's named, shrinking debt list: a function, named by its
+/// crate (source root relative to the scanned checkout, as in
+/// [`AllowedCaller`]), its module path inside that crate and its name
+/// (`Type::method` inside an `impl`). Keyed by crate as well as module, for
+/// the reason [`AllowedCaller`] gives: a same-named module in another crate
+/// is not the listed debt.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DebtEntry {
+    pub(crate) crate_src: &'static str,
+    pub(crate) module: &'static str,
+    pub(crate) function: &'static str,
+}
+
 /// One ADR-011 T-12 API-surface rule (data, per the module doc above).
 pub(crate) struct Rule {
     pub(crate) id: &'static str,
@@ -145,14 +158,14 @@ pub(crate) struct Rule {
     /// function is resolved for `debt_list`. `false` for T12-A, a textual
     /// scan of CG's tree whose `debt_list` is always empty.
     pub(crate) shipped_only: bool,
-    /// FR-060's named, shrinking debt list: a `(module, function)` pair
+    /// FR-060's named, shrinking debt list: a function (see [`DebtEntry`])
     /// whose mint is reported as debt rather than failing the rule. Keyed
     /// by function, not by line, so the list only shrinks: an entry leaves
     /// in the change that removes its last mint, and no entry is added.
     /// Never consulted for a `forbidden_patterns` match, which fails
     /// regardless of caller or debt status. `&[]` for a rule with no debt
     /// (T12-A, T12-D).
-    pub(crate) debt_list: &'static [(&'static str, &'static str)],
+    pub(crate) debt_list: &'static [DebtEntry],
 }
 
 /// today's five T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21,
@@ -221,7 +234,11 @@ pub(crate) const RULES: &[Rule] = &[
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
         // leaves in the change that removes its last mint.
-        debt_list: &[("value::expression::family", "decode_v2")],
+        debt_list: &[DebtEntry {
+            crate_src: "qsl-eval/src",
+            module: "value::expression::family",
+            function: "decode_v2",
+        }],
     },
     Rule {
         id: "T12-C",
@@ -364,7 +381,7 @@ pub(crate) struct RuleOutcome {
     /// A `Rule::debt_list` entry with no remaining mint found in this scan
     /// -- fails the rule, so a fixed site cannot later hide a new mint
     /// under a stale name.
-    pub(crate) stale_debt_entries: Vec<(&'static str, &'static str)>,
+    pub(crate) stale_debt_entries: Vec<DebtEntry>,
 }
 
 impl RuleOutcome {
@@ -857,7 +874,7 @@ pub(crate) fn evaluate(
     };
     let mut violations = Vec::new();
     let mut debt = Vec::new();
-    let mut debt_seen: BTreeSet<(&'static str, &'static str)> = BTreeSet::new();
+    let mut debt_seen: BTreeSet<DebtEntry> = BTreeSet::new();
     for src_root in qsl_scan_src_roots(rule.role, scan_root) {
         if !src_root.exists() {
             // Every listed root is required, the primary root
@@ -917,8 +934,10 @@ pub(crate) fn evaluate(
                 if module_allowed(&crate_src, &site.module, rule.allowed_callers) {
                     continue;
                 }
-                let debt_entry = rule.debt_list.iter().find(|(module, function)| {
-                    *module == site.module && *function == site.function
+                let debt_entry = rule.debt_list.iter().find(|entry| {
+                    entry.crate_src == crate_src
+                        && entry.module == site.module
+                        && entry.function == site.function
                 });
                 match debt_entry {
                     Some(entry) => {
@@ -932,7 +951,7 @@ pub(crate) fn evaluate(
     }
     violations.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     debt.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
-    let stale_debt_entries: Vec<(&'static str, &'static str)> = rule
+    let stale_debt_entries: Vec<DebtEntry> = rule
         .debt_list
         .iter()
         .copied()
@@ -954,7 +973,7 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
-/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-route` (X-9)
+/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-eval` (X-8), `qsl-route` (X-9)
 /// and `qsl-replay` (X-10). A module path is relative to its own crate's
 /// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
 /// `qsl-semantics`' modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
@@ -975,6 +994,7 @@ fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
             "qsl-forms/src",
             "qsl-semantics/src",
             "qsl-package/src",
+            "qsl-eval/src",
             "qsl-route/src",
             "qsl-replay/src",
         ]
@@ -1011,6 +1031,7 @@ mod tests {
             "qsl-forms/src",
             "qsl-semantics/src",
             "qsl-package/src",
+            "qsl-eval/src",
             "qsl-route/src",
             "qsl-replay/src",
         ] {
@@ -1028,19 +1049,27 @@ mod tests {
     /// not themselves about staleness call this first so the debt list
     /// starts fully satisfied, then plant their own scenario on top.
     fn seed_debt_list_baseline(root: &Path, rule: &Rule, mint_expr: &str) {
-        let mut by_module: std::collections::BTreeMap<&str, String> =
+        let mut by_module: std::collections::BTreeMap<(&str, &str), String> =
             std::collections::BTreeMap::new();
-        for (module, function) in rule.debt_list {
+        for DebtEntry {
+            crate_src,
+            module,
+            function,
+        } in rule.debt_list
+        {
             let block = match function.split_once("::") {
                 Some((type_name, method)) => format!(
                     "pub struct {type_name};\nimpl {type_name} {{\n    pub fn {method}(&self) {{ {mint_expr} }}\n}}\n"
                 ),
                 None => format!("pub fn {function}() {{ {mint_expr} }}\n"),
             };
-            by_module.entry(module).or_default().push_str(&block);
+            by_module
+                .entry((crate_src, module))
+                .or_default()
+                .push_str(&block);
         }
-        for (module, body) in by_module {
-            let relative = format!("src/{}.rs", module.replace("::", "/"));
+        for ((crate_src, module), body) in by_module {
+            let relative = format!("{crate_src}/{}.rs", module.replace("::", "/"));
             write(root, &relative, &body);
         }
         if let Some(marker) = rule.requires_path.filter(|path| !root.join(path).exists()) {
@@ -1559,6 +1588,7 @@ mod tests {
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-package/src",
+            "qsl-eval/src",
             "qsl-route/src",
         ] {
             let dir = tempfile::tempdir().unwrap();
@@ -1656,22 +1686,23 @@ mod tests {
     }
 
     /// TC-157 step 6: a shipped mint in a function on the debt list is
-    /// reported as debt and does not fail T12-B.
+    /// reported as debt and does not fail T12-B. The entry names its crate
+    /// (QSL-183): the same module and function in another crate is a
+    /// violation, not debt.
     #[trace("TC-157", "FR-060-AC-4")]
     #[test]
     fn tc_157_debt_list_mint_is_reported_as_debt() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        let rule = &RULES[1]; // T12-B: debt list has (value::expression::family, decode_v2)
+        // T12-B: debt list has qsl-eval's (value::expression::family, decode_v2)
+        let rule = &RULES[1];
         seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
         // Overwrite `value::expression::family`'s seeded baseline with a
         // shaped-like-the-real-thing mint -- T12-B's debt list has exactly
         // one entry in this module, so nothing else to preserve.
-        write(
-            dir.path(),
-            "src/value/expression/family.rs",
-            "fn decode_v2(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
-        );
+        let mint =
+            "fn decode_v2(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n";
+        write(dir.path(), "qsl-eval/src/value/expression/family.rs", mint);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
         assert!(
@@ -1689,6 +1720,22 @@ mod tests {
             outcome.stale_debt_entries
         );
         assert!(outcome.passed());
+
+        // The same module path and function in the root crate is not the
+        // listed debt.
+        write(dir.path(), "src/value/expression/family.rs", mint);
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(
+            outcome
+                .violations
+                .iter()
+                .map(|site| (site.module.as_str(), site.function.as_str()))
+                .collect::<Vec<_>>(),
+            [("value::expression::family", "decode_v2")],
+            "{:?}",
+            outcome.violations
+        );
+        assert!(!outcome.passed());
     }
 
     /// TC-157 step 6: a debt-list entry whose function no longer mints
@@ -1706,16 +1753,18 @@ mod tests {
         );
         write(
             dir.path(),
-            "src/value/expression/family.rs",
+            "qsl-eval/src/value/expression/family.rs",
             "fn decode_v2() -> u8 {\n    0\n}\n",
         );
         let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty());
         assert!(outcome.debt.is_empty());
-        assert!(outcome
-            .stale_debt_entries
-            .contains(&("value::expression::family", "decode_v2")));
+        assert!(outcome.stale_debt_entries.contains(&DebtEntry {
+            crate_src: "qsl-eval/src",
+            module: "value::expression::family",
+            function: "decode_v2",
+        }));
         assert!(!outcome.passed());
     }
 
@@ -1934,7 +1983,7 @@ mod tests {
 
     /// TC-157 step 5: T12-D scans shipped code only -- a `PopulationId`
     /// built from literal bytes inside `#[cfg(test)] mod tests` outside
-    /// `model` (the shape at `src/value/expression/evaluate.rs`) is not a
+    /// `model` (the shape at `qsl-eval/src/value/expression/evaluate.rs`) is not a
     /// mint, and T12-D passes with zero call sites.
     #[trace("TC-157", "FR-060-AC-4")]
     #[test]
@@ -1948,7 +1997,7 @@ mod tests {
         );
         write(
             dir.path(),
-            "src/value/expression/evaluate.rs",
+            "qsl-eval/src/value/expression/evaluate.rs",
             "pub fn run() {}\n#[cfg(test)]\nmod tests {\n    fn f() {\n        let _ = PopulationId::from_digest([7; 32]);\n    }\n}\n",
         );
         let rule = &RULES[3]; // T12-D

@@ -66,12 +66,16 @@ fn workspace_root() -> PathBuf {
 /// Every regular `.rs` file under `root`, relative to `workspace_root`,
 /// excluding `exclude_prefixes` (checked against the relative path).
 fn source_files(workspace_root: &Path, exclude_prefixes: &[&str]) -> Vec<String> {
-    // This crate's `src/` and its layer-3 crate's (QSL-181 moved `check`,
-    // `model` and `library` into `qsl-semantics`).
+    // This crate's `src/` and its layer-3, layer-4 and layer-5 crates'
+    // (QSL-181 moved `check`, `model` and `library` into `qsl-semantics`,
+    // QSL-182 the S4 `CheckedPackage` into `qsl-package`, and QSL-183 the S6a
+    // evaluator into `qsl-eval`).
     let mut files = Vec::new();
     let mut pending = vec![
         workspace_root.join("src"),
         workspace_root.join("qsl-semantics/src"),
+        workspace_root.join("qsl-package/src"),
+        workspace_root.join("qsl-eval/src"),
     ];
     while let Some(dir) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {

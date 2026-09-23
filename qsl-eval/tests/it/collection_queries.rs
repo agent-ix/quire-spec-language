@@ -3,6 +3,7 @@
 //! checker and evaluator boundary (FR-145).
 
 use ix_trace_rs::trace;
+use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
@@ -23,7 +24,6 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
-use qsl_eval::value::CheckedPackageEvaluation;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

@@ -243,9 +243,10 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                         }
                     ));
                 }
-                for (module, function) in &outcome.stale_debt_entries {
+                for entry in &outcome.stale_debt_entries {
                     summary.push_str(&format!(
-                        "    stale debt entry, no remaining mint: {module}, fn {function}\n"
+                        "    stale debt entry, no remaining mint: {} {}, fn {}\n",
+                        entry.crate_src, entry.module, entry.function
                     ));
                 }
             }
@@ -377,6 +378,7 @@ mod tests {
             "qsl-semantics/src",
             "qsl-package/src",
             "qsl-route/src",
+            "qsl-eval/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }

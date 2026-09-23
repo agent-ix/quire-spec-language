@@ -12,6 +12,7 @@ use std::cell::Cell;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss};
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
@@ -49,9 +50,6 @@ use quire_exact::{
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
-};
-use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

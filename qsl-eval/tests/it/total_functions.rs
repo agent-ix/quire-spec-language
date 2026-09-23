@@ -3,6 +3,9 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
+use qsl_eval::value::{
+    CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
+};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
@@ -26,9 +29,6 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, RationalDomain, Value
 use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
-};
-use qsl_eval::value::{
-    CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};

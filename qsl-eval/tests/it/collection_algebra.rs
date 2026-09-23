@@ -579,6 +579,7 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
 /// Rows that need the FR-145/FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
+    use qsl_eval::value::CheckedPackageEvaluation;
     use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
@@ -591,7 +592,6 @@ mod checked {
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause};
     use quire_exact::NODE_KEY_DOMAIN;
-    use qsl_eval::value::CheckedPackageEvaluation;
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

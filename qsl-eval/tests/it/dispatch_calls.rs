@@ -14,6 +14,10 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use qsl_eval::value::{
+    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
+    QualifiedName,
+};
 use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
 };
@@ -46,10 +50,6 @@ use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
-use qsl_eval::value::{
-    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
-    QualifiedName,
-};
 
 // This crate's own `value::Origin` (imported above) is a different type
 // from `quire_exact::Origin` -- `CheckedPackage::occurrence` takes the
