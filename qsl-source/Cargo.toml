@@ -1,0 +1,43 @@
+[package]
+name = "qsl-source"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer I3: the S0 intake adapter over Quire's pinned Rust extractor -- verified extracted-fence bytes plus their document source map."
+
+[features]
+default = []
+# The whole adapter is behind this feature; without it the crate is empty and
+# names no dependency. This feature is what lets QSL code name quire-rs; the
+# root crate's own `quire-extraction` feature enables it.
+quire-extraction = [
+    "dep:qsl-foundation",
+    "dep:quire-rs",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:thiserror",
+]
+
+[dependencies]
+qsl-foundation = { path = "../qsl-foundation", optional = true }
+quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
+serde = { version = "=1.0.228", features = ["derive"], optional = true }
+serde_json = { version = "=1.0.151", optional = true }
+thiserror = { version = "=2.0.20", optional = true }
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+required-features = ["quire-extraction"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

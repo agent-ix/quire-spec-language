@@ -131,7 +131,6 @@ mod parser;
 mod protocol_artifact;
 mod protocol_number;
 mod quantities;
-mod quire_source;
 mod route_registry;
 mod runtime_evaluation;
 mod runtime_execution;

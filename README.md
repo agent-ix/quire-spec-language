@@ -306,11 +306,12 @@ native diagnostic or package path; the API does not manufacture source wrappers
 or change extraction availability. Run `cargo test --test it mapped::` for the
 mapped parent workflow and stage refusals.
 
-With `quire-extraction`, `quire_source::extract(original, context, selection,
-limits)` calls Quire's actual pinned Rust extractor and returns an
-`ExtractedSource`: the verified native body in its document source map, the
-clause's declared language and Quire's unchanged result. Supply a digest-verified
-original Source, a loaded Quire SemanticContext and a `Selection` of the authored
+With `quire-extraction`, `qsl_source::extract(original, context, selection,
+limits)` from the `qsl-source` crate calls Quire's actual pinned Rust extractor
+and returns an `ExtractedSource`: the verified native body in its document
+source map, the clause's declared language and Quire's unchanged result. Supply
+a digest-verified original Source, a loaded Quire SemanticContext (the `run`
+command uses `qsl_source::clause_context`) and a `Selection` of the authored
 clause ID, package and body identity. The adapter checks source coordinates and
 exact bytes, including Quire's omitted final LF on CRLF input, before building
 the source map. It does not compile. The `run` command's extraction path
@@ -318,8 +319,8 @@ the source map. It does not compile. The `run` command's extraction path
 retain Quire's original clause population, availability and diagnostics on
 success and on refusal. Input is bounded to 1 MiB and 4096 lines before
 extraction. Extraction cases run with
-`cargo test --features quire-extraction --test it quire_source::`;
-[the tests](tests/it/quire_source.rs) show context and selection construction.
+`cargo test -p qsl-source --features quire-extraction`;
+[the tests](qsl-source/tests/it/quire_source.rs) show context and selection construction.
 C's existing-repository CLI/wire adoption remains separate from this working
 compiler-side Rust integration.
 
