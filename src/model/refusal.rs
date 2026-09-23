@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
+use qsl_foundation::diagnostic::CatalogCode;
 use qsl_foundation::source::LocatedSpan;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
@@ -708,6 +709,89 @@ impl ModelRefusalCause {
     }
 }
 
+impl ModelRefusalCause {
+    /// ADR-013 O-17: this cause's `quire.native.diagnostics/v1` catalog
+    /// code, with [`Self::as_str`] as its cause tag. One exhaustive match,
+    /// one arm per catalog code and no `_` arm, read from the cause alone.
+    /// `UnsortedDerivation` and `DuplicatePath` share `UnsortedView`'s code:
+    /// all three are TC-195 N10 well-formedness refusals of an effective
+    /// declaration or view.
+    pub fn catalog_code(&self) -> CatalogCode {
+        let code = match self {
+            Self::UnknownOriginal { .. }
+            | Self::UnknownCandidate { .. }
+            | Self::UnknownOwner { .. }
+            | Self::UnknownGeneral { .. }
+            | Self::UnknownValueType { .. }
+            | Self::UnknownFieldWrite { .. }
+            | Self::UnknownEffectType { .. }
+            | Self::UnknownMember { .. }
+            | Self::UnknownRelationship { .. }
+            | Self::UnknownSourcePort { .. }
+            | Self::UnknownTargetPort { .. }
+            | Self::UnknownRedefining { .. }
+            | Self::UnknownRedefined { .. }
+            | Self::UnknownSubsetting { .. }
+            | Self::UnknownSubsetted { .. }
+            | Self::UnknownComponent { .. }
+            | Self::UnknownEndpoint { .. } => "dangling_reference",
+            Self::UnsortedView { .. }
+            | Self::UnsortedDerivation { .. }
+            | Self::DuplicatePath { .. }
+            | Self::SpecializationCycle { .. }
+            | Self::DerivationConflict { .. }
+            | Self::UnsuppliedProducerRecord
+            | Self::RedefinitionTarget { .. }
+            | Self::WrongExport
+            | Self::ConflictingBinding { .. }
+            | Self::PortDirection { .. }
+            | Self::MalformedDeclaration
+            | Self::IntakeMalformedDeclaration { .. }
+            | Self::ReservedPackageIdentity { .. }
+            | Self::WrongModelSelection { .. } => "invalid_model_binding",
+            Self::DispatchFamilyDepth { .. }
+            | Self::GeneralizationDepthExceeded { .. }
+            | Self::ConformanceDepth { .. } => "resource_exhausted",
+            Self::UnclosedMethodSet
+            | Self::IncompleteScope { .. }
+            | Self::UnclosedSubtypes { .. } => "incomplete_population",
+            Self::NoApplicable | Self::MultipleUndominated => "ambiguous_dispatch",
+            Self::VarianceResult
+            | Self::MultiplicityNarrowing { .. }
+            | Self::SubsettingType { .. }
+            | Self::TypeMismatch
+            | Self::VarianceParameter { .. }
+            | Self::EffectEscape { .. }
+            | Self::OperatorIneligible => "ill_typed",
+            Self::UnprovedRefinement => "undefined_expression",
+            Self::ForeignModelSelection { .. }
+            | Self::ForeignType { .. }
+            | Self::ForeignUniverse { .. } => "foreign_reference",
+            Self::AbstractInstance { .. }
+            | Self::ConflictingIdentity { .. }
+            | Self::AbsentKey { .. }
+            | Self::DuplicateMember { .. }
+            | Self::SubsettingViolation { .. } => "invalid_runtime_input",
+            Self::UnknownPopulationMemberType { .. } => "missing_declaration",
+            Self::AboveMaximum { .. } => "cardinality_out_of_bound",
+            Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
+            Self::DigestDomainMismatch { .. } | Self::ByteDigestMismatch { .. } => {
+                "stale_dependency"
+            }
+            Self::MissingSelection { .. } => "missing_import",
+            Self::DuplicateSelection { .. } => "duplicate_selection",
+            Self::FrameCreateOutsideGrant { .. }
+            | Self::FrameTypeChanged { .. }
+            | Self::FrameDeleteOutsideGrant { .. }
+            | Self::FrameFieldWriteOutsideGrant { .. } => "frame_violation",
+            Self::DuplicateDeclaredIdentity { .. }
+            | Self::DeclaredCreateDeleteOverlap { .. }
+            | Self::DeclaredDeltaMismatch { .. } => "population_delta_mismatch",
+        };
+        CatalogCode::new(code, self.as_str())
+    }
+}
+
 impl std::fmt::Display for ModelRefusalCause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -715,7 +799,7 @@ impl std::fmt::Display for ModelRefusalCause {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use serde_json::Value;
 
     use super::{ModelRefusalCause, OfferedSelection};
@@ -738,6 +822,256 @@ mod tests {
             ordered: false,
             unique: true,
         }
+    }
+
+    /// One sample of every [`ModelRefusalCause`] variant. The macro builds
+    /// an exhaustive match over the listed variant names with no `_` arm,
+    /// so a variant left out of the list fails to compile (E0004), and it
+    /// asserts each sample is the variant it is listed under.
+    pub(crate) fn exhaustive_samples() -> Vec<ModelRefusalCause> {
+        macro_rules! samples {
+            ($($variant:ident => $sample:expr),* $(,)?) => {{
+                fn covered(cause: &ModelRefusalCause) {
+                    match cause {
+                        $(ModelRefusalCause::$variant { .. } => {})*
+                    }
+                }
+                vec![$({
+                    let sample = $sample;
+                    covered(&sample);
+                    assert!(
+                        matches!(sample, ModelRefusalCause::$variant { .. }),
+                        "sample {sample:?} is listed under {}",
+                        stringify!($variant)
+                    );
+                    sample
+                }),*]
+            }};
+        }
+        samples![
+        DispatchFamilyDepth => ModelRefusalCause::DispatchFamilyDepth { original: key("p") },
+        UnclosedMethodSet => ModelRefusalCause::UnclosedMethodSet,
+        UnknownOriginal => ModelRefusalCause::UnknownOriginal { original: key("p") },
+        UnknownCandidate => ModelRefusalCause::UnknownCandidate {
+            candidate: key("p"),
+        },
+        NoApplicable => ModelRefusalCause::NoApplicable,
+        MultipleUndominated => ModelRefusalCause::MultipleUndominated,
+        UnsortedView => ModelRefusalCause::UnsortedView { at: effective_id() },
+        GeneralizationDepthExceeded => ModelRefusalCause::GeneralizationDepthExceeded { root: key("p") },
+        SpecializationCycle => ModelRefusalCause::SpecializationCycle {
+            ancestor: key("p"),
+            via: key("p"),
+        },
+        UnknownOwner => ModelRefusalCause::UnknownOwner {
+            member: key("p"),
+            owner: key("p"),
+        },
+        UnknownGeneral => ModelRefusalCause::UnknownGeneral {
+            supertype: key("p"),
+            general: key("p"),
+        },
+        UnknownValueType => ModelRefusalCause::UnknownValueType {
+            operation: key("p"),
+            parameter: Some(key("p")),
+            value_type: ValueTypeRef::Package(key("p")),
+        },
+        UnknownFieldWrite => ModelRefusalCause::UnknownFieldWrite {
+            operation: key("p"),
+            field: key("p"),
+        },
+        UnknownEffectType => ModelRefusalCause::UnknownEffectType {
+            operation: key("p"),
+            type_name: key("p"),
+        },
+        UnknownMember => ModelRefusalCause::UnknownMember {
+            record: key("p"),
+            member: key("p"),
+        },
+        DerivationConflict => ModelRefusalCause::DerivationConflict {
+            type_: key("p"),
+            member: key("p"),
+            redefiners: vec![key("p")],
+        },
+        UnsuppliedProducerRecord => ModelRefusalCause::UnsuppliedProducerRecord,
+        ConformanceDepth => ModelRefusalCause::ConformanceDepth { from: key("p") },
+        VarianceResult => ModelRefusalCause::VarianceResult,
+        MultiplicityNarrowing => ModelRefusalCause::MultiplicityNarrowing {
+            from: multiplicity(),
+            to: multiplicity(),
+        },
+        SubsettingType => ModelRefusalCause::SubsettingType {
+            subsetting: ValueTypeRef::Package(key("p")),
+            subsetted: ValueTypeRef::Package(key("p")),
+        },
+        TypeMismatch => ModelRefusalCause::TypeMismatch,
+        VarianceParameter => ModelRefusalCause::VarianceParameter {
+            index: 0,
+            declared: ValueTypeRef::Package(key("p")),
+            redefined: ValueTypeRef::Package(key("p")),
+        },
+        EffectEscape => ModelRefusalCause::EffectEscape { field: key("p") },
+        UnprovedRefinement => ModelRefusalCause::UnprovedRefinement,
+        RedefinitionTarget => ModelRefusalCause::RedefinitionTarget {
+            redefiners: vec![key("p")],
+            target: key("p"),
+        },
+        ForeignModelSelection => ModelRefusalCause::ForeignModelSelection {
+            actual: OfferedSelection::Document(String::new()),
+            expected: crate::model::domain_package::DomainPackageRef::fixture("p"),
+        },
+        IncompleteScope => ModelRefusalCause::IncompleteScope {
+            selection: String::new(),
+        },
+        UnclosedSubtypes => ModelRefusalCause::UnclosedSubtypes {
+            selection: String::new(),
+            type_name: Some(key("p")),
+        },
+        ForeignType => ModelRefusalCause::ForeignType {
+            member: String::new(),
+            type_name: key("p"),
+        },
+        AbstractInstance => ModelRefusalCause::AbstractInstance {
+            member: String::new(),
+            abstract_type: key("p"),
+        },
+        UnknownPopulationMemberType => ModelRefusalCause::UnknownPopulationMemberType {
+            population: key("p"),
+            type_name: key("p"),
+        },
+        ConflictingIdentity => ModelRefusalCause::ConflictingIdentity {
+            object: String::new(),
+            existing_type: effective_id(),
+            declared_type: effective_id(),
+        },
+        OperatorIneligible => ModelRefusalCause::OperatorIneligible,
+        AboveMaximum => ModelRefusalCause::AboveMaximum {
+            selected: 0,
+            maximum: 0,
+        },
+        ForeignUniverse => ModelRefusalCause::ForeignUniverse {
+            actual: effective_id().as_bytes().to_vec(),
+            expected: effective_id(),
+        },
+        AbsentKey => ModelRefusalCause::AbsentKey { key: Vec::new() },
+        WrongExport => ModelRefusalCause::WrongExport,
+        ConflictingBinding => ModelRefusalCause::ConflictingBinding { key: key("p") },
+        UnknownRelationship => ModelRefusalCause::UnknownRelationship {
+            relationship: key("p"),
+        },
+        UnknownSourcePort => ModelRefusalCause::UnknownSourcePort { port: key("p") },
+        UnknownTargetPort => ModelRefusalCause::UnknownTargetPort { port: key("p") },
+        PortDirection => ModelRefusalCause::PortDirection {
+            source: key("p"),
+            target: key("p"),
+        },
+        UnknownRedefining => ModelRefusalCause::UnknownRedefining { member: key("p") },
+        UnknownRedefined => ModelRefusalCause::UnknownRedefined { member: key("p") },
+        UnknownSubsetting => ModelRefusalCause::UnknownSubsetting { member: key("p") },
+        UnknownSubsetted => ModelRefusalCause::UnknownSubsetted { member: key("p") },
+        UnknownComponent => ModelRefusalCause::UnknownComponent {
+            item: key("p"),
+            missing: key("p"),
+        },
+        UnknownEndpoint => ModelRefusalCause::UnknownEndpoint {
+            end: "source",
+            relationship: key("p"),
+            missing: key("p"),
+        },
+        UnsortedDerivation => ModelRefusalCause::UnsortedDerivation {
+            original: key("p"),
+            position: 0,
+            ordinal: 0,
+        },
+        DuplicatePath => ModelRefusalCause::DuplicatePath {
+            original: key("p"),
+            earlier: 0,
+            later: 0,
+        },
+        MalformedDeclaration => ModelRefusalCause::MalformedDeclaration,
+        IntakeMalformedDeclaration => ModelRefusalCause::IntakeMalformedDeclaration {
+            node: String::new(),
+            artifact: Some(String::new()),
+            span: Some(LocatedSpan {
+                start: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+                end: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+            }),
+        },
+        UnsupportedDeclarationForm => ModelRefusalCause::UnsupportedDeclarationForm {
+            node: String::new(),
+            what: String::new(),
+        },
+        DigestDomainMismatch => ModelRefusalCause::DigestDomainMismatch {
+            expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
+            actual: String::new(),
+        },
+        MissingSelection => ModelRefusalCause::MissingSelection {
+            selection: DomainPackageRef::fixture("p"),
+        },
+        ByteDigestMismatch => ModelRefusalCause::ByteDigestMismatch {
+            expected: [0; 32],
+            actual: [0; 32],
+        },
+        WrongModelSelection => ModelRefusalCause::WrongModelSelection {
+            selection: DomainPackageRef::fixture("p"),
+            actual_identity: String::new(),
+            actual_version: String::new(),
+        },
+        ReservedPackageIdentity => ModelRefusalCause::ReservedPackageIdentity {
+            selection: DomainPackageRef::fixture("p"),
+        },
+        DuplicateSelection => ModelRefusalCause::DuplicateSelection {
+            identity: String::new(),
+            already_selected_version: String::new(),
+            requested_version: String::new(),
+        },
+        DuplicateMember => ModelRefusalCause::DuplicateMember {
+            object: String::new(),
+            field: key("p"),
+        },
+        SubsettingViolation => ModelRefusalCause::SubsettingViolation {
+            object: String::new(),
+            subsetting: key("p"),
+            subsetted: key("p"),
+        },
+        FrameCreateOutsideGrant => ModelRefusalCause::FrameCreateOutsideGrant {
+            object: String::new(),
+            type_name: key("p"),
+        },
+        FrameTypeChanged => ModelRefusalCause::FrameTypeChanged {
+            object: String::new(),
+            pre_type: key("p"),
+            post_type: key("p"),
+        },
+        FrameDeleteOutsideGrant => ModelRefusalCause::FrameDeleteOutsideGrant {
+            object: String::new(),
+            type_name: key("p"),
+        },
+        FrameFieldWriteOutsideGrant => ModelRefusalCause::FrameFieldWriteOutsideGrant {
+            object: String::new(),
+            field: key("p"),
+        },
+        DuplicateDeclaredIdentity => ModelRefusalCause::DuplicateDeclaredIdentity {
+            identity: String::new(),
+        },
+        DeclaredCreateDeleteOverlap => ModelRefusalCause::DeclaredCreateDeleteOverlap {
+            identity: String::new(),
+        },
+        DeclaredDeltaMismatch => ModelRefusalCause::DeclaredDeltaMismatch {
+            declared_created: std::collections::BTreeSet::new(),
+            declared_deleted: std::collections::BTreeSet::new(),
+            computed_created: std::collections::BTreeSet::new(),
+            computed_deleted: std::collections::BTreeSet::new(),
+        },
+        ]
     }
 
     /// #141 review finding 1, #163 re-review fix 4: the wire spellings had
@@ -829,230 +1163,7 @@ mod tests {
 
     #[test]
     fn as_str_covers_every_variant_with_its_original_tag() {
-        let cases: Vec<ModelRefusalCause> = vec![
-            ModelRefusalCause::DispatchFamilyDepth { original: key("p") },
-            ModelRefusalCause::UnclosedMethodSet,
-            ModelRefusalCause::UnknownOriginal { original: key("p") },
-            ModelRefusalCause::UnknownCandidate {
-                candidate: key("p"),
-            },
-            ModelRefusalCause::NoApplicable,
-            ModelRefusalCause::MultipleUndominated,
-            ModelRefusalCause::UnsortedView { at: effective_id() },
-            ModelRefusalCause::GeneralizationDepthExceeded { root: key("p") },
-            ModelRefusalCause::SpecializationCycle {
-                ancestor: key("p"),
-                via: key("p"),
-            },
-            ModelRefusalCause::UnknownOwner {
-                member: key("p"),
-                owner: key("p"),
-            },
-            ModelRefusalCause::UnknownGeneral {
-                supertype: key("p"),
-                general: key("p"),
-            },
-            ModelRefusalCause::UnknownValueType {
-                operation: key("p"),
-                parameter: Some(key("p")),
-                value_type: ValueTypeRef::Package(key("p")),
-            },
-            ModelRefusalCause::UnknownFieldWrite {
-                operation: key("p"),
-                field: key("p"),
-            },
-            ModelRefusalCause::UnknownEffectType {
-                operation: key("p"),
-                type_name: key("p"),
-            },
-            ModelRefusalCause::UnknownMember {
-                record: key("p"),
-                member: key("p"),
-            },
-            ModelRefusalCause::DerivationConflict {
-                type_: key("p"),
-                member: key("p"),
-                redefiners: vec![key("p")],
-            },
-            ModelRefusalCause::UnsuppliedProducerRecord,
-            ModelRefusalCause::ConformanceDepth { from: key("p") },
-            ModelRefusalCause::VarianceResult,
-            ModelRefusalCause::MultiplicityNarrowing {
-                from: multiplicity(),
-                to: multiplicity(),
-            },
-            ModelRefusalCause::SubsettingType {
-                subsetting: ValueTypeRef::Package(key("p")),
-                subsetted: ValueTypeRef::Package(key("p")),
-            },
-            ModelRefusalCause::TypeMismatch,
-            ModelRefusalCause::VarianceParameter {
-                index: 0,
-                declared: ValueTypeRef::Package(key("p")),
-                redefined: ValueTypeRef::Package(key("p")),
-            },
-            ModelRefusalCause::EffectEscape { field: key("p") },
-            ModelRefusalCause::UnprovedRefinement,
-            ModelRefusalCause::RedefinitionTarget {
-                redefiners: vec![key("p")],
-                target: key("p"),
-            },
-            ModelRefusalCause::ForeignModelSelection {
-                actual: OfferedSelection::Document(String::new()),
-                expected: crate::model::domain_package::DomainPackageRef::fixture("p"),
-            },
-            ModelRefusalCause::IncompleteScope {
-                selection: String::new(),
-            },
-            ModelRefusalCause::UnclosedSubtypes {
-                selection: String::new(),
-                type_name: Some(key("p")),
-            },
-            ModelRefusalCause::ForeignType {
-                member: String::new(),
-                type_name: key("p"),
-            },
-            ModelRefusalCause::AbstractInstance {
-                member: String::new(),
-                abstract_type: key("p"),
-            },
-            ModelRefusalCause::UnknownPopulationMemberType {
-                population: key("p"),
-                type_name: key("p"),
-            },
-            ModelRefusalCause::ConflictingIdentity {
-                object: String::new(),
-                existing_type: effective_id(),
-                declared_type: effective_id(),
-            },
-            ModelRefusalCause::OperatorIneligible,
-            ModelRefusalCause::AboveMaximum {
-                selected: 0,
-                maximum: 0,
-            },
-            ModelRefusalCause::ForeignUniverse {
-                actual: effective_id().as_bytes().to_vec(),
-                expected: effective_id(),
-            },
-            ModelRefusalCause::AbsentKey { key: Vec::new() },
-            ModelRefusalCause::WrongExport,
-            ModelRefusalCause::ConflictingBinding { key: key("p") },
-            ModelRefusalCause::UnknownRelationship {
-                relationship: key("p"),
-            },
-            ModelRefusalCause::UnknownSourcePort { port: key("p") },
-            ModelRefusalCause::UnknownTargetPort { port: key("p") },
-            ModelRefusalCause::PortDirection {
-                source: key("p"),
-                target: key("p"),
-            },
-            ModelRefusalCause::UnknownRedefining { member: key("p") },
-            ModelRefusalCause::UnknownRedefined { member: key("p") },
-            ModelRefusalCause::UnknownSubsetting { member: key("p") },
-            ModelRefusalCause::UnknownSubsetted { member: key("p") },
-            ModelRefusalCause::UnknownComponent {
-                item: key("p"),
-                missing: key("p"),
-            },
-            ModelRefusalCause::UnknownEndpoint {
-                end: "source",
-                relationship: key("p"),
-                missing: key("p"),
-            },
-            ModelRefusalCause::UnsortedDerivation {
-                original: key("p"),
-                position: 0,
-                ordinal: 0,
-            },
-            ModelRefusalCause::DuplicatePath {
-                original: key("p"),
-                earlier: 0,
-                later: 0,
-            },
-            ModelRefusalCause::MalformedDeclaration,
-            ModelRefusalCause::IntakeMalformedDeclaration {
-                node: String::new(),
-                artifact: Some(String::new()),
-                span: Some(LocatedSpan {
-                    start: Position {
-                        byte: 0,
-                        line: 1,
-                        column: 1,
-                    },
-                    end: Position {
-                        byte: 0,
-                        line: 1,
-                        column: 1,
-                    },
-                }),
-            },
-            ModelRefusalCause::UnsupportedDeclarationForm {
-                node: String::new(),
-                what: String::new(),
-            },
-            ModelRefusalCause::DigestDomainMismatch {
-                expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
-                actual: String::new(),
-            },
-            ModelRefusalCause::MissingSelection {
-                selection: DomainPackageRef::fixture("p"),
-            },
-            ModelRefusalCause::ByteDigestMismatch {
-                expected: [0; 32],
-                actual: [0; 32],
-            },
-            ModelRefusalCause::WrongModelSelection {
-                selection: DomainPackageRef::fixture("p"),
-                actual_identity: String::new(),
-                actual_version: String::new(),
-            },
-            ModelRefusalCause::ReservedPackageIdentity {
-                selection: DomainPackageRef::fixture("p"),
-            },
-            ModelRefusalCause::DuplicateSelection {
-                identity: String::new(),
-                already_selected_version: String::new(),
-                requested_version: String::new(),
-            },
-            ModelRefusalCause::DuplicateMember {
-                object: String::new(),
-                field: key("p"),
-            },
-            ModelRefusalCause::SubsettingViolation {
-                object: String::new(),
-                subsetting: key("p"),
-                subsetted: key("p"),
-            },
-            ModelRefusalCause::FrameCreateOutsideGrant {
-                object: String::new(),
-                type_name: key("p"),
-            },
-            ModelRefusalCause::FrameTypeChanged {
-                object: String::new(),
-                pre_type: key("p"),
-                post_type: key("p"),
-            },
-            ModelRefusalCause::FrameDeleteOutsideGrant {
-                object: String::new(),
-                type_name: key("p"),
-            },
-            ModelRefusalCause::FrameFieldWriteOutsideGrant {
-                object: String::new(),
-                field: key("p"),
-            },
-            ModelRefusalCause::DuplicateDeclaredIdentity {
-                identity: String::new(),
-            },
-            ModelRefusalCause::DeclaredCreateDeleteOverlap {
-                identity: String::new(),
-            },
-            ModelRefusalCause::DeclaredDeltaMismatch {
-                declared_created: std::collections::BTreeSet::new(),
-                declared_deleted: std::collections::BTreeSet::new(),
-                computed_created: std::collections::BTreeSet::new(),
-                computed_deleted: std::collections::BTreeSet::new(),
-            },
-        ];
+        let cases = exhaustive_samples();
         for cause in &cases {
             let expected = expected_tag(cause);
             assert_eq!(cause.as_str(), expected);

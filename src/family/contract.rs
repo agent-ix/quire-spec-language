@@ -339,8 +339,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// `Ok(EvalOutcome::Kernel(o))` for the kernel evaluation outcome
     /// unchanged -- ADR-012 §2 reserves this hook alone for returning a
     /// meter-budget `Incomplete` outcome (`check` never does, FR-062-AC-5),
-    /// which travels here as `EvalOutcome::Kernel(Outcome::Incomplete(_))`
-    /// (QSL-153, once `quire_exact::Meter::charge` was exported) --
+    /// which travels here as `EvalOutcome::Kernel(Outcome::Incomplete(_))` --
     /// `Ok(EvalOutcome::Family(r))` for a family-owned evaluation-time
     /// refusal or undefined result (ADR-013 O-16), or `Err(InternalFault)`
     /// for a broken S6a invariant (FR-090-AC-3), never a `FamilyResult` or

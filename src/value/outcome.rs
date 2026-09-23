@@ -7,12 +7,7 @@
 
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
-use crate::check::WrongSnapshotCause;
-use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
-};
 use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
-use std::collections::BTreeMap;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,17 +34,11 @@ impl<T> Outcome<T> {
 }
 
 impl<T> Outcome<T> {
-    /// FR-090-AC-1: this QSL kernel-copy outcome, mapped onto the real
-    /// `quire_exact::Outcome<T>` `FamilyOutcome::Evaluated`/`EvalOutcome::
-    /// Kernel` carry (ADR-013 O-16). A total, one-to-one re-tagging, not a
-    /// migration: since `ProtocolClause`'s `wrong_snapshot`, the
-    /// model-query refusal, `precondition-false` and `absent-key` are all
-    /// intercepted earlier (`Halt::Family`, `EvalHalt::Family`) and never
-    /// reach this copy's `Refused`/`Undefined` any more (ADR-013 T-6), the
-    /// two enums are already structurally identical to their kernel
-    /// counterparts, member for member -- QSL-131's remaining work is
-    /// deleting this copy in favor of the kernel type directly, not
-    /// reconciling a shape difference.
+    /// FR-090-AC-1: this QSL kernel-copy outcome as the
+    /// `quire_exact::Outcome<T>` that `FamilyOutcome::Evaluated` and
+    /// `EvalOutcome::Kernel` carry (ADR-013 O-16). A total, one-to-one
+    /// re-tagging: the copy's `Undefined` and `Refusal` have exactly the
+    /// kernel's variants. Remaining work: QSL-131 deletes the copy.
     pub(crate) fn into_kernel(self) -> quire_exact::Outcome<T> {
         match self {
             Self::Completed(value) => quire_exact::Outcome::Completed(value),
@@ -138,14 +127,8 @@ impl<T> Outcome<T> {
     }
 }
 
-/// Why an operation is undefined.
-///
-/// **`AbsentKey` and `PreconditionFalse` are removed (ADR-013 T-6,
-/// FR-090-AC-11/AC-12).** Both were family-owned undefined causes sitting
-/// in the kernel copy's own closed set; O-16 keeps model/dispatch
-/// vocabulary out of the kernel entirely. `StateModelUndefined` (this
-/// module) is their real replacement, carried in `FamilyResult::Undefined`
-/// through `CatalogCoded`'s undefined-side counterpart, `UndefinedCoded`.
+/// Why an operation is undefined. Holds kernel reasons only: the
+/// `StateModel` undefined results are family-owned (ADR-013 O-16, T-6).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Undefined {
     /// A divisor is (normalized) zero.
@@ -177,6 +160,10 @@ pub struct PreconditionFailure {
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
+/// Holds kernel causes only: the evaluation-time `wrong_snapshot` and
+/// model-query refusals are family-owned (ADR-013 O-16, T-6), and an
+/// unresolved or mismatched population argument is refused at admission
+/// (`CallFailure::Input`) and is an `InternalFault` inside S6a (ADR-013 T-4).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal {
     /// Strict `exact` rounding would discard a nonzero digit.
@@ -231,26 +218,6 @@ pub enum Refusal {
     /// A checked-program invariant failed during evaluation; unreachable for
     /// an admitted program.
     CheckedInvariant,
-    // `WrongSnapshot(WrongSnapshotCause)` and `Model(ModelQueryRefusal)` are
-    // removed (ADR-013 T-6, FR-090-AC-7/AC-8). Both were evaluation-time
-    // causes wrapped in the kernel-shaped `Refused` outcome; O-16 keeps
-    // family evaluation causes out of the kernel entirely; ADR-013 T-6
-    // states the removal explicitly ("`WrongSnapshotCause` leaves the
-    // kernel `Refusal`... it becomes an evaluation cause of
-    // `ProtocolClause`"). `ProtocolClauseSnapshot` (this module) and
-    // `crate::model::normalize::ModelRefusal`'s own `CatalogCoded` impl are
-    // their real replacements, carried in `FamilyResult::Refused`.
-    //
-    // FR-089-AC-4/AC-5's `UnresolvedPopulation`/`PopulationMaximumMismatch`
-    // variants are also deleted (FR-090-AC-10, ADR-013 T-4): a consumed
-    // `Value::Population(population_id)` that names no recorded binding, or
-    // whose resolved binding's declared maximum differs from the checked
-    // parameter's, is refused at admission (`CallFailure::Input`,
-    // `CheckedPackage::call`/`evaluate`'s own `validate`) before S6a ever
-    // runs; meeting either condition inside S6a (`Machine::
-    // resolve_population`, `expression/evaluate.rs`) is now an
-    // `InternalFault`, never a kernel `Refused` outcome -- so this public
-    // `Refusal` enum has no variant left for any of the three cases.
 }
 
 impl Refusal {
@@ -309,110 +276,6 @@ impl BoundViolation {
             Self::BelowMinimum => "below-minimum",
             Self::AboveMaximum => "above-maximum",
         }
-    }
-}
-
-/// ADR-013 T-6: `ProtocolClause`'s own evaluation-time refusal cause,
-/// carrying [`WrongSnapshotCause`] -- `ProtocolClause` is the family that
-/// owns `Pre` (ADR-012 §4.3; FR-091-AC-8). Defined here, beside
-/// [`crate::value::expression::evaluate::Machine::select_anchor`], the one
-/// evaluation-time production site: only [`WrongSnapshotCause::WrongAnchor`]
-/// is reachable there, since [`WrongSnapshotCause::ForbiddenPreRead`] is a
-/// checking-time-only cause (`crate::check::check`). `catalog_code()`
-/// (TC-387) is exhaustive over both variants regardless, matching O-17's
-/// "one exhaustive `catalog_code()`" for the whole cause type.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ProtocolClauseSnapshot(pub(crate) WrongSnapshotCause);
-
-impl CatalogCoded for ProtocolClauseSnapshot {
-    fn catalog_code(&self) -> CatalogCode {
-        match self.0 {
-            WrongSnapshotCause::WrongAnchor => CatalogCode::new("wrong_snapshot", "wrong-anchor"),
-            WrongSnapshotCause::ForbiddenPreRead => {
-                CatalogCode::new("wrong_snapshot", "forbidden-pre-read")
-            }
-        }
-    }
-}
-
-/// The identity string a catalog payload field carries for a member: every
-/// real population member's own identity is a JSON string
-/// (`crate::value::model_query`'s own doc), rendered lossily only for a
-/// malformed reference no admitted program produces.
-pub(crate) fn identity_string(identity: &[u8]) -> String {
-    String::from_utf8_lossy(identity).into_owned()
-}
-
-/// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
-/// (FR-090-AC-11/AC-12). ADR-012 assigns dispatch, dispatch preconditions
-/// and population lookup to `StateModel` (ADR-012 §1, §3, §4.3), even
-/// though both evaluators run inside `Value`'s own
-/// [`crate::value::expression::evaluate::Machine`] -- layer 5
-/// `value::expression` holds every family's evaluator (ADR-011 §6.1).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum StateModelUndefined {
-    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
-    /// selected method's effective precondition evaluated to `false`.
-    PreconditionFalse(PreconditionFailure),
-    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
-    /// names no member of the population bound to `p`.
-    AbsentKey {
-        /// The population binding `p` is bound to, rendered for the
-        /// catalog payload.
-        binding: String,
-        /// The requested reference key `r`, rendered for the catalog
-        /// payload.
-        key: String,
-    },
-}
-
-impl UndefinedCoded for StateModelUndefined {
-    fn undefined_record(&self) -> UndefinedRecord {
-        match self {
-            Self::PreconditionFalse(failure) => UndefinedRecord {
-                reason: UndefinedReason::PreconditionFalse,
-                fields: BTreeMap::from([
-                    ("operation", failure.operation.clone()),
-                    ("selected", failure.selected.clone()),
-                    (
-                        "receiver",
-                        identity_string(failure.receiver.identity().as_bytes()),
-                    ),
-                ]),
-            },
-            Self::AbsentKey { binding, key } => UndefinedRecord {
-                reason: UndefinedReason::AbsentKey,
-                fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
-            },
-        }
-    }
-}
-
-/// The evaluator's own early-exit carrier, extended with the family-owned
-/// evaluation-time result a handful of `value/*.rs` computations produce
-/// (FR-090-AC-7/AC-8/AC-11/AC-12): [`Stop`] alone cannot carry a
-/// `FamilyResult`, since it stays shared by roughly two dozen kernel-shaped
-/// computations that all convert through [`Outcome::from_stop`] and must
-/// never gain a non-kernel-shaped arm (see [`Stop`]'s own doc). `Machine`'s
-/// crate-private `Halt` converts an `EvalHalt::Family` the same way it
-/// converts an S6a invariant break: intercepted before anything calls
-/// `Outcome::from_stop`.
-pub(crate) enum EvalHalt {
-    /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
-    Stop(Stop),
-    /// A family-owned evaluation-time refusal or undefined result.
-    Family(crate::family::FamilyResult),
-}
-
-impl From<Stop> for EvalHalt {
-    fn from(stop: Stop) -> Self {
-        Self::Stop(stop)
-    }
-}
-
-impl From<Incomplete> for EvalHalt {
-    fn from(record: Incomplete) -> Self {
-        Self::Stop(Stop::Incomplete(record))
     }
 }
 

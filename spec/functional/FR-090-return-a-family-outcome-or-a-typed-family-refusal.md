@@ -493,74 +493,37 @@ undefined cause type.
 
 ## Status
 
-Implemented under QSL-174 (ADR-013 O-16, O-17, T-4, T-6), both open
+Implemented under QSL-174 (ADR-013 O-16, O-17, T-4, T-6), all open
 questions ruled.
 
-**FR-090-OQ-2, ruled option C: `FamilyRefusal`/`FamilyOutcome::Refused` are
-unrepresentable, not built.** A `Relation` declaration never reaches S6a's
-input type today -- `Value` is the only family with a real
-`FamilyContract`/`ReferenceEvaluation` implementation (#214), `Relation` has
-none -- so nothing ever produces `FamilyNotNativelyEvaluable`, and
-`FamilyRefusal` has no other variant to give it a reason to exist. Building
-either now, with no real construction site, would repeat the
-forward-declared-shape hazard `crate::family`'s own module doc already
-removed once. `FamilyOutcome<T>` therefore has exactly two arms,
-`Evaluated(quire_exact::Outcome<T>)` and `FamilyEvaluated(FamilyResult)`
-(`src/family/evaluation.rs`); `EvalOutcome<T> { Kernel(Outcome<T>),
-Family(FamilyResult) }` is the family `evaluate` hook's own return shape.
-QSL-152, which gives `Relation` a real checker, adds `FamilyRefusal` and the
-`Refused` arm together; TC-383, which asserted that unrepresentable arm, is
-removed rather than deferred. TC-385, repurposed to assert S6a's input type
-admits no `Relation` (`spec/tests.md`), stays under QSL-174.
+`FamilyOutcome<T>` has two arms, `Evaluated(quire_exact::Outcome<T>)` and
+`FamilyEvaluated(FamilyResult)`: S6a admits no `Relation`
+(`src/family/evaluation.rs`). `EvalOutcome<T> { Kernel(Outcome<T>),
+Family(FamilyResult) }` is the `evaluate` hook's return shape.
+`Evaluation { outcome: FamilyOutcome<Value>, location, losses }` is
+`CheckedPackage::call`'s and `CheckedPackage::evaluate`'s result
+(`src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
+records `location` and `losses` as owned fields of its `EvaluationEnv` on
+every `Ok` return, and `call` builds the `Evaluation` from them.
 
-**FR-090-OQ-3, ruled option A: `Evaluation` keeps `location`/`losses`
-alongside `FamilyOutcome`.** `CheckedPackage::call` and
-`CheckedPackage::evaluate` return `Result<Evaluation, CallFailure>`, where
-`Evaluation { outcome: FamilyOutcome<Value>, location, losses }`
-(`src/value/expression/{evaluate,mod}.rs`); `location` stays `check::
-Location`. `Machine::run` builds this `Evaluation` directly for every halt,
-kernel or family-owned alike, located at the task that produced it -- the
-same rule a kernel `Stop` already followed. `ValueFunctionFamily::evaluate`'s
-own hook signature stays the ADR-012 §2 fixed shape
-(`Result<EvalOutcome<Observed>, InternalFault>`, no room for either field);
-it writes `location`/`losses` into new `EvaluationEnv` out-params
-(`src/value/expression/family.rs`) that `CheckedPackage::call` reads back,
-the same way it already reads `local_meter`'s charges back.
+The family cause types are defined in `value::expression`
+(`src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
+`StateModelUndefined { PreconditionFalse, AbsentKey { binding, key } }` and
+`ModelQueryRefusal { cause, detail }`, the model-query refusal S6a carries,
+which holds no native-v1 `Code`. `value::model_query` returns a
+model-layer `ModelQueryHalt`, and the evaluator turns it into a
+`FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
+with no `_` arm (`src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
+delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
+O-16 category. `quire_exact::Undefined` and `Refusal`, and QSL's kernel copy
+in `src/value/outcome.rs`, have no `PreconditionFalse`, `AbsentKey`,
+`WrongSnapshot` or `Model` variant.
 
-**Fixed alongside the ruling: `Task::DispatchGuard` carried no location.**
-`Machine::run`'s per-task location lookup (`src/value/expression/
-evaluate.rs`) mapped `Task::DispatchGuard` to `None`, so a dispatched call's
-`precondition-false` always fell back to the whole checked expression's
-root instead of the call itself. `DispatchGuard` now carries the dispatching
-`NodeKind::Dispatch` node's own location, set once at push time; a
-regression test (`tests/it/dispatch_calls.rs`) nests the dispatch call so
-its own locus provably differs from the root's.
+FR-090-AC-1, AC-3 and AC-5 to AC-12 (TC-382, TC-384, TC-386 to TC-391,
+TC-407, TC-408) are `✅ Passed locally`.
 
-FR-090-AC-3, AC-7, AC-10, AC-11 and AC-12 implement (TC-384, TC-388, TC-391,
-TC-407, TC-408; all `✅ Passed locally`): `FamilyResult { Refused(Box<dyn
-CatalogCoded>), Undefined(Box<dyn UndefinedCoded>) }` and F `diagnostic`'s
-`CatalogCoded`/`UndefinedCoded` traits and `UndefinedReason`/`UndefinedRecord`
-types exist (`qsl-foundation/src/diagnostic.rs`). `ProtocolClauseSnapshot`
-(`src/value/outcome.rs`, beside `Machine::select_anchor`) and the
-`StateModel` undefined cause `StateModelUndefined` (same file, beside
-`Machine`'s `DispatchGuard` handling and `model_query.rs`'s lookup) implement
-these traits; `quire_exact::Undefined`/`Refusal` and QSL's own kernel copy in
-`src/value/outcome.rs` have no `PreconditionFalse`, `AbsentKey`,
-`WrongSnapshot` or `Model` variant any more, so a kernel `Outcome::Refused`/
-`Outcome::Undefined` a caller matches through `FamilyOutcome::Evaluated`
-never carries one of these four causes. `CheckedPackage::call`'s and
-`CheckedPackage::evaluate`'s `Err(fault)` paths remain distinct from every
-`Ok(FamilyOutcome::FamilyEvaluated(_))` result, and none of the three S6a
-invariant breaks panics.
-
-FR-090-AC-1, AC-4, AC-5, AC-6, AC-8 and AC-9 (TC-382, TC-385, TC-386, TC-387,
-TC-389, TC-390) remain open, tracked as QSL-174 remaining work. AC-9's layering
-already holds by construction -- `FamilyOutcome`, `FamilyResult` and
-`EvalOutcome` are defined once in the layer-3 `check` core, and no item under
-it names `ProtocolClauseSnapshot`, `ModelRefusal` or `StateModelUndefined` --
-but TC-390's own resolved-import/definition-scan test is not written.
-`ModelRefusal::catalog_code()` reuses the native-v1 `Code` field's `.as_str()`
-(`src/model/normalize.rs`) rather than a hand-authored ~65-arm mapping over
-`ModelRefusalCause`, a deliberate, documented tension with ADR-013 R-09 ("no
-new consumer" of a lane-private type) flagged for later review. F
-`diagnostic`'s catalog-code-to-category map (AC-5) does not exist.
+FR-090-AC-4 (TC-385) is open. Missing: the S6a family kind (`FamilyKind`
+without `Relation`, in the `check` core), an S6a seam dispatch over it with
+one hand-written arm per variant and no `_` arm, and `evaluate` hooks for
+`StateModel`, `SumCase`, `TemporalTrace` and `ProtocolClause`; only `Value`
+implements `ReferenceEvaluation` today. Remaining work: QSL-174.

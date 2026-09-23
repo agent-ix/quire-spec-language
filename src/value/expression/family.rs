@@ -275,15 +275,32 @@ pub(crate) struct EvaluationEnv<'a> {
     pub(crate) objects: &'a super::super::reference::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<super::super::composite::Value>>,
     pub(crate) local_meter: &'a mut quire_exact::Meter,
-    /// Where this hook records the call's own location/losses
-    /// (FR-090-OQ-3, ruled option A): `EvalOutcome` itself has no room for
-    /// either -- ADR-012 §2 fixes it to exactly `Kernel(Outcome<T>)`/
-    /// `Family(FamilyResult)` -- so [`ValueFunctionFamily::evaluate`] writes
-    /// them here for [`super::CheckedPackage::call`] to read back into its
-    /// own `Evaluation`, the same way it already reads `local_meter`'s
-    /// charges back.
-    pub(crate) location: &'a mut Option<crate::check::Location>,
-    pub(crate) losses: &'a mut Vec<super::evaluate::LocatedLoss>,
+    /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
+    /// hook's `EvalOutcome` holds no location, so the hook records it here
+    /// on every `Ok` return and [`super::CheckedPackage::call`] reads it.
+    pub(crate) location: Option<crate::check::Location>,
+    /// The last hook call's `Evaluation.losses`, recorded like `location`.
+    pub(crate) losses: Vec<super::evaluate::LocatedLoss>,
+}
+
+impl<'a> EvaluationEnv<'a> {
+    /// A fresh environment holding `arguments`, with no location and no
+    /// losses recorded.
+    pub(crate) fn new(
+        package: &'a super::CheckedPackage,
+        objects: &'a super::super::reference::ObjectEnvironment,
+        arguments: Vec<super::super::composite::Value>,
+        local_meter: &'a mut quire_exact::Meter,
+    ) -> Self {
+        Self {
+            package,
+            objects,
+            arguments: Some(arguments),
+            local_meter,
+            location: None,
+            losses: Vec::new(),
+        }
+    }
 }
 
 impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
@@ -316,52 +333,50 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
     /// hook's own admission to run at all, versus the work its body does
     /// once running), and neither restates the other's charge.
     ///
-    /// **`Evaluation`'s `location`/`losses` travel through `env`
-    /// (FR-090-OQ-3, ruled option A).** This hook's own return shape is
-    /// fixed to `EvalOutcome<T>::Kernel(quire_exact::Outcome<T>)`/
-    /// `Family(FamilyResult)` (ADR-012 §2), with no room for either, so it
-    /// writes `Machine::run`'s `Evaluation.location`/`.losses` into `env`'s
-    /// own out-params instead; `CheckedPackage::call` reads them back the
-    /// same way it already reads `local_meter`'s charges back.
+    /// **`location` and `losses` are recorded in `env` (FR-090-OQ-3
+    /// ruling).** The hook's `EvalOutcome` holds neither (ADR-012 §2). The
+    /// hook resets both at entry and writes both on every `Ok` return: a
+    /// denied entry charge records `None` and no losses, since no node ran.
+    /// A consumed `env` faults before the meter is charged, so a reused env
+    /// never reports an earlier call's location or losses.
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
         meter: &mut quire_exact::Meter,
     ) -> Result<crate::family::EvalOutcome<Value>, InternalFault> {
+        env.location = None;
+        env.losses.clear();
         // FR-090-AC-3 (ADR-013 T-4): `call` always resolves `checked` from
         // this same package's declarations before calling `evaluate`, so a
         // lookup miss here means the two lookups disagreed -- a broken S6a
         // invariant, never a caller-input refusal (`call` supplied nothing
-        // wrong). Names the identifier `map_evaluate_failure`
-        // (`value::expression::mod.rs`) forwards unchanged.
+        // wrong). `call` forwards it as `CallFailure::Fault`.
         let function = env
             .package
             .graph()
             .function_by_identity(*checked)
             .ok_or_else(|| InternalFault::new("S6a", "checked-identity-not-resolved-by-package"))?;
+        // A second `evaluate` call on the same `env` finds its arguments
+        // already taken: a broken S6a invariant (FR-090-AC-3), with its own
+        // identifier, never a silent zero-argument evaluation. Checked
+        // before the meter charge, so a consumed env always faults.
+        // `CheckedPackage::call` builds a fresh env per call, so this is
+        // unreached through it.
+        let Some(arguments) = env.arguments.take() else {
+            return Err(InternalFault::new(
+                "S6a",
+                "evaluation-environment-arguments-already-consumed",
+            ));
+        };
         if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
             quire_exact::ChargePoint::FunctionCall,
         )) {
+            // Nothing ran: the arguments stay unconsumed.
+            env.arguments = Some(arguments);
             return Ok(crate::family::EvalOutcome::Kernel(
                 quire_exact::Outcome::Incomplete(incomplete),
             ));
         }
-        // PR #262 review (F17): `.take().unwrap_or_default()` used to
-        // silently evaluate with zero arguments if `arguments` were ever
-        // `None` -- which, since `take()` itself leaves it `None`, is
-        // exactly what a second `evaluate` call on the same `env` would
-        // hit, and it would look like a legitimate zero-argument call
-        // rather than the reused-env bug it actually is.
-        // `EvaluationEnv`'s one real constructor (`CheckedPackage::call`)
-        // always builds a fresh env with `Some(arguments)` and calls
-        // `evaluate` exactly once, so this fault is unreached through that
-        // path; it exists so a future second call surfaces as a typed
-        // `Err`, never a wrong, silent answer. FR-090-AC-3: a broken S6a
-        // invariant, its own distinct identifier from the lookup-miss case
-        // above, never a caller-input refusal.
-        let arguments = env.arguments.take().ok_or_else(|| {
-            InternalFault::new("S6a", "evaluation-environment-arguments-already-consumed")
-        })?;
         let callables = super::callables(env.package);
         let evaluation = super::evaluate::Machine::new(
             env.package.graph().scope(),
@@ -371,8 +386,8 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
             env.package.graph().dispatch_tables(),
         )
         .run(function.body, function.slots, arguments)?;
-        *env.location = evaluation.location;
-        *env.losses = evaluation.losses;
+        env.location = evaluation.location;
+        env.losses = evaluation.losses;
         match evaluation.outcome {
             super::FamilyOutcome::Evaluated(outcome) => {
                 Ok(crate::family::EvalOutcome::Kernel(outcome))
@@ -591,16 +606,7 @@ mod family_contract_tests {
         let package = crate::checked_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(Vec::new()),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
             .expect("first call, with real arguments still present, evaluates cleanly");
@@ -628,21 +634,17 @@ mod family_contract_tests {
     /// variant to return in the first place, so the two hooks cannot be
     /// confused by construction, not merely by this test's assertions.
     ///
-    /// **Strengthened (PR #302 review finding 7).** An earlier version only
-    /// asserted the outer `Err(EvaluateFailure::Incomplete(_))` shape (now
-    /// `Ok(EvalOutcome::Kernel(Outcome::Incomplete(_)))`), which a
-    /// mismatched-point or mismatched-counter denial would also satisfy.
-    /// This asserts the denied record's own fields -- `charge_point` is
+    /// The outer `Ok(EvalOutcome::Kernel(Outcome::Incomplete(_)))` shape
+    /// alone would also accept a mismatched-point or mismatched-counter
+    /// denial, so this asserts the denied record's own fields -- `charge_point` is
     /// exactly `FunctionCall` (not some other point this meter happened to
     /// deny), `limit_kind` is `WorkUnits` (the counter `work_units: 0`
     /// actually bounds, not `TextInputBytes` or another counter this fixture
     /// never touches) and `limit` is `0` (the exact configured bound, not
-    /// merely "some limit") -- and that `env.arguments` is still `Some`:
-    /// `evaluate` charges `meter` *before* `env.arguments.take()`
-    /// (`ValueFunctionFamily::evaluate`'s own body), so a denied charge must
-    /// never have consumed them. A version that charged `meter` after
-    /// `take()` would leave `arguments` `None` here while still returning
-    /// `Incomplete` -- this assertion is what would catch that reordering.
+    /// merely "some limit") -- and that `env.arguments` is still `Some`: a
+    /// denied charge runs nothing, so it must not consume them, and the
+    /// recorded location and losses are empty (FR-090: `None` when the
+    /// evaluation stopped before any node ran).
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
@@ -660,16 +662,7 @@ mod family_contract_tests {
         let package = crate::checked_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(Vec::new()),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
         let exhausted_limits = quire_exact::ScalarLimits {
             work_units: 0,
             ..SCALAR_LIMITS_UNLIMITED
@@ -688,6 +681,118 @@ mod family_contract_tests {
         assert!(
             env.arguments.is_some(),
             "a denied charge must not have consumed env.arguments"
+        );
+        assert_eq!(env.location, None);
+        assert!(env.losses.is_empty());
+    }
+
+    /// A rounding decimal division `divide(p, q) = p / q`, whose completed
+    /// call records one loss.
+    fn rounding_division() -> FunctionDeclaration {
+        use crate::value::{DecimalType, RoundingMode};
+        let whole = |lower: i64, upper: i64| {
+            ValueType::Decimal(
+                DecimalType::new(
+                    quire_exact::Integer::from(lower),
+                    quire_exact::Integer::from(upper),
+                    0,
+                    0,
+                    RoundingMode::Exact,
+                )
+                .expect("a scale-0 decimal domain"),
+            )
+        };
+        let result = DecimalType::new(
+            quire_exact::Integer::from(0_i64),
+            quire_exact::Integer::from(10_000_i64),
+            2,
+            2,
+            RoundingMode::NearestEven,
+        )
+        .expect("a scale-2 decimal domain");
+        FunctionDeclaration::new(
+            "divide",
+            vec![
+                ("p".to_owned(), whole(0, 100)),
+                ("q".to_owned(), whole(1, 9)),
+            ],
+            ValueType::Decimal(result),
+            None,
+            Expression::Binary {
+                operator: crate::forms::BinaryOperator::Divide,
+                left: Box::new(Expression::Name("p".to_owned())),
+                right: Box::new(Expression::Name("q".to_owned())),
+            },
+        )
+    }
+
+    /// FR-090 (F6): the hook records `location` and `losses` on every `Ok`
+    /// return, so a reused env never reports an earlier call's losses. A
+    /// first call completes with one loss; a second call on the same env,
+    /// with fresh arguments and an exhausted meter, reports `Incomplete`
+    /// with no location and no losses. A third call, arguments consumed and
+    /// the meter still exhausted, faults rather than report `Incomplete`.
+    #[test]
+    fn a_reused_env_never_reports_an_earlier_calls_losses() {
+        let graph = PackageDeclarations {
+            functions: vec![rounding_division()],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("p / q with q in [1, 9] checks cleanly");
+        let identity = graph
+            .function_identity("divide")
+            .expect("divide is declared in this package");
+        let package = crate::checked_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let decimal = |coefficient: i64| {
+            Value::Decimal(crate::value::Decimal::new(
+                quire_exact::Integer::from(coefficient),
+                0,
+            ))
+        };
+        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut env = EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![decimal(1), decimal(3)],
+            &mut local_meter,
+        );
+        let mut unlimited = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let first = ValueFunctionFamily::evaluate(&identity, &mut env, &mut unlimited)
+            .expect("the first call completes");
+        assert!(
+            matches!(
+                first,
+                EvalOutcome::Kernel(quire_exact::Outcome::Completed(_))
+            ),
+            "{first:?}"
+        );
+        assert_eq!(env.losses.len(), 1, "the division rounds 1/3");
+
+        env.arguments = Some(vec![decimal(1), decimal(3)]);
+        let mut exhausted = Meter::new(quire_exact::ScalarLimits {
+            work_units: 0,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        let second = ValueFunctionFamily::evaluate(&identity, &mut env, &mut exhausted)
+            .expect("a denied entry charge is Ok(Incomplete)");
+        assert!(
+            matches!(
+                second,
+                EvalOutcome::Kernel(quire_exact::Outcome::Incomplete(_))
+            ),
+            "{second:?}"
+        );
+        assert_eq!(env.location, None);
+        assert!(env.losses.is_empty(), "{:?}", env.losses);
+
+        env.arguments = None;
+        let fault = ValueFunctionFamily::evaluate(&identity, &mut env, &mut exhausted)
+            .expect_err("a consumed env faults before the meter is charged");
+        assert_eq!(
+            fault.invariant(),
+            "evaluation-environment-arguments-already-consumed"
         );
     }
 
@@ -731,16 +836,7 @@ mod family_contract_tests {
             ..SCALAR_LIMITS_UNLIMITED
         };
         let mut local_meter = Meter::new(exhausted_limits);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(Vec::new()),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
             .expect(

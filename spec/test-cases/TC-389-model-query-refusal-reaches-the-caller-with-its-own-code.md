@@ -40,7 +40,7 @@ model-query refusal with a kernel collection-bound refusal.
 3. Match the result as `Ok(e)` and `e.outcome` as
    `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, and take
    `cause.catalog_code()`.
-4. Inspect the definition of `ModelRefusal`.
+4. Inspect the definition of the type S6a carries the refusal in.
 
 Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
 
@@ -52,9 +52,11 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
   returns for the same binding.
 - Step 2 does not panic, and its result matches step 3's pattern;
   `e.outcome` is not `FamilyOutcome::Evaluated(Outcome::Refused(_))`.
-- Step 4 finds no `ModelRefusal` field of type
-  `qsl_foundation::diagnostic::Code`.
+- Step 4 finds no field of type `qsl_foundation::diagnostic::Code`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Steps 1 to 3: `model_query_refusal_reaches_the_caller_with_its_own_code`,
+in `tests/it/model_reference_queries.rs`. Step 4:
+`model_query_refusal_carries_no_native_code`, in
+`src/value/expression/causes.rs`.

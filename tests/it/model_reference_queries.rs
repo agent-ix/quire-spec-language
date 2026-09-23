@@ -41,9 +41,10 @@ use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
     CompositeShape, DeclarationCause, Evaluation, Expression, FamilyOutcome, FamilyResult,
-    FieldDeclaration, FunctionDeclaration, IllTypedCause, InputRefusal, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, PackageDeclarations, Presence,
-    QualifiedName, TypeEnvironment, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    FieldDeclaration, FunctionDeclaration, IllTypedCause, InputRefusal, Location, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin,
+    PackageDeclarations, Presence, QualifiedName, TypeEnvironment, UniverseIdentity, Value,
+    ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -574,7 +575,7 @@ fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
 /// Unwraps a family-owned `Refused` result's catalog code -- every
 /// `crate::model::population::lookup`/`allInstances` refusal (foreign
 /// universe, absent-key-refused, type-mismatch on an undeclared model type)
-/// is now carried in `FamilyResult::Refused`, not the kernel's own
+/// is carried in `FamilyResult::Refused`, not the kernel's own
 /// `Outcome::Refused` (ADR-013 O-16).
 fn refused_catalog_code(evaluation: Evaluation) -> qsl_foundation::diagnostic::CatalogCode {
     match evaluation.outcome {
@@ -886,11 +887,25 @@ fn l14_lookup_expression_undefined_mode() {
         SCALAR_UNLIMITED,
         &objects(&scenario),
     );
+    // The lookup is the checked expression's root, so its locus is the
+    // root's: `Origin::Expression`, an empty path.
+    assert_eq!(
+        absent.location,
+        Some(Location {
+            origin: Origin::Expression,
+            path: Vec::new(),
+        })
+    );
     match absent.outcome {
         FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
             let record = cause.undefined_record();
             assert_eq!(record.reason, UndefinedReason::AbsentKey);
             assert_eq!(record.fields.get("key").map(String::as_str), Some("c9"));
+            let binding = scenario.binding.population_id().to_string();
+            assert_eq!(
+                record.fields.get("binding").map(String::as_str),
+                Some(binding.as_str())
+            );
         }
         other => panic!(
             "expected FamilyEvaluated(Undefined(AbsentKey)) for an absent key, got {other:?}"
@@ -3055,4 +3070,70 @@ fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
         meter.admitted_charges().is_empty(),
         "admission refuses before any charge"
     );
+}
+
+/// TC-389 (FR-090-AC-8): a closed `p: Population<A>[1]` whose binding holds
+/// two `A` members. `allInstances<A>(p)` through `CheckedPackage::evaluate`
+/// is `FamilyEvaluated(Refused(cause))` whose catalog code is
+/// `cardinality_out_of_bound`/`above-maximum`, the same code
+/// `model::population::all_instances`'s own `ModelRefusal` gives for that
+/// binding, and never a kernel `Evaluated(Refused(_))`. Step 4 (the carried
+/// refusal holds no native-v1 `Code`) is
+/// `value::expression::causes`'s `model_query_refusal_carries_no_native_code`.
+#[test]
+#[trace("FR-090-AC-8", "TC-389")]
+fn model_query_refusal_reaches_the_caller_with_its_own_code() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("a1", "model.A"), member("a2", "model.A")],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &domain_package,
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    let scenario = Scenario {
+        universe: object_universe(&domain_package).unwrap().identity(),
+        a: type_id(&view, "model.A"),
+        b: type_id(&view, "model.B"),
+        binding,
+    };
+    let package = package(&scenario);
+
+    let mut direct_meter = Meter::new(SCALAR_UNLIMITED);
+    let direct = match quire_spec_language::model::population::all_instances(
+        &scenario.binding,
+        &DeclarationKey::fixture("model.A"),
+        &mut direct_meter,
+    ) {
+        quire_spec_language::model::population::AllInstancesOutcome::Refused(refusal) => {
+            refusal.catalog_code()
+        }
+        other => panic!("expected all_instances to refuse two members above [0,1], got {other:?}"),
+    };
+
+    let (evaluation, _) = run_family(
+        &package,
+        &[("p", ValueType::Population(1))],
+        &all_instances(ValueType::Reference(node_key(&scenario.a))),
+        vec![population_argument(&scenario)],
+        SCALAR_UNLIMITED,
+        &population_environment(&scenario),
+    );
+    let code = refused_catalog_code(evaluation);
+    assert_eq!(
+        code,
+        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+    );
+    assert_eq!(code, direct);
 }

@@ -1138,11 +1138,9 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
     // expression's own root (`dispatch_expression()` is a bare `self.size()`
     // call, nothing wraps it), so `precondition-false`'s locus is the root
     // location `check_clause_expression` itself uses: `Origin::Expression`,
-    // an empty path. This coincides with the pre-fix fallback
-    // (`Task::DispatchGuard` had no location, so `Machine::run` fell back to
-    // `root.location`), so it does not by itself prove the guard reports its
-    // own locus -- see the sibling test below, which nests the dispatch call
-    // one level deep so the two locations differ.
+    // an empty path. The call is the root here, so this does not by itself
+    // tell the call's locus from the root's -- see the sibling test below,
+    // which nests the dispatch call one level deep so the two differ.
     assert_eq!(
         evaluation.location,
         Some(Location {
@@ -1171,12 +1169,10 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 /// one level inside a wrapping expression (`0 + self.size()`, the dispatch
 /// call as `Binary`'s `right` child, path `[1]`) reports `precondition-
 /// false`'s locus as the dispatch call itself, never the whole checked
-/// clause expression's own root (`Origin::Expression`, path `[]`) --
-/// `Machine::run`'s per-task location lookup previously mapped
-/// `Task::DispatchGuard` to `None`, silently falling back to `root.location`
-/// (`src/value/expression/evaluate.rs`); `DispatchGuard` now carries the
-/// dispatch node's own location, set once, at push time, from the same
-/// `NodeKind::Dispatch` node the D06 tests above dispatch through.
+/// clause expression's own root (`Origin::Expression`, path `[]`).
+/// `DispatchGuard` carries the dispatch node's own location, set at push
+/// time from the `NodeKind::Dispatch` node the D06 tests above dispatch
+/// through (`src/value/expression/evaluate.rs`).
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {

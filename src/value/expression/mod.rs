@@ -11,6 +11,7 @@
 //! [`Meter`], reaching `check`'s checked-output state only
 //! through its public accessors, never through a private field (US-009).
 
+mod causes;
 mod evaluate;
 mod family;
 
@@ -20,17 +21,9 @@ use crate::family::{EvalOutcome, ReferenceEvaluation};
 use evaluate::{Callable, Machine};
 use quire_exact::Meter;
 
-pub use crate::family::FamilyResult;
+pub use crate::family::{FamilyOutcome, FamilyResult};
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
-
-/// FR-090's target S6a result type, monomorphized over `Value`: the
-/// `Evaluated` arm's kernel `Outcome<T>` (ADR-013 O-16) is `Outcome<Value>`
-/// at this crate's one migrated family. `crate::family::FamilyOutcome<T>`
-/// stays generic (`ReferenceEvaluation`'s own hook signature needs it for
-/// every family's own `Observed` type); this alias is [`CheckedPackage::
-/// call`]/[`CheckedPackage::evaluate`]'s own public return type.
-pub type FamilyOutcome = crate::family::FamilyOutcome<Value>;
 
 // ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
 // QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
@@ -256,10 +249,9 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// `Ok(Evaluation { outcome: FamilyOutcome::FamilyEvaluated(r), .. })`
     /// for a family-owned evaluation-time result, or
     /// `Err(CallFailure::Fault(_))` for a broken S6a invariant -- the same
-    /// three outcomes [`Self::evaluate`] returns, since both route through
-    /// the same `ValueFunctionFamily::evaluate` hook (FR-090-OQ-3, ruled
-    /// option A: `location`/`losses` travel on `Evaluation`, read back from
-    /// the hook's own `EvaluationEnv` out-params).
+    /// three outcomes [`Self::evaluate`] returns. `location` and `losses`
+    /// are the ones the `ValueFunctionFamily::evaluate` hook records in its
+    /// `EvaluationEnv` (FR-090-OQ-3 ruling).
     fn call(
         &self,
         function: &QualifiedName,
@@ -270,19 +262,13 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
 
     /// Evaluate a checked expression with `arguments` for its parameters.
     ///
-    /// FR-090's target S6a entry point for a checked clause expression: it
-    /// admits `arguments` before S6a, then returns S6a's `Ok` result
-    /// unchanged -- `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),
-    /// .. })` for the kernel evaluation outcome unchanged
-    /// (`super::outcome::ProtocolClauseSnapshot`'s `wrong_snapshot`, a
-    /// refused model query and a false dispatched precondition never reach
-    /// this arm any more, ADR-013 T-6), or `Ok(Evaluation { outcome:
-    /// FamilyOutcome::FamilyEvaluated(r), .. })` for one of those
-    /// family-owned evaluation-time results (FR-090-AC-7/AC-8/AC-11/AC-12)
-    /// -- and an S6a `Err(InternalFault)` as `Err(CallFailure::Fault(_))`.
-    /// `Machine::run` already returns this method's own target `Evaluation`
-    /// shape (FR-090-OQ-3, ruled option A), so this method forwards it
-    /// unchanged.
+    /// FR-090's S6a entry point for a checked clause expression: it admits
+    /// `arguments` before S6a, then returns S6a's `Ok` result unchanged --
+    /// `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o), .. })` for the
+    /// kernel evaluation outcome, or `Ok(Evaluation { outcome:
+    /// FamilyOutcome::FamilyEvaluated(r), .. })` for a family-owned
+    /// evaluation-time result (FR-090-AC-7, AC-8, AC-11, AC-12) -- and an S6a
+    /// `Err(InternalFault)` as `Err(CallFailure::Fault(_))`.
     fn evaluate(
         &self,
         expression: &CheckedExpression,
@@ -356,16 +342,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // call ran out of budget," regardless of which internal meter
         // denied it.
         let mut contract_meter = Meter::new(*meter.limits());
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = family::EvaluationEnv {
-            package: self,
-            objects,
-            arguments: Some(arguments),
-            local_meter: meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = family::EvaluationEnv::new(self, objects, arguments, meter);
         let outcome = match crate::check::ValueFunctionFamily::evaluate(
             &identity,
             &mut env,
@@ -377,8 +354,8 @@ impl CheckedPackageEvaluation for CheckedPackage {
         };
         Ok(Evaluation {
             outcome,
-            location,
-            losses,
+            location: env.location,
+            losses: env.losses,
         })
     }
 
@@ -474,16 +451,12 @@ mod tests {
         // Steps 2-3: one evaluation environment, carrying the arguments
         // [3], consumed by a first, real S6a call.
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = family::EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(vec![Value::Integer(Integer::from(3_i64))]),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Integer(Integer::from(3_i64))],
+            &mut local_meter,
+        );
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let first =
             crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
@@ -514,16 +487,8 @@ mod tests {
         // function in this package.
         let unknown_identity = NodeKey::from_digest([0xAB; 32]);
         let mut fresh_local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut fresh_location = None;
-        let mut fresh_losses = Vec::new();
-        let mut fresh_env = family::EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(Vec::new()),
-            local_meter: &mut fresh_local_meter,
-            location: &mut fresh_location,
-            losses: &mut fresh_losses,
-        };
+        let mut fresh_env =
+            family::EvaluationEnv::new(&package, &objects, Vec::new(), &mut fresh_local_meter);
         let mut fresh_contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let unknown_fault = crate::check::ValueFunctionFamily::evaluate(
             &unknown_identity,

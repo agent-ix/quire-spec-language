@@ -685,7 +685,7 @@ fn malformed_declarations_refuse_at_admission() {
 /// Rows that need the FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
-    // FR-090: `CheckedPackage::evaluate` now returns `FamilyOutcome`, whose
+    // FR-090: `CheckedPackage::evaluate` returns `FamilyOutcome`, whose
     // `Evaluated` arm carries the kernel `quire_exact::Outcome<T>` (ADR-013
     // O-16), not this crate's own kernel-copy `Outcome`/`Refusal`/
     // `BoundViolation` the outer module's glob import brings in -- these

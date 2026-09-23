@@ -40,25 +40,8 @@ pub(crate) enum EvalOutcome<T> {
     Family(FamilyResult),
 }
 
-/// ADR-013 O-16's S6a seam result.
-///
-/// **Only two of the three design-level arms exist here, by ruling
-/// (FR-090-OQ-2, option C).** `Evaluated`, from a family's own `evaluate`
-/// hook (`EvalOutcome::Kernel`); `FamilyEvaluated`, from the same hook's
-/// `EvalOutcome::Family`. The third design-level arm, `Refused(FamilyRefusal)`
-/// -- "the family does not run here", ADR-013 O-16's rejected-alternatives
-/// discussion -- is unrepresentable, not merely unbuilt: a `Relation`
-/// declaration never enters S6a's input type at all (`Value` is the only
-/// family with a real `FamilyContract`/`ReferenceEvaluation` implementation,
-/// #214; `Relation` has none), so nothing ever produces
-/// `FamilyNotNativelyEvaluable`, and `FamilyRefusal` has no other variant to
-/// give it a reason to exist. Building `FamilyRefusal` and this arm with no
-/// real construction site would repeat the forward-declared-shape hazard
-/// `crate::family`'s own module doc already removed once
-/// (`FamilyContract::package`/`requirements`). The ticket that gives
-/// `Relation` a real checker (QSL-152) adds `FamilyRefusal` and this arm
-/// together, once `Relation` is a real S6a input and `FamilyNotNativelyEvaluable`
-/// has something to refuse.
+/// ADR-013 O-16's S6a seam result. Two arms: S6a's input admits no
+/// `Relation` (FR-090, O-16).
 #[derive(Debug)]
 pub enum FamilyOutcome<T> {
     /// The kernel evaluation outcome, unchanged.

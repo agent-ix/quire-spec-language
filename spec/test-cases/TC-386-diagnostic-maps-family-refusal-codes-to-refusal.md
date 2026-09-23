@@ -44,4 +44,9 @@ Tag the test `#[trace("FR-090-AC-5", "TC-386")]`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Steps 1 and 2: `family_refusal_codes_map_to_category_refusal`,
+in `src/value/expression/causes.rs`, over every `ModelRefusalCause` variant
+(`model::refusal`'s `exhaustive_samples`, which fails to compile when a
+variant is missing). Step 3: `no_crate_below_layer_three_depends_on_the_check_core`,
+in `tests/it/family_outcome_layering.rs`. The map is
+`qsl_foundation::diagnostic::category_of`.

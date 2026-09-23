@@ -24,20 +24,21 @@ use super::super::ieee::{
     evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
 };
 use super::super::key::compare_keys;
-use super::super::model_query::{evaluate_all_instances, evaluate_lookup};
+use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
     OrderingOperator, RationalArithmetic,
 };
-use super::super::outcome::{
-    EvalHalt, Outcome, PreconditionFailure, ProtocolClauseSnapshot, Refusal, StateModelUndefined,
-    Stop, Undefined,
-};
+use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
 use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
+use super::causes::{
+    identity_string, ModelQueryRefusal, ProtocolClauseSnapshot, StateModelUndefined,
+};
+use super::FamilyOutcome;
 use crate::check::{
     Arithmetic, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind, RecordSlot,
     Scope, Slot, Visit, WrongSnapshotCause,
@@ -52,15 +53,13 @@ use quire_exact::{
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome
-/// originated (FR-090-OQ-3, ruled option A: `Evaluation` keeps `outcome`,
-/// `location` and `losses` together; `outcome` is `FamilyOutcome<Value>`, not
-/// the bare kernel `Outcome<Value>`, so a family-owned result also carries a
-/// location). No `Clone`: `FamilyOutcome`'s `FamilyEvaluated` arm holds a
-/// `Box<dyn CatalogCoded>`/`Box<dyn UndefinedCoded>`, neither `Clone`.
+/// originated (FR-090, ruling on FR-090-OQ-3). No `Clone`: `FamilyOutcome`'s
+/// `FamilyEvaluated` arm holds a `Box<dyn CatalogCoded>` or
+/// `Box<dyn UndefinedCoded>`, neither `Clone`.
 #[derive(Debug)]
 pub struct Evaluation {
     /// The outcome.
-    pub outcome: super::FamilyOutcome,
+    pub outcome: FamilyOutcome<Value>,
     /// Where a non-completed outcome originated; `None` when completed.
     pub location: Option<Location>,
     /// The loss records of the operations a completed evaluation performed,
@@ -106,19 +105,16 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
     }
 }
 
-/// `Machine`'s own early-exit carrier: a real evaluator [`Stop`], a
-/// family-owned evaluation-time result (FR-090-AC-7/AC-8/AC-11/AC-12), or an
-/// S6a invariant break neither can represent (PR #334 review round 2,
-/// finding N1). Crate-private to this module alone -- nothing outside
-/// `Machine` ever builds, matches or forwards one. Only [`Machine::run`]
-/// unwraps a `Halt`: its `Fault` arm returns `Err(InternalFault)`, its
-/// `Family` arm becomes `Ok(Evaluation { outcome: FamilyOutcome::
-/// FamilyEvaluated(_), .. })`, located at the current task exactly like a
-/// `Stop` (FR-090-OQ-3), and every `Stop` arm still goes through
-/// [`Self::stopped`]/[`Outcome::from_stop`] exactly as before this change. A
-/// future `Stop`-returning helper, or a new site inside `Machine`, cannot
-/// smuggle a fault into `Outcome::from_stop`'s three real arms: there is no
-/// `Stop` variant left to build.
+/// `Machine`'s own early-exit carrier: an evaluator [`Stop`], a
+/// family-owned evaluation-time result (FR-090-AC-7, AC-8, AC-11, AC-12), or
+/// an S6a invariant break neither can represent. Crate-private to this
+/// module: nothing outside `Machine` builds, matches or forwards one. Only
+/// [`Machine::run`] unwraps a `Halt`: `Fault` returns `Err(InternalFault)`,
+/// `Family` becomes `Ok(Evaluation { outcome: FamilyOutcome::
+/// FamilyEvaluated(_), .. })` located at the current task like a `Stop`
+/// (FR-090-OQ-3), and `Stop` goes through [`Self::stopped`]/
+/// [`Outcome::from_stop`]. No `Stop` variant carries a fault, so no
+/// `Stop`-returning helper can pass one to `Outcome::from_stop`.
 enum Halt {
     /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
     Stop(Stop),
@@ -140,11 +136,21 @@ impl From<Incomplete> for Halt {
     }
 }
 
-impl From<EvalHalt> for Halt {
-    fn from(halt: EvalHalt) -> Self {
+/// FR-090-AC-8, AC-12: a population query's halt as the `StateModel`
+/// family's own evaluation-time result.
+impl From<ModelQueryHalt> for Halt {
+    fn from(halt: ModelQueryHalt) -> Self {
         match halt {
-            EvalHalt::Stop(stop) => Self::Stop(stop),
-            EvalHalt::Family(result) => Self::Family(result),
+            ModelQueryHalt::Stop(stop) => Self::Stop(stop),
+            ModelQueryHalt::Refused(refusal) => Self::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(*refusal),
+            ))),
+            ModelQueryHalt::AbsentKey { population, key } => Self::Family(FamilyResult::Undefined(
+                Box::new(StateModelUndefined::AbsentKey {
+                    binding: population.to_string(),
+                    key: identity_string(&key),
+                }),
+            )),
         }
     }
 }
@@ -364,11 +370,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             if let Err(halt) = self.step(task) {
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
-                    // FR-090-OQ-3 (ruled option A): a family-owned result is
-                    // located exactly like a `Stop`, at the task that
-                    // produced it.
+                    // FR-090-OQ-3 ruling: a family-owned result is located
+                    // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
-                        outcome: super::FamilyOutcome::FamilyEvaluated(result),
+                        outcome: FamilyOutcome::FamilyEvaluated(result),
                         location: Some(location),
                         losses: Vec::new(),
                     }),
@@ -378,7 +383,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
         match (self.values.pop(), self.values.is_empty()) {
             (Some(value), true) => Ok(Evaluation {
-                outcome: super::FamilyOutcome::Evaluated(Outcome::Completed(value).into_kernel()),
+                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value).into_kernel()),
                 location: None,
                 losses: self.losses,
             }),
@@ -388,7 +393,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn stopped(stop: Stop, location: &Location) -> Evaluation {
         Evaluation {
-            outcome: super::FamilyOutcome::Evaluated(Outcome::from_stop(Err(stop)).into_kernel()),
+            outcome: FamilyOutcome::Evaluated(Outcome::from_stop(Err(stop)).into_kernel()),
             location: Some(location.clone()),
             losses: Vec::new(),
         }
@@ -491,9 +496,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     ) -> Result<&'x PopulationBinding, Halt> {
         match self.anchor {
             Anchor::Post => Ok(binding),
-            // ADR-013 T-6/FR-090-AC-7: a `ProtocolClause` family-owned
-            // refusal, carried in `FamilyResult::Refused` -- never the
-            // removed kernel-shaped `Refusal::WrongSnapshot`.
+            // ADR-013 T-6, FR-090-AC-7: a `ProtocolClause` family-owned
+            // refusal.
             Anchor::Pre => binding.pre_anchor().ok_or_else(|| {
                 Halt::Family(FamilyResult::Refused(Box::new(ProtocolClauseSnapshot(
                     WrongSnapshotCause::WrongAnchor,
@@ -611,10 +615,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let holds = self.pop_boolean()?;
                 self.frames.pop().ok_or_else(invariant)?;
                 if !holds {
-                    // ADR-013 O-16/FR-090-AC-11: a `StateModel` family-owned
-                    // undefined result, carried in `FamilyResult::Undefined`
-                    // -- never the removed kernel-shaped
-                    // `Undefined::PreconditionFalse`.
+                    // ADR-013 O-16, FR-090-AC-11: a `StateModel` family-owned
+                    // undefined result.
                     return Err(Halt::Family(FamilyResult::Undefined(Box::new(
                         StateModelUndefined::PreconditionFalse(failure),
                     ))));
@@ -1583,16 +1585,12 @@ mod tests {
         let objects = ObjectEnvironment::default();
         let unresolved_id = PopulationId::from_digest([7; 32]);
         let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = crate::value::expression::family::EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(vec![Value::Population(unresolved_id)]),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = crate::value::expression::family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Population(unresolved_id)],
+            &mut local_meter,
+        );
         let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
         let fault =
             crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
@@ -1620,16 +1618,12 @@ mod tests {
             .with_population(binding)
             .unwrap();
         let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let mut location = None;
-        let mut losses = Vec::new();
-        let mut env = crate::value::expression::family::EvaluationEnv {
-            package: &package,
-            objects: &objects,
-            arguments: Some(vec![Value::Population(id)]),
-            local_meter: &mut local_meter,
-            location: &mut location,
-            losses: &mut losses,
-        };
+        let mut env = crate::value::expression::family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Population(id)],
+            &mut local_meter,
+        );
         let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
         let fault =
             crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
