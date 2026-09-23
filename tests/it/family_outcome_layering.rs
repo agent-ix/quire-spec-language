@@ -406,6 +406,26 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             }
         }
     }
+    // ADR-011 §7.1 (QSL-184): no shipped root-crate module calls `route`,
+    // so the root crate names `qsl-route` as a dev dependency only. This
+    // line comes out when a shipped caller (the T-13 driver) makes the
+    // normal edge real.
+    let root = packages
+        .iter()
+        .find(|package| package.name == "quire-spec-language")
+        .expect("cargo metadata lists the root crate");
+    for (kind, dependencies) in [("normal", &root.normal), ("build", &root.build)] {
+        assert!(
+            !dependencies
+                .iter()
+                .any(|dependency| dependency == "qsl-route"),
+            "the root crate has a {kind} dependency on qsl-route; it is a dev dependency only"
+        );
+    }
+    assert!(
+        root.dev.iter().any(|dependency| dependency == "qsl-route"),
+        "the root crate's tests name qsl-route through a dev dependency"
+    );
 }
 
 /// The FCD crates `qsl-semantics` depends on are named by

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
-//! and S7 seams by building the QSL crate under `RUSTFLAGS=--cfg seam_probe`
-//! and comparing the `E0004` (non-exhaustive match) locations rustc reports
-//! against a checked-in list, exactly as FR-063 requires.
+//! and S7 seams by building the QSL workspace crates that hold seams under
+//! `RUSTFLAGS=--cfg seam_probe` (two normal builds and three probe builds,
+//! `PROBE_BUILDS` and `NORMAL_BUILDS`) and comparing the `E0004`
+//! (non-exhaustive match) locations rustc reports against a checked-in
+//! list, exactly as FR-063 requires.
 //!
 //! **Scope: S1 (one location) and S7 (two locations) (PR #262 review,
 //! finding F7; PR #305 review, finding 6).** FR-063-AC-6 names five
@@ -221,8 +223,8 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// resolution failing before rustc ever runs).
 ///
 /// **Its own `--target-dir` (PR #262 review, finding F7).** This function
-/// runs `cargo build` twice with different `RUSTFLAGS` (plain, then `--cfg
-/// seam_probe`); without a target dir of its own, it inherited whatever
+/// runs `cargo build` five times with different `RUSTFLAGS` (two plain
+/// builds, then three under `--cfg seam_probe`); without a target dir of its own, it inherited whatever
 /// `CARGO_TARGET_DIR` the caller had set -- the same directory `cargo
 /// test`/`cargo clippy` use elsewhere in the same `make ci` run. Each
 /// RUSTFLAGS flip invalidates that whole dependency graph's incremental
@@ -351,6 +353,50 @@ const PROBE_BUILDS: [(&str, &str); 3] = [
 /// [`PROBE_BUILDS`]).
 const NORMAL_BUILDS: [&str; 2] = ["quire-spec-language", "qsl-route"];
 
+/// One probe build's result: whether it compiled, and the `E0004`
+/// locations it reported.
+struct ProbeBuild {
+    package: &'static str,
+    succeeded: bool,
+    locations: BTreeSet<SeamLocation>,
+}
+
+/// Compare every probe build's result against the checked-in list.
+///
+/// A probe build that compiled is an error, but not an early one: the
+/// comparison runs over every build first, so the error names the package
+/// that compiled and the checked-in locations no build reported
+/// (FR-063-AC-2, TC-161 step 4). `qsl-semantics` and `qsl-route` each hold
+/// one seam, so adding a probe arm to that seam makes the whole build
+/// compile, and the missing location is the only thing that says which seam
+/// it was.
+fn compare_probe_builds(builds: &[ProbeBuild], checked_in: &BTreeSet<SeamLocation>) -> Result<()> {
+    let reported: BTreeSet<SeamLocation> = builds
+        .iter()
+        .flat_map(|build| build.locations.iter().cloned())
+        .collect();
+    let unexpected_but_present: Vec<_> = reported.difference(checked_in).cloned().collect();
+    let expected_but_missing: Vec<_> = checked_in.difference(&reported).cloned().collect();
+    let compiled: Vec<&str> = builds
+        .iter()
+        .filter(|build| build.succeeded)
+        .map(|build| build.package)
+        .collect();
+    if !compiled.is_empty() {
+        return Err(Error::SeamProbeBuildUnexpectedlySucceeded {
+            packages: compiled.join(", "),
+            expected_but_missing: format!("{expected_but_missing:?}"),
+        });
+    }
+    if !unexpected_but_present.is_empty() || !expected_but_missing.is_empty() {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: format!("{unexpected_but_present:?}"),
+            expected_but_missing: format!("{expected_but_missing:?}"),
+        });
+    }
+    Ok(())
+}
+
 /// `cargo xtask seam-probe`: FR-063's two required assertions (probe builds
 /// that fail with exactly the checked-in `E0004` locations, and a normal
 /// build that succeeds with none), then the checked-in-list comparison
@@ -379,29 +425,23 @@ pub fn run(workspace_root: &Path) -> Result<String> {
             });
         }
     }
-    let mut probe_locations = BTreeSet::new();
+    let mut probe_results = Vec::new();
     for (package, rustflags) in PROBE_BUILDS {
         let (probe_succeeded, locations, probe_stderr) =
             build_and_collect_e0004(workspace_root, package, rustflags)?;
-        if probe_succeeded {
-            return Err(Error::SeamProbeBuildUnexpectedlySucceeded);
-        }
-        if locations.is_empty() && offline_registry_unavailable(&probe_stderr) {
+        if !probe_succeeded && locations.is_empty() && offline_registry_unavailable(&probe_stderr) {
             return Err(Error::SeamProbeOfflineRegistryUnavailable {
                 stderr: probe_stderr,
             });
         }
-        probe_locations.extend(locations);
-    }
-    let checked_in = checked_in_locations();
-    let unexpected_but_present: Vec<_> = probe_locations.difference(&checked_in).cloned().collect();
-    let expected_but_missing: Vec<_> = checked_in.difference(&probe_locations).cloned().collect();
-    if !unexpected_but_present.is_empty() || !expected_but_missing.is_empty() {
-        return Err(Error::SeamProbeMismatch {
-            unexpected_but_present: format!("{unexpected_but_present:?}"),
-            expected_but_missing: format!("{expected_but_missing:?}"),
+        probe_results.push(ProbeBuild {
+            package,
+            succeeded: probe_succeeded,
+            locations,
         });
     }
+    let checked_in = checked_in_locations();
+    compare_probe_builds(&probe_results, &checked_in)?;
     Ok(format!(
         "seam-probe: {} checked-in S1/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe \
          (qsl-semantics, then quire-spec-language and qsl-route); normal builds have none. `stage_hooks`'s former \
@@ -540,5 +580,84 @@ mod tests {
         assert!(!offline_registry_unavailable(
             "error[E0308]: mismatched types\n --> src/lib.rs:1:1\n"
         ));
+    }
+
+    fn route_seam() -> SeamLocation {
+        SeamLocation {
+            file: "qsl-route/src/lib.rs".to_owned(),
+            item: "same_kind".to_owned(),
+        }
+    }
+
+    /// TC-161 step 4 (FR-063-AC-2): a probe arm added at the one seam of a
+    /// single-seam build makes that build compile. The failure names the
+    /// package and the seam's location as expected-but-missing, instead of
+    /// stopping at the first build that compiled.
+    #[test]
+    #[ix_trace_rs::trace("TC-161", "FR-063-AC-2")]
+    fn a_probe_build_that_compiles_names_its_package_and_missing_location() {
+        let checked_in = checked_in_locations();
+        let everything_but_route: BTreeSet<SeamLocation> = checked_in
+            .iter()
+            .filter(|location| **location != route_seam())
+            .cloned()
+            .collect();
+        let builds = [
+            ProbeBuild {
+                package: "quire-spec-language",
+                succeeded: false,
+                locations: everything_but_route,
+            },
+            ProbeBuild {
+                package: "qsl-route",
+                succeeded: true,
+                locations: BTreeSet::new(),
+            },
+        ];
+        let message = compare_probe_builds(&builds, &checked_in)
+            .expect_err("a probe build that compiled fails the gate")
+            .to_string();
+        assert!(
+            message.contains("the probe build of qsl-route succeeded"),
+            "{message}"
+        );
+        assert!(
+            message.contains(r#"expected-but-missing: [SeamLocation { file: "qsl-route/src/lib.rs", item: "same_kind" }]"#),
+            "{message}"
+        );
+    }
+
+    /// Every build failing with exactly the checked-in locations passes,
+    /// and a location missing from a failing build is a mismatch.
+    #[test]
+    #[ix_trace_rs::trace("TC-161", "FR-063-AC-1")]
+    fn failing_builds_compare_their_union_against_the_checked_in_list() {
+        let checked_in = checked_in_locations();
+        let (route, rest): (BTreeSet<_>, BTreeSet<_>) = checked_in
+            .iter()
+            .cloned()
+            .partition(|location| *location == route_seam());
+        let builds = [
+            ProbeBuild {
+                package: "quire-spec-language",
+                succeeded: false,
+                locations: rest.clone(),
+            },
+            ProbeBuild {
+                package: "qsl-route",
+                succeeded: false,
+                locations: route,
+            },
+        ];
+        compare_probe_builds(&builds, &checked_in).expect("the union equals the list");
+        let missing = [ProbeBuild {
+            package: "quire-spec-language",
+            succeeded: false,
+            locations: rest,
+        }];
+        let message = compare_probe_builds(&missing, &checked_in)
+            .expect_err("a checked-in location no build reported")
+            .to_string();
+        assert!(message.contains("qsl-route/src/lib.rs"), "{message}");
     }
 }

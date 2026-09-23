@@ -100,11 +100,20 @@ pub enum Error {
         /// The E0004 locations the normal build reported.
         locations: String,
     },
-    /// The build under `RUSTFLAGS=--cfg seam_probe` compiled cleanly. It
-    /// must instead fail with E0004 at every checked-in seam location, or
-    /// the probe is not exhaustive.
-    #[error("seam-probe: the build under RUSTFLAGS=--cfg seam_probe succeeded; it must fail with E0004 at every checked-in seam location")]
-    SeamProbeBuildUnexpectedlySucceeded,
+    /// A probe build compiled cleanly. It must instead fail with E0004 at
+    /// every checked-in seam location in that package, or the probe is not
+    /// exhaustive. Names the package or packages and the checked-in
+    /// locations no probe build reported (FR-063-AC-2, TC-161 step 4).
+    #[error(
+        "seam-probe: the probe build of {packages} succeeded; it must fail with E0004 at every \
+         checked-in seam location -- expected-but-missing: {expected_but_missing}"
+    )]
+    SeamProbeBuildUnexpectedlySucceeded {
+        /// The packages whose probe build compiled.
+        packages: String,
+        /// Checked-in locations no probe build reported.
+        expected_but_missing: String,
+    },
     /// The checked-in seam list and the probe build's actual E0004
     /// locations disagree.
     #[error(
@@ -208,7 +217,7 @@ impl Error {
             | Self::SeamProbeNormalBuildFailed { .. }
             | Self::SeamProbeOfflineRegistryUnavailable { .. }
             | Self::SeamProbeNormalBuildHasE0004 { .. }
-            | Self::SeamProbeBuildUnexpectedlySucceeded
+            | Self::SeamProbeBuildUnexpectedlySucceeded { .. }
             | Self::SeamProbeMismatch { .. } => Code::SeamProbe,
             Self::StringEdgeParse { .. }
             | Self::StringEdgeAllowListGatesABranch { .. }

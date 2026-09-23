@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `qsl-route`: the ADR-011 §6.1 layer **R** crate (QSL-184, ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
-//! §7). It depends only on `qsl-semantics` (layer 3) and `qsl-foundation`
-//! (layer F).
+//! §7). Among the workspace crates it depends only on `qsl-semantics`
+//! (layer 3) and `qsl-foundation` (layer F); its one other dependency is
+//! `thiserror`.
 //!
 //! `route` answers one question -- **which registered backends, if any,
 //! advertise the capability kind a requested item needs** -- and nothing

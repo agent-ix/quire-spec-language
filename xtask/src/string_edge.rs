@@ -540,6 +540,62 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
+    /// Workspace members `crate_roots` does not scan: `qsl-attrs` (see
+    /// `crate_roots`' own doc) and `tools/arch-lint`, which the scan has
+    /// never covered.
+    const UNSCANNED_MEMBERS: [&str; 2] = ["qsl-attrs", "tools/arch-lint"];
+
+    /// Every workspace member's `src/` is a scan root, except the
+    /// documented [`UNSCANNED_MEMBERS`]. A crate extracted later, or a root
+    /// dropped from the list (QSL-184 review L5: removing `qsl-route/src`
+    /// failed nothing), fails here.
+    #[test]
+    fn every_workspace_member_is_a_scan_root() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root")
+            .to_path_buf();
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+        let output = std::process::Command::new(cargo)
+            .current_dir(&workspace_root)
+            .args([
+                "metadata",
+                "--format-version",
+                "1",
+                "--no-deps",
+                "--offline",
+            ])
+            .output()
+            .expect("cargo metadata runs");
+        assert!(output.status.success(), "cargo metadata failed");
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("cargo metadata emits JSON");
+        let mut expected: Vec<PathBuf> = metadata["packages"]
+            .as_array()
+            .expect("a package list")
+            .iter()
+            .map(|package| {
+                let manifest = Path::new(package["manifest_path"].as_str().expect("a manifest"));
+                manifest
+                    .parent()
+                    .expect("a package directory")
+                    .strip_prefix(&workspace_root)
+                    .expect("a member under the workspace root")
+                    .to_path_buf()
+            })
+            .filter(|member| {
+                !UNSCANNED_MEMBERS
+                    .iter()
+                    .any(|unscanned| member == Path::new(unscanned))
+            })
+            .map(|member| workspace_root.join(member).join("src"))
+            .collect();
+        expected.sort();
+        let mut roots = crate_roots(&workspace_root);
+        roots.sort();
+        assert_eq!(roots, expected);
+    }
+
     fn scan_source(source: &str) -> Vec<Occurrence> {
         let parsed = syn::parse_file(source).expect("fixture parses");
         let mut scanner = Scanner {

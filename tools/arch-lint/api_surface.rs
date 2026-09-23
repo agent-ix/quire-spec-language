@@ -1532,6 +1532,14 @@ mod tests {
             assert_eq!(outcome.status, RuleStatus::Live, "{file}");
             assert_eq!(outcome.violations.len(), 1, "{file}");
             assert_eq!(outcome.violations[0].module, module, "{file}");
+            // The module path alone does not name the crate (`qsl-route`'s
+            // `lib.rs` and the root crate's are both `""`), so the file is
+            // checked too.
+            assert!(
+                outcome.violations[0].file.ends_with(file),
+                "{file}: {:?}",
+                outcome.violations[0].file
+            );
             assert!(!outcome.passed(), "{file}");
         }
     }

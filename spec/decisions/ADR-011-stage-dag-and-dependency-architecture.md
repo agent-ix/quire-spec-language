@@ -849,7 +849,7 @@ Module table:
 | `simulation` | 5 `simulation` | finite exploration engine for S6a; its implementer arrives through #220 |
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
 | crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket |
-| crate `qsl-route` | R `route` | the #185 registry and router, extracted as X-9 (QSL-184). Its items are at the crate root (`qsl_route::Registry`). It depends only on `qsl-semantics` (for `check::Capability`) and `qsl-foundation`. No shipped root-crate module calls it, so the root crate names it only as a dev dependency. |
+| crate `qsl-route` | R `route` | the #185 registry and router, extracted as X-9 (QSL-184). Its items are at the crate root (`qsl_route::Registry`). Among the workspace crates it depends only on `qsl-semantics` (for `check::Capability`) and `qsl-foundation`; its one other dependency is `thiserror`. No shipped root-crate module calls it, so the root crate names it only as a dev dependency. |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
 | none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: the per-item requirement records are made at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
 
@@ -1111,8 +1111,8 @@ against the combined Layer 1 architecture.
 
 ## Answers to ADR-012 (#210) §13.1
 
-1. **Where the #185 candidate and routing steps run.** In crate `qsl-route`,
-   module `route` (layer R). The candidate step runs after S4 and before
+1. **Where the #185 candidate and routing steps run.** In crate `qsl-route`
+   (layer R), with the `route` items at the crate root. The candidate step runs after S4 and before
    E7. The routing step runs after E7: it reads the FR-331 dispositions as wire
    and returns a `BackendId` per `supported` item. The orchestrating driver
    (T-13) builds the registry value and passes it in. CG `negotiate_*` settles
