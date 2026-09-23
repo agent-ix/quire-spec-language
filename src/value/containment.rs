@@ -8,9 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::composite::{
-    Component, ConstructionCause, ConstructionRefusal, FieldValue, TypeEnvironment, Value,
-};
+use super::composite::{Component, ConstructionCause, ConstructionRefusal, FieldValue, Value};
+use super::declaration::TypeEnvironment;
 use super::node::NodeKey;
 
 /// A graph-local node name.

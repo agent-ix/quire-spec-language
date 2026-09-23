@@ -445,7 +445,8 @@ mod family_contract_tests {
         StageLimits,
     };
     use crate::forms::{Expression, FunctionDeclaration, TypeForm};
-    use crate::value::composite::{TypeEnvironment, ValueType};
+    use crate::value::composite::ValueType;
+    use crate::value::declaration::TypeEnvironment;
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
     use quire_exact::Meter;

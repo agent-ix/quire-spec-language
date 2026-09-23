@@ -914,7 +914,7 @@ fn profile() -> &'static AdmittedIeeeProfile {
 /// identity.
 fn ieee_relations(left: IeeeValue, right: IeeeValue) -> [bool; 3] {
     let compare = |comparison, a, b| {
-        compare_ieee(profile(), comparison, a, b, &mut Meter::new(UNLIMITED))
+        compare_ieee(comparison, a, b, &mut Meter::new(UNLIMITED))
             .unwrap()
             .completed()
             .unwrap()
@@ -951,7 +951,6 @@ fn e19_ieee_widths_need_explicit_conversion() {
     let wide = IeeeValue::binary64(0x3ff0_0000_0000_0000);
     assert_eq!(
         compare_ieee(
-            profile(),
             IeeeComparison::NumericEqual,
             narrow,
             wide,
@@ -962,7 +961,6 @@ fn e19_ieee_widths_need_explicit_conversion() {
         })
     );
     let converted = convert_ieee_width(
-        profile(),
         narrow,
         IeeeWidth::Binary64,
         RoundingMode::Exact,
