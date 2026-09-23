@@ -188,6 +188,38 @@ pub struct EnumBinding {
     pub members: Vec<EnumValue>,
 }
 
+/// A function's resolved signature: its parameters' names paired with each
+/// one's resolved `ValueType`, and the resolved result type.
+pub(crate) type ResolvedSignature = (Vec<(String, ValueType)>, ValueType);
+
+/// Resolved signatures that stand in for resolving some `functions`
+/// entries' own `TypeForm`s, keyed by index into
+/// [`PackageDeclarations::functions`]. Only `check::checked_dispatch` can
+/// populate it: its FR-151 synthesized clauses come from an
+/// already-resolved model signature, not from parsed source. Every other
+/// caller holds the empty default.
+#[derive(Clone, Debug, Default)]
+pub struct ResolvedSignatures(std::collections::BTreeMap<usize, ResolvedSignature>);
+
+impl ResolvedSignatures {
+    pub(crate) fn insert(&mut self, index: usize, signature: ResolvedSignature) {
+        self.0.insert(index, signature);
+    }
+
+    pub(crate) fn get(&self, index: usize) -> Option<&ResolvedSignature> {
+        self.0.get(&index)
+    }
+
+    /// The first index at or past `function_count`, if any: an entry naming
+    /// no function.
+    pub(crate) fn first_out_of_range(&self, function_count: usize) -> Option<usize> {
+        self.0
+            .range(function_count..)
+            .next()
+            .map(|(index, _)| *index)
+    }
+}
+
 /// The closed declarations of one package that expressions resolve against.
 #[derive(Clone, Debug, Default)]
 pub struct PackageDeclarations {
@@ -231,6 +263,9 @@ pub struct PackageDeclarations {
     /// than a hand-built `ModelCorrespondence` (`check/mod.rs`'s own test
     /// module).
     pub model_correspondence: Vec<(quire_exact::NodeKey, crate::model::key::DeclarationKey)>,
+    /// Resolved signatures standing in for some `functions` entries' own
+    /// type forms; see [`ResolvedSignatures`].
+    pub resolved_signatures: ResolvedSignatures,
 }
 
 /// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
@@ -712,38 +747,20 @@ impl<'a> Typer<'a> {
         name: &str,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
-        let mut candidates: Vec<ValueType> = self
-            .scope
-            .aliases
-            .iter()
-            .filter(|(alias, _)| alias == name)
-            .map(|(_, value_type)| value_type.clone())
-            .collect();
-        candidates.extend(
-            self.scope
-                .types
-                .composites()
-                .filter(|declaration| declaration.name() == name)
-                .map(|declaration| ValueType::Composite(declaration.key())),
-        );
-        candidates.extend(
-            self.scope
-                .enums
-                .iter()
-                .filter(|binding| binding.name == name)
-                .map(|binding| ValueType::Enum(binding.declaration.key())),
-        );
-        match candidates.len() {
-            0 => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
-            1 => Ok(candidates.remove(0)),
-            _ => Err(refuse(
-                location,
-                CheckCause::AmbiguousName {
-                    name: name.to_owned(),
-                    loci: vec![location.clone()],
-                },
-            )),
-        }
+        super::type_form::resolve_named_type(self.scope, name, location)
+    }
+
+    /// Resolve a declared `TypeForm` (S2) to the kernel `ValueType` (E3,
+    /// ADR-013 O-14/C-26). The one production entry into
+    /// [`super::type_form::resolve_type_form`], which [`Self::type_named`]
+    /// above's [`super::type_form::resolve_named_type`] also backs for the
+    /// qualified-name case.
+    pub(crate) fn resolve_type(
+        &self,
+        form: &crate::forms::TypeForm,
+        location: &Location,
+    ) -> Result<ValueType, CheckRefusal> {
+        super::type_form::resolve_type_form(self.scope, form, location)
     }
 
     /// Type `expression` where `required` is expected. A conditional or `let`
@@ -1314,9 +1331,10 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
         if let Expression::Convert { target, operand } = expression {
+            let target = self.resolve_type(target, location)?;
             if !matches!(target, ValueType::Collection(_)) {
                 self.enter(location)?;
-                self.check_declared_type(target, location)?;
+                self.check_declared_type(&target, location)?;
                 let inner = self.infer(operand, None, &location.child(0))?;
                 self.leave();
                 if !matches!(inner.value_type, ValueType::Float(_)) {
@@ -1324,7 +1342,7 @@ impl<'a> Typer<'a> {
                     return Ok((
                         inner,
                         EqualityOperand::converted(source, target.clone()),
-                        target.clone(),
+                        target,
                     ));
                 }
                 return Err(mismatch(location));
@@ -1919,10 +1937,12 @@ impl<'a> Typer<'a> {
 
     fn convert(
         &mut self,
-        target: &ValueType,
+        target: &crate::forms::TypeForm,
         operand: &Expression,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let target = self.resolve_type(target, location)?;
+        let target = &target;
         self.check_declared_type(target, location)?;
         let operand = self.infer(operand, None, &location.child(0))?;
         match (&operand.value_type, target) {
@@ -1982,10 +2002,12 @@ impl<'a> Typer<'a> {
     /// `[0,N]` directly; no runtime value is consulted at check time.
     fn all_instances(
         &mut self,
-        target: &ValueType,
+        target: &crate::forms::TypeForm,
         population: &Expression,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let target = self.resolve_type(target, location)?;
+        let target = &target;
         self.check_declared_type(target, location)?;
         if !matches!(target, ValueType::Reference(_)) {
             return Err(mismatch(location));
@@ -2025,12 +2047,14 @@ impl<'a> Typer<'a> {
     /// (`crate::value::evaluate_lookup`).
     fn lookup(
         &mut self,
-        target: &ValueType,
+        target: &crate::forms::TypeForm,
         population: &Expression,
         reference: &Expression,
         absence: AbsenceMode,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let target = self.resolve_type(target, location)?;
+        let target = &target;
         self.check_declared_type(target, location)?;
         if !matches!(target, ValueType::Reference(_)) {
             return Err(mismatch(location));

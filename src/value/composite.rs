@@ -595,6 +595,12 @@ impl TypeEnvironment {
         self.object_types.get(&key)
     }
 
+    /// Every admitted object type in key order, for resolving a type name
+    /// to `ValueType::Reference` alongside [`Self::composites`].
+    pub(crate) fn object_types(&self) -> impl Iterator<Item = &ObjectTypeDeclaration> {
+        self.object_types.values()
+    }
+
     /// Whether `sub` conforms to `sup` (H1, #204 round 1): reflexive
     /// (`sub == sup` always conforms), or `sup` is a proper ancestor of
     /// `sub` in the admitted supertypes graph. `false` for either key

@@ -690,7 +690,7 @@ mod checked {
     use quire_spec_language::value::{
         BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
         CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression, FieldInitializer,
-        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal,
+        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations, Refusal, TypeForm,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -723,6 +723,23 @@ mod checked {
         }
     }
 
+    /// `crate::support::type_form::type_form` can't recover a
+    /// declared composite's own name from `ValueType::Composite`'s bare
+    /// digest, so this file's own fixtures (whose only two composite
+    /// parameter types are "P::R" and "P") map the two back explicitly
+    /// instead.
+    fn param_type_form(value_type: &ValueType) -> TypeForm {
+        match value_type {
+            ValueType::Composite(k) if *k == key("P::R") => {
+                crate::support::type_form::named_type_form("P::R")
+            }
+            ValueType::Composite(k) if *k == key("P") => {
+                crate::support::type_form::named_type_form("P")
+            }
+            _ => crate::support::type_form::type_form(value_type),
+        }
+    }
+
     fn function(
         spelling: &str,
         parameters: &[(&str, ValueType)],
@@ -730,8 +747,11 @@ mod checked {
     ) -> FunctionDeclaration {
         FunctionDeclaration::new(
             spelling.to_owned(),
-            owned(parameters),
-            ValueType::Integer,
+            parameters
+                .iter()
+                .map(|(name, value_type)| ((*name).to_owned(), param_type_form(value_type)))
+                .collect(),
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             body,
         )
@@ -946,7 +966,7 @@ mod checked {
                 (
                     "a".to_owned(),
                     FieldInitializer::Value(Expression::Convert {
-                        target: set.clone(),
+                        target: crate::support::type_form::type_form(&set),
                         operand: Box::new(name("q")),
                     }),
                 ),
@@ -1012,8 +1032,13 @@ mod checked {
     #[test]
     fn r09_no_source_form_converts_into_a_reference() {
         let package = package(node_environment(), Vec::new(), Vec::new()).unwrap();
+        // `node_environment()` registers this object type under the key
+        // `key("M::Node")` but the declared *name* "Node" (see that
+        // function's own `ObjectTypeDeclaration::new` call) -- the `TypeForm`
+        // below names it as source syntax would, by that declared name, not
+        // by the digest.
         let conversion = Expression::Convert {
-            target: ValueType::Reference(key("M::Node")),
+            target: crate::support::type_form::named_type_form("Node"),
             operand: Box::new(literal(1)),
         };
         assert_eq!(

@@ -2063,7 +2063,7 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         &package,
         &parameters,
         &Expression::Convert {
-            target: rational_type(0, 0, 1, 1),
+            target: crate::support::type_form::type_form(&rational_type(0, 0, 1, 1)),
             operand: Box::new(operand("f")),
         },
         None,
@@ -2150,8 +2150,11 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         types,
         functions: vec![FunctionDeclaration::new(
             "pick".to_owned(),
-            vec![("n".to_owned(), int_type(0, 1))],
-            ValueType::Integer,
+            vec![(
+                "n".to_owned(),
+                crate::support::type_form::type_form(&int_type(0, 1)),
+            )],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             operand("n"),
         )],
@@ -2217,7 +2220,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     let let_equal = |target: ValueType| Expression::Let {
         name: "x".to_owned(),
         value: Box::new(Expression::Convert {
-            target,
+            target: crate::support::type_form::type_form(&target),
             operand: Box::new(operand("e")),
         }),
         body: Box::new(operation(BinaryOperator::Equal, "x", "d")),
@@ -2257,7 +2260,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     let direct = Expression::Binary {
         operator: BinaryOperator::Equal,
         left: Box::new(Expression::Convert {
-            target,
+            target: crate::support::type_form::type_form(&target),
             operand: Box::new(operand("e")),
         }),
         right: Box::new(operand("d")),

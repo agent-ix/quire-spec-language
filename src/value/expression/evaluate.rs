@@ -1388,7 +1388,7 @@ mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations};
     use crate::family::ReferenceEvaluation;
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::dispatch::GeneralizationClosure;
     use crate::model::domain_package::{
@@ -1403,6 +1403,9 @@ mod tests {
     };
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::Category;
+
+    // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
+    const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
     /// The shared minimal one-type (`model.A`), one-population
     /// (`model.pop.p1`) domain package [`population_binding`] and
@@ -1499,11 +1502,16 @@ mod tests {
             types,
             functions: vec![FunctionDeclaration::new(
                 "F",
-                vec![("p".to_owned(), ValueType::Population(3))],
-                ValueType::Integer,
+                vec![(
+                    "p".to_owned(),
+                    TypeForm::new(crate::forms::TypeFormHead::Population, SPAN)
+                        .with_arguments(vec![TypeForm::name("M::A", SPAN)])
+                        .with_bounds(vec!["3".to_owned()]),
+                )],
+                TypeForm::builtin(crate::forms::BuiltinType::Integer, SPAN),
                 None,
                 Expression::Size(Box::new(Expression::AllInstances {
-                    target: ValueType::Reference(node_a),
+                    target: TypeForm::name("M::A", SPAN),
                     population: Box::new(Expression::Name("p".to_owned())),
                 })),
             )],

@@ -43,8 +43,11 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 fn function_one() -> FunctionDeclaration {
     FunctionDeclaration::new(
         "one",
-        vec![("a".to_owned(), ValueType::Integer)],
-        ValueType::Integer,
+        vec![(
+            "a".to_owned(),
+            crate::support::type_form::type_form(&ValueType::Integer),
+        )],
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         Expression::Name("a".to_owned()),
     )
@@ -57,10 +60,16 @@ fn function_two() -> FunctionDeclaration {
     FunctionDeclaration::new(
         "two",
         vec![
-            ("a".to_owned(), ValueType::Integer),
-            ("b".to_owned(), ValueType::Integer),
+            (
+                "a".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Integer),
+            ),
+            (
+                "b".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Integer),
+            ),
         ],
-        ValueType::Integer,
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         Expression::Let {
             name: "x".to_owned(),

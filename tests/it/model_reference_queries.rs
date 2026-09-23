@@ -43,7 +43,7 @@ use quire_spec_language::value::{
     CompositeShape, DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration,
     InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Outcome, PackageDeclarations, QualifiedName, Refusal, TypeEnvironment,
-    Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    TypeForm, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -352,8 +352,11 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
         types: types(scenario),
         functions: vec![FunctionDeclaration::new(
             "F",
-            vec![("p".to_owned(), ValueType::Population(3))],
-            ValueType::Integer,
+            vec![(
+                "p".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Population(3)),
+            )],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::Size(Box::new(all_instances(target))),
         )],
@@ -375,18 +378,17 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
 /// body (which, like `F`'s, is checked as `ClauseKind::Body` and could
 /// never see `pre(...)` regardless).
 fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
-    let element = ValueType::Reference(node_key(&scenario.a));
-    let elements_type = ValueType::collection(CollectionType::new(
-        CollectionKind::Set,
-        element,
-        CardinalityBound::new(0, 3).unwrap(),
-    ));
     let graph = PackageDeclarations {
         types: types(scenario),
         functions: vec![FunctionDeclaration::new(
             "F2",
-            vec![("elements".to_owned(), elements_type)],
-            ValueType::Integer,
+            vec![(
+                "elements".to_owned(),
+                TypeForm::collection(CollectionKind::Set, crate::support::type_form::SPAN)
+                    .with_arguments(vec![crate::support::type_form::named_type_form("M::A")])
+                    .with_bounds(vec!["0".to_owned(), "3".to_owned()]),
+            )],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
         )],
@@ -597,16 +599,44 @@ fn population_name() -> Expression {
     Expression::Name("p".to_owned())
 }
 
+/// `all_instances`/`lookup`'s own `target` is always a
+/// `ValueType::Reference` naming one of this file's own fixed object types
+/// ("M::A", "M::B", or the one-off foreign "M::C" fixture,
+/// `all_instances_expression_target_declared_but_not_in_model_is_type_mismatch`'s
+/// own `foreign_key`) -- recovering the declared name a bare `ValueType::
+/// Reference`'s digest cannot itself carry by comparing it against those
+/// three fixed keys, each a deterministic pure function of literal data, so
+/// every existing `all_instances(ValueType::Reference(...))`/`lookup(...)`
+/// call site keeps passing the same `ValueType` it always did.
+fn reference_type_form(target: &ValueType) -> TypeForm {
+    let ValueType::Reference(key) = target else {
+        panic!("all_instances/lookup's own target is always a Reference, got {target:?}");
+    };
+    let fixture = scenario();
+    if *key == node_key(&fixture.a) {
+        crate::support::type_form::named_type_form("M::A")
+    } else if *key == node_key(&fixture.b) {
+        crate::support::type_form::named_type_form("M::B")
+    } else if *key == fixed_key(0xCC) {
+        crate::support::type_form::named_type_form("M::C")
+    } else {
+        panic!(
+            "all_instances/lookup target names an object type this file's fixtures don't \
+             recognize: {key:?}"
+        );
+    }
+}
+
 fn all_instances(target: ValueType) -> Expression {
     Expression::AllInstances {
-        target,
+        target: reference_type_form(&target),
         population: Box::new(population_name()),
     }
 }
 
 fn lookup(target: ValueType, absence: AbsenceMode) -> Expression {
     Expression::Lookup {
-        target,
+        target: reference_type_form(&target),
         population: Box::new(population_name()),
         reference: Box::new(Expression::Name("r".to_owned())),
         absence,
@@ -968,7 +998,9 @@ fn population_refused_as_option_payload() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
     let expression = Expression::Convert {
-        target: ValueType::Option(Box::new(ValueType::Population(3))),
+        target: crate::support::type_form::type_form(&ValueType::Option(Box::new(
+            ValueType::Population(3),
+        ))),
         operand: Box::new(Expression::Boolean(true)),
     };
     let refusal = check_refusal(&package, &parameters, &expression);
@@ -984,11 +1016,11 @@ fn population_refused_as_collection_element() {
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
     let expression = Expression::Convert {
-        target: ValueType::collection(CollectionType::new(
+        target: crate::support::type_form::type_form(&ValueType::collection(CollectionType::new(
             CollectionKind::Set,
             ValueType::Population(3),
             CardinalityBound::new(0, 3).unwrap(),
-        )),
+        ))),
         operand: Box::new(Expression::Boolean(true)),
     };
     let refusal = check_refusal(&package, &parameters, &expression);
@@ -1888,7 +1920,7 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
         name: "q".to_owned(),
         value: Box::new(population_name()),
         body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target,
+            target: reference_type_form(&target),
             population: Box::new(Expression::Name("q".to_owned())),
         })))),
     };
@@ -1932,7 +1964,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
             name: "r".to_owned(),
             value: Box::new(Expression::Name("q".to_owned())),
             body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target,
+                target: reference_type_form(&target),
                 population: Box::new(Expression::Name("r".to_owned())),
             }))),
         })),
@@ -1977,7 +2009,7 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
         name: "q".to_owned(),
         value: Box::new(population_name()),
         body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target,
+            target: reference_type_form(&target),
             population: Box::new(Expression::Let {
                 name: "s".to_owned(),
                 value: Box::new(Expression::Name("q".to_owned())),
@@ -2019,7 +2051,7 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
         name: "q".to_owned(),
         value: Box::new(population_name()),
         body: Box::new(pre(Expression::Size(Box::new(Expression::AllInstances {
-            target,
+            target: reference_type_form(&target),
             population: Box::new(Expression::If {
                 condition: Box::new(Expression::Boolean(true)),
                 then: Box::new(Expression::Name("q".to_owned())),
@@ -2072,7 +2104,7 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
                 otherwise: Box::new(Expression::Name("q".to_owned())),
             }),
             body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target,
+                target: reference_type_form(&target),
                 population: Box::new(Expression::Name("r".to_owned())),
             }))),
         })),
@@ -2123,7 +2155,7 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
                 body: Box::new(Expression::Name("s".to_owned())),
             }),
             body: Box::new(Expression::Size(Box::new(Expression::AllInstances {
-                target,
+                target: reference_type_form(&target),
                 population: Box::new(Expression::Name("r".to_owned())),
             }))),
         })),
