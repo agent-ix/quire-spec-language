@@ -140,15 +140,11 @@ T12-B's debt list:
 
 | Module | Function | Why it is debt |
 | --- | --- | --- |
-| `value::model_query` | `to_object_reference` | OBS-018: builds a `NodeKey` from a model `ReferenceKey`'s bytes |
 | `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
 
-T12-C's debt list:
-
-| Module | Function | Why it is debt |
-| --- | --- | --- |
-| `value::model_query` | `bridge_lookup_key` | OBS-018: builds an `EffectiveId` from a `NodeKey`'s bytes outside `model` |
-| `value::model_query` | `resolve_target` | same |
+T12-C's debt list is empty: QSL-131 typed a reference's type component as
+`EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in
+`value::model_query`.
 
 ### Pending vs. live vs. failing
 
@@ -198,10 +194,8 @@ review, MEDIUM-5).
 
 Running the check against QSL's real source tree at any commit SHALL report
 whatever it finds, including a pre-existing violation ADR-013's own text
-already names as known architecture debt (OBS-018, `value/model_query.rs`'s
-`to_object_reference`, `bridge_lookup_key` and `resolve_target` functions),
-and any real call site the check finds
-that OBS-018's or ADR-011 §1's text does not enumerate. The check SHALL NOT
+already names as known architecture debt, and any real call site the check
+finds that ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
 make a run pass (#249 review R1). T12-B's and T12-C's debt lists are not
 such an exclusion: each entry is reported as debt in the check's output, and

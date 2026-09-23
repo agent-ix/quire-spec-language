@@ -11,7 +11,7 @@
 //! [`crate::check::PackageDeclarations`], and translates
 //! `link_dispatch`'s [`DeclarationKey`]-keyed
 //! [`crate::model::dispatch::DispatchTable`] into the checked layer's
-//! [`NodeKey`]- and function-index-keyed
+//! [`EffectiveId`]- and function-index-keyed
 //! [`crate::check::DispatchTable`], ready for
 //! [`PackageDeclarations::check`](crate::check::PackageDeclarations)
 //! and the evaluator.
@@ -33,12 +33,13 @@
 //!   own per-operation signature. A package with several dispatch call sites
 //!   calls this once per distinct receiver-type/member pair and merges the
 //!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
-//! - The receiver's admitted static types are derived from `object_keys` and
-//!   `table.entries()`, not supplied by the caller (turning a
-//!   `DeclarationKey` into a checker [`NodeKey`] is the same kind of
-//!   pre-translated input as `OperationClauses`, below): one
-//!   [`DispatchOperation`] entry is built per distinct [`NodeKey`]
-//!   `object_keys` maps a `table.entries()` subtype to, wherever that
+//! - The receiver's admitted static types are derived from
+//!   `table.entries()` and the model's effective view, not supplied by the
+//!   caller: each subtype's [`DeclarationKey`] resolves to its
+//!   [`EffectiveId`] through [`EffectiveView::type_identities`], the identity
+//!   a `Reference<T>` value's type component carries (ADR-013 O-05). One
+//!   [`DispatchOperation`] entry is built per distinct [`EffectiveId`]
+//!   a `table.entries()` subtype resolves to, wherever that
 //!   subtype's own winning candidate is `root.key` itself (#176, tightened
 //!   by #204 round 1's M5) -- the operation's own declared owner, plus every
 //!   conforming subtype that inherits the operation unredefined. A subtype
@@ -112,7 +113,7 @@ use qsl_forms::{
     BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::diagnostic::Code;
-use quire_exact::NodeKey;
+use quire_exact::EffectiveId;
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
 /// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared
@@ -181,10 +182,11 @@ pub enum DispatchBridgeRefusal {
         /// The field that was missing it.
         field: MissingClauseField,
     },
-    /// `object_keys` has no entry for a linked table's subtype. A distinct
-    /// variant from [`Self::MissingClauseData`]: the key missing an entry
-    /// here is a *subtype*, not an operation, so it earns its own field name
-    /// instead of overloading `operation`.
+    /// The effective view has no top-level declaration for a linked table's
+    /// subtype or a declared supertype, so it has no [`EffectiveId`]. A
+    /// distinct variant from [`Self::MissingClauseData`]: the key missing an
+    /// entry here is a *subtype*, not an operation, so it earns its own field
+    /// name instead of overloading `operation`.
     MissingObjectKey {
         /// The subtype missing an entry.
         subtype: Box<DeclarationKey>,
@@ -332,29 +334,30 @@ pub struct DispatchRoot {
 }
 
 /// Every declared object type's own `supertypes` (H1, #204 round 1),
-/// translated from `domain_package.records`' [`DeclarationKey`]s through
-/// `object_keys` into checker [`NodeKey`]s -- the exact shape
-/// [`crate::value::ObjectTypeDeclaration::with_supertypes`]
-/// needs, and the same kind of pre-translated bridge input as
-/// [`OperationClauses`] is for clause data (see the module docs). No
-/// production code builds a [`crate::value::TypeEnvironment`]
-/// yet (only test scaffolding does), so this is test-support infrastructure
-/// today; #131's own real intake can call it exactly as tests do.
+/// translated from `domain_package.records`' [`DeclarationKey`]s into their
+/// [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
+/// the exact shape [`crate::value::ObjectTypeDeclaration::with_supertypes`]
+/// needs (ADR-013 O-05). No production code builds a
+/// [`crate::value::TypeEnvironment`] yet (only test scaffolding does), so
+/// this is test-support infrastructure today; #131's own real intake can
+/// call it exactly as tests do.
 pub fn object_type_supertypes(
     domain_package: &DomainPackage,
-    object_keys: &BTreeMap<DeclarationKey, NodeKey>,
-) -> Result<BTreeMap<NodeKey, Vec<NodeKey>>, DispatchBridgeRefusal> {
-    let mut supertypes: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+    view: &EffectiveView,
+) -> Result<BTreeMap<EffectiveId, Vec<EffectiveId>>, DispatchBridgeRefusal> {
+    let type_identities = view.type_identities();
+    let mut supertypes: BTreeMap<EffectiveId, Vec<EffectiveId>> = BTreeMap::new();
     for record in &domain_package.records {
         if let DomainPackageRecord::ObjectType(object_type) = record {
-            let subtype_key = object_keys.get(&object_type.key).copied().ok_or_else(|| {
-                DispatchBridgeRefusal::MissingObjectKey {
+            let subtype_key = type_identities
+                .get(&object_type.key)
+                .copied()
+                .ok_or_else(|| DispatchBridgeRefusal::MissingObjectKey {
                     subtype: Box::new(object_type.key.clone()),
-                }
-            })?;
+                })?;
             let mut mapped = Vec::with_capacity(object_type.supertypes.len());
             for supertype in &object_type.supertypes {
-                let supertype_key = object_keys.get(supertype).copied().ok_or_else(|| {
+                let supertype_key = type_identities.get(supertype).copied().ok_or_else(|| {
                     DispatchBridgeRefusal::MissingObjectKey {
                         subtype: Box::new(supertype.clone()),
                     }
@@ -775,11 +778,11 @@ pub fn checked_dispatch_operation(
     domain_package: &DomainPackage,
     view: &EffectiveView,
     root: &DispatchRoot,
-    object_keys: &BTreeMap<DeclarationKey, NodeKey>,
     clauses: &OperationClauses,
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
+    let type_identities = view.type_identities();
     let table = match outcome {
         LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) => table,
         other => return Err(DispatchBridgeRefusal::Unlinked(Box::new(other))),
@@ -962,10 +965,10 @@ pub fn checked_dispatch_operation(
     }
 
     let mut entries = Vec::with_capacity(table.entries().len());
-    // Every subtype's own checked [`NodeKey`] that `table.entries()` links
+    // Every subtype's own [`EffectiveId`] that `table.entries()` links
     // *to `root.key` itself*, in the table's own subtype-enumeration order
     // (ascending effective identity), deduplicated (#176: `link_dispatch`
-    // links one entry per conforming subtype under `object_keys`; the
+    // links one entry per conforming subtype in `view`; the
     // reflexive entry for the operation's own declared owner is one of
     // them, since `type_conforms(s, t)` is `true` for `s == t` -- see
     // `conformance::type_conforms`). Feeds every exposing static type's own
@@ -987,10 +990,10 @@ pub fn checked_dispatch_operation(
     // still gets a row for every subtype below, redefiner or not: that
     // feeds `checked_table`, which resolves a receiver's *runtime* type
     // regardless of which static type admitted the call.
-    let mut exposing_receiver_types: Vec<NodeKey> = Vec::new();
-    let mut exposing_seen: BTreeSet<NodeKey> = BTreeSet::new();
+    let mut exposing_receiver_types: Vec<EffectiveId> = Vec::new();
+    let mut exposing_seen: BTreeSet<EffectiveId> = BTreeSet::new();
     for (subtype, candidate) in table.entries() {
-        let subtype_key = object_keys.get(subtype).copied().ok_or_else(|| {
+        let subtype_key = type_identities.get(subtype).copied().ok_or_else(|| {
             DispatchBridgeRefusal::MissingObjectKey {
                 subtype: Box::new(subtype.clone()),
             }

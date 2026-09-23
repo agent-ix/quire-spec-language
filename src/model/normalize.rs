@@ -203,7 +203,7 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
@@ -451,6 +451,20 @@ impl EffectiveView {
     /// Every admitted declaration, ascending by [`EffectiveId`].
     pub fn declarations(&self) -> &[ViewEntry] {
         &self.declarations
+    }
+
+    /// Every top-level declaration's effective identity, keyed by its
+    /// original producer [`DeclarationKey`]; member declarations (those with
+    /// an owner effective type) are excluded. This is the one
+    /// `DeclarationKey` -> [`EffectiveId`] correspondence for declared types:
+    /// FR-143's reference type component (ADR-013 O-05) and FR-153's
+    /// population type catalog both read it.
+    pub fn type_identities(&self) -> BTreeMap<DeclarationKey, EffectiveId> {
+        self.declarations
+            .iter()
+            .filter(|entry| entry.preimage.owner_effective_type.is_none())
+            .map(|entry| (entry.preimage.original.clone(), entry.effective_id))
+            .collect()
     }
 
     fn to_json(&self) -> serde_json::Value {

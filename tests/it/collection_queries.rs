@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
@@ -41,6 +42,12 @@ fn work_limit(work_units: u64) -> ScalarLimits {
 
 fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// A model object type's effective-declaration identity (ADR-013 O-05): the
+/// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn int(value: i64) -> Value {
@@ -787,11 +794,15 @@ fn holder_environment() -> TypeEnvironment {
             "Holder",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "r",
-                ValueType::Reference(key("M::Obj")),
+                ValueType::Reference(object_type("M::Obj")),
                 Presence::Required,
             )]),
         )],
-        [ObjectTypeDeclaration::new(key("M::Obj"), "Obj", vec![])],
+        [ObjectTypeDeclaration::new(
+            object_type("M::Obj"),
+            "Obj",
+            vec![],
+        )],
     )
     .unwrap()
 }
@@ -799,7 +810,7 @@ fn holder_environment() -> TypeEnvironment {
 fn object(identity: &str) -> ObjectReference {
     ObjectReference::new(
         UniverseIdentity::new(b"u1").unwrap(),
-        key("M::Obj"),
+        object_type("M::Obj"),
         ObjectIdentity::new(identity.as_bytes()).unwrap(),
     )
 }

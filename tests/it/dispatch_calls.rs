@@ -18,11 +18,12 @@ use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
-use quire_exact::NodeKey;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_spec_language::check::{
-    checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+    checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
+    OperationClauses,
 };
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
@@ -63,8 +64,24 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn key(label: &str) -> NodeKey {
-    NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+/// An object type's effective-declaration identity (ADR-013 O-05) for a
+/// hand-built fixture with no domain package behind it.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// `label`'s effective identity in `view`: the identity the bridge resolves a
+/// linked subtype to, and so the one a `Reference<T>` naming it carries.
+fn view_type(view: &EffectiveView, label: &str) -> EffectiveId {
+    view.type_identities()
+        .get(&DeclarationKey::fixture(label))
+        .copied()
+        .unwrap_or_else(|| panic!("{label} has a type-level effective declaration"))
+}
+
+/// `label`'s effective identity in [`bridge_bundle`]'s view.
+fn ab_type(label: &str) -> EffectiveId {
+    view_type(&bridge_view(&bridge_bundle()), label)
 }
 
 /// This file's `types(receiver_type)` always registers
@@ -76,7 +93,7 @@ fn receiver_type_form() -> TypeForm {
     crate::support::type_form::named_type_form("Receiver")
 }
 
-fn types(receiver_type: NodeKey) -> TypeEnvironment {
+fn types(receiver_type: EffectiveId) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [ObjectTypeDeclaration::new(
@@ -92,7 +109,7 @@ fn universe() -> UniverseIdentity {
     UniverseIdentity::new(b"dispatch-calls-universe").unwrap()
 }
 
-fn receiver_reference(receiver_type: NodeKey, identity: &str) -> ObjectReference {
+fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectReference {
     ObjectReference::new(
         universe(),
         receiver_type,
@@ -100,7 +117,7 @@ fn receiver_reference(receiver_type: NodeKey, identity: &str) -> ObjectReference
     )
 }
 
-fn objects(receiver_type: NodeKey, identity: &str) -> ObjectEnvironment {
+fn objects(receiver_type: EffectiveId, identity: &str) -> ObjectEnvironment {
     let types = types(receiver_type);
     ObjectEnvironment::new(
         &types,
@@ -149,7 +166,7 @@ fn dispatch_expression() -> Expression {
 /// `receiver_type` to it; `dispatch_operations[0]` is the `self.size()`
 /// call site's target, declared `result`.
 fn one_candidate_package(
-    receiver_type: NodeKey,
+    receiver_type: EffectiveId,
     precondition: Option<Expression>,
     result: ValueType,
 ) -> PackageDeclarations {
@@ -217,7 +234,7 @@ fn one_candidate_package(
 #[trace("TC-196")]
 #[test]
 fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let package = one_candidate_package(receiver_type, None, ValueType::Integer)
         .check(CheckingLimits::default())
         .unwrap();
@@ -267,7 +284,7 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
 #[trace("TC-196")]
 #[test]
 fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     let body = Expression::If {
         condition: Box::new(Expression::Binary {
@@ -301,7 +318,7 @@ fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
 #[trace("TC-196")]
 #[test]
 fn dispatch_argument_never_admits_integer_to_int_coercion() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let narrow =
         ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64)).unwrap());
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
@@ -343,9 +360,9 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
 #[trace("TC-196", "FR-151")]
 #[test]
 fn dispatch_argument_admits_a_reference_upcast() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
-    let super_type = key("model.dispatch-calls.Super");
-    let sub_type = key("model.dispatch-calls.Sub");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let super_type = object_type("model.dispatch-calls.Super");
+    let sub_type = object_type("model.dispatch-calls.Sub");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
@@ -391,9 +408,9 @@ fn dispatch_argument_admits_a_reference_upcast() {
 #[trace("TC-196", "FR-151")]
 #[test]
 fn dispatch_argument_refuses_a_reference_downcast() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
-    let super_type = key("model.dispatch-calls.Super");
-    let sub_type = key("model.dispatch-calls.Sub");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let super_type = object_type("model.dispatch-calls.Super");
+    let sub_type = object_type("model.dispatch-calls.Sub");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
@@ -441,9 +458,9 @@ fn dispatch_argument_refuses_a_reference_downcast() {
 #[trace("TC-196", "FR-151")]
 #[test]
 fn dispatch_argument_refuses_an_unrelated_reference_type() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
-    let super_type = key("model.dispatch-calls.Super");
-    let unrelated_type = key("model.dispatch-calls.Unrelated");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let super_type = object_type("model.dispatch-calls.Super");
+    let unrelated_type = object_type("model.dispatch-calls.Unrelated");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.functions[0].parameters.push((
         "arg".to_owned(),
@@ -495,7 +512,7 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
 #[trace("TC-196")]
 #[test]
 fn synthesized_dispatch_candidate_is_not_callable_by_name() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.functions.push(FunctionDeclaration::new(
         "f",
@@ -773,7 +790,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
 #[trace("TC-196")]
 #[test]
 fn check_postcondition_expression_still_admits_a_real_postcondition() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let package = one_candidate_package(receiver_type, None, ValueType::Integer)
         .check(CheckingLimits::default())
         .unwrap();
@@ -798,7 +815,7 @@ fn check_postcondition_expression_still_admits_a_real_postcondition() {
 #[trace("TC-196")]
 #[test]
 fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatch() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.dispatch_tables[0] = DispatchTable::new(
         vec![(
@@ -836,7 +853,7 @@ fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatc
 #[trace("TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     // The operation declares one extra Integer argument that no candidate
     // function accepts (`one_candidate_package`'s body only takes `self`).
@@ -886,7 +903,7 @@ fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
 #[trace("TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispatch() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.dispatch_operations[0].parameters = vec![ValueType::Integer];
     package.functions[0] = FunctionDeclaration::clause(
@@ -938,7 +955,7 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
 #[trace("TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_result_type_is_refused_invalid_dispatch() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.dispatch_operations[0].result = ValueType::Boolean;
     let refusals = package
@@ -973,7 +990,7 @@ fn dispatch_candidate_with_a_mismatched_result_type_is_refused_invalid_dispatch(
 /// returning `1` for A's own body and `2` for B's, with an optional own
 /// precondition on each (`PA`/`PB`). `B.size` redefines `A.size`.
 fn ab_bridge_clauses(
-    receiver_type: NodeKey,
+    receiver_type: EffectiveId,
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> OperationClauses {
@@ -1014,18 +1031,15 @@ fn ab_bridge_clauses(
 /// its ancestor's) — unchecked, so a caller expecting the check itself to be
 /// refused (e.g. a D08 cycle) can inspect the refusals directly.
 fn ab_bridge_declarations(
-    receiver_type: NodeKey,
+    receiver_type: EffectiveId,
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> PackageDeclarations {
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
-    let a_type = key("model.A");
-    let b_type = key("model.B");
+    let a_type = view_type(&view, "model.A");
+    let b_type = view_type(&view, "model.B");
     let clauses = ab_bridge_clauses(a_type, pa, pb);
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
-    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root_key = if receiver_type == b_type {
@@ -1037,17 +1051,11 @@ fn ab_bridge_declarations(
         key: root_key,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .unwrap_or_else(|refusal| {
-        panic!("expected a linked, checked dispatch family, got {refusal:?}")
-    });
+    let mut declarations =
+        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
+            .unwrap_or_else(|refusal| {
+                panic!("expected a linked, checked dispatch family, got {refusal:?}")
+            });
     let types = TypeEnvironment::new(
         [],
         [
@@ -1063,7 +1071,7 @@ fn ab_bridge_declarations(
 /// [`ab_bridge_declarations`], checked and unwrapped, for callers that
 /// expect the check to succeed.
 fn ab_bridge_package(
-    receiver_type: NodeKey,
+    receiver_type: EffectiveId,
     pa: Option<Expression>,
     pb: Option<Expression>,
 ) -> quire_spec_language::value::CheckedPackage {
@@ -1085,7 +1093,7 @@ fn ab_bridge_package(
 #[trace("TC-196", "FR-151-AC-7", "FR-151-AC-8")]
 #[test]
 fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific() {
-    let b_type = key("model.B");
+    let b_type = ab_type("model.B");
     let package = ab_bridge_package(b_type, Some(Expression::Boolean(false)), None);
 
     let objects = objects(b_type, "b1");
@@ -1134,7 +1142,7 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-151-AC-8", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
-    let a_type = key("model.A");
+    let a_type = ab_type("model.A");
     let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
 
     let objects = objects(a_type, "a1");
@@ -1202,7 +1210,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
-    let a_type = key("model.A");
+    let a_type = ab_type("model.A");
     let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
 
     let objects = objects(a_type, "a1");
@@ -1258,7 +1266,7 @@ fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let functions = vec![
         FunctionDeclaration::clause(
             "shared.body",
@@ -1365,7 +1373,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
 #[trace("TC-196", "FR-151-AC-3")]
 #[test]
 fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
-    let receiver_type = key("model.dispatch-calls.Receiver");
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
     let package = one_candidate_package(
         receiver_type,
         Some(dispatch_expression()),
@@ -1407,7 +1415,7 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
-    let b_type = key("model.B");
+    let b_type = ab_type("model.B");
     let package = ab_bridge_package(
         b_type,
         Some(Expression::Boolean(false)),
@@ -1462,7 +1470,7 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
 #[trace("TC-196", "FR-151-AC-7")]
 #[test]
 fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
-    let b_type = key("model.B");
+    let b_type = ab_type("model.B");
     let package = ab_bridge_package(
         b_type,
         Some(Expression::Boolean(true)),
@@ -1519,7 +1527,7 @@ fn self_recursive_precondition() -> Expression {
 #[trace("TC-196", "FR-151-AC-3")]
 #[test]
 fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
-    let a_type = key("model.A");
+    let a_type = ab_type("model.A");
     let declarations = ab_bridge_declarations(a_type, Some(self_recursive_precondition()), None);
     let refusals = declarations
         .check(CheckingLimits::default())
@@ -1554,7 +1562,7 @@ fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
 #[trace("TC-196", "FR-151-AC-3")]
 #[test]
 fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
-    let a_type = key("model.A");
+    let a_type = ab_type("model.A");
     let declarations = ab_bridge_declarations(
         a_type,
         Some(self_recursive_precondition()),
@@ -1590,8 +1598,8 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
 #[trace("TC-196", "FR-151-AC-7")]
 #[test]
 fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_capture() {
-    let a_type = key("model.A");
-    let b_type = key("model.B");
+    let a_type = ab_type("model.A");
+    let b_type = ab_type("model.B");
     let a = DeclarationKey::fixture("model.A.size");
     let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
@@ -1631,9 +1639,6 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
 
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
-    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
@@ -1644,17 +1649,11 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         key: b.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .unwrap_or_else(|refusal| {
-        panic!("expected a linked, checked dispatch family, got {refusal:?}")
-    });
+    let mut declarations =
+        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
+            .unwrap_or_else(|refusal| {
+                panic!("expected a linked, checked dispatch family, got {refusal:?}")
+            });
     declarations.types = TypeEnvironment::new(
         [],
         [
@@ -1776,7 +1775,33 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
     }
 }
 
-fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
+/// ADR-013 O-05 (QSL-131): the bridge keys each object type by the effective
+/// identity `model` computed over the view -- the identity a `Reference<T>`
+/// value's type component carries -- never a caller-supplied key. `B`'s
+/// declared supertype `A` resolves through the same view, so the result
+/// admits into a `TypeEnvironment` in which `B` conforms to `A`.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn bridge_keys_object_types_by_their_effective_identity() {
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
+    let (a, b) = (view_type(&view, "model.A"), view_type(&view, "model.B"));
+    let supertypes = object_type_supertypes(&domain_package, &view).unwrap();
+    assert_eq!(supertypes, BTreeMap::from([(a, vec![]), (b, vec![a])]));
+
+    let types = TypeEnvironment::new(
+        [],
+        supertypes.into_iter().map(|(key, supertypes)| {
+            let name = if key == a { "A" } else { "B" };
+            ObjectTypeDeclaration::new(key, name, vec![]).with_supertypes(supertypes)
+        }),
+    )
+    .unwrap();
+    assert!(types.conforms(b, a));
+    assert!(!types.conforms(a, b));
+}
+
+fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
     let a = DeclarationKey::fixture("model.A.size");
     let b = DeclarationKey::fixture("model.B.size");
     let mut clauses = OperationClauses::default();
@@ -1822,12 +1847,9 @@ fn bridge_clauses(receiver_type: NodeKey) -> OperationClauses {
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
-    let a_type = key("model.A");
-    let b_type = key("model.B");
+    let a_type = view_type(&view, "model.A");
+    let b_type = view_type(&view, "model.B");
     let clauses = bridge_clauses(a_type);
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
-    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
@@ -1835,17 +1857,11 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .unwrap_or_else(|refusal| {
-        panic!("expected a linked, checked dispatch family, got {refusal:?}")
-    });
+    let mut declarations =
+        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
+            .unwrap_or_else(|refusal| {
+                panic!("expected a linked, checked dispatch family, got {refusal:?}")
+            });
     // The bridge is pure and builds no `TypeEnvironment` of its own (see its
     // module docs): the caller declares the object types its own clauses'
     // parameter/result `ValueType`s name.
@@ -1917,7 +1933,7 @@ fn inherited_only_bridge_bundle() -> DomainPackage {
     )
 }
 
-fn inherited_only_clauses(receiver_type: NodeKey) -> OperationClauses {
+fn inherited_only_clauses(receiver_type: EffectiveId) -> OperationClauses {
     let a = DeclarationKey::fixture("model.A.size");
     let mut clauses = OperationClauses::default();
     clauses.member.insert(a.clone(), "size".to_owned());
@@ -1950,12 +1966,9 @@ fn inherited_only_clauses(receiver_type: NodeKey) -> OperationClauses {
 fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines() {
     let domain_package = inherited_only_bridge_bundle();
     let view = bridge_view(&domain_package);
-    let a_type = key("model.A");
-    let c_type = key("model.C");
+    let a_type = view_type(&view, "model.A");
+    let c_type = view_type(&view, "model.C");
     let clauses = inherited_only_clauses(a_type);
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
-    object_keys.insert(DeclarationKey::fixture("model.C"), c_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
@@ -1963,19 +1976,13 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
-        &domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .unwrap_or_else(|refusal| {
-        panic!("expected a linked, checked dispatch family, got {refusal:?}")
-    });
+    let mut declarations =
+        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
+            .unwrap_or_else(|refusal| {
+                panic!("expected a linked, checked dispatch family, got {refusal:?}")
+            });
 
-    let mut receiver_types: Vec<NodeKey> = declarations
+    let mut receiver_types: Vec<EffectiveId> = declarations
         .dispatch_operations
         .iter()
         .map(|operation| operation.receiver_type)
@@ -2052,25 +2059,16 @@ fn not_a_query_bundle(result: Option<OperationResult>, effect: OperationEffect) 
 /// `model.A.size` and returns the refusal it must produce.
 fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal {
     let view = bridge_view(domain_package);
-    let a_type = key("model.A");
+    let a_type = view_type(&view, "model.A");
     let clauses = inherited_only_clauses(a_type);
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    checked_dispatch_operation(
-        domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .expect_err("a non-query dispatch target must refuse, not link")
+    checked_dispatch_operation(domain_package, &view, &root, &clauses, &mut meter)
+        .expect_err("a non-query dispatch target must refuse, not link")
 }
 
 /// #174 (FR-151, `quire.model.dispatch.single/v1`): "Only query operations,
@@ -2174,8 +2172,8 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         ],
     );
     let view = bridge_view(&domain_package);
-    let a_type = key("model.A");
-    let b_type = key("model.B");
+    let a_type = view_type(&view, "model.A");
+    let b_type = view_type(&view, "model.B");
     let mut clauses = OperationClauses::default();
     let a = DeclarationKey::fixture("model.A.size");
     let b = DeclarationKey::fixture("model.B.size");
@@ -2189,24 +2187,14 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
             .own_body
             .insert(operation.clone(), Expression::Integer(Integer::from(1_i64)));
     }
-    let mut object_keys = BTreeMap::new();
-    object_keys.insert(DeclarationKey::fixture("model.A"), a_type);
-    object_keys.insert(DeclarationKey::fixture("model.B"), b_type);
     let mut meter =
         quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: a.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let refusal = checked_dispatch_operation(
-        &domain_package,
-        &view,
-        &root,
-        &object_keys,
-        &clauses,
-        &mut meter,
-    )
-    .expect_err("neither candidate declares a result: the family must refuse, not link");
+    let refusal = checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
+        .expect_err("neither candidate declares a result: the family must refuse, not link");
     match refusal {
         DispatchBridgeRefusal::NotAQuery(refusal) => {
             assert!(

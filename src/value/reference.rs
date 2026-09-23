@@ -13,7 +13,7 @@ use std::sync::Arc;
 use super::composite::{fill_slots, ConstructionRefusal, FieldValue, Value};
 use super::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use crate::model::population::PopulationBinding;
-use quire_exact::NodeKey;
+use quire_exact::EffectiveId;
 use quire_exact::PopulationId;
 
 /// A universe identity in its canonical identity bytes.
@@ -64,14 +64,18 @@ impl ObjectIdentity {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObjectReference {
     universe: UniverseIdentity,
-    object_type: NodeKey,
+    object_type: EffectiveId,
     identity: ObjectIdentity,
 }
 
 impl ObjectReference {
     /// The reference `(universe, object_type, identity)` supplied by a bound
     /// model snapshot.
-    pub fn new(universe: UniverseIdentity, object_type: NodeKey, identity: ObjectIdentity) -> Self {
+    pub fn new(
+        universe: UniverseIdentity,
+        object_type: EffectiveId,
+        identity: ObjectIdentity,
+    ) -> Self {
         Self {
             universe,
             object_type,
@@ -84,8 +88,8 @@ impl ObjectReference {
         &self.universe
     }
 
-    /// The object-type declaration identity.
-    pub fn object_type(&self) -> NodeKey {
+    /// The object type's effective-declaration identity (ADR-013 O-05).
+    pub fn object_type(&self) -> EffectiveId {
         self.object_type
     }
 

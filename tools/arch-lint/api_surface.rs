@@ -200,10 +200,7 @@ pub(crate) const RULES: &[Rule] = &[
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
         // leaves in the change that removes its last mint.
-        debt_list: &[
-            ("value::model_query", "to_object_reference"),
-            ("value::expression::family", "decode_v2"),
-        ],
+        debt_list: &[("value::expression::family", "decode_v2")],
     },
     Rule {
         id: "T12-C",
@@ -227,12 +224,10 @@ pub(crate) const RULES: &[Rule] = &[
              name an allowed-caller mapping for either, not decided here (#213)",
         ),
         shipped_only: true,
-        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists"
-        // (OBS-018).
-        debt_list: &[
-            ("value::model_query", "bridge_lookup_key"),
-            ("value::model_query", "resolve_target"),
-        ],
+        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists".
+        // Empty since QSL-131 V1 retyped reference types to `EffectiveId`
+        // (ADR-013 O-05, OBS-018), so any shipped mint outside `model` fails.
+        debt_list: &[],
     },
     Rule {
         id: "T12-D",

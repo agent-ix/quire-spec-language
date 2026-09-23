@@ -257,7 +257,7 @@ mod tests {
     use super::*;
     use crate::check::family::checking_tests::{empty_scope, root_location};
     use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
-    use quire_exact::{CollectionKind, NodeKey};
+    use quire_exact::{CollectionKind, EffectiveId};
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
@@ -291,7 +291,7 @@ mod tests {
         scope.types = TypeEnvironment::new(
             [],
             [ObjectTypeDeclaration::new(
-                NodeKey::from_digest([7; 32]),
+                EffectiveId::from_digest([7; 32]),
                 name,
                 Vec::new(),
             )],
@@ -378,7 +378,7 @@ mod tests {
         let scope = scope_with_object_type("M::A");
         assert_eq!(
             resolve_in(&scope, &reference("M::A")).expect("M::A is declared"),
-            ValueType::Reference(NodeKey::from_digest([7; 32]))
+            ValueType::Reference(EffectiveId::from_digest([7; 32]))
         );
         let refusal = resolve_in(&scope, &reference("M::B")).unwrap_err();
         assert!(matches!(refusal.cause, CheckCause::MissingName(name) if name == "M::B"));

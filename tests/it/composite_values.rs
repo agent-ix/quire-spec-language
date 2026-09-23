@@ -12,6 +12,7 @@ use std::cell::Cell;
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCause, CompleteCode, Limits};
 use qsl_foundation::SourceIdentity;
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
@@ -47,6 +48,12 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// A model object type's effective-declaration identity (ADR-013 O-05): the
+/// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn int(value: i64) -> Value {
@@ -209,12 +216,16 @@ fn r05_recursion_rule_admits_escaping_and_named_recursion() {
                 "O",
                 vec![field(
                     "r",
-                    ValueType::Reference(key("M::Obj")),
+                    ValueType::Reference(object_type("M::Obj")),
                     Presence::Required,
                 )],
             ),
         ],
-        [ObjectTypeDeclaration::new(key("M::Obj"), "Obj", vec![])],
+        [ObjectTypeDeclaration::new(
+            object_type("M::Obj"),
+            "Obj",
+            vec![],
+        )],
     );
     assert!(admitted.is_ok(), "{admitted:?}");
 
@@ -228,7 +239,7 @@ fn r05_recursion_rule_admits_escaping_and_named_recursion() {
                 "Bad",
                 vec![field(
                     "r",
-                    ValueType::Reference(key("P")),
+                    ValueType::Reference(object_type("P")),
                     Presence::Required,
                 )],
             ),
@@ -392,11 +403,11 @@ fn node_environment() -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [ObjectTypeDeclaration::new(
-            key("M::Node"),
+            object_type("M::Node"),
             "Node",
             vec![field(
                 "peer",
-                ValueType::Reference(key("M::Node")),
+                ValueType::Reference(object_type("M::Node")),
                 Presence::Required,
             )],
         )],
@@ -407,7 +418,7 @@ fn node_environment() -> TypeEnvironment {
 fn node_reference(name: &str) -> ObjectReference {
     ObjectReference::new(
         UniverseIdentity::new(b"snapshot-1").unwrap(),
-        key("M::Node"),
+        object_type("M::Node"),
         ObjectIdentity::new(name.as_bytes()).unwrap(),
     )
 }
@@ -435,7 +446,7 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
         Some(FieldValue::Present(value)) => value.clone(),
         other => panic!("peer is present, not {other:?}"),
     };
-    let reference_type = ValueType::Reference(key("M::Node"));
+    let reference_type = ValueType::Reference(object_type("M::Node"));
     assert_eq!(
         equal(&env, &reference_type, &project("o1"), &project("o1")),
         Ok(Outcome::Completed(true))
@@ -1042,7 +1053,7 @@ mod checked {
     fn r09_no_source_form_converts_into_a_reference() {
         let package = package(node_environment(), Vec::new(), Vec::new()).unwrap();
         // `node_environment()` registers this object type under the key
-        // `key("M::Node")` but the declared *name* "Node" (see that
+        // `object_type("M::Node")` but the declared *name* "Node" (see that
         // function's own `ObjectTypeDeclaration::new` call) -- the `TypeForm`
         // below names it as source syntax would, by that declared name, not
         // by the digest.

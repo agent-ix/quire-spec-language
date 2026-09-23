@@ -39,6 +39,7 @@ use super::quantity::{
 };
 use super::text::compare_text;
 use quire_exact::CollectionKind;
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 
 /// The shape of a composite declaration. Complete V1 has no variant or sum
@@ -85,21 +86,29 @@ impl CompositeDeclaration {
     }
 }
 
-/// A model object type exported by a bound model, with its attributes.
+/// A model object type exported by a bound model, with its attributes. It is
+/// keyed by its effective-declaration identity (ADR-013 O-05), the identity a
+/// `Reference<T>` value's type component carries (FR-143), which `model`
+/// computes over the domain package's effective view -- never a checked
+/// node id.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectTypeDeclaration {
-    key: NodeKey,
+    key: EffectiveId,
     name: String,
     attributes: Vec<FieldDeclaration>,
     /// Every directly declared supertype (FR-151/FR-152/FR-153 generalization,
     /// #204 round 1 H1), empty unless [`Self::with_supertypes`] sets it.
-    supertypes: Vec<NodeKey>,
+    supertypes: Vec<EffectiveId>,
 }
 
 impl ObjectTypeDeclaration {
     /// The object type `name` with declaration identity `key`, declaring no
     /// supertype. See [`Self::with_supertypes`] to declare one.
-    pub fn new(key: NodeKey, name: impl Into<String>, attributes: Vec<FieldDeclaration>) -> Self {
+    pub fn new(
+        key: EffectiveId,
+        name: impl Into<String>,
+        attributes: Vec<FieldDeclaration>,
+    ) -> Self {
         Self {
             key,
             name: name.into(),
@@ -114,13 +123,13 @@ impl ObjectTypeDeclaration {
     /// and returns `self` so every existing [`Self::new`] call site is
     /// unaffected.
     #[must_use]
-    pub fn with_supertypes(mut self, supertypes: Vec<NodeKey>) -> Self {
+    pub fn with_supertypes(mut self, supertypes: Vec<EffectiveId>) -> Self {
         self.supertypes = supertypes;
         self
     }
 
-    /// The object-type declaration identity.
-    pub fn key(&self) -> NodeKey {
+    /// The object type's effective-declaration identity.
+    pub fn key(&self) -> EffectiveId {
         self.key
     }
 
@@ -135,7 +144,7 @@ impl ObjectTypeDeclaration {
     }
 
     /// Every directly declared supertype, in declaration order.
-    pub fn supertypes(&self) -> &[NodeKey] {
+    pub fn supertypes(&self) -> &[EffectiveId] {
         &self.supertypes
     }
 }
@@ -156,7 +165,8 @@ impl InvalidDeclaration {
         match self.cause {
             DeclarationCause::DuplicateKey
             | DeclarationCause::DuplicateMember(_)
-            | DeclarationCause::UnknownDeclaration(_) => "invalid_semantic_graph",
+            | DeclarationCause::UnknownDeclaration(_)
+            | DeclarationCause::UnknownObjectType(_) => "invalid_semantic_graph",
             DeclarationCause::Type(_)
             | DeclarationCause::Recursion { .. }
             | DeclarationCause::GeneralizationCycle { .. } => IllTyped::CODE,
@@ -182,9 +192,12 @@ pub enum DeclarationCause {
     DuplicateMember(String),
     /// A type names a key that is no declaration of the package.
     UnknownDeclaration(NodeKey),
-    /// A member type is ill-typed: a `Reference<T>` target that is not a model
-    /// object type (`type-mismatch`), or an IEEE-bearing set, bag or ordered-set
-    /// element type (`operator-ineligible`).
+    /// A declared supertype names an effective identity that is no admitted
+    /// object type of the package.
+    UnknownObjectType(EffectiveId),
+    /// A member type is ill-typed: a `Reference<T>` target that is not an
+    /// admitted model object type (`type-mismatch`), or an IEEE-bearing set,
+    /// bag or ordered-set element type (`operator-ineligible`).
     Type(IllTypedCause),
     /// The recursion rule refuses this cycle of declaration names, whose first
     /// and last entries are the same declaration.
@@ -209,12 +222,12 @@ pub enum DeclarationCause {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeEnvironment {
     composites: BTreeMap<NodeKey, CompositeDeclaration>,
-    object_types: BTreeMap<NodeKey, ObjectTypeDeclaration>,
+    object_types: BTreeMap<EffectiveId, ObjectTypeDeclaration>,
     /// Every object type's own proper ancestor set (H1, #204 round 1):
     /// transitive, not just direct, `supertypes`. Precomputed once in
     /// [`TypeEnvironment::new`], after the supertypes graph is known
     /// acyclic, so [`Self::conforms`] is a plain set lookup.
-    ancestors: BTreeMap<NodeKey, BTreeSet<NodeKey>>,
+    ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>>,
 }
 
 /// One containment edge of the recursion rule.
@@ -242,9 +255,7 @@ impl TypeEnvironment {
                     return Err(refuse(DeclarationCause::DuplicateMember(name)));
                 }
             }
-            if environment.object_types.contains_key(&declaration.key)
-                || environment.composites.contains_key(&declaration.key)
-            {
+            if environment.composites.contains_key(&declaration.key) {
                 return Err(refuse(DeclarationCause::DuplicateKey));
             }
             environment.composites.insert(declaration.key, declaration);
@@ -257,9 +268,7 @@ impl TypeEnvironment {
             if let Some(name) = duplicate_name(&declaration.attributes) {
                 return Err(refuse(DeclarationCause::DuplicateMember(name)));
             }
-            if environment.object_types.contains_key(&declaration.key)
-                || environment.composites.contains_key(&declaration.key)
-            {
+            if environment.object_types.contains_key(&declaration.key) {
                 return Err(refuse(DeclarationCause::DuplicateKey));
             }
             environment
@@ -284,8 +293,8 @@ impl TypeEnvironment {
         self.composites.values()
     }
 
-    /// The admitted object type with this key.
-    pub fn object_type(&self, key: NodeKey) -> Option<&ObjectTypeDeclaration> {
+    /// The admitted object type with this effective identity.
+    pub fn object_type(&self, key: EffectiveId) -> Option<&ObjectTypeDeclaration> {
         self.object_types.get(&key)
     }
 
@@ -299,7 +308,7 @@ impl TypeEnvironment {
     /// (`sub == sup` always conforms), or `sup` is a proper ancestor of
     /// `sub` in the admitted supertypes graph. `false` for either key
     /// outside this environment's own admitted object types, never a panic.
-    pub fn conforms(&self, sub: NodeKey, sup: NodeKey) -> bool {
+    pub fn conforms(&self, sub: EffectiveId, sup: EffectiveId) -> bool {
         sub == sup
             || self
                 .ancestors
@@ -370,12 +379,12 @@ impl TypeEnvironment {
                 ValueType::Composite(key) if !self.composites.contains_key(key) => {
                     return Some(DeclarationCause::UnknownDeclaration(*key));
                 }
+                // FR-143: `T` in `Reference<T>` must name a model object
+                // type; any other target is `type-mismatch`. The key is an
+                // effective identity (ADR-013 O-05), so an admitted record or
+                // tuple (keyed by `NodeKey`) can never satisfy it either.
                 ValueType::Reference(key) if !self.object_types.contains_key(key) => {
-                    return Some(if self.composites.contains_key(key) {
-                        DeclarationCause::Type(IllTypedCause::TypeMismatch)
-                    } else {
-                        DeclarationCause::UnknownDeclaration(*key)
-                    });
+                    return Some(DeclarationCause::Type(IllTypedCause::TypeMismatch));
                 }
                 // FR-153 names a population binding only as the direct
                 // operand of `allInstances`/`lookup` (checked by
@@ -558,7 +567,7 @@ impl TypeEnvironment {
     /// found, in declaration-key order, exactly as [`Self::check_recursion`]
     /// does for the separate field-containment graph.
     fn check_supertypes(&self) -> Result<(), InvalidDeclaration> {
-        let name = |key: &NodeKey| {
+        let name = |key: &EffectiveId| {
             self.object_types
                 .get(key)
                 .map_or_else(String::new, |declaration| declaration.name.clone())
@@ -568,17 +577,17 @@ impl TypeEnvironment {
                 if !self.object_types.contains_key(supertype) {
                     return Err(InvalidDeclaration {
                         declaration: declaration.name.clone(),
-                        cause: DeclarationCause::UnknownDeclaration(*supertype),
+                        cause: DeclarationCause::UnknownObjectType(*supertype),
                     });
                 }
             }
         }
-        let mut finished: BTreeSet<NodeKey> = BTreeSet::new();
+        let mut finished: BTreeSet<EffectiveId> = BTreeSet::new();
         for root in self.object_types.keys() {
             if finished.contains(root) {
                 continue;
             }
-            let mut path: Vec<(NodeKey, usize)> = vec![(*root, 0)];
+            let mut path: Vec<(EffectiveId, usize)> = vec![(*root, 0)];
             while let Some((node, next)) = path.last_mut() {
                 let node = *node;
                 let Some(target) = self
@@ -615,14 +624,14 @@ impl TypeEnvironment {
     /// folded in only after every direct supertype's own ancestors are
     /// already known (a post-order finish), so each node is visited once and
     /// the walk is bounded by the object-type count, not call-stack depth.
-    fn compute_ancestors(&self) -> BTreeMap<NodeKey, BTreeSet<NodeKey>> {
-        let mut ancestors: BTreeMap<NodeKey, BTreeSet<NodeKey>> = BTreeMap::new();
-        let mut finished: BTreeSet<NodeKey> = BTreeSet::new();
+    fn compute_ancestors(&self) -> BTreeMap<EffectiveId, BTreeSet<EffectiveId>> {
+        let mut ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>> = BTreeMap::new();
+        let mut finished: BTreeSet<EffectiveId> = BTreeSet::new();
         for root in self.object_types.keys() {
             if finished.contains(root) {
                 continue;
             }
-            let mut path: Vec<(NodeKey, usize)> = vec![(*root, 0)];
+            let mut path: Vec<(EffectiveId, usize)> = vec![(*root, 0)];
             while let Some((node, next)) = path.last_mut() {
                 let node = *node;
                 let Some(target) = self

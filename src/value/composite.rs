@@ -9,9 +9,10 @@
 //! parameterized over this module's own `ValueType`/`Value`, not
 //! `quire_exact`'s. Per `quire_exact::value`'s own module doc, `ValueType::
 //! Enum` carries an inline `EnumShape` where this module's carries a
-//! `NodeKey` lookup, and `ValueType::Reference` carries an `EffectiveId`
-//! where this module's carries a `NodeKey`: a redesigned cut, not a
-//! duplicate. `Presence` has no such divergence -- it names only
+//! `NodeKey` lookup: a redesigned cut, not a duplicate. `ValueType::Reference`
+//! carries the kernel `EffectiveId` in both (ADR-013 O-05: FR-143 makes a
+//! reference's type component an effective-declaration identity, never a
+//! checked node id). `Presence` has no divergence -- it names only
 //! `Required`/`Optional` and touches neither `Value` nor `ValueType` -- so it
 //! is `quire_exact`'s type here. Remaining work, Linear QSL-131.
 //!
@@ -35,6 +36,7 @@ use super::quantity::{Quantity, QuantityUnit};
 use super::reference::ObjectReference;
 use super::text::Text;
 use quire_exact::Decimal;
+use quire_exact::EffectiveId;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTyped;
 use quire_exact::NodeKey;
@@ -73,8 +75,9 @@ pub enum ValueType {
     Composite(NodeKey),
     /// A bounded collection type `K<T>[min, max]`.
     Collection(Box<CollectionType>),
-    /// `Reference<T>` to an object of the model object type with this key.
-    Reference(NodeKey),
+    /// `Reference<T>` to an object of the model object type with this
+    /// effective-declaration identity (ADR-013 O-05).
+    Reference(EffectiveId),
     /// FR-153's `Population<T>[N]` parameter type: `N` is the declared
     /// maximum an admitted
     /// [`PopulationBinding`](crate::model::population::PopulationBinding)

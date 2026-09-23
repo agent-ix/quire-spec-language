@@ -520,10 +520,10 @@ pub struct PopulationBinding {
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
     /// rather than discarded): the FR-143 reference-identity bridge
     /// (`crate::value::model_query`) needs this exact
-    /// correspondence to translate a checked `Reference<T>`'s `T`
-    /// (a `quire_exact::NodeKey`, the same 32 bytes as an `EffectiveId`)
-    /// back into the `DeclarationKey` [`all_instances`]/[`lookup`] take, for
-    /// every declared type, not only ones a current member happens to name.
+    /// correspondence to translate a checked `Reference<T>`'s `T` (its
+    /// `EffectiveId`, ADR-013 O-05) back into the `DeclarationKey`
+    /// [`all_instances`]/[`lookup`] take, for every declared type, not only
+    /// ones a current member happens to name.
     type_catalog: BTreeMap<DeclarationKey, EffectiveId>,
     /// FR-153's invocation pre population, attached only by
     /// [`admit_invocation`]: `pre(allInstances(p))`/`pre(lookup(p, r) absent
@@ -892,12 +892,7 @@ fn admit_binding_as(
     // `admitted` would otherwise each be linearly searched per member,
     // making admission O(n^2) against the O(n) `binding.member` charges it
     // records.
-    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view
-        .declarations()
-        .iter()
-        .filter(|entry| entry.preimage.owner_effective_type.is_none())
-        .map(|entry| (entry.preimage.original.clone(), entry.effective_id))
-        .collect();
+    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view.type_identities();
 
     // Computed once here rather than once per `all_instances`/`lookup` call;
     // see the `generals` field's own doc comment.

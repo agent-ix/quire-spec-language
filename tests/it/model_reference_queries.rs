@@ -13,8 +13,8 @@
 //! TC-195 F1 model (`model.A`, `model.B`, generalization `B -> A`) and TC-198
 //! P1 population document, run as real source expressions with a
 //! `Value::Population` parameter and, for `lookup`, a `Value::Reference`
-//! argument bridged through `ObjectReference`/`UniverseIdentity`/`NodeKey`
-//! exactly as `crate::value::model_query` does.
+//! argument bridged through `ObjectReference`/`UniverseIdentity` and the
+//! object type's `EffectiveId` exactly as `crate::value::model_query` does.
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
@@ -124,13 +124,9 @@ fn view_of(domain_package: &DomainPackage) -> EffectiveView {
 }
 
 fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
-    let original = DeclarationKey::fixture(identity);
-    view.declarations()
-        .iter()
-        .find(|entry| {
-            entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
-        })
-        .map(|entry| entry.effective_id)
+    view.type_identities()
+        .get(&DeclarationKey::fixture(identity))
+        .copied()
         .unwrap_or_else(|| panic!("{identity} has no type-level effective declaration"))
 }
 
@@ -212,24 +208,20 @@ fn admitted_binding(
     }
 }
 
-/// The direct byte transfer of a model type/universe/object identity
-/// into a checked `crate::value::ObjectReference`, exactly as
-/// `crate::value::model_query::to_object_reference` bridges a real
-/// `all_instances`/`lookup` result. Test-side construction of an argument
-/// `Value::Reference`, not a re-implementation of the module under test.
+/// A model type/universe/object identity as a checked
+/// `crate::value::ObjectReference`, exactly as
+/// `crate::value::model_query::to_object_reference` converts a real
+/// `all_instances`/`lookup` result: the type is the same `EffectiveId`.
+/// Test-side construction of an argument `Value::Reference`, not a
+/// re-implementation of the module under test.
 fn object_reference(
     universe: &EffectiveId,
     type_identity: &EffectiveId,
     object: &str,
 ) -> ObjectReference {
     let universe = UniverseIdentity::new(universe.as_bytes()).unwrap();
-    let object_type = NodeKey::from_digest(*type_identity.as_bytes());
     let identity = ObjectIdentity::new(object.as_bytes()).unwrap();
-    ObjectReference::new(universe, object_type, identity)
-}
-
-fn node_key(identity: &EffectiveId) -> NodeKey {
-    NodeKey::from_digest(*identity.as_bytes())
+    ObjectReference::new(universe, *type_identity, identity)
 }
 
 struct Scenario {
@@ -315,16 +307,16 @@ fn l07_scenario() -> Scenario {
 }
 
 /// A checked package whose `TypeEnvironment` declares `M::A`/`M::B` as
-/// object types under their real checked `NodeKey`s (the same 32 bytes as
-/// `scenario`'s own `EffectiveId`s) — required for `ValueType::Reference`
+/// object types under `scenario`'s own `EffectiveId`s (ADR-013 O-05) —
+/// required for `ValueType::Reference`
 /// to check at all: `TypeEnvironment::type_refusal` refuses any
 /// `Reference<T>` whose `T` is not a declared object type.
 fn types(scenario: &Scenario) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
-            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
         ],
     )
     .unwrap()
@@ -350,7 +342,7 @@ fn package(scenario: &Scenario) -> CheckedPackage {
 /// `pre(...)` operand does not leak the caller's pre anchor into `F`'s own
 /// body.
 fn package_with_function(scenario: &Scenario) -> CheckedPackage {
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let graph = PackageDeclarations {
         types: types(scenario),
         functions: vec![FunctionDeclaration::new(
@@ -555,13 +547,19 @@ fn check_refusal_as_postcondition(
     }
 }
 
-/// A stable `NodeKey` distinct from any `scenario()` type, for a declaration
-/// this file constructs but never admits into `fixture_f1`'s model -- finding
-/// 1's record-field/object-attribute cases (checked at
-/// `TypeEnvironment::new` time, never through an expression) and finding 2's
-/// package-declared-but-not-in-the-model case need one each.
+/// A stable `NodeKey` distinct from any `scenario()` type, for a record
+/// declaration this file constructs -- finding 1's record-field case
+/// (checked at `TypeEnvironment::new` time, never through an expression).
 fn fixed_key(byte: u8) -> NodeKey {
     NodeKey::from_digest([byte; 32])
+}
+
+/// A stable object-type `EffectiveId` distinct from any `scenario()` type,
+/// for an object type this file declares but never admits into
+/// `fixture_f1`'s model -- finding 1's object-attribute case and finding 2's
+/// package-declared-but-not-in-the-model case need one each.
+fn fixed_type(byte: u8) -> EffectiveId {
+    EffectiveId::from_digest([byte; 32])
 }
 
 /// Unwraps a completed kernel evaluation, panicking on any family-owned
@@ -672,11 +670,11 @@ fn reference_type_form(target: &ValueType) -> TypeForm {
         panic!("all_instances/lookup's own target is always a Reference, got {target:?}");
     };
     let fixture = scenario();
-    if *key == node_key(&fixture.a) {
+    if *key == fixture.a {
         crate::support::type_form::named_type_form("M::A")
-    } else if *key == node_key(&fixture.b) {
+    } else if *key == fixture.b {
         crate::support::type_form::named_type_form("M::B")
-    } else if *key == fixed_key(0xCC) {
+    } else if *key == fixed_type(0xCC) {
         crate::support::type_form::named_type_form("M::C")
     } else {
         panic!(
@@ -739,7 +737,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
-    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let expression = all_instances(ValueType::Reference(scenario.a));
     let arguments = vec![population_argument(&scenario)];
 
     let checked = check(&package, &parameters, &expression);
@@ -749,10 +747,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     };
     assert_eq!(collection_type.bound().minimum(), 0);
     assert_eq!(collection_type.bound().maximum(), 3);
-    assert_eq!(
-        collection_type.element(),
-        &ValueType::Reference(node_key(&scenario.a))
-    );
+    assert_eq!(collection_type.element(), &ValueType::Reference(scenario.a));
 
     let (outcome, meter) = run(
         &package,
@@ -779,7 +774,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     // FR-153-AC-6: the same object, `b1`, selected under `M::B` directly, is the
     // identical reference the `M::A` selection above already carries.
     let arguments_b = vec![population_argument(&scenario)];
-    let expression_b = all_instances(ValueType::Reference(node_key(&scenario.b)));
+    let expression_b = all_instances(ValueType::Reference(scenario.b));
     let (outcome_b, _) = run(
         &package,
         &parameters,
@@ -821,7 +816,7 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
-    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let expression = all_instances(ValueType::Reference(scenario.a));
 
     let (outcome, meter) = run(
         &package,
@@ -874,12 +869,9 @@ fn l14_lookup_expression_undefined_mode() {
     let package = package(&scenario);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.b))),
+        ("r", ValueType::Reference(scenario.b)),
     ];
-    let expression = lookup(
-        ValueType::Reference(node_key(&scenario.a)),
-        AbsenceMode::Undefined,
-    );
+    let expression = lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined);
 
     let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
     let (present, _) = run(
@@ -903,15 +895,12 @@ fn l14_lookup_expression_undefined_mode() {
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters_absent = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
     let (absent, _) = run_family(
         &package,
         &parameters_absent,
-        &lookup(
-            ValueType::Reference(node_key(&scenario.a)),
-            AbsenceMode::Undefined,
-        ),
+        &lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined),
         vec![
             population_argument(&scenario),
             Value::Reference(absent_reference),
@@ -954,10 +943,10 @@ fn l14_lookup_expression_undefined_mode() {
 fn l15_lookup_expression_empty_mode() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.b))),
+        ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target.clone(), AbsenceMode::Empty);
 
@@ -987,7 +976,7 @@ fn l15_lookup_expression_empty_mode() {
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters_absent = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
     let (absent, _) = run(
         &package,
@@ -1021,11 +1010,11 @@ fn l15_lookup_expression_empty_mode() {
 fn l16_lookup_expression_refused_mode() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
     let expression = lookup(target, AbsenceMode::Refused);
 
@@ -1126,8 +1115,8 @@ fn population_refused_as_record_field() {
     let result = TypeEnvironment::new(
         [declaration],
         [
-            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
-            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
         ],
     );
     match result {
@@ -1143,7 +1132,7 @@ fn population_refused_as_record_field() {
 fn population_refused_as_object_attribute() {
     let scenario = scenario();
     let declaration = ObjectTypeDeclaration::new(
-        fixed_key(0xBB),
+        fixed_type(0xBB),
         "M::Holder",
         vec![FieldDeclaration::new(
             "value",
@@ -1154,8 +1143,8 @@ fn population_refused_as_object_attribute() {
     let result = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
-            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
             declaration,
         ],
     );
@@ -1176,7 +1165,7 @@ fn all_instances_refuses_non_population_operand_as_ineligible() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Integer)];
-    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let expression = all_instances(ValueType::Reference(scenario.a));
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -1190,12 +1179,9 @@ fn lookup_refuses_non_population_operand_as_ineligible() {
     let package = package(&scenario);
     let parameters = [
         ("p", ValueType::Integer),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
-    let expression = lookup(
-        ValueType::Reference(node_key(&scenario.a)),
-        AbsenceMode::Undefined,
-    );
+    let expression = lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined);
     let refusal = check_refusal(&package, &parameters, &expression);
     assert_eq!(
         refusal.cause,
@@ -1216,12 +1202,12 @@ fn lookup_refuses_non_population_operand_as_ineligible() {
 #[trace("TC-198", "FR-153-AC-3")]
 fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() {
     let scenario = scenario();
-    let foreign_key = fixed_key(0xCC);
+    let foreign_key = fixed_type(0xCC);
     let types = TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(node_key(&scenario.a), "M::A", vec![]),
-            ObjectTypeDeclaration::new(node_key(&scenario.b), "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
             ObjectTypeDeclaration::new(foreign_key, "M::C", vec![]),
         ],
     )
@@ -1267,16 +1253,16 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.b))),
+        ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target, AbsenceMode::Undefined);
 
     let malformed_reference = ObjectReference::new(
         UniverseIdentity::new(&[1, 2, 3, 4, 5]).unwrap(),
-        node_key(&scenario.b),
+        scenario.b,
         ObjectIdentity::new(b"b1").unwrap(),
     );
     let object_world =
@@ -1319,16 +1305,16 @@ fn lookup_expression_malformed_universe_is_foreign_universe_after_one_work_unit(
 fn lookup_expression_malformed_identity_is_none_in_empty_mode() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
     let expression = lookup(target.clone(), AbsenceMode::Empty);
 
     let malformed_reference = ObjectReference::new(
         UniverseIdentity::new(scenario.universe.as_bytes()).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
@@ -1393,15 +1379,15 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
         binding,
     };
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
 
     let malformed_reference = ObjectReference::new(
         UniverseIdentity::new(scenario.universe.as_bytes()).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
@@ -1478,17 +1464,17 @@ fn lookup_expression_malformed_identity_never_aliases_a_lossy_decoded_member() {
 fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_absent() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
 
     // 32 repeats of 0x07: well-formed length, but not `scenario.universe`.
     let foreign_universe = UniverseIdentity::new(&[0x07; 32]).unwrap();
     let malformed_reference = ObjectReference::new(
         foreign_universe,
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let object_world =
@@ -1552,10 +1538,10 @@ fn lookup_expression_malformed_identity_in_a_foreign_universe_is_refused_not_abs
 fn lookup_expression_malformed_and_absent_well_formed_references_are_indistinguishable() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
 
     let zero_work_units = ScalarLimits {
@@ -1578,22 +1564,22 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
 
     let well_formed_own = ObjectReference::new(
         UniverseIdentity::new(&own_universe).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
     );
     let malformed_identity_own = ObjectReference::new(
         UniverseIdentity::new(&own_universe).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     let well_formed_foreign = ObjectReference::new(
         UniverseIdentity::new(&foreign_universe).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
     );
     let malformed_identity_foreign = ObjectReference::new(
         UniverseIdentity::new(&foreign_universe).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(&[0xFF, 0xFE]).unwrap(),
     );
     // 5 bytes: never a well-formed universe (every real universe is exactly
@@ -1602,7 +1588,7 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
     // the universe axis varies between this pair.
     let malformed_universe = ObjectReference::new(
         UniverseIdentity::new(&[1, 2, 3, 4, 5]).unwrap(),
-        node_key(&scenario.a),
+        scenario.a,
         ObjectIdentity::new(b"zz9-never-admitted").unwrap(),
     );
 
@@ -1746,10 +1732,10 @@ fn lookup_expression_malformed_and_absent_well_formed_references_are_indistingui
 fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.b))),
+        ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = Expression::Collection {
         kind: CollectionKind::Set,
@@ -1792,7 +1778,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
             let elements = reference_elements(&value);
             assert_eq!(elements.len(), 1);
             assert_eq!(elements[0], present_reference);
-            assert_eq!(elements[0].object_type(), node_key(&scenario.b));
+            assert_eq!(elements[0].object_type(), scenario.b);
         }
         other => panic!("expected a completed collection, got {other:?}"),
     }
@@ -1820,7 +1806,7 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
 
     let (post_outcome, _) = run(
         &package,
@@ -1867,10 +1853,10 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
 fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.a))),
+        ("r", ValueType::Reference(scenario.a)),
     ];
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
     let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])])
@@ -1905,7 +1891,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
             match option.payload() {
                 Some(Value::Reference(reference)) => {
                     assert_eq!(*reference, r2);
-                    assert_eq!(reference.object_type(), node_key(&scenario.a));
+                    assert_eq!(reference.object_type(), scenario.a);
                 }
                 other => panic!("expected a present a2 payload, got {other:?}"),
             }
@@ -1930,7 +1916,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
 fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let pre_count = size(pre(allInstances(p))) in
@@ -1988,7 +1974,7 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
 fn pre_refuses_a_let_bound_query_result_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let v = allInstances(p) in pre(v)
@@ -2029,7 +2015,7 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
 fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(size(allInstances(q)))
@@ -2070,7 +2056,7 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
 fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(let r = q in size(allInstances(r)))
@@ -2118,7 +2104,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
 fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(size(allInstances(let s = q in s)))
@@ -2160,7 +2146,7 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
 fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(size(allInstances(if true then q else q)))
@@ -2206,7 +2192,7 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
 fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(let r = if true then q else q in size(allInstances(r)))
@@ -2257,7 +2243,7 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
 fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let q = p in pre(let r = (let s = q in s) in size(allInstances(r)))
@@ -2308,7 +2294,7 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
 fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     // let v = size(allInstances(p)) in pre(size(allInstances(p)) != v)
@@ -2409,7 +2395,7 @@ fn pre_of_an_integer_literal_is_refused() {
 fn pre_refuses_outside_a_postcondition_context() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     let refusal = check_refusal(&package, &parameters, &pre(all_instances(target)));
@@ -2428,7 +2414,7 @@ fn pre_refuses_outside_a_postcondition_context() {
 fn nested_pre_is_idempotent() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     let (single, _) = run_postcondition(
@@ -2510,7 +2496,7 @@ fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_r
 fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
     let scenario = l07_scenario();
     let package = package_with_collection_function(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     let expression = pre(Expression::Call {
@@ -2552,7 +2538,7 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
 fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [("p", ValueType::Population(3))];
 
     let (outcome, _) = run_postcondition_family(
@@ -2645,7 +2631,7 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
         .unwrap();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
-    let expression = all_instances(ValueType::Reference(node_key(&a)));
+    let expression = all_instances(ValueType::Reference(a));
 
     let (outcome1, _) = run(
         &package,
@@ -2776,7 +2762,7 @@ fn tc_294_unresolved_population_id_refuses_typed() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [("p", ValueType::Population(3))];
-    let expression = all_instances(ValueType::Reference(node_key(&scenario.a)));
+    let expression = all_instances(ValueType::Reference(scenario.a));
     let unresolved_id = scenario.binding.population_id();
 
     let checked = check(&package, &parameters, &expression);
@@ -2875,7 +2861,7 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
         .with_population(binding)
         .unwrap();
     let package = package(&scenario);
-    let expression = all_instances(ValueType::Reference(node_key(&a)));
+    let expression = all_instances(ValueType::Reference(a));
 
     let parameters_5 = [("p", ValueType::Population(5))];
     let (outcome_5, _) = run(
@@ -2982,10 +2968,10 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
 fn tc_294_lookup_refuses_an_unresolved_population_id() {
     let scenario = scenario();
     let package = package(&scenario);
-    let target = ValueType::Reference(node_key(&scenario.a));
+    let target = ValueType::Reference(scenario.a);
     let parameters = [
         ("p", ValueType::Population(3)),
-        ("r", ValueType::Reference(node_key(&scenario.b))),
+        ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target, AbsenceMode::Empty);
     let unresolved_id = scenario.binding.population_id();
@@ -3158,7 +3144,7 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
     let (evaluation, _) = run_family(
         &package,
         &[("p", ValueType::Population(1))],
-        &all_instances(ValueType::Reference(node_key(&scenario.a))),
+        &all_instances(ValueType::Reference(scenario.a)),
         vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,
         &population_environment(&scenario),

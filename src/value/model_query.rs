@@ -10,10 +10,10 @@
 //! encoding that bridges the two. FR-143 defines a reference's `universe`
 //! and most-specific `type` as literally the model's own
 //! `quire.model.object-universe/v1` and `quire.model.effective-declaration/v1`
-//! digests, so the bridge is a direct byte transfer, never a re-hash --
-//! [`NodeKey`]/[`UniverseIdentity`] carry no domain tag of their own, and an
-//! `EffectiveId` is exactly 32 bytes, so the two are the same bytes under
-//! different types.
+//! digests. The type component is the kernel [`EffectiveId`] on both sides
+//! (ADR-013 O-05), so it passes through unchanged: no `EffectiveId` <->
+//! `NodeKey` transfer exists (ADR-010 OBS-018). The universe is carried as
+//! its raw bytes in [`UniverseIdentity`], never re-hashed.
 //!
 //! `crate::model::population::all_instances`/`lookup` already perform every
 //! FR-153 charge (`lookup.key`, `lookup.result-retain`, `population.visit`,
@@ -84,7 +84,6 @@ use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
 use super::outcome::{Refusal, Stop};
 use super::reference::{ObjectIdentity, ObjectReference, UniverseIdentity};
-use quire_exact::NodeKey;
 use quire_exact::{Incomplete, Meter, PopulationId};
 
 /// Why a population query stopped without a value. The evaluator
@@ -120,15 +119,15 @@ fn invariant() -> ModelQueryHalt {
     ModelQueryHalt::Stop(Stop::Refused(Refusal::CheckedInvariant))
 }
 
-/// The direct FR-143 byte transfer of a model [`ReferenceKey`] into its
-/// `crate::value` [`ObjectReference`]. Fails only when a component's bytes
-/// are empty, which an admitted [`PopulationBinding`] never produces (a
-/// checked invariant).
+/// The FR-143 conversion of a model [`ReferenceKey`] into its
+/// `crate::value` [`ObjectReference`]: the type component is the same
+/// [`EffectiveId`], and the universe and object are their own bytes. Fails
+/// only when a byte component is empty, which an admitted
+/// [`PopulationBinding`] never produces (a checked invariant).
 fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQueryHalt> {
     let universe = UniverseIdentity::new(key.universe.as_bytes()).map_err(|_| invariant())?;
-    let object_type = NodeKey::from_digest(*key.type_identity.as_bytes());
     let identity = ObjectIdentity::new(key.object.as_bytes()).map_err(|_| invariant())?;
-    Ok(ObjectReference::new(universe, object_type, identity))
+    Ok(ObjectReference::new(universe, key.type_identity, identity))
 }
 
 /// The FR-143 byte transfer of `reference`'s own identity triple into a
@@ -141,7 +140,7 @@ fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -
     LookupKey {
         static_type,
         universe: reference.universe().as_bytes().to_vec(),
-        type_identity: EffectiveId::from_digest(*reference.object_type().as_bytes()),
+        type_identity: reference.object_type(),
         object: reference.identity().as_bytes().to_vec(),
     }
 }
@@ -159,8 +158,8 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
 }
 
 /// The queried type `t`'s original [`DeclarationKey`], resolved from a checked
-/// `Reference<T>`'s `T` (a [`NodeKey`], the same 32 bytes as `t`'s
-/// `EffectiveId`) through `catalog` (see [`reverse_catalog`]). `Err` for a
+/// `Reference<T>`'s `T` (its [`EffectiveId`]) through `catalog` (see
+/// [`reverse_catalog`]). `Err` for a
 /// `T` the checked package declares but this particular runtime binding's
 /// model does not -- a real FR-153 `ill_typed`/`type-mismatch`, the same
 /// cause `crate::model::population::all_instances`'s own `is_object_type`
@@ -171,17 +170,13 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
 /// *binding* declares is model data, not package data).
 fn resolve_target(
     catalog: &HashMap<EffectiveId, DeclarationKey>,
-    target: NodeKey,
+    target: EffectiveId,
 ) -> Result<DeclarationKey, ModelQueryHalt> {
-    let target_id = EffectiveId::from_digest(*target.as_bytes());
-    catalog.get(&target_id).cloned().ok_or_else(|| {
+    catalog.get(&target).cloned().ok_or_else(|| {
         ModelQueryHalt::Refused(Box::new(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
-            detail: format!(
-                "{} is not a declared type of this population's model",
-                target_id
-            ),
+            detail: format!("{target} is not a declared type of this population's model"),
         }))
     })
 }
@@ -221,8 +216,8 @@ pub(crate) fn evaluate_all_instances(
 /// `empty`, per FR-153's own table).
 pub(crate) fn evaluate_lookup(
     binding: &PopulationBinding,
-    target: NodeKey,
-    static_type: NodeKey,
+    target: EffectiveId,
+    static_type: EffectiveId,
     reference: Value,
     absence: AbsenceMode,
     result_type: &ValueType,
