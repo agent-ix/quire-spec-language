@@ -20,13 +20,13 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
-use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
-use quire_exact::{Value, ValueType};
-use quire_spec_language::check::{
+use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations,
 };
-use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::model::object_environment::ObjectEnvironment;
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
+use quire_exact::{Value, ValueType};
 use quire_spec_language::value::{
     CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };

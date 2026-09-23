@@ -437,7 +437,7 @@ macro_rules! digest_domain {
 /// Exact SHA-256 identity of authored source bytes.
 ///
 /// ```compile_fail
-/// use quire_spec_language::complete::{SemanticDigest, SourceDigest};
+/// use qsl_semantics::complete::{SemanticDigest, SourceDigest};
 /// let source: SourceDigest = SemanticDigest::of(b"same bytes");
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

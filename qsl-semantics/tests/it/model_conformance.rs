@@ -6,23 +6,23 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::OrderingOperator;
-use quire_spec_language::check::check_field_refinement_obligation;
-use quire_spec_language::model::accounting::{Meter, ModelNormalizationLimits};
-use quire_spec_language::model::conformance::{
+use qsl_semantics::check::check_field_refinement_obligation;
+use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
+use qsl_semantics::model::conformance::{
     check_field_redefinition, check_operation_redefinition, check_subsetting,
     resolve_redefinition_target, AxisFailure, ConformanceCheckOutcome, ConformanceOutcome,
     RedefinitionTargetOutcome,
 };
-use quire_spec_language::model::domain_package::{
+use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationParameterRecord,
     OperationResult, PostconditionClause, ScalarTypeRecord, ValueTypeRef,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
-use quire_spec_language::model::normalize::{
+use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
+use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
+use quire_exact::OrderingOperator;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {

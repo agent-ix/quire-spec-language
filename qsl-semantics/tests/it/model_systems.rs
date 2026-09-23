@@ -11,17 +11,17 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use quire_spec_language::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
-use quire_spec_language::model::domain_package::{
+use qsl_semantics::model::accounting::{ChargePoint, Meter, ModelNormalizationLimits};
+use qsl_semantics::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
     EndpointRecord, Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
     PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
-use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
-use quire_spec_language::model::systems::{
+use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, resolve_kind, AllocationCheckOutcome,
     ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind,
 };
@@ -70,18 +70,16 @@ fn field_member(
     value_type: &str,
     m: Multiplicity,
 ) -> DomainPackageRecord {
-    DomainPackageRecord::FieldMember(
-        quire_spec_language::model::domain_package::FieldMemberRecord {
-            key: DeclarationKey::fixture(identity),
-            owner: DeclarationKey::fixture(owner),
-            value_type: quire_spec_language::model::domain_package::ValueTypeRef::Package(
-                DeclarationKey::fixture(value_type),
-            ),
-            multiplicity: m,
-            subsets: vec![],
-            redefines: None,
-        },
-    )
+    DomainPackageRecord::FieldMember(qsl_semantics::model::domain_package::FieldMemberRecord {
+        key: DeclarationKey::fixture(identity),
+        owner: DeclarationKey::fixture(owner),
+        value_type: qsl_semantics::model::domain_package::ValueTypeRef::Package(
+            DeclarationKey::fixture(value_type),
+        ),
+        multiplicity: m,
+        subsets: vec![],
+        redefines: None,
+    })
 }
 
 fn component(
@@ -525,7 +523,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     });
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
-    let before = meter.consumed(quire_spec_language::model::accounting::LimitKind::WorkUnits);
+    let before = meter.consumed(qsl_semantics::model::accounting::LimitKind::WorkUnits);
     match check_connection(
         &domain_package,
         &classification,
@@ -544,7 +542,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
         }
         other => panic!("expected an interface-type refusal, got {other:?}"),
     }
-    let after = meter.consumed(quire_spec_language::model::accounting::LimitKind::WorkUnits);
+    let after = meter.consumed(qsl_semantics::model::accounting::LimitKind::WorkUnits);
     // Three systems.connection-condition charges, one flat work unit each
     // (this module's recorded scope choice — see systems.rs's module doc —
     // not FR-152's own f(Flow)/f(Flow2) derivation-fact pricing).

@@ -1279,6 +1279,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-semantics"
+version = "0.1.0"
+dependencies = [
+ "agent-ix-extraction-frontend",
+ "agent-ix-semantic-ir",
+ "ix-trace-rs",
+ "num-bigint",
+ "num-traits",
+ "qsl-forms",
+ "qsl-foundation",
+ "quire-exact",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-source"
 version = "0.1.0"
 dependencies = [
@@ -1366,8 +1385,6 @@ dependencies = [
 name = "quire-spec-language"
 version = "0.2.0"
 dependencies = [
- "agent-ix-extraction-frontend",
- "agent-ix-semantic-ir",
  "ix-trace-rs",
  "jsonschema 0.17.1",
  "logos",
@@ -1378,6 +1395,7 @@ dependencies = [
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
+ "qsl-semantics",
  "qsl-source",
  "quire-contract-codegen",
  "quire-contract-ir",

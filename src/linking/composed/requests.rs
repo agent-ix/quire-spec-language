@@ -28,7 +28,7 @@
 //!
 //! ## One capability type (ADR-010 OBS-012)
 //!
-//! [`Request::capability`] carries [`crate::check::Capability`], the
+//! [`Request::capability`] carries [`qsl_semantics::check::Capability`], the
 //! canonical ten-label FR-290 type (ADR-013 O-19), not a local request-label
 //! enum: OBS-012 records that "the QSL four-variant request label enum is
 //! replaced by the #213 type." [`families`] maps each of the ten kinds onto
@@ -56,8 +56,8 @@
 
 use super::binding;
 use super::{DeclarationId, SyntaxNamespace};
-use crate::check::Capability;
 use crate::syntax::composed::DeclarationKind;
+use qsl_semantics::check::Capability;
 
 /// The declared semantic family of a requested declaration.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

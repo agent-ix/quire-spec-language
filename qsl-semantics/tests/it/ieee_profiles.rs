@@ -14,6 +14,10 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
+use qsl_semantics::value::{
+    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
+    PackageRefusalCode,
+};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -24,10 +28,6 @@ use quire_exact::{
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
     Refusal, ScalarLimits, Undefined,
-};
-use quire_spec_language::value::{
-    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
-    PackageRefusalCode,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

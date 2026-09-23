@@ -7,15 +7,15 @@
 //! against a pinned external hash.
 
 use ix_trace_rs::trace;
-use quire_spec_language::model::accounting::{
+use qsl_semantics::model::accounting::{
     ChargePoint, Incomplete, LimitKind, ModelNormalizationLimits,
 };
-use quire_spec_language::model::domain_package::{
+use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
-use quire_spec_language::model::normalize::{
+use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
+use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, object_universe, object_universe_of, object_universes,
     ModelRefusal, ModelRefusalCause, NormalizeOutcome, ObjectUniverse, Refusals,
 };
@@ -615,10 +615,10 @@ fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_th
 /// `original_identity` under owner effective type `owner`, regardless of
 /// its `visible` bit — phase 4 retains hidden entries in the view.
 fn find_member<'a>(
-    view: &'a quire_spec_language::model::normalize::EffectiveView,
+    view: &'a qsl_semantics::model::normalize::EffectiveView,
     owner: &EffectiveId,
     original_identity: &str,
-) -> &'a quire_spec_language::model::normalize::ViewEntry {
+) -> &'a qsl_semantics::model::normalize::ViewEntry {
     view.declarations()
         .iter()
         .find(|entry| {
@@ -631,7 +631,7 @@ fn find_member<'a>(
 fn completed(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
-) -> quire_spec_language::model::normalize::EffectiveView {
+) -> qsl_semantics::model::normalize::EffectiveView {
     match normalize(domain_package, limits) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed view, got {other:?}"),
@@ -641,9 +641,9 @@ fn completed(
 /// Finds the type-level effective declaration with original identity
 /// `original_identity` (an object type has no owner).
 fn find_type<'a>(
-    view: &'a quire_spec_language::model::normalize::EffectiveView,
+    view: &'a qsl_semantics::model::normalize::EffectiveView,
     original_identity: &str,
-) -> &'a quire_spec_language::model::normalize::ViewEntry {
+) -> &'a qsl_semantics::model::normalize::ViewEntry {
     view.declarations()
         .iter()
         .find(|entry| {
@@ -693,11 +693,10 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
     let rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.identity(), rerun.identity());
 
-    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
     assert_eq!(universe.root_types, vec![type_a.effective_id]);
     assert!(is_sha256_hex(&universe.identity().to_string()));
-    let universe_rerun =
-        quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe_rerun = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
     assert_eq!(universe.identity(), universe_rerun.identity());
 }
 
@@ -748,7 +747,7 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.identity(), rerun.identity());
 
-    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f2()).unwrap();
+    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f2()).unwrap();
     assert!(is_sha256_hex(&universe.identity().to_string()));
 }
 
@@ -785,12 +784,11 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     assert_eq!(v1_ids, v2_ids);
 
     assert!(is_sha256_hex(&view.identity().to_string()));
-    let universe = quire_spec_language::model::normalize::object_universe(&domain_package).unwrap();
+    let universe = qsl_semantics::model::normalize::object_universe(&domain_package).unwrap();
     assert!(is_sha256_hex(&universe.identity().to_string()));
     // Different from version 1's own view/universe: the model selection
     // changed.
-    let universe_v1 =
-        quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe_v1 = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
     assert_ne!(view.identity(), v1.identity());
     assert_ne!(universe.identity(), universe_v1.identity());
 }
@@ -888,10 +886,9 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
 #[test]
 fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_digest() {
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
 
-    let selection_digest =
-        quire_spec_language::model::key::hex(&fixture_f1().model_selection.digest);
+    let selection_digest = qsl_semantics::model::key::hex(&fixture_f1().model_selection.digest);
 
     for entry in view.declarations() {
         assert_ne!(
@@ -1081,13 +1078,13 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
 fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignored() {
     let mut domain_package = fixture_f1();
     domain_package.records.push(DomainPackageRecord::Population(
-        quire_spec_language::model::domain_package::PopulationRecord {
+        qsl_semantics::model::domain_package::PopulationRecord {
             key: DeclarationKey::fixture("model.pop.p1"),
             member_types: vec![
                 DeclarationKey::fixture("ix://test/orders/A"),
                 DeclarationKey::fixture("model.no-such-type"),
             ],
-            extent: quire_spec_language::model::domain_package::Extent::Closed,
+            extent: qsl_semantics::model::domain_package::Extent::Closed,
         },
     ));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
@@ -2179,7 +2176,7 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     assert_eq!(member_a_x.preimage.jcs_bytes().len(), 500);
     assert_eq!(member_b_x.preimage.jcs_bytes().len(), 583);
 
-    let universe = quire_spec_language::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
     assert_eq!(universe.jcs_bytes().len(), 349);
     assert_eq!(view.jcs_bytes().len(), 2941);
 

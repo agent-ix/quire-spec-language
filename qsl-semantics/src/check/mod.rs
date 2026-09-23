@@ -204,7 +204,7 @@ struct CheckedFunction {
 /// in particular, not by naming this struct's private fields directly from
 /// outside `check`:
 /// ```compile_fail,E0451
-/// use quire_spec_language::check::CheckedGraph;
+/// use qsl_semantics::check::CheckedGraph;
 /// let forged = CheckedGraph {
 ///     scope: todo!(),
 ///     functions: Vec::new(),

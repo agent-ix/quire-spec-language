@@ -30,6 +30,6 @@ pub use checked::{CheckedPackage, EmittedPackage};
 // (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
 // `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
 // review) and not re-exported here: `checked_v2` now returns a real
-// `crate::library::VerifiedPackage` (FR-087-AC-1, AC-3; QSL-6 slice A1), but
+// `qsl_semantics::library::VerifiedPackage` (FR-087-AC-1, AC-3; QSL-6 slice A1), but
 // this module still has no caller of its own (S3, ADR-011 §4's round trip,
 // QSL-6 slice A7, has not landed) beyond `checked_v2`'s own tests.

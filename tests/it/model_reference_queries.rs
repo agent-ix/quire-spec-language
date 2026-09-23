@@ -21,37 +21,37 @@ use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
+    PackageDeclarations, WrongSnapshotCause,
+};
+use qsl_semantics::family::{FamilyOutcome, FamilyResult};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::dispatch::GeneralizationClosure;
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
+};
+use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::normalize::{
+    normalize, object_universe, EffectiveView, NormalizeOutcome,
+};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::population::{
+    admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
+    InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember,
+};
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
-    PackageDeclarations, WrongSnapshotCause,
-};
-use quire_spec_language::family::{FamilyOutcome, FamilyResult};
-use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
-};
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
-use quire_spec_language::model::normalize::{
-    normalize, object_universe, EffectiveView, NormalizeOutcome,
-};
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::model::population::{
-    admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
-    InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
-    PopulationMember,
-};
-use quire_spec_language::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
-    ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_spec_language::value::{
     CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
@@ -2804,12 +2804,12 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
     let package = package(&scenario);
 
     let mut direct_meter = Meter::new(SCALAR_UNLIMITED);
-    let direct = match quire_spec_language::model::population::all_instances(
+    let direct = match qsl_semantics::model::population::all_instances(
         &scenario.binding,
         &DeclarationKey::fixture("model.A"),
         &mut direct_meter,
     ) {
-        quire_spec_language::model::population::AllInstancesOutcome::Refused(refusal) => {
+        qsl_semantics::model::population::AllInstancesOutcome::Refused(refusal) => {
             refusal.catalog_code()
         }
         other => panic!("expected all_instances to refuse two members above [0,1], got {other:?}"),

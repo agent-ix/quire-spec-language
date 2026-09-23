@@ -13,16 +13,16 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use quire_spec_language::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
-use quire_spec_language::model::dispatch::{
+use qsl_semantics::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
+use qsl_semantics::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
-use quire_spec_language::model::domain_package::{
+use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord,
 };
-use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
@@ -73,15 +73,15 @@ fn fixture_g() -> Vec<DomainPackageRecord> {
 
 fn effective_view(
     domain_package: &DomainPackage,
-) -> quire_spec_language::model::normalize::EffectiveView {
+) -> qsl_semantics::model::normalize::EffectiveView {
     match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("expected a completed effective view, got {other:?}"),
     }
 }
 
-fn unlimited_meter() -> quire_spec_language::model::accounting::Meter {
-    quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED)
+fn unlimited_meter() -> qsl_semantics::model::accounting::Meter {
+    qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED)
 }
 
 /// D01: `A.size`/`B.size` (`B.size` redefines `A.size`) each have a body.
@@ -241,7 +241,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
 
-    let mut meter = quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits {
+    let mut meter = qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits {
         dispatch_candidates: 7,
         ..ModelNormalizationLimits::UNLIMITED
     });
@@ -279,7 +279,7 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
     let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.g"), records);
     let view = effective_view(&domain_package);
 
-    let mut meter = quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits {
+    let mut meter = qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits {
         dispatch_candidates: 8,
         ..ModelNormalizationLimits::UNLIMITED
     });

@@ -1,0 +1,59 @@
+[package]
+name = "qsl-semantics"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer 3: semantic values, the model and library layers, and the S3 check core with its family checkers."
+
+[features]
+default = []
+# Test-only fixtures and views (`ReaderAuthority::fixture`,
+# `DeclarationKey::fixture`, `DomainPackageRef::fixture{,_with_version}`,
+# `check::family::fixtures`, `model::refusal::fixtures` and the items widened
+# to `pub` only for tests). `ReaderAuthority::fixture` forges a crate-issued
+# capability, so a shipped dependent must never enable this: only a
+# `[dev-dependencies]` entry may, and the root crate's
+# `tests/it/family_outcome_layering.rs`
+# (`no_shipped_dependency_enables_test_support`) refuses any normal or build
+# dependency that does.
+test-support = []
+
+# ADR-011 §6.1 layer 3 depends on "2, F, K" only; the FCD crates are named by
+# `model::intake` alone. The root crate's `tests/it/family_outcome_layering.rs`
+# (TC-390) asserts that this table names no other workspace crate.
+[dependencies]
+qsl-forms = { path = "../qsl-forms" }
+qsl-foundation = { path = "../qsl-foundation" }
+quire-exact = { path = "../quire-exact" }
+serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
+sha2 = "=0.10.9"
+serde = { version = "=1.0.228", features = ["derive"] }
+thiserror = "=2.0.20"
+agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
+agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
+# `model::intake::lift_document` calls FCD's `lift`, which always writes its
+# document to a required output path (FR-099); this is that scratch
+# directory, not test-only.
+tempfile = "=3.27.0"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
+num-bigint = "=0.4.8"
+num-traits = "=0.2.19"
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+# FR-063: `seam_probe` is the `RUSTFLAGS`-set `--cfg` `xtask seam-probe`
+# builds this crate under (see the root crate's own `[lints.rust]` note).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
+
+[lints.clippy]
+all = "deny"

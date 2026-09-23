@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use quire_spec_language::value::{CatalogRole, DefinitionLock, SelectionRefusalCode, Trigger};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, SelectionRefusalCode, Trigger};
 
 fn lock() -> &'static DefinitionLock {
     DefinitionLock::pinned()

@@ -10,6 +10,17 @@
 use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
 use num_traits::Pow;
+use qsl_semantics::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
+use qsl_semantics::value::quantity::{
+    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
+    QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
+};
+use qsl_semantics::value::NodeIdentityPreimage;
+use qsl_semantics::value::{
+    CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage, InvalidCompoundUnit,
+    InvalidSemanticGraph, NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, SemanticGraphCause,
+    UnitGraph, UnitPreimage,
+};
 use quire_exact::NodeKey;
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
@@ -18,17 +29,6 @@ use quire_exact::{
 use quire_exact::{
     ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
     RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
-};
-use quire_spec_language::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
-use quire_spec_language::value::quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
-    QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
-};
-use quire_spec_language::value::NodeIdentityPreimage;
-use quire_spec_language::value::{
-    CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    InvalidSemanticGraph, NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, SemanticGraphCause,
-    UnitGraph, UnitPreimage,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Complete-V1 tooling and package selection built on the `qsl-cst` layer.
+//! Complete-V1 tooling built on the `qsl-cst` layer.
 //!
 //! The recovering concrete syntax tree itself -- token vocabulary, lexer,
 //! parser, declarative grammar and located diagnostics -- lives in the
 //! `qsl-cst` crate (ADR-011 §6.1 layer 1, QSL-178). This module holds
-//! `editor`/`edit` (tooling built on that layer) and `package` (ADR-011 §6.2
-//! layer 3, moving to its own crate with QSL-181); it repoints its own uses
-//! of the layer-1 types at `qsl_cst` and re-exports none of them
-//! (ADR-011 §7.2).
+//! `editor`/`edit`, the tooling built on that layer. Package selection
+//! (ADR-011 §6.2 layer 3) is `qsl_semantics::complete` (QSL-181). This
+//! module re-exports no item of either crate (ADR-011 §7.2).
 
 mod edit;
 mod editor;
-mod package;
-#[cfg(test)]
-mod package_tests;
 
 pub use edit::{
     apply_edit, apply_edit_with_catalog, apply_edits, apply_edits_with_catalog, SourceEdit,
@@ -22,12 +18,6 @@ pub use editor::{
     analyze_document, format_document, CompletionItem, CompletionKind, DocumentBinding,
     DocumentNavigation, DocumentSnapshot, DocumentSymbol, FormatCorrespondence, FormatResponse,
 };
-pub use package::{
-    resolve_source_package, CompleteBundle, Definition, DefinitionCatalog, DefinitionConflict,
-    DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
-    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
-};
-pub use package::{CapabilityId, PackageError, SourceDigest};
 
 use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
 use qsl_foundation::selection::ProfileCatalog;

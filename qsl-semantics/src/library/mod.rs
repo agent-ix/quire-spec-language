@@ -598,7 +598,7 @@ pub(crate) fn verify_package(
 /// sole constructor (FR-087-AC-1). Naming the
 /// fields directly from outside `library` does not compile:
 /// ```compile_fail,E0451
-/// use quire_spec_language::library::VerifiedPackage;
+/// use qsl_semantics::library::VerifiedPackage;
 /// let forged = VerifiedPackage {
 ///     package: todo!(),
 ///     exports: todo!(),
@@ -616,7 +616,7 @@ pub(crate) fn verify_package(
 /// (Stable rustdoc does not check a `compile_fail` error code, so none is
 /// claimed here.)
 /// ```compile_fail
-/// use quire_spec_language::library::{verify_binding, LibraryPackage, SupportedV2Wire};
+/// use qsl_semantics::library::{verify_binding, LibraryPackage, SupportedV2Wire};
 /// let candidate: LibraryPackage = todo!();
 /// let _ = verify_binding(SupportedV2Wire(()), candidate, todo!());
 /// ```
@@ -771,7 +771,7 @@ pub fn verify_binding(
 /// [`VerifiedPackage::into_import_view`] (private fields, private to this
 /// module). Naming them directly from outside `library` does not compile:
 /// ```compile_fail,E0451
-/// use quire_spec_language::library::ImportView;
+/// use qsl_semantics::library::ImportView;
 /// let forged = ImportView {
 ///     package: todo!(),
 ///     exports: todo!(),

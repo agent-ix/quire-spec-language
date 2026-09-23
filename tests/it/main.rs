@@ -11,15 +11,12 @@
 //! `crate::support::<name>` from any module below (see `tests/support/
 //! mod.rs`). `tests/fixtures/` is unchanged.
 //!
-//! The eight modules gated on `feature = "test-support"` call fixture
-//! constructors (`DeclarationKey::fixture`, `ReaderAuthority::fixture` and
-//! friends, see the crate's own `Cargo.toml`) that only exist under that
-//! feature. Gating the `mod` line itself -- not just the calls inside --
-//! keeps a default-feature `cargo test` / `cargo clippy --all-targets` from
-//! trying to compile them at all, matching the seven previous
-//! `required-features = ["test-support"]` per-file targets the first seven
-//! replace (Cargo.toml's own `[[test]] name = "it"`
-//! carries no `required-features`).
+//! Modules that call `qsl-semantics`' test-only fixtures
+//! (`DeclarationKey::fixture`, `ReaderAuthority::fixture` and friends) reach
+//! them through this crate's `qsl-semantics` dev-dependency, which enables
+//! that crate's `test-support` feature in every test build (QSL-181), so no
+//! `mod` line here is feature-gated. The integration tests that exercise
+//! only layer 3 live in `qsl-semantics/tests/it/`.
 //!
 //! No test here needs its own process. There is no `trybuild` compile-fail
 //! test, no process-wide `std::env::set_var`/`remove_var`, and no `harness =
@@ -42,10 +39,8 @@ mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;
-#[cfg(feature = "test-support")]
 mod complete_package;
 mod complete_v1_plan;
-mod complete_value_lock;
 mod composed_admission_stages;
 mod composed_binding;
 mod composed_definition_source;
@@ -69,7 +64,6 @@ mod composite_values;
 mod config_version;
 mod configversion_backends;
 mod contract_model_architecture;
-#[cfg(feature = "test-support")]
 mod dispatch_calls;
 mod equality_matrix;
 mod exact_decimals;
@@ -78,30 +72,15 @@ mod family_outcome_layering;
 mod finite_simulation;
 mod fixture_audit;
 mod formal_source;
-mod ieee_profiles;
 mod import_view_names;
-mod integer_division;
 mod integer_lowering;
-mod library_resolution;
 mod linking;
 mod located_json;
 mod lower_command;
 mod lowering_registry_isolation;
 mod mapped;
-#[cfg(feature = "test-support")]
-mod model_conformance;
-#[cfg(feature = "test-support")]
-mod model_dispatch;
-mod model_intake;
-#[cfg(feature = "test-support")]
-mod model_normalization;
-#[cfg(feature = "test-support")]
-mod model_population;
-#[cfg(feature = "test-support")]
 mod model_reference_queries;
 mod model_source;
-#[cfg(feature = "test-support")]
-mod model_systems;
 mod name_resolution_confinement;
 mod native_backend;
 mod native_boundaries;
@@ -134,7 +113,6 @@ mod package_runtime;
 mod parser;
 mod protocol_artifact;
 mod protocol_number;
-mod quantities;
 mod route_registry;
 mod runtime_evaluation;
 mod runtime_execution;

@@ -10,12 +10,13 @@ use ix_trace_rs::trace;
 use qsl_cst::{parse, CompleteCause, CompleteDiagnostic, Limits, ParsedSource};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
 use qsl_foundation::{Code, SourceIdentity};
-use quire_spec_language::command::{resolve_parsed_source, SourcePackageRefusal};
-use quire_spec_language::complete::{
-    self, resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole,
-    Facet, ModelArtifact, ModelCatalog, PackageError, PackageLimits, PackageRefusal,
-    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
+use qsl_semantics::complete::{
+    resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole, Facet,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimits, PackageRefusal, ReaderAuthority,
+    ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
 };
+use quire_spec_language::command::{resolve_parsed_source, SourcePackageRefusal};
+use quire_spec_language::complete;
 
 const COMPLETE_DEFINITION_ROLES: [(&str, DefinitionRole); 9] = [
     ("quire.source.complete/v1", DefinitionRole::Source),

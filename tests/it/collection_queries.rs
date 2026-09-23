@@ -4,6 +4,15 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckingLimits, CollectionLoss, CollectionProperty,
+    Obligation, PackageDeclarations, ProvedInterval,
+};
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -13,15 +22,6 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimits, CollectionLoss, CollectionProperty,
-    Obligation, PackageDeclarations, ProvedInterval,
-};
-use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_spec_language::value::{CheckedPackage, CheckedPackageEvaluation};
 use sha2::{Digest, Sha256};
 
@@ -169,7 +169,7 @@ fn check(
     package: &CheckedPackage,
     parameters: &[(&str, ValueType)],
     expression: &Expression,
-) -> Result<quire_spec_language::check::CheckedExpression, CheckRefusal> {
+) -> Result<qsl_semantics::check::CheckedExpression, CheckRefusal> {
     check_as(package, parameters, expression, None)
 }
 
@@ -180,7 +180,7 @@ fn check_as(
     parameters: &[(&str, ValueType)],
     expression: &Expression,
     expected: Option<&ValueType>,
-) -> Result<quire_spec_language::check::CheckedExpression, CheckRefusal> {
+) -> Result<qsl_semantics::check::CheckedExpression, CheckRefusal> {
     let parameters = parameters
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
@@ -256,7 +256,7 @@ fn run_in(
 
 fn evaluate_checked(
     package: &CheckedPackage,
-    checked: &quire_spec_language::check::CheckedExpression,
+    checked: &qsl_semantics::check::CheckedExpression,
     arguments: Vec<Value>,
     limits: ScalarLimits,
     objects: &ObjectEnvironment,
@@ -979,7 +979,7 @@ fn check_linked(
     package: &CheckedPackage,
     parameters: &[(&str, ValueType)],
     expression: &Expression,
-) -> Result<quire_spec_language::check::CheckedExpression, CheckRefusal> {
+) -> Result<qsl_semantics::check::CheckedExpression, CheckRefusal> {
     let parameters = parameters
         .iter()
         .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))

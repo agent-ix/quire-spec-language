@@ -9,11 +9,11 @@
 //! environment. `ReferenceEvaluation: FamilyContract` still makes one marker
 //! type per family implement both halves (ADR-012 §2). With the trait here,
 //! the `impl ReferenceEvaluation for` a layer-3 marker type
-//! (`crate::check::ValueFunctionFamily`) sits in the trait's own crate once
+//! (`qsl_semantics::check::ValueFunctionFamily`) sits in the trait's own crate once
 //! `check` is `qsl-semantics`, which the orphan rule (E0117) requires.
 
-use crate::family::{EvalOutcome, FamilyContract, FamilyKind};
 use qsl_foundation::diagnostic::InternalFault;
+use qsl_semantics::family::{EvalOutcome, FamilyContract, FamilyKind};
 use quire_exact::Meter;
 
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
