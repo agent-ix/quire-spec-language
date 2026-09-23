@@ -402,6 +402,14 @@ mod tests {
                     file: "src/value/expression/causes.rs".to_owned(),
                     item: "ProtocolClauseSnapshot::catalog_code".to_owned(),
                 },
+                SeamLocation {
+                    file: "src/value/expression/mod.rs".to_owned(),
+                    item: "evaluate_declaration".to_owned(),
+                },
+                SeamLocation {
+                    file: "src/value/expression/family.rs".to_owned(),
+                    item: "ValueFunctionFamily::evaluate".to_owned(),
+                },
             ]
             .into_iter()
             .collect()
