@@ -189,7 +189,7 @@ operational validation remains outside this audit-only plan.
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | 🚧 Planned; QSL-131 |
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
-| TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | 🚧 Planned; QSL-131 |
+| TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | 🚧 Planned; QSL-141 |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
@@ -242,9 +242,10 @@ permitted layer-3 edge under FR-068-AC-6's layer rule (FR-087-AC-9/TC-256).
 ADR-013 §8 OQ-B to OQ-F fix the kernel's reference, quantity and enum
 identities. FR-088-AC-11 (TC-409) covers an enum value's FR-141
 `VariantId` and its rank key. FR-088-AC-12 (TC-411) covers the two-domain
-`UnitId`. FR-084-AC-7 (TC-410) covers one object universe per connected
+`UnitId`; it passes locally, and `make conformance` runs its QSpec-vector
+step. FR-084-AC-7 (TC-410) covers one object universe per connected
 supertype component and the authored object component of a reference key.
-All three are `🚧 Planned` under QSL-131. OQ-A's layer-2 edge is covered by
+TC-409 and TC-410 are `🚧 Planned` under QSL-131. OQ-A's layer-2 edge is covered by
 TC-398's allow-list.
 
 ## Typed replay envelopes (FR-069–073) coverage

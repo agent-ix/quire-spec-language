@@ -23,7 +23,9 @@ use super::super::numeric::{
     retain_boolean,
 };
 use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
-use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
+use super::super::quantity::{
+    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+};
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
 use super::causes::{
@@ -121,6 +123,17 @@ enum Halt {
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
     Fault(InternalFault),
+}
+
+/// A quantity whose `UnitId` neither the package's unit table nor this
+/// evaluation's formed units resolve. Checking resolves every quantity type
+/// and admission matches every argument's unit id to its parameter's, so this
+/// is an S6a invariant break, never caller input (FR-090-AC-3).
+fn unresolved_unit() -> Halt {
+    Halt::Fault(InternalFault::new(
+        "S6a",
+        "quantity-unit-unresolved-past-admission",
+    ))
 }
 
 impl From<Stop> for Halt {
@@ -292,6 +305,9 @@ pub(crate) struct Machine<'a, 'm> {
     /// The anchor `allInstances`/`lookup` currently read; `pre(..)` toggles
     /// it for its operand and `Task::RestoreAnchor` restores it after.
     anchor: Anchor,
+    /// The package's quantity units, then every compound unit a product or
+    /// quotient formed during this evaluation.
+    units: UnitScope<'a>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -313,6 +329,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             tasks: Vec::new(),
             losses: Vec::new(),
             anchor: Anchor::Post,
+            units: UnitScope::new(scope.types.units()),
         }
     }
 
@@ -841,17 +858,23 @@ impl<'a, 'm> Machine<'a, 'm> {
                 else {
                     return Err(invariant());
                 };
-                let operation = match operator {
-                    ArithmeticOperator::Add => QuantityOperation::Add(&left, &right),
-                    ArithmeticOperator::Subtract => QuantityOperation::Subtract(&left, &right),
-                    ArithmeticOperator::Multiply => QuantityOperation::Multiply(&left, &right),
-                    ArithmeticOperator::Divide => QuantityOperation::Divide(&left, &right),
+                let (Some(l), Some(r)) = (self.units.resolve(&left), self.units.resolve(&right))
+                else {
+                    return Err(unresolved_unit());
                 };
-                Value::Quantity(
-                    evaluate_quantity(operation, self.meter)
-                        .map_err(|_| invariant())?
-                        .into_stop()?,
-                )
+                let operation = match operator {
+                    ArithmeticOperator::Add => QuantityOperation::Add(l, r),
+                    ArithmeticOperator::Subtract => QuantityOperation::Subtract(l, r),
+                    ArithmeticOperator::Multiply => QuantityOperation::Multiply(l, r),
+                    ArithmeticOperator::Divide => QuantityOperation::Divide(l, r),
+                };
+                let (outcome, unit) =
+                    evaluate_quantity_unit(operation, self.meter).map_err(|_| invariant())?;
+                let quantity = outcome.into_stop()?;
+                // A later operation reads this result's unit by its id; the
+                // scope keeps one entry per distinct unit.
+                self.units.form(unit);
+                Value::Quantity(quantity)
             }
             NodeKind::Order(operator, kind, _, _) => {
                 let right = self.pop()?;
@@ -1004,7 +1027,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
-                operand_value(operand, &value, self.meter)?
+                operand_value(operand, &value, &self.units, self.meter)?
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
@@ -1241,6 +1264,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .map_err(Into::into);
             }
             (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
+                let (Some(l), Some(r)) = (self.units.resolve(l), self.units.resolve(r)) else {
+                    return Err(unresolved_unit());
+                };
                 return compare_quantity(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
                     .into_stop()

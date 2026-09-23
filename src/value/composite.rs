@@ -14,7 +14,10 @@
 //! reference's type component an effective-declaration identity, never a
 //! checked node id). `Presence` has no divergence -- it names only
 //! `Required`/`Optional` and touches neither `Value` nor `ValueType` -- so it
-//! is `quire_exact`'s type here. Remaining work, Linear QSL-131.
+//! is `quire_exact`'s type here, and the quantity payloads are already the
+//! kernel's: `ValueType::Quantity` carries a `UnitId` and `Value::Quantity` a
+//! `quire_exact::Quantity`, with the unit graph behind `value::quantity`'s
+//! unit table (ADR-013 T-6). Remaining work, Linear QSL-131.
 //!
 //! The registry that admits a closed set of these declarations
 //! (`TypeEnvironment`, `ObjectTypeDeclaration` and friends) and the FR-149
@@ -32,7 +35,6 @@ use super::collection::{CollectionType, CollectionValue};
 use super::decimal::DecimalType;
 use super::enumeration::EnumValue;
 use super::outcome::{Outcome, Stop};
-use super::quantity::{Quantity, QuantityUnit};
 use super::reference::ObjectReference;
 use super::text::Text;
 use quire_exact::Decimal;
@@ -44,7 +46,7 @@ use quire_exact::Rational;
 use quire_exact::TextType;
 use quire_exact::{
     Charge, ChargePoint, IeeeValue, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
-    Presence, RationalDomain,
+    Presence, Quantity, RationalDomain, UnitId,
 };
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
@@ -63,8 +65,9 @@ pub enum ValueType {
     Decimal(DecimalType),
     /// An FR-148 `Float32` or `Float64`.
     Float(IeeeWidth),
-    /// An FR-142 quantity in exactly this unit.
-    Quantity(QuantityUnit),
+    /// An FR-142 quantity in exactly the unit with this id (ADR-013 T-6);
+    /// `value::quantity`'s unit table holds the unit itself.
+    Quantity(UnitId),
     /// An FR-141 `Text[min, max; profile]`.
     Text(TextType),
     /// A member of the enum declaration with this node key.
@@ -108,7 +111,7 @@ impl ValueType {
             (Self::Rational(domain), Value::Rational(rational)) => domain.contains(rational),
             (Self::Decimal(declared), Value::Decimal(decimal)) => declared.contains(decimal),
             (Self::Float(width), Value::Float(float)) => float.width() == *width,
-            (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == unit,
+            (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
             (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
             (Self::Enum(declaration), Value::Enum(member)) => member.declaration() == *declaration,
             (Self::Option(payload), Value::Option(option)) => option.payload_type() == &**payload,
@@ -175,7 +178,7 @@ pub enum Value {
     Decimal(Decimal),
     /// An IEEE bit pattern.
     Float(IeeeValue),
-    /// A quantity in its unit.
+    /// A kernel quantity: its magnitude and its unit's id.
     Quantity(Quantity),
     /// A text value of its declared type.
     Text(Text),

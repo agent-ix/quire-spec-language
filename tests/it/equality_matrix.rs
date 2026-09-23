@@ -20,22 +20,22 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_exact::{
-    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, Presence, Rational, RoundingMode,
-    TextProfile, TextType,
+    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, Presence, Quantity, Rational,
+    RoundingMode, TextProfile, TextType, UnitDomain, UnitId,
 };
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
-    AdmittedIeeeProfile, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedEquality,
-    CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType,
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage,
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EqualityOperand,
-    EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration, FieldExpression, FieldValue,
-    IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection,
-    OwnerSubject, PackageDeclarations, Quantity, QuantityUnit, RationalDomain, Refusal, Text,
-    TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value,
-    ValueLoss, ValueType,
+    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause, CheckMode, CheckRefusal,
+    CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
+    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration,
+    FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain,
+    Refusal, Text, TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable,
+    UniverseIdentity, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -121,10 +121,13 @@ fn node_id(key: NodeKey) -> serde_json::Value {
     json!({"domain": "quire.checked-semantic-node/v1", "digest": key.to_string()})
 }
 
+/// Three declared units by their kernel ids, and the table that resolves
+/// them.
 struct Units {
-    m: QuantityUnit,
-    cm: QuantityUnit,
-    s: QuantityUnit,
+    m: UnitId,
+    cm: UnitId,
+    s: UnitId,
+    table: UnitTable,
 }
 
 fn units() -> Units {
@@ -167,11 +170,12 @@ fn units() -> Units {
         &owners(),
     )
     .unwrap();
-    let declared = |key| QuantityUnit::Declared(Box::new(graph.unit(key).unwrap().clone()));
+    let declared = |key| graph.declared_unit_id(key).unwrap();
     Units {
         m: declared(keys[0]),
         cm: declared(keys[1]),
         s: declared(keys[2]),
+        table: UnitTable::declared(&graph),
     }
 }
 
@@ -461,17 +465,17 @@ fn e04_rational_with_denominator_above_one_has_no_decimal_equality_conversion() 
 #[trace("TC-194", "FR-149-AC-5")]
 #[test]
 fn e05_quantities_after_explicit_canonical_unit_conversion() {
-    let env = TypeEnvironment::default();
     let units = units();
+    let env = TypeEnvironment::default().with_units(units.table.clone());
     let whole = |value: i64| Rational::from_integer(integer(value));
     let (metres, centimetres, seconds) = (
-        ValueType::Quantity(units.m.clone()),
-        ValueType::Quantity(units.cm.clone()),
-        ValueType::Quantity(units.s.clone()),
+        ValueType::Quantity(units.m),
+        ValueType::Quantity(units.cm),
+        ValueType::Quantity(units.s),
     );
-    let source = Quantity::new(whole(100), units.cm.clone());
+    let source = Quantity::new(whole(100), units.cm);
     let snapshot = source.clone();
-    let one_metre = Value::Quantity(Quantity::new(whole(1), units.m.clone()));
+    let one_metre = Value::Quantity(Quantity::new(whole(1), units.m));
     let converted = env
         .check_equality(
             EqualityOperator::Equal,
@@ -1285,7 +1289,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
             "Length",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "d",
-                ValueType::Quantity(units.cm.clone()),
+                ValueType::Quantity(units.cm),
                 Presence::Required,
             )]),
         )],
@@ -1294,7 +1298,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
     .unwrap();
     let length = ValueType::Composite(key("Length"));
     let record = || {
-        let d = Quantity::new(Rational::from_integer(integer(1)), units.cm.clone());
+        let d = Quantity::new(Rational::from_integer(integer(1)), units.cm);
         env.record(
             key("Length"),
             vec![("d", FieldValue::Present(Value::Quantity(d)))],
@@ -1971,23 +1975,26 @@ fn x03_text_orders_lexicographically_within_one_profile() {
 #[trace("TC-187", "FR-142-AC-2")]
 #[test]
 fn x04_quantities_order_and_add_only_in_one_unit() {
-    let package = plain_package();
     let units = units();
+    let package = expression_package(
+        TypeEnvironment::default().with_units(units.table.clone()),
+        false,
+    );
     let whole = |value: i64| Rational::from_integer(integer(value));
-    let metres = ValueType::Quantity(units.m.clone());
-    let metre = |value| Value::Quantity(Quantity::new(whole(value), units.m.clone()));
+    let metres = ValueType::Quantity(units.m);
+    let metre = |value| Value::Quantity(Quantity::new(whole(value), units.m));
     let parameters = [
         ("x", metres.clone()),
         ("y", metres.clone()),
-        ("c", ValueType::Quantity(units.cm.clone())),
-        ("s", ValueType::Quantity(units.s.clone())),
+        ("c", ValueType::Quantity(units.cm)),
+        ("s", ValueType::Quantity(units.s)),
     ];
     let arguments = || {
         vec![
             metre(1),
             metre(2),
-            Value::Quantity(Quantity::new(whole(1), units.cm.clone())),
-            Value::Quantity(Quantity::new(whole(1), units.s.clone())),
+            Value::Quantity(Quantity::new(whole(1), units.cm)),
+            Value::Quantity(Quantity::new(whole(1), units.s)),
         ]
     };
     let (ordered, _) = run_in(
@@ -2032,6 +2039,114 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
         cause(&negation("x")),
         CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
     );
+}
+
+/// A product or quotient's unit is a compound unit no package declares:
+/// checking forms it as the node's static type, and evaluation forms it again
+/// when the value exists, so a further operation reads it by its `UnitId`.
+#[trace("TC-187", "FR-142-AC-6")]
+#[test]
+fn x04_compound_results_feed_further_quantity_operations() {
+    let units = units();
+    let package = expression_package(
+        TypeEnvironment::default().with_units(units.table.clone()),
+        false,
+    );
+    let whole = |value: i64| Rational::from_integer(integer(value));
+    let parameters = [
+        ("x", ValueType::Quantity(units.m)),
+        ("y", ValueType::Quantity(units.m)),
+        ("t", ValueType::Quantity(units.s)),
+    ];
+    let arguments = || {
+        vec![
+            Value::Quantity(Quantity::new(whole(2), units.m)),
+            Value::Quantity(Quantity::new(whole(3), units.m)),
+            Value::Quantity(Quantity::new(whole(4), units.s)),
+        ]
+    };
+    let binary = |operator, left, right| Expression::Binary {
+        operator,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    let times_t = |name: &str| binary(BinaryOperator::Multiply, operand(name), operand("t"));
+
+    let (quotient, _) = run_in(
+        &package,
+        &parameters,
+        &binary(BinaryOperator::Divide, times_t("x"), operand("t")),
+        None,
+        arguments(),
+        UNLIMITED,
+    );
+    let quire_exact::Outcome::Completed(Value::Quantity(quotient)) = quotient else {
+        panic!("expected a completed quantity, got {quotient:?}");
+    };
+    assert_eq!(quotient.magnitude(), &whole(2));
+    // `m*s/s` is the compound unit `m^1`, never the declared unit `m`.
+    assert_eq!(quotient.unit().domain(), UnitDomain::Compound);
+    assert_ne!(quotient.unit(), units.m);
+
+    // Ordering and FR-149 equality over two compound operands: checking
+    // resolves the formed unit, and the checked equality evaluates with it.
+    for (operator, left, right, expected) in [
+        (BinaryOperator::Less, "x", "y", true),
+        (BinaryOperator::Equal, "x", "y", false),
+        (BinaryOperator::Equal, "x", "x", true),
+        (BinaryOperator::NotEqual, "x", "y", true),
+        (BinaryOperator::NotEqual, "x", "x", false),
+    ] {
+        let (compared, _) = run_in(
+            &package,
+            &parameters,
+            &binary(operator, times_t(left), times_t(right)),
+            None,
+            arguments(),
+            UNLIMITED,
+        );
+        completed_as(&compared, &Value::Boolean(expected));
+    }
+}
+
+/// An S6a invariant break, not a refusal: a quantity expression checked
+/// against one package's units and evaluated in a package whose table lacks
+/// them passes admission (the argument's unit id matches the parameter's) and
+/// reaches an operation whose operand unit nothing resolves.
+#[trace("TC-384", "FR-090-AC-3")]
+#[test]
+fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
+    let units = units();
+    let with_units = expression_package(
+        TypeEnvironment::default().with_units(units.table.clone()),
+        false,
+    );
+    let parameters = [("x", ValueType::Quantity(units.m))];
+    let one_metre = Value::Quantity(Quantity::new(Rational::from_integer(integer(1)), units.m));
+    for operator in [BinaryOperator::Add, BinaryOperator::Less] {
+        let checked = check_in(
+            &with_units,
+            &parameters,
+            &operation(operator, "x", "x"),
+            None,
+            CheckMode::Kernel,
+        )
+        .unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        let failure = plain_package()
+            .evaluate(
+                &checked,
+                vec![one_metre.clone()],
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+            .expect_err("an unresolved unit must fault, never evaluate");
+        let CallFailure::Fault(fault) = failure else {
+            panic!("expected an internal fault, got {failure:?}");
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "quantity-unit-unresolved-past-admission");
+    }
 }
 
 #[trace("TC-193", "FR-148-AC-8")]

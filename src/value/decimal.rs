@@ -15,9 +15,8 @@
 //!
 //! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
-//! evaluation engine and `Placement`/`DecimalType::placement`/
-//! `round_at_target` for `super::quantity`'s unit-graph decimal targets)
-//! stay local. `DecimalType::new` returns `quire_exact`'s own canonical
+//! evaluation engine) stay local. `super::quantity`'s unit-graph decimal
+//! targets use the kernel's `DecimalType::placement` instead (QSL-131 V4). `DecimalType::new` returns `quire_exact`'s own canonical
 //! `IllTyped` directly. `evaluate_decimal` returns this crate's own
 //! `Outcome`/`Refusal` (`value::outcome`), a strict superset of
 //! `quire_exact`'s kernel `Outcome`/`Refusal` -- out of scope here, blocked
@@ -564,93 +563,6 @@ pub(crate) struct Placed {
     loss: Option<DecimalLoss>,
 }
 
-impl DecimalType {
-    /// Decide how `value` is placed at `T` under the target rounding mode and
-    /// the exact retained sizes of that placement, without materializing a
-    /// coefficient larger than the inputs. Strict `exact` refuses a nonzero
-    /// discarded digit.
-    pub(crate) fn placement(&self, value: &Rational) -> Result<Placement, Refusal> {
-        let (numerator, denominator) = (value.numerator(), value.denominator());
-        let terminating = terminating_scale(denominator)
-            .and_then(|scale| u32::try_from(scale).ok())
-            .filter(|scale| *scale <= self.max_scale);
-        if let Some(scale) = terminating {
-            // `n/d = n × (10^k / d) × 10^-k` with `k <= bits(d)`.
-            let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
-            return Ok(Placement::Placed(Placed {
-                coefficient: numerator.mul(&factor),
-                scale,
-                loss: None,
-            }));
-        }
-        // A reduced value that is not a multiple of `10^-T` always discards a
-        // nonzero digit.
-        if self.rounding == RoundingMode::Exact {
-            return Err(Refusal::InexactDecimal);
-        }
-        Ok(Placement::Deferred(value.clone()))
-    }
-
-    /// Round `value × 10^T` to an integer coefficient at `T`, recording the
-    /// loss. The caller has charged or bounded its size.
-    fn round_at_target(&self, value: &Rational) -> Result<Placed, Refusal> {
-        let (numerator, denominator) = (value.numerator(), value.denominator());
-        // A reduced denominator is positive, so the division exists.
-        let units = Rational::from_integer(
-            numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
-        )
-        .div(&Rational::from_integer(denominator.clone()))
-        .ok_or(Refusal::InexactDecimal)?;
-        let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
-        Ok(Placed {
-            loss: Some(DecimalLoss {
-                exact: ExactLossValue::scaled(value, 0),
-                rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
-                mode: self.rounding,
-            }),
-            coefficient: rounded,
-            scale: self.max_scale,
-        })
-    }
-}
-
-/// A decided placement at `T`, before its coefficient is sized and retained.
-pub(crate) enum Placement {
-    /// A coefficient already bounded by the inputs.
-    Placed(Placed),
-    /// A rounded coefficient whose materialization waits for its charge.
-    Deferred(Rational),
-}
-
-impl Placement {
-    /// Materialize the placed coefficient after its sizes were charged.
-    pub(crate) fn materialize(self, target: &DecimalType) -> Result<Placed, Refusal> {
-        match self {
-            Self::Placed(placed) => Ok(placed),
-            Self::Deferred(value) => target.round_at_target(&value),
-        }
-    }
-}
-
-/// The least `k` with `denominator | 10^k`, or `None` when the positive
-/// `denominator` has a prime factor other than two or five.
-fn terminating_scale(denominator: &Integer) -> Option<u64> {
-    let mut remaining = denominator.clone();
-    let mut counts = [0_u64; 2];
-    for (count, prime) in counts.iter_mut().zip([2_i64, 5]) {
-        let prime = Integer::from(prime);
-        loop {
-            let (quotient, remainder) = remaining.div_mod_floor(&prime);
-            if !remainder.is_zero() {
-                break;
-            }
-            remaining = quotient;
-            *count += 1;
-        }
-    }
-    (remaining == Integer::one()).then(|| counts[0].max(counts[1]))
-}
-
 impl Placed {
     /// `decimal.result-retain` for the materialized coefficient `c` at scale
     /// `s`, upscaled by `k = T - s`: `scale_expansion=k`,
@@ -673,11 +585,6 @@ impl Placed {
         } else {
             Err(Refusal::DecimalOutOfDomain)
         }
-    }
-
-    /// The scale-zero coefficient and loss record of an integer target.
-    pub(crate) fn into_integer(self) -> (Integer, Option<DecimalLoss>) {
-        (self.coefficient, self.loss)
     }
 
     /// The completed result retaining `(v × 10^T, T)`.

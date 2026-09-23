@@ -4,16 +4,15 @@
 //! charges of `quire.value.accounting/v1`.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
-use super::decimal::{DecimalLoss, DecimalResult, DecimalType, Placed};
-use super::numeric::rational_arithmetic_bits;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge};
-use quire_exact::Rational;
-use quire_exact::RationalArithmetic;
-use quire_exact::{sbits, sdigits, RoundingMode};
+use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
+use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
+use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
 use quire_exact::{
-    BoundedInteger, Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter,
+    BoundedInteger, Charge, ChargePoint, Integer, IntegerInterval, LimitKind, Meter, Quantity,
+    UnitId,
 };
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
@@ -29,6 +28,15 @@ pub enum QuantityUnit {
 }
 
 impl QuantityUnit {
+    /// The kernel [`UnitId`] a quantity in this unit carries (ADR-013 T-6,
+    /// OQ-B): the declared unit's node key or the compound unit's digest.
+    pub fn id(&self) -> UnitId {
+        match self {
+            Self::Declared(unit) => unit.id(),
+            Self::Compound(unit) => unit.id(),
+        }
+    }
+
     /// The normalized dimension map.
     pub fn dimension(&self) -> &Dimension {
         match self {
@@ -77,43 +85,128 @@ impl QuantityUnit {
     }
 }
 
-/// An exact rational value in a unit.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Quantity {
-    value: Rational,
-    unit: QuantityUnit,
+/// The unit graph over kernel [`UnitId`]s: each id's [`QuantityUnit`]. A
+/// kernel [`Quantity`] carries only its unit's id, so every FR-142 operation
+/// reads its operands through a table (ADR-013 T-6: the unit graph stays in
+/// `semantic_value`).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UnitTable(BTreeMap<UnitId, QuantityUnit>);
+
+impl UnitTable {
+    /// Every admitted unit of `graph`, by its declared-arm id.
+    pub fn declared(graph: &UnitGraph) -> Self {
+        graph
+            .units()
+            .map(|unit| QuantityUnit::Declared(Box::new(unit.clone())))
+            .collect()
+    }
+
+    /// Record `unit` under its id and return the id.
+    pub fn insert(&mut self, unit: QuantityUnit) -> UnitId {
+        let id = unit.id();
+        self.0.entry(id).or_insert(unit);
+        id
+    }
+
+    /// The unit with this id.
+    pub fn get(&self, id: UnitId) -> Option<&QuantityUnit> {
+        self.0.get(&id)
+    }
+
+    /// `quantity` with its unit resolved, or `None` when this table has no
+    /// unit with the quantity's id.
+    pub fn resolve<'a>(&'a self, quantity: &'a Quantity) -> Option<UnitQuantity<'a>> {
+        self.get(quantity.unit())
+            .map(|unit| UnitQuantity { quantity, unit })
+    }
 }
 
-impl Quantity {
-    /// A quantity of exactly `value` in `unit`.
-    pub fn new(value: Rational, unit: QuantityUnit) -> Self {
-        Self { value, unit }
-    }
-
-    /// The exact value.
-    pub fn value(&self) -> &Rational {
-        &self.value
-    }
-
-    /// The unit.
-    pub fn unit(&self) -> &QuantityUnit {
-        &self.unit
+impl FromIterator<QuantityUnit> for UnitTable {
+    fn from_iter<I: IntoIterator<Item = QuantityUnit>>(units: I) -> Self {
+        let mut table = Self::default();
+        for unit in units {
+            table.insert(unit);
+        }
+        table
     }
 }
 
-/// A quantity operation.
+/// One stage's units: the package's [`UnitTable`], then every compound unit
+/// the stage itself formed. Checking forms each static product and quotient
+/// unit; evaluation forms each computed one, so a later operation can read a
+/// compound operand the package never declared.
+#[derive(Clone, Debug)]
+pub(crate) struct UnitScope<'a> {
+    package: &'a UnitTable,
+    formed: UnitTable,
+}
+
+impl<'a> UnitScope<'a> {
+    pub(crate) fn new(package: &'a UnitTable) -> Self {
+        Self {
+            package,
+            formed: UnitTable::default(),
+        }
+    }
+
+    pub(crate) fn get(&self, id: UnitId) -> Option<&QuantityUnit> {
+        self.package.get(id).or_else(|| self.formed.get(id))
+    }
+
+    /// Record a unit this stage formed and return its id.
+    pub(crate) fn form(&mut self, unit: QuantityUnit) -> UnitId {
+        let id = unit.id();
+        if self.package.get(id).is_none() {
+            self.formed.insert(unit);
+        }
+        id
+    }
+
+    pub(crate) fn resolve<'q>(&'q self, quantity: &'q Quantity) -> Option<UnitQuantity<'q>> {
+        self.package
+            .resolve(quantity)
+            .or_else(|| self.formed.resolve(quantity))
+    }
+}
+
+/// A kernel [`Quantity`] read against the unit graph: its magnitude and its
+/// unit. Built only by resolving the quantity's own [`UnitId`]
+/// ([`UnitTable::resolve`]), so the unit is always the quantity's.
+#[derive(Clone, Copy, Debug)]
+pub struct UnitQuantity<'a> {
+    quantity: &'a Quantity,
+    unit: &'a QuantityUnit,
+}
+
+impl<'a> UnitQuantity<'a> {
+    /// The kernel quantity.
+    pub fn quantity(&self) -> &'a Quantity {
+        self.quantity
+    }
+
+    /// The resolved unit.
+    pub fn unit(&self) -> &'a QuantityUnit {
+        self.unit
+    }
+
+    fn value(&self) -> &'a Rational {
+        self.quantity.magnitude()
+    }
+}
+
+/// A quantity operation over resolved operands.
 #[derive(Clone, Copy, Debug)]
 pub enum QuantityOperation<'a> {
     /// `a + b` in one common unit.
-    Add(&'a Quantity, &'a Quantity),
+    Add(UnitQuantity<'a>, UnitQuantity<'a>),
     /// `a - b` in one common unit.
-    Subtract(&'a Quantity, &'a Quantity),
+    Subtract(UnitQuantity<'a>, UnitQuantity<'a>),
     /// `a * b` under the canonical compound unit.
-    Multiply(&'a Quantity, &'a Quantity),
+    Multiply(UnitQuantity<'a>, UnitQuantity<'a>),
     /// `a / b` under the canonical compound unit.
-    Divide(&'a Quantity, &'a Quantity),
+    Divide(UnitQuantity<'a>, UnitQuantity<'a>),
     /// `a ^ n` for a mathematical integer `n`.
-    Power(&'a Quantity, &'a Integer),
+    Power(UnitQuantity<'a>, &'a Integer),
 }
 
 /// The value representation of an explicit conversion target.
@@ -180,21 +273,33 @@ impl Conversion {
     }
 }
 
-/// Evaluate a quantity operation under `quire.value.accounting/v1`.
-/// Incompatible dimensions, affine-unit arithmetic and distinct units are
-/// ill-typed and consume nothing.
+/// Evaluate a quantity operation under `quire.value.accounting/v1`. The
+/// result carries the id of its unit: the operands' identical unit for `+`
+/// and `-`, otherwise the canonical compound unit. Incompatible dimensions,
+/// affine-unit arithmetic and distinct units are ill-typed and consume
+/// nothing.
 pub fn evaluate_quantity(
     operation: QuantityOperation<'_>,
     meter: &mut Meter,
 ) -> Result<Outcome<Quantity>, IllTyped> {
-    type_check(operation)?;
-    Ok(Outcome::from_stop(evaluate(operation, meter)))
+    evaluate_quantity_unit(operation, meter).map(|(outcome, _)| outcome)
+}
+
+/// [`evaluate_quantity`] with the result's unit, formed once at type time
+/// and carried by the result quantity's id, for a caller that records it.
+pub(crate) fn evaluate_quantity_unit(
+    operation: QuantityOperation<'_>,
+    meter: &mut Meter,
+) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {
+    let unit = type_check(operation)?;
+    let outcome = Outcome::from_stop(evaluate(operation, unit.id(), meter));
+    Ok((outcome, unit))
 }
 
 /// Explicitly convert `source` into `unit` with the `target` representation.
 /// Incompatible dimensions are ill-typed and consume nothing.
 pub fn convert_quantity(
-    source: &Quantity,
+    source: UnitQuantity<'_>,
     unit: &QuantityUnit,
     target: &QuantityTarget,
     meter: &mut Meter,
@@ -226,11 +331,11 @@ pub fn convert_quantity(
 /// nothing.
 pub fn compare_quantity(
     operator: ComparisonOperator,
-    left: &Quantity,
-    right: &Quantity,
+    left: UnitQuantity<'_>,
+    right: UnitQuantity<'_>,
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
-    check_comparable(&left.unit, &right.unit)?;
+    check_comparable(left.unit, right.unit)?;
     Ok(Outcome::from_stop(
         compare(left, right, meter).map(|ordering| operator.holds(ordering)),
     ))
@@ -240,12 +345,17 @@ fn ill_typed(cause: IllTypedCause) -> IllTyped {
     IllTyped { cause }
 }
 
+/// A kernel decimal-placement refusal as this evaluator's stop.
+fn refused(refusal: quire_exact::Refusal) -> Stop {
+    Stop::Refused(refusal.into())
+}
+
 /// One `unit.identity-read` per operand, each sized over the operands read so
 /// far.
-fn read_identities(operands: &[&Quantity], meter: &mut Meter) -> Result<(), Stop> {
+fn read_identities(operands: &[UnitQuantity<'_>], meter: &mut Meter) -> Result<(), Stop> {
     let mut bits = 0;
     for (read, operand) in (1_u64..).zip(operands) {
-        bits = operand.value.max_part_bits().max(bits);
+        bits = operand.value().max_part_bits().max(bits);
         meter.charge(
             Charge::new(ChargePoint::UnitIdentityRead)
                 .size(LimitKind::ValueOccurrences, read)
@@ -320,21 +430,22 @@ fn charge_retain(meter: &mut Meter) -> Result<(), Stop> {
 }
 
 /// The type-time refusals of an operation, in cause order: incompatible
-/// dimensions, affine-unit arithmetic, distinct units.
-fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
+/// dimensions, affine-unit arithmetic, distinct units; otherwise its result
+/// unit.
+fn type_check(operation: QuantityOperation<'_>) -> Result<QuantityUnit, IllTyped> {
     let (unit_operation, a, b) = match operation {
         QuantityOperation::Add(a, b) => (UnitOperation::Add, a, b),
         QuantityOperation::Subtract(a, b) => (UnitOperation::Subtract, a, b),
         QuantityOperation::Multiply(a, b) => (UnitOperation::Multiply, a, b),
         QuantityOperation::Divide(a, b) => (UnitOperation::Divide, a, b),
-        QuantityOperation::Power(a, _) => {
+        QuantityOperation::Power(a, n) => {
             if a.unit.is_affine() {
                 return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
-            return Ok(());
+            return Ok(QuantityUnit::Compound(a.unit.canonical_compound().power(n)));
         }
     };
-    result_unit(unit_operation, &a.unit, &b.unit).map(|_| ())
+    result_unit(unit_operation, a.unit, b.unit)
 }
 
 /// A binary quantity operation, before its operand values exist.
@@ -400,8 +511,10 @@ pub(crate) fn check_comparable(left: &QuantityUnit, right: &QuantityUnit) -> Res
 /// wins: a zero divisor, then a zero base under a negative exponent.
 fn check_undefined(operation: QuantityOperation<'_>) -> Result<(), Stop> {
     let undefined = match operation {
-        QuantityOperation::Divide(_, divisor) => divisor.value.is_zero(),
-        QuantityOperation::Power(base, exponent) => base.value.is_zero() && exponent.is_negative(),
+        QuantityOperation::Divide(_, divisor) => divisor.value().is_zero(),
+        QuantityOperation::Power(base, exponent) => {
+            base.value().is_zero() && exponent.is_negative()
+        }
         QuantityOperation::Add(..)
         | QuantityOperation::Subtract(..)
         | QuantityOperation::Multiply(..) => false,
@@ -412,7 +525,12 @@ fn check_undefined(operation: QuantityOperation<'_>) -> Result<(), Stop> {
     Ok(())
 }
 
-fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quantity, Stop> {
+/// Evaluate a type-checked operation whose result unit has id `unit`.
+fn evaluate(
+    operation: QuantityOperation<'_>,
+    unit: UnitId,
+    meter: &mut Meter,
+) -> Result<Quantity, Stop> {
     let operands = match operation {
         QuantityOperation::Add(a, b)
         | QuantityOperation::Subtract(a, b)
@@ -423,42 +541,34 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
     read_identities(&operands, meter)?;
     check_undefined(operation)?;
     let result = match operation {
-        QuantityOperation::Add(a, b) => Quantity {
-            value: rational_event(RationalArithmetic::Add(&a.value, &b.value), meter)?,
-            unit: a.unit.clone(),
-        },
-        QuantityOperation::Subtract(a, b) => Quantity {
-            value: rational_event(RationalArithmetic::Subtract(&a.value, &b.value), meter)?,
-            unit: a.unit.clone(),
-        },
+        QuantityOperation::Add(a, b) => Quantity::new(
+            rational_event(RationalArithmetic::Add(a.value(), b.value()), meter)?,
+            unit,
+        ),
+        QuantityOperation::Subtract(a, b) => Quantity::new(
+            rational_event(RationalArithmetic::Subtract(a.value(), b.value()), meter)?,
+            unit,
+        ),
         QuantityOperation::Multiply(a, b) | QuantityOperation::Divide(a, b) => {
-            let (left_edges, right_edges) = (to_root(&a.unit), to_root(&b.unit));
+            let (left_edges, right_edges) = (to_root(a.unit), to_root(b.unit));
             charge_edges(left_edges.len() + right_edges.len(), meter)?;
-            let left = events(&a.value, &left_edges, meter)?;
-            let right = events(&b.value, &right_edges, meter)?;
-            let (left_unit, right_unit) =
-                (a.unit.canonical_compound(), b.unit.canonical_compound());
-            if matches!(operation, QuantityOperation::Multiply(..)) {
-                Quantity {
-                    value: rational_event(RationalArithmetic::Multiply(&left, &right), meter)?,
-                    unit: QuantityUnit::Compound(left_unit.multiply(&right_unit)),
-                }
+            let left = events(a.value(), &left_edges, meter)?;
+            let right = events(b.value(), &right_edges, meter)?;
+            let value = if matches!(operation, QuantityOperation::Multiply(..)) {
+                rational_event(RationalArithmetic::Multiply(&left, &right), meter)?
             } else {
-                Quantity {
-                    value: rational_event(RationalArithmetic::Divide(&left, &right), meter)?,
-                    unit: QuantityUnit::Compound(left_unit.divide(&right_unit)),
-                }
-            }
+                rational_event(RationalArithmetic::Divide(&left, &right), meter)?
+            };
+            Quantity::new(value, unit)
         }
         QuantityOperation::Power(a, exponent) => {
-            let edges = to_root(&a.unit);
+            let edges = to_root(a.unit);
             charge_edges(edges.len(), meter)?;
-            let base = events(&a.value, &edges, meter)?;
-            Quantity {
-                value: power(&base, exponent, meter)?
-                    .ok_or(Stop::Undefined(Undefined::DivisionByZero))?,
-                unit: QuantityUnit::Compound(a.unit.canonical_compound().power(exponent)),
-            }
+            let base = events(a.value(), &edges, meter)?;
+            Quantity::new(
+                power(&base, exponent, meter)?.ok_or(Stop::Undefined(Undefined::DivisionByZero))?,
+                unit,
+            )
         }
     };
     charge_rational_target(meter)?;
@@ -518,13 +628,13 @@ enum Target<'a> {
 
 /// `source → root → target` in full, with no shortcut and no operation event.
 fn convert(
-    source: &Quantity,
+    source: UnitQuantity<'_>,
     unit: &QuantityUnit,
     target: &Target<'_>,
     meter: &mut Meter,
 ) -> Result<Conversion, Stop> {
     read_identities(&[source], meter)?;
-    let source_edges = to_root(&source.unit);
+    let source_edges = to_root(source.unit);
     let target_edges: Vec<_> = unit
         .path()
         .iter()
@@ -532,7 +642,7 @@ fn convert(
         .map(|edge| (edge, Direction::Reverse))
         .collect();
     charge_edges(source_edges.len() + target_edges.len(), meter)?;
-    let canonical = events(&source.value, &source_edges, meter)?;
+    let canonical = events(source.value(), &source_edges, meter)?;
     let exact = events(&canonical, &target_edges, meter)?;
     let value = match target {
         Target::Exact => {
@@ -541,23 +651,27 @@ fn convert(
             ConvertedValue::Exact(exact)
         }
         Target::Decimal(decimal) => {
-            let placed = place(&exact, decimal, Retained::Decimal, meter)?;
-            placed.check_membership(decimal).map_err(Stop::Refused)?;
+            let admitted = place(&exact, decimal, Retained::Decimal, meter)?
+                .admit()
+                .map_err(refused)?;
             charge_retain(meter)?;
-            ConvertedValue::Decimal(placed.retain(decimal))
+            ConvertedValue::Decimal(admitted.retain())
         }
         Target::Integer { placement, domain } => {
-            let (coefficient, loss) =
-                place(&exact, placement, Retained::Integer, meter)?.into_integer();
-            let value = domain
-                .admit(coefficient)
-                .map_err(|_| Stop::Refused(Refusal::IntegerOutOfDomain))?;
+            let out_of_domain = || Stop::Refused(Refusal::IntegerOutOfDomain);
+            // The scale-zero placement's membership is the integer domain.
+            let (coefficient, loss) = place(&exact, placement, Retained::Integer, meter)?
+                .admit()
+                .map_err(|_| out_of_domain())?
+                .into_integer()
+                .ok_or(Stop::Refused(Refusal::CheckedInvariant))?;
+            let value = domain.admit(coefficient).map_err(|_| out_of_domain())?;
             charge_retain(meter)?;
             ConvertedValue::Integer { value, loss }
         }
     };
     Ok(Conversion {
-        source: source.clone(),
+        source: source.quantity.clone(),
         canonical,
         value,
         unit: unit.clone(),
@@ -583,7 +697,7 @@ fn place(
     retained: Retained,
     meter: &mut Meter,
 ) -> Result<Placed, Stop> {
-    let placement = decimal.placement(exact).map_err(Stop::Refused)?;
+    let placement = decimal.placement(exact).map_err(refused)?;
     // Sized from the reduced exact numerator `a`, before placement
     // materializes any coefficient.
     let numerator = exact.numerator();
@@ -597,17 +711,21 @@ fn place(
         }
         Retained::Integer => charge.size(LimitKind::IntegerBits, numerator.magnitude_bits()),
     })?;
-    placement.materialize(decimal).map_err(Stop::Refused)
+    placement.materialize().map_err(refused)
 }
 
 /// The top-level equality and ordering schedule: both root paths, left then
 /// right, with no operation event and no `unit.target-domain`.
-fn compare(left: &Quantity, right: &Quantity, meter: &mut Meter) -> Result<Ordering, Stop> {
+fn compare(
+    left: UnitQuantity<'_>,
+    right: UnitQuantity<'_>,
+    meter: &mut Meter,
+) -> Result<Ordering, Stop> {
     read_identities(&[left, right], meter)?;
-    let (left_edges, right_edges) = (to_root(&left.unit), to_root(&right.unit));
+    let (left_edges, right_edges) = (to_root(left.unit), to_root(right.unit));
     charge_edges(left_edges.len() + right_edges.len(), meter)?;
-    let left = events(&left.value, &left_edges, meter)?;
-    let right = events(&right.value, &right_edges, meter)?;
+    let left = events(left.value(), &left_edges, meter)?;
+    let right = events(right.value(), &right_edges, meter)?;
     charge_retain(meter)?;
     Ok(left.cmp(&right))
 }

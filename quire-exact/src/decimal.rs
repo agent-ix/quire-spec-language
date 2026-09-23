@@ -6,14 +6,33 @@
 //! floating-point value exists anywhere on this path.
 //!
 //! Ported from QSL `value::decimal` as part of QSL#213 S-1 (ADR-011 X-1).
-//! One adaptation: `DecimalType::placement`/`round_at_target`, the
-//! `Placement` enum and its `materialize`, `terminating_scale` and
-//! `Placed::into_integer` are dropped. Their only caller anywhere in the
-//! original QSL codebase is `value::quantity`'s full unit-graph module
-//! (converting a quantity's magnitude to a `Decimal` target) -- QSL's own
-//! `Quantity`/`QuantityUnit`, not the bare, unit-graph-free
-//! `crate::quantity::Quantity` this kernel carries (ADR-013 T-6). With that
-//! caller outside the kernel, these had no caller left in this crate.
+//! [`DecimalType::placement`], [`Placement::materialize`], [`Placed::admit`]
+//! and [`Admitted`] place an exact rational at a decimal target's scale for a
+//! caller that meters the placement itself: QSL `value::quantity`'s
+//! unit conversion into a `Decimal` or integer target, which charges
+//! `unit.target-domain` rather than any `decimal.*` point (QSL-131 V4). Like
+//! [`sbits`] and [`sdigits`], they are unmetered exact arithmetic, so the
+//! caller charges or bounds the sizes before [`Placement::materialize`]. Each
+//! state carries the target it was placed for, and only an [`Admitted`]
+//! value, one that passed that target's membership, can be retained:
+//!
+//! ```compile_fail,E0599
+//! # use quire_exact::{DecimalType, Integer, Rational, RoundingMode};
+//! let target = DecimalType::new(Integer::zero(), Integer::from(100_i64), 0, 2, RoundingMode::Exact).unwrap();
+//! let placed = target.placement(&Rational::from_integer(Integer::one())).unwrap().materialize().unwrap();
+//! let _ = placed.retain(); // `retain` exists only after `admit`
+//! ```
+//!
+//! and an admitted value is retained at its own target, never another's:
+//!
+//! ```compile_fail,E0061
+//! # use quire_exact::{DecimalType, Integer, Rational, RoundingMode};
+//! let wide = DecimalType::new(Integer::zero(), Integer::from(100_000_i64), 0, 5, RoundingMode::Exact).unwrap();
+//! let narrow = DecimalType::new(Integer::zero(), Integer::from(100_i64), 0, 2, RoundingMode::Exact).unwrap();
+//! let one = Rational::from_integer(Integer::one());
+//! let admitted = wide.placement(&one).unwrap().materialize().unwrap().admit().unwrap();
+//! let _ = admitted.retain(&narrow);
+//! ```
 
 use std::cmp::Ordering;
 
@@ -738,7 +757,7 @@ fn evaluate(
     let intermediate = plan.intermediate()?;
 
     let placed = match in_target_units(&intermediate, target.max_scale()) {
-        TargetUnits::Exact { coefficient, scale } => Placed {
+        TargetUnits::Exact { coefficient, scale } => Coefficient {
             coefficient,
             scale,
             loss: None,
@@ -755,7 +774,7 @@ fn evaluate(
                     .exact_size(LimitKind::DecimalDigits, digits),
             )?;
             let rounded = round(&units, mode).ok_or(Stop::Refused(Refusal::InexactDecimal))?;
-            Placed {
+            Coefficient {
                 loss: Some(DecimalLoss {
                     exact: intermediate.exact_loss_value(target.max_scale()),
                     rounded: DecimalRepresentation::new(rounded.clone(), target.max_scale()),
@@ -771,21 +790,170 @@ fn evaluate(
     Ok(placed.retain(target))
 }
 
-/// An exact rational placed at a target's maximum scale `T`, before target
-/// membership and retention.
-pub(crate) struct Placed {
+/// An exact coefficient placed at scale `scale <= T` of some target, with its
+/// loss record: the engine's own intermediate and the payload of the public
+/// [`Placed`]/[`Admitted`] states, which bind it to its target.
+#[derive(Debug)]
+struct Coefficient {
     coefficient: Integer,
     scale: u32,
     loss: Option<DecimalLoss>,
 }
 
+impl DecimalType {
+    /// Decide how `value` is placed at this type's scale `T` under its
+    /// rounding mode, without materializing a coefficient larger than the
+    /// inputs. Strict `exact` refuses a nonzero discarded digit. The
+    /// placement carries this type, so every later step reads the one
+    /// target it was placed for.
+    pub fn placement(&self, value: &Rational) -> Result<Placement, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        let terminating = terminating_scale(denominator)
+            .and_then(|scale| u32::try_from(scale).ok())
+            .filter(|scale| *scale <= self.max_scale);
+        let placing = if let Some(scale) = terminating {
+            // `n/d = n × (10^k / d) × 10^-k` with `k <= bits(d)`.
+            let factor = Integer::power_of_ten(u64::from(scale)).exact_div(denominator);
+            Placing::Placed(Coefficient {
+                coefficient: numerator.mul(&factor),
+                scale,
+                loss: None,
+            })
+        } else if self.rounding == RoundingMode::Exact {
+            // A reduced value that is not a multiple of `10^-T` always
+            // discards a nonzero digit.
+            return Err(Refusal::InexactDecimal);
+        } else {
+            Placing::Deferred(value.clone())
+        };
+        Ok(Placement {
+            target: self.clone(),
+            placing,
+        })
+    }
+
+    /// Round `value × 10^T` to an integer coefficient at `T`, recording the
+    /// loss. The caller has charged or bounded its size.
+    fn round_at_target(&self, value: &Rational) -> Result<Coefficient, Refusal> {
+        let (numerator, denominator) = (value.numerator(), value.denominator());
+        // A reduced denominator is positive, so the division exists.
+        let units = Rational::from_integer(
+            numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
+        )
+        .div(&Rational::from_integer(denominator.clone()))
+        .ok_or(Refusal::InexactDecimal)?;
+        let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
+        Ok(Coefficient {
+            loss: Some(DecimalLoss {
+                exact: ExactLossValue::scaled(value, 0),
+                rounded: DecimalRepresentation::new(rounded.clone(), self.max_scale),
+                mode: self.rounding,
+            }),
+            coefficient: rounded,
+            scale: self.max_scale,
+        })
+    }
+}
+
+/// A decided placement at its target's scale ([`DecimalType::placement`]),
+/// before its coefficient is sized and materialized.
+#[derive(Debug)]
+pub struct Placement {
+    target: DecimalType,
+    placing: Placing,
+}
+
+#[derive(Debug)]
+enum Placing {
+    /// A coefficient already bounded by the inputs.
+    Placed(Coefficient),
+    /// A rounded coefficient whose materialization waits for its charge.
+    Deferred(Rational),
+}
+
+impl Placement {
+    /// Materialize the placed coefficient after its sizes were charged.
+    pub fn materialize(self) -> Result<Placed, Refusal> {
+        let value = match self.placing {
+            Placing::Placed(value) => value,
+            Placing::Deferred(value) => self.target.round_at_target(&value)?,
+        };
+        Ok(Placed {
+            target: self.target,
+            value,
+        })
+    }
+}
+
+/// A materialized placement, not yet admitted by its target's membership.
+/// Nothing can be retained from it: [`Placed::admit`] is the only way on.
+#[derive(Debug)]
+pub struct Placed {
+    target: DecimalType,
+    value: Coefficient,
+}
+
 impl Placed {
+    /// Admit the placed value by its own target's FR-140 membership, or
+    /// refuse it `DecimalOutOfDomain`.
+    pub fn admit(self) -> Result<Admitted, Refusal> {
+        self.value.check_membership(&self.target)?;
+        Ok(Admitted(self))
+    }
+}
+
+/// A placement its own target admitted: the only state that can be
+/// retained.
+#[derive(Debug)]
+pub struct Admitted(Placed);
+
+impl Admitted {
+    /// The completed result retaining `(v × 10^T, T)`.
+    pub fn retain(self) -> DecimalResult {
+        let Placed { target, value } = self.0;
+        value.retain(&target)
+    }
+
+    /// The coefficient and loss record of a scale-zero target, or `None`
+    /// when the target's scale is not zero.
+    pub fn into_integer(self) -> Option<(Integer, Option<DecimalLoss>)> {
+        let Placed { target, value } = self.0;
+        (target.max_scale == 0).then_some((value.coefficient, value.loss))
+    }
+}
+
+/// The least `k` with `denominator | 10^k`, or `None` when the positive
+/// `denominator` has a prime factor other than two or five.
+fn terminating_scale(denominator: &Integer) -> Option<u64> {
+    let mut remaining = denominator.clone();
+    let mut counts = [0_u64; 2];
+    for (count, prime) in counts.iter_mut().zip([2_i64, 5]) {
+        let prime = Integer::from(prime);
+        loop {
+            let (quotient, remainder) = remaining.div_mod_floor(&prime);
+            if !remainder.is_zero() {
+                break;
+            }
+            remaining = quotient;
+            *count += 1;
+        }
+    }
+    (remaining == Integer::one()).then(|| counts[0].max(counts[1]))
+}
+
+impl Coefficient {
+    /// The upscale `k = T - s` to the target scale. The placement put the
+    /// coefficient at `s <= T` of this same target.
+    fn lift(&self, target: &DecimalType) -> u64 {
+        u64::from(target.max_scale).saturating_sub(u64::from(self.scale))
+    }
+
     /// `decimal.result-retain` for the materialized coefficient `c` at scale
     /// `s`, upscaled by `k = T - s`: `scale_expansion=k`,
     /// `integer_bits=sbits(c,k)`, `decimal_digits=sdigits(c,k)`, sized before
     /// `c × 10^k` exists.
-    pub(crate) fn retain_charge(&self, target: &DecimalType) -> Charge {
-        let lift = u64::from(target.max_scale) - u64::from(self.scale);
+    fn retain_charge(&self, target: &DecimalType) -> Charge {
+        let lift = self.lift(target);
         Charge::new(ChargePoint::DecimalResultRetain)
             .size(LimitKind::ScaleExpansion, lift)
             .exact_size(LimitKind::IntegerBits, sbits(&self.coefficient, lift))
@@ -795,7 +963,7 @@ impl Placed {
     }
 
     /// Refuse a value outside the target's declared membership.
-    pub(crate) fn check_membership(&self, target: &DecimalType) -> Result<(), Refusal> {
+    fn check_membership(&self, target: &DecimalType) -> Result<(), Refusal> {
         if target.contains(&Decimal::new(self.coefficient.clone(), self.scale)) {
             Ok(())
         } else {
@@ -804,8 +972,8 @@ impl Placed {
     }
 
     /// The completed result retaining `(v × 10^T, T)`.
-    pub(crate) fn retain(self, target: &DecimalType) -> DecimalResult {
-        let lift = u64::from(target.max_scale) - u64::from(self.scale);
+    fn retain(self, target: &DecimalType) -> DecimalResult {
+        let lift = self.lift(target);
         DecimalResult {
             value: Decimal::new(expand_one((&self.coefficient, lift)), target.max_scale),
             loss: self.loss,
@@ -1027,6 +1195,73 @@ mod tests {
             RoundingMode::Exact,
         )
         .unwrap()
+    }
+
+    fn integer(value: i64) -> Integer {
+        Integer::from(value)
+    }
+
+    /// FR-142-AC-3 (QSL-131 V4 review M1): a placement is bound to its own
+    /// target. `7/4` places exactly at `Decimal[0, 100; 0, 2]` (1.75 is
+    /// outside the declared `[0, 1.00]`), and the placement cannot be
+    /// retained unless admitted, so the out-of-domain value is refused
+    /// rather than retained. An admitted value retains at its own scale.
+    #[trace("TC-187", "FR-142-AC-3")]
+    #[test]
+    fn placement_retains_only_what_its_own_target_admits() {
+        let target =
+            DecimalType::new(Integer::zero(), integer(100), 0, 2, RoundingMode::Exact).unwrap();
+        let seven_quarters = Rational::new(integer(7), integer(4)).unwrap();
+        let placed = target
+            .placement(&seven_quarters)
+            .unwrap()
+            .materialize()
+            .unwrap();
+        assert_eq!(placed.admit().unwrap_err(), Refusal::DecimalOutOfDomain);
+
+        let half = Rational::new(integer(1), integer(2)).unwrap();
+        let result = target
+            .placement(&half)
+            .unwrap()
+            .materialize()
+            .unwrap()
+            .admit()
+            .unwrap()
+            .retain();
+        assert_eq!(
+            result.value().representation(),
+            &DecimalRepresentation::new(integer(50), 2)
+        );
+        assert!(result.loss().is_none());
+    }
+
+    /// FR-142-AC-3 (review M1): the integer view exists only for a
+    /// scale-zero target; an admitted placement at a nonzero scale has none.
+    #[trace("TC-187", "FR-142-AC-3")]
+    #[test]
+    fn into_integer_requires_a_scale_zero_target() {
+        let one = Rational::from_integer(Integer::one());
+        let admitted = |max_scale| {
+            DecimalType::new(
+                Integer::zero(),
+                integer(1_000),
+                0,
+                max_scale,
+                RoundingMode::Exact,
+            )
+            .unwrap()
+            .placement(&one)
+            .unwrap()
+            .materialize()
+            .unwrap()
+            .admit()
+            .unwrap()
+        };
+        assert_eq!(
+            admitted(0).into_integer().map(|(value, _)| value),
+            Some(Integer::one())
+        );
+        assert!(admitted(2).into_integer().is_none());
     }
 
     /// TC-348 (M-7): every `RoundingMode` variant round-trips its source
