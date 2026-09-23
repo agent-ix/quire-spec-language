@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
@@ -55,6 +56,12 @@ fn work_limit(work_units: u64) -> ScalarLimits {
 
 fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// A model object type's effective-declaration identity (ADR-013 O-05): the
+/// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn integer(value: i64) -> Integer {
@@ -135,7 +142,7 @@ fn value(operand: Expression) -> Expression {
 /// declared composite/object type's own name from a bare `ValueType::
 /// Composite`/`Reference` digest, so this file's own fixtures (whose only
 /// three such parameter/result types are "Node", "Box" and the object type
-/// registered at `key("M::Obj")` but declared as "Obj") map those back
+/// registered at `object_type("M::Obj")` but declared as "Obj") map those back
 /// explicitly instead.
 fn param_type_form(value_type: &ValueType) -> TypeForm {
     match value_type {
@@ -145,7 +152,7 @@ fn param_type_form(value_type: &ValueType) -> TypeForm {
         ValueType::Composite(k) if *k == key("Box") => {
             crate::support::type_form::named_type_form("Box")
         }
-        ValueType::Reference(k) if *k == key("M::Obj") => {
+        ValueType::Reference(k) if *k == object_type("M::Obj") => {
             crate::support::type_form::named_type_form("Obj")
         }
         ValueType::Option(payload) => TypeForm::builtin(
@@ -849,7 +856,7 @@ fn ieee_profile() -> quire_spec_language::value::AdmittedIeeeProfile {
 fn object() -> ObjectReference {
     ObjectReference::new(
         UniverseIdentity::new(b"u1").unwrap(),
-        key("M::Obj"),
+        object_type("M::Obj"),
         ObjectIdentity::new(b"o1").unwrap(),
     )
 }
@@ -866,7 +873,7 @@ fn box_environment() -> TypeEnvironment {
             )]),
         )],
         [ObjectTypeDeclaration::new(
-            key("M::Obj"),
+            object_type("M::Obj"),
             "Obj",
             vec![FieldDeclaration::new(
                 "n",
@@ -902,7 +909,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                     &[
                         ("x", ValueType::Composite(key("Box"))),
                         ("f", ValueType::Float(IeeeWidth::Binary64)),
-                        ("ro", ValueType::option(ValueType::Reference(key("M::Obj")))),
+                        (
+                            "ro",
+                            ValueType::option(ValueType::Reference(object_type("M::Obj"))),
+                        ),
                     ],
                     ValueType::Integer,
                     None,

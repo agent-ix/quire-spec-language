@@ -8,6 +8,7 @@ use crate::value::composite::{Value, ValueType};
 use crate::value::decimal::DecimalType;
 use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator};
 use qsl_foundation::absence::AbsenceMode;
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionKind, IntegerInterval, RationalDomain};
@@ -167,13 +168,15 @@ pub struct DispatchCandidate {
 /// indices; the checker only threads it through unchanged.
 #[derive(Clone, Debug)]
 pub struct DispatchTable {
-    entries: Vec<(NodeKey, DispatchCandidate)>,
+    /// Keyed by the receiver type's effective identity (ADR-013 O-05), the
+    /// type component a runtime `Reference<T>` value carries.
+    entries: Vec<(EffectiveId, DispatchCandidate)>,
     candidate_count: u64,
 }
 
 impl DispatchTable {
     /// Build a table from its linked entries and total candidate count.
-    pub fn new(entries: Vec<(NodeKey, DispatchCandidate)>, candidate_count: u64) -> Self {
+    pub fn new(entries: Vec<(EffectiveId, DispatchCandidate)>, candidate_count: u64) -> Self {
         Self {
             entries,
             candidate_count,
@@ -181,7 +184,7 @@ impl DispatchTable {
     }
 
     /// The linked candidate for the receiver's most-specific runtime type.
-    pub(crate) fn linked_for(&self, subtype: &NodeKey) -> Option<&DispatchCandidate> {
+    pub(crate) fn linked_for(&self, subtype: &EffectiveId) -> Option<&DispatchCandidate> {
         self.entries
             .iter()
             .find(|(key, _)| key == subtype)
@@ -194,7 +197,7 @@ impl DispatchTable {
     }
 
     /// Every entry, in the order this table carries them.
-    pub(crate) fn entries(&self) -> &[(NodeKey, DispatchCandidate)] {
+    pub(crate) fn entries(&self) -> &[(EffectiveId, DispatchCandidate)] {
         &self.entries
     }
 

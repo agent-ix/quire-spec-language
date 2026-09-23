@@ -1557,6 +1557,45 @@ mod tests {
         );
     }
 
+    /// The `Reference` arm of the preimage byte grammar is pinned: a function
+    /// over `Reference<M::A>` mints this exact digest. The reference type is
+    /// written as its tag and its key's lowercase hex, so retyping the key
+    /// from `NodeKey` to `EffectiveId` (ADR-013 O-05) left the digest
+    /// unchanged: the constant was computed on main before that retype, with
+    /// `M::A` keyed by the `NodeKey` of the same 32 bytes. Regenerate it only
+    /// for an intended grammar change.
+    #[test]
+    fn mint_reference_signature_identity_matches_a_checked_in_digest() {
+        use crate::value::declaration::ObjectTypeDeclaration;
+        let mut scope = empty_scope();
+        scope.types = TypeEnvironment::new(
+            [],
+            [ObjectTypeDeclaration::new(
+                quire_exact::EffectiveId::from_digest([0x5a; 32]),
+                "M::A",
+                Vec::new(),
+            )],
+        )
+        .expect("one object type admits");
+        let reference = || {
+            TypeForm::builtin(BuiltinType::Reference, SPAN)
+                .with_arguments(vec![TypeForm::name("M::A", SPAN)])
+        };
+        let declaration = FunctionDeclaration::new(
+            "same",
+            vec![("r".to_owned(), reference())],
+            reference(),
+            None,
+            Expression::Name("r".to_owned()),
+        );
+        assert_eq!(
+            mint(&scope, &declaration).to_string(),
+            "bda707c9ead1b1e7c70b108ef4bd6ec304f51cee961a80096ff4717dc7c9e44d",
+            "the reference arm of the preimage byte grammar changed -- see \
+             this test's own doc before regenerating this constant"
+        );
+    }
+
     /// ADR-013 O-04: equal ids mean structurally identical nodes. Three
     /// spellings of one type -- defaulted profile, explicit profile, and an
     /// alias -- mint one identity; so do two spellings of a `Convert`

@@ -63,8 +63,8 @@ use qsl_forms::{
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
+use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
-use quire_exact::NodeKey;
 use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
@@ -277,8 +277,9 @@ pub struct PackageDeclarations {
 /// naming `table` (an index into the package's `dispatch_tables`).
 #[derive(Clone, Debug)]
 pub struct DispatchOperation {
-    /// The receiver's required static type.
-    pub receiver_type: NodeKey,
+    /// The receiver's required static type, by its effective identity
+    /// (ADR-013 O-05).
+    pub receiver_type: EffectiveId,
     /// The unqualified member name a dispatch call site names.
     pub member: String,
     /// The declared parameter types, in order.

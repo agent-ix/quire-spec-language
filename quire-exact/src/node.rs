@@ -23,8 +23,7 @@
 //!
 //! QSL call sites built on `from_digest` that do not conform to the minting
 //! rule above are named debt (FR-060 T12-B's named-debt list), not this
-//! design's sanctioned path; `value::model_query::to_object_reference`, for
-//! one, bridges an `EffectiveId`'s bytes into a `NodeKey`.
+//! design's sanctioned path.
 //!
 //! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`)
 //! scans for the kernel constructor and reports every call site outside

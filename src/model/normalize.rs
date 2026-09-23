@@ -203,7 +203,7 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
@@ -440,6 +440,11 @@ pub struct EffectiveView {
     model_selection: DomainPackageRef,
     /// Every admitted declaration, ascending by [`EffectiveId`].
     declarations: Vec<ViewEntry>,
+    /// Every top-level declaration's effective identity, keyed by its
+    /// original producer [`DeclarationKey`]: exactly the `declarations`
+    /// entries with no owner effective type. Derived from `declarations` at
+    /// construction, so it adds no identity of its own.
+    type_identities: BTreeMap<DeclarationKey, EffectiveId>,
 }
 
 impl EffectiveView {
@@ -451,6 +456,16 @@ impl EffectiveView {
     /// Every admitted declaration, ascending by [`EffectiveId`].
     pub fn declarations(&self) -> &[ViewEntry] {
         &self.declarations
+    }
+
+    /// Every top-level declaration's effective identity, keyed by its
+    /// original producer [`DeclarationKey`]; member declarations (those with
+    /// an owner effective type) are excluded. This is the one
+    /// `DeclarationKey` -> [`EffectiveId`] correspondence for declared types:
+    /// FR-143's reference type component (ADR-013 O-05) and FR-153's
+    /// population type catalog both read it. Normalization computes it once.
+    pub fn type_identities(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
+        &self.type_identities
     }
 
     fn to_json(&self) -> serde_json::Value {
@@ -1426,6 +1441,7 @@ fn build(
             view: EffectiveView {
                 model_selection: domain_package.model_selection.clone(),
                 declarations: Vec::new(),
+                type_identities: BTreeMap::new(),
             },
             universe: ObjectUniverse {
                 model_selection: domain_package.model_selection.clone(),
@@ -1832,9 +1848,14 @@ fn build(
         .collect();
     root_types.sort();
 
+    let type_identities = type_keys
+        .iter()
+        .map(|key| (key.clone(), type_effective_ids[key]))
+        .collect();
     let view = EffectiveView {
         model_selection: domain_package.model_selection.clone(),
         declarations: entries,
+        type_identities,
     };
     let universe = ObjectUniverse {
         model_selection: domain_package.model_selection.clone(),
@@ -2859,6 +2880,7 @@ mod tests {
         let view = EffectiveView {
             model_selection: DomainPackageRef::fixture("test/orders"),
             declarations: vec![entry(2), entry(1)],
+            type_identities: BTreeMap::new(),
         };
         let refusal = view
             .validate_order()
