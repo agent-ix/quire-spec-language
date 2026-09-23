@@ -39,13 +39,15 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `value::unit`, `value::quantity`, `value::containment`,
 `value::semantic_node`, `value::declaration`). There
 is no `value` K-copy module; `check` reaches every kernel item through
-`quire_exact`. `check` imports nothing from a later layer:
-`checked_package`, `package`, `value::expression`, `route`, `replay` or
-`lowering`. Every `value` import names its submodule.
+`quire_exact`. Every `value` import names its submodule. The later-layer
+modules (`checked_package`, `package`, `value::expression`, `route`,
+`replay`, `lowering`) are in crates that depend on `qsl-semantics`, so Cargo
+refuses an import of any of them; this test checks the module order inside
+`qsl-semantics`, which Cargo does not see.
 
-The failure this catches is a later-layer edge into `check`, the direction
-ADR-011 §6.1 forbids. An extra item from an already-permitted module is not a
-failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
+The failure this catches is an import from a module of `qsl-semantics` that
+`check` may not use, or through `value`'s flat aggregate. An extra item from
+an already-permitted module is not a failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
 
 ## Test Procedure
 
@@ -57,10 +59,8 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
    through `value/mod.rs`'s re-export table only to report which module it
    reaches; the flat form itself fails in step 2.
 2. Classify each import as permitted (its module is on FR-068-AC-6's
-   permitted list), forbidden (its module is `checked_package`, `package`,
-   `value::expression`, `route`, `replay` or `lowering`, or a descendant of
-   one), or unlisted (anything else). Confirm there are no forbidden and no
-   unlisted imports, and that every `value` import is written
+   permitted list) or unlisted (any other module of `qsl-semantics`).
+   Confirm there are no unlisted imports, and that every `value` import is written
    `crate::value::<submodule>::Name`.
 3. *(Retired with FR-068-AC-7; see the header.)* Search `check` for any
    definition or re-export of `model::checked_dispatch` or
@@ -75,26 +75,28 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
    repository's tooling reads.
 6. Adverse checks, each run against a fixture tree rather than the real
    crate:
-   - a shipped `use crate::checked_package::CheckedPackage;` under
+   - a shipped `use crate::complete::ReaderAuthority;` under
      `qsl-semantics/src/check/` fails step 2 and names the file, line and module;
-   - a shipped inline path `crate::value::expression::Evaluation` with no
-     `use` line fails step 2;
+   - a shipped inline path `crate::value::member::Member` with no `use` line
+     fails step 2;
    - a shipped `use crate::value::Rational;` (flat aggregate) fails step 2;
    - a shipped inline flat path `crate::value::Presence::Optional` fails
      step 2;
    - a shipped import from a module on no list (for example
      `crate::value::member`) fails step 2;
-   - the same forbidden import inside a `#[cfg(test)]` item does not fail
+   - the same unlisted import inside a `#[cfg(test)]` item does not fail
      step 2;
+   - a path rooted at `qsl_semantics` is classified the same as one rooted
+     at `crate`;
    - an additional item from a permitted module (for example a new name from
      `crate::value::quantity`) does not fail step 2.
 
 ## Expected Results
 
 - Steps 1-2: every shipped import under `qsl-semantics/src/check/` is permitted and
-  submodule-qualified. A forbidden or unlisted import, or a flat `value`
+  submodule-qualified. An unlisted import, or a flat `value`
   import, fails this step and names the file, line and resolved module. The
   number of items imported from a permitted module is not checked.
 - Steps 3-5: retired with FR-068-AC-7; TC-261 verifies the post-M-2 shape.
-- Step 6: each adverse fixture produces the stated result. A forbidden edge
+- Step 6: each adverse fixture produces the stated result. An unlisted edge
   that passes, or a permitted item that fails, fails this test.

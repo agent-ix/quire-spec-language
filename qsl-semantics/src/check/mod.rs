@@ -7,7 +7,7 @@
 //! public-accessor mechanism). The evaluation half -- `evaluate.rs`,
 //! `CheckedPackage::call`, `CheckedPackage::evaluate` and the
 //! argument-admission logic -- stays at layer 5 in
-//! `crate::value::expression` (a private module, not resolvable as an
+//! `quire_spec_language::value::expression` (a private module, not resolvable as an
 //! intra-doc link) (S6a), reaching this module's state only
 //! through the accessor methods below, never through a private field: the
 //! two modules no longer share private state (US-009).
@@ -19,11 +19,12 @@
 //! checker's stage output, produced by [`PackageDeclarations::check`].
 //! `CheckedPackage` (the S4 in-process link step's output, `CheckedGraph`
 //! plus the checked dependency closure) is a *different*, canonical type,
-//! defined in layer-4 `crate::checked_package`, not here -- `check` defines
-//! no `CheckedPackage` type, method or field, and imports nothing from
-//! `checked_package` (FR-087-AC-9/TC-256): the `CheckedPackage::call`/
-//! `CheckedPackage::evaluate` references in this module's own doc comments
-//! name `value::expression`'s re-export of `checked_package::CheckedPackage`,
+//! defined in the root crate's layer-4 `checked_package` module, not here
+//! -- `check` defines no `CheckedPackage` type, method or field, and this
+//! crate cannot import `checked_package` (FR-087-AC-9/TC-256): the
+//! `CheckedPackage::call`/`CheckedPackage::evaluate` references in this
+//! module's own doc comments name the root crate's
+//! `value::expression` re-export of `checked_package::CheckedPackage`,
 //! reached only through `checked_package`'s own `CheckedGraph`-typed field
 //! and its `graph()` accessor.
 //!

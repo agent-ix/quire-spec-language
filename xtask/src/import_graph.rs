@@ -304,7 +304,7 @@ fn resolves_into_check(path: &[String], leaf: &str, reexports: &ValueReexports) 
 
 fn strip_leading_crate(path: &[String]) -> &[String] {
     match path.first().map(String::as_str) {
-        Some("crate") => &path[1..],
+        Some(root) if root == "crate" || root == LAYER3_CRATE => &path[1..],
         _ => path,
     }
 }
@@ -445,13 +445,20 @@ const LAYER3_SRC: &str = "qsl-semantics/src";
 /// That crate's own Rust name. A path rooted at it (`qsl_semantics::value::
 /// quantity::UnitTable`, as a doctest or an `extern crate self` alias would
 /// write one) is the same crate-relative path as `crate::value::quantity::
-/// UnitTable`, so [`resolve_relative_path`] resolves it the same way and the
-/// layer rule classifies it, rather than skipping it as an external crate.
+/// UnitTable`. Every scan here treats it as a crate root, the same as
+/// `crate`: [`strip_leading_crate`] (TC-172, TC-262), [`resolve_relative_path`]
+/// and inline-path resolution (TC-175).
 const LAYER3_CRATE: &str = "qsl_semantics";
 
 // ---------------------------------------------------------------------
 // FR-068-AC-6: `check`'s imports are bounded by module and layer, not by
 // item. The number of items imported from a permitted module is not checked.
+//
+// Cargo is the gate for crate direction: every later-layer module
+// (`checked_package`, `package`, `value::expression`, `route`, `replay`,
+// `lowering`, the SEAM modules) is in a crate that depends on
+// `qsl-semantics`, so an import of one from here does not compile. This scan
+// checks what Cargo cannot see: the module order inside `qsl-semantics`.
 // ---------------------------------------------------------------------
 
 /// FR-068-AC-6's permitted-module list (closed): any item of a listed
@@ -484,17 +491,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "family",
 ];
 
-/// FR-068-AC-6's MUST NOT list (closed): a later layer, forbidden including
-/// any descendant.
-const LAYER_FORBIDDEN_MODULES: &[&str] = &[
-    "checked_package",
-    "package",
-    "value::expression",
-    "route",
-    "replay",
-    "lowering",
-];
-
 /// Whether `module` is exactly `entry` or a `::`-segment descendant of it
 /// (`model_query` is not a descendant of `model` by this rule -- only a
 /// `::` boundary counts, the same segment-matching FR-060 T12-B/T12-C use).
@@ -507,19 +503,12 @@ fn module_or_descendant(module: &str, entry: &str) -> bool {
 pub enum LayerClass {
     /// On the permitted list (or a descendant of a permitted entry).
     Permitted,
-    /// On the MUST NOT list (or a descendant of one) -- a later layer.
-    Forbidden,
-    /// On neither list.
+    /// A module of this crate that is not on the permitted list.
     Unlisted,
 }
 
 fn classify_layer_module(module: &str) -> LayerClass {
-    if LAYER_FORBIDDEN_MODULES
-        .iter()
-        .any(|entry| module_or_descendant(module, entry))
-    {
-        LayerClass::Forbidden
-    } else if LAYER_PERMITTED_MODULES
+    if LAYER_PERMITTED_MODULES
         .iter()
         .any(|entry| module_or_descendant(module, entry))
     {
@@ -559,7 +548,7 @@ fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
 /// Resolve `top` (a resolved path's first segment) and `next` (its second,
 /// if any) into FR-068-AC-6's module label and whether the edge names its
 /// submodule. Only `value` needs `next` resolved further: every other
-/// permitted/forbidden entry is matched on `top` alone (`module_or_descendant`
+/// permitted entry is matched on `top` alone (`module_or_descendant`
 /// covers the rest of the path).
 ///
 /// `next_is_module_by_syntax` is `true` when the caller already knows `next`
@@ -630,7 +619,7 @@ pub struct LayerEdge {
     pub line: usize,
     /// The resolved module label (e.g. `"value::quantity"`, `"model"`).
     pub module: String,
-    /// Permitted, forbidden, or unlisted.
+    /// Permitted or unlisted.
     pub class: LayerClass,
     /// Whether a `value` edge names its submodule (`crate::value::
     /// <submodule>::Name`) rather than reaching it through `value`'s flat
@@ -685,8 +674,8 @@ fn classify_resolved(
 }
 
 /// Classify one `use` edge found under `qsl-semantics/src/check/`, on the resolved path of
-/// what it binds -- so `use crate::checked_package;`, `use
-/// crate::{package, route};` and `use super::super::route;`, which bind a
+/// what it binds -- so `use crate::complete;`, `use
+/// crate::{complete, model};` and `use super::super::complete;`, which bind a
 /// module by name, are classified on that module. Every resolved segment but
 /// a named leaf is a module by syntax; a named leaf may itself be a module
 /// (`use crate::value::quantity;`), which [`resolve_layer_module`] tells
@@ -947,7 +936,7 @@ fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
         let Some((first, rest)) = path.segments.split_first() else {
             continue;
         };
-        if matches!(first.as_str(), "crate" | "super" | "self") {
+        if matches!(first.as_str(), "crate" | "super" | "self") || first == LAYER3_CRATE {
             inline.push((
                 path.line,
                 resolve_relative_path(&path.segments, &current_module),
@@ -967,9 +956,9 @@ fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
 }
 
 /// FR-068-AC-6/TC-175: every shipped `use` edge and inline path under
-/// `qsl-semantics/src/check/`, classified against the module-level layer rule, so one scan
-/// covers both `value`'s submodules and the `package`/`checked_package`/
-/// `route`/`replay`/`lowering` forbidden list. Inline paths resolve as
+/// `qsl-semantics/src/check/`, classified against the module-level layer
+/// rule: each resolves into a permitted module of this crate, names its
+/// `value` submodule, or is a violation. Inline paths resolve as
 /// `file_edges` describes.
 pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
@@ -1270,26 +1259,16 @@ mod tests {
         fs::write(path, contents).unwrap();
     }
 
-    /// A minimal QSL-shaped fixture tree: a bare marker file for every
-    /// non-`value` module FR-068-AC-6 names (so [`is_real_crate_module`]
-    /// can tell each apart from an external crate) and every named
-    /// `semantic_value` `value` submodule, plus `value::member` and
-    /// `value::expression` -- two
-    /// real submodules the rule deliberately leaves off both lists (the
-    /// first permanently unlisted, the second forbidden).
+    /// A minimal `qsl-semantics`-shaped fixture tree: a bare marker file for
+    /// each of its real top-level modules (so [`is_real_crate_module`] can
+    /// tell each apart from an external crate) and each of its real `value`
+    /// submodules. `complete` and `value::member` are real modules of the
+    /// crate that the permitted list leaves off, so an import of either is
+    /// unlisted. Later-layer modules are not faked: they are in other
+    /// crates, and Cargo refuses an import of them.
     fn layer_fixture_root() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        for module in [
-            "model",
-            "library",
-            "family",
-            "checked_package",
-            "package",
-            "route",
-            "replay",
-            "lowering",
-            "checking",
-        ] {
+        for module in ["model", "library", "family", "complete"] {
             write(dir.path(), &format!("{LAYER3_SRC}/{module}.rs"), "");
         }
         for submodule in [
@@ -1297,7 +1276,6 @@ mod tests {
             "enumeration",
             "unit",
             "quantity",
-            "reference",
             "containment",
             "semantic_node",
             "model_query",
@@ -1309,7 +1287,6 @@ mod tests {
                 "",
             );
         }
-        write(dir.path(), "qsl-semantics/src/value/expression/mod.rs", "");
         write(dir.path(), "qsl-semantics/src/value/mod.rs", "");
         dir
     }
@@ -1331,21 +1308,22 @@ mod tests {
         }
     }
 
-    /// TC-175 step 6: a shipped `use crate::checked_package::CheckedPackage;`
-    /// under `src/check/` fails, naming the file, line and resolved module.
+    /// TC-175 step 6: a shipped `use crate::complete::ReaderAuthority;`
+    /// under `check/` fails, naming the file, line and resolved module:
+    /// `complete` is a module of the crate that is not on the permitted list.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn forbidden_use_edge_is_a_violation() {
+    fn unlisted_use_edge_is_a_violation() {
         let dir = layer_fixture_root();
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::checked_package::CheckedPackage;\n",
+            "use crate::complete::ReaderAuthority;\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "checked_package");
-        assert_eq!(edges[0].class, LayerClass::Forbidden);
+        assert_eq!(edges[0].module, "complete");
+        assert_eq!(edges[0].class, LayerClass::Unlisted);
         assert_eq!(edges[0].line, 1);
         assert!(edges[0].is_violation());
     }
@@ -1374,7 +1352,8 @@ mod tests {
     /// rooted at its own name is classified exactly as a `crate::` one would
     /// be, not skipped as an external crate: `qsl_semantics::value::member`
     /// is unlisted, a flat `qsl_semantics::value::UnitTable` names no
-    /// submodule, and `qsl_semantics::value::quantity` is permitted.
+    /// submodule, `qsl_semantics::value::quantity` is permitted, and an
+    /// inline `qsl_semantics::complete::..` path is unlisted.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn qsl_semantics_rooted_paths_are_classified_like_crate_paths() {
@@ -1389,7 +1368,8 @@ mod tests {
             "qsl-semantics/src/check/fixture.rs",
             "use qsl_semantics::value::member::SomeThing;\n\
              use qsl_semantics::value::UnitTable;\n\
-             use qsl_semantics::value::quantity::QuantityUnit;\n",
+             use qsl_semantics::value::quantity::QuantityUnit;\n\
+             pub fn f(_: qsl_semantics::complete::ReaderAuthority) {}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         let summary: Vec<(usize, &str, bool)> = edges
@@ -1402,44 +1382,49 @@ mod tests {
                 (1, "value::member", true),
                 (2, "value::quantity", true),
                 (3, "value::quantity", false),
+                (4, "complete", true),
             ]
         );
+        // TC-172/TC-262 resolve through `strip_leading_crate`, which strips
+        // the crate's own name the same way.
+        let path = vec!["qsl_semantics".to_owned(), "check".to_owned()];
+        assert!(resolves_into_check(&path, "X", &ValueReexports::default()));
     }
 
-    /// TC-175 step 6: a shipped inline `use crate::package::*;` glob fails
-    /// the same way a named import would -- `package` has no allow-list to
-    /// check a leaf against, so a glob must still be caught.
+    /// TC-175 step 6: a shipped `use crate::complete::*;` glob fails the
+    /// same way a named import would -- a glob binds no leaf to check, so
+    /// it must still be caught on its module.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn forbidden_glob_use_edge_is_a_violation() {
+    fn unlisted_glob_use_edge_is_a_violation() {
         let dir = layer_fixture_root();
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::package::*;\n",
+            "use crate::complete::*;\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "package");
+        assert_eq!(edges[0].module, "complete");
         assert!(edges[0].is_violation());
     }
 
-    /// TC-175 step 6: a shipped inline path `crate::value::expression::
-    /// Evaluation` with no `use` line fails -- an inline path into a later
-    /// layer is the same forbidden edge a `use` line would be.
+    /// TC-175 step 6: a shipped inline path `crate::value::member::Member`
+    /// with no `use` line fails -- an inline path into an unlisted module
+    /// is the same edge a `use` line would be.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn forbidden_inline_path_is_a_violation() {
+    fn unlisted_inline_path_is_a_violation() {
         let dir = layer_fixture_root();
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() -> crate::value::expression::Evaluation {\n    todo!()\n}\n",
+            "pub fn f() -> crate::value::member::Member {\n    todo!()\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::expression");
-        assert_eq!(edges[0].class, LayerClass::Forbidden);
+        assert_eq!(edges[0].module, "value::member");
+        assert_eq!(edges[0].class, LayerClass::Unlisted);
         assert!(edges[0].is_violation());
     }
 
@@ -1517,16 +1502,16 @@ mod tests {
         assert!(edges[0].is_violation());
     }
 
-    /// TC-175 step 6: the same forbidden import inside a `#[cfg(test)]`
+    /// TC-175 step 6: the same unlisted import inside a `#[cfg(test)]`
     /// item does not fail -- shipped-only scope.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn cfg_test_forbidden_import_is_not_reported() {
+    fn cfg_test_unlisted_import_is_not_reported() {
         let dir = layer_fixture_root();
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "#[cfg(test)]\nmod tests {\n    use crate::checked_package::CheckedPackage;\n}\n",
+            "#[cfg(test)]\nmod tests {\n    use crate::complete::ReaderAuthority;\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert!(edges.is_empty(), "{edges:?}");
@@ -1615,31 +1600,31 @@ mod tests {
             .collect()
     }
 
-    /// TC-175 step 6: a `use` that binds a forbidden module by name --
-    /// `use crate::checked_package;`, `use crate::{package, route};`,
-    /// `use super::super::route;` -- fails on that module.
+    /// TC-175 step 6: a `use` that binds an unlisted module by name --
+    /// `use crate::complete;`, `use crate::{value::member, complete as c};`,
+    /// `use super::super::complete as d;` -- fails on that module.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
-    fn use_binding_a_forbidden_module_is_a_violation() {
+    fn use_binding_an_unlisted_module_is_a_violation() {
         let dir = layer_fixture_root();
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::checked_package;\nuse crate::{package, route};\nuse super::super::lowering;\n",
+            "use crate::complete;\nuse crate::{value::member, complete as c};\nuse super::super::complete as d;\n",
         );
         assert_eq!(
             violations_of(dir.path()),
             vec![
-                ("checked_package".to_owned(), 1),
-                ("package".to_owned(), 2),
-                ("route".to_owned(), 2),
-                ("lowering".to_owned(), 3),
+                ("complete".to_owned(), 1),
+                ("value::member".to_owned(), 2),
+                ("complete".to_owned(), 2),
+                ("complete".to_owned(), 3),
             ]
         );
     }
 
     /// TC-175 step 6: `{self}` imports bind the module they name.
-    /// `use crate::lowering::{self};` fails; `use crate::value::quantity::
+    /// `use crate::complete::{self};` fails; `use crate::value::quantity::
     /// {self};` names a permitted `semantic_value` submodule and passes.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1648,11 +1633,11 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::lowering::{self};\nuse crate::value::quantity::{self as q};\n",
+            "use crate::complete::{self};\nuse crate::value::quantity::{self as q};\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 2, "{edges:?}");
-        assert_eq!(edges[0].module, "lowering");
+        assert_eq!(edges[0].module, "complete");
         assert!(edges[0].is_violation());
         assert_eq!(edges[1].module, "value::quantity");
         assert!(!edges[1].is_violation());
@@ -1683,8 +1668,8 @@ mod tests {
     }
 
     /// TC-175 step 6: a module bound by a `use`, renamed or not, is tracked:
-    /// `use crate::checked_package as cp;` then `cp::CheckedPackage::new()`
-    /// fails on both lines, while `use crate::value::quantity;` then
+    /// `use crate::complete as cp;` then `cp::ReaderAuthority::new()` fails
+    /// on both lines, while `use crate::value::quantity;` then
     /// `quantity::UnitTable` resolves to the permitted, named submodule.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1693,8 +1678,8 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::checked_package as cp;\nuse crate::value::quantity;\n\
-             pub fn f() {\n    let _ = cp::CheckedPackage::new();\n    let _ = quantity::UnitTable::default();\n}\n",
+            "use crate::complete as cp;\nuse crate::value::quantity;\n\
+             pub fn f() {\n    let _ = cp::ReaderAuthority::new();\n    let _ = quantity::UnitTable::default();\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         let lines = |module: &str| -> Vec<(usize, bool)> {
@@ -1704,7 +1689,7 @@ mod tests {
                 .map(|edge| (edge.line, edge.is_violation()))
                 .collect()
         };
-        assert_eq!(lines("checked_package"), vec![(1, true), (4, true)]);
+        assert_eq!(lines("complete"), vec![(1, true), (4, true)]);
         assert_eq!(lines("value::quantity"), vec![(2, false), (5, false)]);
     }
 
@@ -1717,14 +1702,14 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() {\n    use crate::package::PackageDeclarations;\n}\n\
-             #[cfg(test)]\nfn t() {\n    use crate::route::Route;\n}\n",
+            "pub fn f() {\n    use crate::complete::ReaderAuthority;\n}\n\
+             #[cfg(test)]\nfn t() {\n    use crate::value::member::Member;\n}\n",
         );
-        assert_eq!(violations_of(dir.path()), vec![("package".to_owned(), 2)]);
+        assert_eq!(violations_of(dir.path()), vec![("complete".to_owned(), 2)]);
     }
 
     /// TC-175 step 6: a `crate::` path inside a macro invocation's arguments
-    /// (`vec![crate::package::X]`, `format!("{}", crate::route::R)`) is
+    /// (`vec![crate::complete::X]`, `format!("{}", crate::value::member::M)`) is
     /// scanned from the macro's tokens.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1733,17 +1718,17 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() {\n    let _ = vec![crate::package::X];\n    let _ = format!(\"{}\", crate::route::R);\n}\n",
+            "pub fn f() {\n    let _ = vec![crate::complete::X];\n    let _ = format!(\"{}\", crate::value::member::M);\n}\n",
         );
         assert_eq!(
             violations_of(dir.path()),
-            vec![("package".to_owned(), 2), ("route".to_owned(), 3)]
+            vec![("complete".to_owned(), 2), ("value::member".to_owned(), 3)]
         );
     }
 
     /// TC-175 step 6 / FR-068-AC-6 ("A `super::` or `self::` path is
-    /// resolved relative to its file"): `self::super::super::lowering::L`
-    /// from `src/check/fixture.rs` resolves to `lowering` and fails.
+    /// resolved relative to its file"): `self::super::super::complete::C`
+    /// from `check/fixture.rs` resolves to `complete` and fails.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn self_then_super_path_resolves_relative_to_its_file() {
@@ -1751,9 +1736,9 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() -> self::super::super::lowering::L {\n    todo!()\n}\n",
+            "pub fn f() -> self::super::super::complete::C {\n    todo!()\n}\n",
         );
-        assert_eq!(violations_of(dir.path()), vec![("lowering".to_owned(), 1)]);
+        assert_eq!(violations_of(dir.path()), vec![("complete".to_owned(), 1)]);
         let current = vec!["check".to_owned(), "fixture".to_owned()];
         let raw: Vec<String> = ["self", "super", "family"]
             .into_iter()

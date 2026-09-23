@@ -53,7 +53,7 @@ its one `check` dependency, since `semantic_value` does not exist yet.
 
 ## Inputs
 
-- `qsl-semantics/src/model/checked_dispatch.rs`, the whole file (1149 lines pre-move),
+- `src/model/checked_dispatch.rs`, the whole file (1149 lines pre-move),
   including its own interim-edge comment and `use crate::check::{...}` line
   FR-068-CON-5 required (`:109-117`).
 - `qsl-semantics/src/model/conformance.rs:763-1094`: the contiguous

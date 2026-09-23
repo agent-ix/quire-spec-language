@@ -146,6 +146,9 @@ struct PackageDependencies {
     shipped_features: Vec<(String, Vec<String>)>,
     /// The package's own `default` feature list.
     default_features: Vec<String>,
+    /// Every one of the package's own `[features]` entries, `default`
+    /// included, with the values it enables.
+    features: Vec<(String, Vec<String>)>,
 }
 
 /// Every workspace package's dependency names, from `cargo metadata`, so
@@ -220,6 +223,12 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
                     })
                     .collect(),
                 default_features: strings(&package["features"]["default"]),
+                features: package["features"]
+                    .as_object()
+                    .expect("a feature table")
+                    .iter()
+                    .map(|(name, values)| (name.clone(), strings(values)))
+                    .collect(),
             }
         })
         .collect()
@@ -364,13 +373,32 @@ fn fcd_is_named_by_model_intake_only(dependencies: &[String]) {
     );
 }
 
-/// QSL-181 (#371 review L8): `test-support` turns on fixture constructors
-/// that forge crate-issued capabilities (`ReaderAuthority::fixture`) and
-/// test-only views of `pub(crate)` items. It is for tests only: no workspace
-/// package enables it by default, and no normal or build dependency edge
-/// enables it on a workspace crate (a dev-dependency may, which is how a
-/// crate's own tests reach it). Cargo feature unification would otherwise
-/// switch it on in a shipped build.
+/// Whether a `[features]` value forwards to a workspace crate's
+/// `test-support`: `<crate>/test-support` or `<crate>?/test-support`.
+fn forwards_to_test_support(value: &str, workspace_crates: &[&str]) -> bool {
+    value.split_once('/').is_some_and(|(dependency, feature)| {
+        feature == "test-support"
+            && workspace_crates.contains(&dependency.strip_suffix('?').unwrap_or(dependency))
+    })
+}
+
+/// QSL-181 (#371 review L8, #372 review M1): `test-support` turns on fixture
+/// constructors that forge crate-issued capabilities
+/// (`ReaderAuthority::fixture`) and test-only views of `pub(crate)` items.
+/// It is for tests only:
+///
+/// - no workspace package enables its own `test-support` by default;
+/// - no normal or build dependency edge enables it on a workspace crate (a
+///   dev-dependency may, which is how a crate's own tests reach it);
+/// - no `[features]` entry other than a package's own `test-support`
+///   forwards to a workspace crate's `test-support` (`default =
+///   ["qsl-semantics/test-support"]`, or any feature a shipped dependent
+///   could enable). Forwarding `test-support` to `test-support` is allowed:
+///   only a test build can turn the outer one on, by the two rules above.
+///
+/// Cargo feature unification would otherwise switch it on in a shipped
+/// build. Measured: a root `default = ["qsl-semantics/test-support"]` fails
+/// this test.
 #[trace("FR-087-AC-1", "TC-243")]
 #[test]
 fn no_shipped_dependency_enables_test_support() {
@@ -380,6 +408,21 @@ fn no_shipped_dependency_enables_test_support() {
         .map(|package| package.name.as_str())
         .collect();
     assert!(workspace_crates.contains(&"quire-spec-language"));
+    // The matcher sees both spellings, including the `?` one Cargo accepts
+    // only for an optional dependency, and nothing else.
+    for (value, forwards) in [
+        ("qsl-semantics/test-support", true),
+        ("qsl-semantics?/test-support", true),
+        ("qsl-semantics/other", false),
+        ("serde/test-support", false),
+        ("dep:qsl-semantics", false),
+    ] {
+        assert_eq!(
+            forwards_to_test_support(value, &workspace_crates),
+            forwards,
+            "{value}"
+        );
+    }
     for package in &packages {
         assert!(
             !package
@@ -389,6 +432,18 @@ fn no_shipped_dependency_enables_test_support() {
             "{} enables test-support by default",
             package.name
         );
+        for (feature, values) in &package.features {
+            if feature == "test-support" {
+                continue;
+            }
+            for value in values {
+                assert!(
+                    !forwards_to_test_support(value, &workspace_crates),
+                    "{}'s feature `{feature}` enables {value}, which a shipped build can reach",
+                    package.name
+                );
+            }
+        }
         for (dependency, features) in &package.shipped_features {
             assert!(
                 !(workspace_crates.contains(&dependency.as_str())

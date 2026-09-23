@@ -169,7 +169,7 @@ above.
 
 **Real deleted symbols from this migration** (FR-066-AC-4). **Correction
 (PR #262 review, finding F13):** an earlier revision of this section cited
-`qsl-semantics/src/family/requirements.rs`, `PackageRefusal`,
+`src/family/requirements.rs`, `PackageRefusal`,
 `EvaluateRefusal::Incomplete`, `DeclarationCause` and `Stage::Requirements`
 as this ticket's "real deleted symbols." Those five were deleted from an
 uncommitted working draft before this ticket's first commit

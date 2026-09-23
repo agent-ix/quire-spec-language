@@ -97,6 +97,20 @@ impl Role {
     }
 }
 
+/// One allowed caller of a rule's symbol: the crate, named by its source
+/// root relative to the scanned checkout (`"src"` for the root crate,
+/// `"qsl-semantics/src"`), and a module path prefix inside it, matched as
+/// `module == prefix` or `module.starts_with("{prefix}::")`. Module paths are
+/// relative to their own crate, and two crates can have modules of the same
+/// name (the root crate and `qsl-semantics` both have `value` and
+/// `complete`), so a module prefix alone would also allow a same-named
+/// module in any other crate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AllowedCaller {
+    pub(crate) crate_src: &'static str,
+    pub(crate) module_prefix: &'static str,
+}
+
 /// One ADR-011 T-12 API-surface rule (data, per the module doc above).
 pub(crate) struct Rule {
     pub(crate) id: &'static str,
@@ -109,9 +123,9 @@ pub(crate) struct Rule {
     /// Call-site substrings that are a violation from any module, including
     /// an allowed caller: a path that no longer names the rule's symbol.
     pub(crate) forbidden_patterns: &'static [&'static str],
-    /// Module path prefixes allowed to contain a call site (matched as
-    /// `module == prefix` or `module.starts_with("{prefix}::")`).
-    pub(crate) allowed_caller_prefixes: &'static [&'static str],
+    /// The callers allowed to contain a call site: each names its crate and
+    /// a module path prefix within it (see [`AllowedCaller`]).
+    pub(crate) allowed_callers: &'static [AllowedCaller],
     /// A file path, relative to the QSL tree, whose presence the rule needs
     /// before it is live. `None` means the rule is always live once a root is
     /// given (the constructor rules below: the files that define `NodeKey`,
@@ -159,7 +173,10 @@ pub(crate) const RULES: &[Rule] = &[
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
         // #217/#219 build it). Left as a placeholder for #213/#217 to set.
-        allowed_caller_prefixes: &["replay"],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "src",
+            module_prefix: "replay",
+        }],
         requires_path: Some("qsl-replay/src/lib.rs"),
         pending_reason: "the layer-6 facade crate `qsl-replay/src/lib.rs` is absent from the \
                          --qsl tree",
@@ -185,7 +202,10 @@ pub(crate) const RULES: &[Rule] = &[
         // T12-B's allowed callers are `check` and every module under it
         // (ADR-013 O-04), including `check::family`'s
         // `mint_declaration_identity`/`mint_call_identity`.
-        allowed_caller_prefixes: &["check"],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "qsl-semantics/src",
+            module_prefix: "check",
+        }],
         // No marker: the kernel `NodeKey` constructor exists, so T12-B is
         // always live once a root is given.
         requires_path: None,
@@ -212,7 +232,10 @@ pub(crate) const RULES: &[Rule] = &[
         // passed as a function value (`.map(EffectiveId::from_digest)`).
         call_patterns: &["EffectiveId::from_digest"],
         forbidden_patterns: &[],
-        allowed_caller_prefixes: &["model"],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "qsl-semantics/src",
+            module_prefix: "model",
+        }],
         requires_path: Some("qsl-semantics/src/model/key.rs"),
         // Genuinely unreachable for the same reason as T12-B's, above:
         // `qsl-semantics/src/model/key.rs` already exists on origin/main (it now
@@ -241,7 +264,10 @@ pub(crate) const RULES: &[Rule] = &[
         // empty, so any shipped mint outside `model` fails.
         call_patterns: &["PopulationId::from_digest"],
         forbidden_patterns: &[],
-        allowed_caller_prefixes: &["model"],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "qsl-semantics/src",
+            module_prefix: "model",
+        }],
         requires_path: Some("qsl-semantics/src/model/population.rs"),
         // Genuinely unreachable for the same reason as T12-C's, above:
         // `qsl-semantics/src/model/population.rs` already exists on origin/main (FR-084's
@@ -272,7 +298,10 @@ pub(crate) const RULES: &[Rule] = &[
         // Its own `fn attest_ir_admitted_v2(` definition is not a call.
         call_patterns: &["attest_ir_admitted_v2"],
         forbidden_patterns: &[],
-        allowed_caller_prefixes: &["checked_package::checked_v2"],
+        allowed_callers: &[AllowedCaller {
+            crate_src: "src",
+            module_prefix: "checked_package::checked_v2",
+        }],
         requires_path: Some("qsl-semantics/src/library/witness.rs"),
         pending_reason: "the witness module `qsl-semantics/src/library/witness.rs` is absent from \
                          the --qsl tree",
@@ -368,10 +397,14 @@ pub(crate) fn module_path_of(relative: &Path) -> String {
     segments.join("::")
 }
 
-fn module_allowed(module: &str, allowed_prefixes: &[&str]) -> bool {
-    allowed_prefixes
-        .iter()
-        .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}::")))
+/// Whether `module` of the crate whose source root is `crate_src` is one of
+/// `allowed`.
+fn module_allowed(crate_src: &str, module: &str, allowed: &[AllowedCaller]) -> bool {
+    allowed.iter().any(|caller| {
+        caller.crate_src == crate_src
+            && (module == caller.module_prefix
+                || module.starts_with(&format!("{}::", caller.module_prefix)))
+    })
 }
 
 /// Whether `attrs` includes `#[cfg(test)]` -- FR-060 Behavior, "T12-B and
@@ -664,10 +697,15 @@ fn enclosing_function(parsed: &syn::File, line: usize) -> String {
 /// from any module (tagged `true`), or a `call_patterns` match from a
 /// module outside the allowed callers (tagged `false`, for `evaluate`'s
 /// debt-list lookup).
-fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bool)>> {
+fn scan_file(
+    path: &Path,
+    crate_src: &str,
+    module: &str,
+    rule: &Rule,
+) -> Result<Vec<(CallSite, bool)>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let contains_any = |line: &str, patterns: &[&str]| patterns.iter().any(|p| line.contains(p));
-    let caller_allowed = module_allowed(module, rule.allowed_caller_prefixes);
+    let caller_allowed = module_allowed(crate_src, module, rule.allowed_callers);
     let mut sites = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let is_forbidden = contains_any(line, rule.forbidden_patterns);
@@ -693,7 +731,12 @@ fn scan_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bo
 /// excludes `#[cfg(test)]` items; and resolves each site's enclosing function.
 /// Tags each site the same way [`scan_file`] does (`forbidden_patterns` vs.
 /// `call_patterns`).
-fn scan_shipped_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(CallSite, bool)>> {
+fn scan_shipped_file(
+    path: &Path,
+    crate_src: &str,
+    module: &str,
+    rule: &Rule,
+) -> Result<Vec<(CallSite, bool)>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let parsed = syn::parse_file(&text).map_err(|source| Error::source_parse(path, source))?;
     let stream: proc_macro2::TokenStream = text
@@ -706,7 +749,7 @@ fn scan_shipped_file(path: &Path, module: &str, rule: &Rule) -> Result<Vec<(Call
         patterns.iter().map(|p| CallPattern::compile(p)).collect()
     };
     let forbidden_lines = pattern_match_lines(&tokens, &compile(rule.forbidden_patterns));
-    let call_lines = if module_allowed(module, rule.allowed_caller_prefixes) {
+    let call_lines = if module_allowed(crate_src, module, rule.allowed_callers) {
         BTreeSet::new()
     } else {
         pattern_match_lines(&tokens, &compile(rule.call_patterns))
@@ -831,6 +874,11 @@ pub(crate) fn evaluate(
                 format!("source root does not exist: {}", src_root.display()),
             ));
         }
+        let crate_src = src_root
+            .strip_prefix(scan_root)
+            .expect("a source root is under its scan root")
+            .to_string_lossy()
+            .replace('\\', "/");
         let mut files = Vec::new();
         walk_rs_files(&src_root, &mut files)?;
         let modules: Vec<(PathBuf, String)> = files
@@ -857,16 +905,16 @@ pub(crate) fn evaluate(
                 continue;
             }
             let sites = if rule.shipped_only {
-                scan_shipped_file(&file, &module, rule)?
+                scan_shipped_file(&file, &crate_src, &module, rule)?
             } else {
-                scan_file(&file, &module, rule)?
+                scan_file(&file, &crate_src, &module, rule)?
             };
             for (site, is_forbidden) in sites {
                 if is_forbidden {
                     violations.push(site);
                     continue;
                 }
-                if module_allowed(&site.module, rule.allowed_caller_prefixes) {
+                if module_allowed(&crate_src, &site.module, rule.allowed_callers) {
                     continue;
                 }
                 let debt_entry = rule.debt_list.iter().find(|(module, function)| {
@@ -1896,9 +1944,9 @@ mod tests {
     /// it in `qsl-semantics`, and another root-crate `checked_package`
     /// module -- is a violation, whether spelled through the type, through
     /// `Self`, as a function value or across the crate boundary
-    /// (`qsl_semantics::library::SupportedV2Wire::..`, QSL-181); the one call
-    /// in the root crate's `checked_v2` and the minter's own definition are
-    /// not.
+    /// (`qsl_semantics::library::SupportedV2Wire::..`, QSL-181), and so is a
+    /// `checked_package::checked_v2` module in another crate; the one call in
+    /// the root crate's `checked_v2` and the minter's own definition are not.
     #[trace("TC-157", "FR-060-AC-3", "FR-087-AC-1")]
     #[test]
     fn tc_arch_lint_api_surface_023_witness_minter_outside_checked_v2_is_a_violation() {
@@ -1932,6 +1980,13 @@ mod tests {
             "src/route.rs",
             "fn route() {\n    let _ = qsl_semantics::library::SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
         );
+        // A module of the same path in another crate is not the allowed
+        // caller: the allow-list names the root crate's `checked_v2`.
+        write(
+            dir.path(),
+            "qsl-semantics/src/checked_package/checked_v2.rs",
+            "fn read() {\n    let _ = SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
+        );
         let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
@@ -1943,6 +1998,7 @@ mod tests {
         assert_eq!(
             found,
             vec![
+                ("checked_package::checked_v2", 2, "read"),
                 ("library::witness", 7, "SupportedV2Wire::again"),
                 ("checked_package::emit", 2, "emit"),
                 ("route", 2, "route"),
