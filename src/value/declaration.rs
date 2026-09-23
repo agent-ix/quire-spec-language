@@ -68,7 +68,7 @@ use quire_exact::{
     Decimal, DecimalOperation, DecimalType, IllTyped, IllTypedCause, Integer, LimitKind, Meter,
     Outcome, Presence, Quantity, Rational, Refusal,
 };
-use quire_exact::{from_admitted_slots, Deferred, FieldValue, Value, ValueType};
+use quire_exact::{from_admitted_slots, retain_composite, Deferred, FieldValue, Value, ValueType};
 
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::quantity::{
@@ -131,24 +131,6 @@ impl fmt::Debug for FieldExpression<'_> {
             Self::Null => formatter.write_str("Null"),
         }
     }
-}
-
-/// Charge `composite.result-retain` with `occ(result)`, then expose it. Not
-/// reusable from `quire_exact` (its own `retain_composite` is
-/// `pub(crate)` there, since the kernel's checked `record`/`tuple`/
-/// `evaluate_record`/`evaluate_tuple` are its only callers); this module's
-/// callers are its own name-keyed `evaluate_record`/`evaluate_tuple` below
-/// (and `value::expression::evaluate`, directly), which is why this one
-/// small charge-and-return helper stays QSL's own rather than a K-copy of
-/// kernel logic.
-pub(crate) fn retain_composite(value: Value, meter: &mut Meter) -> Result<Value, Stop> {
-    let occ = value.occ();
-    meter.charge(
-        Charge::new(ChargePoint::CompositeResultRetain)
-            .exact_size(LimitKind::ValueOccurrences, occ.clone())
-            .exact_results(occ),
-    )?;
-    Ok(value)
 }
 
 /// Where a construction refusal originates.
@@ -988,10 +970,10 @@ impl TypeEnvironment {
             };
             slots.push(slot);
         }
-        Ok(outcome_from_stop(retain_composite(
+        Ok(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
-        )))
+        ))
     }
 
     /// Evaluate a tuple call `T(e, ...)`: the arity is checked first, then the
@@ -1011,10 +993,10 @@ impl TypeEnvironment {
                 Err(stop) => return Ok(outcome_from_stop(Err(stop))),
             }
         }
-        Ok(outcome_from_stop(retain_composite(
+        Ok(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
-        )))
+        ))
     }
 
     fn tuple_positions(

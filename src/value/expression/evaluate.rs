@@ -10,9 +10,8 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::declaration::{operand_value, retain_composite, CompositeShape};
+use super::super::declaration::{operand_value, CompositeShape};
 use super::super::enumeration::{compare_enum, EnumMemberIndex};
-use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use super::super::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
@@ -32,6 +31,10 @@ use crate::family::FamilyResult;
 use crate::model::population::PopulationBinding;
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Rational;
+use quire_exact::{
+    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
+    OptionValue, Value, ValueType,
+};
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
@@ -43,9 +46,6 @@ use quire_exact::{
 };
 use quire_exact::{
     evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
-};
-use quire_exact::{
-    form, form_grouped, member_equal, CollectionValue, FieldValue, OptionValue, Value, ValueType,
 };
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
@@ -965,7 +965,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .types
                     .tuple(*declaration, arguments)
                     .map_err(|_| invariant())?;
-                retain_composite(value, self.meter)?
+                outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Record { declaration, slots } => {
                 let present = slots
@@ -997,7 +997,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .types
                     .record(*declaration, fields)
                     .map_err(|_| invariant())?;
-                retain_composite(value, self.meter)?
+                outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Collection {
                 collection_type,

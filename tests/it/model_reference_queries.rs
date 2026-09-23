@@ -25,6 +25,7 @@ use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
+use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
@@ -43,10 +44,10 @@ use quire_spec_language::model::population::{
 };
 use quire_spec_language::value::{
     CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration, CompositeShape,
+    CheckedPackageEvaluation, CheckingLimits, CompositeDeclaration, CompositeShape,
     DeclarationCause, Evaluation, FamilyOutcome, FamilyResult, FieldDeclaration, InputRefusal,
     Location, ObjectEnvironment, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
-    TypeEnvironment, Value, ValueType, WrongSnapshotCause,
+    TypeEnvironment, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

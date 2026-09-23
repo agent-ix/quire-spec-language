@@ -14,7 +14,7 @@
 
 use qsl_forms::TypeForm;
 use quire_exact::IeeeWidth;
-use quire_spec_language::value::{CollectionType, ValueType};
+use quire_exact::{CollectionType, ValueType};
 
 /// A placeholder span: `TypeForm`'s own span carries no identity
 /// (ADR-011 §2.2 row E2, "identity: none: forms carry position only"), so

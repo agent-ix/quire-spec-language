@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
+use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, Decimal, DecimalType, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
@@ -26,7 +27,7 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
-    PackageRefusalCode, RationalDomain,
+    PackageRefusalCode,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

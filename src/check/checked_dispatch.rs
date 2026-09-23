@@ -1075,8 +1075,8 @@ mod tests {
     };
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
-    use crate::value::ValueType;
     use qsl_forms::Expression;
+    use quire_exact::ValueType;
 
     /// `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
     /// rather than silently truncating the closure. A straight redefinition

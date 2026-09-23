@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The type-owned total canonical key (ported from QSL `value::key`).
+//! The type-owned total canonical key.
 //!
 //! Every type that admits `=` has a key, and two values of one type have
 //! equal keys exactly when they are equal under [`crate::equality`]. The key
@@ -50,8 +50,11 @@ enum Task<'a> {
 
 /// Compare the canonical keys of two values of one declared type. `None`
 /// means the operands are not of one keyed type, which a checked program
-/// never produces.
-pub(crate) fn compare_keys(left: &Value, right: &Value) -> Option<Ordering> {
+/// never produces. `pub`: QSL's expression evaluator's `Machine` groups
+/// adjacent equal elements with this key before [`crate::form_grouped`] and
+/// in `Contains`, so it must order exactly as [`crate::form`]'s canonical
+/// sort does.
+pub fn compare_keys(left: &Value, right: &Value) -> Option<Ordering> {
     let mut tasks = vec![Task::Values(left, right)];
     while let Some(task) = tasks.pop() {
         let ordering = match task {

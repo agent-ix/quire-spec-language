@@ -18,6 +18,7 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, Outcome,
     Refusal, ScalarLimits,
 };
+use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
 };
@@ -25,12 +26,11 @@ use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
 use quire_spec_language::value::{
-    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator,
-    FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId,
-    GraphRefusal, GraphSlot, InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause,
-    ObjectEnvironmentRefusal, ObjectTypeDeclaration, OptionValue, QualifiedName, RecursionEdges,
-    TypeEnvironment, Value, ValueGraph, ValueType,
+    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
+    DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator, FieldDeclaration,
+    FieldExpression, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
+    InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
+    ObjectTypeDeclaration, QualifiedName, RecursionEdges, TypeEnvironment, ValueGraph,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -1032,7 +1032,7 @@ mod checked {
         let ValueType::Collection(q_collection) = &q_type else {
             panic!("a collection type");
         };
-        let q = quire_spec_language::value::form_collection(
+        let q = quire_exact::form_collection(
             q_collection,
             vec![int(1), int(2)],
             &mut Meter::new(UNLIMITED),

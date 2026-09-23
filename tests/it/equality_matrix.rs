@@ -23,20 +23,22 @@ use quire_exact::{
     TextPayload, TextProfile, TextType, Undefined, UnitDomain, UnitId, UniverseId,
 };
 use quire_exact::{
+    form_collection, plan_equality, CollectionType, FieldValue, OptionValue, RationalDomain, Value,
+    ValueType,
+};
+use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_spec_language::value::{
-    form_collection, plan_equality, AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause,
-    CheckMode, CheckRefusal, CheckedEquality, CheckedExpression, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, CollectionType, Component, CompositeDeclaration,
-    CompositeShape, ConstructionCause, ConstructionRefusal, DefinitionLock, DefinitionReference,
-    DefinitionRevision, DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage,
-    EnumMemberIndex, EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation,
-    FamilyOutcome, FieldDeclaration, FieldExpression, FieldValue, LocatedLoss, NodeOwner,
-    ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue, OwnerSelection,
-    OwnerSubject, PackageDeclarations, RationalDomain, TypeEnvironment, UnitGraph, UnitPreimage,
-    UnitTable, Value, ValueLoss, ValueType,
+    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause, CheckMode, CheckRefusal,
+    CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
+    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
+    DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage, EnumDeclaration,
+    EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage, EqualityOperand,
+    EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration, FieldExpression, LocatedLoss,
+    NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OwnerSelection, OwnerSubject,
+    PackageDeclarations, TypeEnvironment, UnitGraph, UnitPreimage, UnitTable, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

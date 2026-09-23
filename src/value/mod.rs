@@ -17,10 +17,12 @@
 //!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`]
 //!    (FR-141), [`evaluate_quantity`] and [`convert_quantity`] (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
-//! 3. FR-143 records, tuples and finite recursive [`Value`]s over a
+//! 3. FR-143 records, tuples and finite recursive
+//!    [`Value`](quire_exact::Value)s over a
 //!    [`TypeEnvironment`], the FR-149 equality matrix
 //!    ([`TypeEnvironment::check_equality`]) and FR-144 bounded
-//!    [`CollectionValue`]s ([`construct_collection`]) (QSL #119); FR-307
+//!    [`CollectionValue`](quire_exact::CollectionValue)s
+//!    ([`construct_collection`](quire_exact::construct_collection)) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
 //!    (FR-087, #213 S-3a);
 //! 4. [`order_numbers`](quire_exact::order_numbers) compares one
@@ -123,7 +125,6 @@ pub(crate) mod declaration;
 pub(crate) mod definition;
 pub(crate) mod enumeration;
 mod expression;
-mod key;
 mod member;
 mod model_query;
 pub(crate) mod quantity;
@@ -145,26 +146,10 @@ mod unit;
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own types; this
 // module does not re-export them (QSL-131 S-1b), so consumers import them from
 // `quire_exact` directly.
-// QSL-131 V5: `Value`, `ValueType`, `OptionValue`, `CompositeValue`,
-// `FieldValue`, `CollectionType` and `CollectionValue` are `quire_exact`'s
-// own kernel types (ADR-011 §6.1's K row). QSL-131 V5b deleted the
-// `value::composite` and `value::collection` modules that used to re-export
-// them (both were empty once the kernel widened `form`, `form_grouped` and
-// `member_equal` to `pub`, letting `value::expression::evaluate`'s `Machine`
-// call the kernel directly), so every one of these seven is imported from
-// `quire_exact` here with no intermediate module. `FieldDeclaration`,
-// `Component`, `ConstructionCause` and `ConstructionRefusal` moved to
-// `declaration` (QSL-131 V5b): they stay QSL's own, name-keyed types, since
-// the kernel's own versions key a field by its opaque `MemberId` (ADR-013
-// O-06), which needs the `check::CheckedGraph` member-identity resolution
-// `value::member`'s own doc marks as not yet landed ("No production caller
-// constructs a `Member` yet") -- adopting them here is remaining work,
-// gated on that landing, not on this crate's own choice.
+// The kernel's `Value`, `ValueType`, collection, equality and rational items
+// (ADR-011 §6.1's K row) are not re-exported here: every consumer imports
+// them from `quire_exact`, the one definition (ADR-011 §7.2).
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
-pub use quire_exact::{
-    construct_collection, form_collection, CollectionType, CollectionValue, CompositeValue,
-    Deferred, FieldValue, OptionValue, Value, ValueType,
-};
 // QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
 // `evaluate_decimal` were this module's own `decimal` submodule, a
 // byte-identical duplicate of `quire_exact`'s (V4 had already moved unit
@@ -173,10 +158,10 @@ pub use quire_exact::{
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
-// `declaration` owns the FR-143 registry and the FR-149 check-level
-// equality layer; neither is a kernel type (ADR-011 §6.1). `FieldDeclaration`,
-// `Component`, `ConstructionCause` and `ConstructionRefusal` moved here from
-// the deleted `value::composite` (QSL-131 V5b, see the note above).
+// `declaration` owns the FR-143 registry, the FR-149 check-level equality
+// layer and QSL's name-keyed `FieldDeclaration`/`Component`/
+// `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
+// (ADR-011 §6.1).
 pub use declaration::{
     CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule,
@@ -192,16 +177,6 @@ pub use enumeration::{
     compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
     EnumMemberPreimage, EnumValue,
 };
-// QSL-131 V5b deleted `value::equality`: `plan_pairs`/`PlannedPairs`/`Pair`
-// (the last of its byte-identical copies of kernel logic, kept only because
-// the kernel's own `plan_pairs` is `pub(crate)`) are gone entirely, not
-// re-exported -- `value::expression::evaluate`'s `Machine` now gets a pair
-// count and equality Boolean straight from the kernel's own
-// `quire_exact::member_equal`, under the same `collection.member-walk`/
-// `collection.member-test` charge points. `plan_equality` and `EqualityPlan`
-// were already pure re-exports of identical kernel items, so they are
-// imported from `quire_exact` directly with no intermediate module.
-pub use quire_exact::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
@@ -271,11 +246,6 @@ pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
     QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
 };
-// QSL-131 V5b deleted `value::rational`, a pure re-export with nothing else
-// in it (confirmed clean in the V5 measurement); every former consumer now
-// imports these three from `quire_exact` directly, same as it already did
-// for `Rational` itself.
-pub use quire_exact::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
     ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal, PopulationConflict,
 };

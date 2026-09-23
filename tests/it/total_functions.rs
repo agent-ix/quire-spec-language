@@ -10,18 +10,18 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
+use quire_exact::{CollectionType, FieldValue, OptionValue, RationalDomain, Value, ValueType};
 use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
 use quire_spec_language::value::{
     CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
+    CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference, DefinitionRevision,
-    Evaluation, FamilyOutcome, FieldDeclaration, FieldValue, LocatedLoss, Location,
-    MeasureObligation, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue, Origin,
-    PackageDeclarations, ProvedInterval, QualifiedName, RationalDomain, TypeEnvironment, Value,
-    ValueLoss, ValueType,
+    Evaluation, FamilyOutcome, FieldDeclaration, LocatedLoss, Location, MeasureObligation,
+    ObjectEnvironment, ObjectTypeDeclaration, Obligation, Origin, PackageDeclarations,
+    ProvedInterval, QualifiedName, TypeEnvironment, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};

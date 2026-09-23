@@ -11,12 +11,13 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ObjectId, ObjectReference, Outcome, Refusal, ScalarLimits,
     Undefined, UniverseId,
 };
+use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::value::{
     CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
-    CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
-    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectTypeDeclaration,
-    Obligation, PackageDeclarations, ProvedInterval, TypeEnvironment, Value, ValueType,
+    CollectionLoss, CollectionProperty, CompositeDeclaration, CompositeShape, FamilyOutcome,
+    FieldDeclaration, ObjectEnvironment, ObjectTypeDeclaration, Obligation, PackageDeclarations,
+    ProvedInterval, TypeEnvironment,
 };
 use sha2::{Digest, Sha256};
 
@@ -197,7 +198,7 @@ fn collection(value_type: &ValueType, values: Vec<Value>) -> Value {
     let ValueType::Collection(collection_type) = value_type else {
         panic!("a collection type");
     };
-    quire_spec_language::value::form_collection(collection_type, values, &mut Meter::new(UNLIMITED))
+    quire_exact::form_collection(collection_type, values, &mut Meter::new(UNLIMITED))
         .unwrap()
         .completed()
         .unwrap()

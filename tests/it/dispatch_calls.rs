@@ -22,6 +22,7 @@ use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
+use quire_exact::{Value, ValueType};
 use quire_spec_language::check::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     OperationClauses,
@@ -41,8 +42,7 @@ use quire_spec_language::value::{
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, DispatchCandidate,
     DispatchFunctionRole, DispatchOperation, DispatchTable, Evaluation, FamilyOutcome,
     FamilyResult, InputRefusal, InvalidDispatchDeclaration, Location, ObjectEnvironment,
-    ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName, TypeEnvironment, Value,
-    ValueType,
+    ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName, TypeEnvironment,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
