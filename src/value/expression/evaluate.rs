@@ -10,9 +10,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
-use super::super::composite::{retain_composite, FieldValue, OptionValue, Value, ValueType};
-use super::super::declaration::{operand_value, CompositeShape};
+use super::super::declaration::{operand_value, retain_composite, CompositeShape};
 use super::super::enumeration::{compare_enum, EnumMemberIndex};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -51,6 +49,9 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_exact::{
+    form, form_grouped, member_equal, CollectionValue, FieldValue, OptionValue, Value, ValueType,
+};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome
@@ -1003,7 +1004,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 elements,
             } => {
                 let occurrences = self.pop_many(elements.len())?;
-                form(collection_type, occurrences, self.meter)?
+                outcome_into_stop(form(collection_type, occurrences, self.meter))?
             }
             NodeKind::ConvertCollection { target, .. } => {
                 let source = self.pop_collection()?;
@@ -1024,9 +1025,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 if source_kind == CollectionKind::Sequence
                     && target.kind() != CollectionKind::Sequence
                 {
-                    form(target, produced, self.meter)?
+                    outcome_into_stop(form(target, produced, self.meter))?
                 } else {
-                    form_grouped(target, produced, self.meter)?
+                    outcome_into_stop(form_grouped(target, produced, self.meter))?
                 }
             }
             NodeKind::ConvertScalar(operand, _) => {
@@ -1068,7 +1069,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                         produced.push(element.clone());
                     }
                 }
-                form(result_type, produced, self.meter)?
+                outcome_into_stop(form(result_type, produced, self.meter))?
             }
             NodeKind::Size(_) => {
                 let collection = self.pop_collection()?;
@@ -1092,7 +1093,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     if repeated {
                         continue;
                     }
-                    if member_equal(&item, member, self.meter)? {
+                    if outcome_into_stop(member_equal(&item, member, self.meter))? {
                         found = true;
                         break;
                     }
@@ -1431,9 +1432,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                         return Err(invariant());
                     };
                     if *visit == Visit::Map {
-                        form(result_type, iteration.results, self.meter)?
+                        outcome_into_stop(form(result_type, iteration.results, self.meter))?
                     } else {
-                        form_grouped(result_type, iteration.results, self.meter)?
+                        outcome_into_stop(form_grouped(result_type, iteration.results, self.meter))?
                     }
                 }
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,

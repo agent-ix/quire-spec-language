@@ -145,8 +145,8 @@ pub use accounting::{
     length_amount, Charge, ChargePoint, Incomplete, InjectedDenial, LimitKind, Meter, ScalarLimits,
 };
 pub use collection::{
-    construct_collection, form_collection, form_grouped, from_admitted, CardinalityBound,
-    CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
+    construct_collection, form, form_collection, form_grouped, from_admitted, member_equal,
+    CardinalityBound, CollectionKind, CollectionType, CollectionValue, EmptyCardinalityBound,
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{

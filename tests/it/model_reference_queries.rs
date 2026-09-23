@@ -1392,7 +1392,7 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
 /// triple and FR-153's Outputs both require the most-specific type (TC-198
 /// L01); `OptionValue::from_admitted`'s soundness chain (its own doc comment)
 /// is exactly why this collection-literal path is sound too --
-/// `crate::value::collection::from_admitted` bypasses `admits()` the same way
+/// `quire_exact::from_admitted` bypasses `admits()` the same way
 /// for the identical reason.
 #[test]
 #[trace("TC-198", "FR-143", "FR-153-AC-5")]

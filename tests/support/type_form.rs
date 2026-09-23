@@ -127,7 +127,7 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
         ValueType::Quantity(_) => panic!(
             "type_form: {value_type:?} has no declared-type syntax -- forms::BuiltinType \
              has no quantity head, so no fixture can build this TypeForm today; a caller reaching this arm wants \
-             `value::equality::EqualityOperand`'s own `ValueType`-based API instead, not a \
+             `value::declaration::EqualityOperand`'s own `ValueType`-based API instead, not a \
              `TypeForm`"
         ),
     }

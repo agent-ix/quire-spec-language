@@ -118,19 +118,15 @@
 // `text` from this list; `check` now imports their former items from
 // `quire_exact` directly.
 mod application_key;
-pub(crate) mod collection;
-pub(crate) mod composite;
 mod containment;
 pub(crate) mod declaration;
 pub(crate) mod definition;
 pub(crate) mod enumeration;
-pub(crate) mod equality;
 mod expression;
 mod key;
 mod member;
 mod model_query;
 pub(crate) mod quantity;
-pub(crate) mod rational;
 mod reference;
 pub(crate) mod semantic_node;
 mod stop;
@@ -151,20 +147,22 @@ mod unit;
 // `quire_exact` directly.
 // QSL-131 V5: `Value`, `ValueType`, `OptionValue`, `CompositeValue`,
 // `FieldValue`, `CollectionType` and `CollectionValue` are `quire_exact`'s
-// own kernel types now (ADR-011 §6.1's K row), re-exported from `composite`/
-// `collection` rather than duplicated. `FieldDeclaration`, `Component`,
-// `ConstructionCause` and `ConstructionRefusal` stay QSL's own, name-keyed
-// types: the kernel's own versions key a field by its opaque `MemberId`
-// (ADR-013 O-06), which needs the `check::CheckedGraph` member-identity
-// resolution `value::member`'s own doc marks as not yet landed
-// ("No production caller constructs a `Member` yet") -- adopting them here
-// is remaining work, gated on that landing, not on this crate's own choice.
-// `value::composite`'s and `value::collection`'s own module docs give the
-// full per-item accounting.
-pub use collection::{construct_collection, form_collection, CollectionType, CollectionValue};
-pub use composite::{
-    Component, CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, FieldDeclaration,
-    FieldExpression, FieldValue, OptionValue, Value, ValueType,
+// own kernel types (ADR-011 §6.1's K row). QSL-131 V5b deleted the
+// `value::composite` and `value::collection` modules that used to re-export
+// them (both were empty once the kernel widened `form`, `form_grouped` and
+// `member_equal` to `pub`, letting `value::expression::evaluate`'s `Machine`
+// call the kernel directly), so every one of these seven is imported from
+// `quire_exact` here with no intermediate module. `FieldDeclaration`,
+// `Component`, `ConstructionCause` and `ConstructionRefusal` moved to
+// `declaration` (QSL-131 V5b): they stay QSL's own, name-keyed types, since
+// the kernel's own versions key a field by its opaque `MemberId` (ADR-013
+// O-06), which needs the `check::CheckedGraph` member-identity resolution
+// `value::member`'s own doc marks as not yet landed ("No production caller
+// constructs a `Member` yet") -- adopting them here is remaining work,
+// gated on that landing, not on this crate's own choice.
+pub use quire_exact::{
+    construct_collection, form_collection, CollectionType, CollectionValue, CompositeValue,
+    Deferred, FieldValue, OptionValue, Value, ValueType,
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 // QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
@@ -176,10 +174,13 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
 // `declaration` owns the FR-143 registry and the FR-149 check-level
-// equality layer; neither is a kernel type (ADR-011 §6.1).
+// equality layer; neither is a kernel type (ADR-011 §6.1). `FieldDeclaration`,
+// `Component`, `ConstructionCause` and `ConstructionRefusal` moved here from
+// the deleted `value::composite` (QSL-131 V5b, see the note above).
 pub use declaration::{
-    CheckedEquality, CompositeDeclaration, CompositeShape, DeclarationCause, EqualityOperand,
-    EqualityOperator, EqualitySchedule, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule,
+    FieldDeclaration, FieldExpression, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges,
     TypeEnvironment,
 };
 pub use definition::{
@@ -191,7 +192,16 @@ pub use enumeration::{
     compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
     EnumMemberPreimage, EnumValue,
 };
-pub use equality::{plan_equality, EqualityPlan};
+// QSL-131 V5b deleted `value::equality`: `plan_pairs`/`PlannedPairs`/`Pair`
+// (the last of its byte-identical copies of kernel logic, kept only because
+// the kernel's own `plan_pairs` is `pub(crate)`) are gone entirely, not
+// re-exported -- `value::expression::evaluate`'s `Machine` now gets a pair
+// count and equality Boolean straight from the kernel's own
+// `quire_exact::member_equal`, under the same `collection.member-walk`/
+// `collection.member-test` charge points. `plan_equality` and `EqualityPlan`
+// were already pure re-exports of identical kernel items, so they are
+// imported from `quire_exact` directly with no intermediate module.
+pub use quire_exact::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
@@ -261,7 +271,11 @@ pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
     QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
 };
-pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
+// QSL-131 V5b deleted `value::rational`, a pure re-export with nothing else
+// in it (confirmed clean in the V5 measurement); every former consumer now
+// imports these three from `quire_exact` directly, same as it already did
+// for `Rational` itself.
+pub use quire_exact::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};
 pub use reference::{
     ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal, PopulationConflict,
 };

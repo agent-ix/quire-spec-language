@@ -67,12 +67,12 @@ use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
 use super::{CheckingLimits, DispatchTable, Scope};
-use crate::value::composite::ValueType;
 use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
 use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
+use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
 
 /// The declaring package's `name@version` a checked node's identity
@@ -1453,8 +1453,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 mod tests {
     use super::checking_tests::{empty_scope, mint_resolved, root_location};
     use super::*;
-    use crate::value::composite::FieldDeclaration;
-    use crate::value::declaration::{CompositeDeclaration, TypeEnvironment};
+    use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
     use quire_exact::{Presence, TextType};

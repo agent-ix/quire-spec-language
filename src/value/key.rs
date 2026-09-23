@@ -8,7 +8,7 @@
 
 use std::cmp::Ordering;
 
-use super::composite::{FieldValue, Value};
+use quire_exact::{FieldValue, Value};
 
 /// One pending key comparison.
 enum Task<'a> {

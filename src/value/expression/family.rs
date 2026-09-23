@@ -21,9 +21,8 @@
 use qsl_attrs::string_edge;
 
 use qsl_foundation::diagnostic::InternalFault;
-use quire_exact::{is_identifier, NodeKey};
+use quire_exact::{is_identifier, NodeKey, Value};
 
-use super::super::composite::Value;
 use crate::check::ValueFunctionFamily;
 
 /// ADR-013 O-11: a non-empty sequence of identifiers, `::`-separated on
@@ -273,7 +272,7 @@ fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
     pub(crate) objects: &'a super::super::reference::ObjectEnvironment,
-    pub(crate) arguments: Option<Vec<super::super::composite::Value>>,
+    pub(crate) arguments: Option<Vec<Value>>,
     pub(crate) local_meter: &'a mut quire_exact::Meter,
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
     /// hook's `EvalOutcome` holds no location, so the hook records it here
@@ -289,7 +288,7 @@ impl<'a> EvaluationEnv<'a> {
     pub(crate) fn new(
         package: &'a super::CheckedPackage,
         objects: &'a super::super::reference::ObjectEnvironment,
-        arguments: Vec<super::super::composite::Value>,
+        arguments: Vec<Value>,
         local_meter: &'a mut quire_exact::Meter,
     ) -> Self {
         Self {
@@ -444,7 +443,7 @@ mod family_contract_tests {
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
         StageLimits,
     };
-    use crate::value::composite::ValueType;
+    use quire_exact::ValueType;
     use crate::value::declaration::TypeEnvironment;
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;

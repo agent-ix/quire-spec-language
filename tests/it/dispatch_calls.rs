@@ -1875,7 +1875,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// receiver through the real bridge-built table.
 ///
 /// This does not also evaluate a `B` receiver through the *same* checked
-/// call site: [`crate::value::composite::ValueType::admits`] requires a
+/// call site: [`quire_exact::ValueType::admits`] requires a
 /// `Value::Reference`'s own `object_type()` to exactly equal a checked
 /// parameter's declared `Reference<T>`, with no subtype allowance, so no
 /// top-level parameter binding can carry a `B` instance where the checked

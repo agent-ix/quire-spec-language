@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, VecDeque};
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{Node, NodeKind, Slot};
 use super::refusal::{CheckCause, CheckRefusal, Location, MeasureObligation};
-use crate::value::composite::ValueType;
+use quire_exact::ValueType;
 
 /// One element of a measure, naming the parameter it measures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
