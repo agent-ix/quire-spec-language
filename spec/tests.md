@@ -163,7 +163,7 @@ operational validation remains outside this audit-only plan.
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally (PR #303 review round 3, finding F1) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
 | TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | ✅ Passed locally |
-| TC-385 | S6a's input type admits no Relation, and FamilyOutcome has exactly two arms | Unit | P1 | FR-090-AC-4 | 🚧 Planned; QSL-174 |
+| TC-385 | S6a's input type admits no Relation, and FamilyOutcome has exactly two arms | Unit | P1 | FR-090-AC-4 | ✅ Passed locally |
 | TC-386 | F diagnostic maps every snapshot-cause and model-refusal catalog code to category refusal | Unit | P1 | FR-090-AC-5 | ✅ Passed locally |
 | TC-387 | The ProtocolClause snapshot cause maps each WrongSnapshotCause to wrong_snapshot | Unit | P1 | FR-090-AC-6 | ✅ Passed locally |
 | TC-388 | An evaluation-time wrong-anchor snapshot reaches the caller as a coded QSL refusal, not a kernel refusal | Integration | P1 | FR-090-AC-7 | ✅ Passed locally |
@@ -460,9 +460,8 @@ type that admits no `Relation`; F `diagnostic`'s map to category `refusal`;
 the evaluation-time `wrong_snapshot` and model-query refusals and the `precondition-false` and `absent-key` undefined results
 carried in `FamilyOutcome::FamilyEvaluated` instead of the kernel types, and
 unresolved population arguments refused at admission (`CallFailure::Input`)
-and faulted inside S6a. TC-382, TC-384, TC-386 to TC-391, TC-407 and
-TC-408 (FR-090-AC-1, AC-3, AC-5 to AC-12) are `✅ Passed locally`; TC-385
-(FR-090-AC-4) is `🚧 Planned` under QSL-174. TC-390 uses the resolved-import and definition-scan approach of
+and faulted inside S6a. TC-382, TC-384 to TC-391, TC-407 and TC-408
+(FR-090-AC-1, AC-3 to AC-12) are `✅ Passed locally`. TC-390 uses the resolved-import and definition-scan approach of
 TC-256, TC-170 and TC-176. TC-388, TC-389, TC-407 and TC-408 match the
 `FamilyOutcome::FamilyEvaluated` arm the ADR-013 O-16 ruling on FR-090-OQ-1
 fixes, inside the `Evaluation` the ruling on FR-090-OQ-3 fixes; TC-385 backs

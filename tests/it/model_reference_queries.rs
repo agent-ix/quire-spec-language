@@ -342,6 +342,11 @@ fn package(scenario: &Scenario) -> CheckedPackage {
 /// `pre(...)` operand does not leak the caller's pre anchor into `F`'s own
 /// body.
 fn package_with_function(scenario: &Scenario) -> CheckedPackage {
+    package_with_size_function(scenario, 3)
+}
+
+/// Like [`package_with_function`], with `p: Population<M::A>[maximum]`.
+fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPackage {
     let target = ValueType::Reference(scenario.a);
     let graph = PackageDeclarations {
         types: types(scenario),
@@ -349,7 +354,7 @@ fn package_with_function(scenario: &Scenario) -> CheckedPackage {
             "F",
             vec![(
                 "p".to_owned(),
-                crate::support::type_form::type_form(&ValueType::Population(3)),
+                crate::support::type_form::type_form(&ValueType::Population(maximum)),
             )],
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
@@ -3155,4 +3160,75 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
         qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
     );
     assert_eq!(code, direct);
+}
+
+/// TC-385 (FR-090-AC-4): both `FamilyOutcome` arms reach a
+/// `CheckedPackage::call` caller through the S6a seam. `F(p:
+/// Population<M::A>[1]) = size(allInstances<M::A>(p))` over a binding
+/// declared `[0,1]` that holds two `A` members is
+/// `FamilyEvaluated(Refused(_))` with `cardinality_out_of_bound`/
+/// `above-maximum`; the same `F` over a one-member binding is
+/// `Evaluated(Completed(1))`.
+#[test]
+#[trace("FR-090-AC-4", "TC-385")]
+fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let bind = |members: Vec<PopulationMember>| {
+        let document = PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members,
+        };
+        let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        match admit_binding(
+            &domain_package,
+            &view,
+            &document,
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(1),
+            &mut admission,
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected an admitted binding, got {other:?}"),
+        }
+    };
+    let call = |binding: PopulationBinding| {
+        let scenario = Scenario {
+            universe: object_universe(&domain_package).unwrap().identity(),
+            a: type_id(&view, "model.A"),
+            b: type_id(&view, "model.B"),
+            binding,
+        };
+        let package = package_with_size_function(&scenario, 1);
+        let mut meter = Meter::new(SCALAR_UNLIMITED);
+        package
+            .call(
+                &QualifiedName::unqualified("F").unwrap(),
+                vec![population_argument(&scenario)],
+                &population_environment(&scenario),
+                &mut meter,
+            )
+            .expect("admission accepts the population argument and S6a keeps its invariants")
+    };
+
+    let refused = call(bind(vec![member("a1", "model.A"), member("a2", "model.A")]));
+    match refused.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => assert_eq!(
+            cause.catalog_code(),
+            qsl_foundation::diagnostic::CatalogCode::new(
+                "cardinality_out_of_bound",
+                "above-maximum"
+            )
+        ),
+        other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+    }
+
+    let completed = call(bind(vec![member("a1", "model.A")]));
+    match completed.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(size))) => {
+            assert_eq!(size, Integer::from(1_i64))
+        }
+        other => panic!("expected Evaluated(Completed(Integer(1))), got {other:?}"),
+    }
 }

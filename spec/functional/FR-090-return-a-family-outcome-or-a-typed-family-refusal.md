@@ -86,10 +86,10 @@ This requirement carries testable criteria for decisions already taken:
 
 ## Inputs
 
-- A checked declaration identity of a family that implements
-  `ReferenceEvaluation` (every `FamilyKind` except `Relation`), the family's
-  evaluation environment (for `Value`, the checked package, the caller's
-  object environment and argument values) and a `quire_exact::Meter`.
+- An S6a family kind, a checked declaration identity of that family, the
+  family's evaluation environment (for `Value`, the checked package, the
+  caller's object environment and argument values) and a
+  `quire_exact::Meter`.
 - For a clause expression (a postcondition, an invariant or another checked
   expression that is not a function declaration): the checked package, the
   `CheckedExpression`, its argument values, the caller's object environment
@@ -141,9 +141,8 @@ This requirement carries testable criteria for decisions already taken:
 
 The S6a seam SHALL dispatch on the S6a family kind, which has one variant
 per family implementing `ReferenceEvaluation` and no `Relation` variant, with
-one hand-written arm per variant and no `_` arm (ADR-012 §5.1 S1). Every family
-except `Relation` implements `ReferenceEvaluation` (ADR-012 §2); its arm
-SHALL call that family's `evaluate` hook, whose design-level shape is
+one hand-written arm per variant and no `_` arm (ADR-012 §5.1 S1). Each
+arm SHALL call its family's `evaluate` hook, whose design-level shape is
 
 ```text
 fn evaluate(checked: &Self::Checked, env: &mut EvalEnv, meter: &mut Meter)
@@ -161,9 +160,8 @@ The arm SHALL pass each hook result through unchanged:
 with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(r)`, and
 `Err(fault)` becomes `Err(fault)`. The kernel outcome's category follows
 O-16's evaluation column (ADR-012 §13.5, Q210-3); the seam does not rewrite
-it. This holds for the `Value`, `StateModel`, `SumCase`, `TemporalTrace` and
-`ProtocolClause` arms. The three results are an `Evaluation` whose `outcome`
-is `FamilyOutcome::Evaluated`, an `Evaluation` whose `outcome` is
+it. This holds for every arm. The three results are an `Evaluation` whose
+`outcome` is `FamilyOutcome::Evaluated`, an `Evaluation` whose `outcome` is
 `FamilyOutcome::FamilyEvaluated`, and `Err(InternalFault)`.
 
 The hook has its own `InternalFault` channel because it is where two S6a
@@ -470,7 +468,8 @@ undefined cause type.
 
 - **Upstream:** [FR-062](FR-062-implement-checked-family-contract.md) owns
   `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`. The S6a family
-  kind is `FamilyKind` without `Relation`. FR-090-AC-4 is the precise form of FR-062-AC-6.
+  kind has one variant for each `FamilyKind` that implements
+  `ReferenceEvaluation`. FR-090-AC-4 is the precise form of FR-062-AC-6.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
   `WrongSnapshotCause` in `crate::check` (FR-068-AC-4, AC-8).
   [FR-089](FR-089-carry-population-identity-across-the-kernel-boundary.md)
@@ -504,7 +503,7 @@ Family(FamilyResult) }` is the `evaluate` hook's return shape.
 `CheckedPackage::call`'s and `CheckedPackage::evaluate`'s result
 (`src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
 records `location` and `losses` as owned fields of its `EvaluationEnv` on
-every `Ok` return, and `call` builds the `Evaluation` from them.
+every `Ok` return, and the S6a seam builds the `Evaluation` from them.
 
 The family cause types are defined in `value::expression`
 (`src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
@@ -519,11 +518,11 @@ O-16 category. `quire_exact::Undefined` and `Refusal`, and QSL's kernel copy
 in `src/value/outcome.rs`, have no `PreconditionFalse`, `AbsentKey`,
 `WrongSnapshot` or `Model` variant.
 
-FR-090-AC-1, AC-3 and AC-5 to AC-12 (TC-382, TC-384, TC-386 to TC-391,
-TC-407, TC-408) are `✅ Passed locally`.
+The S6a family kind is `S6aFamilyKind { Value }` (`src/family/mod.rs`):
+`Value` is the family that implements `ReferenceEvaluation`. The S6a seam
+`evaluate_declaration` (`src/value/expression/mod.rs`) matches it with one
+arm per variant and no `_` arm, and `CheckedPackage::call` evaluates
+through it (QSL-191).
 
-FR-090-AC-4 (TC-385) is open. Missing: the S6a family kind (`FamilyKind`
-without `Relation`, in the `check` core), an S6a seam dispatch over it with
-one hand-written arm per variant and no `_` arm, and `evaluate` hooks for
-`StateModel`, `SumCase`, `TemporalTrace` and `ProtocolClause`; only `Value`
-implements `ReferenceEvaluation` today. Remaining work: QSL-174.
+FR-090-AC-1 and AC-3 to AC-12 (TC-382, TC-384 to TC-391, TC-407, TC-408)
+are `✅ Passed locally`.

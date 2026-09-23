@@ -23,8 +23,9 @@ and a third `FamilyOutcome` arm added for a result nothing produces.
 ## Test Procedure
 
 1. In the test body, write an exhaustive `match` with no `_` arm over the
-   family kind S6a dispatches on (the S6a family kind). It has one arm per family that implements
-   `ReferenceEvaluation`, and no `Relation` arm.
+   S6a family kind, the family kind S6a dispatches on. It has one arm per
+   variant, one per family that implements `ReferenceEvaluation`, and no
+   `Relation` arm.
 2. In the test body, write an exhaustive `match` with no `_` arm over a
    `FamilyOutcome<Value>`, with the two arms `Evaluated(_)` and
    `FamilyEvaluated(_)`.
@@ -46,7 +47,14 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 
 ## Status
 
-Planned; no test backs this case. Missing code: the S6a family kind
-(`FamilyKind` without `Relation`, in the `check` core), an S6a seam dispatch
-over it with one hand-written arm per variant and no `_` arm, and `evaluate`
-hooks for `StateModel`, `SumCase`, `TemporalTrace` and `ProtocolClause`.
+`✅ Passed locally`. Steps 1 to 3:
+`s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`, in
+`src/value/expression/mod.rs`. Both `FamilyOutcome` arms through the seam
+from `CheckedPackage::call`:
+`both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`, in
+`tests/it/model_reference_queries.rs`. The seam-probe list names
+`evaluate_declaration`, `S6aFamilyKind::family` and
+`ValueFunctionFamily::evaluate`, and `S6aFamilyKind` and `FamilyOutcome`
+each have a `#[cfg(seam_probe)]` variant. A compile-time check in
+`src/family/mod.rs` rejects an S6a family kind that maps to
+`FamilyKind::Relation` or shares a `FamilyKind` with another.
