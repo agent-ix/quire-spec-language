@@ -8,11 +8,9 @@
 //! Ported verbatim from QSL `value::comparison` as part of QSL#213 S-1
 //! (ADR-011 X-1); no edge needed cutting.
 //!
-//! QSL-131 K1 widened [`ComparisonOperator::holds`] from `pub(crate)` to
-//! `pub`: `quire_spec_language::value::text`'s own `compare`, still local
-//! because it returns this crate's own `Outcome`, calls it directly. It is
-//! a pure decision over an already-computed `Ordering`, so widening it
-//! exposes no unmetered computation.
+//! [`ComparisonOperator::holds`] is `pub`: it is a pure decision over an
+//! already-computed `Ordering`, so exposing it exposes no unmetered
+//! computation.
 
 use std::cmp::Ordering;
 

@@ -51,7 +51,7 @@
 //! unused id cannot satisfy that. The fix is not to build a third scheme:
 //! `check` was never the minter of a composite's or enum's own declaration
 //! identity in the first place (`CompositeDeclaration`'s key is
-//! producer-assigned, `value/composite.rs`; `EnumDeclaration`'s key is
+//! producer-assigned, `value/declaration.rs`; `EnumDeclaration`'s key is
 //! verified against its own content-addressed preimage at `admit`,
 //! `value/enumeration.rs`, whose `owner` field already carries the
 //! declaring package/source scope AC-7 requires). `check` now simply carries
@@ -477,7 +477,7 @@ impl SumVariants {
 /// node id alone (FR-143-AC-6): [`Self::Composite`] carries no further
 /// shape, since the kernel `ValueType::Composite(NodeKey)` needs none -- the
 /// node's own id carries the declaration's own pre-existing key
-/// (`composite.key()`, `value/composite.rs`) unchanged into this module's
+/// (`composite.key()`, `value/declaration.rs`) unchanged into this module's
 /// checked-node-id space -- the declaration holds the kernel `NodeKey` this
 /// module uses, so no conversion is needed -- the
 /// same identity `type_named` and field types already read, reused rather
@@ -925,7 +925,7 @@ mod tests {
 
     /// ADR-013 O-14/OQ-D (mutation proof): identity (`VariantId`) never
     /// depends on declared order, but *rank* does, for an ordered sum --
-    /// exactly the property `quire_exact::key::compare_keys`'s FR-144
+    /// exactly the property `quire_exact::compare_keys`'s FR-144
     /// canonical-key ordering now relies on. An implementation that dropped
     /// `SumVariants`' `ordered` flag and always case-sorted (the bug this
     /// test catches) would give both declared orders the same rank for

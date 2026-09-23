@@ -12,11 +12,9 @@
 //! kernel-row scalar operation this crate exposes to its consumers) names it
 //! in a public signature.
 //!
-//! QSL-131 K1 widened [`OrderingOperator::holds`] from `fn`-private to
-//! `pub`: `quire_spec_language::value::numeric`'s own `order`, still local
-//! because it returns this crate's own `Outcome`, calls it directly. It is
-//! a pure decision over an already-computed `Ordering`, so widening it
-//! exposes no unmetered computation.
+//! [`OrderingOperator::holds`] is `pub`: it is a pure decision over an
+//! already-computed `Ordering`, so exposing it exposes no unmetered
+//! computation.
 
 use std::cmp::Ordering;
 

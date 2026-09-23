@@ -1773,7 +1773,7 @@ pub fn all_instances(
     }
 
     // Each selected member is a scalar reference (occ() = 1); the FR-144
-    // collection-result-retain fold (`src/value/collection.rs::bound_and_retain`)
+    // collection-result-retain fold (the kernel's `quire_exact::form`)
     // starts from `Integer::one()`, so a set of `n` references retains
     // `n + 1` value/result units — verified against TC-198 L01's exact
     // `value_occurrences 4` / `result_units += 4` for a 3-element selection.

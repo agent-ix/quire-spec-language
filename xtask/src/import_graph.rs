@@ -458,7 +458,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::enumeration",
     "value::unit",
     "value::quantity",
-    "value::key",
     "value::reference",
     "value::containment",
     "value::semantic_node",
@@ -469,14 +468,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // Layer 3, `check` core itself.
     "check",
     "family",
-    // The `value` K-copy list is now empty (this list only shrinks; a
-    // module leaves it in the change that deletes that module's QSL copy).
-    // `value::outcome` left it under QSL-131 O2; `value::decimal`,
-    // `value::ieee`, `value::numeric` and `value::text` left it under
-    // QSL-131 O3; `value::collection`, `value::composite`, `value::equality`
-    // and `value::rational` left it under QSL-131 V5b, which deleted the
-    // four modules -- every K-designated type and operation `check` needs is
-    // now reached through `quire_exact` directly.
 ];
 
 /// FR-068-AC-6's MUST NOT list (closed): a later layer, forbidden including
@@ -561,9 +552,9 @@ fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
 /// is a real module segment because the source syntax itself guarantees it
 /// (a `use` edge's own path, where every segment but the bound leaf is a
 /// module by construction); it is `false` for an inline path, where syntax
-/// alone cannot tell a submodule segment (`composite` in
-/// `crate::value::composite::Presence`) apart from a flat aggregate item
-/// (`Presence` in `crate::value::Presence::Optional`) -- that case falls
+/// alone cannot tell a submodule segment (`quantity` in
+/// `crate::value::quantity::UnitTable`) apart from a flat aggregate item
+/// (`UnitTable` in `crate::value::UnitTable`) -- that case falls
 /// back to a filesystem check and then `value::mod.rs`'s own re-export
 /// table, the same two-step resolution the flat-`use` case already needed.
 fn resolve_layer_module(
@@ -623,7 +614,7 @@ pub struct LayerEdge {
     pub file: String,
     /// 1-based source line.
     pub line: usize,
-    /// The resolved module label (e.g. `"value::composite"`, `"model"`).
+    /// The resolved module label (e.g. `"value::quantity"`, `"model"`).
     pub module: String,
     /// Permitted, forbidden, or unlisted.
     pub class: LayerClass,
@@ -684,7 +675,7 @@ fn classify_resolved(
 /// crate::{package, route};` and `use super::super::route;`, which bind a
 /// module by name, are classified on that module. Every resolved segment but
 /// a named leaf is a module by syntax; a named leaf may itself be a module
-/// (`use crate::value::composite;`), which [`resolve_layer_module`] tells
+/// (`use crate::value::quantity;`), which [`resolve_layer_module`] tells
 /// apart from a flat aggregate item.
 fn classify_use_edge(
     workspace_root: &Path,
@@ -1253,8 +1244,8 @@ mod tests {
     /// A minimal QSL-shaped fixture tree: a bare marker file for every
     /// non-`value` module FR-068-AC-6 names (so [`is_real_crate_module`]
     /// can tell each apart from an external crate) and every named
-    /// `semantic_value` `value` submodule (the K-copy list is empty,
-    /// QSL-131 V5b), plus `value::member` and `value::expression` -- two
+    /// `semantic_value` `value` submodule, plus `value::member` and
+    /// `value::expression` -- two
     /// real submodules the rule deliberately leaves off both lists (the
     /// first permanently unlisted, the second forbidden).
     fn layer_fixture_root() -> tempfile::TempDir {
@@ -1277,7 +1268,6 @@ mod tests {
             "enumeration",
             "unit",
             "quantity",
-            "key",
             "reference",
             "containment",
             "semantic_node",
@@ -1412,9 +1402,9 @@ mod tests {
     }
 
     /// TC-175's own flat-inline-path fixture: a shipped inline flat path
-    /// `crate::value::Presence::Optional` fails, resolved to
-    /// `value::composite` (the module `Presence` actually belongs to)
-    /// through `value::mod.rs`'s own re-export table.
+    /// `crate::value::UnitTable` fails, resolved to `value::quantity` (the
+    /// module `UnitTable` actually belongs to) through `value::mod.rs`'s own
+    /// re-export table.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn flat_inline_value_path_is_a_violation() {
@@ -1422,16 +1412,16 @@ mod tests {
         write(
             dir.path(),
             "src/value/mod.rs",
-            "pub use composite::Presence;\n",
+            "pub use quantity::UnitTable;\n",
         );
         write(
             dir.path(),
             "src/check/fixture.rs",
-            "pub fn f() -> u8 {\n    match crate::value::Presence::Optional {\n        _ => 0,\n    }\n}\n",
+            "pub fn f(_: &crate::value::UnitTable) {}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::composite");
+        assert_eq!(edges[0].module, "value::quantity");
         assert!(!edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
     }

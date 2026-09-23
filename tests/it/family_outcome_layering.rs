@@ -37,7 +37,7 @@ const BELOW_CORE: [&str; 11] = [
     "src/value/enumeration.rs",
     "src/value/unit.rs",
     "src/value/quantity.rs",
-    "src/value/key.rs",
+    "src/value/declaration.rs",
     "src/value/reference.rs",
     "src/value/model_query.rs",
 ];

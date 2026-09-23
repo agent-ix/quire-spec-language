@@ -189,10 +189,7 @@ impl ConstructionRefusal {
 }
 
 /// Refuse construction of `component` with `cause`.
-pub(crate) fn refuse<T>(
-    component: Component,
-    cause: ConstructionCause,
-) -> Result<T, ConstructionRefusal> {
+fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, ConstructionRefusal> {
     Err(ConstructionRefusal { component, cause })
 }
 
@@ -200,7 +197,7 @@ pub(crate) fn refuse<T>(
 /// repeated name. This module's own `TypeEnvironment::evaluate_record` uses
 /// it to match supplied `FieldExpression`s to declared fields the same way
 /// [`fill_slots`] matches supplied `FieldValue`s.
-pub(crate) fn match_names<'n, T>(
+fn match_names<'n, T>(
     declared: &[FieldDeclaration],
     supplied: Vec<(&'n str, T)>,
 ) -> Result<BTreeMap<&'n str, T>, ConstructionRefusal> {
@@ -254,7 +251,7 @@ pub(crate) fn fill_slots(
 /// check is needed (and the kernel's own checked `record`/`tuple` are not
 /// reachable here, since they take `MemberId`-keyed declarations this
 /// module does not have -- see the module doc comment).
-pub(crate) fn composite(declaration: NodeKey, slots: Box<[FieldValue]>) -> Value {
+fn composite(declaration: NodeKey, slots: Box<[FieldValue]>) -> Value {
     from_admitted_slots(declaration, slots)
 }
 

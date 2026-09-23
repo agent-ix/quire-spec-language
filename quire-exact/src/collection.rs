@@ -254,12 +254,14 @@ pub fn form_collection(
 }
 
 /// Form a collection of `collection_type` from completed occurrences in
-/// source or visiting order, trusting that every occurrence is already
-/// admitted: membership comparisons, `collection.bound`, the bound check
-/// and `collection.result-retain`. `pub`, not `pub(crate)`: its caller
-/// (QSL's own expression evaluator's `Machine`, which already knows its
-/// occurrences are admitted, from a checked, already-evaluated expression)
-/// is a separate crate from this one.
+/// source or visiting order: membership comparisons, `collection.bound`,
+/// the bound check, canonical order and `collection.result-retain`. The
+/// caller must already have admitted every occurrence against
+/// `collection_type`'s element type; nothing here re-checks it. An
+/// occurrence outside the element type is kept as it is, and a sequence's
+/// occurrences are not compared at all. [`form_collection`] is the checked
+/// alternative. `pub`: QSL's expression evaluator's `Machine` forms
+/// occurrences of a checked, already-evaluated expression.
 pub fn form(
     collection_type: &CollectionType,
     occurrences: Vec<Value>,

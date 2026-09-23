@@ -536,10 +536,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// admitted `PopulationBinding` this evaluation's own recorded
     /// correspondence (`self.objects`, `model`'s
     /// `admit_binding`/`admit_invocation` mint into) recorded it against, by
-    /// lookup alone -- never by decoding `population_id`'s own bytes. The
-    /// pairing this checks is the one `ValueType::admits` performed directly
-    /// when `Value::Population` still carried the binding itself
-    /// (`value::composite`'s own doc, before this identity replaced it).
+    /// lookup alone -- never by decoding `population_id`'s own bytes.
     ///
     /// **FR-090-AC-10: an invariant break, not a `Refusal` (ADR-013 T-4).**
     /// `CheckedPackage::call`'s own `validate` (`expression/mod.rs`) admits
