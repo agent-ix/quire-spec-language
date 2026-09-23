@@ -14,6 +14,7 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
 use quire_exact::EffectiveId;
+use quire_exact::EnumMember;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
@@ -30,12 +31,13 @@ use quire_spec_language::value::{
     CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
-    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
-    EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration,
-    FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner,
-    ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection,
-    OwnerSubject, PackageDeclarations, RationalDomain, Refusal, Text, TextPayload, TypeEnvironment,
-    Undefined, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss, ValueType,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
+    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome,
+    FieldDeclaration, FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue,
+    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue,
+    Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain, Refusal, Text,
+    TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -196,18 +198,28 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
     .unwrap()
 }
 
-fn member(declaration: &EnumDeclaration, case: &str) -> Value {
+fn enum_value(declaration: &EnumDeclaration, case: &str) -> quire_spec_language::value::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),
         "case": case,
     });
     let key = fixture_key(&preimage);
-    Value::Enum(
-        declaration
-            .admit_member(&EnumMemberPreimage::from_json(preimage).unwrap(), key)
-            .unwrap(),
-    )
+    declaration
+        .admit_member(&EnumMemberPreimage::from_json(preimage).unwrap(), key)
+        .unwrap()
+}
+
+/// ADR-013 O-14/OQ-D: a bare kernel `Value::Enum` (`VariantId` and rank),
+/// which `equal`'s `check`-then-`evaluate` path resolves back to its full
+/// [`enum_value`] through the `Enum` schedule's own captured index
+/// (`check_with_enums`).
+fn member(declaration: &EnumDeclaration, case: &str) -> Value {
+    let member = enum_value(declaration, case);
+    Value::Enum(EnumMember::new(
+        member.variant(),
+        u32::try_from(member.position()).unwrap(),
+    ))
 }
 
 fn integer(value: i64) -> Integer {
@@ -293,12 +305,29 @@ fn typed(value_type: &ValueType) -> EqualityOperand {
     EqualityOperand::typed(value_type.clone())
 }
 
+/// No test using this helper (or `equal`, built over it) exercises an `Enum`
+/// schedule, so an empty index is correct for every one of them; `e07_...`
+/// below builds its own real index with [`check_with_enums`] instead.
 fn check(
     env: &TypeEnvironment,
     left: &ValueType,
     right: &ValueType,
 ) -> Result<CheckedEquality, IllTyped> {
-    env.check_equality(EqualityOperator::Equal, typed(left), typed(right))
+    check_with_enums(env, left, right, &EnumMemberIndex::default())
+}
+
+fn check_with_enums(
+    env: &TypeEnvironment,
+    left: &ValueType,
+    right: &ValueType,
+    enum_members: &EnumMemberIndex,
+) -> Result<CheckedEquality, IllTyped> {
+    env.check_equality(
+        EqualityOperator::Equal,
+        typed(left),
+        typed(right),
+        enum_members,
+    )
 }
 
 /// `left = right` for parameters of the declared types, under unlimited limits.
@@ -395,6 +424,7 @@ fn e02_integers_and_admitted_rational_conversion() {
             EqualityOperator::Equal,
             EqualityOperand::converted(small.clone(), ratio.clone()),
             typed(&ratio),
+            &EnumMemberIndex::default(),
         )
         .unwrap();
     let mut meter = Meter::new(UNLIMITED);
@@ -427,6 +457,7 @@ fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
             EqualityOperator::Equal,
             EqualityOperand::converted(source_type, target.clone()),
             typed(&target),
+            &EnumMemberIndex::default(),
         )
         .unwrap();
     let one = rational(1, 1);
@@ -454,6 +485,7 @@ fn e04_rational_with_denominator_above_one_has_no_decimal_equality_conversion() 
             EqualityOperator::Equal,
             EqualityOperand::converted(rational_type(0, 1, 1, 3), target.clone()),
             typed(&target),
+            &EnumMemberIndex::default(),
         ),
         Err(IllTyped {
             cause: IllTypedCause::TypeMismatch
@@ -481,6 +513,7 @@ fn e05_quantities_after_explicit_canonical_unit_conversion() {
             EqualityOperator::Equal,
             EqualityOperand::converted(centimetres.clone(), metres.clone()),
             typed(&metres),
+            &EnumMemberIndex::default(),
         )
         .unwrap();
     let mut meter = Meter::new(UNLIMITED);
@@ -546,24 +579,57 @@ fn e06_text_under_one_pinned_profile() {
     assert_disjoint(&env, &nfc);
 }
 
+/// ADR-013 O-14: a bare kernel `Value::Enum` carries no declaration of its
+/// own, so unlike every other `equal` call in this file, an enum comparison
+/// needs a real `EnumMemberIndex` -- built here from a declaration's
+/// admitted members into a shared index, exactly as
+/// `check::check::enum_member_index` builds one from `scope.enums` in
+/// production.
+fn enum_shape(
+    declaration: &EnumDeclaration,
+    cases: &[&str],
+    index: &mut EnumMemberIndex,
+) -> ValueType {
+    let variants: Vec<_> = cases
+        .iter()
+        .map(|case| {
+            let member = enum_value(declaration, case);
+            let variant = member.variant();
+            index.record(member);
+            variant
+        })
+        .collect();
+    ValueType::Enum(quire_exact::EnumShape::new(
+        declaration.preimage().is_ordered(),
+        variants,
+    ))
+}
+
 #[trace("TC-194", "FR-149-AC-3")]
 #[trace("TC-194", "FR-149-AC-4")]
 #[test]
 fn e07_enumerations_by_declaration_node_and_case() {
     let env = TypeEnvironment::default();
     let (a, b) = (enum_declaration("EnumA"), enum_declaration("EnumB"));
-    let (a_type, b_type) = (ValueType::Enum(a.key()), ValueType::Enum(b.key()));
+    let mut index = EnumMemberIndex::default();
+    let a_type = enum_shape(&a, &["DONE", "READY"], &mut index);
+    let b_type = enum_shape(&b, &["DONE", "READY"], &mut index);
+    let equal_enum =
+        |left_type: &ValueType, left: &Value, right_type: &ValueType, right: &Value| {
+            check_with_enums(&env, left_type, right_type, &index)
+                .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+        };
     let ready = member(&a, "READY");
     assert_eq!(
-        equal(&env, (&a_type, &ready), (&a_type, &member(&a, "READY"))),
+        equal_enum(&a_type, &ready, &a_type, &member(&a, "READY")),
         is(true)
     );
     assert_eq!(
-        equal(&env, (&a_type, &ready), (&a_type, &member(&a, "DONE"))),
+        equal_enum(&a_type, &ready, &a_type, &member(&a, "DONE")),
         is(false)
     );
     assert_eq!(
-        equal(&env, (&a_type, &ready), (&b_type, &member(&b, "READY"))),
+        equal_enum(&a_type, &ready, &b_type, &member(&b, "READY")),
         ill_typed(IllTypedCause::DistinctEnumDeclarations)
     );
     assert_disjoint(&env, &a_type);
@@ -1391,7 +1457,12 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
     ];
     for (operator, value_type, left, right, expected) in rows {
         let checked = env
-            .check_equality(operator, typed(value_type), typed(value_type))
+            .check_equality(
+                operator,
+                typed(value_type),
+                typed(value_type),
+                &EnumMemberIndex::default(),
+            )
             .unwrap();
         let mut meter = Meter::new(limits);
         assert_eq!(
@@ -1485,6 +1556,7 @@ fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
             EqualityOperator::Equal,
             EqualityOperand::converted(source, target.clone()),
             typed(&target),
+            &EnumMemberIndex::default(),
         );
         match expected {
             Some(expected) => assert_eq!(
@@ -1628,6 +1700,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
             EqualityOperator::Equal,
             EqualityOperand::converted(int_type(0, 2), target.clone()),
             typed(&target),
+            &EnumMemberIndex::default(),
         )
         .unwrap();
     let limits = ScalarLimits {

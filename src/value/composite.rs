@@ -7,17 +7,25 @@
 //! `retain_composite`, the crate-internal `composite`/`match_names`/`refuse`), are
 //! the K-designated shadow of `quire_exact::value`: this crate's own cut,
 //! parameterized over this module's own `ValueType`/`Value`, not
-//! `quire_exact`'s. Per `quire_exact::value`'s own module doc, `ValueType::
-//! Enum` carries an inline `EnumShape` where this module's carries a
-//! `NodeKey` lookup: a redesigned cut, not a duplicate. `ValueType::Reference`
-//! carries the kernel `EffectiveId` in both (ADR-013 O-05: FR-143 makes a
+//! `quire_exact`'s. `ValueType::Enum` and `Value::Enum` are no longer a
+//! locally redesigned cut: this module reuses `quire_exact::EnumShape` and
+//! `quire_exact::EnumMember` directly (ADR-013 O-14, T-6, OQ-D and OQ-F
+//! rulings), exactly as it already reused `quire_exact::UnitId` for
+//! `ValueType::Quantity` and `quire_exact::EffectiveId` for
+//! `ValueType::Reference` before this change -- the kernel is a leaf with no
+//! declaration lookup, so ordered-enum comparison and case lookup are
+//! `semantic_value`'s own job, through the checked `VariantId ->
+//! (declaration, position, ordered, case)` index
+//! ([`super::enumeration::EnumMemberIndex`]) rather than a field on the
+//! value itself (ADR-013 T-6, last sentence). `ValueType::Reference` carries
+//! the kernel `EffectiveId` in both (ADR-013 O-05: FR-143 makes a
 //! reference's type component an effective-declaration identity, never a
 //! checked node id). `Presence` has no divergence -- it names only
 //! `Required`/`Optional` and touches neither `Value` nor `ValueType` -- so it
 //! is `quire_exact`'s type here, and the quantity payloads are already the
 //! kernel's: `ValueType::Quantity` carries a `UnitId` and `Value::Quantity` a
 //! `quire_exact::Quantity`, with the unit graph behind `value::quantity`'s
-//! unit table (ADR-013 T-6). Remaining work, Linear QSL-131.
+//! unit table (ADR-013 T-6).
 //!
 //! The registry that admits a closed set of these declarations
 //! (`TypeEnvironment`, `ObjectTypeDeclaration` and friends) and the FR-149
@@ -33,11 +41,12 @@ use std::sync::Arc;
 
 use super::collection::{CollectionType, CollectionValue};
 use super::decimal::DecimalType;
-use super::enumeration::EnumValue;
 use super::outcome::{Outcome, Stop};
 use super::text::Text;
 use quire_exact::Decimal;
 use quire_exact::EffectiveId;
+use quire_exact::EnumMember;
+use quire_exact::EnumShape;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTyped;
 use quire_exact::NodeKey;
@@ -70,8 +79,9 @@ pub enum ValueType {
     Quantity(UnitId),
     /// An FR-141 `Text[min, max; profile]`.
     Text(TextType),
-    /// A member of the enum declaration with this node key.
-    Enum(NodeKey),
+    /// An `Enum` type admitting exactly this inline, ranked variant set
+    /// (ADR-013 O-14).
+    Enum(EnumShape),
     /// `Option<T>`: `none` or a present `T`.
     Option(Box<ValueType>),
     /// The record or tuple declaration with this node key.
@@ -113,7 +123,9 @@ impl ValueType {
             (Self::Float(width), Value::Float(float)) => float.width() == *width,
             (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
             (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
-            (Self::Enum(declaration), Value::Enum(member)) => member.declaration() == *declaration,
+            (Self::Enum(shape), Value::Enum(member)) => {
+                shape.rank(member.variant()) == Some(member.rank())
+            }
             (Self::Option(payload), Value::Option(option)) => option.payload_type() == &**payload,
             (Self::Composite(declaration), Value::Composite(composite)) => {
                 composite.declaration() == *declaration
@@ -182,8 +194,10 @@ pub enum Value {
     Quantity(Quantity),
     /// A text value of its declared type.
     Text(Text),
-    /// An enum member.
-    Enum(EnumValue),
+    /// A bare enum member identity and its canonical rank (ADR-013 T-6,
+    /// OQ-D): ordered comparison and case lookup resolve through
+    /// [`super::enumeration::EnumMemberIndex`], not a field here.
+    Enum(EnumMember),
     /// An option value.
     Option(Arc<OptionValue>),
     /// A record or tuple value.

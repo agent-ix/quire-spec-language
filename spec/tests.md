@@ -187,7 +187,7 @@ operational validation remains outside this audit-only plan.
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
-| TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | 🚧 Planned; QSL-131 |
+| TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; QSL-131 V3; steps 2-6 via retagged tests, step 7 new |
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | 🚧 Planned; QSL-141 |
@@ -245,8 +245,8 @@ identities. FR-088-AC-11 (TC-409) covers an enum value's FR-141
 `UnitId`; it passes locally, and `make conformance` runs its QSpec-vector
 step. FR-084-AC-7 (TC-410) covers one object universe per connected
 supertype component and the authored object component of a reference key.
-TC-409 and TC-410 are `🚧 Planned` under QSL-131. OQ-A's layer-2 edge is covered by
-TC-398's allow-list.
+TC-409 passes locally as of QSL-131 V3; TC-410 is still `🚧 Planned` under
+QSL-131. OQ-A's layer-2 edge is covered by TC-398's allow-list.
 
 ## Typed replay envelopes (FR-069–073) coverage
 

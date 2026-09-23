@@ -26,11 +26,11 @@ use quire_spec_language::library::{
 };
 use quire_spec_language::value::{
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration,
-    FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot,
-    InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-    ObjectTypeDeclaration, OptionValue, Outcome, QualifiedName, RecursionEdges, TypeEnvironment,
-    Value, ValueGraph, ValueType,
+    ConstructionRefusal, DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator,
+    FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId,
+    GraphRefusal, GraphSlot, InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause,
+    ObjectEnvironmentRefusal, ObjectTypeDeclaration, OptionValue, Outcome, QualifiedName,
+    RecursionEdges, TypeEnvironment, Value, ValueGraph, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -97,6 +97,7 @@ fn equal(
         EqualityOperator::Equal,
         EqualityOperand::typed(value_type.clone()),
         EqualityOperand::typed(value_type.clone()),
+        &EnumMemberIndex::default(),
     )
     .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
 }
@@ -177,6 +178,7 @@ fn r02_equal_shapes_of_distinct_declarations_do_not_compare() {
             EqualityOperator::Equal,
             EqualityOperand::typed(composite("A")),
             EqualityOperand::typed(composite("B")),
+            &EnumMemberIndex::default(),
         ),
         Err(IllTyped {
             cause: IllTypedCause::TypeMismatch

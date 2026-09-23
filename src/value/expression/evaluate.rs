@@ -14,7 +14,7 @@ use super::super::collection::{form, form_grouped, member_equal, CollectionValue
 use super::super::composite::{retain_composite, FieldValue, OptionValue, Value, ValueType};
 use super::super::decimal::{evaluate_decimal, DecimalLoss, DecimalType};
 use super::super::declaration::{operand_value, CompositeShape};
-use super::super::enumeration::compare_enum;
+use super::super::enumeration::{compare_enum, EnumMemberIndex};
 use super::super::ieee::{evaluate_ieee, ieee_to_exact, IeeeExactTarget};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -33,8 +33,8 @@ use super::causes::{
 };
 use super::FamilyOutcome;
 use crate::check::{
-    Arithmetic, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind, RecordSlot,
-    Scope, Slot, Visit, WrongSnapshotCause,
+    enum_member_index, Arithmetic, Connective, DispatchTable, Location, Node, NodeKind,
+    OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
 use crate::family::FamilyResult;
 use crate::model::population::PopulationBinding;
@@ -308,6 +308,12 @@ pub(crate) struct Machine<'a, 'm> {
     /// The package's quantity units, then every compound unit a product or
     /// quotient formed during this evaluation.
     units: UnitScope<'a>,
+    /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
+    /// index, built once from `scope.enums` and consulted by the `Enum`
+    /// equality schedule and `OrderedKind::Enums` -- a bare kernel
+    /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
+    /// case name of its own.
+    enum_members: EnumMemberIndex,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -318,6 +324,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
+        let enum_members = enum_member_index(scope);
         Self {
             scope,
             functions,
@@ -330,6 +337,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             losses: Vec::new(),
             anchor: Anchor::Post,
             units: UnitScope::new(scope.types.units()),
+            enum_members,
         }
     }
 
@@ -1252,6 +1260,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 OrderedOperands::Decimals(l, r)
             }
             (OrderedKind::Enums, Value::Enum(l), Value::Enum(r)) => {
+                let (Some(l), Some(r)) = (
+                    self.enum_members.resolve(l.variant()),
+                    self.enum_members.resolve(r.variant()),
+                ) else {
+                    return Err(invariant());
+                };
                 return compare_enum(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?
                     .into_stop()

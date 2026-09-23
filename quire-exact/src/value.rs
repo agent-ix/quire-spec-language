@@ -10,12 +10,14 @@
 //!
 //! - `ValueType::Enum(NodeKey)` becomes `ValueType::Enum(EnumShape)` (ADR-013
 //!   O-14, T-6): the declaration-keyed `NodeKey` lookup is dropped, but the
-//!   shape carries its admitted variant set inline, as opaque `VariantId`
-//!   digests, so `ValueType::admits` needs no declaration lookup at all --
-//!   membership is a pure set-membership test against the shape the type
-//!   itself carries. A bare `Value::Enum(VariantId)` (T-6: "no `NodeKey`") is
-//!   unaffected: it names one variant, and the shape says which variants a
-//!   given enum type admits.
+//!   shape carries its admitted variants inline, as a canonically ranked list
+//!   of opaque `VariantId` digests, so `ValueType::admits` needs no
+//!   declaration lookup at all -- membership and rank agreement are checked
+//!   against the shape the type itself carries. `Value::Enum(EnumMember)`
+//!   (T-6: "no `NodeKey`"; OQ-D: "an enum value is a `VariantId` and its
+//!   rank") carries one variant's identity plus its zero-based canonical
+//!   rank, so ordering (`crate::key::compare_keys`) needs no declaration
+//!   lookup either.
 //! - `ValueType::Reference(EffectiveId)` is the same type in both (ADR-013
 //!   O-05). Only the value payload diverges: `Value::Reference(ObjectReference)`
 //!   carries the T-6 triple (`EffectiveId`, `UniverseId`, `ObjectId`) from
@@ -49,7 +51,6 @@
 //!   own registry -- mirroring [`OptionValue::from_admitted`]'s identical
 //!   role, which is likewise widened from `pub(crate)` to `pub` here.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
@@ -65,28 +66,106 @@ use crate::rational::{Rational, RationalDomain};
 use crate::reference::ObjectReference;
 use crate::text::{Text, TextType};
 
-/// The inline set of an enum type's admitted variants (ADR-013 O-14): the
-/// kernel `ValueType::Enum` carries its variant set directly, as opaque
-/// [`VariantId`] digests, so `admits` is a pure set-membership test needing
-/// no declaration lookup. Two shapes are the same shape exactly when they
-/// admit the same variant set.
+/// The inline, *ranked* set of an enum type's admitted variants (ADR-013
+/// O-14, OQ-D ruling): the kernel `ValueType::Enum` carries its variant set
+/// directly, as opaque [`VariantId`] digests, so `admits` is a pure
+/// set-membership test needing no declaration lookup. Unlike the type's
+/// earlier, unranked shape (`quire-exact/src/value.rs:73`, before this
+/// change), the variants are held as a canonically ordered list, not a
+/// digest-ordered set: FR-144's enumeration key row (FR-144-AC-9) fixes
+/// canonical order as declaration position for an `ordered enum` and
+/// case-identifier byte order for an unordered one, never the `VariantId`
+/// digest. `EnumShape` cannot compute that order itself -- a kernel leaf
+/// holds no case-name strings -- so the caller (QSL `check`, `semantic_value`)
+/// supplies `variants` already in that canonical order; each variant's
+/// zero-based index in the list is its *rank* ([`Self::rank`]), which
+/// [`EnumMember`] carries next to its `VariantId` (OQ-D: "An enum value
+/// carries its `VariantId` and its rank"). Two shapes are the same shape
+/// exactly when they admit the same variants in the same canonical order and
+/// agree on [`Self::is_ordered`].
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EnumShape(BTreeSet<VariantId>);
+pub struct EnumShape {
+    ordered: bool,
+    variants: Vec<VariantId>,
+}
 
 impl EnumShape {
-    /// The enum shape admitting exactly `variants`.
-    pub fn new(variants: impl IntoIterator<Item = VariantId>) -> Self {
-        Self(variants.into_iter().collect())
+    /// The enum shape admitting exactly `variants`, supplied already in FR-141
+    /// canonical order (declaration order when `ordered`, case-identifier byte
+    /// order otherwise): the caller's responsibility, since this leaf type has
+    /// no case-name strings to sort by itself.
+    pub fn new(ordered: bool, variants: impl IntoIterator<Item = VariantId>) -> Self {
+        Self {
+            ordered,
+            variants: variants.into_iter().collect(),
+        }
+    }
+
+    /// Whether the declaration this shape describes selects `ordered enum`
+    /// semantics (FR-141-AC-5): only an ordered enum admits an ordering
+    /// operator.
+    pub fn is_ordered(&self) -> bool {
+        self.ordered
     }
 
     /// Whether `variant` is one of this shape's admitted variants.
     pub fn contains(&self, variant: VariantId) -> bool {
-        self.0.contains(&variant)
+        self.rank(variant).is_some()
     }
 
-    /// The admitted variants, in canonical digest order.
+    /// `variant`'s zero-based index in this shape's canonical member list, or
+    /// `None` when `variant` is not one of this shape's admitted variants
+    /// (ADR-013 O-14/OQ-D: "a rank is a function of its `VariantId`").
+    pub fn rank(&self, variant: VariantId) -> Option<u32> {
+        self.variants
+            .iter()
+            .position(|candidate| *candidate == variant)
+            .map(|position| {
+                u32::try_from(position)
+                    .expect("an admitted enum has far fewer than u32::MAX variants")
+            })
+    }
+
+    /// The admitted variants, in canonical (rank) order.
     pub fn variants(&self) -> impl Iterator<Item = VariantId> + '_ {
-        self.0.iter().copied()
+        self.variants.iter().copied()
+    }
+}
+
+/// A completed enum value: its variant identity and its canonical rank next
+/// to it (ADR-013 O-14, OQ-D ruling: "An enum value carries its `VariantId`
+/// and its rank, the variant's zero-based index in the FR-141 canonical
+/// member list"). Identity and equality use `variant` alone
+/// (the kernel equality leaf match, "Identity and equality use the
+/// `VariantId` only"); `rank` exists purely so the kernel's own canonical key
+/// (`compare_keys`, FR-144) can order same-enum values
+/// without any declaration lookup. [`ValueType::admits`] refuses a value
+/// whose claimed rank disagrees with the shape's own ranked list, so a
+/// well-formed `EnumMember` always has `shape.rank(member.variant()) ==
+/// Some(member.rank())` for the `EnumShape` it was admitted against.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumMember {
+    variant: VariantId,
+    rank: u32,
+}
+
+impl EnumMember {
+    /// Pair a variant identity with its claimed canonical rank. This
+    /// constructor performs no validation of its own -- [`ValueType::admits`]
+    /// is where a mismatched pair is caught.
+    pub fn new(variant: VariantId, rank: u32) -> Self {
+        Self { variant, rank }
+    }
+
+    /// The variant identity: the only component identity and equality use.
+    pub fn variant(&self) -> VariantId {
+        self.variant
+    }
+
+    /// This member's zero-based index in its enum's FR-141 canonical member
+    /// list.
+    pub fn rank(&self) -> u32 {
+        self.rank
     }
 }
 
@@ -140,9 +219,9 @@ impl ValueType {
     /// Whether `value` is a member of this declared type. Composite, option
     /// and collection values carry their declared type, which must be this
     /// type; their contents were admitted at construction. An `Enum` shape
-    /// admits a `Value::Enum` exactly when the shape contains the value's
-    /// variant (ADR-013 O-14): a pure set-membership test, no declaration
-    /// lookup needed.
+    /// admits a `Value::Enum` exactly when the shape's own ranked list agrees
+    /// with the member's claimed rank for its variant (ADR-013 O-14/OQ-D): a
+    /// pure lookup against the shape, no declaration lookup needed.
     pub fn admits(&self, value: &Value) -> bool {
         match (self, value) {
             (Self::Boolean, Value::Boolean(_)) | (Self::Integer, Value::Integer(_)) => true,
@@ -152,7 +231,9 @@ impl ValueType {
             (Self::Float(width), Value::Float(float)) => float.width() == *width,
             (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
             (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
-            (Self::Enum(shape), Value::Enum(variant)) => shape.contains(*variant),
+            (Self::Enum(shape), Value::Enum(member)) => {
+                shape.rank(member.variant()) == Some(member.rank())
+            }
             (Self::Option(payload), Value::Option(option)) => option.payload_type() == &**payload,
             (Self::Composite(declaration), Value::Composite(composite)) => {
                 composite.declaration() == *declaration
@@ -209,8 +290,9 @@ pub enum Value {
     Quantity(Quantity),
     /// A text value of its declared type.
     Text(Text),
-    /// A bare enum member identity (ADR-013 T-6).
-    Enum(VariantId),
+    /// A bare enum member identity and its canonical rank (ADR-013 T-6,
+    /// OQ-D).
+    Enum(EnumMember),
     /// An opaque population admission identity (ADR-013 O-13 Population
     /// row, QC-21, FR-089): never the `PopulationBinding` itself, which
     /// stays a QSL `model` type.
@@ -737,17 +819,62 @@ mod tests {
     }
 
     /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it
-    /// contains, and refuses one it does not (ADR-013 O-14 set-membership
-    /// admission, no declaration lookup).
+    /// contains at the variant's own rank, and refuses one it does not
+    /// contain (ADR-013 O-14/OQ-D, no declaration lookup).
+    ///
+    /// Also TC-409 (FR-088-AC-11): admission checks the whole `(VariantId,
+    /// rank)` pair, not membership alone.
     #[trace("TC-308")]
+    #[trace("TC-409")]
     #[test]
     fn tc_308_enum_shape_admits_only_its_own_variants() {
         let in_shape = VariantId::from_digest(digest(1));
         let out_of_shape = VariantId::from_digest(digest(2));
-        let shape = ValueType::Enum(EnumShape::new([in_shape]));
-        assert!(shape.admits(&Value::Enum(in_shape)));
-        assert!(!shape.admits(&Value::Enum(out_of_shape)));
-        assert!(!ValueType::Boolean.admits(&Value::Enum(in_shape)));
+        let shape = ValueType::Enum(EnumShape::new(false, [in_shape]));
+        assert!(shape.admits(&Value::Enum(EnumMember::new(in_shape, 0))));
+        assert!(!shape.admits(&Value::Enum(EnumMember::new(out_of_shape, 0))));
+        assert!(!ValueType::Boolean.admits(&Value::Enum(EnumMember::new(in_shape, 0))));
+    }
+
+    /// TC-308 (OQ-D adverse): a well-formed variant paired with the *wrong*
+    /// rank is refused just as surely as an unknown variant -- admission
+    /// checks the whole `(VariantId, rank)` pair against the shape's own
+    /// ranked list, not membership alone.
+    ///
+    /// Also TC-409 step 5 (FR-088-AC-11): a value that pairs a known
+    /// `VariantId` with the wrong rank is refused at admission.
+    #[trace("TC-308")]
+    #[trace("TC-409")]
+    #[test]
+    fn admits_refuses_a_known_variant_at_the_wrong_rank() {
+        let first = VariantId::from_digest(digest(1));
+        let second = VariantId::from_digest(digest(2));
+        let shape = ValueType::Enum(EnumShape::new(true, [first, second]));
+        assert!(shape.admits(&Value::Enum(EnumMember::new(first, 0))));
+        assert!(shape.admits(&Value::Enum(EnumMember::new(second, 1))));
+        assert!(!shape.admits(&Value::Enum(EnumMember::new(first, 1))));
+        assert!(!shape.admits(&Value::Enum(EnumMember::new(second, 0))));
+    }
+
+    /// OQ-D: the shape's own rank lookup is exactly the variant's index in
+    /// the canonical list the caller supplied, and an unranked (unknown)
+    /// variant resolves to `None`, never a panic or a fabricated rank.
+    ///
+    /// Also TC-409 step 3 (FR-088-AC-11): rank is the canonical-list
+    /// position.
+    #[trace("TC-308")]
+    #[trace("TC-409")]
+    #[test]
+    fn enum_shape_rank_matches_canonical_position() {
+        let a = VariantId::from_digest(digest(1));
+        let b = VariantId::from_digest(digest(2));
+        let c = VariantId::from_digest(digest(3));
+        let shape = EnumShape::new(true, [a, b]);
+        assert_eq!(shape.rank(a), Some(0));
+        assert_eq!(shape.rank(b), Some(1));
+        assert_eq!(shape.rank(c), None);
+        assert!(shape.is_ordered());
+        assert_eq!(shape.variants().collect::<Vec<_>>(), [a, b]);
     }
 
     /// TC-309: building a record with a missing required field is refused

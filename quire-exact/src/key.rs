@@ -21,17 +21,19 @@
 //! that would stop this key on a Float pair also stops the first
 //! two-element membership comparison there.
 //!
-//! One adaptation against the original: `Value::Enum` is a bare
-//! [`crate::identity::VariantId`] digest here (ADR-013 T-6), not a
-//! declaration-aware `EnumValue` with a position and case. Two enum values
-//! of the *same* enum therefore key-order by raw digest bytes rather than by
-//! declared position/case order; a declaration-ordered enum's canonical
-//! collection order is something the layer that still holds the enum
-//! declaration (QSL `model`) must reproduce on top of this, not something
-//! this kernel key can give it. This is unrelated to `ValueType::Enum`'s own
-//! shape (see `crate::value`'s module doc comment): that type gained back an
-//! inline `EnumShape` variant set for admission checking, but the bare
-//! `Value::Enum` payload this key compares is unchanged either way.
+//! One adaptation against the original: `Value::Enum` is [`crate::value::
+//! EnumMember`] here (ADR-013 T-6, OQ-D ruling) -- a bare [`crate::identity::
+//! VariantId`] paired with its zero-based canonical rank -- not a
+//! declaration-aware `EnumValue` carrying a live position/case lookup. FR-144's
+//! enumeration key row (FR-144-AC-9) fixes canonical order as declaration
+//! position for an `ordered enum` and case-identifier byte order otherwise;
+//! because `EnumMember::rank` is already that canonical-list index (the
+//! shape that admitted it fixed it there, `crate::value::EnumShape::rank`),
+//! comparing two same-enum members' ranks numerically reproduces FR-144's
+//! order for *both* cases at once, with no declaration lookup and no
+//! case-name string needed here. This corrects the prior digest-ordered
+//! comparison this file carried (`quire-exact/src/key.rs:103` before this
+//! change), which did not conform to FR-144 (ADR-013 O-14).
 
 use std::cmp::Ordering;
 
@@ -100,7 +102,21 @@ fn leaf<'a>(
         (Value::Text(left), Value::Text(right)) => {
             left.retained().as_bytes().cmp(right.retained().as_bytes())
         }
-        (Value::Enum(left), Value::Enum(right)) => left.cmp(right),
+        // FND-003 (SR-511): a rank alone does not name a declaration. Two
+        // members of *different* enum declarations can share a rank without
+        // being equal under `crate::equality` (they have different
+        // `VariantId`s), and this leaf carries no declaration to guard on.
+        // When ranks are equal but the `VariantId`s differ, the pair is not
+        // one keyed type, so this returns `None` rather than reporting a
+        // false `Equal` -- the same contract `crate::equality`'s leaf match
+        // already enforces on a `VariantId` mismatch.
+        (Value::Enum(left), Value::Enum(right)) => {
+            let ordering = left.rank().cmp(&right.rank());
+            if ordering.is_eq() && left.variant() != right.variant() {
+                return None;
+            }
+            ordering
+        }
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {
@@ -198,6 +214,30 @@ mod tests {
 
         let left = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
         let right = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
+        assert_eq!(compare_keys(&left, &right), None);
+    }
+
+    /// FND-003 (SR-511): the kernel leaf carries no declaration to guard
+    /// on, so two members of *different* enum declarations that happen to
+    /// share a rank must still be told apart by `VariantId` -- they are not
+    /// equal under `crate::equality`'s leaf match. Mutation proof: dropping
+    /// the `left.variant() != right.variant()` guard back to a bare
+    /// `left.rank().cmp(&right.rank())` makes this return
+    /// `Some(Ordering::Equal)` instead of `None`.
+    #[trace("TC-409")]
+    #[test]
+    fn compare_keys_refuses_same_rank_different_declaration_members() {
+        use crate::identity::VariantId;
+        use crate::value::EnumMember;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Enum(EnumMember::new(VariantId::from_digest(digest(1)), 0));
+        let right = Value::Enum(EnumMember::new(VariantId::from_digest(digest(2)), 0));
         assert_eq!(compare_keys(&left, &right), None);
     }
 }

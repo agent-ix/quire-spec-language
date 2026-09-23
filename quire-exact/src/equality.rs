@@ -157,7 +157,10 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
             {
                 l.retained() == r.retained()
             }
-            (Value::Enum(l), Value::Enum(r)) => l == r,
+            // ADR-013 O-14: "Identity and equality use the `VariantId` only"
+            // -- the paired rank (OQ-D) is ignored here, exactly as it is
+            // absent from `ValueType::Enum`'s own admission-checked identity.
+            (Value::Enum(l), Value::Enum(r)) => l.variant() == r.variant(),
             (Value::Reference(l), Value::Reference(r)) => {
                 if l.universe() != r.universe() {
                     return Err(Refusal::ForeignReference);

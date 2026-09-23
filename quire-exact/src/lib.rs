@@ -188,6 +188,6 @@ pub use text::{
 };
 pub use value::{
     evaluate_record, evaluate_tuple, fill_slots, from_admitted_slots, record, tuple, Component,
-    CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumShape, FieldDeclaration,
-    FieldExpression, FieldValue, OptionValue, Presence, Value, ValueType,
+    CompositeValue, ConstructionCause, ConstructionRefusal, Deferred, EnumMember, EnumShape,
+    FieldDeclaration, FieldExpression, FieldValue, OptionValue, Presence, Value, ValueType,
 };
