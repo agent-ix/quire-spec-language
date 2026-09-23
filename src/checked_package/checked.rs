@@ -183,3 +183,55 @@ impl EmittedPackage {
         self.package_id
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::check::{CheckingLimits, PackageDeclarations};
+    use ix_trace_rs::trace;
+
+    /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
+    /// real `PackageDeclarations::check` run, from its own new
+    /// `model_correspondence` field, and read back only through
+    /// `CheckedGraph::resolve_declaration` -- not a hand-built
+    /// `ModelCorrespondence` sitting outside the checker (FR-088-AC-2). The
+    /// frame-subject *resolution mechanics* over that correspondence stay
+    /// covered by `check::identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
+    /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
+    /// test is the "the checker really records it" half.
+    ///
+    /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
+    /// `CheckedPackage::link(graph).graph().resolve_declaration`,
+    /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
+    /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
+    /// directly, which the prior version of this test read from.
+    /// It lives here, in layer-4 `checked_package`, not in `check`'s own
+    /// tests: it reads the layer-4 `CheckedPackage`, which a layer-3 test
+    /// cannot name once `check` is its own crate (QSL-181 X-6a).
+    #[trace("TC-248", "FR-088-AC-2")]
+    #[test]
+    fn model_correspondence_is_recorded_by_a_real_check_run() {
+        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
+        let declaration = crate::model::key::DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "Order.status".to_owned(),
+        };
+        let graph = PackageDeclarations {
+            model_correspondence: vec![(node, declaration.clone())],
+            ..PackageDeclarations::default()
+        }
+        .check(CheckingLimits::default())
+        .expect("an empty package with a correspondence seed checks cleanly");
+        let package = CheckedPackage::link(graph);
+
+        assert_eq!(
+            package.graph().resolve_declaration(node),
+            Some(&declaration)
+        );
+
+        // Adverse (R-05): a node the caller never supplied resolves to
+        // nothing -- `check` never re-derives an entry by search.
+        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
+        assert_eq!(package.graph().resolve_declaration(other), None);
+    }
+}

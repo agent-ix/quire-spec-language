@@ -100,8 +100,7 @@ use quire_exact::ValueType;
 
 pub use check::Scope;
 pub use family::ValueFunctionFamily;
-// `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
-// and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
+// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
 // family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
 // permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
 // plain: a plain `pub(crate) use` here is genuinely unused in a non-test
@@ -116,7 +115,7 @@ pub use family::ValueFunctionFamily;
 // caller's own configured limits (`*meter.limits()`) instead, so this
 // constant has no production reader left.
 #[cfg(test)]
-pub(crate) use family::{OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
+pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -1124,54 +1123,6 @@ mod tests {
         }
     }
 
-    /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
-    /// real `PackageDeclarations::check` run, from its own new
-    /// `model_correspondence` field, and read back only through
-    /// `CheckedGraph::resolve_declaration` -- not a hand-built
-    /// `ModelCorrespondence` sitting outside the checker (FR-088-AC-2). The
-    /// frame-subject *resolution mechanics* over that correspondence stay
-    /// covered by `identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
-    /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
-    /// test is the "the checker really records it" half.
-    ///
-    /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
-    /// `crate::checked_package::CheckedPackage::link(graph).graph().resolve_declaration`,
-    /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
-    /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
-    /// directly, which the prior version of this test read from.
-    /// `checked_package` is `pub` at the crate root and this test module is
-    /// `#[cfg(test)]` (excluded from the FR-068-AC-6 layer rule's
-    /// `check_layer_edges` scan, which covers shipped code only), so this
-    /// is not a `check` -> `checked_package` production edge (QSL-182 prep:
-    /// relocated out of `package` into its own sibling module, same
-    /// non-edge either way).
-    #[trace("TC-248", "FR-088-AC-2")]
-    #[test]
-    fn model_correspondence_is_recorded_by_a_real_check_run() {
-        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let declaration = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
-        };
-        let graph = PackageDeclarations {
-            model_correspondence: vec![(node, declaration.clone())],
-            ..PackageDeclarations::default()
-        }
-        .check(CheckingLimits::default())
-        .expect("an empty package with a correspondence seed checks cleanly");
-        let package = crate::checked_package::CheckedPackage::link(graph);
-
-        assert_eq!(
-            package.graph().resolve_declaration(node),
-            Some(&declaration)
-        );
-
-        // Adverse (R-05): a node the caller never supplied resolves to
-        // nothing -- `check` never re-derives an entry by search.
-        let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
-        assert_eq!(package.graph().resolve_declaration(other), None);
-    }
-
     /// PR #300 review round 2, MEDIUM-3: a second correspondence entry for a
     /// node an earlier entry already named refuses rather than silently
     /// overwriting the first.
@@ -1297,9 +1248,11 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
-        use crate::value::{
-            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeIdentityPreimage,
-            NodeOwner, OwnerSelection, OwnerSubject,
+        use crate::value::enumeration::{
+            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+        };
+        use crate::value::semantic_node::{
+            NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
         };
         use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
         use serde_json::json;
