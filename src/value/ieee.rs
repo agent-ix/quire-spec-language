@@ -43,7 +43,7 @@ use num_integer::Integer as _;
 use num_traits::{One, Zero};
 
 use super::decimal::DecimalType;
-use super::stop::{OutcomeStop, Stop};
+use super::stop::{outcome_from_stop, Stop};
 use quire_exact::Rational;
 pub use quire_exact::{
     ieee_intrinsic_identities, IeeeComparison, IeeeFlag, IeeeOperationKind, IeeeValue,
@@ -276,7 +276,7 @@ pub fn evaluate_ieee<'a, O: Into<IeeeOperand<'a>>>(
     let operation = try_map_operation(operation, ieee_operand)?;
     let (first, rest) = operation_operands(operation);
     let width = same_width(first, &rest)?;
-    Ok(Outcome::from_stop(arithmetic(
+    Ok(outcome_from_stop(arithmetic(
         operation, width, rounding, meter,
     )))
 }
@@ -293,7 +293,7 @@ pub fn compare_ieee<'a>(
     // FR-148: every comparison whose IEEE operands differ in width is
     // `ill_typed` before any charge.
     let width = same_width(left, &[right])?;
-    Ok(Outcome::from_stop(compare(
+    Ok(outcome_from_stop(compare(
         comparison, left, right, width, meter,
     )))
 }
@@ -332,7 +332,7 @@ pub fn convert_ieee_width(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Outcome<IeeeResult> {
-    Outcome::from_stop(convert_width(value, target, rounding, meter))
+    outcome_from_stop(convert_width(value, target, rounding, meter))
 }
 
 /// The type an explicit IEEE-to-exact conversion names.
@@ -367,7 +367,7 @@ pub fn ieee_to_exact(
             })
         }
     };
-    Ok(Outcome::from_stop(to_exact(value, domain, meter)))
+    Ok(outcome_from_stop(to_exact(value, domain, meter)))
 }
 
 fn to_exact(
@@ -416,7 +416,7 @@ pub fn exact_to_ieee<'a>(
     rounding: RoundingMode,
     meter: &mut Meter,
 ) -> Outcome<IeeeResult> {
-    Outcome::from_stop(from_exact(source.into(), width, rounding, meter))
+    outcome_from_stop(from_exact(source.into(), width, rounding, meter))
 }
 
 fn from_exact(

@@ -27,7 +27,7 @@
 
 use std::cmp::Ordering;
 
-use super::stop::{OutcomeStop, Stop};
+use super::stop::{outcome_from_stop, Stop};
 use quire_exact::DecimalRepresentation;
 use quire_exact::Rational;
 use quire_exact::{compare_shifted, sbits, sdigits, Decimal, DecimalOperation, RoundingMode};
@@ -283,7 +283,7 @@ pub fn evaluate_decimal(
     target: &DecimalType,
     meter: &mut Meter,
 ) -> Outcome<DecimalResult> {
-    Outcome::from_stop(evaluate(operation, target, meter))
+    outcome_from_stop(evaluate(operation, target, meter))
 }
 
 /// One retained coefficient multiplied by `10^shift`.

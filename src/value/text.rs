@@ -7,7 +7,7 @@
 //! `unicode-normalization` table version. No locale, case folding, collation
 //! or grapheme segmentation is applied.
 
-use super::stop::{OutcomeStop, Stop};
+use super::stop::{outcome_from_stop, Stop};
 // `UNICODE_TEXT_DEFINITION`/`UNICODE_VERSION` and the Unicode-17 table-version
 // assertion are `quire_exact`'s own canonical items (QSL-131 K1): this crate
 // no longer keeps a second copy of the constants its own normalizing
@@ -108,7 +108,7 @@ impl Text {
 
 /// Admit `payload` into `text_type` under `quire.value.accounting/v1`.
 pub fn admit_text(payload: &TextPayload, text_type: &TextType, meter: &mut Meter) -> Outcome<Text> {
-    Outcome::from_stop(admit(payload, text_type, meter))
+    outcome_from_stop(admit(payload, text_type, meter))
 }
 
 /// Compare two text values. Operands of different profiles are ill-typed and
@@ -125,7 +125,7 @@ pub fn compare_text(
             cause: IllTypedCause::DistinctTextProfiles,
         });
     }
-    Ok(Outcome::from_stop(compare(
+    Ok(outcome_from_stop(compare(
         operator,
         profile,
         [&left.payload, &right.payload],

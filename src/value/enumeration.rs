@@ -25,7 +25,7 @@ use super::semantic_node::{
     InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     SemanticGraphCause,
 };
-use super::stop::{OutcomeStop, Stop};
+use super::stop::{outcome_from_stop, Stop};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NodeKey;
 use quire_exact::Outcome;
@@ -388,7 +388,7 @@ pub fn compare_enum(
             cause: IllTypedCause::UnorderedEnumOrdering,
         });
     }
-    Ok(Outcome::from_stop(compare(operator, left, right, meter)))
+    Ok(outcome_from_stop(compare(operator, left, right, meter)))
 }
 
 fn compare(

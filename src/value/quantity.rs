@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use super::stop::{OutcomeStop, Stop};
+use super::stop::{outcome_from_stop, Stop};
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
 use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
 use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
@@ -293,7 +293,7 @@ pub(crate) fn evaluate_quantity_unit(
     meter: &mut Meter,
 ) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {
     let unit = type_check(operation)?;
-    let outcome = Outcome::from_stop(evaluate(operation, unit.id(), meter));
+    let outcome = outcome_from_stop(evaluate(operation, unit.id(), meter));
     Ok((outcome, unit))
 }
 
@@ -322,7 +322,7 @@ pub fn convert_quantity(
             domain,
         },
     };
-    Ok(Outcome::from_stop(convert(source, unit, &target, meter)))
+    Ok(outcome_from_stop(convert(source, unit, &target, meter)))
 }
 
 /// Compare two quantities of the identical unit under
@@ -337,7 +337,7 @@ pub fn compare_quantity(
     meter: &mut Meter,
 ) -> Result<Outcome<bool>, IllTyped> {
     check_comparable(left.unit, right.unit)?;
-    Ok(Outcome::from_stop(
+    Ok(outcome_from_stop(
         compare(left, right, meter).map(|ordering| operator.holds(ordering)),
     ))
 }
