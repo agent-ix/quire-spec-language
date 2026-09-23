@@ -836,7 +836,12 @@ mod tests {
     /// function's own owning pair per `spec/tests.md`) -- the prior
     /// `TC-259`/`FR-088-AC-10` pairing named a combination absent from the
     /// Test Matrix (TC-259 verifies AC-7; AC-10 is TC-252).
+    ///
+    /// Also TC-409 step 2 (FR-088-AC-11): the pinned digest is the same
+    /// independently computed FR-141 member node key TC-409's own procedure
+    /// asks for.
     #[trace("TC-252", "FR-088-AC-10")]
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn mint_variant_id_matches_a_checked_in_digest() {
         let sum = node_key(7);
@@ -879,7 +884,13 @@ mod tests {
     /// sum and that variant's name -- not its position -- and the converted
     /// kernel shape carries no `NodeKey`. A sum value carries its
     /// `(VariantId, rank)` pair (ADR-013 O-14/OQ-D), never a bare index.
+    ///
+    /// Also TC-409 steps 2 and 5 (FR-088-AC-11): each variant's `VariantId`
+    /// is the FR-141 member node key, its rank is its canonical-list
+    /// position, and admission refuses a well-formed `VariantId` paired
+    /// with the wrong rank.
     #[trace("TC-252", "FR-088-AC-10")]
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn c26_sum_preserves_node_id_and_mints_name_derived_variant_ids() {
         let sum_node = node_key(4);
@@ -919,7 +930,11 @@ mod tests {
     /// `SumVariants`' `ordered` flag and always case-sorted (the bug this
     /// test catches) would give both declared orders the same rank for
     /// "Active", making this assertion fail.
+    ///
+    /// Also TC-409 step 3 (FR-088-AC-11): an ordered enum's ranks follow
+    /// declaration order.
     #[trace("TC-252", "FR-088-AC-10")]
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn c26_ordered_sum_rank_follows_declared_order_not_identity() {
         let sum_node = node_key(4);
@@ -961,13 +976,79 @@ mod tests {
     /// `value::enumeration::EnumDeclaration::admit` enforces -- so a caller
     /// cannot silently mis-rank an unordered enum by declaring it out of
     /// order.
+    ///
+    /// Also TC-409 step 4 (FR-088-AC-11): an unordered enum's canonical
+    /// order is case-identifier byte order, enforced here at construction.
     #[trace("TC-252", "FR-088-AC-10")]
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn sum_variants_refuses_an_unsorted_unordered_declaration() {
         let closed = SumVariant::new(identifier("Closed"));
         let active = SumVariant::new(identifier("Active"));
         let refusal = SumVariants::new(vec![closed, active], false).unwrap_err();
         assert_eq!(refusal, InvalidSumVariants::Unsorted);
+    }
+
+    /// TC-409 step 6 (FR-088-AC-11): two declarations that differ only in
+    /// identity (here, two distinct declaration `NodeKey`s standing in for
+    /// a rename -- a declaration's `NodeKey` is a digest over `{owner,
+    /// qualified_declaration, ordered, members}`, so any of those changing
+    /// produces exactly this) mint different `VariantId`s for the same case
+    /// name, at the same rank, under the same declared order. This tests
+    /// what FR-141's member preimage (`{version, declaration_node_id,
+    /// case}`) unambiguously guarantees -- unlike TC-409's own procedure
+    /// text, which frames step 6 as a package *version* bump; SR-511
+    /// FND-007 found that framing unsupported by QSpec (a version bump only
+    /// changes the key through `owner`, not directly), so this test uses a
+    /// declaration-identity change instead, which is what FR-141 actually
+    /// keys on.
+    #[trace("TC-409", "FR-088-AC-11")]
+    #[test]
+    fn c26_declaration_identity_change_mints_new_variant_ids_at_the_same_ranks() {
+        let original_node = node_key(4);
+        let renamed_node = node_key(5);
+        assert_ne!(original_node, renamed_node);
+
+        let variants = || {
+            SumVariants::new(
+                vec![
+                    SumVariant::new(identifier("Active")),
+                    SumVariant::new(identifier("Closed")),
+                ],
+                true,
+            )
+            .unwrap()
+        };
+        let original = CheckedTypeNode::Sum {
+            node: original_node,
+            variants: variants(),
+        };
+        let renamed = CheckedTypeNode::Sum {
+            node: renamed_node,
+            variants: variants(),
+        };
+        let ValueType::Enum(original_shape) = to_kernel_value_type(&original) else {
+            panic!("sum form must convert to ValueType::Enum");
+        };
+        let ValueType::Enum(renamed_shape) = to_kernel_value_type(&renamed) else {
+            panic!("sum form must convert to ValueType::Enum");
+        };
+
+        let original_active = mint_variant_id(original_node, "Active");
+        let renamed_active = mint_variant_id(renamed_node, "Active");
+        let original_closed = mint_variant_id(original_node, "Closed");
+        let renamed_closed = mint_variant_id(renamed_node, "Closed");
+
+        // Every VariantId changes with the declaration's own identity.
+        assert_ne!(original_active, renamed_active);
+        assert_ne!(original_closed, renamed_closed);
+
+        // Ranks and canonical order do not: both shapes still rank "Active"
+        // 0 and "Closed" 1, the same declared order in both.
+        assert_eq!(original_shape.rank(original_active), Some(0));
+        assert_eq!(original_shape.rank(original_closed), Some(1));
+        assert_eq!(renamed_shape.rank(renamed_active), Some(0));
+        assert_eq!(renamed_shape.rank(renamed_closed), Some(1));
     }
 
     /// PR #300 review finding 6: two variants sharing one declared name

@@ -387,6 +387,13 @@ pub(crate) struct Typer<'a> {
     /// The package's quantity units, then every compound unit this pass
     /// formed as a product or quotient type.
     units: UnitScope<'a>,
+    /// The checked `VariantId -> EnumValue` index (ADR-013 T-6, last
+    /// sentence), built once here from `scope.enums` -- `scope` is fixed for
+    /// this `Typer`'s whole lifetime, so every `contains`/`=`/`!=` site this
+    /// pass checks reads the same index rather than rebuilding it (M1,
+    /// SR-511 review of PR #365), matching `value::expression::evaluate::
+    /// Machine::new`'s equivalent one-time build.
+    enum_members: EnumMemberIndex,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -518,6 +525,7 @@ impl<'a> Typer<'a> {
             slots: 0,
             clause_kind,
             units: UnitScope::new(scope.types.units()),
+            enum_members: enum_member_index(scope),
         }
     }
 
@@ -1174,7 +1182,7 @@ impl<'a> Typer<'a> {
                         EqualityOperator::Equal,
                         EqualityOperand::typed(element.clone()),
                         EqualityOperand::typed(element),
-                        &enum_member_index(self.scope),
+                        &self.enum_members,
                     )
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 Ok(node(
@@ -1438,7 +1446,7 @@ impl<'a> Typer<'a> {
                 operator,
                 left_operand,
                 right_operand,
-                &enum_member_index(self.scope),
+                &self.enum_members,
             )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(

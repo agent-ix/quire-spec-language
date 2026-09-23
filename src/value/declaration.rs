@@ -904,7 +904,10 @@ pub struct CheckedEquality {
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
     /// index, captured at checking so `Self::evaluate` needs no extra
     /// argument. Empty and never consulted unless `schedule` is
-    /// `EqualitySchedule::Enum`.
+    /// `EqualitySchedule::Enum`. Filtered (SR-511 M2) to only the compared
+    /// operands' own `EnumShape` -- never the whole package's enum-member
+    /// index -- so a checked package with many sizeable enums does not
+    /// retain O(equality nodes x total enum members) in its checked IR.
     enum_members: EnumMemberIndex,
 }
 
@@ -1005,17 +1008,24 @@ impl TypeEnvironment {
             (l, r) if l == r => EqualitySchedule::Plan,
             _ => return ill_typed(IllTypedCause::TypeMismatch),
         };
+        // SR-511 M2: retain only the compared enum declaration's own
+        // members (`left_type`'s `EnumShape`, which schedule selection
+        // above already confirmed equals `right_type`'s), not a clone of
+        // the whole package's `enum_members` index. Computed before `left`
+        // moves into the struct literal below, since `left_type` borrows it.
+        let enum_members = match (schedule, left_type) {
+            (EqualitySchedule::Enum, ValueType::Enum(shape)) => {
+                enum_members.filtered(shape.variants())
+            }
+            _ => EnumMemberIndex::default(),
+        };
         Ok(CheckedEquality {
             operator,
             left,
             right,
             schedule,
             units: resolved,
-            enum_members: if schedule == EqualitySchedule::Enum {
-                enum_members.clone()
-            } else {
-                EnumMemberIndex::default()
-            },
+            enum_members,
         })
     }
 }

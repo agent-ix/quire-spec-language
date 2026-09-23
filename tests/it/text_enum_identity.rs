@@ -747,6 +747,32 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     );
 }
 
+/// TC-409 step 7 (FR-088-AC-11, ADR-013 C-30): a declaration's own node key
+/// is never accepted in a member's place. `admit_member` recomputes the
+/// FR-141 member preimage digest (`{version: quire.enum-member-node/v1,
+/// declaration_node_id, case}`) and compares it against the retained key it
+/// is handed (ADR-013 O-04); the declaration's own key is the digest of a
+/// wholly different preimage (`quire.enum-declaration-node/v1`), so passing
+/// it in the member key's place -- the step a caller must go through before
+/// an `EnumValue::variant` (`VariantId`) ever exists -- refuses as a stale
+/// key rather than minting an identity from declaration bytes. This is the
+/// one TC-409 fault SR-511 (FND-006, informational) found untested anywhere
+/// in the repo.
+#[trace("TC-409", "FR-088-AC-11")]
+#[test]
+fn tc_409_declaration_key_is_never_accepted_as_a_member_key() {
+    let status = fixture_declaration(["Example", "Status"], true, &["READY", "DONE"]);
+    let ready_preimage =
+        EnumMemberPreimage::from_json(member_preimage(status.key(), "READY")).unwrap();
+    assert_eq!(
+        status
+            .admit_member(&ready_preimage, status.key())
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::StaleKey
+    );
+}
+
 #[trace("TC-186", "FR-141-AC-6")]
 #[test]
 fn enum_accounting_exact_bounds_and_named_denials() {

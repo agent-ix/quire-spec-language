@@ -351,6 +351,22 @@ impl EnumMemberIndex {
     pub fn resolve(&self, variant: VariantId) -> Option<&EnumValue> {
         self.0.get(&variant)
     }
+
+    /// The sub-index holding only the entries named by `variants`, silently
+    /// skipping any this index never recorded. `value::declaration::
+    /// CheckedEquality` (SR-511 M2) uses this to retain, inside a checked
+    /// `Enum`-scheduled equality node, only the compared operands' own enum
+    /// declaration -- an `EnumShape::variants()` iterator -- rather than a
+    /// clone of the whole package's enum-member index.
+    pub fn filtered(&self, variants: impl IntoIterator<Item = VariantId>) -> Self {
+        let mut filtered = Self::default();
+        for variant in variants {
+            if let Some(member) = self.resolve(variant) {
+                filtered.record(member.clone());
+            }
+        }
+        filtered
+    }
 }
 
 /// Compare two enum values. Members of different declarations, and ordering

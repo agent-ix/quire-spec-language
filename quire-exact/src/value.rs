@@ -821,7 +821,11 @@ mod tests {
     /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it
     /// contains at the variant's own rank, and refuses one it does not
     /// contain (ADR-013 O-14/OQ-D, no declaration lookup).
+    ///
+    /// Also TC-409 (FR-088-AC-11): admission checks the whole `(VariantId,
+    /// rank)` pair, not membership alone.
     #[trace("TC-308")]
+    #[trace("TC-409")]
     #[test]
     fn tc_308_enum_shape_admits_only_its_own_variants() {
         let in_shape = VariantId::from_digest(digest(1));
@@ -836,7 +840,11 @@ mod tests {
     /// rank is refused just as surely as an unknown variant -- admission
     /// checks the whole `(VariantId, rank)` pair against the shape's own
     /// ranked list, not membership alone.
+    ///
+    /// Also TC-409 step 5 (FR-088-AC-11): a value that pairs a known
+    /// `VariantId` with the wrong rank is refused at admission.
     #[trace("TC-308")]
+    #[trace("TC-409")]
     #[test]
     fn admits_refuses_a_known_variant_at_the_wrong_rank() {
         let first = VariantId::from_digest(digest(1));
@@ -851,7 +859,11 @@ mod tests {
     /// OQ-D: the shape's own rank lookup is exactly the variant's index in
     /// the canonical list the caller supplied, and an unranked (unknown)
     /// variant resolves to `None`, never a panic or a fabricated rank.
+    ///
+    /// Also TC-409 step 3 (FR-088-AC-11): rank is the canonical-list
+    /// position.
     #[trace("TC-308")]
+    #[trace("TC-409")]
     #[test]
     fn enum_shape_rank_matches_canonical_position() {
         let a = VariantId::from_digest(digest(1));

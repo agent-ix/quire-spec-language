@@ -780,6 +780,10 @@ mod checked {
 
     #[trace("TC-189", "FR-144-AC-7")]
     #[trace("TC-189", "FR-144-AC-9")]
+    // Also TC-409 steps 3-4 (FR-088-AC-11): a real kernel Set formed from
+    // admitted enum values visits an unordered enum's members in
+    // case-identifier byte order and an ordered enum's in declaration order.
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn c05_enum_keys_order_unordered_members_by_identifier_bytes() {
         let color = admit("Color", false, &["blue", "green", "red"]);
