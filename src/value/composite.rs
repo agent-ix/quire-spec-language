@@ -44,10 +44,10 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{Charge, ChargePoint, IllTyped, LimitKind, Meter, NodeKey, Presence};
 pub use quire_exact::{
     from_admitted_slots, CompositeValue, Deferred, FieldValue, OptionValue, Value, ValueType,
 };
+use quire_exact::{Charge, ChargePoint, IllTyped, LimitKind, Meter, NodeKey, Presence};
 
 use super::stop::Stop;
 

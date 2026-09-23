@@ -30,7 +30,9 @@ use super::equality::plan_pairs;
 use super::key::compare_keys;
 use super::stop::{outcome_into_stop, Stop};
 pub use quire_exact::{construct_collection, form_collection, from_admitted};
-use quire_exact::{length_amount, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Refusal};
+use quire_exact::{
+    length_amount, Charge, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Refusal,
+};
 pub use quire_exact::{CollectionType, CollectionValue};
 
 /// Form a collection of `collection_type` from completed occurrences in
