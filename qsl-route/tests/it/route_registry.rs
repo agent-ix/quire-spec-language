@@ -3,21 +3,19 @@
 //! backend is chosen for a requested capability kind, and what is reported
 //! when none is.
 //!
-//! Every test here drives [`route::Registry`] through its public API only:
+//! Every test here drives [`qsl_route::Registry`] through its public API only:
 //! build a registry, register backends, ask for a capability kind's
 //! candidate set, and check which backend (if any) comes back. None of
 //! these tests inspects where a type is defined or which module imports
 //! which; TC-193 step 6 (FR-075-AC-5's "no local capability-kind enum"
 //! check) is a source scan, run separately (see this crate's own
-//! `#[cfg(test)]` module in `src/route.rs`, which already imports only the
+//! `#[cfg(test)]` module in `src/lib.rs`, which already imports only the
 //! canonical `Capability` type -- there is no second type to scan for).
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
+use qsl_route::{BackendDescriptor, BackendId, CandidateOutcome, Mode, Registry, ToolIdentity};
 use qsl_semantics::check::Capability;
-use quire_spec_language::route::{
-    BackendDescriptor, BackendId, CandidateOutcome, Mode, Registry, ToolIdentity,
-};
 
 fn digest(seed: &[u8]) -> ByteDigest {
     ByteDigest::of(seed)
@@ -797,7 +795,11 @@ mod cargo_deny_bans_the_three_registry_crates {
         std::fs::create_dir_all(scratch.path().join("src")).expect("create src/");
         std::fs::write(scratch.path().join("src/lib.rs"), "").expect("write an empty lib.rs");
 
-        let deny_toml = Path::new(env!("CARGO_MANIFEST_DIR")).join("deny.toml");
+        // The workspace's own `deny.toml`, one level above this crate.
+        let deny_toml = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("qsl-route lives one level below the workspace root")
+            .join("deny.toml");
         let output = Command::new("cargo-deny")
             .arg("--manifest-path")
             .arg(scratch.path().join("Cargo.toml"))

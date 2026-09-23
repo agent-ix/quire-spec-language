@@ -12,8 +12,9 @@ check-index-completeness:
 	tools/check-index-completeness.sh
 
 # QSL#214 (FR-063-AC-5): demonstrated on every full-gate run, not only when
-# run by hand. Builds the QSL crate twice on its own (once under
-# `RUSTFLAGS=--cfg seam_probe`, once without), independent of whatever
+# run by hand. Runs two normal builds (the root crate and qsl-route) and
+# three probe builds (qsl-semantics, the root crate and qsl-route under
+# `RUSTFLAGS=--cfg seam_probe`) on their own, independent of whatever
 # feature set the caller's own `cargo build`/`clippy` steps used.
 seam-probe:
 	cargo xtask seam-probe
@@ -49,9 +50,10 @@ seam-probe:
 string-edge:
 	cargo xtask string-edge
 
-# QSL-46 (FR-080-AC-3): scans the #185 registry module (src/route.rs) for a
-# static, OnceLock or thread_local! item -- ADR-012 §5.3's registry evidence
-# requires the registry stay an ordinary value, never ambient state.
+# QSL-46 (FR-080-AC-3): scans the #185 registry crate (every file under
+# qsl-route/src) for a static, OnceLock or thread_local! item -- ADR-012
+# §5.3's registry evidence requires the registry stay an ordinary value,
+# never ambient state.
 route-lint:
 	cargo xtask route-lint
 
@@ -70,7 +72,7 @@ route-lint:
 # the three banned registry-discovery crates (PR #305 review round 2,
 # finding 4). There is no `SKIP_CARGO_DENY`-style opt-out.
 #
-# The `cargo-deny`-backed trigger test in `tests/it/route_registry.rs`
+# The `cargo-deny`-backed trigger test in `qsl-route/tests/it/route_registry.rs`
 # (`cargo_deny_bans_the_three_registry_crates`) still skips, rather than
 # fails, when the binary is absent: it is a network/tool test exercising the
 # same binary this target already requires, so this target failing first is

@@ -14,12 +14,13 @@ relationships:
 
 ## Description
 
-Verify that the two probe builds -- `qsl-semantics` under
-`RUSTFLAGS=--cfg seam_probe`, then the root crate under `RUSTFLAGS=--cfg
-seam_probe --cfg seam_probe_downstream` -- each fail to compile, together
+Verify that the three probe builds -- `qsl-semantics` under
+`RUSTFLAGS=--cfg seam_probe`, then the root crate and `qsl-route` each
+under `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream` -- each fail
+to compile, together
 with exactly the checked-in set of seam-function locations (and with rustc
-error code `E0004` specifically at each), that a normal build (no `seam_probe`
-set) succeeds with none, that removing a checked-in entry or removing an
+error code `E0004` specifically at each), that the two normal builds (the
+root crate and `qsl-route`, no `seam_probe` set) succeed with none, that removing a checked-in entry or removing an
 actual compiler error each causes `xtask seam-probe` to report a mismatch,
 that nothing in the repository sets `seam_probe` outside the probe builds'
 own invocations, that the tool's exit code reflects set equality, that the
@@ -56,7 +57,8 @@ deliver.
 ## Test Procedure
 
 1. Run `cargo build -p qsl-semantics --lib` with `RUSTFLAGS=--cfg
-   seam_probe`, then `cargo build -p quire-spec-language --lib` with
+   seam_probe`, then `cargo build -p quire-spec-language --lib` and
+   `cargo build -p qsl-route --lib` with
    `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`; confirm each
    fails, and collect the union of their `E0004` diagnostic locations
    (via `--message-format=json`, filtering `compiler-message` entries whose
@@ -69,10 +71,11 @@ deliver.
 4. Add a match arm for the probe variant at exactly one seam function in the
    source (leaving the checked-in list unchanged) and re-run
    `xtask seam-probe`.
-5. Build the QSL crate's `--lib` target with no `RUSTFLAGS=--cfg seam_probe`
-   set (the normal build) and confirm it succeeds with zero `E0004`
-   locations (`xtask seam-probe` performs this build itself and fails if it
-   does not succeed or reports any `E0004`). Separately, grep `Cargo.toml`'s
+5. Build the root crate's and `qsl-route`'s `--lib` targets with no
+   `RUSTFLAGS=--cfg seam_probe` set (the two normal builds) and confirm each
+   succeeds with zero `E0004` locations (`xtask seam-probe` performs these
+   builds itself and fails if either does not succeed or reports any
+   `E0004`). Separately, grep `Cargo.toml`'s
    `[features]` table, every `build.rs`, every `.cargo/config.toml` and
    every `Makefile` target and CI workflow step for `seam_probe`,
    `seam_probe_downstream` or `--cfg seam_probe`; confirm the only match is
@@ -114,8 +117,8 @@ deliver.
   corresponding location as unexpected-but-present.
 - Step 4: `xtask seam-probe` exits non-zero, naming that seam's location as
   expected-but-missing.
-- Step 5: the normal build compiles cleanly with zero `E0004` locations, so
-  the probe variant is unreachable from any non-probe path in the one build
+- Step 5: both normal builds compile cleanly with zero `E0004` locations, so
+  the probe variant is unreachable from any non-probe path in the builds
   that would actually catch it if it were not; the grep finds `seam_probe`
   set nowhere but `xtask seam-probe`'s own build invocation.
 - Step 6: the wrong list produces a non-zero exit naming the missing entry;

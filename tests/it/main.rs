@@ -113,7 +113,6 @@ mod package_runtime;
 mod parser;
 mod protocol_artifact;
 mod protocol_number;
-mod route_registry;
 mod runtime_evaluation;
 mod runtime_execution;
 mod runtime_inputs;

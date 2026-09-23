@@ -252,8 +252,10 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// QSL-182) names exactly `qsl-foundation`, `qsl-semantics`,
 /// `quire-contract-model`, `serde_json` and `thiserror` in `[dependencies]`;
 /// its `[dev-dependencies]` may also name `quire-exact` and the lower layer
-/// `qsl-forms`, so K is a test-only edge there. Every other workspace crate, `qsl-source` and
-/// this crate included, is refused. Cargo already
+/// `qsl-forms`, so K is a test-only edge there. `qsl-route` (layer R,
+/// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
+/// in `[dependencies]`, and has no `[build-dependencies]`. Every other
+/// workspace crate, `qsl-source` and this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
 /// dev-dependency one, so the dev table is checked here.
 #[trace(
@@ -280,6 +282,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         "qsl-forms",
         "qsl-semantics",
         "qsl-package",
+        "qsl-route",
     ] {
         assert!(
             workspace_crates.contains(&required),
@@ -304,6 +307,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             "qsl-package",
             &["qsl-foundation", "qsl-semantics"][..],
             &["qsl-forms", "quire-exact"][..],
+        ),
+        (
+            "qsl-route",
+            &["qsl-foundation", "qsl-semantics"][..],
+            &[][..],
         ),
     ] {
         let package = packages
@@ -364,6 +372,25 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "{crate_name}'s [dependencies]"
             );
         }
+        if crate_name == "qsl-route" {
+            // Layer R (QSL-184): `route` names layer 3's `Capability`, F's
+            // `ByteDigest` and `CatalogCode`, and `thiserror` for
+            // `RegistrationRefusal`, and nothing of layer 4, K or the root
+            // crate. The whole `[dependencies]` table is checked, so a
+            // planted third-party crate fails it too.
+            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
+            normal.sort_unstable();
+            assert_eq!(
+                normal,
+                ["qsl-foundation", "qsl-semantics", "thiserror"],
+                "{crate_name}'s [dependencies]"
+            );
+            assert!(
+                package.build.is_empty(),
+                "{crate_name}'s [build-dependencies]: {:?}",
+                package.build
+            );
+        }
         for (kind, dependencies, extra) in [
             ("normal", &package.normal, &[][..]),
             ("dev", &package.dev, dev_only),
@@ -379,6 +406,26 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             }
         }
     }
+    // ADR-011 §7.1 (QSL-184): no shipped root-crate module calls `route`,
+    // so the root crate names `qsl-route` as a dev dependency only. This
+    // line comes out when a shipped caller (the T-13 driver) makes the
+    // normal edge real.
+    let root = packages
+        .iter()
+        .find(|package| package.name == "quire-spec-language")
+        .expect("cargo metadata lists the root crate");
+    for (kind, dependencies) in [("normal", &root.normal), ("build", &root.build)] {
+        assert!(
+            !dependencies
+                .iter()
+                .any(|dependency| dependency == "qsl-route"),
+            "the root crate has a {kind} dependency on qsl-route; it is a dev dependency only"
+        );
+    }
+    assert!(
+        root.dev.iter().any(|dependency| dependency == "qsl-route"),
+        "the root crate's tests name qsl-route through a dev dependency"
+    );
 }
 
 /// The FCD crates `qsl-semantics` depends on are named by

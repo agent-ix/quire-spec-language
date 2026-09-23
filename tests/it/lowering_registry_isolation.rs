@@ -10,7 +10,7 @@
 //! `lowering::target`, `ProjectionTarget` and the `--target` argument to a
 //! *later* ticket (`#217`, SEAM-1 M-6b) -- "`M-6b deletes the rest of
 //! `lowering` with #217`". This ticket (`#185`) is additive only: it adds
-//! the new `crate::route` registry alongside the untouched lowering
+//! the new `#185` registry (now `qsl_route`) alongside the untouched lowering
 //! pipeline, in preparation for `#217` to route through it later. There is
 //! therefore no in-place "swap" of `target.rs`'s own code for TC-203's
 //! two-commit snapshot-and-diff procedure to compare across -- see this
@@ -33,7 +33,7 @@
 //!    identical before and after", since there is no "after" edit to those
 //!    files to diverge from "before" at all.
 //! 2. **Architectural decoupling (this file).** `lowering::lower_for`'s own
-//!    signature takes no [`route::Registry`] parameter, so a registry
+//!    signature takes no [`qsl_route::Registry`] parameter, so a registry
 //!    populated with a representative Kani `BackendDescriptor` cannot
 //!    reach it. This test constructs such a registry, lowers the same
 //!    input with and without it having been built at all, and confirms the
@@ -41,11 +41,11 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
+use qsl_route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
-use quire_spec_language::route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
 use quire_spec_language::syntax::ClauseKind;
 use serde_json::json;
 
@@ -130,7 +130,7 @@ fn lower_for_output_is_identical_whether_or_not_a_registry_was_ever_built() {
     assert_eq!(
         format!("{without_registry:?}"),
         format!("{with_registry_in_scope:?}"),
-        "lower_for's output must not depend on whether a route::Registry was built"
+        "lower_for's output must not depend on whether a qsl_route::Registry was built"
     );
 }
 

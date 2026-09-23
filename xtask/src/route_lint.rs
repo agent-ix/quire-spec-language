@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL-46 (FR-080-AC-3): `cargo xtask route-lint` -- scans the `#185`
-//! registry module (`src/route.rs`) for a `static`, `OnceLock`,
+//! registry crate (every `.rs` file under `qsl-route/src`, QSL-184) for a
+//! `static`, `OnceLock`,
 //! `thread_local!` or `lazy_static!` item and fails when it finds one.
 //!
 //! ADR-012 §5.3's registry evidence requires "a lint gate that finds no
@@ -27,10 +28,12 @@ use syn::visit::Visit;
 
 use crate::error::{Error, Result};
 
-/// The registry module this gate scans, relative to the workspace root.
-/// FR-080-AC-3's own scope: "the registry module (the module implementing
-/// FR-075)".
-pub const REGISTRY_MODULE_PATH: &str = "src/route.rs";
+/// The registry crate's source root this gate scans, relative to the
+/// workspace root. FR-080-AC-3's own scope is "the registry module (the
+/// module implementing FR-075)"; since QSL-184 that module is the crate
+/// `qsl-route`, so every file under its `src/` is scanned, and a module
+/// added beside `lib.rs` cannot hold ambient state unseen.
+pub const REGISTRY_SRC_ROOT: &str = "qsl-route/src";
 
 /// One finding: a `static`, `OnceLock`-typed `static`, `thread_local!` or
 /// `lazy_static!` item, named and located.
@@ -120,7 +123,7 @@ fn type_mentions_ident(ty: &syn::Type, ident: &str) -> bool {
 
 /// Scan `source` (already-read Rust source text) for `static`, `OnceLock`,
 /// `thread_local!` and `lazy_static!` items. Pure function, used both by
-/// the real gate (over `src/route.rs` on disk) and by this module's own
+/// the real gate (over every file under `qsl-route/src` on disk) and by this module's own
 /// tests (over literal injected source strings).
 pub fn scan_source(source: &str) -> std::result::Result<Vec<Finding>, syn::Error> {
     let parsed = syn::parse_file(source)?;
@@ -131,29 +134,55 @@ pub fn scan_source(source: &str) -> std::result::Result<Vec<Finding>, syn::Error
     Ok(visitor.findings)
 }
 
-/// `cargo xtask route-lint`: scan [`REGISTRY_MODULE_PATH`] and fail,
-/// naming every finding, if it contains a `static`, `OnceLock`,
-/// `thread_local!` or `lazy_static!` item.
+/// Every `.rs` file under `dir`, recursively, sorted. A missing `dir` is
+/// an error, not an empty scan.
+fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
+        let path = entry.map_err(|source| Error::io(dir, source))?.path();
+        if path.is_dir() {
+            rust_files(&path, out)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            out.push(path);
+        }
+    }
+    out.sort();
+    Ok(())
+}
+
+/// `cargo xtask route-lint`: scan every file under [`REGISTRY_SRC_ROOT`]
+/// and fail, naming every finding by file and line, if any contains a
+/// `static`, `OnceLock`, `thread_local!` or `lazy_static!` item.
 pub fn run(workspace_root: &Path) -> Result<String> {
-    let path: PathBuf = workspace_root.join(REGISTRY_MODULE_PATH);
-    let source = fs::read_to_string(&path).map_err(|source| Error::io(path.clone(), source))?;
-    let findings = scan_source(&source).map_err(|source| Error::RouteLintParse { path, source })?;
-    if !findings.is_empty() {
-        let summary = findings
-            .iter()
-            .map(|finding| {
-                format!(
-                    "{}:{} {} `{}`",
-                    REGISTRY_MODULE_PATH, finding.line, finding.kind, finding.name
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(Error::RouteLintFound { summary });
+    let mut files = Vec::new();
+    rust_files(&workspace_root.join(REGISTRY_SRC_ROOT), &mut files)?;
+    let mut summary = Vec::new();
+    for path in &files {
+        let source = fs::read_to_string(path).map_err(|source| Error::io(path.clone(), source))?;
+        let findings = scan_source(&source).map_err(|source| Error::RouteLintParse {
+            path: path.clone(),
+            source,
+        })?;
+        let relative = path
+            .strip_prefix(workspace_root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        summary.extend(findings.iter().map(|finding| {
+            format!(
+                "{relative}:{} {} `{}`",
+                finding.line, finding.kind, finding.name
+            )
+        }));
+    }
+    if !summary.is_empty() {
+        return Err(Error::RouteLintFound {
+            summary: summary.join("\n"),
+        });
     }
     Ok(format!(
-        "route-lint: {REGISTRY_MODULE_PATH} has no static, OnceLock, thread_local! or \
-         lazy_static! item.\n"
+        "route-lint: {REGISTRY_SRC_ROOT} ({} files) has no static, OnceLock, thread_local! or \
+         lazy_static! item.\n",
+        files.len()
     ))
 }
 
@@ -170,8 +199,36 @@ mod tests {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("xtask is one level under the workspace root");
-        let outcome = run(workspace_root).expect("the real route.rs must pass this gate");
+        let outcome = run(workspace_root).expect("the real registry module must pass this gate");
         assert!(outcome.contains("no static, OnceLock, thread_local! or lazy_static!"));
+    }
+
+    /// QSL-184: the gate scans the whole registry crate. A `static` in a
+    /// module beside `lib.rs` is found and named by its file, and a
+    /// missing `qsl-route/src` is an error, not a clean scan.
+    #[test]
+    #[trace("TC-206", "FR-080-AC-3")]
+    fn a_static_in_another_module_of_the_registry_crate_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join(REGISTRY_SRC_ROOT);
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::write(src.join("lib.rs"), "mod nested;\npub struct Registry;\n").unwrap();
+        fs::write(src.join("nested/mod.rs"), "mod cache;\n").unwrap();
+        fs::write(
+            src.join("nested/cache.rs"),
+            "static DEFAULT: std::sync::OnceLock<u8> = std::sync::OnceLock::new();\n",
+        )
+        .unwrap();
+        let error = run(dir.path()).expect_err("the planted static fails the gate");
+        assert!(
+            error
+                .to_string()
+                .contains("qsl-route/src/nested/cache.rs:1 OnceLock `DEFAULT`"),
+            "{error}"
+        );
+
+        let empty = tempfile::tempdir().unwrap();
+        assert!(run(empty.path()).is_err(), "a missing qsl-route/src fails");
     }
 
     /// TC-206 step 2: an injected plain `static` is found and named.

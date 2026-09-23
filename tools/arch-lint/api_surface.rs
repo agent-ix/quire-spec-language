@@ -954,10 +954,10 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
-/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7) and `qsl-replay`
-/// (X-10). A module path is relative to its own crate's `src/`, so `check`
-/// (T12-B), `model` (T12-C, T12-D) and `library` name `qsl-semantics`'
-/// modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
+/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-route` (X-9)
+/// and `qsl-replay` (X-10). A module path is relative to its own crate's
+/// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
+/// `qsl-semantics`' modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
 /// extracted. `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
 /// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
 /// own scope notes already exclude checking a copy of the constructor
@@ -975,6 +975,7 @@ fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
             "qsl-forms/src",
             "qsl-semantics/src",
             "qsl-package/src",
+            "qsl-route/src",
             "qsl-replay/src",
         ]
         .into_iter()
@@ -1010,6 +1011,7 @@ mod tests {
             "qsl-forms/src",
             "qsl-semantics/src",
             "qsl-package/src",
+            "qsl-route/src",
             "qsl-replay/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
@@ -1496,9 +1498,9 @@ mod tests {
     }
 
     /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185; X-4,
-    /// QSL-179; X-5, QSL-180; X-6, QSL-181): a `Role::Qsl` rule scans
-    /// `qsl-replay/src/`, `qsl-source/src/`, `qsl-forms/src/` and
-    /// `qsl-semantics/src/` too, the same way tc_arch_lint_api_surface_014/016
+    /// QSL-179; X-5, QSL-180; X-6, QSL-181; X-9, QSL-184): a `Role::Qsl` rule
+    /// scans `qsl-replay/src/`, `qsl-source/src/`, `qsl-forms/src/`,
+    /// `qsl-semantics/src/` and `qsl-route/src/` too, the same way tc_arch_lint_api_surface_014/016
     /// cover `qsl-foundation/src/` and `qsl-cst/src/` -- each extracted layer
     /// crate is as much "QSL's own tree" as the root crate. Each crate gets
     /// its own checkout so one crate's violation cannot stand in for the
@@ -1511,6 +1513,7 @@ mod tests {
             ("qsl-source/src/preflight.rs", "preflight"),
             ("qsl-forms/src/dispatch.rs", "dispatch"),
             ("qsl-semantics/src/check/identity.rs", "check::identity"),
+            ("qsl-route/src/lib.rs", ""),
         ] {
             let dir = tempfile::tempdir().unwrap();
             ensure_qsl_roots(dir.path());
@@ -1529,14 +1532,22 @@ mod tests {
             assert_eq!(outcome.status, RuleStatus::Live, "{file}");
             assert_eq!(outcome.violations.len(), 1, "{file}");
             assert_eq!(outcome.violations[0].module, module, "{file}");
+            // The module path alone does not name the crate (`qsl-route`'s
+            // `lib.rs` and the root crate's are both `""`), so the file is
+            // checked too.
+            assert!(
+                outcome.violations[0].file.ends_with(file),
+                "{file}: {:?}",
+                outcome.violations[0].file
+            );
             assert!(!outcome.passed(), "{file}");
         }
     }
 
     /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185, QSL-179,
-    /// QSL-180, QSL-181, QSL-182): a checkout with no `qsl-replay/`, no
-    /// `qsl-source/`, no `qsl-forms/`, no `qsl-package/` or no
-    /// `qsl-semantics/` directory is an error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
+    /// QSL-180, QSL-181, QSL-182, QSL-184): a checkout with no `qsl-replay/`,
+    /// no `qsl-source/`, no `qsl-forms/`, no `qsl-package/`, no `qsl-route/`
+    /// or no `qsl-semantics/` directory is an error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
     /// Every listed root is required precisely so a crate rename or move this
     /// scanner's root list has not caught up with fails loudly instead of
     /// silently scanning nothing there.
@@ -1548,6 +1559,7 @@ mod tests {
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-package/src",
+            "qsl-route/src",
         ] {
             let dir = tempfile::tempdir().unwrap();
             ensure_qsl_roots(dir.path());

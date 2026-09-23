@@ -1294,6 +1294,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-route"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-foundation",
+ "qsl-semantics",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-semantics"
 version = "0.1.0"
 dependencies = [
@@ -1413,6 +1424,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "qsl-package",
+ "qsl-route",
  "qsl-semantics",
  "qsl-source",
  "quire-contract-codegen",

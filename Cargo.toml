@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route"]
 resolver = "2"
 
 [package]
@@ -62,6 +62,13 @@ qsl-attrs = { path = "qsl-attrs" }
 # dependency that does. Resolver 2 turns it on only when a test target is
 # built, so it never reaches the production lib.
 qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
+# ADR-011 §7.3 X-9 (QSL-184): layer R, extracted out of this crate. No
+# shipped module of this crate calls it, so it is a dev dependency only
+# (ADR-011 §7.1: "A dependency needed only by tests is a dev dependency"):
+# `tests/it/lowering_registry_isolation.rs` builds a `qsl_route::Registry`
+# beside the SEAM-1 lowering pipeline. This crate re-exports none of its
+# items (ADR-011 §7.2).
+qsl-route = { path = "qsl-route" }
 tempfile = "=3.27.0"
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
