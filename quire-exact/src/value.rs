@@ -136,9 +136,9 @@ impl EnumShape {
 /// to it (ADR-013 O-14, OQ-D ruling: "An enum value carries its `VariantId`
 /// and its rank, the variant's zero-based index in the FR-141 canonical
 /// member list"). Identity and equality use `variant` alone
-/// ([`crate::equality`]'s leaf match, "Identity and equality use the
+/// (the kernel equality leaf match, "Identity and equality use the
 /// `VariantId` only"); `rank` exists purely so the kernel's own canonical key
-/// ([`crate::key`]'s `compare_keys`, FR-144) can order same-enum values
+/// (`compare_keys`, FR-144) can order same-enum values
 /// without any declaration lookup. [`ValueType::admits`] refuses a value
 /// whose claimed rank disagrees with the shape's own ranked list, so a
 /// well-formed `EnumMember` always has `shape.rank(member.variant()) ==
