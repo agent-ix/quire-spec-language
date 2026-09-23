@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-139 (FR-068) TC-172/TC-176: resolve `check`'s and `model`'s real
-//! `use` edges against `value`'s own re-export tables, instead of trusting a
-//! textual scan of `use` lines alone.
+//! QSL-139 (FR-068) TC-176/TC-262: resolve `model`'s real `use` edges
+//! against `value`'s own re-export table, instead of trusting a textual scan
+//! of `use` lines alone.
 //!
-//! FR-068-CON-4 lets `value::mod.rs` go on re-exporting both `check`'s
-//! relocated types and `value::expression`'s evaluation-only types through
-//! its own flat aggregate (`pub use crate::check::{...}`, `pub use
-//! expression::{...}`). That aggregate is exactly what makes a flat
+//! TC-172's scan of `check` for edges into `value::expression` or
+//! `checking` is retired (QSL-182): both modules are in the root crate,
+//! which depends on `qsl-semantics`, so Cargo refuses either edge from
+//! `check` and the scan could never fire.
+//!
+//! FR-068-CON-4 lets `value::mod.rs` go on re-exporting `check`'s
+//! relocated types through its own flat aggregate (`pub use
+//! crate::check::{...}`). That aggregate is exactly what makes a flat
 //! `crate::value::X` import's *true* defining module invisible to a plain
-//! grep for `value::expression` or `crate::check` -- the coordinator's own
-//! framing in the PR #282 review that asked for this tool. A `use
-//! crate::value::Evaluation;` inside `check` never contains the substring
-//! `expression` anywhere in its own text; a `use crate::value::
-//! DispatchTable;` inside `model` never contains the substring `check`
-//! anywhere in its own text. Both compile today (CON-4 permits the
-//! aggregate), and both are exactly the hidden edges TC-172 step 5 and
-//! TC-176 step 5 require catching at the *resolved* level.
+//! grep for `crate::check` -- the coordinator's own framing in the PR #282
+//! review that asked for this tool. A `use crate::value::DispatchTable;`
+//! inside `model` never contains the substring `check` anywhere in its own
+//! text, and it is exactly the hidden edge TC-176 step 5 requires catching
+//! at the *resolved* level.
 //!
-//! This module closes that gap by reading `qsl-semantics/src/value/mod.rs`'s own two
-//! aggregate `use` blocks (`pub use expression::{...}` and `pub use
-//! crate::check::{...}`) to build the two name sets that matter, then
-//! resolving every `use` edge found under `qsl-semantics/src/check/` and `qsl-semantics/src/model/`
-//! against them: a flat `crate::value::Name` import whose `Name` is in
-//! `value`'s `expression` re-export set resolves into `value::expression`
-//! exactly as surely as a direct `crate::value::expression::Name` import
-//! would, and the same for `crate::check`'s re-export set inside `model`.
+//! This module closes that gap by reading
+//! `qsl-semantics/src/value/mod.rs`'s own aggregate `use` block (`pub use
+//! crate::check::{...}`) to build the name set that matters, then resolving
+//! every `use` edge found under `qsl-semantics/src/model/` against it: a flat
+//! `crate::value::Name` import whose `Name` is in that set resolves into
+//! `crate::check` exactly as surely as a direct `crate::check::Name` import
+//! would.
 //!
 //! **Scope of what this resolves.** This is a two-hop resolution (`use`
 //! edge -> `value::mod.rs`'s own aggregate lines), matched to the one
@@ -33,13 +33,10 @@
 //!
 //! **`#[cfg(test)]` handling differs by which criterion is being checked
 //! (owner ruling, PR #282 review, post-rebase).**
-//! [`check_module_violations`] (TC-172/AC-3) and [`model_check_edges`]
-//! (TC-176) do not evaluate `#[cfg]` attributes at all: a `#[cfg(test)]`-gated
-//! `use` is scanned the same as an unconditional one, which only ever makes
-//! those two scans *stricter* than a build would be, and is deliberate --
-//! `check` must import nothing from `value::expression` even in its own test
-//! code (TC-174's test lives in `value::expression` instead, precisely
-//! because of this). [`check_layer_edges`] (TC-175/AC-6), by contrast,
+//! [`model_check_edges`] (TC-176/TC-262) does not evaluate `#[cfg]`
+//! attributes at all: a `#[cfg(test)]`-gated `use` is scanned the same as an
+//! unconditional one, which only ever makes the scan *stricter* than a build
+//! would be, and is deliberate. [`check_layer_edges`] (TC-175/AC-6), by contrast,
 //! excludes `#[cfg(test)]`-gated imports and items on purpose: AC-6's bound
 //! constrains `check`'s *shipped* dependency graph, and a test-only import is
 //! not part of it.
@@ -209,22 +206,18 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// The two name sets `qsl-semantics/src/value/mod.rs`'s own aggregate `use` blocks
-/// establish (see this module's own doc): every name a flat
+/// The name set `qsl-semantics/src/value/mod.rs`'s own aggregate `use`
+/// block establishes (see this module's own doc): every name a flat
 /// `crate::value::Name` import can reach that really resolves into
-/// `value::expression`, and every name a flat `crate::value::Name` import
-/// can reach that really resolves into `crate::check`.
+/// `crate::check`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ValueReexports {
-    /// Names `value::mod.rs`'s `pub use expression::{...};` block re-exports.
-    pub expression: BTreeSet<String>,
     /// Names `value::mod.rs`'s `pub use crate::check::{...};` block re-exports.
     pub check: BTreeSet<String>,
 }
 
-/// Read `qsl-semantics/src/value/mod.rs` and extract [`ValueReexports`] by finding the
-/// one `use` item whose path is exactly `expression` (a sibling-relative
-/// `pub use expression::{...}`) and the one whose path starts `crate::check`.
+/// Read `qsl-semantics/src/value/mod.rs` and extract [`ValueReexports`] by
+/// finding the one `use` item whose path starts `crate::check`.
 pub fn value_reexports(workspace_root: &Path) -> Result<ValueReexports> {
     let value_mod = format!("{LAYER3_SRC}/value/mod.rs");
     let parsed = parse_file(workspace_root, &value_mod)?;
@@ -234,14 +227,10 @@ pub fn value_reexports(workspace_root: &Path) -> Result<ValueReexports> {
         if edge.is_glob {
             continue;
         }
-        match edge.path.as_slice() {
-            [module] if module == "expression" => {
-                reexports.expression.insert(edge.leaf.clone());
-            }
-            [first, second] if first == "crate" && second == "check" => {
+        if let [first, second] = edge.path.as_slice() {
+            if first == "crate" && second == "check" {
                 reexports.check.insert(edge.leaf.clone());
             }
-            _ => {}
         }
     }
     Ok(reexports)
@@ -267,30 +256,6 @@ fn files_in(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
-/// Whether `path` (a `use` edge's segments, `crate`-rooted or not) resolves,
-/// directly or through `value`'s flat aggregate, into `value::expression`.
-/// `leaf` is the edge's own bound name.
-fn resolves_into_value_expression(path: &[String], leaf: &str, reexports: &ValueReexports) -> bool {
-    let normalized = strip_leading_crate(path);
-    match normalized {
-        // Direct: `crate::value::expression::...`.
-        [first, second, ..] if first == "value" && second == "expression" => true,
-        // Flat, through value's own aggregate: `crate::value::Name` where
-        // `Name` is one of the names `value::mod.rs` re-exports from
-        // `expression`.
-        [first] if first == "value" => reexports.expression.contains(leaf),
-        _ => false,
-    }
-}
-
-/// Whether `path` resolves, directly or through `value`'s flat aggregate,
-/// into `crate::checking` (the pre-existing SEAM-1/SEAM-2 module, untouched
-/// by QSL-139).
-fn resolves_into_checking(path: &[String]) -> bool {
-    let normalized = strip_leading_crate(path);
-    matches!(normalized, [first, ..] if first == "checking")
-}
-
 /// Whether `path` resolves, directly or through `value`'s flat aggregate,
 /// into `crate::check`.
 fn resolves_into_check(path: &[String], leaf: &str, reexports: &ValueReexports) -> bool {
@@ -309,53 +274,10 @@ fn strip_leading_crate(path: &[String]) -> &[String] {
     }
 }
 
-/// One finding: an edge that resolves somewhere TC-172/TC-176 forbids it
-/// from resolving.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Violation {
-    /// The file the offending `use` was found in.
-    pub file: String,
-    /// The edge's own source-written path, joined with `::`.
-    pub path: String,
-    /// The bound leaf name.
-    pub leaf: String,
-    /// What this edge actually resolves into, and why that is forbidden.
-    pub reason: &'static str,
-}
-
-/// TC-172: every `use` edge under `qsl-semantics/src/check/` that resolves, directly or
-/// through `value`'s flat aggregate, into `value::expression` or into
-/// `checking` -- both forbidden regardless of whether the edge's own
-/// spelling contains the word `expression` or `checking` at all.
-pub fn check_module_violations(workspace_root: &Path) -> Result<Vec<Violation>> {
-    let reexports = value_reexports(workspace_root)?;
-    let mut violations = Vec::new();
-    for file in files_in(workspace_root, &format!("{LAYER3_SRC}/check"))? {
-        let parsed = parse_file(workspace_root, &file)?;
-        for edge in use_edges_in_file(&parsed, &file) {
-            if edge.is_glob {
-                continue;
-            }
-            if resolves_into_value_expression(&edge.path, &edge.leaf, &reexports) {
-                violations.push(Violation {
-                    file: edge.file.clone(),
-                    path: edge.path.join("::"),
-                    leaf: edge.leaf.clone(),
-                    reason: "resolves into value::expression (directly or through value's flat aggregate)",
-                });
-            }
-            if resolves_into_checking(&edge.path) {
-                violations.push(Violation {
-                    file: edge.file.clone(),
-                    path: edge.path.join("::"),
-                    leaf: edge.leaf.clone(),
-                    reason: "resolves into checking (the pre-existing SEAM-1/SEAM-2 module)",
-                });
-            }
-        }
-    }
-    Ok(violations)
-}
+// TC-172 (FR-068-AC-3) used to scan `check` here for an edge into
+// `value::expression` or `checking`. Both are in the root crate, and Cargo
+// gates crate direction: the root crate depends on `qsl-semantics`, so
+// neither edge compiles from `check` (QSL-182 retired the scan).
 
 /// One resolved `model` -> `check` edge (TC-262/FR-074-AC-3, inverted from
 /// TC-176/FR-068-AC-9, which this retires): which file it was found in, the
@@ -446,7 +368,7 @@ const LAYER3_SRC: &str = "qsl-semantics/src";
 /// quantity::UnitTable`, as a doctest or an `extern crate self` alias would
 /// write one) is the same crate-relative path as `crate::value::quantity::
 /// UnitTable`. Every scan here treats it as a crate root, the same as
-/// `crate`: [`strip_leading_crate`] (TC-172, TC-262), [`resolve_relative_path`]
+/// `crate`: [`strip_leading_crate`] (TC-262), [`resolve_relative_path`]
 /// and inline-path resolution (TC-175).
 const LAYER3_CRATE: &str = "qsl_semantics";
 
@@ -1051,73 +973,6 @@ mod tests {
             .to_path_buf()
     }
 
-    /// A flat `use crate::value::Evaluation;` binds a name `value::mod.rs`
-    /// re-exports from `expression` -- the exact hidden-edge shape TC-172
-    /// step 5 requires catching at the resolved level, invisible to any
-    /// scan of the edge's own text (it contains neither `expression` nor
-    /// any of the seven flagged example names' shared substring).
-    #[trace("TC-172", "FR-068-AC-3")]
-    #[test]
-    fn flat_value_import_of_an_expression_reexport_resolves_into_expression() {
-        let reexports = ValueReexports {
-            expression: ["Evaluation".to_owned()].into_iter().collect(),
-            check: BTreeSet::new(),
-        };
-        let path = vec!["crate".to_owned(), "value".to_owned()];
-        assert!(resolves_into_value_expression(
-            &path,
-            "Evaluation",
-            &reexports
-        ));
-    }
-
-    /// The same flat-import shape for an *unrelated* name (one `value`
-    /// re-exports from somewhere other than `expression`) must not be
-    /// flagged -- this resolver targets the real CON-4 aggregate edge, not
-    /// every `crate::value::` import.
-    #[trace("TC-172", "FR-068-AC-3")]
-    #[test]
-    fn flat_value_import_of_a_non_expression_name_does_not_resolve_into_expression() {
-        let reexports = ValueReexports {
-            expression: ["Evaluation".to_owned()].into_iter().collect(),
-            check: BTreeSet::new(),
-        };
-        let path = vec!["crate".to_owned(), "value".to_owned()];
-        assert!(!resolves_into_value_expression(
-            &path,
-            "CollectionType",
-            &reexports
-        ));
-    }
-
-    /// A direct `use crate::value::expression::Foo;` resolves into
-    /// `value::expression` regardless of the reexport table -- the other
-    /// half of TC-172 step 3 ("the whole module, not a fixed name list").
-    #[trace("TC-172", "FR-068-AC-3")]
-    #[test]
-    fn direct_value_expression_import_resolves_into_expression() {
-        let reexports = ValueReexports::default();
-        let path = vec![
-            "crate".to_owned(),
-            "value".to_owned(),
-            "expression".to_owned(),
-        ];
-        assert!(resolves_into_value_expression(
-            &path, "Anything", &reexports
-        ));
-    }
-
-    /// TC-172 step 4: an edge into the pre-existing `checking` module is
-    /// flagged the same way, independent of the reexport table.
-    #[trace("TC-172", "FR-068-AC-3")]
-    #[test]
-    fn checking_module_import_is_flagged() {
-        let path = vec!["crate".to_owned(), "checking".to_owned()];
-        assert!(resolves_into_checking(&path));
-        let unrelated = vec!["crate".to_owned(), "value".to_owned()];
-        assert!(!resolves_into_checking(&unrelated));
-    }
-
     /// The resolution mechanism `real_model_check_edge_is_empty` (TC-262)
     /// relies on: a flat `use crate::value::DispatchTable;` inside `model`
     /// would resolve into `check` if `value::mod.rs` re-exported it from
@@ -1131,7 +986,6 @@ mod tests {
     #[test]
     fn flat_value_import_of_a_check_reexport_resolves_into_check_indirectly() {
         let reexports = ValueReexports {
-            expression: BTreeSet::new(),
             check: ["DispatchTable".to_owned()].into_iter().collect(),
         };
         let path = vec!["crate".to_owned(), "value".to_owned()];
@@ -1160,21 +1014,6 @@ mod tests {
         assert!(resolves_into_check(&path, "DispatchTable", &reexports));
         let direct = strip_leading_crate(&path).first().map(String::as_str) == Some("check");
         assert!(direct);
-    }
-
-    /// Against the real, current tree: `check_module_violations` is empty --
-    /// this is TC-172's own live assertion, run over `check`'s actual
-    /// source rather than a fixture, confirming the resolver finds nothing
-    /// where the real crate has nothing after PR #282 review F2's rewrite
-    /// to submodule-qualified imports.
-    #[trace("TC-172", "FR-068-AC-3")]
-    #[test]
-    fn real_check_module_has_no_value_expression_or_checking_edge() {
-        let violations = check_module_violations(&workspace_root()).expect("scan runs");
-        assert!(
-            violations.is_empty(),
-            "check_module_violations found real edges: {violations:?}"
-        );
     }
 
     /// Against the real, current tree: `model_check_edges` is empty -- M-2
@@ -1229,18 +1068,12 @@ mod tests {
     /// `value_reexports` against the real tree: layer-3 `value`
     /// (`qsl-semantics/src/value/mod.rs`) re-exports nothing from `check`
     /// (QSL-181 X-6a: `semantic_value` sits before `check` in ADR-011 §6.1's
-    /// order) and nothing from `expression`, which stayed in the root crate
-    /// at X-6b. Its own submodule re-exports are non-empty, so the resolver
-    /// is reading the real file. This fails if either kind of re-export
-    /// comes back.
+    /// order). Its own submodule re-exports are non-empty, so the resolver
+    /// is reading the real file. This fails if a `check` re-export comes
+    /// back.
     #[test]
-    fn real_value_reexports_expression_only() {
+    fn real_value_reexports_nothing_from_check() {
         let reexports = value_reexports(&workspace_root()).expect("scan runs");
-        assert!(
-            reexports.expression.is_empty(),
-            "{:?}",
-            reexports.expression
-        );
         assert!(reexports.check.is_empty(), "{:?}", reexports.check);
         let submodules = value_submodule_reexports(&workspace_root()).expect("scan runs");
         assert_eq!(
@@ -1385,7 +1218,7 @@ mod tests {
                 (4, "complete", true),
             ]
         );
-        // TC-172/TC-262 resolve through `strip_leading_crate`, which strips
+        // TC-262 resolves through `strip_leading_crate`, which strips
         // the crate's own name the same way.
         let path = vec!["qsl_semantics".to_owned(), "check".to_owned()];
         assert!(resolves_into_check(&path, "X", &ValueReexports::default()));

@@ -286,7 +286,7 @@ pub(crate) const RULES: &[Rule] = &[
     },
     Rule {
         id: "T12-E",
-        description: "only layer-4 `checked_package::checked_v2` mints the ADR-011 §4 \
+        description: "only layer-4 `qsl-package`'s `checked_v2` mints the ADR-011 §4 \
                       condition-1 witness `SupportedV2Wire` (ADR-013 T-1, FR-087-AC-1)",
         role: Role::Qsl,
         // `library::SupportedV2Wire::attest_ir_admitted_v2` is `pub` only so
@@ -299,8 +299,8 @@ pub(crate) const RULES: &[Rule] = &[
         call_patterns: &["attest_ir_admitted_v2"],
         forbidden_patterns: &[],
         allowed_callers: &[AllowedCaller {
-            crate_src: "src",
-            module_prefix: "checked_package::checked_v2",
+            crate_src: "qsl-package/src",
+            module_prefix: "checked_v2",
         }],
         requires_path: Some("qsl-semantics/src/library/witness.rs"),
         pending_reason: "the witness module `qsl-semantics/src/library/witness.rs` is absent from \
@@ -311,8 +311,8 @@ pub(crate) const RULES: &[Rule] = &[
              and called elsewhere passes this rule -- the companion gate \
              `tests/it/verified_binding_witness.rs` refuses any reference in `checked_v2` but \
              the one direct call in `read_checked_package_v2`'s `AdmittedV2` arm, across every \
-             workspace crate's `src/`; both carry over X-6b and X-7, where the allowed caller \
-             follows `checked_v2` into `qsl-package`",
+             workspace crate's `src/`; the allowed caller is `qsl-package`'s `checked_v2` \
+             since X-7",
         ),
         shipped_only: true,
         debt_list: &[],
@@ -954,10 +954,10 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
-/// (X-5), `qsl-semantics` (X-6) and `qsl-replay` (X-10). A module path is
-/// relative to its own crate's `src/`, so `check` (T12-B), `model` (T12-C,
-/// T12-D) and `library` name `qsl-semantics`' modules, and
-/// `checked_package::checked_v2` (T12-E) the root crate's. Each later layer crate joins this list when it is
+/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7) and `qsl-replay`
+/// (X-10). A module path is relative to its own crate's `src/`, so `check`
+/// (T12-B), `model` (T12-C, T12-D) and `library` name `qsl-semantics`'
+/// modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
 /// extracted. `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
 /// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
 /// own scope notes already exclude checking a copy of the constructor
@@ -974,6 +974,7 @@ fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-semantics/src",
+            "qsl-package/src",
             "qsl-replay/src",
         ]
         .into_iter()
@@ -1008,6 +1009,7 @@ mod tests {
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-semantics/src",
+            "qsl-package/src",
             "qsl-replay/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
@@ -1532,15 +1534,21 @@ mod tests {
     }
 
     /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185, QSL-179,
-    /// QSL-180, QSL-181): a checkout with no `qsl-replay/`, no `qsl-source/`,
-    /// no `qsl-forms/` or no `qsl-semantics/` directory is an error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
+    /// QSL-180, QSL-181, QSL-182): a checkout with no `qsl-replay/`, no
+    /// `qsl-source/`, no `qsl-forms/`, no `qsl-package/` or no
+    /// `qsl-semantics/` directory is an error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
     /// Every listed root is required precisely so a crate rename or move this
     /// scanner's root list has not caught up with fails loudly instead of
     /// silently scanning nothing there.
     #[trace("TC-157", "FR-060-AC-2")]
     #[test]
     fn tc_arch_lint_api_surface_019_missing_qsl_replay_or_qsl_source_crate_is_an_error() {
-        for missing in ["qsl-replay/src", "qsl-source/src", "qsl-forms/src"] {
+        for missing in [
+            "qsl-replay/src",
+            "qsl-source/src",
+            "qsl-forms/src",
+            "qsl-package/src",
+        ] {
             let dir = tempfile::tempdir().unwrap();
             ensure_qsl_roots(dir.path());
             fs::remove_dir_all(dir.path().join(missing)).unwrap();
@@ -1940,13 +1948,13 @@ mod tests {
     }
     /// tc_arch_lint_api_surface_023 (T12-E, TC-157, FR-060-AC-3, FR-087-AC-1): a call to
     /// the condition-1 witness minter from any module outside
-    /// `checked_package::checked_v2` -- including `library`, which defines
-    /// it in `qsl-semantics`, and another root-crate `checked_package`
-    /// module -- is a violation, whether spelled through the type, through
-    /// `Self`, as a function value or across the crate boundary
+    /// `qsl-package`'s `checked_v2` -- including `library`, which defines
+    /// it in `qsl-semantics`, and another `qsl-package` module -- is a
+    /// violation, whether spelled through the type, through `Self`, as a
+    /// function value or across the crate boundary
     /// (`qsl_semantics::library::SupportedV2Wire::..`, QSL-181), and so is a
-    /// `checked_package::checked_v2` module in another crate; the one call in
-    /// the root crate's `checked_v2` and the minter's own definition are not.
+    /// `checked_v2` module in another crate; the one call in `qsl-package`'s
+    /// `checked_v2` and the minter's own definition are not.
     #[trace("TC-157", "FR-060-AC-3", "FR-087-AC-1")]
     #[test]
     fn tc_arch_lint_api_surface_023_witness_minter_outside_checked_v2_is_a_violation() {
@@ -1967,12 +1975,12 @@ mod tests {
         );
         write(
             dir.path(),
-            "src/checked_package/checked_v2.rs",
+            "qsl-package/src/checked_v2.rs",
             "fn read() {\n    let _ = SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
         );
         write(
             dir.path(),
-            "src/checked_package/emit.rs",
+            "qsl-package/src/emit.rs",
             "fn emit() {\n    let mint = SupportedV2Wire::attest_ir_admitted_v2;\n}\n",
         );
         write(
@@ -1981,10 +1989,10 @@ mod tests {
             "fn route() {\n    let _ = qsl_semantics::library::SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
         );
         // A module of the same path in another crate is not the allowed
-        // caller: the allow-list names the root crate's `checked_v2`.
+        // caller: the allow-list names `qsl-package`'s `checked_v2`.
         write(
             dir.path(),
-            "qsl-semantics/src/checked_package/checked_v2.rs",
+            "src/checked_v2.rs",
             "fn read() {\n    let _ = SupportedV2Wire::attest_ir_admitted_v2();\n}\n",
         );
         let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
@@ -1998,9 +2006,9 @@ mod tests {
         assert_eq!(
             found,
             vec![
-                ("checked_package::checked_v2", 2, "read"),
+                ("emit", 2, "emit"),
                 ("library::witness", 7, "SupportedV2Wire::again"),
-                ("checked_package::emit", 2, "emit"),
+                ("checked_v2", 2, "read"),
                 ("route", 2, "route"),
             ],
             "{:?}",
@@ -2011,7 +2019,7 @@ mod tests {
 
     /// tc_arch_lint_api_surface_024 (T12-E on this repository's own tree):
     /// the witness minter's only shipped caller is
-    /// `checked_package::checked_v2`. This is the CI gate for the rule: it
+    /// `qsl-package`'s `checked_v2`. This is the CI gate for the rule: it
     /// runs in `cargo test --workspace` (`make ci`), where the `arch-lint`
     /// binary itself does not yet run.
     #[trace("TC-157", "FR-060-AC-2", "FR-087-AC-1")]

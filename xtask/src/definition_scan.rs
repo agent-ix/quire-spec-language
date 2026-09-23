@@ -213,12 +213,16 @@ pub struct CrateDefinitions {
     pub methods: BTreeMap<(String, String), Vec<Definition>>,
 }
 
-/// Scan the QSL crate's `src/` tree and its extracted layer-3 crate's
-/// (`qsl-semantics/src/`, QSL-181), once, as one set of definitions: `check`,
-/// `model` and `library` moved there, and the checks below still ask where
-/// in the QSL crate family an item is defined.
+/// Scan the QSL crate's `src/` tree and its extracted layer-3 and layer-4
+/// crates' (`qsl-semantics/src/`, QSL-181; `qsl-package/src/`, QSL-182),
+/// once, as one set of definitions: `check`, `model`, `library` and the S4
+/// `CheckedPackage` moved there, and the checks below still ask where in the
+/// QSL crate family an item is defined.
 pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
-    scan_dirs(workspace_root, &["src", "qsl-semantics/src"])
+    scan_dirs(
+        workspace_root,
+        &["src", "qsl-semantics/src", "qsl-package/src"],
+    )
 }
 
 /// Scan every `.rs` tree in `dirs` (relative to `workspace_root`) once, as
@@ -366,8 +370,8 @@ mod tests {
     /// **Updated (QSL-158 S-3a).** `check`'s S3 output type was renamed
     /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
     /// methods this test pins moved with it, and `CheckedPackage` itself is
-    /// now `package`'s own, different, S4 in-process type (`src/package/
-    /// checked.rs`), so it no longer belongs in this check-scoped assertion
+    /// now `package`'s own, different, S4 in-process type
+    /// (`qsl-package/src/checked.rs`), so it no longer belongs in this check-scoped assertion
     /// at all -- it is covered instead by `package`'s own TC-243 inspection.
     /// This test does not itself verify FR-087-AC-9 (TC-256, the
     /// `graph()` delegation point, does), so it no longer cites that AC.

@@ -243,8 +243,12 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
-/// §6.1; layer 2's cell names no external crate). Every other workspace
-/// crate, `qsl-source` and this crate included, is refused. Cargo already
+/// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4,
+/// QSL-182) names only `qsl-semantics`, `qsl-foundation` and `quire-exact`
+/// among the workspace crates in `[dependencies]`, and `quire-contract-model`
+/// as its one quire-ecosystem crate; its `[dev-dependencies]` may also name
+/// the lower layer `qsl-forms`. Every other workspace crate, `qsl-source` and
+/// this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
 /// dev-dependency one, so the dev table is checked here.
 #[trace(
@@ -268,23 +272,31 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         "qsl-cst",
         "qsl-forms",
         "qsl-semantics",
+        "qsl-package",
     ] {
         assert!(
             workspace_crates.contains(&required),
             "cargo metadata lists no {required}: {workspace_crates:?}"
         );
     }
-    for (crate_name, allowed) in [
-        ("quire-exact", &[][..]),
-        ("qsl-foundation", &["quire-exact"][..]),
-        ("qsl-cst", &["qsl-foundation", "quire-exact"][..]),
+    for (crate_name, allowed, dev_only) in [
+        ("quire-exact", &[][..], &[][..]),
+        ("qsl-foundation", &["quire-exact"][..], &[][..]),
+        ("qsl-cst", &["qsl-foundation", "quire-exact"][..], &[][..]),
         (
             "qsl-forms",
             &["qsl-cst", "qsl-foundation", "quire-exact"][..],
+            &[][..],
         ),
         (
             "qsl-semantics",
             &["qsl-forms", "qsl-foundation", "quire-exact"][..],
+            &[][..],
+        ),
+        (
+            "qsl-package",
+            &["qsl-foundation", "qsl-semantics", "quire-exact"][..],
+            &["qsl-forms"][..],
         ),
     ] {
         let package = packages
@@ -325,11 +337,42 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
             fcd_is_named_by_model_intake_only(&package.normal);
         }
-        for (kind, dependencies) in [("normal", &package.normal), ("dev", &package.dev)] {
+        if crate_name == "qsl-package" {
+            // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for v2 wire
+            // constants and round-trip tests only". Layer 3 is required, and
+            // the one quire-ecosystem crate outside the workspace is
+            // `quire-contract-model`.
+            assert!(
+                package
+                    .normal
+                    .iter()
+                    .any(|dependency| dependency == "qsl-semantics"),
+                "{crate_name} does not depend on layer-3 qsl-semantics"
+            );
+            let ecosystem: Vec<&str> = package
+                .normal
+                .iter()
+                .map(String::as_str)
+                .filter(|dependency| {
+                    !workspace_crates.contains(dependency)
+                        && (dependency.starts_with("quire-") || dependency.starts_with("agent-ix-"))
+                })
+                .collect();
+            assert_eq!(
+                ecosystem,
+                ["quire-contract-model"],
+                "{crate_name}'s ecosystem [dependencies]"
+            );
+        }
+        for (kind, dependencies, extra) in [
+            ("normal", &package.normal, &[][..]),
+            ("dev", &package.dev, dev_only),
+        ] {
             for dependency in dependencies {
                 assert!(
                     !workspace_crates.contains(&dependency.as_str())
-                        || allowed.contains(&dependency.as_str()),
+                        || allowed.contains(&dependency.as_str())
+                        || extra.contains(&dependency.as_str()),
                     "{crate_name} has a {kind} dependency on workspace crate {dependency}"
                 );
             }

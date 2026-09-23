@@ -375,6 +375,7 @@ mod tests {
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-semantics/src",
+            "qsl-package/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
