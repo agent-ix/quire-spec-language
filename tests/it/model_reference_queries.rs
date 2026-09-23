@@ -21,6 +21,7 @@ use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
     PackageDeclarations, WrongSnapshotCause,
@@ -53,7 +54,7 @@ use quire_exact::{
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
 use quire_spec_language::value::{
-    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
+    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

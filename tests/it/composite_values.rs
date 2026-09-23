@@ -740,14 +740,13 @@ mod checked {
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
     use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
+    use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
         CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
         PackageDeclarations,
     };
     use quire_exact::{BoundViolation, Outcome, Refusal};
-    use quire_spec_language::value::{
-        CallFailure, CheckedPackage, CheckedPackageEvaluation, InputRefusal,
-    };
+    use quire_spec_language::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
 
     fn name(spelling: &str) -> Expression {
         Expression::Name(spelling.to_owned())

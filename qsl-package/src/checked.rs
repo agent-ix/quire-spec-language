@@ -25,15 +25,15 @@
 //! `check`-owned state through that same `graph()` accessor, under its own
 //! separate, permitted layer-5-depends-on-layer-3 edge -- not routed
 //! through this module, and outside this module's own one-item `check`-core
-//! import count. A trait, not an inherent impl: once
-//! `CheckedPackage` is `qsl-package`'s own foreign type (X-7), an inherent
-//! `impl CheckedPackage` outside its defining crate is E0116.
+//! import count. A trait, not an inherent impl: `CheckedPackage` is this
+//! crate's type, and an inherent `impl CheckedPackage` outside its defining
+//! crate is E0116.
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
 //! QSL-6/#242, slice S1a): [`super::emit`], a sibling module of this one, so
-//! it stays within `checked_package`'s own `pub(super)` reach without being
-//! reachable from outside `checked_package` (ADR-013 O-02: `package_id` is
+//! it stays within this crate's `pub(super)` reach without being
+//! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
 //! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
@@ -49,9 +49,9 @@ use qsl_semantics::library::PackageId;
 /// TC-244 row 2 (FR-087-AC-2): a `CheckedGraph` never becomes a
 /// `CheckedPackage` by any path other than [`CheckedPackage::link`] -- in
 /// particular, not by naming this struct's private fields directly from
-/// outside `checked_package`:
+/// outside `qsl-package`:
 /// ```compile_fail,E0451
-/// use quire_spec_language::checked_package::CheckedPackage;
+/// use qsl_package::CheckedPackage;
 /// let forged = CheckedPackage {
 ///     graph: todo!(),
 ///     dependencies: Default::default(),
@@ -100,7 +100,7 @@ impl CheckedPackage {
     /// This package's own checked declarations (S3's stage output) -- the
     /// delegation point FR-087-AC-9/TC-256 names: every check-owned-type
     /// accessor a consumer needs is reached through this method, not by
-    /// `checked_package` re-declaring or re-importing `check`'s types itself.
+    /// `qsl-package` re-declaring or re-importing `check`'s types itself.
     pub fn graph(&self) -> &CheckedGraph {
         &self.graph
     }
@@ -122,10 +122,10 @@ impl CheckedPackage {
 /// A caller cannot supply a `package_id`: both fields are private, and this
 /// type's own (`pub(super)`, so not documented on this public page)
 /// constructor takes no `package_id` parameter to forge one through --
-/// naming this struct's private fields directly from outside `checked_package`
+/// naming this struct's private fields directly from outside `qsl-package`
 /// (ADR-013 O-02) does not compile:
 /// ```compile_fail,E0451
-/// use quire_spec_language::checked_package::EmittedPackage;
+/// use qsl_package::EmittedPackage;
 /// let forged = EmittedPackage {
 ///     bytes: Vec::new(),
 ///     package_id: todo!(),
@@ -145,11 +145,11 @@ impl EmittedPackage {
     /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
     /// through which a caller could instead supply arbitrary preimage
     /// bytes, let alone an arbitrary `package_id` directly. `pub(super)`:
-    /// reachable from anywhere in `checked_package` (in particular,
-    /// `checked_package::emit`), never from outside it.
+    /// reachable from anywhere in `qsl-package` (in particular,
+    /// `emit`), never from outside it.
     #[allow(
         dead_code,
-        reason = "no caller yet: checked_package::emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
+        reason = "no caller yet: emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
     )]
     pub(super) fn new(
         identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
@@ -205,7 +205,7 @@ mod tests {
     /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
     /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
     /// directly, which the prior version of this test read from.
-    /// It lives here, in layer-4 `checked_package`, not in `check`'s own
+    /// It lives here, in layer-4 `qsl-package`, not in `check`'s own
     /// tests: it reads the layer-4 `CheckedPackage`, which a layer-3 test
     /// cannot name once `check` is its own crate (QSL-181 X-6a).
     #[trace("TC-248", "FR-088-AC-2")]

@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
     PackageDeclarations,
@@ -50,7 +51,7 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_spec_language::value::{
-    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss,
+    CallFailure, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

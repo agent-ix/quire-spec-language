@@ -73,6 +73,7 @@ mod finite_simulation;
 mod fixture_audit;
 mod formal_source;
 mod integer_lowering;
+mod layer_crate_reexports;
 mod linking;
 mod located_json;
 mod lower_command;

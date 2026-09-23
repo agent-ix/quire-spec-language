@@ -249,9 +249,9 @@ impl<'ast> Visit<'ast> for DefinedNames {
 /// Step 2's own exception, positively confirmed rather than only excluded
 /// by directory: `crate::check::CheckedGraph::callable`/`function_identity`
 /// are the checker's own name -> node id resolution functions R-06/O-11
-/// name (reached from outside `check` only through
-/// `value::expression::CheckedPackage::call`'s typed `QualifiedName`
-/// lookup, itself inside the check stage's own resolution path per that
+/// name (reached from outside `check` only through `CheckedPackage::call`'s
+/// (`qsl_package::CheckedPackage`, via `CheckedPackageEvaluation`) typed
+/// `QualifiedName` lookup, itself inside the check stage's own resolution path per that
 /// method's doc). This asserts they still exist under `check` as real
 /// parsed function/method definitions (not a text search that a comment or
 /// doc example could also satisfy), so a future rename or relocation out of

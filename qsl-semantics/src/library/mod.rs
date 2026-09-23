@@ -25,7 +25,7 @@
 //! (`Selection`, `LibraryLock`) and refusal reporting (`LibraryCause`,
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
 //! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
-//! layer-4 `package` reader (`checked_package::checked_v2`) reads
+//! layer-4 `package` reader (`qsl-package`'s `checked_v2`) reads
 //! `quire.checked-package/v2` bytes and calls `verify_binding` here, handing
 //! it the condition-1 witness only that reader mints, to apply the ADR-011
 //! §4 verified binding and construct `VerifiedPackage`;
@@ -804,7 +804,7 @@ impl ImportView {
 
 /// Every name `identity_preimage` declares, in ascending order (FR-307: "a
 /// package's local declarations are exactly its exports", this module's own
-/// doc). The layer-4 `checked_package` I2 reader calls this to populate a freshly
+/// doc). The layer-4 `qsl-package` I2 reader calls this to populate a freshly
 /// wire-read [`LibraryPackage::exports`] before handing the candidate to
 /// `verify_package`: a package read straight from its own wire bytes
 /// carries no separate export selection, so its exports are exactly what its

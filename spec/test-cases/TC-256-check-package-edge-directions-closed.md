@@ -30,16 +30,15 @@ type, method, or field named `CheckedPackage`; `package`'s `CheckedPackage`
 is built by the S4 link step from a `CheckedGraph`, holds it as a field, and
 reaches check-owned state through it without re-declaring or copying any
 check-owned type; `check` reads `LibraryLock` only through its read-only
-accessors, never constructing or mutating one; and `value::expression`
-reaches `CheckedPackage` only through the single closed re-export
-`pub use crate::checked_package::CheckedPackage;`. Scope: FR-087-AC-9.
+accessors, never constructing or mutating one; and the root crate, where
+`value::expression` lives, re-exports no layer-crate item, `CheckedPackage`
+included. Scope: FR-087-AC-9.
 
-Until X-7, layer-4 `package`'s content — the canonical `CheckedPackage`,
-`EmittedPackage`, the v2 emitter and the I2 byte reader — lives in the
-top-level module `checked_package` (`src/checked_package.rs`,
-`src/checked_package/`), and the module named `package` holds only SEAM-1
-(ADR-011 §6.2, `package` row). In this test, "`package`" means layer-4
-`package`, whose source is both trees; the steps name both paths.
+Layer-4 `package` is the crate `qsl-package` (X-7, QSL-182): the canonical
+`CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader
+are in `qsl-package/src/`, and the root crate's module named `package` holds
+only SEAM-1 (ADR-011 §6.2, `package` row). In this test, "`package`" means
+layer-4 `package`; the steps name its path.
 
 The wrapping design is what this test guards: S4's output is made from S3's
 output and nothing else, and every checked declaration has one owner (ADR-013
@@ -48,16 +47,21 @@ depending on `check` is layer 4's permitted direction.
 
 ## Test Procedure
 
-1. Scan every shipped `use` line and every `crate::`-rooted inline path under
-   `qsl-semantics/src/check/` and confirm none resolves into `crate::package` or
-   `crate::checked_package`. This is FR-068-AC-6's layer rule; TC-175 runs
-   the same scan, and this step reconfirms it.
+1. Confirm `check` cannot import `package`. **Amended by QSL-182.** Layer-4
+   `package` is the crate `qsl-package`, which depends on `qsl-semantics`,
+   where `check` is. Cargo refuses the reverse edge as a dependency cycle, so
+   no `use` line or inline path under `qsl-semantics/src/check/` can resolve
+   into `qsl_package`. TC-390 confirms the crate edges from `cargo
+   metadata`: `qsl-semantics` names no `qsl-package` dependency of either
+   kind.
 2. Search `qsl-semantics/src/check/` for any type, method, or field named
    `CheckedPackage`; confirm none exists.
-3. Read `value::expression`'s re-export line for `CheckedPackage` and
-   confirm it is exactly `pub use crate::checked_package::CheckedPackage;`
-   — no glob, no additional name, and no import from any path other than
-   `crate::checked_package`.
+3. **Amended by QSL-182.** Scan every `pub use` under the root crate's
+   `src/` and confirm none is rooted at a layer crate: `value::expression`
+   imports `CheckedPackage` with a private `use qsl_package::CheckedPackage;`
+   and re-exports it nowhere (ADR-011 §7.2, §4 as amended). The scan is
+   `tests/it/layer_crate_reexports.rs`. (Before QSL-182 this step required
+   exactly `pub use crate::checked_package::CheckedPackage;`.)
 4. Confirm no code under `qsl-semantics/src/check/` constructs a `LibraryLock`, mutates
    one, or calls any method on it other than its read-only accessors.
 5. Read `package`'s `CheckedPackage` definition and confirm: it holds a
@@ -65,22 +69,23 @@ depending on `check` is layer 4's permitted direction.
    S4 dependency-closure data; its only constructor is the S4 link step,
    taking a `CheckedGraph`; every accessor that returns check-owned state
    delegates to that `CheckedGraph` field; and no type under
-   `src/checked_package/` or `src/package/` re-declares or copies a
+   `qsl-package/src/` or `src/package/` re-declares or copies a
    check-owned type (`Node`, `Signature`, and the rest).
-6. Adverse checks, run against fixture trees: a `check` module importing
-   `crate::checked_package::CheckedPackage` by `use` line, and the same edge
-   written as an inline path, each fail step 1 through the FR-068-AC-6 gate
-   (`xtask` import graph), not merely by a manual reading of the diff.
+6. Adverse checks: a `qsl-semantics` dependency on `qsl-package` (normal or
+   dev) fails TC-390's crate-edge check, and a planted `pub use` of a layer
+   crate fails step 3's scan fixture. **Amended by QSL-182.** A `check`
+   module importing `qsl_package::CheckedPackage` does not compile, so it
+   needs no fixture of its own.
 
 ## Expected Results
 
 - Step 1: zero `check` → `package` edges, at `use`-line and inline-path
   level.
 - Step 2: `check` names no `CheckedPackage`.
-- Step 3: the re-export is exactly the one named line.
+- Step 3: no root-crate `pub use` is rooted at a layer crate.
 - Step 4: `LibraryLock` is only read by `check`.
 - Step 5: `CheckedPackage` wraps a `CheckedGraph`, is built only from one,
   and delegates to it; a re-declared or copied check-owned type fails this
   step and names it.
-- Step 6: both adverse edges are caught by the automated gate; an edge that
+- Step 6: both adverse cases are caught by the automated gates; a case that
   passes silently fails this test.

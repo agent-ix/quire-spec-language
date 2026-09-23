@@ -4,16 +4,16 @@
 //! `library`, can build one except through
 //! [`SupportedV2Wire::attest_ir_admitted_v2`].
 //!
-//! That function has to be callable from `checked_package::checked_v2`, the
-//! layer-4 v2 reader, which is a separate crate once QSL-181 extracts
-//! `qsl-semantics` (and X-7 `qsl-package`). Rust has no visibility that
+//! That function has to be callable from `qsl-package`'s `checked_v2`, the
+//! layer-4 v2 reader, which is a separate crate (QSL-181 extracted
+//! `qsl-semantics`, X-7 `qsl-package`). Rust has no visibility that
 //! names one module of another crate, so the minter is `pub`, and two
 //! checks confine its callers within the QSL workspace instead of the
 //! compiler (a crate outside the workspace can call it; those checks do not
 //! scan such a crate): arch-lint rule T12-E
 //! (`tools/arch-lint/api_surface.rs`, run on this tree by
 //! `tc_arch_lint_api_surface_024` in `cargo test --workspace`) fails on any
-//! shipped reference outside `checked_package::checked_v2`, and
+//! shipped reference outside `qsl-package`'s `checked_v2`, and
 //! `tests/it/verified_binding_witness.rs` fails unless the only reference
 //! outside this module and `library`'s own tests is one call inside
 //! `read_checked_package_v2`'s `AdmittedV2` arm, including any reference
@@ -40,7 +40,7 @@ impl SupportedV2Wire {
     /// `AdmittedV2` arm.
     ///
     /// `pub` only for the QSL-181 crate boundary: arch-lint rule T12-E fails
-    /// on a shipped call from any module but `checked_package::checked_v2`
+    /// on a shipped call from any module but `qsl-package`'s `checked_v2`
     /// (see this module's doc).
     pub fn attest_ir_admitted_v2() -> Self {
         Self(())

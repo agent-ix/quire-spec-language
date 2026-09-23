@@ -64,12 +64,13 @@ stage boundary in this ADR already uses (§4).
 ### US-009-EX-3: `CheckedPackage::call` stays the one evaluation entry, not a second type
 
 - **Given** the split has landed.
-- **When** I call `value::expression::CheckedPackage::call` the way existing
-  callers already do.
-- **Then** it still resolves to one type, defined once in `check` and
-  reached through `value::expression`'s `pub use`, exactly as ADR-011 §4
-  already establishes for the analogous S4 case — not a second,
-  independently-defined `CheckedPackage` living in `value::expression`.
+- **When** I call `CheckedPackage::call` with `CheckedPackageEvaluation`
+  in scope.
+- **Then** it resolves to one type, `qsl_package::CheckedPackage`, defined
+  once in layer-4 `package` (the crate `qsl-package`) and named by callers
+  at that path, as ADR-011 §4 (amended by QSL-182) establishes — not a
+  second, independently-defined `CheckedPackage` living in
+  `value::expression`.
 
 ## Priority and Risk (Informative)
 

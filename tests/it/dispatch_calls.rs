@@ -18,6 +18,7 @@ use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     OperationClauses,
@@ -46,8 +47,8 @@ use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLim
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
 use quire_spec_language::value::{
-    decode_function_package_v2, CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation,
-    InputRefusal, QualifiedName,
+    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
+    QualifiedName,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -1083,7 +1084,7 @@ fn ab_bridge_package(
     receiver_type: EffectiveId,
     pa: Option<Expression>,
     pb: Option<Expression>,
-) -> quire_spec_language::value::CheckedPackage {
+) -> CheckedPackage {
     let graph = ab_bridge_declarations(receiver_type, pa, pb)
         .check(CheckingLimits::default())
         .unwrap();

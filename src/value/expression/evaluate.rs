@@ -1557,8 +1557,7 @@ mod tests {
     /// package and `F`'s checked identity, so a test can call
     /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
-    fn population_function_package(
-    ) -> (crate::checked_package::CheckedPackage, quire_exact::NodeKey) {
+    fn population_function_package() -> (qsl_package::CheckedPackage, quire_exact::NodeKey) {
         let domain_package = domain_package("bundle.qsl174-ac10-seam");
         let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
             NormalizeOutcome::Completed(view) => view,
@@ -1604,10 +1603,7 @@ mod tests {
         let identity = graph
             .function_identity("F")
             .expect("F is declared in this package");
-        (
-            crate::checked_package::CheckedPackage::link(graph),
-            identity,
-        )
+        (qsl_package::CheckedPackage::link(graph), identity)
     }
 
     /// TC-391 (FR-090-AC-10): a `Value::Population` argument whose id names

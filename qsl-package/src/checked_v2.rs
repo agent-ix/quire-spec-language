@@ -44,7 +44,7 @@
 //!
 //! [`V2ReadLimits`] holds only the two ceilings this reader itself checks
 //! before and during the call into IR: `artifact_bytes` and `depth`. It is
-//! not the native-v1 `PackageLimits` (`crate::package`, FR-019, SEAM-1
+//! not the native-v1 `PackageLimits` (the root crate's `package`, FR-019, SEAM-1
 //! until M-6): that type's other two fields, `string_bytes` and `entries`,
 //! exist only for the native encode/intake path and have no IR
 //! counterpart -- IR's own I04 reader does not meter decoded string bytes

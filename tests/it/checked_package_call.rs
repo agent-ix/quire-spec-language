@@ -20,6 +20,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations,
 };
@@ -28,7 +29,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
 use quire_spec_language::value::{
-    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
+    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:

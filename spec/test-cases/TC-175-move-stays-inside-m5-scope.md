@@ -40,7 +40,7 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `value::semantic_node`, `value::declaration`). There
 is no `value` K-copy module; `check` reaches every kernel item through
 `quire_exact`. Every `value` import names its submodule. The later-layer
-modules (`checked_package`, `package`, `value::expression`, `route`,
+modules (`qsl-package`, `package`, `value::expression`, `route`,
 `replay`, `lowering`) are in crates that depend on `qsl-semantics`, so Cargo
 refuses an import of any of them; this test checks the module order inside
 `qsl-semantics`, which Cargo does not see.

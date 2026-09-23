@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-019/021: immutable native checked artifacts and source-bound static
 //! identity (SEAM-1, ADR-011 §6.2, retired at M-6). The layer-4 canonical
-//! [`crate::checked_package::CheckedPackage`]/
-//! [`crate::checked_package::EmittedPackage`] typestate (ADR-013 T-1,
-//! FR-087, QSL-158 S-3a) lives in the sibling `checked_package` module
-//! until X-7 extracts it into `qsl-package` (Linear QSL-182): this file's own
-//! top-level `NativePackage` wraps the lane-private
-//! `checking::CheckedPackage<'a>` (ADR-013 §6), an unrelated type
-//! referenced here by its full path so it is never confused with
-//! `checked_package`'s own `CheckedPackage` -- `src/package/features.rs`
+//! [`qsl_package::CheckedPackage`]/[`qsl_package::EmittedPackage`]
+//! typestate (ADR-013 T-1, FR-087, QSL-158 S-3a) is the `qsl-package`
+//! crate's (ADR-011 §7.3 X-7, QSL-182): this file's own top-level
+//! `NativePackage` wraps the lane-private `checking::CheckedPackage<'a>`
+//! (ADR-013 §6), an unrelated type referenced here by its full path so it is
+//! never confused with `qsl-package`'s own `CheckedPackage` -- `src/package/features.rs`
 //! and `src/package/view.rs` keep their own pre-existing, unrelated
 //! `use crate::checking::CheckedPackage;` imports unchanged
 //! (FR-087-AC-10/TC-247).

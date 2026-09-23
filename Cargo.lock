@@ -1269,6 +1269,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-package"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-forms",
+ "qsl-foundation",
+ "qsl-semantics",
+ "quire-contract-model",
+ "quire-exact",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
@@ -1397,6 +1412,7 @@ dependencies = [
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
+ "qsl-package",
  "qsl-semantics",
  "qsl-source",
  "quire-contract-codegen",

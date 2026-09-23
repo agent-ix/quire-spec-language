@@ -11,7 +11,7 @@
 //! their redacted rendering (FR-069 through FR-073). It builds no backend
 //! invocation, no Kani harness and no replay execution: the executor entry
 //! (ADR-013 TK-01, `CheckedPackage::call`) stays in the root crate's own
-//! `value::expression`/`checked_package`, which "lands it first with the
+//! `value::expression`, over `qsl-package`'s `CheckedPackage`, which "lands it first with the
 //! skeleton spine" (ADR-011 §6.1) and widens it per family thereafter. CG
 //! reaches this crate's public API and nothing else in QSL (ADR-011 FB-05).
 //!

@@ -6,8 +6,8 @@
 //! The witness lives in `library::witness`, whose private field means the
 //! compiler already refuses a `SupportedV2Wire(())` built anywhere else,
 //! including elsewhere in `library`. Its constructor,
-//! `attest_ir_admitted_v2`, must be callable from
-//! `checked_package::checked_v2`, and Rust can restrict visibility only to
+//! `attest_ir_admitted_v2`, must be callable from `qsl-package`'s
+//! `checked_v2`, and Rust can restrict visibility only to
 //! an ancestor module (E0742), so no visibility confines that call to the
 //! reader. This `syn` scan does. Outside `library::witness` and `library`'s
 //! test-only `binding_tests.rs`, it requires exactly one reference to the
@@ -25,13 +25,13 @@
 //! The constructor and `verify_binding` are `pub` for the QSL-181 crate
 //! boundary. Two gates confine the constructor within the QSL workspace,
 //! and neither is complete alone: arch-lint rule T12-E fails on any
-//! reference outside `checked_package::checked_v2`, but not on a wrapper
+//! reference outside `qsl-package`'s `checked_v2`, but not on a wrapper
 //! inside `checked_v2` (a `#[macro_export]` macro, a trait method or a
 //! helper fn) that other modules call; this scan fails on exactly those,
 //! because it requires the one reference in `checked_v2` to be the direct
 //! call in `read_checked_package_v2`'s `AdmittedV2` arm. It scans every
 //! workspace crate's `src/`, so it follows `library` into `qsl-semantics`
-//! (X-6b) and `checked_package` into `qsl-package` (X-7).
+//! (X-6b) and the reader into `qsl-package` (X-7).
 use std::path::{Path, PathBuf};
 
 use ix_trace_rs::trace;
@@ -39,7 +39,7 @@ use syn::visit::Visit;
 
 const CONSTRUCTOR: &str = "attest_ir_admitted_v2";
 const WITNESS: &str = "SupportedV2Wire";
-const READER_FILE: &str = "src/checked_package/checked_v2.rs";
+const READER_FILE: &str = "qsl-package/src/checked_v2.rs";
 const READER_FN: &str = "read_checked_package_v2";
 const ADMITTED_ARM: &str = "AdmittedV2";
 /// The witness's own module, and `library`'s test-only binding tests, both
@@ -55,11 +55,11 @@ fn root() -> PathBuf {
 
 /// Every Rust source file of every workspace crate: the root crate's
 /// `src/` and each `<crate>/src/` beside it, so the scan follows `library`
-/// into `qsl-semantics` (QSL-181) and `checked_package` into `qsl-package`
+/// into `qsl-semantics` (QSL-181) and the reader into `qsl-package`
 /// (X-7). Each file is named relative to the workspace root, crate
 /// directory included (`qsl-semantics/src/library/witness.rs`), which is how
 /// [`EXEMPT`] and [`READER_FILE`] name it: a same-named module in another
-/// crate is not exempt. X-7 moves [`READER_FILE`] with `checked_package`.
+/// crate is not exempt.
 fn source_files() -> Vec<(String, PathBuf)> {
     let root = root();
     let mut crate_roots = vec![root.clone()];

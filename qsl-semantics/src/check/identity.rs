@@ -346,8 +346,9 @@ impl Frame {
 // PR #300 review finding 2: the checker's own name -> node id resolution
 // function already exists and is exercised in production --
 // `CheckedGraph::function`/`function_identity`/`callable` (`check/mod.rs`),
-// reached from outside `check` only through
-// `value::expression::CheckedPackage::call`'s `QualifiedName` lookup (the
+// reached from outside `check` only through `CheckedPackage::call`'s
+// (`qsl_package::CheckedPackage`, via `CheckedPackageEvaluation`)
+// `QualifiedName` lookup (the
 // one O-11/R-06 lookup this crate builds outside `replay`'s own E9
 // exception). TC-251 and TC-257 (`tests/it/name_resolution_confinement.rs`,
 // `tests/it/clause_kind_canonical.rs`) are the whole-crate scans that verify

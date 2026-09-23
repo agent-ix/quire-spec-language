@@ -40,12 +40,12 @@ pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
 // retired by QSL-181: ADR-011 §7.2 forbids a root re-export of an item that
-// moves to `qsl-semantics`). `CheckedPackage` (S4 in-process) is layer-4
-// `checked_package`'s own canonical type, re-exported by the line below so
-// that `value::expression::CheckedPackage::call` remains the S6a entry point
-// ADR-011 §7.3's M-5 row names -- the sole closed re-export FR-087-AC-9/
-// TC-256 requires, naming no other path and no glob.
-pub use crate::checked_package::CheckedPackage;
+// moves to `qsl-semantics`). `CheckedPackage` (S4 in-process) is layer 4's
+// own canonical type, imported from `qsl-package` and re-exported by none of
+// this crate (QSL-182 amends FR-087-AC-9 the same way): callers name it at
+// `qsl_package::CheckedPackage` and bring `CheckedPackageEvaluation` into
+// scope to call it.
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedExpression;
 
 /// A runtime input a call or evaluation refuses before any charge. Stays at
@@ -503,7 +503,7 @@ mod tests {
         let identity = graph
             .function_identity("id")
             .expect("id is declared in this package");
-        let package = crate::checked_package::CheckedPackage::link(graph);
+        let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::default();
 
         // Steps 2-3: one evaluation environment, carrying the arguments
@@ -604,7 +604,7 @@ mod tests {
     #[trace("FR-090-AC-4", "TC-385")]
     #[test]
     fn s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms() {
-        let empty = crate::checked_package::CheckedPackage::link(
+        let empty = qsl_package::CheckedPackage::link(
             PackageDeclarations::default()
                 .check(CheckingLimits::default())
                 .expect("an empty package checks cleanly"),
@@ -637,7 +637,7 @@ mod tests {
         let identity = graph
             .function_identity("id")
             .expect("id is declared in this package");
-        let package = crate::checked_package::CheckedPackage::link(graph);
+        let package = qsl_package::CheckedPackage::link(graph);
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = family::EvaluationEnv::new(
             &package,

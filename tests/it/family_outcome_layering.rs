@@ -136,12 +136,14 @@ fn the_check_core_names_no_family_cause_type() {
     );
 }
 
-/// One workspace package's normal (`[dependencies]`) and dev
-/// (`[dev-dependencies]`) dependency names.
+/// One workspace package's normal (`[dependencies]`), dev
+/// (`[dev-dependencies]`) and build (`[build-dependencies]`) dependency
+/// names.
 struct PackageDependencies {
     name: String,
     normal: Vec<String>,
     dev: Vec<String>,
+    build: Vec<String>,
     /// Each normal (and build) dependency with the features it enables.
     shipped_features: Vec<(String, Vec<String>)>,
     /// The package's own `default` feature list.
@@ -209,6 +211,7 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
                 name: package["name"].as_str().expect("a package name").to_owned(),
                 normal: names_of_kind(None),
                 dev: names_of_kind(Some("dev")),
+                build: names_of_kind(Some("build")),
                 shipped_features: dependencies
                     .iter()
                     .filter(|dependency| dependency["kind"].as_str() != Some("dev"))
@@ -236,15 +239,21 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 
 /// Step 4 of TC-390, step 3 of TC-386 and TC-398's crate edges: each crate
 /// below layer 3 depends only on the workspace crates below it, in its
-/// `[dependencies]` and its `[dev-dependencies]` alike. `qsl-semantics`
+/// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` alike
+/// (a build dependency on a higher layer or on this crate fails as a normal
+/// one does). `qsl-semantics`
 /// (layer 3, QSL-181) names exactly `qsl-forms`, `qsl-foundation` and
 /// `quire-exact` among the workspace crates, never `qsl-cst`, and only
 /// `model::intake` names its FCD dependencies. `quire-exact` names
 /// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
-/// §6.1; layer 2's cell names no external crate). Every other workspace
-/// crate, `qsl-source` and this crate included, is refused. Cargo already
+/// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4,
+/// QSL-182) names exactly `qsl-foundation`, `qsl-semantics`,
+/// `quire-contract-model`, `serde_json` and `thiserror` in `[dependencies]`;
+/// its `[dev-dependencies]` may also name `quire-exact` and the lower layer
+/// `qsl-forms`, so K is a test-only edge there. Every other workspace crate, `qsl-source` and
+/// this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
 /// dev-dependency one, so the dev table is checked here.
 #[trace(
@@ -253,7 +262,9 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
     "FR-090-AC-5",
     "TC-386",
     "FR-091-AC-11",
-    "TC-398"
+    "TC-398",
+    "FR-068-AC-3",
+    "TC-172"
 )]
 #[test]
 fn no_crate_below_layer_three_depends_on_the_check_core() {
@@ -268,23 +279,31 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         "qsl-cst",
         "qsl-forms",
         "qsl-semantics",
+        "qsl-package",
     ] {
         assert!(
             workspace_crates.contains(&required),
             "cargo metadata lists no {required}: {workspace_crates:?}"
         );
     }
-    for (crate_name, allowed) in [
-        ("quire-exact", &[][..]),
-        ("qsl-foundation", &["quire-exact"][..]),
-        ("qsl-cst", &["qsl-foundation", "quire-exact"][..]),
+    for (crate_name, allowed, dev_only) in [
+        ("quire-exact", &[][..], &[][..]),
+        ("qsl-foundation", &["quire-exact"][..], &[][..]),
+        ("qsl-cst", &["qsl-foundation", "quire-exact"][..], &[][..]),
         (
             "qsl-forms",
             &["qsl-cst", "qsl-foundation", "quire-exact"][..],
+            &[][..],
         ),
         (
             "qsl-semantics",
             &["qsl-forms", "qsl-foundation", "quire-exact"][..],
+            &[][..],
+        ),
+        (
+            "qsl-package",
+            &["qsl-foundation", "qsl-semantics"][..],
+            &["qsl-forms", "quire-exact"][..],
         ),
     ] {
         let package = packages
@@ -325,11 +344,36 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
             fcd_is_named_by_model_intake_only(&package.normal);
         }
-        for (kind, dependencies) in [("normal", &package.normal), ("dev", &package.dev)] {
+        if crate_name == "qsl-package" {
+            // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for v2 wire
+            // constants and round-trip tests only". The whole shipped table
+            // is fixed: layer 3, F, the v2 wire contract and the two
+            // third-party crates the shipped code calls. K is used by its
+            // tests only.
+            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
+            normal.sort_unstable();
+            assert_eq!(
+                normal,
+                [
+                    "qsl-foundation",
+                    "qsl-semantics",
+                    "quire-contract-model",
+                    "serde_json",
+                    "thiserror"
+                ],
+                "{crate_name}'s [dependencies]"
+            );
+        }
+        for (kind, dependencies, extra) in [
+            ("normal", &package.normal, &[][..]),
+            ("dev", &package.dev, dev_only),
+            ("build", &package.build, &[][..]),
+        ] {
             for dependency in dependencies {
                 assert!(
                     !workspace_crates.contains(&dependency.as_str())
-                        || allowed.contains(&dependency.as_str()),
+                        || allowed.contains(&dependency.as_str())
+                        || extra.contains(&dependency.as_str()),
                     "{crate_name} has a {kind} dependency on workspace crate {dependency}"
                 );
             }

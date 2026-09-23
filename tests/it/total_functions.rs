@@ -4,6 +4,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
     CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
@@ -27,7 +28,7 @@ use quire_exact::{
     Rational, RoundingMode, UniverseId,
 };
 use quire_spec_language::value::{
-    CheckedPackage, CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
+    CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};

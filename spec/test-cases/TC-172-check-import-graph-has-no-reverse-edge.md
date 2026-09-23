@@ -32,6 +32,17 @@ or merging the two. It also verified FR-068-AC-10's other direction, `value::exp
 
 ## Test Procedure
 
+**Steps 1-5 RETIRED by QSL-182 (X-7).** `value::expression` and `checking`
+are modules of the root crate `quire-spec-language`, and the root crate
+depends on `qsl-semantics`, where `check` is. Cargo refuses a dependency
+from `qsl-semantics` back to the root crate as a cycle, and TC-390 refuses
+one in `qsl-semantics`' `[dev-dependencies]`, where Cargo would accept it. So
+no file under `qsl-semantics/src/check/` can import either module, and the
+`xtask` scan these steps described could never report an edge; it is
+deleted. Cargo's crate-edge refusal, `qsl-semantics` → `quire-spec-language`,
+is the gate for steps 1-5. Step 4's `src/checking/` baseline comparison was
+a one-time check on the M-5 diff. Step 6 stays live.
+
 1. Enumerate every `.rs` file under `qsl-semantics/src/check/`.
 2. Parse or grep each file's `use` statements (including glob imports) and
    resolve each import path against the crate's module tree.
@@ -54,25 +65,27 @@ or merging the two. It also verified FR-068-AC-10's other direction, `value::exp
    level, in case a macro or re-export obscures a textual scan.
 6. Read `value::expression`'s `use` lines naming `check`. **Amended by
    QSL-181 (FR-068-AC-10 retired):** `value::expression` imports
-   `CheckedExpression` with a plain `use crate::check::CheckedExpression;`
-   and re-exports no `check` item. `CheckedPackage`'s own re-export,
-   `pub use crate::checked_package::CheckedPackage;`, is FR-087-AC-9's and
-   TC-256's, not this step's. (Before QSL-181 this step read
+   `CheckedExpression` with a plain `use qsl_semantics::check::CheckedExpression;`
+   and re-exports no `check` item. **Amended by QSL-182:** the scan in
+   `tests/it/layer_crate_reexports.rs` refuses any root-crate `pub use` rooted
+   at a layer crate, which covers this step; `CheckedPackage`'s re-export is
+   gone too (FR-087-AC-9, TC-256). (Before QSL-181 this step read
    `pub use crate::check::{CheckedExpression};`; before FR-087 it read the
    two-name line `pub use crate::check::{CheckedPackage,
    CheckedExpression};`.)
 
 ## Expected Results
 
-- Step 3: zero flagged imports; any import resolving into `value::expression`
+- Step 3 (retired by QSL-182; Cargo refuses the edge): zero flagged imports; any import resolving into `value::expression`
   — whether or not it names one of the illustrative examples — fails this
   step, naming the file and the import.
-- Step 4: zero flagged imports into `checking`, and `src/checking/`'s file
+- Step 4 (retired by QSL-182): zero flagged imports into `checking`, and `src/checking/`'s file
   list and contents are unchanged from the pre-move baseline; any diff
   fails this step.
-- Step 5: the resolved import graph confirms the same absence a textual scan
+- Step 5 (retired by QSL-182): the resolved import graph confirms the same absence a textual scan
   found; a discrepancy (a hidden edge a textual scan misses) fails this
   step and names the actual resolved path.
-- Step 6 (amended by QSL-181): no `pub use` in `value::expression` names
-  `crate::check`, and `check::CheckedExpression` is the type's only public
-  path; a `pub use crate::check::...` line of any shape fails this step.
+- Step 6 (amended by QSL-181 and QSL-182): no `pub use` in the root crate
+  is rooted at `qsl_semantics`, and `qsl_semantics::check::CheckedExpression`
+  is the type's only public path; a `pub use qsl_semantics::...` line of any
+  shape fails this step.
