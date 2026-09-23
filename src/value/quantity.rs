@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::stop::{OutcomeStop, Stop};
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
 use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
 use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
@@ -15,6 +15,7 @@ use quire_exact::{
     UnitId,
 };
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// The unit of a quantity: an admitted declared unit or a compound unit
 /// produced by multiplication, division or power.
@@ -346,8 +347,8 @@ fn ill_typed(cause: IllTypedCause) -> IllTyped {
 }
 
 /// A kernel decimal-placement refusal as this evaluator's stop.
-fn refused(refusal: quire_exact::Refusal) -> Stop {
-    Stop::Refused(refusal.into())
+fn refused(refusal: Refusal) -> Stop {
+    Stop::Refused(refusal)
 }
 
 /// One `unit.identity-read` per operand, each sized over the operands read so

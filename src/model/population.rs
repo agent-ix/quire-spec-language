@@ -1827,7 +1827,7 @@ impl TypedReference {
 }
 
 /// The outcome of one [`lookup`] evaluation, mirroring AD-005's four-way
-/// shape (`crate::value::outcome::Outcome`) with this operation's own payload
+/// shape ([`quire_exact::Outcome`]) with this operation's own payload
 /// and refusal types. `Completed(Some(_))` is `r`'s realized reference,
 /// typed by the queried `T`, when present, for every mode alike;
 /// `Completed(None)` only ever occurs under [`AbsenceMode::Empty`] (the other

@@ -21,10 +21,10 @@ use super::composite::{
 };
 use super::equality::plan_pairs;
 use super::key::compare_keys;
-use super::outcome::{Outcome, Refusal, Stop};
+use super::stop::{OutcomeStop, Stop};
 use quire_exact::{
     length_amount, BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer,
-    LimitKind, Meter,
+    LimitKind, Meter, Outcome, Refusal,
 };
 
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own FR-144

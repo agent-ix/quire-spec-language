@@ -9,13 +9,13 @@ use quire_exact::{
 };
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
-    ObjectReference, ScalarLimits, UniverseId,
+    ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
     CompositeShape, Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome,
-    FieldDeclaration, FieldValue, ObjectTypeDeclaration, OptionValue, Outcome, Refusal,
-    TextPayload, TypeEnvironment, Value, ValueType,
+    FieldDeclaration, FieldValue, ObjectTypeDeclaration, OptionValue, TextPayload, TypeEnvironment,
+    Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 

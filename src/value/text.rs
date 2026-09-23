@@ -7,7 +7,7 @@
 //! `unicode-normalization` table version. No locale, case folding, collation
 //! or grapheme segmentation is applied.
 
-use super::outcome::{Outcome, Refusal, Stop};
+use super::stop::{OutcomeStop, Stop};
 // `UNICODE_TEXT_DEFINITION`/`UNICODE_VERSION` and the Unicode-17 table-version
 // assertion are `quire_exact`'s own canonical items (QSL-131 K1): this crate
 // no longer keeps a second copy of the constants its own normalizing
@@ -15,7 +15,7 @@ use super::outcome::{Outcome, Refusal, Stop};
 // already returns `quire_exact`'s constant.
 use quire_exact::{
     length_amount, Charge, ChargePoint, ComparisonOperator, IllTyped, IllTypedCause, InvalidUtf8,
-    LimitKind, Meter, TextProfile, TextProvenance, TextType,
+    LimitKind, Meter, Outcome, Refusal, TextProfile, TextProvenance, TextType,
 };
 
 /// A source text literal is not one complete JSON-compatible quoted string

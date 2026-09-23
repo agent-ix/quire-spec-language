@@ -478,7 +478,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::equality",
     "value::ieee",
     "value::numeric",
-    "value::outcome",
     "value::rational",
     "value::text",
 ];
@@ -1291,7 +1290,6 @@ mod tests {
             "equality",
             "ieee",
             "numeric",
-            "outcome",
             "rational",
             "text",
             "model_query",

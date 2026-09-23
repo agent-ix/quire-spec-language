@@ -17,24 +17,23 @@
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
 //! evaluation engine) stay local. `super::quantity`'s unit-graph decimal
 //! targets use the kernel's `DecimalType::placement` instead (QSL-131 V4). `DecimalType::new` returns `quire_exact`'s own canonical
-//! `IllTyped` directly. `evaluate_decimal` returns this crate's own
-//! `Outcome`/`Refusal` (`value::outcome`), a strict superset of
-//! `quire_exact`'s kernel `Outcome`/`Refusal` -- out of scope here, blocked
-//! on QSL-166 and QSL-174 -- and `DecimalResult`/`DecimalLoss` are
-//! constructed only through their own private struct literals inside that
-//! engine; `quire_exact` exposes neither type with a public constructor
-//! (only accessors), so even once the `Outcome`/`Refusal` coupling above is
-//! resolved, this crate's engine could not build a
-//! `quire_exact::DecimalResult`/`DecimalLoss` without one.
+//! `IllTyped` directly. `evaluate_decimal` returns `quire_exact`'s own
+//! `Outcome`/`Refusal` directly (QSL-131 O2 deleted the byte-identical
+//! `value::outcome` copy), and `DecimalResult`/`DecimalLoss` are constructed
+//! only through their own private struct literals inside that engine;
+//! `quire_exact` exposes neither type with a public constructor (only
+//! accessors), so this crate's engine still cannot be cut until one exists
+//! (QSL-131 O3).
 
 use std::cmp::Ordering;
 
-use super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::stop::{OutcomeStop, Stop};
 use quire_exact::DecimalRepresentation;
 use quire_exact::Rational;
 use quire_exact::{compare_shifted, sbits, sdigits, Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// `DecimalLoss { exact_numerator, exact_denominator, rounded_coefficient,
 /// rounded_scale, mode }`. The exact value is a canonical rational.

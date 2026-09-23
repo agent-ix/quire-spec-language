@@ -19,12 +19,11 @@
 //! directly.
 //!
 //! `value::decimal`'s own evaluation engine (`evaluate_decimal` and
-//! everything beneath it) stays local: it returns this crate's own
-//! `Outcome`/`Refusal` (`value::outcome`), a strict superset of
-//! `quire_exact`'s kernel `Outcome`/`Refusal`, and constructs
-//! `DecimalResult`/`DecimalLoss` only through their own private struct
-//! literals -- neither type has a public constructor in `quire_exact` -- so
-//! that engine cannot be cut until `value::outcome` unifies with
-//! `quire_exact::outcome` (QSL-166, QSL-174).
+//! everything beneath it) stays local: it returns `quire_exact`'s own
+//! `Outcome`/`Refusal` directly (QSL-131 O2 deleted the byte-identical
+//! `value::outcome` copy), and constructs `DecimalResult`/`DecimalLoss` only
+//! through their own private struct literals -- neither type has a public
+//! constructor in `quire_exact` -- so that engine cannot be cut until one
+//! exists (QSL-131 O3).
 
 pub use quire_exact::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator};

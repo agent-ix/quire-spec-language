@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
-    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Presence,
-    Quantity, Rational,
+    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Outcome,
+    Presence, Quantity, Rational, Refusal,
 };
 
 use super::composite::{
@@ -35,10 +35,10 @@ use super::composite::{
 use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::equality::planned_equality;
-use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
+use super::stop::{OutcomeStop, Stop};
 use super::text::compare_text;
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;

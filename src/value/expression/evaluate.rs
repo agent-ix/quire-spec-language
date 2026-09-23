@@ -22,14 +22,15 @@ use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean,
 };
-use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
 use super::super::reference::ObjectEnvironment;
+use super::super::stop::{OutcomeStop, Stop};
 use super::super::text::compare_text;
 use super::causes::{
-    identity_string, ModelQueryRefusal, ProtocolClauseSnapshot, StateModelUndefined,
+    identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
+    StateModelUndefined,
 };
 use super::FamilyOutcome;
 use crate::check::{
@@ -51,6 +52,7 @@ use quire_exact::{
 };
 use quire_exact::{Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{IeeeExactLoss, IeeeFlags, IeeeOperation};
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome
@@ -114,8 +116,8 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
 /// `Family` becomes `Ok(Evaluation { outcome: FamilyOutcome::
 /// FamilyEvaluated(_), .. })` located at the current task like a `Stop`
 /// (FR-090-OQ-3), and `Stop` goes through [`Self::stopped`]/
-/// [`Outcome::from_stop`]. No `Stop` variant carries a fault, so no
-/// `Stop`-returning helper can pass one to `Outcome::from_stop`.
+/// [`OutcomeStop::from_stop`]. No `Stop` variant carries a fault, so no
+/// `Stop`-returning helper can pass one to [`OutcomeStop::from_stop`].
 enum Halt {
     /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
     Stop(Stop),
@@ -407,7 +409,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
         match (self.values.pop(), self.values.is_empty()) {
             (Some(value), true) => Ok(Evaluation {
-                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value).into_kernel()),
+                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value)),
                 location: None,
                 losses: self.losses,
             }),
@@ -417,7 +419,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn stopped(stop: Stop, location: &Location) -> Evaluation {
         Evaluation {
-            outcome: FamilyOutcome::Evaluated(Outcome::from_stop(Err(stop)).into_kernel()),
+            outcome: FamilyOutcome::Evaluated(Outcome::from_stop(Err(stop))),
             location: Some(location.clone()),
             losses: Vec::new(),
         }

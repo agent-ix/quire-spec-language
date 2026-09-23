@@ -25,12 +25,12 @@
 //! `IeeeResult`, `IeeeExact`, `IeeeExactTarget`, the five entry points
 //! (`evaluate_ieee`/`compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/
 //! `exact_to_ieee`) and the private rounding/arithmetic engine beneath them.
-//! Each returns this crate's own `Outcome`/`Refusal`/`Undefined`
-//! (`value::outcome`), or is parameterized over this crate's own
-//! `DecimalType`, which carries declaration-bound state `quire_exact`
-//! excludes. `RationalDomain`, `RoundingMode`, `Decimal`, `Rational`,
-//! `IllTyped` and `IllTypedCause` are `quire_exact`'s own canonical items,
-//! imported directly.
+//! Each returns `quire_exact`'s own `Outcome`/`Refusal`/`Undefined` directly
+//! (QSL-131 O2 deleted the byte-identical `value::outcome` copy), or is
+//! parameterized over this crate's own `DecimalType`, which carries
+//! declaration-bound state `quire_exact` excludes. `RationalDomain`,
+//! `RoundingMode`, `Decimal`, `Rational`, `IllTyped` and `IllTypedCause` are
+//! `quire_exact`'s own canonical items, imported directly.
 //!
 //! Package admission of the IEEE profile is `value::definition`'s
 //! `DefinitionLock::admit_ieee_profile`. `check` refuses an IEEE operation in
@@ -43,7 +43,7 @@ use num_integer::Integer as _;
 use num_traits::{One, Zero};
 
 use super::decimal::DecimalType;
-use super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::stop::{OutcomeStop, Stop};
 use quire_exact::Rational;
 pub use quire_exact::{
     ieee_intrinsic_identities, IeeeComparison, IeeeFlag, IeeeOperationKind, IeeeValue,
@@ -55,6 +55,7 @@ use quire_exact::{
 };
 use quire_exact::{Decimal, RoundingMode};
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// An exact integer, rational or decimal scalar where IEEE values meet exact
 /// values: an explicit conversion source, or an operand type checking refuses.

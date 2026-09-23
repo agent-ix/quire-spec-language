@@ -24,9 +24,11 @@ const CAUSE_TYPES: [&str; 4] = [
 
 /// The modules ordered below the `check` core (ADR-011 §6.1, §6.2): layer 1
 /// `qsl-cst`, layer 2 `qsl-forms`, and the layer-3 `semantic_value`, `model` and
-/// `library` modules, plus the layer-K and layer-3 `value` modules that sit
-/// beside the evaluator (`value::outcome`, `value::model_query`).
-const BELOW_CORE: [&str; 12] = [
+/// `library` modules, plus the layer-3 `value` module that sits beside the
+/// evaluator (`value::model_query`). `value::outcome` left this list under
+/// QSL-131 O2, which deleted the module (it was layer K, a byte-identical
+/// `quire_exact` copy).
+const BELOW_CORE: [&str; 11] = [
     "qsl-cst/src",
     "qsl-forms/src",
     "src/model",
@@ -38,7 +40,6 @@ const BELOW_CORE: [&str; 12] = [
     "src/value/key.rs",
     "src/value/reference.rs",
     "src/value/model_query.rs",
-    "src/value/outcome.rs",
 ];
 
 fn workspace_root() -> PathBuf {

@@ -21,9 +21,9 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_exact::{
-    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, ObjectId, ObjectReference,
-    Presence, Quantity, Rational, RoundingMode, TextProfile, TextType, UnitDomain, UnitId,
-    UniverseId,
+    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, ObjectId, ObjectReference, Outcome,
+    Presence, Quantity, Rational, Refusal, RoundingMode, TextProfile, TextType, Undefined,
+    UnitDomain, UnitId, UniverseId,
 };
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
@@ -35,9 +35,8 @@ use quire_spec_language::value::{
     EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome,
     FieldDeclaration, FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue,
     LocatedLoss, NodeOwner, ObjectEnvironment, ObjectTypeDeclaration, Obligation, OptionValue,
-    Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain, Refusal, Text,
-    TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss,
-    ValueType,
+    OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain, Text, TextPayload,
+    TypeEnvironment, UnitGraph, UnitPreimage, UnitTable, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
