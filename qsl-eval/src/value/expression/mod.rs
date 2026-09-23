@@ -599,7 +599,7 @@ mod tests {
     /// package that declares no item of that family, returns
     /// `Err(InternalFault)` naming S6a for the unresolved identity, not a
     /// panic. A declared identity passed through the same seam returns
-    /// `FamilyOutcome::Evaluated`; `tests/it/model_reference_queries.rs`'s
+    /// `FamilyOutcome::Evaluated`; `qsl-eval/tests/it/model_reference_queries.rs`'s
     /// TC-385 test takes the `FamilyEvaluated` arm through the seam.
     #[trace("FR-090-AC-4", "TC-385")]
     #[test]

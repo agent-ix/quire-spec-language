@@ -76,7 +76,7 @@ code. Scope: FR-068-AC-5.
   and the differing field.
 
 **Amendment (implementation, PR #282 review F1): steps 2-3, as landed.**
-`src/value/expression/mod.rs`'s own `#[cfg(test)] mod tests` (not an
+`qsl-eval/src/value/expression/mod.rs`'s own `#[cfg(test)] mod tests` (not an
 external `tests/` file: `check`'s `slots` accessor is `pub(crate)`, and
 `check` itself must import nothing from `value::expression` even in test
 code per FR-068-AC-3/TC-172, so `value::expression` — the legitimate

@@ -35,8 +35,9 @@ which turns `FamilyResult` back into a shared cause list.
 
 ## Test Procedure
 
-1. Scan every `.rs` file under `src/`, `quire-exact/src/` and
-   `qsl-foundation/src/` for an item definition named `FamilyOutcome`,
+1. Scan every `.rs` file under `src/`, `quire-exact/src/`,
+   `qsl-foundation/src/`, `qsl-cst/src/`, `qsl-forms/src/`,
+   `qsl-semantics/src/`, `qsl-package/src/` and `qsl-eval/src/` for an item definition named `FamilyOutcome`,
    `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
@@ -53,7 +54,8 @@ which turns `FamilyResult` back into a shared cause list.
    `ModelRefusal` or the `StateModel` undefined cause type.
 4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
    `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`, and both dependency
-   tables of `qsl-package/Cargo.toml` (layer 4, QSL-182).
+   tables of `qsl-package/Cargo.toml` (layer 4, QSL-182) and
+   `qsl-eval/Cargo.toml` (layer 5, QSL-183).
 
 Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 
@@ -71,7 +73,10 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
   no workspace crate outside `qsl-semantics`, `qsl-foundation` and
   `quire-exact`, and `quire-contract-model` as their one ecosystem crate
   outside the workspace; its `[dev-dependencies]` may also name
-  `qsl-forms`.
+  `qsl-forms`. `qsl-eval`'s `[dependencies]` are exactly `qsl-attrs`,
+  `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-exact`, `serde`,
+  `serde_json` and `thiserror`; its `[dev-dependencies]` may also name
+  `qsl-forms`, and no other workspace crate.
 
 ## Status
 

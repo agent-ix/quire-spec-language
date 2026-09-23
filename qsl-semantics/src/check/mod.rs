@@ -7,7 +7,7 @@
 //! public-accessor mechanism). The evaluation half -- `evaluate.rs`,
 //! `CheckedPackage::call`, `CheckedPackage::evaluate` and the
 //! argument-admission logic -- stays at layer 5 in
-//! `quire_spec_language::value::expression` (a private module, not resolvable as an
+//! `qsl_eval::value::expression` (a private module, not resolvable as an
 //! intra-doc link) (S6a), reaching this module's state only
 //! through the accessor methods below, never through a private field: the
 //! two modules no longer share private state (US-009).
@@ -710,7 +710,7 @@ impl PackageDeclarations {
         // unbounded-by-default shape. The mechanism is real (`CheckContext::
         // check_input_bytes`/`check_node_count`, and a `cx.meter` charge for
         // `work_budget`) and is exercised directly against tight fixtures in
-        // `src/value/expression/family.rs`'s `family_contract_tests`.
+        // `qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`.
         let contract_limits = crate::family::StageLimits {
             nesting_depth: limits.depth(),
             input_bytes: limits.input_bytes(),
@@ -1244,7 +1244,7 @@ mod tests {
     /// `composite_declaration_becomes_a_real_checked_type_node` above --
     /// round 1's own review named this as a real gap ("no real-`check()`
     /// test for the enum/Sum path"). A real `EnumDeclaration`, admitted the
-    /// same way `tests/it/collection_algebra.rs`'s own fixtures build one,
+    /// same way `qsl-eval/tests/it/collection_algebra.rs`'s own fixtures build one,
     /// becomes a real `CheckedTypeNode::Sum` whose own node id is exactly
     /// `EnumDeclaration::key()` -- the same identity `Typer::type_named`
     /// and every `EnumValue::declaration()` already resolve a reference

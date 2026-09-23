@@ -20,7 +20,7 @@ category `undefined`. The same query with `absent refused` receives
 category `refusal` (QSpec TC-198 L03). The kernel `Undefined` has no
 `AbsentKey` variant (ADR-013 O-13, O-16). Scope: FR-090-AC-12.
 
-The fixture is `tests/it/model_reference_queries.rs`'s
+The fixture is `qsl-eval/tests/it/model_reference_queries.rs`'s
 `l14_lookup_expression_undefined_mode` scenario (QSpec TC-198 L03): a
 population argument `p: Population<A>[3]` and a reference `c9` of type `A`
 that is not a member. That test asserts `Outcome::Undefined(
@@ -65,6 +65,6 @@ Tag the test `#[trace("FR-090-AC-12", "TC-408")]`.
 ## Status
 
 `✅ Passed locally`. Steps 1 to 3: `l14_lookup_expression_undefined_mode`, in
-`tests/it/model_reference_queries.rs`, which also asserts `e.location` at
+`qsl-eval/tests/it/model_reference_queries.rs`, which also asserts `e.location` at
 the `lookup` node. Step 4: `l16_lookup_expression_refused_mode`. Step 5:
 `quire-exact/src/outcome.rs`'s `Undefined` has no `AbsentKey` variant.

@@ -31,9 +31,9 @@ on every build of the full gate, not only by inspection of the source.
   `RUSTFLAGS`, not a Cargo feature (see this section's own correction note
   below), enabled only by the probe builds.
 - The `seam_probe_downstream` build-configuration flag: a second `--cfg`
-  name, set only by the probe builds of the root crate and `qsl-route`, that gives each seam
-  `match` in `qsl-semantics` its probe arm so that crate compiles in that
-  build.
+  name, set only by the probe builds of the root crate, `qsl-route` and
+  `qsl-eval`, that gives each seam `match` in `qsl-semantics` its probe arm
+  so that crate compiles in those builds.
 - A checked-in list of the seam functions the probe builds' compiler errors
   are expected to name.
 
@@ -53,7 +53,7 @@ compile check. Every occurrence of "`seam-probe` cargo feature" /
 
 ## Outputs
 
-- Three probe builds, each failing to compile, whose rustc `E0004`
+- Four probe builds, each failing to compile, whose rustc `E0004`
   (non-exhaustive match) locations together are exactly the checked-in set.
 - A non-zero `xtask seam-probe` exit and a diagnostic naming any location
   that appeared and is not in the checked-in list, or any checked-in location
@@ -78,7 +78,7 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
 
 ### `xtask seam-probe`
 
-`xtask seam-probe` SHALL run three probe builds and collect every rustc
+`xtask seam-probe` SHALL run four probe builds and collect every rustc
 `E0004` diagnostic location each reports:
 
 1. `qsl-semantics` with `RUSTFLAGS=--cfg seam_probe`;
@@ -86,14 +86,18 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
    --cfg seam_probe_downstream`;
 3. `qsl-route` with `RUSTFLAGS=--cfg seam_probe --cfg
    seam_probe_downstream`. The root crate names `qsl-route` only as a dev
-   dependency, so building the root crate's library never compiles it.
+   dependency, so building the root crate's library never compiles it;
+4. `qsl-eval` (layer 5, QSL-183) with `RUSTFLAGS=--cfg seam_probe --cfg
+   seam_probe_downstream`. The root crate does not depend on `qsl-eval`, so
+   building the root crate's library never compiles it either.
 
 A crate that fails to compile stops every crate that depends on it, so one
-build cannot reach both `qsl-semantics`' seams and the root crate's seams
-that match over `qsl-semantics`' probe variants. `seam_probe_downstream`
-exists only so the second and third builds compile `qsl-semantics`: under
-it, each seam `match` in `qsl-semantics` has an arm for its probe variant,
-and it gates nothing else. Every build SHALL fail. `xtask seam-probe` SHALL compare
+build cannot reach both `qsl-semantics`' seams and the seams of the crates
+above it that match over `qsl-semantics`' probe variants.
+`seam_probe_downstream` exists only so the second, third and fourth builds
+compile `qsl-semantics`: under it, each seam `match` in `qsl-semantics` has
+an arm for its probe variant, and it gates nothing else. Every build SHALL
+fail. `xtask seam-probe` SHALL compare
 the union of their location sets against a checked-in list of seam
 functions and SHALL fail when the two sets differ in either direction: a
 location present in a build but absent from the list, or a location in the
@@ -103,7 +107,7 @@ list that no build reports.
 
 ### Which seams the probe covers
 
-The three probe builds together report every S1 to S4 seam in the QSL
+The four probe builds together report every S1 to S4 seam in the QSL
 workspace crates (ADR-012 §1). The
 checked-in seam-function list SHALL include, at minimum, one entry for each
 of:
@@ -174,9 +178,9 @@ comment.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-063-AC-1 | Building `qsl-semantics` with `RUSTFLAGS=--cfg seam_probe`, and then the root crate and `qsl-route` each with `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`, each fails to compile with rustc error code `E0004` specifically, and the three builds together report every seam function in the checked-in list and no other location; `seam_probe_downstream` gates only the probe arms that let the second and third builds compile `qsl-semantics`; a build that fails for any other reason (a typo, an unrelated compile error, a misconfigured build) does not satisfy this criterion merely by failing -- the error code and the exact sites must match. Removing one seam function's exhaustive-match arm from the checked-in list without removing the corresponding compiler error causes `xtask seam-probe` to fail with a diagnostic naming that location as unexpected-but-present. | Test (TC-161) |
+| FR-063-AC-1 | Building `qsl-semantics` with `RUSTFLAGS=--cfg seam_probe`, and then the root crate, `qsl-route` and `qsl-eval` each with `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`, each fails to compile with rustc error code `E0004` specifically, and the four builds together report every seam function in the checked-in list and no other location; `seam_probe_downstream` gates only the probe arms that let the second, third and fourth builds compile `qsl-semantics`; a build that fails for any other reason (a typo, an unrelated compile error, a misconfigured build) does not satisfy this criterion merely by failing -- the error code and the exact sites must match. Removing one seam function's exhaustive-match arm from the checked-in list without removing the corresponding compiler error causes `xtask seam-probe` to fail with a diagnostic naming that location as unexpected-but-present. | Test (TC-161) |
 | FR-063-AC-2 | Adding a match arm for the probe variant at one seam function, without adding it at the others, leaves `xtask seam-probe` reporting that seam's location as no longer present while every other checked-in location still appears; `xtask seam-probe` fails, naming the missing location. | Test (TC-161) |
-| FR-063-AC-3 | Building the root crate and `qsl-route` with no `RUSTFLAGS=--cfg seam_probe` set (the two normal builds) compiles cleanly, with `xtask seam-probe` confirming both that each build succeeds and that it reports zero `E0004` locations -- a probe variant reachable from a non-probe code path would surface as an `E0004` in this same build, not merely as an absent Cargo feature. A test inspects the repository for anything that could set `seam_probe` outside `xtask seam-probe`'s own build invocation -- a `[features]` table entry, `build.rs`, `.cargo/config.toml`, or a `RUSTFLAGS`/`rustflags` setting in any `Makefile` target or CI workflow -- and asserts none exists; this is a grep-shaped check over those specific files, not a proof that no code path anywhere could set the cfg (a `build.rs` added later, for instance, would need this check re-run, not exempt it from the pattern it greps for). | Test (TC-161) |
+| FR-063-AC-3 | Building the root crate, `qsl-route` and `qsl-eval` with no `RUSTFLAGS=--cfg seam_probe` set (the three normal builds) compiles cleanly, with `xtask seam-probe` confirming both that each build succeeds and that it reports zero `E0004` locations -- a probe variant reachable from a non-probe code path would surface as an `E0004` in this same build, not merely as an absent Cargo feature. A test inspects the repository for anything that could set `seam_probe` outside `xtask seam-probe`'s own build invocation -- a `[features]` table entry, `build.rs`, `.cargo/config.toml`, or a `RUSTFLAGS`/`rustflags` setting in any `Makefile` target or CI workflow -- and asserts none exists; this is a grep-shaped check over those specific files, not a proof that no code path anywhere could set the cfg (a `build.rs` added later, for instance, would need this check re-run, not exempt it from the pattern it greps for). | Test (TC-161) |
 | FR-063-AC-4 | `xtask seam-probe` runs to completion and exits non-zero when the checked-in list and the actual `E0004` location set differ in either direction (extra or missing), and exits zero only when the two sets are equal; a test with a deliberately wrong checked-in list (one entry removed) demonstrates the non-zero exit with a concrete example, not only an assertion that the tool "checks" the list. | Test (TC-161) |
 | FR-063-AC-5 | The full gate invokes `xtask seam-probe`, and a test that stubs the gate's target list shows the gate fails when `xtask seam-probe` exits non-zero. | Test (TC-161) |
 | FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the S6a seam's `match` over the S6a family kind (`evaluate_declaration`); the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that still has an `E0004` at that category's location (the source is unchanged), causes `xtask seam-probe` to fail, naming that category's location as present in the build but absent from the list (unexpected-but-present). | Test (TC-161) |

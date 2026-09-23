@@ -1216,7 +1216,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 /// clause expression's own root (`Origin::Expression`, path `[]`).
 /// `DispatchGuard` carries the dispatch node's own location, set at push
 /// time from the `NodeKind::Dispatch` node the D06 tests above dispatch
-/// through (`src/value/expression/evaluate.rs`).
+/// through (`qsl-eval/src/value/expression/evaluate.rs`).
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {

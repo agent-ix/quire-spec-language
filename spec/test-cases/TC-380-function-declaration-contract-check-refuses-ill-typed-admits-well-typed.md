@@ -35,5 +35,5 @@ admitted with its minted identity. Scope: FR-065-AC-7.
 Backed: `value_function_family_check_refuses_an_ill_typed_body` (step 1,
 `qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `value_function_family_checks_through_the_contract` (step 2,
-`src/value/expression/family.rs`, `family_contract_tests`), both tagged
+`qsl-eval/src/value/expression/family.rs`, `family_contract_tests`), both tagged
 `#[trace("TC-380", "FR-065-AC-7")]`.

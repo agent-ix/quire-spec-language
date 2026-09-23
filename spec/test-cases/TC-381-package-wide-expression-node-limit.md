@@ -34,4 +34,4 @@ together when their combined node count exceeds it. Scope: FR-062-AC-11.
 ## Status
 
 Backed: `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
-(`tests/it/total_functions.rs`), tagged `#[trace("TC-381", "FR-062-AC-11")]`.
+(`qsl-eval/tests/it/total_functions.rs`), tagged `#[trace("TC-381", "FR-062-AC-11")]`.

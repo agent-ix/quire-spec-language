@@ -20,7 +20,7 @@ The fixture uses an IEEE-to-rational conversion because the checker's
 definedness pass puts no obligation on it: `qsl-semantics/src/check/facts.rs` raises
 obligations only for `Nonzero`, `Presence`, integer `Range`, `RationalRange`
 and `NonemptyReduction`. The same conversion already runs through a checked
-package in `tests/it/total_functions.rs`
+package in `qsl-eval/tests/it/total_functions.rs`
 (`p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits`),
 giving `Undefined(IeeeNotFinite)` for NaN, `Refused(IeeeRationalOutOfDomain)`
 for 20.0 and `Completed(1/2)` for 0.5. A zero divisor or an out-of-domain
@@ -65,5 +65,5 @@ it holds with `assert_eq!`.
 ## Status
 
 `✅ Passed locally`. Backed: `s6a_returns_kernel_outcomes_unchanged_in_evaluated`,
-in `tests/it/total_functions.rs`, through `CheckedPackage::call`. It also
+in `qsl-eval/tests/it/total_functions.rs`, through `CheckedPackage::call`. It also
 calls a rounding decimal division and asserts the one loss `call` returns.

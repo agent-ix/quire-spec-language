@@ -57,6 +57,6 @@ Tag the test `#[trace("FR-090-AC-8", "TC-389")]`.
 ## Status
 
 `✅ Passed locally`. Steps 1 to 3: `model_query_refusal_reaches_the_caller_with_its_own_code`,
-in `tests/it/model_reference_queries.rs`. Step 4:
+in `qsl-eval/tests/it/model_reference_queries.rs`. Step 4:
 `model_query_refusal_carries_no_native_code`, in
-`src/value/expression/causes.rs`.
+`qsl-eval/src/value/expression/causes.rs`.

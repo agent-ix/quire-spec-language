@@ -419,7 +419,7 @@ resolution step) landed: `model::population::mint_population_id` mints a
 `PopulationId` -> `PopulationBinding` correspondence
 (`with_population`/`resolve_population`, `qsl-semantics/src/model/object_environment.rs`) the
 evaluator resolves through (`Machine::resolve_population`,
-`src/value/expression/evaluate.rs`). TC-291, TC-293, TC-294, TC-295 and
+`qsl-eval/src/value/expression/evaluate.rs`). TC-291, TC-293, TC-294, TC-295 and
 TC-296 are `✅ Passed locally`. TC-296 backs FR-089-AC-1's admission-role
 discriminator half specifically: a `Direct` (standalone `admit_binding`)
 admission and an `admit_invocation`-attached `Post` binding over the same
@@ -430,7 +430,7 @@ computed entirely by QSL `model`, not the kernel.
 
 FR-089-AC-4 (TC-294) and FR-089-AC-5 (TC-295) are backed at the argument-
 admission boundary (`CheckedPackage::call`/`evaluate`'s own `validate`,
-`src/value/expression/mod.rs`), not only inside the evaluator's own
+`qsl-eval/src/value/expression/mod.rs`), not only inside the evaluator's own
 `AllInstances`/`Lookup` consumption sites: an unresolved identity or a
 mismatched declared maximum refuses whether or not the checked body actually
 consumes the parameter (PR #326 review finding F1), for both `allInstances`

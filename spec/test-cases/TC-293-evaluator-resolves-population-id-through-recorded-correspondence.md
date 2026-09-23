@@ -19,10 +19,10 @@ FR-089-AC-3.
 Implemented (QSL-131 Slice B): the evaluator matches
 `Value::Population(population_id)` and resolves it through
 `ObjectEnvironment::resolve_population`'s recorded correspondence
-(`Machine::resolve_population`, `src/value/expression/evaluate.rs`'s
+(`Machine::resolve_population`, `qsl-eval/src/value/expression/evaluate.rs`'s
 `AllInstances`/`Lookup` sites). Backed by
 `tc_293_evaluator_resolves_population_id_through_recorded_correspondence`
-(`tests/it/model_reference_queries.rs`).
+(`qsl-eval/tests/it/model_reference_queries.rs`).
 
 Catches an implementation that resolves by re-deriving a binding from the
 identity's own bytes (defeating the point of an opaque digest — a real

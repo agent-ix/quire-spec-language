@@ -326,8 +326,8 @@ impl Frame {
 // O-11: qualified names
 // ---------------------------------------------------------------------
 //
-// ADR-013 O-11 already has one canonical implementation in this crate:
-// `quire_spec_language::value::expression::family::QualifiedName` (layer 5, ADR-011),
+// ADR-013 O-11 already has one canonical implementation in this workspace:
+// `qsl_eval::value::expression::family::QualifiedName` (layer 5, ADR-011),
 // which predates FR-088 (it is the layer-6 `replay`/`CheckedPackage::call`
 // function-selection key, FR-062/FR-065). This module does not define a
 // second `QualifiedName` type: FR-068-AC-3 forbids `check` (layer 3) from

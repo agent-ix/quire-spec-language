@@ -117,7 +117,7 @@
 //! decision logic is mirrored here rather than called into directly).
 //!
 //! Switching a `pre(..)` expression's evaluation anchor between pre and post
-//! (`quire_spec_language::value::expression::evaluate`'s `Anchor`/`Task::RestoreAnchor`) is
+//! (`qsl_eval::value::expression::evaluate`'s `Anchor`/`Task::RestoreAnchor`) is
 //! not itself a charge: `value-accounting.md`'s "Model and graph evaluation"
 //! paragraph charges only static resolution, conformance, closure and
 //! foreign checks, and binding admission; selecting which already-admitted

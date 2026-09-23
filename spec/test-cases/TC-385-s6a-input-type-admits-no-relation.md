@@ -49,12 +49,12 @@ Tag the test `#[trace("FR-090-AC-4", "TC-385")]`.
 
 `✅ Passed locally`. Steps 1 to 3:
 `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`, in
-`src/value/expression/mod.rs`. Both `FamilyOutcome` arms through the seam
+`qsl-eval/src/value/expression/mod.rs`. Both `FamilyOutcome` arms through the seam
 from `CheckedPackage::call`:
 `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`, in
-`tests/it/model_reference_queries.rs`. The seam-probe list names
+`qsl-eval/tests/it/model_reference_queries.rs`. The seam-probe list names
 `evaluate_declaration`, `S6aFamilyKind::family` and
 `ValueFunctionFamily::evaluate`, and `S6aFamilyKind` and `FamilyOutcome`
 each have a `#[cfg(seam_probe)]` variant. A compile-time check in
-`src/value/expression/s6a.rs` rejects an S6a family kind that maps to
+`qsl-eval/src/value/expression/s6a.rs` rejects an S6a family kind that maps to
 `FamilyKind::Relation` or shares a `FamilyKind` with another.
