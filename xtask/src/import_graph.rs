@@ -471,7 +471,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // only shrinks; a module leaves it in the change that deletes that
     // module's QSL copy).
     "value::collection",
-    "value::comparison",
     "value::composite",
     "value::decimal",
     "value::division",
@@ -1287,7 +1286,6 @@ mod tests {
             "reference",
             "containment",
             "collection",
-            "comparison",
             "composite",
             "decimal",
             "division",

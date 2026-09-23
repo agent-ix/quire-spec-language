@@ -10,12 +10,13 @@
 //! a wire node id becomes a `NodeKey` only by lookup in a QSL checked
 //! package, a lookup this module never performs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use crate::value::node::{is_qualified_name, NODE_KEY_DOMAIN};
+use crate::value::node::is_qualified_name;
 use qsl_foundation::digest::WireNodeId;
+use quire_exact::NODE_KEY_DOMAIN;
 
 /// The identity preimage version constant.
 pub(crate) const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";
@@ -132,17 +133,16 @@ pub enum NodeDefect {
     Declaration,
 }
 
-/// The validated wire node ids of one identity preimage, by the top-level
-/// `declaration.qualified_name` each node spells, spelled with `::`.
+/// The validated declarations of one identity preimage: each projection
+/// node that carries a top-level `declaration`, keyed by its wire node id,
+/// with the `declaration.qualified_name` it spells (joined with `::`) as
+/// data. It offers no lookup that takes a name: resolving a name to a node
+/// id is the importing package's own check stage (FR-087-AC-4; ADR-013
+/// R-06).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ProjectedDeclarations(BTreeMap<String, WireNodeId>);
+pub(crate) struct ProjectedDeclarations(BTreeMap<WireNodeId, String>);
 
 impl ProjectedDeclarations {
-    /// The wire node id declaring `name`.
-    pub(crate) fn node(&self, name: &str) -> Option<WireNodeId> {
-        self.0.get(name).copied()
-    }
-
     /// Every declared name, in ascending order: FR-307's "a package's local
     /// declarations are exactly its exports" (`library` module doc), read by
     /// the layer-4 `package` I2 reader (ADR-011 §4) before it populates a
@@ -151,29 +151,41 @@ impl ProjectedDeclarations {
         dead_code,
         reason = "no production caller yet: reachable only through `library::declared_exports`, itself uncalled until ADR-011 §4's round trip (QSL-6 slice S3) wires the I2 reader in"
     )]
-    pub(crate) fn declared_names(&self) -> impl Iterator<Item = &str> {
-        self.0.keys().map(String::as_str)
+    pub(crate) fn declared_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.0.values().map(String::as_str).collect();
+        names.sort_unstable();
+        names
     }
 
-    /// The declarations of `exports` only, or the first export no nominal
-    /// declaration spells.
-    pub(crate) fn select<'a>(&self, exports: &'a [String]) -> Result<Self, &'a str> {
+    /// The first of `exports`, in order, that no declaration spells. A
+    /// membership test over the declared names: it yields a name, never a
+    /// node id.
+    pub(crate) fn undeclared<'a>(&self, exports: &'a [String]) -> Option<&'a str> {
+        let declared: BTreeSet<&str> = self.0.values().map(String::as_str).collect();
         exports
             .iter()
-            .map(|name| {
-                self.node(name)
-                    .map(|key| (name.clone(), key))
-                    .ok_or(name.as_str())
-            })
-            .collect::<Result<_, _>>()
-            .map(Self)
+            .map(String::as_str)
+            .find(|export| !declared.contains(export))
     }
 
-    /// Consume `self` into its underlying name -> wire node id map, for
-    /// [`super::ImportView`]'s own exported-declaration data (FR-087-AC-4):
-    /// the verified binding's already-`select`ed exports, carried forward
-    /// without re-deriving them from the preimage a second time.
-    pub(crate) fn into_map(self) -> BTreeMap<String, WireNodeId> {
+    /// Keep only the declarations whose name is one of `exports`. A
+    /// membership filter over the entries: it takes names and yields no
+    /// node id.
+    pub(crate) fn retain_exported(&mut self, exports: &[String]) {
+        let exported: BTreeSet<&str> = exports.iter().map(String::as_str).collect();
+        self.0.retain(|_, name| exported.contains(name.as_str()));
+    }
+
+    /// Every declaration as a `(WireNodeId, name)` entry, in ascending
+    /// node-id order.
+    #[cfg(test)]
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (WireNodeId, &str)> + '_ {
+        self.0.iter().map(|(node, name)| (*node, name.as_str()))
+    }
+
+    /// Consume `self` into its node-id-keyed entries, for
+    /// [`super::ImportView`]'s own exported-declaration data (FR-087-AC-4).
+    pub(crate) fn into_entries(self) -> BTreeMap<WireNodeId, String> {
         self.0
     }
 }
@@ -417,11 +429,13 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         }
     }
 
-    // Pass 3 (step 5): ambiguous-name, in ascending node-id order.
-    let mut declarations = BTreeMap::new();
+    // Pass 3 (step 5): ambiguous-name, in ascending node-id order. This is
+    // the preimage's own well-formedness (one node per declared name), not
+    // a lookup: `seen` lives only for this pass.
+    let mut seen: BTreeMap<&str, WireNodeId> = BTreeMap::new();
     for shape in &shapes {
         if let Some(declared) = &shape.declared {
-            if let Some(earlier) = declarations.insert(declared.clone(), shape.key) {
+            if let Some(earlier) = seen.insert(declared, shape.key) {
                 return Err(PreimageDefect::AmbiguousDeclaration {
                     name: declared.clone(),
                     nodes: [earlier, shape.key],
@@ -429,6 +443,10 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
             }
         }
     }
+    let declarations = shapes
+        .into_iter()
+        .filter_map(|shape| shape.declared.map(|name| (shape.key, name)))
+        .collect();
     Ok(ProjectedDeclarations(declarations))
 }
 
@@ -499,45 +517,59 @@ mod tests {
     use super::*;
 
     /// FR-307: the wire node id `library::package_identity` derives for a
-    /// nominal declaration is the projection node's own `node_id` digest.
-    /// `tests/library_resolution.rs`'s l01/l09 vectors used to prove this
-    /// through the now-deleted `resolve_name`/`ExportIdentity` path
-    /// (FR-087 removed per-name lookup from `library`'s external surface);
-    /// this in-crate unit test restores the specific-node-id check using
-    /// the pub(crate) accessor that survives the removal.
+    /// nominal declaration is the projection node's own `node_id` digest,
+    /// carried as a `(WireNodeId, name)` entry.
     #[trace("TC-227", "FR-307-AC-1")]
     #[test]
     fn project_declarations_derives_the_declaring_nodes_own_wire_id() {
         let bytes = one_node_preimage(b"Example::Length", &["Example", "Length"]);
         let expected = WireNodeId::from_hex(&hex(b"Example::Length")).unwrap();
         let declarations = project_declarations(&bytes).unwrap();
-        assert_eq!(declarations.node("Example::Length"), Some(expected));
-        assert_eq!(declarations.node("Example::Width"), None);
+        assert_eq!(
+            declarations.entries().collect::<Vec<_>>(),
+            vec![(expected, "Example::Length")]
+        );
     }
 
     /// A migrated identity's nodes are never relabelled onto the
     /// predecessor's evidence (FR-307-AC-3): two preimages that both
-    /// declare the same qualified name, from different node content, derive
-    /// two different wire node ids for that name -- `tests/
-    /// library_resolution.rs`'s l07 makes this same claim at the
-    /// `resolve_libraries`/`LibraryLock` level; this unit test pins it at
-    /// the node-id-derivation level `l07` can no longer reach directly
-    /// after FR-087 removed `library`'s per-name lookup.
+    /// declare the same qualified name, from different node content, carry
+    /// that name at two different wire node ids.
     #[trace("TC-227", "FR-307-AC-3")]
     #[test]
     fn migrated_identity_derives_a_different_node_id_for_the_same_name() {
-        let old_bytes = one_node_preimage(b"L::R (old)", &["L", "R"]);
-        let new_bytes = one_node_preimage(b"L::R (new)", &["L", "R"]);
-        let old_id = project_declarations(&old_bytes)
-            .unwrap()
-            .node("L::R")
-            .unwrap();
-        let new_id = project_declarations(&new_bytes)
-            .unwrap()
-            .node("L::R")
-            .unwrap();
+        let entries = |seed: &[u8]| {
+            project_declarations(&one_node_preimage(seed, &["L", "R"]))
+                .unwrap()
+                .entries()
+                .map(|(node, name)| (node, name.to_owned()))
+                .collect::<Vec<_>>()
+        };
+        let old_id = WireNodeId::from_hex(&hex(b"L::R (old)")).unwrap();
+        let new_id = WireNodeId::from_hex(&hex(b"L::R (new)")).unwrap();
         assert_ne!(old_id, new_id);
-        assert_eq!(old_id, WireNodeId::from_hex(&hex(b"L::R (old)")).unwrap());
-        assert_eq!(new_id, WireNodeId::from_hex(&hex(b"L::R (new)")).unwrap());
+        assert_eq!(entries(b"L::R (old)"), vec![(old_id, "L::R".to_owned())]);
+        assert_eq!(entries(b"L::R (new)"), vec![(new_id, "L::R".to_owned())]);
+    }
+
+    /// `undeclared` answers membership only: the first export, in list
+    /// order (not sorted order), that no declaration spells. It returns a
+    /// name, never a node id.
+    #[trace("TC-227", "FR-307-AC-1")]
+    #[trace("TC-254", "FR-087-AC-4")]
+    #[test]
+    fn undeclared_names_the_first_export_no_declaration_spells() {
+        let declarations = project_declarations(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+        let exports = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(declarations.undeclared(&exports(&["L::R"])), None);
+        assert_eq!(
+            declarations.undeclared(&exports(&["L::R", "L::T", "L::S"])),
+            Some("L::T")
+        );
     }
 }

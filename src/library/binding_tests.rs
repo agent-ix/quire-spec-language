@@ -274,6 +274,35 @@ fn preimage_declaring(nodes: &[(&str, &str, &str)]) -> Vec<u8> {
     serde_json::to_vec(&preimage).unwrap()
 }
 
+/// FR-087-AC-4: the view carries only the declarations the package's
+/// `exports` list names. The preimage declares `Flag` and `go`; the package
+/// exports `Flag` alone, so the view holds `Flag` alone.
+#[trace("TC-254", "FR-087-AC-4")]
+#[test]
+fn import_view_carries_only_the_listed_exports() {
+    let bytes = preimage_declaring(&[
+        ("pkg::Flag", "Flag", "scalar_type"),
+        ("pkg::go", "go", "function"),
+    ]);
+    let package_id = PackageId::of_preimage(&bytes);
+    let package = LibraryPackage {
+        library: identity("pkg"),
+        version: "1".to_owned(),
+        package_id,
+        identity_preimage: bytes.into_boxed_slice(),
+        imports: Vec::new(),
+        exports: vec!["Flag".to_owned()],
+    };
+    let view = bind(package, &pin("1", package_id))
+        .expect("all three conditions hold")
+        .into_import_view();
+    let flag = PackageNodeKey::new(
+        package_id,
+        WireNodeId::from_hex(&hex(b"pkg::Flag")).unwrap(),
+    );
+    assert_eq!(view.exports().collect::<Vec<_>>(), vec![("Flag", flag)]);
+}
+
 /// FR-087-AC-4, TC-254 step 1's separate case: two exports of different
 /// node kinds, at different `WireNodeId`s, both reach the `ImportView`, each
 /// exported name mapped to its own node id.

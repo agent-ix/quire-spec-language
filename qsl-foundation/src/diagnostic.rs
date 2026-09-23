@@ -369,9 +369,9 @@ impl Diagnostic {
 
 /// Build a [`Diagnostic`] at a source region, locating `start..end` and
 /// cloning the source's identity and path. `pub`: nearly every stage module
-/// in the root crate (`parser`, `format`, `formal_source`, `quire_source`,
-/// `checking`, `native_model`, `linking`, `mapped`, `complete::*`,
-/// `runtime::*`, `lexer`) is a real cross-crate call site.
+/// in the root crate (`parser`, `format`, `formal_source`, `checking`,
+/// `native_model`, `linking`, `mapped`, `complete::*`, `runtime::*`, `lexer`),
+/// and the `qsl-source` crate, is a real cross-crate call site.
 pub fn error(
     source: &Source,
     code: Code,
@@ -688,6 +688,9 @@ impl InternalFault {
 /// `Incomplete` outcome, which carries no catalog code. The `unsupported_*`
 /// codes are refusals too: the catalog has no category column, and O-16's
 /// evaluation column rules `unsupported` out of an evaluation outcome.
+/// [`Code::is_incomplete`] and [`Code::is_unsupported`] are the native-v1
+/// exit-code ladder (FR-301), not the O-16 category, so they may differ
+/// from this table.
 const CATALOG_CATEGORIES: [(&str, Category); 38] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),

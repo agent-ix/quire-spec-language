@@ -40,4 +40,7 @@ Tag the test `#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Backed by `tests/it/native_boundaries.rs`:
+`format_takes_the_cst_and_depends_on_layer_1_and_f_only` (step 1),
+`format_formats_complete_v1_source_the_arena_parser_refuses` (steps 2 and 3)
+and `format_refuses_a_recovering_or_diagnosed_parse_without_output` (step 4).

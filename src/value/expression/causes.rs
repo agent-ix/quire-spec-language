@@ -204,7 +204,7 @@ mod tests {
         let _: String = detail;
     }
 
-    /// F7: a malformed identity renders as its hex bytes, so two distinct
+    /// FR-090-AC-12: a malformed identity renders as its hex bytes, so two distinct
     /// malformed identities never render alike.
     #[test]
     fn identity_string_renders_non_utf8_bytes_as_hex() {

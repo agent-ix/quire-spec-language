@@ -137,7 +137,7 @@ operational validation remains outside this audit-only plan.
 | TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | ✅ Passed locally; #300 (the `QualifiedName` half only -- AC-5's "or a bare string" half is investigated, not enforced; see `tests/it/name_resolution_confinement.rs`'s own module doc) |
 | TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300; step 6's from-source reorder is QSL-131 |
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | ✅ Passed locally; #340 (step 3 and steps 5-7 at the `library` level, see FR-087 Status) |
-| TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | 🚧 Partly backed; #340 (two-export view and the no-`NodeKey` scan pass; steps 2-4 as written fail on the name-keyed view, see FR-087 Status). Remaining work: QSL-6 |
+| TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | ✅ Passed locally (steps 1-2: the view keyed by `WireNodeId`; steps 3-5: the `library` signature scan and `check::imports`, see FR-087 Status) |
 | TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
 | TC-256 | check and package's dependency edge is one direction, and CheckedPackage wraps CheckedGraph | Integration | P1 | FR-087-AC-9 | 🚧 Planned; QSL-158 |
 | TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
@@ -182,7 +182,7 @@ operational validation remains outside this audit-only plan.
 | TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; source owner needs QSL-159 |
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
-| TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | 🚧 Planned; QSL-8 |
+| TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
 | TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23 | 🚧 Planned; QSL-141 |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
@@ -203,7 +203,7 @@ split. TC-243–260 and TC-281 above are the corresponding test cases, all
 `🚧 Planned`, except TC-245 (`✅ Passed locally`, the `PackageNodeKey`
 equality test), TC-282 (`✅ Passed locally`, `LibraryRefusal::class()`
 and its per-variant tests), TC-253 (`✅ Passed locally`, the verified
-binding) and TC-254 (partly backed, see its row). FR-087 also resolves, by owner
+binding) and TC-254 (`✅ Passed locally`, the name-free `ImportView`). FR-087 also resolves, by owner
 ruling on QSL-158 (2026-09-21), the `CheckedPackage`-placement half of
 QSL-167 (an
 ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4

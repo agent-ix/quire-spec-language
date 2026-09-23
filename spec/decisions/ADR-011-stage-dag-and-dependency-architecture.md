@@ -662,14 +662,14 @@ enforces it; before #226, §3's interim rule applies.
 | F | `absence` < `json_number` < `serde_object` < `digest` < `wire_format` < `source` (with `source_map`) < `diagnostic` < `located_json` | foundation | K |
 | 1 | `token` < `lexer` < `cst` | S1 | F |
 | 2 | `forms` core < family form builders | S2 | 1, F, K |
-| I3 | `quire_source` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
+| I3 | `qsl-source` crate root < `preflight` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
 | 3 | `semantic_value` < `model` (with `model::intake`) < `library` (with `VerifiedPackage`, the §4 binding and `ImportView`) < `check` core (`CheckContext`, family checker trait, shared checked types, `FamilyOutcome`, `FamilyResult` and `EvalOutcome`) < family checker modules | S3, I1, I2 binding and view | 2, F, K; FCD crates from `model::intake` only |
 | 4 | `package` | S4, I2 byte reader (verification calls `library`) | 3, F, K; `quire-contract-model` for v2 wire constants and round-trip tests only |
 | 5 | `value::expression` core (S6a) < family evaluators under `value::expression`, including the state and temporal evaluators < `simulation` | S6a | 4, 3, F, K |
 | R | `route` (#185 registry and router) | candidate sets over S4 before E7; after E7, the `BackendId` of each item settled `supported`, read from the FR-331 dispositions as wire. The backend is chosen only by the `BackendId` argument. | 4, 3, F, K |
 | tool | `complete::editor`, `complete::edit`, `format` | tooling over S1 | 1, F |
 | 6 | `replay` | the CG-facing replay facade: S1 to S4 recompile, then S6a. Its public API includes the #231 envelopes. | layers 1 to 5, F, K; I3 under feature `quire-extraction` |
-| 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `quire_source`; never CG |
+| 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `qsl-source`; never CG |
 | driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design) | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
 
 Crate map. Layers F, 1, I3, 2, 3, 4, 5, R and the layer-6 `replay` facade are
@@ -845,7 +845,7 @@ Module table:
 | `formal_source` | SEAM-2 | shared native and composed code |
 | `native_model`, `model_source`, `mapped`, `runtime` | SEAM-1 | `runtime::execute` is not a replay target (AD-016). Native `run` reaches `model_source`, `mapped` and `runtime`, so they retire with it in M-6c (§7.3, ADR-011-OQ-2). `NativeModelProfile` and its ceiling sites retire with SEAM-1. |
 | `lowering` | SEAM-1 | `lowering` as a whole, including `lowering::target`, its `ProjectionTarget` enum and the `--target` argument, is deleted in M-6a once the skeleton spine (§1.1) is green. The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). |
-| `quire_source` | I3 | the extraction adapter stays at S0; its call into `mapped` retires with SEAM-1 |
+| crate `qsl-source` | I3 | the extraction adapter stops at S0: verified body bytes plus their document `SourceMap`. The native compile join is in `command::extraction` (SEAM-1). `qsl-source` builds the clause-only Quire context (`clause_context`) and re-exports the Quire result and failure types `command` renders; the root crate names no quire-rs dependency. |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1; the v2 emitter and the I2 byte reader are new in M-4. Until X-7 extracts `qsl-package`, layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — lives in the top-level module `checked_package`, and the module named `package` holds only SEAM-1. Every rule this ADR states for layer-4 `package` applies to `checked_package`. |
 | `value` kernel submodules: `numeric`, `integer` (QSL's copy is a `value/mod.rs` `pub use` re-export, not a module; QSL-146 owns it), `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `node`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. #213 S-1 (X-1) added these as new `quire-exact` types; its own PR summary states no file under `src/value/` or `src/model/` was touched (§6.1's "K is a leaf" bullet), so removing the matching QSL copies is a separate, outstanding step — confirmed still needed for `accounting` (QSL-166) and for `collection`, `equality`, `division`, `ieee`, `composite` and `outcome` (QSL-131, same bullet). This row does not claim the remaining modules' QSL copies are gone. |
 | `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `key`, `reference` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (QSL-165) |
@@ -920,7 +920,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6a, once the skeleton spine is green |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
-| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); X-10 (`qsl-replay`) is extracted (QSL-185); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
+| QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); X-4 (`qsl-source`) is extracted (QSL-179); X-10 (`qsl-replay`) is extracted (QSL-185); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New** | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 
@@ -1034,7 +1034,7 @@ is unstaffed**, blocking QSL-165.
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
 | X-2 | Extract crate `qsl-foundation` (QSL-177). **Extracted** (QSL-177 PR2): `absence`, `json_number`, `serde_object`, `digest`, `wire_format`, `source` (with `source_map`) and `diagnostic` moved. `located_json` stays in the root crate -- it still imports `formal_source` (SEAM-2), which M-6e retires; it moves to `qsl-foundation` in a follow-up once that import is gone. | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
 | X-3 | Extract crate `qsl-cst` (QSL-178). **Extracted** (QSL-178 PR2): `token`, `lexer` and, from `complete`, `cst`, `parser`, `grammar` and `diagnostic` moved, along with the `ParsedSource` type and the plain `parse`/`parse_source` entry points (pure layer-1 concepts, not named as a separate module in the ticket text but owned by the same crate for the same reason `parser::parse` already built them there). `complete::editor`, `complete::edit`, `format` and `complete::package` (layer 3, moving with QSL-181) stay in the root crate; `complete::parse_with_catalog` stays with them, since it also depends on the layer-3 `ProfileCatalog`. | 1 | the layer-1 modules' public items | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
-| X-4 | Extract crate `qsl-source` (QSL-179) | I3 | `quire_source`, with feature `quire-extraction` | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
+| X-4 | Extract crate `qsl-source` (QSL-179). **Extracted**: the I3 adapter is the crate `qsl-source` (its crate root and `preflight`), which depends only on `qsl-foundation` (F), and on quire-rs under its own feature `quire-extraction`; the root crate's `quire-extraction` feature enables it. | I3 | the adapter (`clause_context`, `extract`, `ExtractedSource`, `Selection`, `Limits`, `Error`, `Cause`, `PreflightFailure`, the Quire contract constants) and the pinned Quire result and failure types the root crate renders, with feature `quire-extraction` | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
 | X-5 | Extract crate `qsl-forms` (QSL-180) | 2 | the layer-2 modules' public items | after X-3, on the same condition | none: no root-crate re-export (§7.2) |
 | X-6 | Extract crate `qsl-semantics` (QSL-181) | 3 | the layer-3 modules' public items | after X-5, on the same condition | none: no root-crate re-export (§7.2) |
 | X-7 | Extract crate `qsl-package` (QSL-182) | 4 | the layer-4 modules' public items | after X-6, on the same condition | none: no root-crate re-export (§7.2) |
@@ -1048,7 +1048,7 @@ old path and its replacement both run:
 
 | Lane | Deleted | In the PR that lands |
 |---|---|---|
-| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST. Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
+| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST, and native-edition `format` retires with no replacement. That retirement is a scoped exception, by owner decision on 2026-09-22, to the 2026-09-19 ruling that nothing working is removed early: `format` is tooling with no downstream artifact, the native lane is retiring, and native `run` does not need formatted input (Rulings 2026-09-22, native-edition `format`). Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
 | M-6b proof and replay | nothing: its former contents, SEAM-4 and `lowering`, are deleted in M-6a | #217 widens the skeleton spine to the function-application exemplar and deletes nothing. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
 | M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them; native `run` (native-run/1 clause execution over snapshots and invocations) and the SEAM-1 modules only it reaches, including `package::NativePackage`, the native-linked-package/1 reader, `runtime`, `mapped` and `model_source` (ADR-011-OQ-2) | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222). The PR that lands spine clause execution deletes native `run`. |
 | M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 (design #223), with agent-ix/quire-contract-ir#141 |
@@ -1294,6 +1294,14 @@ sections it names.
 - **OQ-4: `format` over a recovering CST.** Refused, as FR-003's Behavior
   and FR-003-AC-8 state. FR-003-AC-7 and FR-003-AC-8 supersede the
   recovery-node criterion proposed in a QSL-8 comment.
+- **Native-edition `format`.** Native-edition `format` retires in M-6a,
+  with no replacement (§7.3 M-6a row). `format` reads the complete-V1 CST
+  (FR-003), and a native-edition source refuses with `unknown_edition`. This
+  is a scoped exception to the 2026-09-19 ruling that nothing working is
+  removed early, decided by the owner on 2026-09-22. Reason: `format` is
+  tooling with no downstream artifact, the native lane is retiring, and
+  native `run` does not need formatted input. The exception covers `format`
+  only; native `run` stays until M-6c (OQ-1).
 - **OQ-5: `dependency_selections`.** Each entry holds the dependency's
   `package_id`; QSpec's schema typing is a QSpec defect. Until QSpec corrects
   it, `dependency_selections` is `[]` and an `import` is refused (§2.4). It is

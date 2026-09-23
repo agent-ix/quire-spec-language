@@ -286,7 +286,7 @@ mod tests {
     /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
     /// module's own doc): its *only* declarations are `evaluate`, `family`
     /// (`value::expression::family.rs` keeps the evaluation half and
-    /// `check::family.rs` keeps the checking half, PR #282 review F4) and
+    /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
     /// `causes` (FR-090's family evaluation causes, defined beside the
     /// evaluator), so an unexpected module cannot be hiding a renamed
     /// leftover here.

@@ -8,9 +8,129 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`Expression::children`] lists the children.
 
-use crate::value::ValueType;
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
+
+/// A builtin type keyword a [`TypeForm`] can be headed by, other than a
+/// collection kind (see [`TypeFormHead::Collection`]). Closed: `check`'s
+/// resolution matches it exhaustively (FR-091-CON-2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BuiltinType {
+    /// `Boolean`.
+    Boolean,
+    /// `Integer`: unbounded.
+    Integer,
+    /// `Int[lower, upper]`.
+    Int,
+    /// `Rational[numerator lower, numerator upper; denominator lower,
+    /// denominator upper]`.
+    Rational,
+    /// `Decimal[lower, upper; min scale, max scale; rounding mode]`.
+    Decimal,
+    /// `Float32`, carrying no width payload: FR-091-OQ-4 puts the rounding
+    /// mode in the floating type, so the head names the keyword only.
+    Float32,
+    /// `Float64`; see [`Self::Float32`].
+    Float64,
+    /// `Text[min, max; profile]`.
+    Text,
+    /// `Option<T>`.
+    Option,
+    /// `Reference<T>`.
+    Reference,
+}
+
+/// A [`TypeForm`]'s head.
+#[derive(Clone, Debug)]
+pub enum TypeFormHead {
+    /// A builtin keyword type.
+    Builtin(BuiltinType),
+    /// A collection type (`Sequence`, `Set`, `Bag`, `OrderedSet`), carried
+    /// as the kernel [`CollectionKind`] the same way
+    /// [`Expression::Collection`] carries it (ADR-011 §6.1: layer 2 depends
+    /// on "1, F, K"; ADR-013 OQ-A).
+    Collection(CollectionKind),
+    /// `Population<T>[N]` (FR-153): its one argument is the named element
+    /// type `T`, its one bound the declared maximum `N`.
+    Population,
+    /// A qualified name that `check` resolves against a declared alias,
+    /// record or tuple, enum or model object type.
+    Name(String),
+}
+
+/// A declared type as spelled in source (ADR-011 §1's stage table:
+/// "Unchecked syntactic forms per family, each with a span. No semantic
+/// identity."; §2.2 row E2: "Declared bounds and extents carried as
+/// syntax").
+///
+/// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11). [`Self::head`]
+/// is a builtin keyword, a kernel collection kind, `Population` or a name.
+/// [`Self::arguments`] are this same syntactic type recursively (an element
+/// or payload type). [`Self::bounds`] are declared bound or extent literals,
+/// spelled exactly as written (e.g. `Int[0, 10]`'s `"0"`, `"10"`;
+/// `Text[1, 100; nfc]`'s `"nfc"`); FR-091-OQ-9 is open on whether they
+/// become kernel values. `check` resolves a type form to the kernel
+/// `ValueType` at E3 (ADR-013 O-14/C-26), and declaration identity is
+/// minted over that resolved type, never over this spelling.
+#[derive(Clone, Debug)]
+pub struct TypeForm {
+    /// The type's head.
+    pub head: TypeFormHead,
+    /// Type arguments in source order (e.g. `Sequence<Int[0,10]>`'s element,
+    /// `Option<T>`'s payload, or `Population<M::A>[3]`'s named element type,
+    /// which the kernel `ValueType::Population` does not itself carry).
+    pub arguments: Vec<TypeForm>,
+    /// Declared bound or extent literals, spelled exactly as written, in
+    /// source order.
+    pub bounds: Vec<String>,
+    /// The source span.
+    pub span: Span,
+}
+
+impl TypeForm {
+    /// A type form headed by `head`, with no arguments or bounds yet.
+    pub fn new(head: TypeFormHead, span: Span) -> Self {
+        Self {
+            head,
+            arguments: Vec::new(),
+            bounds: Vec::new(),
+            span,
+        }
+    }
+
+    /// A builtin keyword type with no arguments or bounds yet, e.g.
+    /// `Boolean`.
+    pub fn builtin(builtin: BuiltinType, span: Span) -> Self {
+        Self::new(TypeFormHead::Builtin(builtin), span)
+    }
+
+    /// A collection type of `kind` with no element argument or bounds yet.
+    pub fn collection(kind: CollectionKind, span: Span) -> Self {
+        Self::new(TypeFormHead::Collection(kind), span)
+    }
+
+    /// A bare qualified name, e.g. a record, tuple, enum or model object
+    /// type's own declared name.
+    pub fn name(name: impl Into<String>, span: Span) -> Self {
+        Self::new(TypeFormHead::Name(name.into()), span)
+    }
+
+    /// This type's own declared type arguments, in source order.
+    #[must_use]
+    pub fn with_arguments(mut self, arguments: Vec<TypeForm>) -> Self {
+        self.arguments = arguments;
+        self
+    }
+
+    /// This type's own declared bound or extent literals, spelled exactly as
+    /// written, in source order.
+    #[must_use]
+    pub fn with_bounds(mut self, bounds: Vec<String>) -> Self {
+        self.bounds = bounds;
+        self
+    }
+}
 
 /// A binary operator of the expression grammar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -203,7 +323,7 @@ pub enum Expression {
     /// `convert<T>(e)`.
     Convert {
         /// The target type.
-        target: ValueType,
+        target: TypeForm,
         /// The converted operand.
         operand: Box<Expression>,
     },
@@ -274,14 +394,14 @@ pub enum Expression {
     /// most-specific type conforms to `T`.
     AllInstances {
         /// The queried type `T`.
-        target: ValueType,
+        target: TypeForm,
         /// The population operand `p`.
         population: Box<Expression>,
     },
     /// `lookup<T>(p, r) absent m` (FR-153): `r`'s presence in `p`, per `m`.
     Lookup {
         /// The queried type `T`.
-        target: ValueType,
+        target: TypeForm,
         /// The population operand `p`.
         population: Box<Expression>,
         /// The reference operand `r`.
@@ -403,9 +523,9 @@ pub struct FunctionDeclaration {
     /// The declared name.
     pub name: String,
     /// Parameters in order.
-    pub parameters: Vec<(String, ValueType)>,
+    pub parameters: Vec<(String, TypeForm)>,
     /// The declared result type.
-    pub result: ValueType,
+    pub result: TypeForm,
     /// The `decreases` measure, when written.
     pub measure: Option<Expression>,
     /// The body.
@@ -427,8 +547,8 @@ impl FunctionDeclaration {
     /// as [`ClauseKind::Body`].
     pub fn new(
         name: impl Into<String>,
-        parameters: Vec<(String, ValueType)>,
-        result: ValueType,
+        parameters: Vec<(String, TypeForm)>,
+        result: TypeForm,
         measure: Option<Expression>,
         body: Expression,
     ) -> Self {
@@ -460,8 +580,8 @@ impl FunctionDeclaration {
     /// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
-        parameters: Vec<(String, ValueType)>,
-        result: ValueType,
+        parameters: Vec<(String, TypeForm)>,
+        result: TypeForm,
         measure: Option<Expression>,
         body: Expression,
         clause_kind: DeclaredClauseKind,
@@ -591,7 +711,10 @@ mod tests {
         let declaration = FunctionDeclaration::new(
             "f",
             Vec::new(),
-            ValueType::Boolean,
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Boolean,
+                Span { start: 0, end: 0 },
+            ),
             None,
             Expression::Boolean(true),
         );

@@ -54,7 +54,7 @@ evaluation, shared wire and external producer qualification are outside this pla
 | --- | --- | --- | --- | --- | --- |
 | TC-011 | Exact native source intake | Integration | P1 | FR-001-AC-1, FR-001-AC-2, FR-001-AC-3, FR-001-AC-4 | ✅ Passed locally |
 | TC-012 | Located admitted native grammar | Integration | P1 | FR-002-AC-1, FR-002-AC-2, FR-002-AC-3, FR-002-AC-4, FR-002-AC-5, NFR-001-M-2, NFR-001-M-3, NFR-001-M-4 | ✅ Passed locally |
-| TC-013 | Token-preserving formatting | Integration | P1 | FR-003-AC-1, FR-003-AC-2, FR-003-AC-3 | ✅ Passed locally |
+| TC-013 | Token-preserving formatting | Unit | P1 | FR-003-AC-1, FR-003-AC-2, FR-003-AC-3 | ✅ Passed locally |
 | TC-014 | Exact extracted source correspondence | Integration | P1 | FR-004-AC-1, FR-004-AC-2, FR-004-AC-3, FR-004-AC-4, NFR-001-M-5 | ✅ Passed locally |
 | TC-015 | Native CLI outcomes and digest | E2E | P1 | FR-010-AC-1, FR-010-AC-2, FR-010-AC-3, FR-010-AC-4, FR-010-AC-5, FR-010-AC-7, FR-010-AC-9 | ✅ Passed locally |
 | TC-016 | Inclusive formatter byte ceilings | Property | P1 | FR-003-AC-4, FR-003-AC-5, FR-003-AC-6, NFR-001-M-1 | ✅ Passed locally |

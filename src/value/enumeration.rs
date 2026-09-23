@@ -22,13 +22,13 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 use super::node::{
     is_qualified_name, node_key_of, refuse, CanonicalNodeId, CanonicalOwner, InvalidSemanticGraph,
     NodeIdDocument, NodeKey, NodeOwner, OwnerSelection, SemanticGraphCause,
 };
 use super::outcome::{Outcome, Stop};
 use quire_exact::{is_identifier, Charge, ChargePoint, LimitKind, Meter};
+use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
 
 const DECLARATION_VERSION: &str = "quire.enum-declaration-node/v1";
 const MEMBER_VERSION: &str = "quire.enum-member-node/v1";

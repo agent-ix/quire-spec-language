@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Complete-V1 format fixture; the profile digest is a placeholder.
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+type Digit = Int[0, 9];
+record Point { x: Digit; y: Digit; }
+function   px using v(p: Point): Digit pure {
+      // the larger coordinate
+  if p.x > p.y then p.x else p.y }

@@ -7,36 +7,35 @@
 //!
 //! [`DecimalRepresentation`], [`Decimal`], [`RoundingMode`],
 //! [`DecimalOperation`], [`DecimalRepresentation::to_rational`],
-//! `compare_shifted`, `sbits`, `sdigits` and `power_of_ten_bits` are
-//! `quire_exact`'s own canonical items, re-exported below rather than
-//! duplicated: every method and function these carry is reachable straight
-//! off the re-exported type or name; none of it is duplicated here.
+//! `compare_shifted`, `sbits` and `sdigits` are `quire_exact`'s own
+//! canonical items, imported directly rather than duplicated: every method
+//! and function these carry is reachable straight off the imported type or
+//! name; none of it is duplicated here. All of them are imported for this
+//! module's own use only; callers name them from `quire_exact` directly.
 //!
 //! [`DecimalType`], [`DecimalLoss`], [`DecimalResult`], [`evaluate_decimal`]
 //! and everything beneath them (the private `Plan`/`Placed`/`Intermediate`
 //! evaluation engine and `Placement`/`DecimalType::placement`/
 //! `round_at_target` for `super::quantity`'s unit-graph decimal targets)
-//! stay local. `DecimalType::new` and `evaluate_decimal` return this crate's
-//! own `IllTyped` (`value::comparison`) and `Outcome`/`Refusal`
-//! (`value::outcome`), a strict superset of `quire_exact`'s kernel
-//! `IllTyped`/`Outcome`/`Refusal` -- out of scope here, blocked on QSL-166
-//! and QSL-174 -- and `DecimalResult`/`DecimalLoss` are constructed only
-//! through their own private struct literals inside that engine;
-//! `quire_exact` exposes neither type with a public constructor (only
-//! accessors), so even once the `Outcome`/`Refusal` coupling above is
+//! stay local. `DecimalType::new` returns `quire_exact`'s own canonical
+//! `IllTyped` directly. `evaluate_decimal` returns this crate's own
+//! `Outcome`/`Refusal` (`value::outcome`), a strict superset of
+//! `quire_exact`'s kernel `Outcome`/`Refusal` -- out of scope here, blocked
+//! on QSL-166 and QSL-174 -- and `DecimalResult`/`DecimalLoss` are
+//! constructed only through their own private struct literals inside that
+//! engine; `quire_exact` exposes neither type with a public constructor
+//! (only accessors), so even once the `Outcome`/`Refusal` coupling above is
 //! resolved, this crate's engine could not build a
 //! `quire_exact::DecimalResult`/`DecimalLoss` without one.
 
 use std::cmp::Ordering;
 
-use super::comparison::{IllTyped, IllTypedCause};
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use super::rational::Rational;
-pub use quire_exact::{
-    compare_shifted, power_of_ten_bits, sbits, sdigits, Decimal, DecimalOperation,
-    DecimalRepresentation, RoundingMode,
-};
+use quire_exact::DecimalRepresentation;
+use quire_exact::Rational;
+use quire_exact::{compare_shifted, sbits, sdigits, Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{length_amount, Charge, ChargePoint, Integer, LimitKind, Meter};
+use quire_exact::{IllTyped, IllTypedCause};
 
 /// `DecimalLoss { exact_numerator, exact_denominator, rounded_coefficient,
 /// rounded_scale, mode }`. The exact value is a canonical rational.

@@ -30,8 +30,6 @@ pub mod native_model;
 pub mod package;
 mod parser;
 pub mod protocol_artifact;
-#[cfg(feature = "quire-extraction")]
-pub mod quire_source;
 pub mod route;
 pub mod runtime;
 pub mod simulation;

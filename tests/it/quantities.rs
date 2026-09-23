@@ -14,13 +14,13 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
     ScalarLimits,
 };
+use quire_exact::{ComparisonOperator, Decimal, IllTyped, IllTypedCause, Rational, RoundingMode};
 use quire_spec_language::value::{
-    compare_quantity, convert_quantity, evaluate_quantity, ComparisonOperator, CompoundUnitCause,
-    CompoundUnitPreimage, ConvertedValue, Decimal, DecimalType, Dimension, DimensionPreimage,
-    IllTyped, IllTypedCause, InvalidCompoundUnit, InvalidSemanticGraph, NodeKey, NodeOwner,
-    Outcome, OwnerSelection, OwnerSubject, Quantity, QuantityOperation, QuantityTarget,
-    QuantityUnit, Rational, Refusal, RoundingMode, SemanticGraphCause, Undefined, UnitGraph,
-    UnitPreimage,
+    compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
+    ConvertedValue, DecimalType, Dimension, DimensionPreimage, InvalidCompoundUnit,
+    InvalidSemanticGraph, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
+    QuantityOperation, QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined,
+    UnitGraph, UnitPreimage,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

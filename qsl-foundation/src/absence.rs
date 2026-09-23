@@ -19,3 +19,27 @@ pub enum AbsenceMode {
     /// `absent refused`.
     Refused,
 }
+
+impl AbsenceMode {
+    /// The mode's keyword, which is also its v2 `OperationMode` `absence`
+    /// value spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Undefined => "undefined",
+            Self::Empty => "empty",
+            Self::Refused => "refused",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AbsenceMode;
+
+    #[test]
+    fn as_str_spells_each_absent_keyword() {
+        assert_eq!(AbsenceMode::Undefined.as_str(), "undefined");
+        assert_eq!(AbsenceMode::Empty.as_str(), "empty");
+        assert_eq!(AbsenceMode::Refused.as_str(), "refused");
+    }
+}

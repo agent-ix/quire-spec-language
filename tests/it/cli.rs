@@ -127,7 +127,25 @@ fn cli_parses_and_formats_without_claiming_execution() {
         qsl_foundation::ByteDigest::of(include_bytes!("../fixtures/parent.native")).to_string()
     );
     assert!(value.get("value").is_none());
+    // FR-003: `format` reads complete-V1 source through the lossless CST.
     let formatted = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args([
+            "format",
+            "test:value-format",
+            "fixture:1",
+            "tests/fixtures/value-format.native",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        formatted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&formatted.stderr)
+    );
+    assert!(String::from_utf8(formatted.stdout)
+        .unwrap()
+        .contains("// the larger coordinate"));
+    let refused = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args([
             "format",
             "test:parent",
@@ -136,10 +154,12 @@ fn cli_parses_and_formats_without_claiming_execution() {
         ])
         .output()
         .unwrap();
-    assert!(formatted.status.success());
-    assert!(String::from_utf8(formatted.stdout)
-        .unwrap()
-        .contains("// Newly authored syntax fixture"));
+    assert_eq!(refused.status.code(), Some(20));
+    assert!(refused.stdout.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["code"], "unknown_edition");
+    assert_eq!(value["path"], "tests/fixtures/parent.native");
     let invalid = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args(["parse", "", "fixture:1", "tests/fixtures/parent.native"])
         .output()

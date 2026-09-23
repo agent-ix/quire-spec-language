@@ -436,15 +436,15 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::*;
     use crate::check::{
-        declarations_for, empty_scope, mint_declaration_identity, root_location, CheckCause,
-        CheckingLimitKind, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
+        declarations_for, empty_scope, mint_resolved, root_location, CheckCause, CheckingLimitKind,
+        CheckingLimits, PackageDeclarations, Signature, DEFAULT_PACKAGE_IDENTITY,
         SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
         StageLimits,
     };
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::value::composite::{TypeEnvironment, ValueType};
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
@@ -465,8 +465,27 @@ mod family_contract_tests {
         }
     }
 
+    /// A bare `Boolean` type form.
+    fn boolean_type_form() -> TypeForm {
+        TypeForm::builtin(
+            crate::forms::BuiltinType::Boolean,
+            qsl_foundation::Span { start: 0, end: 0 },
+        )
+    }
+
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
+    }
+
+    /// The resolved signature of a [`declaration`] fixture (no parameters,
+    /// `Boolean` result), for `declarations_for`'s `own_signature`.
+    fn declaration_signature(name: &str) -> Signature {
+        Signature {
+            name: name.to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Boolean,
+            callable_by_name: true,
+        }
     }
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
@@ -486,10 +505,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -505,7 +526,7 @@ mod family_contract_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (expected, _) = mint_declaration_identity(&package_identity, &form, u64::MAX);
+        let (expected, _) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
         let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(staged.value.identity, expected);
         assert_eq!(diagnostics.entries().len(), 1);
@@ -531,10 +552,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("g");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -552,7 +575,7 @@ mod family_contract_tests {
         let form = FunctionDeclaration::new(
             "g",
             Vec::new(),
-            ValueType::Boolean,
+            boolean_type_form(),
             None,
             Expression::Integer(quire_exact::Integer::from(1_i64)),
         );
@@ -563,7 +586,7 @@ mod family_contract_tests {
             crate::family::StageFailure::Refused(refusal) => assert!(
                 matches!(
                     refusal.cause,
-                    CheckCause::IllTyped(crate::value::comparison::IllTypedCause::TypeMismatch)
+                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
                 ),
                 "expected an ill-typed/type-mismatch refusal, got {refusal:?}"
             ),
@@ -686,37 +709,25 @@ mod family_contract_tests {
         assert!(env.losses.is_empty());
     }
 
-    /// A rounding decimal division `divide(p, q) = p / q`, whose completed
-    /// call records one loss.
-    fn rounding_division() -> FunctionDeclaration {
-        use crate::value::{DecimalType, RoundingMode};
-        let whole = |lower: i64, upper: i64| {
-            ValueType::Decimal(
-                DecimalType::new(
-                    quire_exact::Integer::from(lower),
-                    quire_exact::Integer::from(upper),
-                    0,
-                    0,
-                    RoundingMode::Exact,
-                )
-                .expect("a scale-0 decimal domain"),
+    /// `name(p: Decimal[0..100], q: Decimal[1..9]): Decimal[0..10000; 2, 2;
+    /// mode] = p / q`. With `nearest-even` a call on (1, 3) completes and
+    /// records one loss; with `exact` it stops with a refusal, located at the
+    /// division.
+    fn decimal_division(name: &str, mode: &str) -> FunctionDeclaration {
+        let decimal = |bounds: [&str; 5]| {
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Decimal,
+                qsl_foundation::Span { start: 0, end: 0 },
             )
+            .with_bounds(bounds.map(str::to_owned).to_vec())
         };
-        let result = DecimalType::new(
-            quire_exact::Integer::from(0_i64),
-            quire_exact::Integer::from(10_000_i64),
-            2,
-            2,
-            RoundingMode::NearestEven,
-        )
-        .expect("a scale-2 decimal domain");
         FunctionDeclaration::new(
-            "divide",
+            name,
             vec![
-                ("p".to_owned(), whole(0, 100)),
-                ("q".to_owned(), whole(1, 9)),
+                ("p".to_owned(), decimal(["0", "100", "0", "0", "exact"])),
+                ("q".to_owned(), decimal(["1", "9", "0", "0", "exact"])),
             ],
-            ValueType::Decimal(result),
+            decimal(["0", "10000", "2", "2", mode]),
             None,
             Expression::Binary {
                 operator: crate::forms::BinaryOperator::Divide,
@@ -726,27 +737,34 @@ mod family_contract_tests {
         )
     }
 
-    /// FR-090 (F6): the hook records `location` and `losses` on every `Ok`
-    /// return, so a reused env never reports an earlier call's losses. A
-    /// first call completes with one loss; a second call on the same env,
-    /// with fresh arguments and an exhausted meter, reports `Incomplete`
-    /// with no location and no losses. A third call, arguments consumed and
-    /// the meter still exhausted, faults rather than report `Incomplete`.
+    /// FR-090: the hook records `location` and `losses` on every `Ok`
+    /// return, so a reused env never reports an earlier call's location or
+    /// losses. On one env: a rounding division completes with one loss; an
+    /// exact division stops with a location and no losses; a third call,
+    /// with an exhausted meter, reports `Incomplete` with no location and no
+    /// losses; a fourth, with its arguments consumed, faults before the
+    /// meter is charged.
     #[test]
     fn a_reused_env_never_reports_an_earlier_calls_losses() {
         let graph = PackageDeclarations {
-            functions: vec![rounding_division()],
+            functions: vec![
+                decimal_division("rounding", "nearest-even"),
+                decimal_division("exact", "exact"),
+            ],
             ..PackageDeclarations::default()
         }
         .check(CheckingLimits::default())
         .expect("p / q with q in [1, 9] checks cleanly");
-        let identity = graph
-            .function_identity("divide")
-            .expect("divide is declared in this package");
+        let rounding = graph
+            .function_identity("rounding")
+            .expect("rounding is declared in this package");
+        let exact = graph
+            .function_identity("exact")
+            .expect("exact is declared in this package");
         let package = crate::checked_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
         let decimal = |coefficient: i64| {
-            Value::Decimal(crate::value::Decimal::new(
+            Value::Decimal(quire_exact::Decimal::new(
                 quire_exact::Integer::from(coefficient),
                 0,
             ))
@@ -759,8 +777,9 @@ mod family_contract_tests {
             &mut local_meter,
         );
         let mut unlimited = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let first = ValueFunctionFamily::evaluate(&identity, &mut env, &mut unlimited)
-            .expect("the first call completes");
+
+        let first = ValueFunctionFamily::evaluate(&rounding, &mut env, &mut unlimited)
+            .expect("the rounding division completes");
         assert!(
             matches!(
                 first,
@@ -768,27 +787,41 @@ mod family_contract_tests {
             ),
             "{first:?}"
         );
+        assert_eq!(env.location, None);
         assert_eq!(env.losses.len(), 1, "the division rounds 1/3");
+
+        env.arguments = Some(vec![decimal(1), decimal(3)]);
+        let second = ValueFunctionFamily::evaluate(&exact, &mut env, &mut unlimited)
+            .expect("the exact division stops in Ok");
+        assert!(
+            matches!(
+                second,
+                EvalOutcome::Kernel(quire_exact::Outcome::Refused(_))
+            ),
+            "{second:?}"
+        );
+        assert!(env.location.is_some(), "a refusal is located");
+        assert!(env.losses.is_empty(), "{:?}", env.losses);
 
         env.arguments = Some(vec![decimal(1), decimal(3)]);
         let mut exhausted = Meter::new(quire_exact::ScalarLimits {
             work_units: 0,
             ..SCALAR_LIMITS_UNLIMITED
         });
-        let second = ValueFunctionFamily::evaluate(&identity, &mut env, &mut exhausted)
+        let third = ValueFunctionFamily::evaluate(&rounding, &mut env, &mut exhausted)
             .expect("a denied entry charge is Ok(Incomplete)");
         assert!(
             matches!(
-                second,
+                third,
                 EvalOutcome::Kernel(quire_exact::Outcome::Incomplete(_))
             ),
-            "{second:?}"
+            "{third:?}"
         );
         assert_eq!(env.location, None);
         assert!(env.losses.is_empty(), "{:?}", env.losses);
 
         env.arguments = None;
-        let fault = ValueFunctionFamily::evaluate(&identity, &mut env, &mut exhausted)
+        let fault = ValueFunctionFamily::evaluate(&rounding, &mut env, &mut exhausted)
             .expect_err("a consumed env faults before the meter is charged");
         assert_eq!(
             fault.invariant(),
@@ -878,6 +911,7 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scalar_limits = SCALAR_LIMITS_UNLIMITED;
         let form = declaration("f", Expression::Boolean(true));
+        let own_signature = declaration_signature("f");
 
         let scope_a = empty_scope();
         let location_a = root_location();
@@ -885,6 +919,7 @@ mod family_contract_tests {
             &package_identity,
             &scope_a,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location_a,
@@ -907,6 +942,7 @@ mod family_contract_tests {
             &package_identity,
             &scope_b,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location_b,
@@ -941,10 +977,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -1001,16 +1039,18 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (_, metrics) = mint_declaration_identity(&package_identity, &form, u64::MAX);
+        let (_, metrics) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
         assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
         let base = StageLimits {
@@ -1089,10 +1129,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -1179,9 +1221,18 @@ mod family_contract_tests {
             Box::new(Expression::Boolean(true)),
         )))));
         let form = declaration("f", nested);
+        let own_signature = declaration_signature("f");
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, &[], &[], tight, &location);
+        let declarations = declarations_for(
+            &package_identity,
+            &scope,
+            &[],
+            &own_signature,
+            &[],
+            tight,
+            &location,
+        );
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -1209,7 +1260,15 @@ mod family_contract_tests {
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, &[], &[], wide, &location);
+        let declarations = declarations_for(
+            &package_identity,
+            &scope,
+            &[],
+            &own_signature,
+            &[],
+            wide,
+            &location,
+        );
         let mut cx = CheckContext::new(
             &declarations,
             limits(),
@@ -1228,13 +1287,21 @@ mod family_contract_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
-    use crate::forms::{Expression, FunctionDeclaration};
-    use crate::value::composite::ValueType;
+    use crate::check::{empty_scope, mint_resolved, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        FunctionDeclaration::new(
+            name,
+            Vec::new(),
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Boolean,
+                qsl_foundation::Span { start: 0, end: 0 },
+            ),
+            None,
+            body,
+        )
     }
 
     /// FR-062-AC-2/FR-065-AC-2: two structurally identical declarations mint
@@ -1246,12 +1313,12 @@ mod tests {
         let b = declaration("f", Expression::Boolean(true));
         let c = declaration("g", Expression::Boolean(true));
         assert_eq!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
         );
         assert_ne!(
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
+            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
         );
     }
 
@@ -1304,8 +1371,12 @@ mod tests {
     #[test]
     fn identity_survives_v2_round_trip() {
         let declaration = declaration("f", Expression::Boolean(true));
-        let (after_check, _) =
-            mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
+        let (after_check, _) = mint_resolved(
+            &empty_scope(),
+            DEFAULT_PACKAGE_IDENTITY,
+            &declaration,
+            u64::MAX,
+        );
         let name = QualifiedName::unqualified("f").unwrap();
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
@@ -1322,12 +1393,14 @@ mod tests {
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
         let name = QualifiedName::unqualified("f").unwrap();
-        let (first, _) = mint_declaration_identity(
+        let (first, _) = mint_resolved(
+            &empty_scope(),
             DEFAULT_PACKAGE_IDENTITY,
             &declaration("f", Expression::Boolean(true)),
             u64::MAX,
         );
-        let (second, _) = mint_declaration_identity(
+        let (second, _) = mint_resolved(
+            &empty_scope(),
             "other-package@1.0.0",
             &declaration("f", Expression::Boolean(true)),
             u64::MAX,

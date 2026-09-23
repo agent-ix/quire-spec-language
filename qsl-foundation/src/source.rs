@@ -257,11 +257,11 @@ impl Source {
         &self.0.text
     }
     /// The byte offset of the start of a one-based line, or `None` past the
-    /// last line. `pub`: the root crate's `quire_source` module (I3, feature
+    /// last line. `pub`: the `qsl-source` crate (I3, feature
     /// `quire-extraction`) reuses this source's existing byte index for
     /// Quire line loci, a real cross-crate call site. Always compiled here
-    /// (this crate has no `quire-extraction` feature of its own); the root
-    /// crate's own feature gate decides whether its caller is compiled.
+    /// (this crate has no `quire-extraction` feature of its own);
+    /// `qsl-source`'s own feature gate decides whether its caller is compiled.
     pub fn line_start(&self, line: usize) -> Option<usize> {
         self.0.line_starts.get(line.checked_sub(1)?).copied()
     }

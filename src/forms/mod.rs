@@ -29,49 +29,24 @@
 //! use quire_spec_language::value::expression::syntax::Expression;
 //! ```
 //!
-//! ## Declared layer violation (QSL-146, narrowed; QSL-131 owns the rest)
+//! ## Layering
 //!
-//! `forms` is layer 2 (ADR-011 §6.1), whose allow-list is layer 1 (`cst`)
-//! and F only. This module does not conform. QSL-146 resolved three of the
-//! four carrier types named when this violation was first declared:
-//! `syntax`'s `AbsenceMode` field now imports `qsl_foundation::absence::AbsenceMode`
-//! (F, allow-listed — QSL-146 moved it out of `model::population`, layer 3),
-//! and its `CollectionKind` and `Integer` fields now import
-//! `quire_exact::{CollectionKind, Integer}` (layer K, allow-listed — a
-//! sibling crate, not a QSL layer at all). One carrier type remains,
-//! independently in two places:
-//!
-//! - [`Expression`]: its `AllInstances`, `Lookup` and `Convert`
-//!   variants each carry a `crate::value::ValueType` field (layer 5).
-//! - [`FunctionDeclaration`]: `parameters: Vec<(String, ValueType)>`
-//!   (`syntax.rs:406`) and `result: ValueType` (`syntax.rs:408`) each carry
-//!   `crate::value::ValueType` (layer 5) directly, independent of
-//!   `Expression`.
-//!
-//! `ParsedForm`'s `expression` field is unconditional production code (not
-//! test-only), so this remains a hard dependency of the `forms` core on
-//! layer 5, not an incidental one.
-//!
-//! This is a contradiction between two decision records, not an
-//! implementation mistake this module can fix alone: ADR-012 §4.3 places
-//! the one shared `Expression` enum inside the `forms` core by design, and
-//! ADR-011 §6.1 assigns `forms` a layer-2 allow-list that `Expression`'s and
-//! `FunctionDeclaration`'s own fields cannot satisfy while `ValueType` lives
-//! where it lives today. Unlike `CollectionKind` and `Integer`,
-//! `quire-exact`'s `ValueType`/`Value` are not a byte-identical duplicate of
-//! the QSL copy — their `Enum`, `Reference` and `Quantity` payloads are a
-//! redesigned target shape, and `quire-exact`'s `Value` has no `Population`
-//! variant at all — so retargeting `ValueType` is not the mechanical repoint
-//! QSL-146 did for the other three. QSL-131 (#213 S-1b) owns that
-//! replacement; once it lands, `ValueType` in `syntax` retargets to
-//! `quire_exact`'s copy (layer K, allow-listed) and `forms` becomes
-//! layer-2-legal without a further change to this module's shape.
+//! `forms` is layer 2 (ADR-011 §6.1), which depends on layer 1 (`cst`), F
+//! and K. It carries kernel types directly as parsed-form payloads
+//! (ADR-013 OQ-A): `quire_exact::Integer` for an integer literal and
+//! `quire_exact::CollectionKind` for a collection kind, both in an
+//! [`Expression`] and in a [`TypeForm`]'s collection head. A parsed form
+//! holds no `ValueType` and no `NodeKey` (FR-091-AC-11): [`Expression`]'s
+//! `AllInstances`, `Lookup` and `Convert` variants, and
+//! [`FunctionDeclaration`]'s `parameters`/`result`, each carry a
+//! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
+//! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
 mod dispatch;
 mod syntax;
 
 pub use dispatch::{build_form, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm};
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
-    FieldInitializer, FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclaredClauseKind,
+    Expression, FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
 };

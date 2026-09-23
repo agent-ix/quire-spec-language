@@ -396,19 +396,24 @@ impl CheckedPackageEvaluation for CheckedPackage {
 mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::Category;
-    use quire_exact::{Integer, IntegerInterval, NodeKey};
+    use quire_exact::{Integer, NodeKey};
 
     /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
     fn identity_function() -> FunctionDeclaration {
-        let bound = IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64))
-            .expect("[0, 10] is a non-empty interval");
+        let bound = || {
+            TypeForm::builtin(
+                crate::forms::BuiltinType::Int,
+                qsl_foundation::Span { start: 0, end: 0 },
+            )
+            .with_bounds(vec!["0".to_owned(), "10".to_owned()])
+        };
         FunctionDeclaration::new(
             "id",
-            vec![("x".to_owned(), ValueType::Int(bound.clone()))],
-            ValueType::Int(bound),
+            vec![("x".to_owned(), bound())],
+            bound(),
             None,
             Expression::Name("x".to_owned()),
         )

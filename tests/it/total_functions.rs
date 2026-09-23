@@ -7,16 +7,17 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
+use quire_exact::{Decimal, IeeeWidth, IllTypedCause, Presence, Rational, RoundingMode};
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionType, CompositeDeclaration, CompositeShape, Decimal, DecimalType, DefinitionLock,
+    CollectionType, CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock,
     DefinitionReference, DefinitionRevision, Evaluation, Expression, FamilyOutcome,
-    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, IeeeWidth, IllTypedCause,
-    LocatedLoss, Location, MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations,
-    Presence, ProvedInterval, QualifiedName, Rational, RationalDomain, RoundingMode,
-    TypeEnvironment, UniverseIdentity, Value, ValueLoss, ValueType,
+    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, LocatedLoss, Location,
+    MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval,
+    QualifiedName, RationalDomain, TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueLoss,
+    ValueType,
 };
 
 use sha2::{Digest, Sha256};
@@ -130,6 +131,32 @@ fn value(operand: Expression) -> Expression {
     Expression::Value(Box::new(operand))
 }
 
+/// `crate::support::type_form::type_form` can't recover a
+/// declared composite/object type's own name from a bare `ValueType::
+/// Composite`/`Reference` digest, so this file's own fixtures (whose only
+/// three such parameter/result types are "Node", "Box" and the object type
+/// registered at `key("M::Obj")` but declared as "Obj") map those back
+/// explicitly instead.
+fn param_type_form(value_type: &ValueType) -> TypeForm {
+    match value_type {
+        ValueType::Composite(k) if *k == key("Node") => {
+            crate::support::type_form::named_type_form("Node")
+        }
+        ValueType::Composite(k) if *k == key("Box") => {
+            crate::support::type_form::named_type_form("Box")
+        }
+        ValueType::Reference(k) if *k == key("M::Obj") => {
+            crate::support::type_form::named_type_form("Obj")
+        }
+        ValueType::Option(payload) => TypeForm::builtin(
+            quire_spec_language::value::BuiltinType::Option,
+            crate::support::type_form::SPAN,
+        )
+        .with_arguments(vec![param_type_form(payload)]),
+        _ => crate::support::type_form::type_form(value_type),
+    }
+}
+
 fn function(
     spelling: &str,
     parameters: &[(&str, ValueType)],
@@ -141,9 +168,9 @@ fn function(
         spelling.to_owned(),
         parameters
             .iter()
-            .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+            .map(|(name, value_type)| ((*name).to_owned(), param_type_form(value_type)))
             .collect(),
-        result,
+        param_type_form(&result),
         measure,
         body,
     )
@@ -907,7 +934,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         .check_expression(
             vec![("f".to_owned(), ValueType::Float(IeeeWidth::Binary64))],
             &Expression::Convert {
-                target: quotient_type(),
+                target: crate::support::type_form::type_form(&quotient_type()),
                 operand: Box::new(name("f")),
             },
             None,
@@ -1326,7 +1353,7 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
                 quotient_type(),
                 None,
                 Expression::Convert {
-                    target: quotient_type(),
+                    target: crate::support::type_form::type_form(&quotient_type()),
                     operand: Box::new(name("x")),
                 },
             ),

@@ -19,6 +19,8 @@ use sha2::{Digest, Sha256};
 use super::{
     read_checked_package_v2, V2ReadIncomplete, V2ReadLimits, V2ReadOutcome, V2ReadRefusal,
 };
+use crate::check::imports::ImportedNames;
+use crate::check::CheckCause;
 use crate::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     PreimageDefect, RefusalClass, Selection, StaleCause, StalePin,
@@ -323,19 +325,40 @@ fn import_view_of(exports: &[(&str, &str)]) -> (PackageId, ImportView) {
 }
 
 /// FR-087-AC-4, TC-254 steps 1-2: `VerifiedPackage::into_import_view`
-/// carries every exported declaration of a two-export package, each
-/// exported name mapped to its own `WireNodeId` and paired into a
-/// `PackageNodeKey` under the verified `package_id` -- not one entry, not
-/// a node id shared between names, and not a node id derived from the name.
+/// carries every exported declaration of a two-export package, each at its
+/// own `WireNodeId` under the verified `package_id`, keyed by that id and
+/// not by name. The node seeds are chosen so that ascending node-id order
+/// (`pkg::Z` before `pkg::Y`) is the reverse of ascending name order (`A`
+/// before `B`): a view keyed by name yields `A` first and fails.
 #[trace("TC-254", "FR-087-AC-4")]
 #[test]
-fn import_view_maps_each_export_name_to_its_own_wire_node_id() {
-    let (package_id, view) = import_view_of(&[("pkg::R", "R"), ("pkg::S", "S")]);
+fn import_view_keys_each_export_by_its_own_wire_node_id() {
+    let (package_id, view) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
     assert_eq!(view.package(), package_id);
-    let exports: Vec<_> = view.exports().collect();
     let key =
         |label: &str| PackageNodeKey::new(package_id, WireNodeId::from_hex(&hex(label)).unwrap());
-    assert_eq!(exports, vec![("R", key("pkg::R")), ("S", key("pkg::S"))]);
+    assert!(key("pkg::Z").node < key("pkg::Y").node);
+    let exports: Vec<_> = view.exports().collect();
+    assert_eq!(exports, vec![("B", key("pkg::Z")), ("A", key("pkg::Y"))]);
+}
+
+/// FR-087-AC-4, TC-254 step 5: the importing package's checker resolves a
+/// name by its own index over the view's entries (`check::imports`), to the
+/// export's `PackageNodeKey`; a name the package does not export is
+/// refused `missing_declaration` / `missing-name`.
+#[trace("TC-254", "FR-087-AC-4")]
+#[test]
+fn the_checker_resolves_an_imported_name_over_the_view_entries() {
+    let (package_id, view) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
+    let names = ImportedNames::of(&view);
+    let key =
+        |label: &str| PackageNodeKey::new(package_id, WireNodeId::from_hex(&hex(label)).unwrap());
+    assert_eq!(names.resolve("A"), Ok(key("pkg::Y")));
+    assert_eq!(names.resolve("B"), Ok(key("pkg::Z")));
+    let missing = names.resolve("C").unwrap_err();
+    assert_eq!(missing, CheckCause::MissingName("C".to_owned()));
+    assert_eq!(missing.code(), Code::MissingDeclaration);
+    assert_eq!(missing.cause(), Some("missing-name"));
 }
 
 /// FR-087-AC-3, TC-253 step 4: an otherwise-admissible package refuses when

@@ -33,6 +33,12 @@ first diagnostic code, and returns no output. ADR-011 §2.3's E1 row permits
 a formatter to consume a recovering CST without requiring it, and this
 requirement formats validated source only.
 
+`format` formats complete-V1 source. A native-edition source (for example
+edition `0-draft`) parses as a recovering CST that carries `unknown_edition`,
+so `format` refuses it with that code and the CLI exits 20. Native-edition
+`format` retires in M-6a with no replacement (ADR-011 §7.3 M-6a row;
+ADR-011 Rulings 2026-09-22, native-edition `format`).
+
 Formatting changes whitespace and normalizes layout to LF while retaining grouping and original token order. The library returns the complete string; the CLI writes it to stdout and leaves files untouched. The caller assigns a new source revision before using changed bytes in evidence.
 
 The format(source) API applies the default 1 MiB ceiling. The
@@ -68,5 +74,7 @@ separate heap-accounting promise. Reuse the existing declarative token vocabular
 
 Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
 
-The input is the CST (ADR-011 §7.3 M-6a). `src/format.rs` takes the arena
-`ParsedUnit` today; AC-7 is unimplemented.
+The input is the CST (ADR-011 §7.3 M-6a). `src/format.rs` takes
+`qsl_cst::ParsedSource` and owns the one CST token walk, which
+`complete::editor::format_document` also calls. AC-1 to AC-3 are backed by
+TC-013, AC-4 to AC-6 by TC-016, and AC-7 and AC-8 by TC-404.

@@ -28,7 +28,7 @@ use quire_exact::Identifier;
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
 // tests below still assert the wire shape against the domain's own constant.
 #[cfg(test)]
-use super::node::NODE_KEY_DOMAIN;
+use quire_exact::NODE_KEY_DOMAIN;
 
 /// One closed checked-member identity (ADR-013 O-06).
 ///
@@ -147,6 +147,15 @@ impl Member {
                 "operator": operator.as_str(),
             }),
         }
+    }
+}
+
+/// Serializes exactly [`Member::to_wire`], so a member embedded in a larger
+/// preimage (the FR-322 application-node key's `operation.member`) has one
+/// wire encoding, not a second hand-written one.
+impl serde::Serialize for Member {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_wire().serialize(serializer)
     }
 }
 

@@ -7,6 +7,12 @@
 //!
 //! Ported verbatim from QSL `value::comparison` as part of QSL#213 S-1
 //! (ADR-011 X-1); no edge needed cutting.
+//!
+//! QSL-131 K1 widened [`ComparisonOperator::holds`] from `pub(crate)` to
+//! `pub`: `quire_spec_language::value::text`'s own `compare`, still local
+//! because it returns this crate's own `Outcome`, calls it directly. It is
+//! a pure decision over an already-computed `Ordering`, so widening it
+//! exposes no unmetered computation.
 
 use std::cmp::Ordering;
 
@@ -47,7 +53,12 @@ impl ComparisonOperator {
     }
 
     /// Decide the operator over an exact ordering of its operands.
-    pub(crate) fn holds(self, ordering: Ordering) -> bool {
+    ///
+    /// `pub`, not `pub(crate)` (QSL-131 K1): `quire_spec_language::value::
+    /// text`'s own `compare`, still local because it returns this crate's
+    /// own `Outcome`, calls it directly. It is a pure decision over an
+    /// already-computed `Ordering`, so widening charges or exposes nothing.
+    pub fn holds(self, ordering: Ordering) -> bool {
         match self {
             Self::Equal => ordering.is_eq(),
             Self::NotEqual => ordering.is_ne(),

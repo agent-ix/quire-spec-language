@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
-use crate::value::comparison::{IllTyped, IllTypedCause};
 use crate::value::node::NodeKey;
 use qsl_foundation::diagnostic::Code;
 use quire_exact::Integer;
+use quire_exact::{IllTyped, IllTypedCause};
 
 /// The declaration a location belongs to.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -373,6 +373,12 @@ pub enum InvalidDispatchDeclaration {
         receiver_type: NodeKey,
         /// The shared member name.
         member: String,
+    },
+    /// A [`super::ResolvedSignatures`] entry is keyed by an index past the
+    /// package's own `functions`, so it stands in for no declaration.
+    ResolvedSignatureOutOfRange {
+        /// The out-of-range function index.
+        index: usize,
     },
 }
 

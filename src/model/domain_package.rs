@@ -10,7 +10,7 @@
 //! document's IR nodes into these records.
 
 use crate::model::key::DeclarationKey;
-use crate::value::OrderingOperator;
+use quire_exact::OrderingOperator;
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

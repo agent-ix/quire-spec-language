@@ -805,6 +805,8 @@ pub(crate) mod tests {
     use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::{digest_of, DeclarationKey};
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::CatalogCode;
     use qsl_foundation::source::{LocatedSpan, Position};
 
     fn key(identity: &str) -> DeclarationKey {
@@ -1158,6 +1160,97 @@ pub(crate) mod tests {
             ModelRefusalCause::DuplicateDeclaredIdentity { .. }
             | ModelRefusalCause::DeclaredCreateDeleteOverlap { .. }
             | ModelRefusalCause::DeclaredDeltaMismatch { .. } => "delta-disagreement",
+        }
+    }
+
+    /// FR-090-AC-5 (TC-386): each cause's expected catalog code, one
+    /// literal arm per variant with no `_` arm, written independently of
+    /// `ModelRefusalCause::catalog_code`'s grouped arms. Each code is the
+    /// native code every construction site pairs with that cause;
+    /// `UnsortedDerivation` and `DuplicatePath` take `UnsortedView`'s.
+    fn expected_code(cause: &ModelRefusalCause) -> &'static str {
+        match cause {
+            ModelRefusalCause::UnknownOriginal { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownCandidate { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownOwner { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownGeneral { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownValueType { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownFieldWrite { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownEffectType { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownMember { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownRelationship { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownSourcePort { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownTargetPort { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownRedefining { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownRedefined { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownSubsetting { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownSubsetted { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownComponent { .. } => "dangling_reference",
+            ModelRefusalCause::UnknownEndpoint { .. } => "dangling_reference",
+            ModelRefusalCause::UnsortedView { .. } => "invalid_model_binding",
+            ModelRefusalCause::UnsortedDerivation { .. } => "invalid_model_binding",
+            ModelRefusalCause::DuplicatePath { .. } => "invalid_model_binding",
+            ModelRefusalCause::SpecializationCycle { .. } => "invalid_model_binding",
+            ModelRefusalCause::DerivationConflict { .. } => "invalid_model_binding",
+            ModelRefusalCause::UnsuppliedProducerRecord => "invalid_model_binding",
+            ModelRefusalCause::RedefinitionTarget { .. } => "invalid_model_binding",
+            ModelRefusalCause::WrongExport => "invalid_model_binding",
+            ModelRefusalCause::ConflictingBinding { .. } => "invalid_model_binding",
+            ModelRefusalCause::PortDirection { .. } => "invalid_model_binding",
+            ModelRefusalCause::MalformedDeclaration => "invalid_model_binding",
+            ModelRefusalCause::IntakeMalformedDeclaration { .. } => "invalid_model_binding",
+            ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
+            ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
+            ModelRefusalCause::DispatchFamilyDepth { .. } => "resource_exhausted",
+            ModelRefusalCause::GeneralizationDepthExceeded { .. } => "resource_exhausted",
+            ModelRefusalCause::ConformanceDepth { .. } => "resource_exhausted",
+            ModelRefusalCause::UnclosedMethodSet => "incomplete_population",
+            ModelRefusalCause::IncompleteScope { .. } => "incomplete_population",
+            ModelRefusalCause::UnclosedSubtypes { .. } => "incomplete_population",
+            ModelRefusalCause::NoApplicable => "ambiguous_dispatch",
+            ModelRefusalCause::MultipleUndominated => "ambiguous_dispatch",
+            ModelRefusalCause::VarianceResult => "ill_typed",
+            ModelRefusalCause::MultiplicityNarrowing { .. } => "ill_typed",
+            ModelRefusalCause::SubsettingType { .. } => "ill_typed",
+            ModelRefusalCause::TypeMismatch => "ill_typed",
+            ModelRefusalCause::VarianceParameter { .. } => "ill_typed",
+            ModelRefusalCause::EffectEscape { .. } => "ill_typed",
+            ModelRefusalCause::OperatorIneligible => "ill_typed",
+            ModelRefusalCause::UnprovedRefinement => "undefined_expression",
+            ModelRefusalCause::ForeignModelSelection { .. } => "foreign_reference",
+            ModelRefusalCause::ForeignType { .. } => "foreign_reference",
+            ModelRefusalCause::ForeignUniverse { .. } => "foreign_reference",
+            ModelRefusalCause::AbstractInstance { .. } => "invalid_runtime_input",
+            ModelRefusalCause::ConflictingIdentity { .. } => "invalid_runtime_input",
+            ModelRefusalCause::AbsentKey { .. } => "invalid_runtime_input",
+            ModelRefusalCause::DuplicateMember { .. } => "invalid_runtime_input",
+            ModelRefusalCause::SubsettingViolation { .. } => "invalid_runtime_input",
+            ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing_declaration",
+            ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",
+            ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
+            ModelRefusalCause::DigestDomainMismatch { .. } => "stale_dependency",
+            ModelRefusalCause::ByteDigestMismatch { .. } => "stale_dependency",
+            ModelRefusalCause::MissingSelection { .. } => "missing_import",
+            ModelRefusalCause::DuplicateSelection { .. } => "duplicate_selection",
+            ModelRefusalCause::FrameCreateOutsideGrant { .. } => "frame_violation",
+            ModelRefusalCause::FrameTypeChanged { .. } => "frame_violation",
+            ModelRefusalCause::FrameDeleteOutsideGrant { .. } => "frame_violation",
+            ModelRefusalCause::FrameFieldWriteOutsideGrant { .. } => "frame_violation",
+            ModelRefusalCause::DuplicateDeclaredIdentity { .. } => "population_delta_mismatch",
+            ModelRefusalCause::DeclaredCreateDeleteOverlap { .. } => "population_delta_mismatch",
+            ModelRefusalCause::DeclaredDeltaMismatch { .. } => "population_delta_mismatch",
+        }
+    }
+
+    #[trace("FR-090-AC-5", "TC-386")]
+    #[test]
+    fn catalog_code_gives_every_variant_its_code_and_tag() {
+        for cause in exhaustive_samples() {
+            assert_eq!(
+                cause.catalog_code(),
+                CatalogCode::new(expected_code(&cause), cause.as_str()),
+                "{cause:?}"
+            );
         }
     }
 

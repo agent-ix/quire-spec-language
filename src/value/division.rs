@@ -5,49 +5,7 @@
 
 use super::definition::AdmittedIntegerDivision;
 use super::outcome::{Outcome, Refusal, Stop, Undefined};
-use quire_exact::{Charge, ChargePoint, Integer, IntegerDomain, LimitKind, Meter};
-
-/// A selectable `div`/`rem` law.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum DivisionProfile {
-    /// `quire.value.integer-division.truncating/v1`.
-    Truncating,
-    /// `quire.value.integer-division.floor/v1`.
-    Floor,
-    /// `quire.value.integer-division.euclidean/v1`.
-    Euclidean,
-}
-
-impl DivisionProfile {
-    /// Every law.
-    pub const ALL: [Self; 3] = [Self::Truncating, Self::Floor, Self::Euclidean];
-
-    /// The exact definition identity that selects this law.
-    pub fn definition_identity(self) -> &'static str {
-        match self {
-            Self::Truncating => "quire.value.integer-division.truncating/v1",
-            Self::Floor => "quire.value.integer-division.floor/v1",
-            Self::Euclidean => "quire.value.integer-division.euclidean/v1",
-        }
-    }
-
-    /// The unique `(q, r)` with `a = b*q + r` under this law; `b` is nonzero.
-    fn apply(self, dividend: &Integer, divisor: &Integer) -> (Integer, Integer) {
-        match self {
-            Self::Truncating => dividend.div_rem_truncating(divisor),
-            Self::Floor => dividend.div_mod_floor(divisor),
-            Self::Euclidean => {
-                let (quotient, remainder) = dividend.div_mod_floor(divisor);
-                if remainder.is_negative() {
-                    // Only a negative divisor yields a negative floor remainder.
-                    (quotient.add(&Integer::one()), remainder.sub(divisor))
-                } else {
-                    (quotient, remainder)
-                }
-            }
-        }
-    }
-}
+use quire_exact::{Charge, ChargePoint, DivisionProfile, Integer, IntegerDomain, LimitKind, Meter};
 
 /// An atomically admitted quotient/remainder pair.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

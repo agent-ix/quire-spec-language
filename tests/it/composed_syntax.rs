@@ -8,7 +8,7 @@ use quire_spec_language::syntax::composed::{
     ProductOp, ProtocolRequirement, QueryOp, TemporalKind, TemporalOp, ValueKind,
 };
 use quire_spec_language::syntax::{BinaryOp, ExprId, ExprKind};
-use quire_spec_language::{format::format, parse, parse_native, parse_native_source, Limits};
+use quire_spec_language::{parse, parse_native, parse_native_source, Limits};
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";
 profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
@@ -358,7 +358,6 @@ fn keyword_classification_is_edition_and_position_specific() {
         Limits::default(),
     )
     .unwrap();
-    assert_eq!(format(&selected).unwrap(), format(&original).unwrap());
     assert_eq!(selected.source().digest(), original.source().digest());
 }
 

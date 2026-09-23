@@ -30,12 +30,16 @@ This story covers historical state clauses and the proposed composed native
 edition. Precise feedback applies equally to predicate, temporal and choreography
 syntax. Existing parser evidence does not establish the composed grammar.
 
+Formatting covers complete-V1 source only: `format` reads the complete-V1 CST
+(FR-003), and native-edition `format` is retired (ADR-011 §7.3 M-6a row;
+ADR-011 Rulings 2026-09-22, native-edition `format`).
+
 ## Acceptance Examples (Illustrative)
 
 ### US-001-EX-1
 
 - **Given** an admitted clause.
-- **When** I parse or format it.
+- **When** I parse it, or format it as complete-V1 source.
 - **Then** the source text remains identifiable.
 
 ### US-001-EX-2

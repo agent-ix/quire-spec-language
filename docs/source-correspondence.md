@@ -3,7 +3,7 @@
 The native compiler now validates exact body-to-original byte correspondence.
 This is an in-process Rust API, not a registered FS05 wire reader, Markdown
 extractor or model binding. C retains the existing-repository adapter and its
-independent consumer tests. The optional `quire_source` adapter calls Quire's
+independent consumer tests. The optional `qsl-source` adapter crate calls Quire's
 Rust extractor, validates its exact reported body and yields this map; the `run`
 command compiles the mapped body. Its CRLF adaptation drops only the verified final newline;
 the original Quire output remains available unchanged.

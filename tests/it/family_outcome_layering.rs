@@ -123,56 +123,83 @@ fn the_check_core_names_no_family_cause_type() {
     );
 }
 
-/// The crate names a manifest's `[dependencies]` table lists.
-fn dependencies(manifest: &str) -> Vec<String> {
-    let path = workspace_root().join(manifest);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    let mut in_dependencies = false;
-    let mut names = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            in_dependencies = line == "[dependencies]";
-            continue;
-        }
-        if in_dependencies && !line.is_empty() && !line.starts_with('#') {
-            if let Some((name, _)) = line.split_once('=') {
-                names.push(name.trim().to_owned());
-            }
-        }
-    }
-    names
+/// Every workspace package's name and its normal (`[dependencies]`)
+/// dependency names, from `cargo metadata`, so `x.workspace = true` keys and
+/// `[dependencies.x]` tables resolve like any other entry.
+fn workspace_dependencies() -> Vec<(String, Vec<String>)> {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let output = std::process::Command::new(cargo)
+        .current_dir(workspace_root())
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--offline",
+        ])
+        .output()
+        .expect("cargo metadata runs");
+    assert!(
+        output.status.success(),
+        "cargo metadata failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("cargo metadata emits JSON");
+    metadata["packages"]
+        .as_array()
+        .expect("cargo metadata lists packages")
+        .iter()
+        .map(|package| {
+            let name = package["name"].as_str().expect("a package name").to_owned();
+            let dependencies = package["dependencies"]
+                .as_array()
+                .expect("a dependency list")
+                .iter()
+                .filter(|dependency| dependency["kind"].is_null())
+                .map(|dependency| {
+                    dependency["name"]
+                        .as_str()
+                        .expect("a dependency name")
+                        .to_owned()
+                })
+                .collect();
+            (name, dependencies)
+        })
+        .collect()
 }
 
-/// Step 4 of TC-390, and step 3 of TC-386: each crate below layer 3 names
-/// only the workspace crates below it. `quire-exact` names none,
+/// Step 4 of TC-390, and step 3 of TC-386: each crate below layer 3 depends
+/// only on the workspace crates below it. `quire-exact` names none,
 /// `qsl-foundation` may name `quire-exact`, and `qsl-cst` may name
-/// `qsl-foundation` and `quire-exact` (ADR-011 §6.1).
+/// `qsl-foundation` and `quire-exact` (ADR-011 §6.1). Every other workspace
+/// crate, `qsl-source` and this crate included, is refused.
 #[trace("FR-090-AC-9", "TC-390", "FR-090-AC-5", "TC-386")]
 #[test]
 fn no_crate_below_layer_three_depends_on_the_check_core() {
-    let workspace_crates = [
-        "quire-spec-language",
-        "quire-exact",
-        "qsl-foundation",
-        "qsl-cst",
-        "qsl-attrs",
-        "qsl-replay",
-        "xtask",
-        "arch-lint",
-    ];
-    for (manifest, allowed) in [
-        ("quire-exact/Cargo.toml", &[][..]),
-        ("qsl-foundation/Cargo.toml", &["quire-exact"][..]),
-        ("qsl-cst/Cargo.toml", &["qsl-foundation", "quire-exact"][..]),
+    let packages = workspace_dependencies();
+    let workspace_crates: Vec<&str> = packages.iter().map(|(name, _)| name.as_str()).collect();
+    for required in ["quire-spec-language", "qsl-source", "qsl-cst"] {
+        assert!(
+            workspace_crates.contains(&required),
+            "cargo metadata lists no {required}: {workspace_crates:?}"
+        );
+    }
+    for (crate_name, allowed) in [
+        ("quire-exact", &[][..]),
+        ("qsl-foundation", &["quire-exact"][..]),
+        ("qsl-cst", &["qsl-foundation", "quire-exact"][..]),
     ] {
-        let names = dependencies(manifest);
-        assert!(!names.is_empty(), "{manifest} lists no dependency");
-        for name in names {
+        let (_, dependencies) = packages
+            .iter()
+            .find(|(name, _)| name == crate_name)
+            .unwrap_or_else(|| panic!("cargo metadata lists no {crate_name}"));
+        assert!(!dependencies.is_empty(), "{crate_name} lists no dependency");
+        for dependency in dependencies {
             assert!(
-                !workspace_crates.contains(&name.as_str()) || allowed.contains(&name.as_str()),
-                "{manifest} depends on workspace crate {name}"
+                !workspace_crates.contains(&dependency.as_str())
+                    || allowed.contains(&dependency.as_str()),
+                "{crate_name} depends on workspace crate {dependency}"
             );
         }
     }

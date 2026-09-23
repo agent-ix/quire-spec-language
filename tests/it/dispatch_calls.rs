@@ -15,6 +15,7 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
@@ -34,9 +35,9 @@ use quire_spec_language::value::{
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
     DispatchTable, Evaluation, Expression, FamilyOutcome, FamilyResult, FunctionDeclaration,
-    IllTypedCause, InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations,
-    QualifiedName, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    InputRefusal, InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
+    ObjectReference, ObjectTypeDeclaration, Origin, PackageDeclarations, QualifiedName,
+    TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type
@@ -61,6 +62,15 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
 
 fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// This file's `types(receiver_type)` always registers
+/// `receiver_type` under the fixed declared name "Receiver" -- see that
+/// function's own `ObjectTypeDeclaration::new` call -- so a
+/// `FunctionDeclaration`'s own `self` parameter names it this way,
+/// regardless of what `receiver_type`'s own digest happens to be.
+fn receiver_type_form() -> TypeForm {
+    crate::support::type_form::named_type_form("Receiver")
 }
 
 fn types(receiver_type: NodeKey) -> TypeEnvironment {
@@ -147,8 +157,8 @@ fn one_candidate_package(
     };
     let mut functions = vec![FunctionDeclaration::clause(
         "candidate.body",
-        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-        result.clone(),
+        vec![("self".to_owned(), receiver_type_form())],
+        crate::support::type_form::type_form(&result),
         None,
         body_value,
         DeclaredClauseKind::Body,
@@ -156,8 +166,8 @@ fn one_candidate_package(
     let precondition_index = precondition.map(|expression| {
         functions.push(FunctionDeclaration::clause(
             "candidate.precondition",
-            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-            ValueType::Boolean,
+            vec![("self".to_owned(), receiver_type_form())],
+            crate::support::type_form::type_form(&ValueType::Boolean),
             None,
             expression,
             DeclaredClauseKind::Precondition,
@@ -267,8 +277,8 @@ fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
     };
     package.functions.push(FunctionDeclaration::new(
         "f",
-        vec![("r".to_owned(), ValueType::Reference(receiver_type))],
-        ValueType::Integer,
+        vec![("r".to_owned(), receiver_type_form())],
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         body,
     ));
@@ -292,9 +302,10 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
     let narrow =
         ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(10_i64)).unwrap());
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    package.functions[0]
-        .parameters
-        .push(("n".to_owned(), narrow.clone()));
+    package.functions[0].parameters.push((
+        "n".to_owned(),
+        crate::support::type_form::type_form(&narrow),
+    ));
     package.dispatch_operations[0].parameters = vec![narrow];
     let checked_package = package.check(CheckingLimits::default()).unwrap();
     let parameters = vec![
@@ -333,9 +344,10 @@ fn dispatch_argument_admits_a_reference_upcast() {
     let super_type = key("model.dispatch-calls.Super");
     let sub_type = key("model.dispatch-calls.Sub");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    package.functions[0]
-        .parameters
-        .push(("arg".to_owned(), ValueType::Reference(super_type)));
+    package.functions[0].parameters.push((
+        "arg".to_owned(),
+        crate::support::type_form::named_type_form("Super"),
+    ));
     package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
     package.types = TypeEnvironment::new(
         [],
@@ -380,9 +392,10 @@ fn dispatch_argument_refuses_a_reference_downcast() {
     let super_type = key("model.dispatch-calls.Super");
     let sub_type = key("model.dispatch-calls.Sub");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    package.functions[0]
-        .parameters
-        .push(("arg".to_owned(), ValueType::Reference(sub_type)));
+    package.functions[0].parameters.push((
+        "arg".to_owned(),
+        crate::support::type_form::named_type_form("Sub"),
+    ));
     package.dispatch_operations[0].parameters = vec![ValueType::Reference(sub_type)];
     package.types = TypeEnvironment::new(
         [],
@@ -429,9 +442,10 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
     let super_type = key("model.dispatch-calls.Super");
     let unrelated_type = key("model.dispatch-calls.Unrelated");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    package.functions[0]
-        .parameters
-        .push(("arg".to_owned(), ValueType::Reference(super_type)));
+    package.functions[0].parameters.push((
+        "arg".to_owned(),
+        crate::support::type_form::named_type_form("Super"),
+    ));
     package.dispatch_operations[0].parameters = vec![ValueType::Reference(super_type)];
     package.types = TypeEnvironment::new(
         [],
@@ -482,8 +496,8 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
     package.functions.push(FunctionDeclaration::new(
         "f",
-        vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-        ValueType::Integer,
+        vec![("self".to_owned(), receiver_type_form())],
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         Expression::Call {
             name: "candidate.body".to_owned(),
@@ -534,7 +548,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
         functions: vec![FunctionDeclaration::clause(
             "internal_guard",
             vec![],
-            ValueType::Boolean,
+            crate::support::type_form::type_form(&ValueType::Boolean),
             None,
             Expression::Boolean(true),
             DeclaredClauseKind::Body,
@@ -593,7 +607,13 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 #[test]
 fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        FunctionDeclaration::new(
+            name,
+            Vec::new(),
+            crate::support::type_form::type_form(&ValueType::Boolean),
+            None,
+            body,
+        )
     }
 
     let target = declaration("target", Expression::Boolean(true));
@@ -708,7 +728,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
         FunctionDeclaration::new(
             name,
             Vec::new(),
-            ValueType::Boolean,
+            crate::support::type_form::type_form(&ValueType::Boolean),
             None,
             Expression::Boolean(true),
         )
@@ -869,10 +889,13 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
     package.functions[0] = FunctionDeclaration::clause(
         "candidate.body",
         vec![
-            ("self".to_owned(), ValueType::Reference(receiver_type)),
-            ("n".to_owned(), ValueType::Boolean),
+            ("self".to_owned(), receiver_type_form()),
+            (
+                "n".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Boolean),
+            ),
         ],
-        ValueType::Integer,
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         Expression::Integer(Integer::from(1_i64)),
         DeclaredClauseKind::Body,
@@ -1236,16 +1259,16 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
     let functions = vec![
         FunctionDeclaration::clause(
             "shared.body",
-            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-            ValueType::Integer,
+            vec![("self".to_owned(), receiver_type_form())],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::Integer(Integer::from(1_i64)),
             DeclaredClauseKind::Body,
         ),
         FunctionDeclaration::clause(
             "shared.precondition",
-            vec![("self".to_owned(), ValueType::Reference(receiver_type))],
-            ValueType::Boolean,
+            vec![("self".to_owned(), receiver_type_form())],
+            crate::support::type_form::type_form(&ValueType::Boolean),
             None,
             Expression::Boolean(false),
             DeclaredClauseKind::Precondition,

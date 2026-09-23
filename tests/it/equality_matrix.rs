@@ -16,21 +16,24 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
+use quire_exact::{
+    Decimal, IeeeExactLoss, IeeeWidth, IllTyped, IllTypedCause, Presence, Rational, RoundingMode,
+    TextProfile, TextType,
+};
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
     AdmittedIeeeProfile, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal,
     CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, Decimal, DecimalType, DefinitionLock, DefinitionReference,
-    DefinitionRevision, DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage,
-    EnumMemberPreimage, EqualityOperand, EqualityOperator, Evaluation, Expression, FamilyOutcome,
-    FieldDeclaration, FieldExpression, FieldInitializer, FieldValue, FunctionDeclaration,
-    IeeeComparison, IeeeExactLoss, IeeeFlag, IeeeValue, IeeeWidth, IllTyped, IllTypedCause,
-    LocatedLoss, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    EqualityOperand, EqualityOperator, Evaluation, Expression, FamilyOutcome, FieldDeclaration,
+    FieldExpression, FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeFlag,
+    IeeeValue, LocatedLoss, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
-    PackageDeclarations, Presence, Quantity, QuantityUnit, Rational, RationalDomain, Refusal,
-    RoundingMode, Text, TextPayload, TextProfile, TextType, TypeEnvironment, Undefined, UnitGraph,
-    UnitPreimage, UniverseIdentity, Value, ValueLoss, ValueType,
+    PackageDeclarations, Quantity, QuantityUnit, RationalDomain, Refusal, Text, TextPayload,
+    TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,
+    ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -2089,7 +2092,7 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         &package,
         &parameters,
         &Expression::Convert {
-            target: rational_type(0, 0, 1, 1),
+            target: crate::support::type_form::type_form(&rational_type(0, 0, 1, 1)),
             operand: Box::new(operand("f")),
         },
         None,
@@ -2178,8 +2181,11 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         types,
         functions: vec![FunctionDeclaration::new(
             "pick".to_owned(),
-            vec![("n".to_owned(), int_type(0, 1))],
-            ValueType::Integer,
+            vec![(
+                "n".to_owned(),
+                crate::support::type_form::type_form(&int_type(0, 1)),
+            )],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             operand("n"),
         )],
@@ -2245,7 +2251,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     let let_equal = |target: ValueType| Expression::Let {
         name: "x".to_owned(),
         value: Box::new(Expression::Convert {
-            target,
+            target: crate::support::type_form::type_form(&target),
             operand: Box::new(operand("e")),
         }),
         body: Box::new(operation(BinaryOperator::Equal, "x", "d")),
@@ -2287,7 +2293,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     let direct = Expression::Binary {
         operator: BinaryOperator::Equal,
         left: Box::new(Expression::Convert {
-            target,
+            target: crate::support::type_form::type_form(&target),
             operand: Box::new(operand("e")),
         }),
         right: Box::new(operand("d")),

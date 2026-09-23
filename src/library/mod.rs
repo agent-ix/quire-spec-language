@@ -41,16 +41,17 @@
 //! Name resolution against an imported dependency's exports -- binding a
 //! qualified reference's `a::Name` qualifier, and reporting a missing or
 //! ambiguous name -- is E3's own resolution over an `ImportView`, performed
-//! by the importing package's own check stage (FR-087-AC-4), never by
-//! `library` calling back into itself. `ImportView` exposes its exported
-//! declarations only as data (`ImportView::exports`, an iterator of
-//! `(name, PackageNodeKey)` pairs) and has no method that takes a name.
-//! `library` builds no `NodeKey` and has no function that takes a name and
-//! returns a `NodeKey` or `PackageNodeKey`. It does map a package's own
-//! export names to their `WireNodeId`s while admitting that package
-//! (`package_identity::ProjectedDeclarations::node`, reached through
-//! `verify_package`'s export selection). This module names none of
-//! `resolve_name`, `ExportIdentity`, `NameReference` or `NameRefusal`.
+//! by the importing package's own check stage (FR-087-AC-4; ADR-013 R-06),
+//! which builds its own name index from the view's entries
+//! (`check::imports`). `ImportView` holds its exported declarations keyed
+//! by `WireNodeId`, exposes them only as `(name, PackageNodeKey)` entries
+//! (`ImportView::exports`), and has no method that takes a name. `library`
+//! builds no `NodeKey` and has no function that takes a name and returns a
+//! node id or a declaration: admitting a package checks its export list
+//! against its declared names, and keeps only the listed declarations, by
+//! membership alone (`package_identity::ProjectedDeclarations::undeclared`,
+//! which returns a name, and `retain_exported`). This module names none of `resolve_name`, `ExportIdentity`,
+//! `NameReference` or `NameRefusal`.
 
 use std::collections::BTreeMap;
 
@@ -511,8 +512,11 @@ pub enum RefusalClass {
     SuppliedPoolPrecondition,
 }
 
-/// Recompute `package`'s `package_id` from its identity preimage, then
-/// validate the preimage and derive the package's export node keys from it.
+/// Recompute `package`'s `package_id` from its identity preimage, validate
+/// the preimage, and require every name in `package.exports` to be one the
+/// preimage declares. Returns the declarations `package.exports` names,
+/// keyed by `WireNodeId`; both steps test name membership and neither maps
+/// a name to a node id.
 ///
 /// ADR-011 §4's I2 verified binding, checks 1-2: `package.package_id` must
 /// equal `PackageId::of_preimage(&package.identity_preimage)` for every
@@ -543,16 +547,20 @@ pub(crate) fn verify_package(
             recomputed,
         });
     }
-    project_declarations(&package.identity_preimage)
-        .map_err(|defect| LibraryRefusal::InvalidPreimage {
+    let mut declarations = project_declarations(&package.identity_preimage).map_err(|defect| {
+        LibraryRefusal::InvalidPreimage {
             library: package.library.clone(),
             defect,
-        })?
-        .select(&package.exports)
-        .map_err(|export| LibraryRefusal::UndeclaredExport {
+        }
+    })?;
+    if let Some(export) = declarations.undeclared(&package.exports) {
+        return Err(LibraryRefusal::UndeclaredExport {
             library: package.library.clone(),
             export: export.to_owned(),
-        })
+        });
+    }
+    declarations.retain_exported(&package.exports);
+    Ok(declarations)
 }
 
 /// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
@@ -611,15 +619,16 @@ impl VerifiedPackage {
     }
 
     /// Convert into an [`ImportView`] (ADR-013 T-1), this module's only
-    /// conversion from `VerifiedPackage`: the verified package's exported
-    /// declarations exposed as opaque data, keyed for an importing
+    /// conversion from `VerifiedPackage`: the verified package's declared
+    /// exports exposed as data keyed by `WireNodeId`, for an importing
     /// package's own check stage to resolve by [`PackageNodeKey`] (T-3),
     /// without `library` performing any name resolution itself
-    /// (FR-087-AC-4; ADR-013 R-06).
+    /// (FR-087-AC-4; ADR-013 R-06). The view carries only the declarations
+    /// the verified package's `exports` list names.
     pub fn into_import_view(self) -> ImportView {
         ImportView {
             package: self.package.package_id,
-            exports: self.exports.into_map(),
+            exports: self.exports.into_entries(),
         }
     }
 }
@@ -726,12 +735,13 @@ pub(crate) fn verify_binding(
     })
 }
 
-/// The verified package's exported declarations, exposed as opaque data
-/// (ADR-013 T-1; FR-087-AC-4): each exported qualified name mapped to its
-/// `WireNodeId`, paired with [`Self::package`] into a [`PackageNodeKey`]
-/// (T-3) for an importing package's own check stage to look up. `library`
-/// performs no name resolution over this data (ADR-013 R-06): `ImportView`
-/// has no method that takes a name.
+/// The verified package's exported declarations, exposed as data (ADR-013
+/// T-1; FR-087-AC-4; ADR-011 §2.1 I2): keyed by `WireNodeId`, each carrying
+/// its exported qualified name, and paired with [`Self::package`] into a
+/// [`PackageNodeKey`] (T-3). The importing package's own check stage builds
+/// its name index from these entries. `library` performs no name resolution
+/// over this data (ADR-013 R-06): `ImportView` has no method that takes a
+/// name.
 ///
 /// The only field-carrying constructor is
 /// [`VerifiedPackage::into_import_view`] (private fields, private to this
@@ -746,7 +756,7 @@ pub(crate) fn verify_binding(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportView {
     package: PackageId,
-    exports: BTreeMap<String, WireNodeId>,
+    exports: BTreeMap<WireNodeId, String>,
 }
 
 impl ImportView {
@@ -756,14 +766,15 @@ impl ImportView {
         self.package
     }
 
-    /// The exported declarations, each already paired with [`Self::package`]
-    /// into a [`PackageNodeKey`]. The importing package's own checker
-    /// performs the name lookup itself, over this data (E3; FR-087-AC-4).
+    /// The exported declarations as `(name, PackageNodeKey)` entries, in
+    /// ascending `WireNodeId` order, each node already paired with
+    /// [`Self::package`]. The importing package's own checker performs the
+    /// name lookup itself, over this data (E3; FR-087-AC-4).
     pub fn exports(&self) -> impl Iterator<Item = (&str, PackageNodeKey)> + '_ {
         let package = self.package;
         self.exports
             .iter()
-            .map(move |(name, node)| (name.as_str(), PackageNodeKey::new(package, *node)))
+            .map(move |(node, name)| (name.as_str(), PackageNodeKey::new(package, *node)))
     }
 }
 
@@ -781,6 +792,7 @@ impl ImportView {
 pub(crate) fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
     Ok(project_declarations(identity_preimage)?
         .declared_names()
+        .into_iter()
         .map(str::to_owned)
         .collect())
 }
