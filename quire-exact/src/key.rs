@@ -102,7 +102,21 @@ fn leaf<'a>(
         (Value::Text(left), Value::Text(right)) => {
             left.retained().as_bytes().cmp(right.retained().as_bytes())
         }
-        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
+        // FND-003 (SR-511): a rank alone does not name a declaration. Two
+        // members of *different* enum declarations can share a rank without
+        // being equal under `crate::equality` (they have different
+        // `VariantId`s), and this leaf carries no declaration to guard on.
+        // When ranks are equal but the `VariantId`s differ, the pair is not
+        // one keyed type, so this returns `None` rather than reporting a
+        // false `Equal` -- the same contract `crate::equality`'s leaf match
+        // already enforces on a `VariantId` mismatch.
+        (Value::Enum(left), Value::Enum(right)) => {
+            let ordering = left.rank().cmp(&right.rank());
+            if ordering.is_eq() && left.variant() != right.variant() {
+                return None;
+            }
+            ordering
+        }
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {
@@ -200,6 +214,30 @@ mod tests {
 
         let left = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
         let right = Value::Float(IeeeValue::binary64(0x3ff0_0000_0000_0000));
+        assert_eq!(compare_keys(&left, &right), None);
+    }
+
+    /// FND-003 (SR-511): the kernel leaf carries no declaration to guard
+    /// on, so two members of *different* enum declarations that happen to
+    /// share a rank must still be told apart by `VariantId` -- they are not
+    /// equal under `crate::equality`'s leaf match. Mutation proof: dropping
+    /// the `left.variant() != right.variant()` guard back to a bare
+    /// `left.rank().cmp(&right.rank())` makes this return
+    /// `Some(Ordering::Equal)` instead of `None`.
+    #[trace("TC-409")]
+    #[test]
+    fn compare_keys_refuses_same_rank_different_declaration_members() {
+        use crate::identity::VariantId;
+        use crate::value::EnumMember;
+
+        fn digest(byte: u8) -> [u8; 32] {
+            let mut bytes = [0_u8; 32];
+            bytes[31] = byte;
+            bytes
+        }
+
+        let left = Value::Enum(EnumMember::new(VariantId::from_digest(digest(1)), 0));
+        let right = Value::Enum(EnumMember::new(VariantId::from_digest(digest(2)), 0));
         assert_eq!(compare_keys(&left, &right), None);
     }
 }

@@ -79,7 +79,21 @@ fn leaf<'a>(
         // value fixed it there (declaration order when ordered, case-sorted
         // order otherwise) -- so comparing ranks numerically reproduces
         // FR-144's rule for both cases at once, with no declaration lookup.
-        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
+        //
+        // FND-003 (SR-511): a rank alone does not name a declaration. Two
+        // members of *different* enum declarations can share a rank without
+        // being FR-149 equal (they have different `VariantId`s). When ranks
+        // are equal but the `VariantId`s differ, the pair is not one keyed
+        // type, so this returns `None` rather than reporting a false
+        // `Equal` -- the same contract violation `crate::equality`'s leaf
+        // match already refuses on a `VariantId` mismatch.
+        (Value::Enum(left), Value::Enum(right)) => {
+            let ordering = left.rank().cmp(&right.rank());
+            if ordering.is_eq() && left.variant() != right.variant() {
+                return None;
+            }
+            ordering
+        }
         (Value::Reference(left), Value::Reference(right)) => left.cmp(right),
         (Value::Option(left), Value::Option(right)) => match (left.payload(), right.payload()) {
             (Some(left), Some(right)) => {
@@ -121,4 +135,59 @@ fn leaf<'a>(
         ) => return None,
     };
     Some(Some(ordering))
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::{EnumMember, NodeKey};
+
+    use super::*;
+    use crate::value::enumeration::mint_variant_id;
+
+    fn node_key(byte: u8) -> NodeKey {
+        let mut bytes = [0_u8; 32];
+        bytes[31] = byte;
+        NodeKey::from_digest(bytes)
+    }
+
+    /// FND-003 (SR-511): two members of *different* enum declarations that
+    /// share a rank are not FR-149 equal -- they have different
+    /// `VariantId`s -- so `compare_keys` must not report them as one keyed
+    /// type. Mutation proof: dropping the `left.variant() != right.variant()`
+    /// guard back to a bare `left.rank().cmp(&right.rank())` makes this
+    /// return `Some(Ordering::Equal)` instead of `None`.
+    #[trace("TC-409")]
+    #[test]
+    fn compare_keys_refuses_same_rank_different_declaration_members() {
+        let left_variant = mint_variant_id(node_key(1), "READY");
+        let right_variant = mint_variant_id(node_key(2), "READY");
+        assert_ne!(left_variant, right_variant);
+
+        let left = Value::Enum(EnumMember::new(left_variant, 0));
+        let right = Value::Enum(EnumMember::new(right_variant, 0));
+        assert_eq!(compare_keys(&left, &right), None);
+    }
+
+    /// Sanity companion to the FND-003 test above: two members of *one*
+    /// declaration with equal ranks (the same member twice) do key-compare
+    /// equal, and members at different ranks order by rank.
+    #[trace("TC-409")]
+    #[test]
+    fn compare_keys_orders_same_declaration_members_by_rank() {
+        let declaration = node_key(1);
+        let ready = mint_variant_id(declaration, "READY");
+        let done = mint_variant_id(declaration, "DONE");
+
+        let ready_value = Value::Enum(EnumMember::new(ready, 0));
+        let done_value = Value::Enum(EnumMember::new(done, 1));
+        assert_eq!(
+            compare_keys(&ready_value, &ready_value),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(
+            compare_keys(&ready_value, &done_value),
+            Some(Ordering::Less)
+        );
+    }
 }
