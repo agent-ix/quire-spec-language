@@ -288,8 +288,9 @@ mod tests {
     /// (`value::expression::family.rs` keeps the evaluation half and
     /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
     /// `causes` (FR-090's family evaluation causes, defined beside the
-    /// evaluator), so an unexpected module cannot be hiding a renamed
-    /// leftover here.
+    /// evaluator) and `s6a` (the S6a family contract, `ReferenceEvaluation`
+    /// and `S6aFamilyKind`, layer 5 since QSL-181), so an unexpected module
+    /// cannot be hiding a renamed leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
@@ -301,12 +302,13 @@ mod tests {
                 "value::expression::mod.rs still declares mod {forbidden};"
             );
         }
-        let expected: std::collections::BTreeSet<&str> =
-            ["causes", "evaluate", "family"].into_iter().collect();
+        let expected: std::collections::BTreeSet<&str> = ["causes", "evaluate", "family", "s6a"]
+            .into_iter()
+            .collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family"
+            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family/s6a"
         );
     }
 

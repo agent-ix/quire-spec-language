@@ -1198,12 +1198,12 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Declarations`]:
 /// the package-wide, read-only state one declaration's `check` call needs to
-/// run [`check_declaration_body`] for real (QSL-148) -- `Scope`, every
+/// run `check_declaration_body` for real (QSL-148) -- `Scope`, every
 /// declared `Signature` and the checked package's dispatch tables, none of
 /// which the shared `CheckContext`/`StageLimits` carry, since those are
 /// generic across every family -- plus the two per-declaration locations
 /// (`location`, `measure_location`) `check::mod`'s per-declaration loop
-/// already computes fresh each iteration, plus [`Self::nodes_used`] (PR #303
+/// already computes fresh each iteration, plus `nodes_used` (PR #303
 /// review round 3, finding F1).
 ///
 /// **No interior mutability (PR #303 review, finding N3).** The real checked
@@ -1213,12 +1213,12 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 /// `Ok`.
 ///
 /// **The package-wide `nodes` budget travels the same ordinary way (PR #303
-/// review round 3, finding F1).** [`Self::nodes_used`] is the running total
+/// review round 3, finding F1).** `nodes_used` is the running total
 /// of `Expression` nodes every earlier declaration in this same package has
 /// already admitted -- owned and advanced by `check::mod`'s own loop, not by
 /// this struct, exactly the way that loop's pre-QSL-148 version shared one
 /// `&mut u64` across every `Typer` it built in turn.
-/// [`check_declaration_body`] seeds `Typer`'s own counter from it instead of
+/// `check_declaration_body` seeds `Typer`'s own counter from it instead of
 /// starting at zero each time, so `Typer` still compares against the one,
 /// unmodified `CheckingLimits::nodes` bound this declaration's own
 /// `checking_limits` names, but against the *package's* running total, not
@@ -1248,7 +1248,7 @@ pub struct ValueDeclarations<'a> {
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Checked`]
 /// (QSL-148; PR #303 review, finding N3): the minted identity together with
-/// the real checked body [`check_declaration_body`] produces, returned
+/// the real checked body `check_declaration_body` produces, returned
 /// through `check`'s own `Ok` rather than a side channel.
 ///
 /// This is distinct from layer 5's `ReferenceEvaluation::Key`, the
@@ -1256,7 +1256,7 @@ pub struct ValueDeclarations<'a> {
 /// real caller (`CheckedPackage::call`, `value::expression::mod.rs`) only
 /// ever has a bare identity, resolved out of `CheckedPackage`'s own,
 /// separately stored `CheckedFunction` list -- it never has a
-/// [`CheckedDeclarationBody`] at that point, only what `check` minted for
+/// `CheckedDeclarationBody` at that point, only what `check` minted for
 /// it. Splitting the two associated types apart is what lets `Checked`
 /// carry the richer, check-time-only payload without breaking `evaluate`'s
 /// existing calling convention.
