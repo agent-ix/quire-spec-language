@@ -14,8 +14,8 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
-use qsl_semantics::check::Capability;
 use qsl_route::{BackendDescriptor, BackendId, CandidateOutcome, Mode, Registry, ToolIdentity};
+use qsl_semantics::check::Capability;
 
 fn digest(seed: &[u8]) -> ByteDigest {
     ByteDigest::of(seed)

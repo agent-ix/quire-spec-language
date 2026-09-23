@@ -41,11 +41,11 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
+use qsl_route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::package::{NativePackage, PackageLimits};
-use qsl_route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
 use quire_spec_language::syntax::ClauseKind;
 use serde_json::json;
 

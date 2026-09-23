@@ -180,8 +180,8 @@ registrations were added.
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Implemented under QSL-46 (PR #305) as `src/route.rs`, over the canonical
-`Capability` type (QSL-173, `qsl-semantics/src/check/capability.rs`).
+Implemented under QSL-46 (PR #305) over the canonical `Capability` type (QSL-173, `qsl-semantics/src/check/capability.rs`). Since QSL-184 (ADR-011
+§7.3 X-9) it is the crate `qsl-route` (`qsl-route/src/lib.rs`).
 `src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
 the lowering-target selector; it is deleted with `lowering` in ADR-011
 §7.3 M-6a (Description).
@@ -189,20 +189,20 @@ the lowering-target selector; it is deleted with `lowering` in ADR-011
 By Acceptance Criterion:
 - FR-075-AC-1: backed (`TC-193`):
   `candidate_set_matches_registered_backends_advertising_the_requested_kind`
-  (`tests/it/route_registry.rs`).
+  (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-2: backed (`TC-194`):
   `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`
   and `thirty_sampled_orderings_of_five_descriptors_agree`
-  (`tests/it/route_registry.rs`).
+  (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-3: backed (`TC-195`):
   `unregistered_named_backend_yields_a_distinct_unknown_backend_marker`
-  (`tests/it/route_registry.rs`).
+  (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-4: backed (`TC-196`):
   `duplicate_backend_identity_registration_is_refused_and_the_original_stands`
-  (`tests/it/route_registry.rs`).
+  (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-5: backed for its matching half (`TC-193`):
-  `advertises_kind_matches_only_the_exact_capability` (`src/route.rs`)
+  `advertises_kind_matches_only_the_exact_capability` (`qsl-route/src/lib.rs`)
   shows candidate matching goes through `Capability` and tells two kinds
   apart. Its second half, that no other enum in scope carries FR-290
   capability-kind variants, holds by inspection: `route` imports
-  `crate::check::Capability` and defines no capability-kind type.
+  `qsl_semantics::check::Capability` and defines no capability-kind type.

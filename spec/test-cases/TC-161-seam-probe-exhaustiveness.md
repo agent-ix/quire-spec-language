@@ -14,9 +14,10 @@ relationships:
 
 ## Description
 
-Verify that the two probe builds -- `qsl-semantics` under
-`RUSTFLAGS=--cfg seam_probe`, then the root crate under `RUSTFLAGS=--cfg
-seam_probe --cfg seam_probe_downstream` -- each fail to compile, together
+Verify that the three probe builds -- `qsl-semantics` under
+`RUSTFLAGS=--cfg seam_probe`, then the root crate and `qsl-route` each
+under `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream` -- each fail
+to compile, together
 with exactly the checked-in set of seam-function locations (and with rustc
 error code `E0004` specifically at each), that a normal build (no `seam_probe`
 set) succeeds with none, that removing a checked-in entry or removing an
@@ -56,7 +57,8 @@ deliver.
 ## Test Procedure
 
 1. Run `cargo build -p qsl-semantics --lib` with `RUSTFLAGS=--cfg
-   seam_probe`, then `cargo build -p quire-spec-language --lib` with
+   seam_probe`, then `cargo build -p quire-spec-language --lib` and
+   `cargo build -p qsl-route --lib` with
    `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`; confirm each
    fails, and collect the union of their `E0004` diagnostic locations
    (via `--message-format=json`, filtering `compiler-message` entries whose
