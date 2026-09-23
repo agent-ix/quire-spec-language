@@ -2,12 +2,12 @@
 //! Complete-V1 document analysis and canonical-format round-tripping.
 use ix_trace_rs::trace;
 use qsl_cst::{
-    parse, CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionDigest, DefinitionRef,
-    HostCause, Limits, TokenClass,
+    parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, TokenClass,
 };
+use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
-    self, analyze_document, format_document, DocumentBinding, ProfileCatalog, SourceEdit,
+    self, analyze_document, format_document, DocumentBinding, SourceEdit,
 };
 
 fn ugly(profile: &DefinitionRef) -> String {

@@ -19,7 +19,7 @@ default = []
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 # Test-only fixture constructors (`DeclarationKey::fixture`,
 # `DomainPackageRef::fixture`, `DomainPackageRef::fixture_with_version`) that
-# derive a digest from a display identity —
+# derive a digest from a display identity, and `ReaderAuthority::fixture` —
 # never enabled in a production build; `cargo test --all-features` turns it on
 # so integration tests in `tests/` can reach them (PR #140 F13).
 test-support = []
@@ -86,13 +86,13 @@ path = "tools/fixture-audit/main.rs"
 
 # QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for
-# the full rationale). The seven modules that call the `test-support`-gated
+# the full rationale). The eight modules that call the `test-support`-gated
 # fixture constructors (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
-# `DomainPackageRef::fixture_with_version`) are gated with
+# `DomainPackageRef::fixture_with_version`, `ReaderAuthority::fixture`) are gated with
 # `#[cfg(feature = "test-support")]` on their own `mod` lines in
 # `tests/it/main.rs` instead of `required-features` here, so this single
 # target needs none: a default-feature `cargo clippy --all-targets`/`cargo
-# test` build (no `test-support`) compiles `it` with those seven modules
+# test` build (no `test-support`) compiles `it` with those eight modules
 # `cfg`'d out, matching the previous per-file behavior (#154) without
 # skipping the whole binary.
 [[test]]

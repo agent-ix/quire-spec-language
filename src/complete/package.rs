@@ -5,16 +5,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest as _, Sha256};
 use std::sync::Arc;
 
-use qsl_cst::{
-    CompleteCause, DefinitionDigest, DefinitionRef, InvalidDefinitionComponent,
-    InvalidModelComponent, ModelDigest, ModelRef, ParsedSource,
+use qsl_foundation::selection::{
+    DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, InvalidModelComponent,
+    ModelDigest, ModelRef, SourceSelections, MAX_SELECTED_DEFINITIONS,
 };
-use qsl_foundation::{ByteDigest, Code, SourceIdentity, Span};
+use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
 
 /// Unforgeable crate-issued proof that typed definition/model parts came from
 /// the owning reader boundary.
 ///
-/// There is deliberately no public constructor. Task-054 will connect the
+/// There is deliberately no production constructor. Task-054 will connect the
 /// concrete checked reader; raw source/editor callers cannot mint this proof.
 #[derive(Debug)]
 pub struct ReaderAuthority {
@@ -22,21 +22,21 @@ pub struct ReaderAuthority {
 }
 
 impl ReaderAuthority {
-    #[cfg(test)]
-    pub(crate) const fn crate_owned() -> Self {
+    /// Test-only fixture authority (`test-support`, never enabled in a
+    /// production build), so the integration tests that parse a source and
+    /// then resolve it (`tests/it/complete_package.rs`) can build
+    /// definitions and models.
+    #[cfg(any(test, feature = "test-support"))]
+    pub const fn fixture() -> Self {
         Self { _private: () }
     }
 }
 
 // `DefinitionDigest`, `DefinitionRef`, `ModelDigest`, `ModelRef` and the
-// selection types (`ProfileSelection`, `ImportSelection`, `ModelSelection`,
-// `SourceSelections`) are layer-1 CST types, defined in the `qsl-cst` crate
-// (ADR-011 §7.3 X-3): they are the exact syntax-level selection domain the
-// parser produces, not package resolution. This module (layer 3) depends on
-// them downward. `new()` stays an inherent impl in `qsl_cst::cst` (an
-// inherent impl for a foreign type is an error across the crate boundary);
-// this module maps its public layer-1 validation errors onto `PackageError`
-// instead.
+// selection lists (`SourceSelections`) are layer-F values
+// (`qsl_foundation::selection`, QSL-181): the parser produces them and this
+// module resolves them, and neither layer owns them. This module maps their
+// validation errors onto `PackageError`.
 impl From<InvalidDefinitionComponent> for PackageError {
     fn from(component: InvalidDefinitionComponent) -> Self {
         match component {
@@ -181,7 +181,7 @@ pub struct PackageLimits {
 impl Default for PackageLimits {
     fn default() -> Self {
         Self {
-            definitions: 4_096,
+            definitions: MAX_SELECTED_DEFINITIONS,
             dependency_edges: 16_384,
             depth: 256,
             artifact_bytes: 16 * qsl_foundation::source::MAX_SOURCE_BYTES,
@@ -306,51 +306,6 @@ impl DefinitionCatalog {
     }
 }
 
-/// Exact profile-selection inventory used by public syntax and editor APIs.
-///
-/// This catalog carries only immutable source-selected references. It grants no
-/// semantic-definition, capability, checked-package, model-reader, or runtime
-/// authority.
-#[derive(Clone, Debug, Default)]
-pub struct ProfileCatalog {
-    profiles: BTreeSet<DefinitionRef>,
-}
-
-impl ProfileCatalog {
-    /// Build a bounded exact profile inventory.
-    pub fn new(profiles: Vec<DefinitionRef>) -> Result<Self, PackageError> {
-        let limits = PackageLimits::default();
-        if profiles.len() > limits.definitions {
-            return Err(PackageError::ResourceLimit);
-        }
-        let mut catalog = Self::default();
-        for profile in profiles {
-            if !catalog.profiles.insert(profile) {
-                return Err(PackageError::DuplicateDefinition);
-            }
-        }
-        Ok(catalog)
-    }
-
-    pub(crate) fn profile_status(&self, selected: &DefinitionRef) -> ProfileStatus {
-        if self.profiles.contains(selected) {
-            ProfileStatus::Exact
-        } else if self.profiles.iter().any(|profile| {
-            profile.identity() == selected.identity() && profile.version() == selected.version()
-        }) {
-            ProfileStatus::Stale(StaleProfile::ByteDigest)
-        } else if self
-            .profiles
-            .iter()
-            .any(|profile| profile.identity() == selected.identity())
-        {
-            ProfileStatus::Stale(StaleProfile::Revision)
-        } else {
-            ProfileStatus::Unknown
-        }
-    }
-}
-
 /// Exact compiled-model inventory, separate from semantic definitions.
 #[derive(Clone, Debug, Default)]
 pub struct ModelCatalog {
@@ -401,22 +356,6 @@ impl ModelCatalog {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ProfileStatus {
-    Exact,
-    Stale(StaleProfile),
-    Unknown,
-}
-
-/// How a known profile identity differs from its selection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StaleProfile {
-    /// No known profile has the selected version.
-    Revision,
-    /// A known profile has the selected version with another digest.
-    ByteDigest,
-}
-
 /// Original source authority retained through package graph resolution/lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceAuthority {
@@ -428,10 +367,21 @@ pub struct SourceAuthority {
     pub path: String,
 }
 
+impl SourceAuthority {
+    /// The authority of `source`: its identity, exact raw-byte digest and
+    /// path.
+    pub fn of(source: &Source) -> Self {
+        Self {
+            identity: source.identity().clone(),
+            digest: SourceDigest(source.digest()),
+            path: source.path().into(),
+        }
+    }
+}
+
 /// Syntax/package-graph checked result; not the later type-checked package.
 #[derive(Clone, Debug)]
 pub struct ResolvedSourcePackage {
-    parsed: Arc<ParsedSource>,
     authority: SourceAuthority,
     bundle: CompleteBundle,
     definitions: BTreeMap<DefinitionRef, Arc<Definition>>,
@@ -439,10 +389,6 @@ pub struct ResolvedSourcePackage {
 }
 
 impl ResolvedSourcePackage {
-    /// The exact admitted syntax tree this package was resolved from.
-    pub fn parsed(&self) -> &Arc<ParsedSource> {
-        &self.parsed
-    }
     /// Original source authority (identity, digest, path) this package was
     /// resolved from.
     pub fn authority(&self) -> &SourceAuthority {
@@ -677,33 +623,112 @@ pub struct PackageRefusal {
     /// Typed corrective cause.
     pub cause: PackageError,
     /// Closed catalogued cause tag, admitted by the catalog for `code`.
-    pub cause_tag: CompleteCause,
+    pub cause_tag: ResolutionCause,
+}
+
+/// The closed catalogued cause tag of a package-graph refusal, under
+/// `quire.native.diagnostics/v1` revision `1-draft.3`. Layer 3's own subset of
+/// the cause vocabulary: the parser's `qsl_cst::CompleteCause` is layer 1's,
+/// and resolution never sees a syntax cause.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ResolutionCause {
+    /// `unknown_profile`: the selection is not supported by this consumer.
+    UnsupportedSelection,
+    /// `stale_dependency`: the selected version differs from the known one.
+    RevisionMismatch,
+    /// `stale_dependency`: the selected version is known with another digest.
+    ByteDigestMismatch,
+    /// `resource_exhausted`: the next charge exceeds its limit.
+    InsufficientNextCharge,
+    /// `missing_import`: no known definition has the selected identity.
+    MissingSelection,
+    /// `ambiguous_declaration`: one alias is declared twice in a namespace.
+    AmbiguousName,
+    /// `ambiguous_declaration`: one definition identity is selected at two
+    /// distinct exact selections.
+    ConflictingAuthority,
+    /// `invalid_package`: a catalog holds one exact selection twice.
+    DuplicateMember,
+    /// `invalid_package`: a definition or model member is malformed.
+    InvalidValue,
+    /// `invalid_package`: the definition dependency graph has a cycle.
+    DefinitionCycle,
+    /// `invalid_package`: the resolved closure lacks a required facet.
+    FeatureSetMismatch,
+    /// `unknown_required_feature`: a capability name outside the inventory.
+    UnknownFeature,
+    /// `unknown_required_feature`: a known capability the closure does not
+    /// provide.
+    UnsupportedFeature,
+    /// `invalid_model_binding`: the selected compiled model is absent or stale.
+    WrongModelSelection,
+    /// `invalid_model_binding`: one model identity is selected twice with
+    /// distinct exact selections.
+    ConflictingBinding,
+}
+
+impl ResolutionCause {
+    /// The stable catalog tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedSelection => "unsupported-selection",
+            Self::RevisionMismatch => "revision-mismatch",
+            Self::ByteDigestMismatch => "byte-digest-mismatch",
+            Self::InsufficientNextCharge => "insufficient-next-charge",
+            Self::MissingSelection => "missing-selection",
+            Self::AmbiguousName => "ambiguous-name",
+            Self::ConflictingAuthority => "conflicting-authority",
+            Self::DuplicateMember => "duplicate-member",
+            Self::InvalidValue => "invalid-value",
+            Self::DefinitionCycle => "definition-cycle",
+            Self::FeatureSetMismatch => "feature-set-mismatch",
+            Self::UnknownFeature => "unknown-feature",
+            Self::UnsupportedFeature => "unsupported-feature",
+            Self::WrongModelSelection => "wrong-model-selection",
+            Self::ConflictingBinding => "conflicting-binding",
+        }
+    }
+
+    /// Whether the catalog admits this cause for `code`.
+    pub fn is_cause_of(self, code: Code) -> bool {
+        match self {
+            Self::UnsupportedSelection => matches!(
+                code,
+                Code::UnknownLanguage | Code::UnknownEdition | Code::UnknownProfile
+            ),
+            Self::RevisionMismatch | Self::ByteDigestMismatch => {
+                matches!(code, Code::StaleDependency | Code::SourceDigestMismatch)
+            }
+            Self::InsufficientNextCharge => code == Code::ResourceExhausted,
+            Self::MissingSelection => code == Code::MissingImport,
+            Self::AmbiguousName | Self::ConflictingAuthority => code == Code::AmbiguousDeclaration,
+            Self::DuplicateMember
+            | Self::InvalidValue
+            | Self::DefinitionCycle
+            | Self::FeatureSetMismatch => code == Code::InvalidPackage,
+            Self::UnknownFeature | Self::UnsupportedFeature => code == Code::UnknownRequiredFeature,
+            Self::WrongModelSelection | Self::ConflictingBinding => {
+                code == Code::InvalidModelBinding
+            }
+        }
+    }
 }
 
 /// Resolve exact source selections into a dependency-closed complete bundle.
+///
+/// `selections` are the selections of the source `authority` names, as an
+/// admitted parse recovered them. Parsing, and refusing a source whose parse
+/// is not admissible, is the caller's step (layer 6 or a tool, QSL-181): this
+/// layer sees no syntax.
 pub fn resolve_source_package(
-    parsed: Arc<ParsedSource>,
+    authority: SourceAuthority,
+    selections: &SourceSelections,
     catalog: &DefinitionCatalog,
     models: &ModelCatalog,
     limits: PackageLimits,
 ) -> Result<ResolvedSourcePackage, PackageRefusal> {
     let limits = limits.bounded();
-    let refusal = |code, span, cause| refusal(parsed.as_ref(), code, span, cause);
-    if !parsed.is_admissible() {
-        let whole = Span {
-            start: 0,
-            end: parsed.source().text().len(),
-        };
-        // The source's first diagnostic classifies it; an inadmissible source
-        // without one broke the parser's established invariant.
-        let mut refused = refusal(Code::RuntimeInvariant, whole, PackageError::InvalidSource);
-        if let Some(first) = parsed.diagnostics().first() {
-            refused.code = first.code;
-            refused.cause_tag = first.cause;
-        }
-        return Err(refused);
-    }
-    let selections = parsed.selections();
+    let refusal = |code, span, cause| refusal(&authority, code, span, cause);
     for (namespace, aliases) in [
         (
             "profile",
@@ -834,7 +859,7 @@ pub fn resolve_source_package(
                         *span,
                         PackageError::StaleDefinition((*selected).clone()),
                     );
-                    stale.cause_tag = CompleteCause::ByteDigestMismatch;
+                    stale.cause_tag = ResolutionCause::ByteDigestMismatch;
                     return Err(stale);
                 }
                 (
@@ -1003,7 +1028,7 @@ pub fn resolve_source_package(
     }
     let mut bundle = link_complete_bundle(facets).map_err(|cause| {
         identity_refusal(
-            parsed.as_ref(),
+            &authority,
             selections
                 .profiles
                 .first()
@@ -1027,9 +1052,9 @@ pub fn resolve_source_package(
                 definition.role.identity_name().as_bytes(),
             ),
         ] {
-            identity.field(name, value).map_err(|cause| {
-                identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause)
-            })?;
+            identity
+                .field(name, value)
+                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
         }
         for dependency in &definition.dependencies {
             let digest = dependency.digest().digest().to_string();
@@ -1039,16 +1064,14 @@ pub fn resolve_source_package(
                 ("dependency-digest", digest.as_bytes()),
             ] {
                 identity.field(name, value).map_err(|cause| {
-                    identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause)
+                    identity_refusal(&authority, Span { start: 0, end: 0 }, cause)
                 })?;
             }
         }
         for capability in &definition.capabilities {
             identity
                 .field("definition-capability", capability.as_str().as_bytes())
-                .map_err(|cause| {
-                    identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause)
-                })?;
+                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
         }
     }
     for model in resolved_models.values() {
@@ -1058,40 +1081,36 @@ pub fn resolve_source_package(
             ("model-version", model.exact.version().as_bytes()),
             ("model-digest", digest.as_bytes()),
         ] {
-            identity.field(name, value).map_err(|cause| {
-                identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause)
-            })?;
+            identity
+                .field(name, value)
+                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
         }
     }
     for capability in &bundle.capabilities {
         identity
             .field("capability", capability.as_str().as_bytes())
-            .map_err(|cause| identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause))?;
+            .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
     }
     bundle.identity = identity
         .finish()
-        .map_err(|cause| identity_refusal(parsed.as_ref(), Span { start: 0, end: 0 }, cause))?;
+        .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
     Ok(ResolvedSourcePackage {
-        authority: source_authority(parsed.as_ref()),
-        parsed,
+        authority,
         bundle,
         definitions: resolved,
         models: resolved_models,
     })
 }
 
-fn source_authority(parsed: &ParsedSource) -> SourceAuthority {
-    SourceAuthority {
-        identity: parsed.source().identity().clone(),
-        digest: SourceDigest(parsed.source().digest()),
-        path: parsed.source().path().into(),
-    }
-}
-
-fn refusal(parsed: &ParsedSource, code: Code, span: Span, cause: PackageError) -> PackageRefusal {
+fn refusal(
+    authority: &SourceAuthority,
+    code: Code,
+    span: Span,
+    cause: PackageError,
+) -> PackageRefusal {
     PackageRefusal {
         code,
-        authority: Box::new(source_authority(parsed)),
+        authority: Box::new(authority.clone()),
         span,
         cause_tag: cause_tag(code, &cause),
         cause,
@@ -1101,10 +1120,9 @@ fn refusal(parsed: &ParsedSource, code: Code, span: Span, cause: PackageError) -
 /// The catalogued cause tag of a package-graph refusal. A stale definition is
 /// tagged at its call site, which knows whether the version or only the digest
 /// differs; here it is the version.
-fn cause_tag(code: Code, cause: &PackageError) -> CompleteCause {
-    use CompleteCause as Tag;
+fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
+    use ResolutionCause as Tag;
     match cause {
-        PackageError::InvalidSource => Tag::EstablishedInvariantBroken,
         PackageError::InvalidDefinitionIdentity
         | PackageError::InvalidDefinitionVersion
         | PackageError::InvalidDefinitionArtifactBytes
@@ -1129,12 +1147,16 @@ fn cause_tag(code: Code, cause: &PackageError) -> CompleteCause {
     }
 }
 
-fn identity_refusal(parsed: &ParsedSource, span: Span, cause: PackageError) -> PackageRefusal {
+fn identity_refusal(
+    authority: &SourceAuthority,
+    span: Span,
+    cause: PackageError,
+) -> PackageRefusal {
     let code = match &cause {
         PackageError::CanonicalSize | PackageError::ResourceLimit => Code::ResourceExhausted,
         _ => Code::InvalidPackage,
     };
-    refusal(parsed, code, span, cause)
+    refusal(authority, code, span, cause)
 }
 
 fn encode_set<'a>(values: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, PackageError> {
@@ -1197,9 +1219,6 @@ impl SemanticIdentityBuilder {
 /// Typed complete-package refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PackageError {
-    /// Source was not syntactically admitted.
-    #[error("source is not admissible")]
-    InvalidSource,
     /// Definition identity was empty or outside its bound.
     #[error("invalid definition identity")]
     InvalidDefinitionIdentity,

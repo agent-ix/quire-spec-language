@@ -28,14 +28,13 @@ mod parser;
 pub mod token;
 
 pub use cst::{
-    CstElement, CstNode, CstToken, DefinitionDigest, DefinitionRef, ImportSelection,
-    InvalidDefinitionComponent, InvalidModelComponent, LosslessCst, ModelDigest, ModelRef,
-    ModelSelection, NodeIdentity, Production, ProfileSelection, Recovery, RecoveryKind,
-    SourceSelections, StableNodeId, TokenClass, TokenKind,
+    CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, Production, Recovery, RecoveryKind,
+    StableNodeId, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use lexer::Limits;
 
+use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Source, SourceIdentity, Span};
 
 /// A version-bound source artifact and its lossless parse evidence.

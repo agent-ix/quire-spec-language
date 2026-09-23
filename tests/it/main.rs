@@ -11,13 +11,14 @@
 //! `crate::support::<name>` from any module below (see `tests/support/
 //! mod.rs`). `tests/fixtures/` is unchanged.
 //!
-//! The seven modules gated on `feature = "test-support"` call fixture
-//! constructors (`DeclarationKey::fixture` and friends, see the crate's own
-//! `Cargo.toml`) that only exist under that feature. Gating the `mod` line
-//! itself -- not just the calls inside -- keeps a default-feature `cargo
-//! test` / `cargo clippy --all-targets` from trying to compile them at all,
-//! matching the seven previous `required-features = ["test-support"]`
-//! per-file targets they replace (Cargo.toml's own `[[test]] name = "it"`
+//! The eight modules gated on `feature = "test-support"` call fixture
+//! constructors (`DeclarationKey::fixture`, `ReaderAuthority::fixture` and
+//! friends, see the crate's own `Cargo.toml`) that only exist under that
+//! feature. Gating the `mod` line itself -- not just the calls inside --
+//! keeps a default-feature `cargo test` / `cargo clippy --all-targets` from
+//! trying to compile them at all, matching the seven previous
+//! `required-features = ["test-support"]` per-file targets the first seven
+//! replace (Cargo.toml's own `[[test]] name = "it"`
 //! carries no `required-features`).
 //!
 //! No test here needs its own process. There is no `trybuild` compile-fail
@@ -41,6 +42,8 @@ mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;
+#[cfg(feature = "test-support")]
+mod complete_package;
 mod complete_v1_plan;
 mod complete_value_lock;
 mod composed_admission_stages;

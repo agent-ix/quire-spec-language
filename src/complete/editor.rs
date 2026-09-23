@@ -3,12 +3,12 @@
 use qsl_foundation::{Phase, SourceIdentity, Span};
 use std::collections::BTreeSet;
 
-use super::package::{ProfileStatus, StaleProfile};
-use super::{ProfileCatalog, SourceEdit};
+use super::SourceEdit;
 use qsl_cst::{
-    CompleteCause, CompleteCode, CompleteDiagnostic, DefinitionRef, HostCause, Limits,
-    NodeIdentity, ParsedSource, Production, TokenClass,
+    CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, NodeIdentity, ParsedSource,
+    Production, TokenClass,
 };
+use qsl_foundation::selection::{DefinitionRef, ProfileCatalog, ProfileStatus, StaleProfile};
 
 /// Exact document/profile tuple carried by every editor request and response.
 #[derive(Clone, Debug, Eq, PartialEq)]

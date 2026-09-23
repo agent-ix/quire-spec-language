@@ -2,6 +2,7 @@
 use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
 };
+use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::{Phase, SourceIdentity, Span};
 
 /// One UTF-8-boundary-preserving source replacement.
@@ -38,7 +39,7 @@ pub fn apply_edit_with_catalog(
     expected_revision: &str,
     new_identity: SourceIdentity,
     edit: SourceEdit,
-    catalog: &super::ProfileCatalog,
+    catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     apply_edits_selected(
@@ -68,7 +69,7 @@ pub fn apply_edits_with_catalog(
     expected_revision: &str,
     new_identity: SourceIdentity,
     edits: &[SourceEdit],
-    catalog: &super::ProfileCatalog,
+    catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     apply_edits_selected(
@@ -87,7 +88,7 @@ fn apply_edits_selected(
     new_identity: SourceIdentity,
     edits: &[SourceEdit],
     limits: Limits,
-    catalog: Option<&super::ProfileCatalog>,
+    catalog: Option<&ProfileCatalog>,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let limits = limits.bounded();
     let source = parsed.source();
