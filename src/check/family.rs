@@ -82,7 +82,7 @@ use quire_exact::{UnitDomain, UnitId};
 /// layer); every caller of `PackageDeclarations::check` (including its
 /// ~40 existing test call sites) keeps using the unchanged `check` entry
 /// point and gets this default.
-pub(crate) const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
+pub const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
 
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
@@ -93,7 +93,7 @@ pub(crate) const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-
 /// review, nit): each copy was a fact -- "this call site does not want a
 /// scalar limit" -- restated by hand in ten fields, with nothing checking
 /// the six copies stayed identical.
-pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+pub const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
     integer_bits: u64::MAX,
     decimal_digits: u64::MAX,
     scale_expansion: u64::MAX,
@@ -743,7 +743,7 @@ pub(crate) fn mint_declaration_identity(
 /// `work_budget` is charged against the shared kernel meter instead (PR
 /// #302 review finding 3) -- see `StageLimits`'s own doc.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct IdentityPreimageMetrics {
+pub struct IdentityPreimageMetrics {
     /// The minted preimage's own logical byte length (`Preimage::
     /// input_bytes`, not `bytes.len()` -- see `Preimage`'s own doc).
     pub(crate) input_bytes: u64,
@@ -1266,6 +1266,13 @@ pub struct CheckedDeclaration {
     pub(crate) body: CheckedDeclarationBody,
 }
 
+impl CheckedDeclaration {
+    /// The minted identity of the checked declaration.
+    pub fn identity(&self) -> NodeKey {
+        self.identity
+    }
+}
+
 /// `Value`'s checked-package producer for the function-declaration form
 /// (FR-062, FR-065): the one family slice migrated onto the
 /// `crate::family` contract. A marker type -- every method is a bare
@@ -1452,7 +1459,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
-    use super::checking_tests::{empty_scope, mint_resolved, root_location};
+    use super::fixtures::{empty_scope, mint_resolved, root_location};
     use super::*;
     use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
@@ -1685,32 +1692,26 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod checking_tests {
-    //! QSL-148: behavioral coverage of what `Value`'s relocated family check
-    //! code (`check_application`, `check_declaration_body`) accepts and
-    //! refuses, per the testing-policy ruling at
-    //! <https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837>
-    //! (Peter, 2026-09-22, relayed by the QSL team lead) -- these tests
-    //! exercise real accept/refuse outcomes over real fixtures, not the
-    //! code's shape or where it lives.
+/// Test fixtures shared by `check`'s own tests and by the layer-5
+/// evaluator's tests (`value::expression::family`), which reach them across
+/// the QSL-181 crate boundary through `test-support`. Never compiled into a
+/// production build.
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
-    use crate::check::CheckingLimitKind;
-    use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
-    use ix_trace_rs::trace;
-    use quire_exact::Meter;
+    use crate::family::StageLimits;
 
     /// `declaration`'s identity as `ValueFunctionFamily::check` mints it:
     /// over its signature resolved against `scope`.
-    pub(crate) fn mint_resolved(
+    pub fn mint_resolved(
         scope: &Scope,
         package_identity: &str,
         declaration: &FunctionDeclaration,
         input_bytes_limit: u64,
     ) -> (NodeKey, IdentityPreimageMetrics) {
         let location = root_location();
-        let (parameters, result) = super::super::resolve_signature(scope, declaration, &location)
+        let (parameters, result) = crate::check::resolve_signature(scope, declaration, &location)
             .expect("the fixture's signature resolves");
         let signature = Signature {
             name: declaration.name.clone(),
@@ -1727,20 +1728,18 @@ pub(crate) mod checking_tests {
         )
         .expect("the fixture's targets resolve")
     }
-
-    /// PR #303 review, finding N7b: `pub(crate)`, not private -- this is
-    /// the one real definition `check::mod`'s own `#[cfg(test)]`-gated
+    /// PR #303 review, finding N7b: shared, not private -- this is
+    /// the one real definition `check::mod`'s own test-support
     /// re-export hands to `value::expression::family`'s
     /// `family_contract_tests` module, which used to keep a second,
     /// byte-for-byte copy of this same fixture instead of importing it.
-    pub(crate) fn root_location() -> CheckLocation {
+    pub fn root_location() -> CheckLocation {
         CheckLocation {
             origin: CheckOrigin::Expression,
             path: Vec::new(),
         }
     }
-
-    fn boolean_signature(name: &str, parameter_count: usize) -> Signature {
+    pub fn boolean_signature(name: &str, parameter_count: usize) -> Signature {
         Signature {
             name: name.to_owned(),
             parameters: (0..parameter_count)
@@ -1750,14 +1749,90 @@ pub(crate) mod checking_tests {
             callable_by_name: true,
         }
     }
-
     /// A bare `Boolean` type form.
-    fn boolean_type_form() -> qsl_forms::TypeForm {
+    pub fn boolean_type_form() -> qsl_forms::TypeForm {
         qsl_forms::TypeForm::builtin(
             qsl_forms::BuiltinType::Boolean,
             qsl_foundation::Span { start: 0, end: 0 },
         )
     }
+    /// See [`root_location`]'s own doc (PR #303 review, finding N7b): the
+    /// one real definition, re-exported rather than duplicated.
+    pub fn empty_scope() -> Scope {
+        Scope {
+            types: crate::value::declaration::TypeEnvironment::default(),
+            enums: Vec::new(),
+            aliases: Vec::new(),
+            model_operations: Vec::new(),
+            ieee_profile: None,
+            dispatch_operations: Vec::new(),
+        }
+    }
+    /// A [`ValueDeclarations`] for tests exercising [`check_declaration_body`]
+    /// or [`ValueFunctionFamily::check`] directly (PR #303 review round 3,
+    /// finding F6: the one real definition, shared the same way
+    /// [`empty_scope`]/[`root_location`] are -- this used to be defined a
+    /// second time, with a different parameter shape, in
+    /// `value::expression::family`'s own `family_contract_tests` module).
+    /// `nodes_used` always starts at `0`: every test using this helper
+    /// exercises one declaration in isolation, not `check::mod`'s own
+    /// running package total.
+    pub fn declarations_for<'a>(
+        package_identity: &'a str,
+        scope: &'a Scope,
+        signatures: &'a [Signature],
+        own_signature: &'a Signature,
+        dispatch_tables: &'a [DispatchTable],
+        checking_limits: CheckingLimits,
+        location: &'a CheckLocation,
+    ) -> ValueDeclarations<'a> {
+        ValueDeclarations {
+            package_identity,
+            scope,
+            signatures,
+            own_signature,
+            dispatch_tables,
+            checking_limits,
+            location,
+            measure_location: location,
+            nodes_used: 0,
+        }
+    }
+    /// The contract-level stage limits these tests check under: nothing
+    /// is bounded except where a test tightens one field.
+    pub fn limits() -> StageLimits {
+        StageLimits {
+            nesting_depth: 128,
+            input_bytes: u64::MAX,
+            node_count: u64::MAX,
+        }
+    }
+    /// A `Boolean`-result, parameterless declaration of `body`.
+    pub fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
+        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
+    }
+    /// The resolved signature of a [`declaration`] fixture (no parameters,
+    /// `Boolean` result), for `declarations_for`'s `own_signature`.
+    pub fn declaration_signature(name: &str) -> Signature {
+        boolean_signature(name, 0)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod checking_tests {
+    //! QSL-148: behavioral coverage of what `Value`'s relocated family check
+    //! code (`check_application`, `check_declaration_body`) accepts and
+    //! refuses, per the testing-policy ruling at
+    //! <https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837>
+    //! (Peter, 2026-09-22, relayed by the QSL team lead) -- these tests
+    //! exercise real accept/refuse outcomes over real fixtures, not the
+    //! code's shape or where it lives.
+    use super::fixtures::*;
+    use super::*;
+    use crate::check::CheckingLimitKind;
+    use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
+    use ix_trace_rs::trace;
+    use quire_exact::Meter;
 
     /// An `Option<Integer>` type form.
     fn option_integer_type_form() -> qsl_forms::TypeForm {
@@ -1769,19 +1844,6 @@ pub(crate) mod checking_tests {
             qsl_forms::BuiltinType::Integer,
             qsl_foundation::Span { start: 0, end: 0 },
         )])
-    }
-
-    /// See [`root_location`]'s own doc (PR #303 review, finding N7b): the
-    /// one real definition, re-exported rather than duplicated.
-    pub(crate) fn empty_scope() -> Scope {
-        Scope {
-            types: crate::value::declaration::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
-        }
     }
 
     /// TC-376/FR-065-AC-4: a well-typed call to a one-argument Boolean
@@ -1890,37 +1952,6 @@ pub(crate) mod checking_tests {
             refusal.cause,
             CheckCause::IllTyped(IllTypedCause::TypeMismatch)
         ));
-    }
-
-    /// A [`ValueDeclarations`] for tests exercising [`check_declaration_body`]
-    /// or [`ValueFunctionFamily::check`] directly (PR #303 review round 3,
-    /// finding F6: the one real definition, shared the same way
-    /// [`empty_scope`]/[`root_location`] are -- this used to be defined a
-    /// second time, with a different parameter shape, in
-    /// `value::expression::family`'s own `family_contract_tests` module).
-    /// `nodes_used` always starts at `0`: every test using this helper
-    /// exercises one declaration in isolation, not `check::mod`'s own
-    /// running package total.
-    pub(crate) fn declarations_for<'a>(
-        package_identity: &'a str,
-        scope: &'a Scope,
-        signatures: &'a [Signature],
-        own_signature: &'a Signature,
-        dispatch_tables: &'a [DispatchTable],
-        checking_limits: CheckingLimits,
-        location: &'a CheckLocation,
-    ) -> ValueDeclarations<'a> {
-        ValueDeclarations {
-            package_identity,
-            scope,
-            signatures,
-            own_signature,
-            dispatch_tables,
-            checking_limits,
-            location,
-            measure_location: location,
-            nodes_used: 0,
-        }
     }
 
     /// TC-377/FR-065's checking-decision half: `check_declaration_body`
@@ -2074,27 +2105,6 @@ pub(crate) mod checking_tests {
     // evaluator or the v2 codec. The three fixtures below are shared with
     // those tests through `check::mod`'s `#[cfg(test)]` re-export (PR #303
     // N7b), not copied.
-
-    /// The contract-level stage limits these tests check under: nothing
-    /// is bounded except where a test tightens one field.
-    pub(crate) fn limits() -> StageLimits {
-        StageLimits {
-            nesting_depth: 128,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        }
-    }
-
-    /// A `Boolean`-result, parameterless declaration of `body`.
-    pub(crate) fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
-    }
-
-    /// The resolved signature of a [`declaration`] fixture (no parameters,
-    /// `Boolean` result), for `declarations_for`'s `own_signature`.
-    pub(crate) fn declaration_signature(name: &str) -> Signature {
-        boolean_signature(name, 0)
-    }
 
     /// QSL-148's core requirement (PR #303 review, finding 1): calling
     /// `ValueFunctionFamily::check` on an ill-typed declaration -- `g() ->

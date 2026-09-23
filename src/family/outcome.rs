@@ -29,7 +29,8 @@
 /// shell restored speculatively.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Staged<T> {
-    pub(crate) value: T,
+    /// The stage's output.
+    pub value: T,
 }
 
 impl<T> Staged<T> {

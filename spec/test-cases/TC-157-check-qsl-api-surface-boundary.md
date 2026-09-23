@@ -17,7 +17,7 @@ as `failing` with file, line and module named, respects `::`-segment module
 matching (a textual prefix that is not a segment boundary, such as
 `model_query` under a `model` allow-list, is not treated as allowed), and
 reproduces the real, current pending/failing/passing state of
-T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
+T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
 
 ## Test Procedure
 
@@ -63,7 +63,11 @@ T12-A/T12-B/T12-C/T12-D against QSL's own head. Scope: FR-060-AC-1 through FR-06
   list entry has no mint left (FR-060-AC-4). **Amended by the layer-rule
   ruling (2026-09-22)**: fixed site counts are replaced by the debt lists.
   T12-D reports `PASS` with zero call sites: no
-  module outside `model` calls `PopulationId::from_digest(`. This output is
+  module outside `model` calls `PopulationId::from_digest(`. T12-E reports
+  `PASS`: the witness minter's only shipped caller is
+  `checked_package::checked_v2` (`tc_arch_lint_api_surface_024`, which runs
+  on the real tree in `cargo test --workspace`; a call added from another
+  module fails it, `tc_arch_lint_api_surface_023`). This output is
   captured for the PR body as real, not synthetic, evidence -- the check is
   not tuned to exclude any finding.
 - Step 6: the `check` submodule mint is not reported; the function-value

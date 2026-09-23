@@ -12,7 +12,7 @@ use quire_exact::Meter;
 /// is the sink's own record shape (a message plus the scope name active when
 /// it was raised), independent of any one family's `Cause` enum.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Diagnostic {
+pub struct Diagnostic {
     pub(crate) scope: String,
     pub(crate) message: String,
 }
@@ -20,7 +20,7 @@ pub(crate) struct Diagnostic {
 /// The only mutable diagnostic sink `check` may write through
 /// (FR-062-AC-3): an ordinary append-only log, read back for assertions.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DiagnosticSink {
+pub struct DiagnosticSink {
     entries: Vec<Diagnostic>,
 }
 
@@ -40,9 +40,10 @@ impl DiagnosticSink {
     /// production callers never need to read the sink back, only write
     /// through it -- so the compiler is told that directly rather than
     /// having the lint silenced over a real (non-test) reader that does
-    /// not exist.
-    #[cfg(test)]
-    pub(crate) fn entries(&self) -> &[Diagnostic] {
+    /// not exist. `test-support` makes it reachable from the layer-5
+    /// evaluator's tests across the QSL-181 crate boundary.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn entries(&self) -> &[Diagnostic] {
         &self.entries
     }
 }
@@ -50,7 +51,7 @@ impl DiagnosticSink {
 /// The only mutable scope stack `check` may push/pop through
 /// (FR-062-AC-3). Named scopes only -- no family-specific payload.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ScopeStack {
+pub struct ScopeStack {
     frames: Vec<String>,
 }
 
@@ -127,7 +128,7 @@ impl ScopeStack {
 /// mechanism is real and exercised directly against tight fixtures
 /// (`src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct StageLimits {
+pub struct StageLimits {
     pub(crate) nesting_depth: u64,
     /// Maximum length-prefixed preimage byte count for one checked
     /// declaration.
@@ -154,7 +155,9 @@ pub struct CheckContext<'a, D> {
 }
 
 impl<'a, D> CheckContext<'a, D> {
-    pub(crate) fn new(
+    /// A context over `declarations`, bounded by `limits`, writing through
+    /// `meter`, `diagnostics` and `scopes`.
+    pub fn new(
         declarations: &'a D,
         limits: StageLimits,
         meter: &'a mut Meter,

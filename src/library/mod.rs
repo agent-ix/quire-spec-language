@@ -26,12 +26,14 @@
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
 //! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
 //! layer-4 `package` reader (`checked_package::checked_v2`) reads
-//! `quire.checked-package/v2` bytes and calls the crate-private
-//! `verify_binding` here, handing it the condition-1 witness only that
-//! reader constructs, to apply the ADR-011 §4 verified binding and construct
-//! `VerifiedPackage`; [`VerifiedPackage::into_import_view`] is the only
-//! `ImportView` constructor. No constructor of either type is reachable from
-//! outside this crate.
+//! `quire.checked-package/v2` bytes and calls `verify_binding` here, handing
+//! it the condition-1 witness only that reader mints, to apply the ADR-011
+//! §4 verified binding and construct `VerifiedPackage`;
+//! [`VerifiedPackage::into_import_view`] is the only `ImportView`
+//! constructor. Both types' fields are private to this module. The witness
+//! minter and `verify_binding` are `pub` so the layer-4 reader can call them
+//! across the QSL-181 crate boundary; arch-lint rule T12-E confines the
+//! minter's callers to that reader.
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
@@ -69,7 +71,7 @@ mod witness;
 pub use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
-pub(crate) use witness::SupportedV2Wire;
+pub use witness::SupportedV2Wire;
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -565,9 +567,9 @@ pub(crate) fn verify_package(
 
 /// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
 /// T-2): a [`LibraryPackage`] read from v2 wire bytes for which all three
-/// conditions held -- 1, a supported schema version (witnessed by the
-/// crate-private `SupportedV2Wire`, which only the layer-4 v2 reader
-/// constructs); 2, the FR-322 `package_id` recompute (`verify_package`); and
+/// conditions held -- 1, a supported schema version (witnessed by
+/// [`SupportedV2Wire`], which only the layer-4 v2 reader mints: its minter is
+/// `pub` for the crate boundary and arch-lint rule T12-E gates its callers); 2, the FR-322 `package_id` recompute (`verify_package`); and
 /// 3, this identity and version listed in the consumer's library lock or
 /// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
@@ -575,8 +577,8 @@ pub(crate) fn verify_package(
 /// `CheckedPackage` -- only [`Self::into_import_view`] converts it, into an
 /// `ImportView`.
 ///
-/// Both fields are private to this module, and the crate-private
-/// `verify_binding` is the sole constructor (FR-087-AC-1). Naming the
+/// Both fields are private to this module, and [`verify_binding`] is the
+/// sole constructor (FR-087-AC-1). Naming the
 /// fields directly from outside `library` does not compile:
 /// ```compile_fail,E0451
 /// use quire_spec_language::library::VerifiedPackage;
@@ -586,15 +588,18 @@ pub(crate) fn verify_package(
 /// };
 /// ```
 ///
-/// A crate-external caller cannot build a `VerifiedPackage` from a
-/// hand-built candidate either: `verify_binding` and its condition-1
-/// witness `SupportedV2Wire` are both crate-private, and making the two
-/// public lets this snippet compile, so the test fails. (Stable rustdoc does
-/// not check a `compile_fail` error code, so none is claimed here.)
+/// `verify_binding` is `pub` for the QSL-181 crate boundary: it only
+/// verifies, and it needs a condition-1 witness. A crate-external caller
+/// cannot build that witness itself (its field is private), so it cannot
+/// verify a hand-built candidate without the witness minter, whose callers
+/// arch-lint rule T12-E confines to the layer-4 v2 reader. Making the
+/// witness's field public lets this snippet compile, so the test fails.
+/// (Stable rustdoc does not check a `compile_fail` error code, so none is
+/// claimed here.)
 /// ```compile_fail
-/// use quire_spec_language::library::{verify_binding, LibraryPackage};
+/// use quire_spec_language::library::{verify_binding, LibraryPackage, SupportedV2Wire};
 /// let candidate: LibraryPackage = todo!();
-/// let _ = verify_binding(todo!(), candidate, todo!());
+/// let _ = verify_binding(SupportedV2Wire(()), candidate, todo!());
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPackage {
@@ -643,22 +648,18 @@ pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 /// `package_id`s for one library identity (ADR-011 I2's second rule).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("two pins for one library identity select different packages")]
-pub(crate) struct ConflictingPin {
+pub struct ConflictingPin {
     /// The library identity pinned twice.
-    pub(crate) library: LibraryName,
+    pub library: LibraryName,
     /// The earlier entry, then the later, conflicting one.
-    pub(crate) selections: Box<[Selection; 2]>,
+    pub selections: Box<[Selection; 2]>,
 }
 
 impl PinnedRequest {
     /// A pinned request from `entries`. A repeated identity with an equal
     /// selection is one pin; a repeated identity with a different
     /// selection is refused.
-    #[allow(
-        dead_code,
-        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
-    )]
-    pub(crate) fn new(
+    pub fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,
     ) -> Result<Self, ConflictingPin> {
         let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();
@@ -701,7 +702,7 @@ impl From<&LibraryLock> for PinnedRequest {
 /// `MissingImport`. Every refusal names its cause and yields nothing
 /// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
 /// of the file bytes, a lock file or the source.
-pub(crate) fn verify_binding(
+pub fn verify_binding(
     _admitted: SupportedV2Wire,
     candidate: LibraryPackage,
     pinned: &PinnedRequest,

@@ -80,8 +80,9 @@ mod contract;
 mod evaluation;
 mod outcome;
 
-pub use contract::{CheckContext, FamilyContract};
-pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
+pub use contract::{
+    CheckContext, Diagnostic, DiagnosticSink, FamilyContract, ScopeStack, StageLimits,
+};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub(crate) use outcome::StageLimitKind;
 pub use outcome::{CheckOutcome, LimitExceeded, StageFailure, Staged};

@@ -5,13 +5,23 @@
 //! [`SupportedV2Wire::attest_ir_admitted_v2`].
 //!
 //! That function has to be callable from `checked_package::checked_v2`, the
-//! layer-4 v2 reader. Rust restricts visibility only to an ancestor module
-//! (`pub(in path)`, E0742), and `checked_v2` is not an ancestor of
-//! `library`, so the compiler cannot confine the call to that one module.
-//! `tests/it/verified_binding_witness.rs` does: it fails unless the only
-//! reference outside this module and `library`'s own tests is one call
-//! inside `read_checked_package_v2`'s `AdmittedV2` arm, including any
-//! reference written inside a macro.
+//! layer-4 v2 reader, which is a separate crate once QSL-181 extracts
+//! `qsl-semantics` (and X-7 `qsl-package`). Rust has no visibility that
+//! names one module of another crate, so the minter is `pub`, and two
+//! checks confine its callers instead of the compiler: arch-lint rule T12-E
+//! (`tools/arch-lint/api_surface.rs`, run on this tree by
+//! `tc_arch_lint_api_surface_024` in `cargo test --workspace`) fails on any
+//! shipped reference outside `checked_package::checked_v2`, and
+//! `tests/it/verified_binding_witness.rs` fails unless the only reference
+//! outside this module and `library`'s own tests is one call inside
+//! `read_checked_package_v2`'s `AdmittedV2` arm, including any reference
+//! written inside a macro. This is ADR-013 O-04's pattern for the `pub`
+//! kernel `NodeKey` constructor (T12-B). The field stays private, so the
+//! minter is the only way to build one:
+//!
+//! ```compile_fail
+//! let forged = quire_spec_language::library::SupportedV2Wire(());
+//! ```
 
 /// IR's I04 reader admitted the bytes as a supported
 /// `quire.checked-package/v2` wire. `library` is layer 3 and may not name
@@ -19,13 +29,17 @@
 /// on `quire-contract-model`), so the layer-4 reader attests it with this
 /// token instead.
 #[derive(Debug)]
-pub(crate) struct SupportedV2Wire(());
+pub struct SupportedV2Wire(());
 
 impl SupportedV2Wire {
     /// Attest that IR's v2 reader has just admitted the bytes the candidate
     /// is derived from. Called only from `read_checked_package_v2`'s
     /// `AdmittedV2` arm.
-    pub(crate) fn attest_ir_admitted_v2() -> Self {
+    ///
+    /// `pub` only for the QSL-181 crate boundary: arch-lint rule T12-E fails
+    /// on a shipped call from any module but `checked_package::checked_v2`
+    /// (see this module's doc).
+    pub fn attest_ir_admitted_v2() -> Self {
         Self(())
     }
 }

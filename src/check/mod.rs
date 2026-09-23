@@ -78,7 +78,7 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
-pub(crate) mod imports;
+pub mod imports;
 mod ir;
 mod refusal;
 mod termination;
@@ -90,7 +90,7 @@ use check::{bind_parameters, Typer};
 // Re-exported so `value::expression::family`'s `#[cfg(test)]` modules can
 // build the resolved `Signature` `declarations_for` takes as
 // `own_signature`.
-pub(crate) use check::Signature;
+pub use check::Signature;
 use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
 
@@ -99,23 +99,13 @@ use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
 pub use check::Scope;
-pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
-// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
-// family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
-// permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
-// plain: a plain `pub(crate) use` here is genuinely unused in a non-test
-// build (`cargo check`/`cargo build`/`cargo clippy` without
-// `--all-targets`), and `-D warnings` promotes that to a hard compile error
-// before cargo ever reaches the test binaries where it would be used --
-// gating on `cfg(test)` keeps both builds clean instead of papering over
-// the non-test one with `#[allow(unused_imports)]`. `SCALAR_LIMITS_UNLIMITED`
-// joined this list in PR #302 review (finding 2): `CheckedPackage::call`'s
-// `contract_meter` used to be an unconditionally unlimited `Meter` built
-// from it, a real (non-test) production use; it is now built from the
-// caller's own configured limits (`*meter.limits()`) instead, so this
-// constant has no production reader left.
-#[cfg(test)]
-pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
+pub use family::{
+    CheckedDeclaration, IdentityPreimageMetrics, ValueDeclarations, ValueFunctionFamily,
+};
+// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are `check`'s own
+// constants, also read by the layer-5 evaluator's tests (QSL-181: across the
+// `qsl-semantics` crate boundary, so `pub`).
+pub use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -126,8 +116,8 @@ pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // `declarations_for` joined this list in PR #303 review round 3 (finding
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
-#[cfg(test)]
-pub(crate) use family::checking_tests::{
+#[cfg(any(test, feature = "test-support"))]
+pub use family::fixtures::{
     declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
     root_location,
 };
@@ -1373,8 +1363,8 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let scope = family::checking_tests::empty_scope();
-        let location = family::checking_tests::root_location();
+        let scope = family::fixtures::empty_scope();
+        let location = family::fixtures::root_location();
         let call_identity = family::mint_call_identity(
             family::DEFAULT_PACKAGE_IDENTITY,
             "helper",

@@ -251,7 +251,7 @@ pub(crate) fn resolve_type_form(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::family::checking_tests::{empty_scope, root_location};
+    use crate::check::family::fixtures::{empty_scope, root_location};
     use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
     use quire_exact::{CollectionKind, EffectiveId};
 

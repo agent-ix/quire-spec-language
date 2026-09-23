@@ -494,10 +494,10 @@ mod family_contract_tests {
         let form = declaration("f", Expression::Boolean(true));
         let (expected, _) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
         let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
-        assert_eq!(staged.value.identity, expected);
+        assert_eq!(staged.value.identity(), expected);
         assert_eq!(diagnostics.entries().len(), 1);
         let declaration_name = QualifiedName::unqualified("declaration").unwrap();
-        let v2 = emit_v2(&[(declaration_name.clone(), staged.value.identity)]);
+        let v2 = emit_v2(&[(declaration_name.clone(), staged.value.identity())]);
         assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
     }
 

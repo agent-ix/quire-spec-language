@@ -21,8 +21,9 @@
 //! - a tuple or struct construction of `SupportedV2Wire` outside
 //!   `library::witness`, as a second check on what the compiler refuses.
 //!
-//! Code outside the crate cannot reach the constructor or `verify_binding`
-//! at all; `VerifiedPackage`'s `compile_fail` doctest shows that.
+//! The constructor and `verify_binding` are `pub` for the QSL-181 crate
+//! boundary; arch-lint rule T12-E gates the constructor's callers across
+//! every QSL crate, and this scan pins the one call's exact place.
 use std::path::{Path, PathBuf};
 
 use ix_trace_rs::trace;
