@@ -24,14 +24,49 @@ pub(crate) use quire_exact::NodeKey as FamilyNodeKey;
 pub type Slot = usize;
 
 /// One typed node.
+///
+/// Only `check` builds or edits a `Node`: its fields are private to `check`,
+/// and every other layer reads them through [`Self::kind`],
+/// [`Self::value_type`] and [`Self::location`]. A node from outside `check`
+/// therefore always went through checking. Building one from outside `check`
+/// does not compile:
+/// ```compile_fail,E0451
+/// use quire_spec_language::check::{Location, Node, NodeKind};
+/// fn forge(kind: NodeKind, location: Location) -> Node {
+///     Node { kind, value_type: quire_exact::ValueType::Boolean, location }
+/// }
+/// ```
+/// Nor does retyping a clone of a checked node:
+/// ```compile_fail,E0616
+/// use quire_spec_language::check::Node;
+/// fn retype(checked: &Node) -> Node {
+///     let mut node = checked.clone();
+///     node.value_type = quire_exact::ValueType::Boolean;
+///     node
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Node {
+    pub(in crate::check) kind: NodeKind,
+    pub(in crate::check) value_type: ValueType,
+    pub(in crate::check) location: Location,
+}
+
+impl Node {
     /// What the node computes.
-    pub kind: NodeKind,
+    pub fn kind(&self) -> &NodeKind {
+        &self.kind
+    }
+
     /// The node's checked static type.
-    pub value_type: ValueType,
+    pub fn value_type(&self) -> &ValueType {
+        &self.value_type
+    }
+
     /// The node's source location.
-    pub location: Location,
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
 }
 
 /// A connective with a skippable right operand.

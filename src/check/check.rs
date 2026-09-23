@@ -323,16 +323,30 @@ pub struct DispatchOperation {
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
-    /// The package's composite and object type declarations.
-    pub types: TypeEnvironment,
+    pub(crate) types: TypeEnvironment,
     pub(crate) enums: Vec<EnumBinding>,
     pub(crate) aliases: Vec<(String, ValueType)>,
     pub(crate) model_operations: Vec<String>,
+    pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    pub(crate) dispatch_operations: Vec<DispatchOperation>,
+}
+
+impl Scope {
+    /// The package's composite and object type declarations.
+    pub fn types(&self) -> &TypeEnvironment {
+        &self.types
+    }
+
     /// The package's admitted IEEE profile, if it selects one.
-    pub ieee_profile: Option<AdmittedIeeeProfile>,
+    pub fn ieee_profile(&self) -> Option<&AdmittedIeeeProfile> {
+        self.ieee_profile.as_ref()
+    }
+
     /// The package's FR-151 dispatch operations, indexed by a checked
     /// `NodeKind::Dispatch`'s `operation`.
-    pub dispatch_operations: Vec<DispatchOperation>,
+    pub fn dispatch_operations(&self) -> &[DispatchOperation] {
+        &self.dispatch_operations
+    }
 }
 
 /// A function's declared signature.

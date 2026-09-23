@@ -291,6 +291,7 @@ impl CheckedExpression {
 /// `value::expression`'s evaluator needs (name, checked body, slot count --
 /// FR-068's own Description names these as the accessor surface), without
 /// exposing `CheckedFunction`'s private representation.
+#[non_exhaustive]
 pub struct FunctionState<'a> {
     /// The declared name.
     pub name: &'a str,
@@ -305,6 +306,7 @@ pub struct FunctionState<'a> {
 /// runtime `QualifiedName` lookup through
 /// `crate::family::ReferenceEvaluation::evaluate` and validate its
 /// caller's arguments, without a direct field read.
+#[non_exhaustive]
 pub struct CallableFunction<'a> {
     /// The minted identity `crate::family::ReferenceEvaluation::evaluate`
     /// resolves against.

@@ -569,7 +569,7 @@ pub(crate) fn verify_package(
 /// crate-private `SupportedV2Wire`, which only the layer-4 v2 reader
 /// constructs); 2, the FR-322 `package_id` recompute (`verify_package`); and
 /// 3, this identity and version listed in the consumer's library lock or
-/// pinned request (the crate-private `PinnedRequest`). Not checked typestate
+/// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
 /// never accepted as, or converted into, a `CheckedGraph` or
 /// `CheckedPackage` -- only [`Self::into_import_view`] converts it, into an
@@ -587,8 +587,8 @@ pub(crate) fn verify_package(
 /// ```
 ///
 /// A crate-external caller cannot build a `VerifiedPackage` from a
-/// hand-built candidate either: `verify_binding`, its condition-1 witness
-/// and its pinned-request type are all crate-private, and making the three
+/// hand-built candidate either: `verify_binding` and its condition-1
+/// witness `SupportedV2Wire` are both crate-private, and making the two
 /// public lets this snippet compile, so the test fails. (Stable rustdoc does
 /// not check a `compile_fail` error code, so none is claimed here.)
 /// ```compile_fail
@@ -643,11 +643,11 @@ pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 /// `package_id`s for one library identity (ADR-011 I2's second rule).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("two pins for one library identity select different packages")]
-pub struct ConflictingPin {
+pub(crate) struct ConflictingPin {
     /// The library identity pinned twice.
-    pub library: LibraryName,
+    pub(crate) library: LibraryName,
     /// The earlier entry, then the later, conflicting one.
-    pub selections: Box<[Selection; 2]>,
+    pub(crate) selections: Box<[Selection; 2]>,
 }
 
 impl PinnedRequest {
@@ -658,7 +658,7 @@ impl PinnedRequest {
         dead_code,
         reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
     )]
-    pub fn new(
+    pub(crate) fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,
     ) -> Result<Self, ConflictingPin> {
         let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();
@@ -785,10 +785,6 @@ impl ImportView {
 /// `verify_package`: a package read straight from its own wire bytes
 /// carries no separate export selection, so its exports are exactly what its
 /// preimage declares.
-#[allow(
-    dead_code,
-    reason = "no production caller yet: the I2 reader (`checked_package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
-)]
 pub fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
     Ok(project_declarations(identity_preimage)?
         .declared_names()
