@@ -7,14 +7,14 @@
 //! (`link_function_identity`), the v2 emit/decode codec, and
 //! [`ValueFunctionFamily`]'s [`super::s6a::ReferenceEvaluation`] half.
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
-//! half -- identity minting, [`crate::check::PackageDeclarations::check`]'s
-//! own [`crate::family::FamilyContract`] hook, and the `OccurrenceMap`
+//! half -- identity minting, [`qsl_semantics::check::PackageDeclarations::check`]'s
+//! own [`qsl_semantics::family::FamilyContract`] hook, and the `OccurrenceMap`
 //! `check` builds from it -- into `check::family`, since FR-068-
 //! AC-3 forbids `check` importing anything from `value::expression`; see
 //! that module's own doc for why the split runs through `family.rs` even
 //! though FR-068 itself only names seven of `value::expression`'s eight
 //! submodules. `ValueFunctionFamily` is re-exported from there
-//! ([`crate::check::ValueFunctionFamily`]) and this module implements its
+//! ([`qsl_semantics::check::ValueFunctionFamily`]) and this module implements its
 //! evaluation half over it -- layer 5 depending on layer 3 is the
 //! permitted direction (ADR-011 §6.1).
 
@@ -23,7 +23,7 @@ use qsl_attrs::string_edge;
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{is_identifier, NodeKey, Value};
 
-use crate::check::ValueFunctionFamily;
+use qsl_semantics::check::ValueFunctionFamily;
 
 /// ADR-013 O-11: a non-empty sequence of identifiers, `::`-separated on
 /// display -- the layer-6 `replay` facade's (and, for this ticket,
@@ -271,13 +271,13 @@ fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
 /// environment's one real (non-test) constructor.
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
-    pub(crate) objects: &'a crate::model::object_environment::ObjectEnvironment,
+    pub(crate) objects: &'a qsl_semantics::model::object_environment::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<Value>>,
     pub(crate) local_meter: &'a mut quire_exact::Meter,
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
     /// hook's `EvalOutcome` holds no location, so the hook records it here
     /// on every `Ok` return and [`super::CheckedPackage::call`] reads it.
-    pub(crate) location: Option<crate::check::Location>,
+    pub(crate) location: Option<qsl_semantics::check::Location>,
     /// The last hook call's `Evaluation.losses`, recorded like `location`.
     pub(crate) losses: Vec<super::evaluate::LocatedLoss>,
 }
@@ -287,7 +287,7 @@ impl<'a> EvaluationEnv<'a> {
     /// losses recorded.
     pub(crate) fn new(
         package: &'a super::CheckedPackage,
-        objects: &'a crate::model::object_environment::ObjectEnvironment,
+        objects: &'a qsl_semantics::model::object_environment::ObjectEnvironment,
         arguments: Vec<Value>,
         local_meter: &'a mut quire_exact::Meter,
     ) -> Self {
@@ -342,7 +342,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
         meter: &mut quire_exact::Meter,
-    ) -> Result<crate::family::EvalOutcome<Value>, InternalFault> {
+    ) -> Result<qsl_semantics::family::EvalOutcome<Value>, InternalFault> {
         env.location = None;
         env.losses.clear();
         // FR-090-AC-3 (ADR-013 T-4): `call` always resolves `checked` from
@@ -372,7 +372,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         )) {
             // Nothing ran: the arguments stay unconsumed.
             env.arguments = Some(arguments);
-            return Ok(crate::family::EvalOutcome::Kernel(
+            return Ok(qsl_semantics::family::EvalOutcome::Kernel(
                 quire_exact::Outcome::Incomplete(incomplete),
             ));
         }
@@ -388,11 +388,11 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         env.location = evaluation.location;
         env.losses = evaluation.losses;
         match evaluation.outcome {
-            crate::family::FamilyOutcome::Evaluated(outcome) => {
-                Ok(crate::family::EvalOutcome::Kernel(outcome))
+            qsl_semantics::family::FamilyOutcome::Evaluated(outcome) => {
+                Ok(qsl_semantics::family::EvalOutcome::Kernel(outcome))
             }
-            crate::family::FamilyOutcome::FamilyEvaluated(result) => {
-                Ok(crate::family::EvalOutcome::Family(result))
+            qsl_semantics::family::FamilyOutcome::FamilyEvaluated(result) => {
+                Ok(qsl_semantics::family::EvalOutcome::Family(result))
             }
         }
     }
@@ -401,9 +401,9 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 // FR-062-AC-8/FR-063-AC-6 (ADR-012 §5.1 S4, "each family Cause enum's
 // catalog_code()" seam-probe coverage) is still deferred, though QSL-148
 // gives `Value`'s function-declaration family a real `Cause` at last:
-// `ValueFunctionFamily::Cause = crate::check::CheckRefusal`
-// (`crate::check::family`), returned through
-// `crate::family::StageFailure::Refused` when `check` genuinely refuses
+// `ValueFunctionFamily::Cause = qsl_semantics::check::CheckRefusal`
+// (`qsl_semantics::check::family`), returned through
+// `qsl_semantics::family::StageFailure::Refused` when `check` genuinely refuses
 // (an ill-typed or undefined body). `CheckRefusal`'s own `catalog_code()`
 // mapping (`CheckCause::code`/`CheckCause::cause`, `src/check/refusal.rs`)
 // already exists and is exhaustive by construction -- it is `Value`'s
@@ -435,16 +435,16 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::super::s6a::ReferenceEvaluation;
     use super::*;
-    use crate::check::{
+    use ix_trace_rs::trace;
+    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::{
         declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
         root_location, staged_identity, CheckingLimits, PackageDeclarations,
         DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
     };
-    use crate::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
-    use crate::model::object_environment::ObjectEnvironment;
-    use crate::value::declaration::TypeEnvironment;
-    use ix_trace_rs::trace;
-    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::value::declaration::TypeEnvironment;
     use quire_exact::Meter;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
@@ -484,7 +484,7 @@ mod family_contract_tests {
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
-        let mut cx = crate::check::check_context(
+        let mut cx = qsl_semantics::check::check_context(
             &declarations,
             limits(),
             &mut meter,
@@ -791,9 +791,9 @@ mod family_contract_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{declaration, empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
     use ix_trace_rs::trace;
     use qsl_forms::Expression;
+    use qsl_semantics::check::{declaration, empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
 
     /// FR-065-AC-2: identity read after `check` survives a real v2
     /// emit/decode round trip unchanged. Does not exercise a distinct

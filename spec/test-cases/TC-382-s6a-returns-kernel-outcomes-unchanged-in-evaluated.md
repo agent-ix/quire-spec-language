@@ -17,7 +17,7 @@ and each `o` is a fixed, literal expected outcome. The hook's
 `Evaluated(Outcome::Incomplete(i))`. Scope: FR-090-AC-1.
 
 The fixture uses an IEEE-to-rational conversion because the checker's
-definedness pass puts no obligation on it: `src/check/facts.rs` raises
+definedness pass puts no obligation on it: `qsl-semantics/src/check/facts.rs` raises
 obligations only for `Nonzero`, `Presence`, integer `Range`, `RationalRange`
 and `NonemptyReduction`. The same conversion already runs through a checked
 package in `tests/it/total_functions.rs`

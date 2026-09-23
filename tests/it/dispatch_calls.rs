@@ -18,33 +18,33 @@ use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use qsl_semantics::check::{
+    checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
+    OperationClauses,
+};
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits, CheckingStage,
+    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    InvalidDispatchDeclaration, Location, Origin, PackageDeclarations,
+};
+use qsl_semantics::family::{FamilyOutcome, FamilyResult};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::dispatch::GeneralizationClosure;
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
+};
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::normalize::{
+    normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
+};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
-use quire_spec_language::check::{
-    checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
-    OperationClauses,
-};
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits, CheckingStage,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    InvalidDispatchDeclaration, Location, Origin, PackageDeclarations,
-};
-use quire_spec_language::family::{FamilyOutcome, FamilyResult};
-use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
-};
-use quire_spec_language::model::key::DeclarationKey;
-use quire_spec_language::model::normalize::{
-    normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
-};
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_spec_language::value::{
     decode_function_package_v2, CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation,
     InputRefusal, QualifiedName,
@@ -1050,7 +1050,7 @@ fn ab_bridge_declarations(
     let b_type = view_type(&view, "model.B");
     let clauses = ab_bridge_clauses(a_type, pa, pb);
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root_key = if receiver_type == b_type {
         DeclarationKey::fixture("model.B.size")
     } else {
@@ -1649,7 +1649,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         // #204 round 1, M5: rooted at `b`, not the family's original `a` --
         // `B`'s own effective member for "size" is `B.size`, and this test
@@ -1903,7 +1903,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let b_type = view_type(&view, "model.B");
     let clauses = bridge_clauses(a_type);
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
@@ -2022,7 +2022,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
     let c_type = view_type(&view, "model.C");
     let clauses = inherited_only_clauses(a_type);
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
 
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
@@ -2114,7 +2114,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
     let a_type = view_type(&view, "model.A");
     let clauses = inherited_only_clauses(a_type);
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
@@ -2240,7 +2240,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
             .insert(operation.clone(), Expression::Integer(Integer::from(1_i64)));
     }
     let mut meter =
-        quire_spec_language::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
     let root = DispatchRoot {
         key: a.clone(),
         closure: GeneralizationClosure::Closed,

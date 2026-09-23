@@ -45,14 +45,12 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
-use quire_spec_language::model::accounting::{
-    ChargePoint, LimitKind, Meter, ModelNormalizationLimits,
-};
-use quire_spec_language::model::domain_package::{DomainPackage, DomainPackageRef};
-use quire_spec_language::model::intake::{admit, lift_document, meaning, read_records};
-use quire_spec_language::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
-use quire_spec_language::model::normalize::{normalize, NormalizeOutcome};
-use quire_spec_language::model::systems::{
+use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
+use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
+use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records};
+use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+use qsl_semantics::model::systems::{
     check_allocation, check_connection, classify, AllocationCheckOutcome, ConnectionCheckOutcome,
     ConnectionOutcome,
 };
@@ -188,7 +186,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// `populations[]`, asserted below rather than assumed), **5 refuse and 7
 /// read clean**:
 ///
-/// - `Count`: [`quire_spec_language::model::normalize::ModelRefusalCause::UnsupportedDeclarationForm`]
+/// - `Count`: [`qsl_semantics::model::normalize::ModelRefusalCause::UnsupportedDeclarationForm`]
 ///   -- `quire.meaning.model.record-value-type/v1` has no reader yet (a
 ///   separate, still-open gap, not this pin's).
 /// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
@@ -267,7 +265,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
     );
 
     use qsl_foundation::diagnostic::Code;
-    use quire_spec_language::model::normalize::ModelRefusalCause;
+    use qsl_semantics::model::normalize::ModelRefusalCause;
 
     let (count, flow2, pump, sys, tank) = (
         &refusals[0],
@@ -345,7 +343,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
 /// `Flow.rate`'s `typeRef` (a reference to `Count`, the unsupported-meaning
 /// refusal, equally irrelevant here) redirected to a supported native type
 /// so the closure itself reads clean too. `pump_out` reads as a real
-/// [`quire_spec_language::model::domain_package::EndpointRecord`], not
+/// [`qsl_semantics::model::domain_package::EndpointRecord`], not
 /// merely "no refusal": owner `sys_pump`, direction `Out`, value type
 /// `Flow`, multiplicity exactly `1..=1`.
 #[trace("TC-145", "FR-056-AC-1")]
@@ -410,7 +408,7 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     let endpoint = records
         .iter()
         .find_map(|record| match record {
-            quire_spec_language::model::domain_package::DomainPackageRecord::Endpoint(endpoint) => {
+            qsl_semantics::model::domain_package::DomainPackageRecord::Endpoint(endpoint) => {
                 Some(endpoint)
             }
             _ => None,
@@ -430,7 +428,7 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     );
     assert_eq!(
         endpoint.direction,
-        Some(quire_spec_language::model::domain_package::PortDirection::Out)
+        Some(qsl_semantics::model::domain_package::PortDirection::Out)
     );
     assert_eq!(endpoint.multiplicity.lower, 1);
     assert_eq!(endpoint.multiplicity.upper, Some(1));
@@ -966,7 +964,7 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
 #[test]
 fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     let offered = DomainPackageRef {
-        identity: quire_spec_language::model::intake::native::RESERVED_IDENTITY.to_owned(),
+        identity: qsl_semantics::model::intake::native::RESERVED_IDENTITY.to_owned(),
         version: "1".to_owned(),
         digest: Sha256::digest(b"irrelevant: refused before any byte lookup").into(),
     };
@@ -978,7 +976,7 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
     );
     assert_eq!(
         refusal.cause,
-        quire_spec_language::model::refusal::ModelRefusalCause::ReservedPackageIdentity {
+        qsl_semantics::model::refusal::ModelRefusalCause::ReservedPackageIdentity {
             selection: offered,
         }
     );
@@ -1017,7 +1015,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
         digest: Sha256::digest(b"second selection: refused before this is ever looked up").into(),
     };
 
-    let refusal = quire_spec_language::model::intake::admit_selections(
+    let refusal = qsl_semantics::model::intake::admit_selections(
         &[first, second],
         SHA256_JCS_DIGEST_DOMAIN,
         &bytes_by_digest,
@@ -1025,7 +1023,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     .expect_err("a second selection of the same domain-package identity never admits");
     assert_eq!(
         refusal.cause,
-        quire_spec_language::model::refusal::ModelRefusalCause::DuplicateSelection {
+        qsl_semantics::model::refusal::ModelRefusalCause::DuplicateSelection {
             identity: "acme/orders".to_owned(),
             already_selected_version: "1".to_owned(),
             requested_version: "2".to_owned(),
@@ -1070,7 +1068,7 @@ fn lift_document_refuses_a_bundle_with_no_identity() {
     let error = lift_document(bundle.path(), &module_roots)
         .expect_err("a bundle with no org: carries no identity for FCD to mint");
     match error {
-        quire_spec_language::model::intake::LiftFailure::Refused(refusal) => {
+        qsl_semantics::model::intake::LiftFailure::Refused(refusal) => {
             assert_eq!(
                 refusal,
                 agent_ix_extraction_frontend::Refusal {
@@ -1141,7 +1139,7 @@ fn lift_document_blocks_on_a_duplicate_identity() {
         "FR-001's own field and its own operation, both named `revision`, mint the same identity",
     );
     match error {
-        quire_spec_language::model::intake::LiftFailure::Blocked(diagnostics) => {
+        qsl_semantics::model::intake::LiftFailure::Blocked(diagnostics) => {
             assert_eq!(
                 diagnostics,
                 vec![agent_ix_extraction_frontend::Diagnostic {

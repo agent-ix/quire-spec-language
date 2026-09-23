@@ -6,7 +6,7 @@
 //! advertise the capability kind a requested item needs** -- and nothing
 //! else. It computes a candidate set from an explicitly-built [`Registry`]
 //! value (ADR-012 §7.1), matching on the canonical
-//! [`crate::check::Capability`] kind alone (FR-075): mode
+//! [`qsl_semantics::check::Capability`] kind alone (FR-075): mode
 //! (`bounded`/`unbounded`) never filters candidacy, and no local
 //! capability-kind type is defined here or anywhere else in this ticket's
 //! scope (FR-075-AC-5).
@@ -31,9 +31,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use crate::check::Capability;
 use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::CatalogCode;
+use qsl_semantics::check::Capability;
 
 /// A backend's declared identity, unique within one [`Registry`] (FR-290
 /// "Candidate set and negotiation": "a backend identity is unique within a

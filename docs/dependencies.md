@@ -6,7 +6,7 @@ existing `tinyvec` dependency) for the exact `value` layer. All were already
 resolved in the lock and retain their declared `MIT OR Apache-2.0` grants; no
 package is added to the lock. QSpec definitions and rules the `value` layer
 qualifies against (`quire.value.text.unicode-17.0.0/v1` and the rest of
-`src/value/definition.rs`'s catalog) are resolved from `agent-ix/quire-specification`
+`qsl-semantics/src/value/definition.rs`'s catalog) are resolved from `agent-ix/quire-specification`
 by identity and revision, not held as local content.
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the

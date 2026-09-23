@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete-V1 value expressions and total pure functions (FR-145, FR-146).
 //!
-//! [`crate::check::PackageDeclarations::check`] resolves names, types every
+//! [`qsl_semantics::check::PackageDeclarations::check`] resolves names, types every
 //! body and measure, checks every definedness obligation on a reachable
 //! path and the `decreases` obligations of every recursive component, all
 //! before any charge -- that checking-stage logic lives in the layer-3
-//! [`crate::check`] module (ADR-011 §7.3 M-5, QSL-139/FR-068). This module
+//! [`qsl_semantics::check`] module (ADR-011 §7.3 M-5, QSL-139/FR-068). This module
 //! is what remains at layer 5 (S6a): [`CheckedPackage::call`] and
 //! [`CheckedPackage::evaluate`] run already-checked code under a
 //! [`Meter`], reaching `check`'s checked-output state only
@@ -28,9 +28,9 @@ mod evaluate;
 mod family;
 mod s6a;
 
-use crate::model::object_environment::ObjectEnvironment;
 use evaluate::{Callable, Machine};
 use qsl_foundation::diagnostic::InternalFault;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
@@ -38,19 +38,19 @@ pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
-// imports it from `crate::check` and re-exports none of it (FR-068-AC-10 is
+// imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
 // retired by QSL-181: ADR-011 §7.2 forbids a root re-export of an item that
 // moves to `qsl-semantics`). `CheckedPackage` (S4 in-process) is layer-4
 // `checked_package`'s own canonical type, re-exported by the line below so
 // that `value::expression::CheckedPackage::call` remains the S6a entry point
 // ADR-011 §7.3's M-5 row names -- the sole closed re-export FR-087-AC-9/
 // TC-256 requires, naming no other path and no glob.
-use crate::check::CheckedExpression;
 pub use crate::checked_package::CheckedPackage;
+use qsl_semantics::check::CheckedExpression;
 
 /// A runtime input a call or evaluation refuses before any charge. Stays at
 /// layer 5 (FR-068's refusal split): every *check-cause* type moved to
-/// `crate::check` (FR-068-AC-4), but this one names an evaluation-time
+/// `qsl_semantics::check` (FR-068-AC-4), but this one names an evaluation-time
 /// input refusal, relocated here beside [`CheckedPackage::call`]'s and
 /// [`CheckedPackage::evaluate`]'s admission code.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -211,7 +211,7 @@ fn validate(
 
 /// Every admitted function's own name, checked body and slot count, as
 /// [`evaluate::Callable`] -- built from `check`'s
-/// [`crate::check::CheckedGraph::function_states`] accessor, reached
+/// [`qsl_semantics::check::CheckedGraph::function_states`] accessor, reached
 /// through `package`'s own [`CheckedPackage::graph`] accessor (ADR-013 T-1,
 /// FR-087-AC-9/TC-256: `package` itself imports nothing from `check`
 /// beyond `CheckedGraph`; this module's own, separate,
@@ -265,10 +265,11 @@ fn evaluate_declaration(
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
     let outcome = match family {
-        S6aFamilyKind::Value => crate::check::ValueFunctionFamily::evaluate(identity, env, meter)?,
-        // FR-063: no arm for `S6aFamilyKind::__SeamProbe` -- under
-        // `--cfg seam_probe` this match is deliberately non-exhaustive
-        // (`E0004`). Do not add a catch-all to make it compile.
+        S6aFamilyKind::Value => {
+            qsl_semantics::check::ValueFunctionFamily::evaluate(identity, env, meter)?
+        } // FR-063: no arm for `S6aFamilyKind::__SeamProbe` -- under
+          // `--cfg seam_probe` this match is deliberately non-exhaustive
+          // (`E0004`). Do not add a catch-all to make it compile.
     };
     Ok(Evaluation {
         outcome: outcome.into(),
@@ -446,11 +447,11 @@ impl CheckedPackageEvaluation for CheckedPackage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-    use crate::family::{EvalOutcome, FamilyOutcome};
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
+    use qsl_semantics::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+    use qsl_semantics::family::{EvalOutcome, FamilyOutcome};
     use quire_exact::{Integer, NodeKey};
 
     /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
@@ -515,9 +516,12 @@ mod tests {
             &mut local_meter,
         );
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let first =
-            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-                .expect("the first call, with real arguments still present, evaluates cleanly");
+        let first = qsl_semantics::check::ValueFunctionFamily::evaluate(
+            &identity,
+            &mut env,
+            &mut contract_meter,
+        )
+        .expect("the first call, with real arguments still present, evaluates cleanly");
         assert!(
             matches!(
                 &first,
@@ -528,11 +532,12 @@ mod tests {
         );
 
         // Step 4: a second S6a call on that same, now-consumed environment.
-        let consumed_fault =
-            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-                .expect_err(
-                    "a second call on the same env, arguments already consumed, must fault",
-                );
+        let consumed_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
+            &identity,
+            &mut env,
+            &mut contract_meter,
+        )
+        .expect_err("a second call on the same env, arguments already consumed, must fault");
         assert_eq!(consumed_fault.stage(), "S6a");
         assert_eq!(consumed_fault.category(), Category::InternalFailure);
         assert_eq!(
@@ -547,7 +552,7 @@ mod tests {
         let mut fresh_env =
             family::EvaluationEnv::new(&package, &objects, Vec::new(), &mut fresh_local_meter);
         let mut fresh_contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let unknown_fault = crate::check::ValueFunctionFamily::evaluate(
+        let unknown_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
             &unknown_identity,
             &mut fresh_env,
             &mut fresh_contract_meter,

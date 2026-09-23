@@ -224,13 +224,13 @@ construction site: `check`, the checked-input parameter, and the
 stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely),
 `package` (AC-1's mention, AC-9 entirely) and the `Relation`
 non-native-evaluability case (AC-6's first sentence) are deleted or never
-implemented, not stubbed -- see `src/family/mod.rs`'s and
-`src/family/contract.rs`'s own module docs for why each is a real deferral
+implemented, not stubbed -- see `qsl-semantics/src/family/mod.rs`'s and
+`qsl-semantics/src/family/contract.rs`'s own module docs for why each is a real deferral
 rather than an oversight. By Acceptance Criterion, with real trace tags as
 they exist in the delivered code today:
 - FR-062-AC-1: unbacked (untagged; the six-part shape it describes is
   narrowed to `check` alone, per `contract.rs`'s own doc). Owner: QSL-152.
-- FR-062-AC-2: backed (`TC-160`, `src/check/family.rs`, `checking_tests`).
+- FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: unbacked (untagged; PR #262 review, coordinator round 3,
   finding 5). The one test tagged for this criterion,
   `two_contexts_from_the_same_declarations_check_identically`, backs only
@@ -243,7 +243,7 @@ they exist in the delivered code today:
   it. Nothing currently asserts the identical-checked-output clause itself.
   Owner: QSL-161.
 - FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
-  migrates carries an FR-057 capability kind (`src/family/mod.rs`'s module
+  migrates carries an FR-057 capability kind (`qsl-semantics/src/family/mod.rs`'s module
   doc). Owner: QSL-152.
 - FR-062-AC-5: backed at the hook level (`TC-160`, `src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
@@ -279,14 +279,14 @@ they exist in the delivered code today:
   to demonstrate it) is deleted with it.
   There are two distinct depth-limiting mechanisms in this codebase, and
   AC-7 is about the second one: `CheckContext::enter_nesting`
-  (`src/family/`) is charged once per top-level declaration by
+  (`qsl-semantics/src/family/`) is charged once per top-level declaration by
   `ValueFunctionFamily::check`, bounding how many declarations' worth of
   contract-level nesting are in flight -- it does not walk into a
   declaration's body. `Typer`'s own `CheckingLimits.depth`
-  (`src/check/check.rs`) is charged once per real recursive `infer`/
+  (`qsl-semantics/src/check/check.rs`) is charged once per real recursive `infer`/
   `check_as` call and is what actually bounds a function body's real
   recursive descent today; `real_checker_depth_limit_is_the_proximate_cause`
-  (`src/check/family.rs` `checking_tests`, untagged) demonstrates that bound
+  (`qsl-semantics/src/check/family.rs` `checking_tests`, untagged) demonstrates that bound
   through `ValueFunctionFamily::check` end-to-end (a body nested 4 deep,
   limit 3 refuses via `CheckCause::ResourceExhausted{kind: Depth}`, limit 4
   admits). But that refusal surfaces as `StageFailure::Refused`, not the
@@ -322,7 +322,7 @@ they exist in the delivered code today:
 Three of this requirement's eleven Acceptance Criteria are backed (AC-2,
 AC-5, AC-11). AC-5's two tagged tests are
 `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
-(`src/check/family.rs`, `checking_tests`) and
+(`qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`
 (`src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the

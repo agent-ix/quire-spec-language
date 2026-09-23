@@ -10,20 +10,16 @@ extern crate self as quire_spec_language;
 #[path = "../tests/support/runtime_setup.rs"]
 mod runtime_test_setup;
 
-pub mod check;
 pub mod checked_package;
 pub mod checking;
 pub mod command;
 pub mod complete;
-pub mod family;
 pub mod formal_source;
 pub mod format;
-pub mod library;
 pub mod linking;
 pub mod located_json;
 pub mod lowering;
 pub mod mapped;
-pub mod model;
 pub mod model_source;
 pub mod native_model;
 pub mod package;

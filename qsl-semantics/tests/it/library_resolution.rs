@@ -10,7 +10,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
-use quire_spec_language::library::{
+use qsl_semantics::library::{
     check_migration, resolve_libraries, ImportDeclaration, LibraryCause, LibraryMigration,
     LibraryName, LibraryPackage, LibraryRefusal, NodeDefect, PackageId, PreimageDefect,
     RefusalClass, Selection, StaleCause, StalePin,

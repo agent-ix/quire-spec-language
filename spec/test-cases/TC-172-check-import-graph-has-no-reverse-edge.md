@@ -32,7 +32,7 @@ or merging the two. It also verified FR-068-AC-10's other direction, `value::exp
 
 ## Test Procedure
 
-1. Enumerate every `.rs` file under `src/check/`.
+1. Enumerate every `.rs` file under `qsl-semantics/src/check/`.
 2. Parse or grep each file's `use` statements (including glob imports) and
    resolve each import path against the crate's module tree.
 3. Flag any import that resolves into `value::expression` at all — the

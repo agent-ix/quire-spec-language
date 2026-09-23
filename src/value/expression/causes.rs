@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The family-owned evaluation-time causes S6a returns in
-//! [`crate::family::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
+//! [`qsl_semantics::family::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
 //! beside the evaluator that raises them. Layer 5 `value::expression` holds
 //! every family's evaluator (ADR-011 §6.1), so the module path does not
 //! decide the owning family: [`ProtocolClauseSnapshot`] is `ProtocolClause`'s,
@@ -14,9 +14,9 @@ use qsl_foundation::diagnostic::{
 };
 use quire_exact::ObjectReference;
 
-use crate::check::WrongSnapshotCause;
-use crate::model::key::hex;
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use qsl_semantics::check::WrongSnapshotCause;
+use qsl_semantics::model::key::hex;
+use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the
@@ -145,10 +145,10 @@ impl UndefinedCoded for StateModelUndefined {
 #[cfg(test)]
 mod tests {
     use super::{identity_string, ModelQueryRefusal, ProtocolClauseSnapshot};
-    use crate::check::WrongSnapshotCause;
-    use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::{category_of, CatalogCode, CatalogCoded, Category, Code};
+    use qsl_semantics::check::WrongSnapshotCause;
+    use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 
     /// TC-387 (FR-090-AC-6): each `WrongSnapshotCause` maps to
     /// `wrong_snapshot` with its own catalog cause tag, never through the
@@ -181,7 +181,7 @@ mod tests {
             let code = ProtocolClauseSnapshot(cause).catalog_code();
             assert_eq!(category_of(&code), Some(Category::Refusal), "{code}");
         }
-        let samples = crate::model::refusal::fixtures::exhaustive_samples();
+        let samples = qsl_semantics::model::refusal::fixtures::exhaustive_samples();
         assert!(!samples.is_empty());
         for cause in samples {
             let code = cause.catalog_code();

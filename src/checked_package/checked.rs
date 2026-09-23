@@ -10,7 +10,7 @@
 //! `CheckedPackage`'s constructor ([`CheckedPackage::link`]) and both its
 //! fields are private to this module: the only conversion into it is the S4
 //! link step, over an already-checked [`CheckedGraph`] (S3's own stage
-//! output, `crate::check`) and other already-checked `CheckedPackage`s (E4's
+//! output, `qsl_semantics::check`) and other already-checked `CheckedPackage`s (E4's
 //! dependency closure), never over an unchecked or wire-admitted value
 //! (R-10, O-15) -- there is no `From`/`Into` impl from `VerifiedPackage`,
 //! `ImportView` or any `protocol_artifact`-read value, and no struct-literal
@@ -38,8 +38,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::check::CheckedGraph;
-use crate::library::PackageId;
+use qsl_semantics::check::CheckedGraph;
+use qsl_semantics::library::PackageId;
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
@@ -187,8 +187,8 @@ impl EmittedPackage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{CheckingLimits, PackageDeclarations};
     use ix_trace_rs::trace;
+    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 
     /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
     /// real `PackageDeclarations::check` run, from its own new
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
         let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let declaration = crate::model::key::DeclarationKey {
+        let declaration = qsl_semantics::model::key::DeclarationKey {
             package: "test/orders".to_owned(),
             node: "Order.status".to_owned(),
         };

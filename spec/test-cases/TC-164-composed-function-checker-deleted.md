@@ -52,10 +52,10 @@ by inspecting reachability. Scope: FR-065-AC-5.
 **Still zero tests against this test case's own procedure (QSL-148,
 2026-09-21) -- superseded, not satisfied.** QSL-148 moves the checking this
 test case's target design names: `Typer::call` is deleted
-(`src/check/check.rs`), and `check/mod.rs`'s inline per-declaration
+(`qsl-semantics/src/check/check.rs`), and `check/mod.rs`'s inline per-declaration
 typing/definedness pass is replaced by a call to
 `check::family::check_declaration_body`
-(`src/check/family.rs`) -- the composed checker's pre-migration
+(`qsl-semantics/src/check/family.rs`) -- the composed checker's pre-migration
 function-check entry points genuinely are absent now. But this test case's
 own procedure (a symbol-search step and an `E0004` compile-fail fixture) is
 not implemented, on the explicit

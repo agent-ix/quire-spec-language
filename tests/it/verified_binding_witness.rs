@@ -42,8 +42,12 @@ const WITNESS: &str = "SupportedV2Wire";
 const READER_FILE: &str = "src/checked_package/checked_v2.rs";
 const READER_FN: &str = "read_checked_package_v2";
 const ADMITTED_ARM: &str = "AdmittedV2";
-/// The witness's own module, and `library`'s test-only binding tests.
-const EXEMPT: [&str; 2] = ["src/library/witness.rs", "src/library/binding_tests.rs"];
+/// The witness's own module, and `library`'s test-only binding tests, both
+/// in `qsl-semantics`.
+const EXEMPT: [&str; 2] = [
+    "qsl-semantics/src/library/witness.rs",
+    "qsl-semantics/src/library/binding_tests.rs",
+];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
@@ -51,10 +55,11 @@ fn root() -> PathBuf {
 
 /// Every Rust source file of every workspace crate: the root crate's
 /// `src/` and each `<crate>/src/` beside it, so the scan follows `library`
-/// and `checked_package` when QSL-181 (X-6b) and X-7 move them into
-/// `qsl-semantics` and `qsl-package`. Each file is named relative to its own
-/// crate root (`src/library/witness.rs`), which is how [`EXEMPT`] and
-/// [`READER_FILE`] name it, and paired with its path from the workspace root.
+/// into `qsl-semantics` (QSL-181) and `checked_package` into `qsl-package`
+/// (X-7). Each file is named relative to the workspace root, crate
+/// directory included (`qsl-semantics/src/library/witness.rs`), which is how
+/// [`EXEMPT`] and [`READER_FILE`] name it: a same-named module in another
+/// crate is not exempt. X-7 moves [`READER_FILE`] with `checked_package`.
 fn source_files() -> Vec<(String, PathBuf)> {
     let root = root();
     let mut crate_roots = vec![root.clone()];
@@ -76,8 +81,8 @@ fn source_files() -> Vec<(String, PathBuf)> {
                     pending.push(path);
                 } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
                     let relative = path
-                        .strip_prefix(&crate_root)
-                        .expect("under its crate root")
+                        .strip_prefix(&root)
+                        .expect("under the workspace root")
                         .to_string_lossy()
                         .replace('\\', "/");
                     files.push((relative, path));
@@ -339,13 +344,13 @@ fn the_scan_flags_each_evasion() {
 
     // A plain call from another module.
     assert!(flagged(
-        "src/check/mod.rs",
+        "qsl-semantics/src/check/mod.rs",
         "fn forge() { let _ = SupportedV2Wire::attest_ir_admitted_v2(); }",
     ));
     // Evasion 1: the call inside a macro, in another module and in the
     // reader's own arm.
     assert!(flagged(
-        "src/check/mod.rs",
+        "qsl-semantics/src/check/mod.rs",
         "fn forge() { let _ = vec![crate::library::SupportedV2Wire::attest_ir_admitted_v2()]; }",
     ));
     assert!(flagged(
@@ -359,16 +364,21 @@ fn the_scan_flags_each_evasion() {
     // Evasion 2: a tuple, struct or in-macro construction elsewhere in
     // `library` (the compiler also refuses these outside `library::witness`).
     assert!(flagged(
-        "src/library/package_identity.rs",
+        "qsl-semantics/src/library/package_identity.rs",
         "fn forge() -> SupportedV2Wire { super::SupportedV2Wire(()) }",
     ));
     assert!(flagged(
-        "src/library/mod.rs",
+        "qsl-semantics/src/library/mod.rs",
         "fn forge() -> SupportedV2Wire { SupportedV2Wire { 0: () } }",
     ));
     assert!(flagged(
-        "src/library/mod.rs",
+        "qsl-semantics/src/library/mod.rs",
         "fn forge() { let _ = vec![SupportedV2Wire(())]; }",
+    ));
+    // A same-named witness module in another crate is not exempt.
+    assert!(flagged(
+        "src/library/witness.rs",
+        "fn forge() -> SupportedV2Wire { SupportedV2Wire(()) }",
     ));
     // Evasion 3: a wrapper fn in the reader's file, called by the arm.
     assert!(flagged(

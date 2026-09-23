@@ -2,6 +2,12 @@
 //! TC-189 collection kind algebra over the real `value` boundary (FR-144).
 
 use ix_trace_rs::trace;
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
+use qsl_semantics::value::enumeration::EnumMemberIndex;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -16,12 +22,6 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
-use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::value::declaration::{
-    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
-    ObjectTypeDeclaration, TypeEnvironment,
-};
-use quire_spec_language::value::enumeration::EnumMemberIndex;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -580,19 +580,17 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
 mod checked {
     use super::*;
     use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
-    use quire_exact::NODE_KEY_DOMAIN;
-    use quire_spec_language::check::{
+    use qsl_semantics::check::{
         CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, EnumBinding,
         PackageDeclarations,
     };
-    use quire_spec_language::model::object_environment::ObjectEnvironment;
-    use quire_spec_language::value::enumeration::{
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::value::enumeration::{
         EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use quire_spec_language::value::{
-        CheckedPackage, CheckedPackageEvaluation, NodeOwner, OwnerSelection, OwnerSubject,
-        SemanticGraphCause,
-    };
+    use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause};
+    use quire_exact::NODE_KEY_DOMAIN;
+    use quire_spec_language::value::{CheckedPackage, CheckedPackageEvaluation};
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

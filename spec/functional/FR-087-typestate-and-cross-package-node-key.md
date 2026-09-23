@@ -66,7 +66,7 @@ during implementation.**
    O-15") and is untouched by this requirement: it retires with its lane
    when that lane converges (ADR-011 §8, Q209-1), and is not a third
    candidate for `CheckedPackage`'s canonical home. The second —
-   `check::CheckedPackage` (`src/check/mod.rs:127`,
+   `check::CheckedPackage` (`qsl-semantics/src/check/mod.rs:127`,
    `PackageDeclarations::check` at `:291` returning it) — landed under
    FR-068 (M-5, QSL-139) in layer-3 `check`, and FR-068's own text
    acknowledges this contradicts ADR-011 §4's worked example, which names
@@ -92,7 +92,7 @@ during implementation.**
    **Ruled (owner ruling on QSL-158, 2026-09-21): ADR-013 T-1 stands
    unamended, and `CheckedPackage` is canonically layer-4 `package`.** The
    reverse-edge objection FR-068 raised does not survive measurement: it
-   rests on `PackageDeclarations::check` (`src/check/mod.rs:291`) returning
+   rests on `PackageDeclarations::check` (`qsl-semantics/src/check/mod.rs:291`) returning
    `CheckedPackage` today only because **`check` has no S3 output type of
    its own** — `CheckedGraph` does not exist anywhere in `src/` (confirmed:
    a whole-repository search for `struct CheckedGraph` returns nothing).
@@ -295,20 +295,20 @@ during implementation.**
   the verified-binding and dependency-binding rules, and the private-
   constructor/public-accessor mechanism), §6.1 (the layer table: layer 3
   `library`, with `VerifiedPackage` and `ImportView`; layer 4 `package`).
-- The current tree: `src/complete/package.rs:618-1268` defines
+- The current tree: `qsl-semantics/src/complete/package.rs:618-1268` defines
   `ResolvedSourcePackage` (complete-V1 lane C2); no *top-level* `library`
   module exists yet (`src/lib.rs` has no `mod library;`), but
   `src/value/library.rs` (FR-307, re-exported at `value::*`,
   `src/value/mod.rs:154`) and `src/value/package_identity.rs` already exist
   and are ADR-011's own relocation target for it (`:744`; Description, item
-  3); `src/check/mod.rs:127` defines `CheckedPackage` (landed under
+  3); `qsl-semantics/src/check/mod.rs:127` defines `CheckedPackage` (landed under
   FR-068/M-5); `src/checking/` defines the lane-private
   `checking::CheckedPackage<'a>`; `src/protocol_artifact/native/mod.rs:68`
   defines the unrelated SEAM-3 `EmittedPackage`.
 
 ## Outputs
 
-- A top-level `library` module (`src/library/`, declared in `src/lib.rs`) at
+- A top-level `library` module (`qsl-semantics/src/library/`, declared in `src/lib.rs`) at
   the layer-3 position ADR-011 §6.1 assigns it (after `model`, before the
   `check` core in the intra-layer-3 order). This module is the relocation
   target ADR-011's module table (`:744`) names for `value::library`
@@ -362,7 +362,7 @@ during implementation.**
     named as lying outside all four (item 3, owner ruling (e);
     FR-087-AC-12).
 - `CheckedGraph` (S3 output, new type, private constructors in `check`).
-  `PackageDeclarations::check` (`src/check/mod.rs:291`) SHALL return
+  `PackageDeclarations::check` (`qsl-semantics/src/check/mod.rs:291`) SHALL return
   `CheckedGraph`, not `CheckedPackage`; `check` SHALL name no
   `CheckedPackage` type at all after this requirement's implementation.
 - `CheckedPackage` (S4 in-process output), relocated to layer-4 `package`,
@@ -388,10 +388,10 @@ during implementation.**
 - `EmittedPackage` (S4 wire output: the v2 bytes with their `package_id`),
   new, defined in layer-4 `package`, distinct from
   `protocol_artifact::native::EmittedPackage` (Description).
-- Retirement of `ResolvedSourcePackage` (`src/complete/package.rs`): its
+- Retirement of `ResolvedSourcePackage` (`qsl-semantics/src/complete/package.rs`): its
   role is replaced by `VerifiedPackage` and `ImportView` (ADR-011 §8,
   Q209-2; ADR-013 O-15). This requirement removes the type and its
-  constructors from `src/complete/package.rs`; it does not leave a
+  constructors from `qsl-semantics/src/complete/package.rs`; it does not leave a
   `pub use` alias or a wrapper that keeps the old name reachable.
 
 ## Behavior
@@ -412,10 +412,10 @@ evidence rule for R-10 and the typestate half of O-15.
 
 ### `check` produces `CheckedGraph`; `package` constructs `CheckedPackage`
 
-`PackageDeclarations::check` (`src/check/mod.rs:291`) SHALL return
+`PackageDeclarations::check` (`qsl-semantics/src/check/mod.rs:291`) SHALL return
 `CheckedGraph`. The checking methods FR-068 placed on `check::CheckedPackage`
 (`check_expression`, `check_postcondition_expression`,
-`check_clause_expression`, `src/check/mod.rs:601,625,648`) are S3 checking
+`check_clause_expression`, `qsl-semantics/src/check/mod.rs:601,625,648`) are S3 checking
 behavior — they type and admit expressions against the package's declared
 functions and dispatch tables, work that ADR-013 T-1 assigns to S3, before
 S4 linking — and SHALL be retargeted to take and return `CheckedGraph` in
@@ -517,7 +517,7 @@ comparison over the referenced node's content SHALL substitute.
 ### `ResolvedSourcePackage` is replaced, not kept alongside its replacement
 
 QSL SHALL remove `ResolvedSourcePackage` and its constructors from
-`src/complete/package.rs` in the same change that lands `VerifiedPackage`
+`qsl-semantics/src/complete/package.rs` in the same change that lands `VerifiedPackage`
 and `ImportView`. No consumer of the old type SHALL remain after the
 change: every caller of `ResolvedSourcePackage` SHALL be migrated to
 `VerifiedPackage`/`ImportView` or removed, per its own lane's disposition
@@ -567,8 +567,8 @@ change: every caller of `ResolvedSourcePackage` SHALL be migrated to
   `CheckedPackage` return type (M-5), and opened QSL-167 for the ADR-011
   §4-versus-§6.1 conflict this requirement resolves per the QSL-158 owner
   ruling (Status): `PackageDeclarations::check` returns `CheckedGraph`
-  after this requirement, and `check::CheckedPackage` (`src/check/mod.rs:127`)
-  and its three checking methods (`src/check/mod.rs:601,625,648`) are
+  after this requirement, and `check::CheckedPackage` (`qsl-semantics/src/check/mod.rs:127`)
+  and its three checking methods (`qsl-semantics/src/check/mod.rs:601,625,648`) are
   relocated/retargeted as this requirement's Behavior and Outputs state.
 - Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split and
   the 2026-09-21 `CheckedPackage`-placement ruling) and QSL-167 (the ADR-011
@@ -632,7 +632,7 @@ a name there, refusing an unexported name `missing_declaration` /
 two exports whose node-id order is the reverse of their name order, and
 the checker's index over them) and at the `library` level (two exports of
 different node kinds, and a view holding only the listed export). Steps 3-4
-are `tests/it/import_view_names.rs`, a `syn` scan of every `library` file.
+are `qsl-semantics/tests/it/import_view_names.rs`, a `syn` scan of every `library` file.
 It fails on any function taking a name and returning a `WireNodeId`,
 `NodeKey`, `PackageNodeKey`, `ImportView`, a `library` type carrying one,
 `Self::X` bound to one, or a generic built from one; on any name → node id

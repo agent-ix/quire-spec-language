@@ -11,7 +11,7 @@
 //! ([`quire_contract_ir::CheckedPackageIdentityPreimageV2`] and the rest of
 //! its `checked_package::v2` vocabulary): this module defines no wire
 //! member set or contract-version spelling of its own, reusing
-//! [`crate::library::PACKAGE_ID_VERSION`] for the identity preimage's own
+//! [`qsl_semantics::library::PACKAGE_ID_VERSION`] for the identity preimage's own
 //! `quire.checked-package-id/v2` version tag.
 //!
 //! # Scope (S1a) and what still blocks a real emission
@@ -69,8 +69,8 @@ use std::convert::Infallible;
 
 use quire_contract_ir::{CheckedPackageIdentityPreimageV2, CheckedSelection};
 
-use crate::check::CheckedGraph;
 use qsl_foundation::Code;
+use qsl_semantics::check::CheckedGraph;
 
 use super::CheckedPackage;
 
@@ -157,7 +157,7 @@ fn identity_preimage(
     let edition = edition_selection(package).ok_or(EmitRefusal::EditionNotYetSelected)?;
     let identity_projection = identity_projection(package.graph())?;
     Ok(CheckedPackageIdentityPreimageV2 {
-        version: crate::library::PACKAGE_ID_VERSION.into(),
+        version: qsl_semantics::library::PACKAGE_ID_VERSION.into(),
         edition,
         profile_selections: Vec::new(),
         definition_selections: Vec::new(),
@@ -188,8 +188,8 @@ pub(crate) fn emit_package(package: &CheckedPackage) -> Result<Infallible, EmitR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{CheckingLimits, PackageDeclarations};
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
+    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 
     /// An empty checked package: no functions. `CheckedPackage::link`'s
     /// dependency closure always starts empty today (S-3a review fix); M-4

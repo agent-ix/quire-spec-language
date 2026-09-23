@@ -84,19 +84,25 @@ cargo-deny-bans:
 	fi
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
-# its own gate, separate from the `--all-features` one below. `test-support`
-# fixture constructors are reachable with `--features test-support`, not only
-# under `--all-features`; QSL-175 (#306) gates the seven modules that call
-# them with `#[cfg(feature = "test-support")]` on their own `mod` line in
-# `tests/it/main.rs` rather than a `[[test]] required-features` (there is now
-# one `[[test]]` target, `it`, covering all of `tests/`), so a default-feature
-# build must also be checked or those seven modules can silently stop
-# compiling under the feature set every non-Quire caller actually builds
-# with.
+# its own gate, separate from the `--all-features` one below.
+#
+# A workspace-wide build unifies features across every package, dev-
+# dependencies included. `quire-spec-language`'s dev-dependency turns on
+# `qsl-semantics/test-support`, and `qsl-forms`'s turns on
+# `qsl-cst/test-support`, so `--workspace` builds those two crates with
+# `test-support` on even here. The `-p` runs below build each crate alone,
+# with the feature off: they lint the `not(feature = "test-support")` code
+# paths under `-D warnings`, and check that the modules of each crate's own
+# `tests/it` not gated on the feature compile and pass without it. These
+# are the only two workspace crates with a `test-support` feature.
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo test --locked --workspace
+	cargo clippy --locked -p qsl-semantics --all-targets -- -D warnings
+	cargo test --locked -p qsl-semantics
+	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
+	cargo test --locked -p qsl-cst
 
 ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
@@ -125,7 +131,8 @@ ci: check-no-committed-binaries check-index-completeness ci-default-features ci-
 # public; nothing of QSpec is copied into this repository. Without QSPEC_DIR
 # the test itself skips, so this target refuses to run instead, and it fails
 # when the test did not actually check the vectors (a renamed test filters to
-# zero tests and would otherwise pass).
+# zero tests and would otherwise pass). Both tests are `qsl-semantics`'
+# (QSL-181 moved `value::application_key` and `tests/it/quantities.rs` there).
 CONFORMANCE_TEST := value::application_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
 # TC-411 step 3 (FR-088-AC-12): the compound-unit `UnitId`s against QSpec's
 # `value-compound-unit-vectors.json`, guarded the same way.
@@ -135,12 +142,12 @@ conformance:
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
 		exit 1; \
 	fi
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked --lib -- --exact $(CONFORMANCE_TEST) --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_TEST) --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: ' || { echo "conformance: the vector check did not run" >&2; exit 1; }
-	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked --test it -- --exact $(CONFORMANCE_UNIT_TEST) --nocapture 2>&1); \
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_UNIT_TEST) --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \

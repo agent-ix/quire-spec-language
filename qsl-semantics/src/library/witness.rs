@@ -23,7 +23,7 @@
 //! minter is the only way to build one:
 //!
 //! ```compile_fail
-//! let forged = quire_spec_language::library::SupportedV2Wire(());
+//! let forged = qsl_semantics::library::SupportedV2Wire(());
 //! ```
 
 /// IR's I04 reader admitted the bytes as a supported

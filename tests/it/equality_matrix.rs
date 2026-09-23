@@ -13,6 +13,25 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
+    PackageDeclarations,
+};
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::declaration::{
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
+use qsl_semantics::value::enumeration::{
+    EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
+};
+use qsl_semantics::value::quantity::UnitTable;
+use qsl_semantics::value::{
+    AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision,
+    DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+};
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::NodeKey;
@@ -30,25 +49,8 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
-    PackageDeclarations,
-};
-use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::value::declaration::{
-    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    ObjectTypeDeclaration, TypeEnvironment,
-};
-use quire_spec_language::value::enumeration::{
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
-};
-use quire_spec_language::value::quantity::UnitTable;
 use quire_spec_language::value::{
-    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckedPackage, CheckedPackageEvaluation,
-    DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage, Evaluation,
-    LocatedLoss, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage, ValueLoss,
+    CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -212,7 +214,7 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
 fn enum_value(
     declaration: &EnumDeclaration,
     case: &str,
-) -> quire_spec_language::value::enumeration::EnumValue {
+) -> qsl_semantics::value::enumeration::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),

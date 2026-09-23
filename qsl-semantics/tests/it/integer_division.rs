@@ -8,14 +8,14 @@
 use std::num::NonZeroU32;
 
 use ix_trace_rs::trace;
+use qsl_semantics::value::{
+    divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
+    DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
+};
 use quire_exact::{
     ChargePoint, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
     IntegerInterval, LimitKind, Meter, Outcome, QuotientRemainder, Refusal, ScalarLimits,
     Undefined,
-};
-use quire_spec_language::value::{
-    divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
-    DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics"]
 resolver = "2"
 
 [package]
@@ -17,17 +17,6 @@ default = []
 # ADR-011 §7.3 X-4 (QSL-179): the I3 adapter crate `qsl-source` owns the
 # quire-rs dependency; this feature builds it with its own `quire-extraction`.
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
-# Test-only fixture constructors (`DeclarationKey::fixture`,
-# `DomainPackageRef::fixture`, `DomainPackageRef::fixture_with_version`) that
-# derive a digest from a display identity, and `ReaderAuthority::fixture` —
-# never enabled in a production build; `cargo test --all-features` turns it on
-# so integration tests in `tests/` can reach them (PR #140 F13). A shipped
-# dependent must never enable it: `ReaderAuthority::fixture` forges a
-# crate-issued capability. Only `[dev-dependencies]` may name it, and
-# `tests/it/family_outcome_layering.rs`'s
-# `no_shipped_dependency_enables_test_support` refuses any normal or build
-# dependency that does (QSL-181).
-test-support = []
 
 [dependencies]
 # ADR-013 O-05: only `model` calls the kernel `EffectiveId` constructor,
@@ -41,6 +30,10 @@ qsl-foundation = { path = "qsl-foundation" }
 qsl-cst = { path = "qsl-cst" }
 # ADR-011 §7.3 X-5 (QSL-180): layer 2, extracted out of this crate.
 qsl-forms = { path = "qsl-forms" }
+# ADR-011 §7.3 X-6 (QSL-181): layer 3, extracted out of this crate. This crate
+# re-exports none of its items (ADR-011 §7.2); callers name them at
+# `qsl_semantics::...`.
+qsl-semantics = { path = "qsl-semantics" }
 # ADR-011 §7.3 X-4 (QSL-179): layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }
@@ -55,14 +48,17 @@ thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "dbb2e22d577b56fed5c27e81e584370acdf02512" }
 qsl-attrs = { path = "qsl-attrs" }
-agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
-agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
-# `crate::model::intake::lift_document` calls FCD's `lift`, which always
-# writes its document to a required output path (FR-099); this is that
-# scratch directory, not test-only.
-tempfile = "=3.27.0"
 
 [dev-dependencies]
+# `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
+# `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
+# unit and integration tests. Only this dev-dependency may enable
+# `test-support`: `tests/it/family_outcome_layering.rs`
+# (`no_shipped_dependency_enables_test_support`) refuses a normal or build
+# dependency that does. Resolver 2 turns it on only when a test target is
+# built, so it never reaches the production lib.
+qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
+tempfile = "=3.27.0"
 jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "=1.0.151", features = ["raw_value"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
@@ -91,15 +87,8 @@ path = "tools/fixture-audit/main.rs"
 
 # QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for
-# the full rationale). The eight modules that call the `test-support`-gated
-# fixture constructors (`DeclarationKey::fixture`, `DomainPackageRef::fixture`,
-# `DomainPackageRef::fixture_with_version`, `ReaderAuthority::fixture`) are gated with
-# `#[cfg(feature = "test-support")]` on their own `mod` lines in
-# `tests/it/main.rs` instead of `required-features` here, so this single
-# target needs none: a default-feature `cargo clippy --all-targets`/`cargo
-# test` build (no `test-support`) compiles `it` with those eight modules
-# `cfg`'d out, matching the previous per-file behavior (#154) without
-# skipping the whole binary.
+# the full rationale). It needs no `required-features`: the `qsl-semantics`
+# fixtures its modules call are enabled by that crate's dev-dependency above.
 [[test]]
 name = "it"
 path = "tests/it/main.rs"

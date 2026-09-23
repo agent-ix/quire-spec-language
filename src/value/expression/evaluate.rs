@@ -14,22 +14,22 @@ use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
 };
-use crate::check::{
+use qsl_foundation::diagnostic::InternalFault;
+use qsl_semantics::check::{
     enum_member_index, Arithmetic, Connective, DispatchTable, Location, Node, NodeKind,
     OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
-use crate::family::FamilyOutcome;
-use crate::family::FamilyResult;
-use crate::model::object_environment::ObjectEnvironment;
-use crate::model::population::PopulationBinding;
-use crate::value::declaration::{operand_value, CompositeShape};
-use crate::value::enumeration::{compare_enum, EnumMemberIndex};
-use crate::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use crate::value::quantity::{
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::family::FamilyResult;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::population::PopulationBinding;
+use qsl_semantics::value::declaration::{operand_value, CompositeShape};
+use qsl_semantics::value::enumeration::{compare_enum, EnumMemberIndex};
+use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
+use qsl_semantics::value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
-use crate::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
-use qsl_foundation::diagnostic::InternalFault;
+use qsl_semantics::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
@@ -513,8 +513,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `CheckedInvariant` is reserved for a broken evaluator invariant, never
     /// for input a caller controls.
     ///
-    /// [`admit_invocation`]: crate::model::population::admit_invocation
-    /// [`admit_binding`]: crate::model::population::admit_binding
+    /// [`admit_invocation`]: qsl_semantics::model::population::admit_invocation
+    /// [`admit_binding`]: qsl_semantics::model::population::admit_binding
     fn select_anchor<'x>(
         &self,
         binding: &'x PopulationBinding,
@@ -1472,22 +1472,22 @@ impl<'a, 'm> Machine<'a, 'm> {
 mod tests {
     use super::super::s6a::ReferenceEvaluation;
     use super::*;
-    use crate::check::{CheckingLimits, PackageDeclarations};
-    use crate::model::accounting::ModelNormalizationLimits;
-    use crate::model::dispatch::GeneralizationClosure;
-    use crate::model::domain_package::{
-        DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
-        PopulationRecord,
-    };
-    use crate::model::key::DeclarationKey;
-    use crate::model::normalize::{normalize, NormalizeOutcome};
-    use crate::model::population::{
-        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
-        PopulationDocument, PopulationMember,
-    };
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
+    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
+        PopulationRecord,
+    };
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -1555,7 +1555,7 @@ mod tests {
     /// `F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p))`,
     /// over [`domain_package`] -- TC-391's own fixture. Returns the linked
     /// package and `F`'s checked identity, so a test can call
-    /// [`crate::check::ValueFunctionFamily::evaluate`] directly -- the S6a
+    /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`] directly -- the S6a
     /// seam itself, bypassing `CheckedPackage::call`'s admission.
     fn population_function_package(
     ) -> (crate::checked_package::CheckedPackage, quire_exact::NodeKey) {
@@ -1569,13 +1569,15 @@ mod tests {
             .get(&DeclarationKey::fixture("model.A"))
             .copied()
             .expect("model.A has a type-level effective declaration");
-        let types = crate::value::declaration::TypeEnvironment::new(
+        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
             [],
-            [crate::value::declaration::ObjectTypeDeclaration::new(
-                a,
-                "M::A",
-                Vec::new(),
-            )],
+            [
+                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                    a,
+                    "M::A",
+                    Vec::new(),
+                ),
+            ],
         )
         .expect("one object type admits cleanly");
         let graph = PackageDeclarations {
@@ -1623,17 +1625,20 @@ mod tests {
         let (package, identity) = population_function_package();
         let objects = ObjectEnvironment::default();
         let unresolved_id = PopulationId::from_digest([7; 32]);
-        let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut local_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Population(unresolved_id)],
             &mut local_meter,
         );
-        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let fault =
-            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-                .expect_err("an unresolved population id must fault, never evaluate");
+        let mut contract_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
+            &identity,
+            &mut env,
+            &mut contract_meter,
+        )
+        .expect_err("an unresolved population id must fault, never evaluate");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
         assert_eq!(
@@ -1656,17 +1661,20 @@ mod tests {
         let objects = ObjectEnvironment::default()
             .with_population(binding)
             .unwrap();
-        let mut local_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut local_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Population(id)],
             &mut local_meter,
         );
-        let mut contract_meter = Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
-        let fault =
-            crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-                .expect_err("a mismatched declared maximum must fault, never evaluate");
+        let mut contract_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
+            &identity,
+            &mut env,
+            &mut contract_meter,
+        )
+        .expect_err("a mismatched declared maximum must fault, never evaluate");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
         assert_eq!(

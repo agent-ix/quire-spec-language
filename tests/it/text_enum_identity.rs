@@ -12,6 +12,13 @@ use std::cmp::Ordering;
 use ix_trace_rs::trace;
 use qsl_cst::{Limits, ParsedSource};
 use qsl_foundation::{Code, SourceIdentity};
+use qsl_semantics::value::enumeration::{
+    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
+};
+use qsl_semantics::value::NodeIdentityPreimage;
+use qsl_semantics::value::{
+    InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
+};
 use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, compare_text, ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause,
@@ -20,13 +27,6 @@ use quire_exact::{
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits,
-};
-use quire_spec_language::value::enumeration::{
-    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
-};
-use quire_spec_language::value::NodeIdentityPreimage;
-use quire_spec_language::value::{
-    InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

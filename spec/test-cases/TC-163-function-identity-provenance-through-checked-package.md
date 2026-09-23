@@ -67,7 +67,7 @@ delivered code, per the [testing-policy ruling](https://linear.app/agent-ix/issu
 (Peter, QSL-148, 2026-09-22, relayed by the QSL team lead: test what the
 family check accepts and refuses, not the arm's code shape or placement).
 The fact step 6 would verify is true of the delivered code --
-`infer_form`'s `Call` arm (`src/check/check.rs`) is exactly one call into
+`infer_form`'s `Call` arm (`qsl-semantics/src/check/check.rs`) is exactly one call into
 `super::family::check_application` and holds no other conditional, lookup
 or loop -- but AC-4 is **true by inspection, not backed**: `TC-376`'s
 behavioral tests of `check_application` itself would keep passing even if

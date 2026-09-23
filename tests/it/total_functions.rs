@@ -4,6 +4,17 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
+    CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
+    ProvedInterval,
+};
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -15,19 +26,8 @@ use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
-    CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
-    ProvedInterval,
-};
-use quire_spec_language::family::FamilyOutcome;
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_spec_language::value::{
-    CatalogRole, CheckedPackage, CheckedPackageEvaluation, DefinitionLock, DefinitionReference,
-    DefinitionRevision, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
+    CheckedPackage, CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 
 use sha2::{Digest, Sha256};
@@ -846,7 +846,7 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
     );
 }
 
-fn ieee_profile() -> quire_spec_language::value::AdmittedIeeeProfile {
+fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
     let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
     let reference = DefinitionReference {

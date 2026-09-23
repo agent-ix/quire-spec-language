@@ -18,7 +18,7 @@ interface-type reference does not itself classify as `Interface` refuses
 wrong-export naming required kind `Interface` and the reference's actual
 kind. Scope: FR-086-AC-5.
 
-Known gap: `src/model/systems.rs::classify` does not yet implement either
+Known gap: `qsl-semantics/src/model/systems.rs::classify` does not yet implement either
 half. Interface types are collected inline while scanning every record and
 are never charged through `charge_kind`, so they are not their own first
 charged phase; and the endpoint loop never checks whether an endpoint's

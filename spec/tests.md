@@ -415,9 +415,9 @@ absent from a scan.
 QSL-131 Slice B's other half (`model` minting and the evaluator's
 resolution step) landed: `model::population::mint_population_id` mints a
 `PopulationId` at admission time (`admit_binding`/`admit_invocation`,
-`src/model/population.rs`), and `ObjectEnvironment` records the
+`qsl-semantics/src/model/population.rs`), and `ObjectEnvironment` records the
 `PopulationId` -> `PopulationBinding` correspondence
-(`with_population`/`resolve_population`, `src/model/object_environment.rs`) the
+(`with_population`/`resolve_population`, `qsl-semantics/src/model/object_environment.rs`) the
 evaluator resolves through (`Machine::resolve_population`,
 `src/value/expression/evaluate.rs`). TC-291, TC-293, TC-294, TC-295 and
 TC-296 are `✅ Passed locally`. TC-296 backs FR-089-AC-1's admission-role

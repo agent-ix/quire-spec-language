@@ -21,37 +21,37 @@ use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_semantics::check::{
+    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
+    PackageDeclarations, WrongSnapshotCause,
+};
+use qsl_semantics::family::{FamilyOutcome, FamilyResult};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::dispatch::GeneralizationClosure;
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
+};
+use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::normalize::{
+    normalize, object_universe, EffectiveView, NormalizeOutcome,
+};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::population::{
+    admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
+    InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
+    PopulationMember,
+};
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
-use quire_spec_language::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
-    PackageDeclarations, WrongSnapshotCause,
-};
-use quire_spec_language::family::{FamilyOutcome, FamilyResult};
-use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
-};
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
-use quire_spec_language::model::normalize::{
-    normalize, object_universe, EffectiveView, NormalizeOutcome,
-};
-use quire_spec_language::model::object_environment::ObjectEnvironment;
-use quire_spec_language::model::population::{
-    admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
-    InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
-    PopulationMember,
-};
-use quire_spec_language::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
-    ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_spec_language::value::{
     CallFailure, CheckedPackage, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
@@ -167,7 +167,7 @@ fn p1_population_key() -> DeclarationKey {
 /// declaration key, `model.pop.second` -- FR-089-AC-1's own distinct-
 /// `population_key` case (TC-291, TC-293) needs two population
 /// declarations on the *same* domain package. Same key spelling as
-/// `tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
+/// `qsl-semantics/tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
 /// review finding S4): the two files' `fixture_f1_with_second_population`
 /// helpers build on each file's own separately authored `fixture_f1`, so
 /// they are not merged into one shared helper, but nothing justifies them
@@ -1262,7 +1262,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// digest, never equal to this model's own `quire.model.object-universe/v1`
 /// digest); a byte-length other than 32 can no longer reach this layer at
 /// all, since `quire_exact::UniverseId` fixes the shape at construction
-/// (ADR-013 §8 OQ-C ruling) -- `tests/it/model_population.rs`'s
+/// (ADR-013 §8 OQ-C ruling) -- `qsl-semantics/tests/it/model_population.rs`'s
 /// `l04b_lookup_wrong_length_universe_refuses_as_foreign` covers a
 /// wrong-length universe directly, at `crate::model::population::lookup`'s
 /// own byte-comparison layer.
@@ -1327,7 +1327,7 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
 // `UniverseId` value to construct for them to exercise. The byte-level
 // defense they exercised through this full evaluator path still lives, and
 // is still tested directly, in `crate::model::population::lookup` itself:
-// see `tests/it/model_population.rs`'s
+// see `qsl-semantics/tests/it/model_population.rs`'s
 // `l03_lookup_refused_mode_malformed_identity_reports_hex_detail`, which
 // builds a `LookupKey` with `object: vec![0xFF, 0xFE]` directly, bypassing
 // `ObjectReference` entirely, exactly as a wire/replay caller that skipped
@@ -2804,12 +2804,12 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
     let package = package(&scenario);
 
     let mut direct_meter = Meter::new(SCALAR_UNLIMITED);
-    let direct = match quire_spec_language::model::population::all_instances(
+    let direct = match qsl_semantics::model::population::all_instances(
         &scenario.binding,
         &DeclarationKey::fixture("model.A"),
         &mut direct_meter,
     ) {
-        quire_spec_language::model::population::AllInstancesOutcome::Refused(refusal) => {
+        qsl_semantics::model::population::AllInstancesOutcome::Refused(refusal) => {
             refusal.catalog_code()
         }
         other => panic!("expected all_instances to refuse two members above [0,1], got {other:?}"),

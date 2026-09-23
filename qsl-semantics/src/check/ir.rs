@@ -31,14 +31,14 @@ pub type Slot = usize;
 /// therefore always went through checking. Building one from outside `check`
 /// does not compile:
 /// ```compile_fail,E0451
-/// use quire_spec_language::check::{Location, Node, NodeKind};
+/// use qsl_semantics::check::{Location, Node, NodeKind};
 /// fn forge(kind: NodeKind, location: Location) -> Node {
 ///     Node { kind, value_type: quire_exact::ValueType::Boolean, location }
 /// }
 /// ```
 /// Nor does retyping a clone of a checked node:
 /// ```compile_fail,E0616
-/// use quire_spec_language::check::Node;
+/// use qsl_semantics::check::Node;
 /// fn retype(checked: &Node) -> Node {
 ///     let mut node = checked.clone();
 ///     node.value_type = quire_exact::ValueType::Boolean;

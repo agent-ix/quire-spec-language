@@ -82,7 +82,7 @@ family this ticket migrates, has no FR-057 capability kind at all, so its
 exactly one always-taken branch is not a real implementation of a pure
 function from checked node to requirement, it is the function's own
 absence wearing a signature. #214 does not add `requirements()` to the
-contract for this reason (see `src/family/mod.rs`'s own module doc). A
+contract for this reason (see `qsl-semantics/src/family/mod.rs`'s own module doc). A
 family migration whose claim forms *do* carry a real FR-057 capability kind
 adds `requirements()` back to the contract in that same change, with a real
 non-`None` arm to justify it -- StateModel's model-element lookups and
@@ -129,7 +129,7 @@ above.
 **Required tests, as delivered:**
 - Clause-level unit: `src/value/expression/family.rs`'s
   `family_contract_tests::value_function_family_checks_through_the_contract`,
-  and `src/check/family.rs`'s
+  and `qsl-semantics/src/check/family.rs`'s
   `checking_tests::two_contexts_from_the_same_declarations_check_identically`.
 - Builder-ordering: not applicable to this family -- a function declaration
   has no independently meaningful clause sequence (ADR-012 §4.1's test);
@@ -137,11 +137,11 @@ above.
 - Seam-probe: `xtask/src/seam_probe.rs`'s checked-in `checked_in_locations()`
   names the two real S1 seams this migration adds (`FamilyKind`'s
   `catalog_code_prefix` prefix arm and `stage_hooks`'s stage-participation
-  table, both in `src/family/mod.rs`), demonstrated by a real failing build
+  table, both in `qsl-semantics/src/family/mod.rs`), demonstrated by a real failing build
   under `RUSTFLAGS=--cfg seam_probe` (FR-063).
 - Wire-totality: `family_contract_tests::value_function_family_checks_through_the_contract`
   asserts the v2 round trip (`ValueFunctionFamily::package` then
-  `decode_v2`) recovers the minted identity, and `src/family/mod.rs`'s own
+  `decode_v2`) recovers the minted identity, and `qsl-semantics/src/family/mod.rs`'s own
   `FamilyKind` `match`es (the seam-probe targets above) have no `_` arm.
 - Backend-absence corpus: not applicable -- function declaration and
   application requests no FR-057 capability kind (see this document's
@@ -178,7 +178,7 @@ from a symbol that was never proposed at all, which is precisely the
 "hypothetical placeholder" AC-4 forbids citing. `Requirements`,
 `CapabilityKind`, `Extent`, `Bound` and `Stage::Requirements` are recorded
 unbacked for AC-4 rather than cited as deleted (they are real deferrals --
-this document's `requirements()` note above and `src/family/mod.rs`'s own
+this document's `requirements()` note above and `qsl-semantics/src/family/mod.rs`'s own
 module doc explain why -- just not ones a git log entry can show being
 removed). `PackageRefusal`, `EvaluateRefusal::Incomplete` and
 `DeclarationCause` are dropped from this list entirely: `package` was
@@ -190,22 +190,22 @@ The following, in contrast, existed in `7ec1302` (pushed, inspectable with
 commit on this branch, in the PR #262 review round -- real deletions
 someone can find:
 - `FamilyContract::package` and `ValueFunctionFamily`'s implementation of it
-  (`src/family/contract.rs`, `src/value/expression/family.rs`) -- deleted
+  (`qsl-semantics/src/family/contract.rs`, `src/value/expression/family.rs`) -- deleted
   because `emit_function_package_v2` never read its output (F1/F2 above).
-- `stage_hooks`, `Stage` and `HookStatus` (`src/family/mod.rs`) -- deleted
+- `stage_hooks`, `Stage` and `HookStatus` (`qsl-semantics/src/family/mod.rs`) -- deleted
   because their only non-test callers were three `assert_eq!` sites
   asserting a hand-written `match`'s own literal result against itself, and
   removing those fabricated callers left the table with no real reader
-  (PR #262 review, finding F7; see `src/family/mod.rs`'s own module doc and
+  (PR #262 review, finding F7; see `qsl-semantics/src/family/mod.rs`'s own module doc and
   FR-063's "Correction to merged spec" note on the seam-probe's checked-in
   list).
 - `FamilyKind::all()` and `assert_distinct_catalog_code_prefixes`
-  (`src/family/mod.rs`) -- deleted for the same reason as `stage_hooks`
+  (`qsl-semantics/src/family/mod.rs`) -- deleted for the same reason as `stage_hooks`
   (F7); the compile-time distinctness check `const _` in the same file
   replaces the property it asserted with one enforced on every build, not
   only under `cargo test`.
 - `StageFailure::Fault` and this crate's own `InternalFault`
-  (`src/family/outcome.rs`) -- deleted (F7): their one construction site
+  (`qsl-semantics/src/family/outcome.rs`) -- deleted (F7): their one construction site
   compared `mint_declaration_identity`'s output against itself, which
   cannot fail by construction, not by anything the runtime checked.
   `src/diagnostic.rs`'s own `InternalFault` (landed later, from `#213` S-5)

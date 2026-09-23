@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-390 (FR-090-AC-9) and TC-386 step 3 (FR-090-AC-5): `FamilyOutcome`,
 //! `FamilyResult` and `EvalOutcome` are defined once, in the layer-3 `check`
-//! core (`src/family/`); no module below the core names them; the core
-//! names no family cause type; and no crate below layer 3 depends on this
-//! crate. Uses the resolved-import and definition scans of TC-256, TC-170 and
+//! core (`qsl-semantics/src/family/`); no module below the core names them;
+//! the core names no family cause type; no crate below layer 3 depends on
+//! this crate; and `qsl-semantics`, layer 3 itself, depends on layers 2, F
+//! and K only. Uses the resolved-import and definition scans of TC-256, TC-170 and
 //! TC-176 (`xtask::import_graph`, `xtask::definition_scan`), so a
 //! fully-qualified inline path is caught as well as a `use` line.
 
@@ -28,25 +29,28 @@ const CAUSE_TYPES: [&str; 4] = [
 /// evaluator (`value::model_query`). `value::outcome` left this list under
 /// QSL-131 O2, which deleted the module (it was layer K, a byte-identical
 /// `quire_exact` copy). `value::reference` left it under QSL-181 X-6a, which
-/// moved its `ObjectEnvironment` into `model` (`src/model` covers it).
+/// moved its `ObjectEnvironment` into `model` (`qsl-semantics/src/model`
+/// covers it). QSL-181 (X-6b) moved every layer-3 module into
+/// `qsl-semantics`.
 const BELOW_CORE: [&str; 10] = [
     "qsl-cst/src",
     "qsl-forms/src",
-    "src/model",
-    "src/library",
-    "src/value/definition.rs",
-    "src/value/enumeration.rs",
-    "src/value/unit.rs",
-    "src/value/quantity.rs",
-    "src/value/declaration.rs",
-    "src/value/model_query.rs",
+    "qsl-semantics/src/model",
+    "qsl-semantics/src/library",
+    "qsl-semantics/src/value/definition.rs",
+    "qsl-semantics/src/value/enumeration.rs",
+    "qsl-semantics/src/value/unit.rs",
+    "qsl-semantics/src/value/quantity.rs",
+    "qsl-semantics/src/value/declaration.rs",
+    "qsl-semantics/src/value/model_query.rs",
 ];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// Step 1: exactly one definition of each type, under `src/family/`.
+/// Step 1: exactly one definition of each type, under
+/// `qsl-semantics/src/family/`.
 #[trace("FR-090-AC-9", "TC-390")]
 #[test]
 fn family_outcome_types_are_defined_once_in_the_check_core() {
@@ -58,6 +62,7 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
             "qsl-foundation/src",
             "qsl-cst/src",
             "qsl-forms/src",
+            "qsl-semantics/src",
         ],
     )
     .expect("the definition scan runs cleanly");
@@ -69,8 +74,8 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
             "{name} must be defined exactly once: {locations:?}"
         );
         assert!(
-            locations[0].file.starts_with("src/family/"),
-            "{name} must be defined under src/family/, found {:?}",
+            locations[0].file.starts_with("qsl-semantics/src/family/"),
+            "{name} must be defined under qsl-semantics/src/family/, found {:?}",
             locations[0].file
         );
     }
@@ -110,11 +115,12 @@ fn no_module_below_the_check_core_names_a_family_outcome_type() {
 #[trace("FR-090-AC-9", "TC-390")]
 #[test]
 fn the_check_core_names_no_family_cause_type() {
-    let paths = xtask::import_graph::resolved_paths(&workspace_root(), &["src/family"])
-        .expect("the resolved-import scan runs cleanly");
+    let paths =
+        xtask::import_graph::resolved_paths(&workspace_root(), &["qsl-semantics/src/family"])
+            .expect("the resolved-import scan runs cleanly");
     assert!(
         !paths.is_empty(),
-        "the scan found no paths under src/family"
+        "the scan found no paths under qsl-semantics/src/family"
     );
     let offending: Vec<_> = paths
         .iter()
@@ -140,6 +146,9 @@ struct PackageDependencies {
     shipped_features: Vec<(String, Vec<String>)>,
     /// The package's own `default` feature list.
     default_features: Vec<String>,
+    /// Every one of the package's own `[features]` entries, `default`
+    /// included, with the values it enables.
+    features: Vec<(String, Vec<String>)>,
 }
 
 /// Every workspace package's dependency names, from `cargo metadata`, so
@@ -214,6 +223,12 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
                     })
                     .collect(),
                 default_features: strings(&package["features"]["default"]),
+                features: package["features"]
+                    .as_object()
+                    .expect("a feature table")
+                    .iter()
+                    .map(|(name, values)| (name.clone(), strings(values)))
+                    .collect(),
             }
         })
         .collect()
@@ -221,7 +236,10 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 
 /// Step 4 of TC-390, step 3 of TC-386 and TC-398's crate edges: each crate
 /// below layer 3 depends only on the workspace crates below it, in its
-/// `[dependencies]` and its `[dev-dependencies]` alike. `quire-exact` names
+/// `[dependencies]` and its `[dev-dependencies]` alike. `qsl-semantics`
+/// (layer 3, QSL-181) names exactly `qsl-forms`, `qsl-foundation` and
+/// `quire-exact` among the workspace crates, never `qsl-cst`, and only
+/// `model::intake` names its FCD dependencies. `quire-exact` names
 /// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
@@ -244,7 +262,13 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         .iter()
         .map(|package| package.name.as_str())
         .collect();
-    for required in ["quire-spec-language", "qsl-source", "qsl-cst", "qsl-forms"] {
+    for required in [
+        "quire-spec-language",
+        "qsl-source",
+        "qsl-cst",
+        "qsl-forms",
+        "qsl-semantics",
+    ] {
         assert!(
             workspace_crates.contains(&required),
             "cargo metadata lists no {required}: {workspace_crates:?}"
@@ -257,6 +281,10 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         (
             "qsl-forms",
             &["qsl-cst", "qsl-foundation", "quire-exact"][..],
+        ),
+        (
+            "qsl-semantics",
+            &["qsl-forms", "qsl-foundation", "quire-exact"][..],
         ),
     ] {
         let package = packages
@@ -274,6 +302,29 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             normal.sort_unstable();
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
         }
+        if crate_name == "qsl-semantics" {
+            // Layer 3 (QSL-181): its workspace-crate `[dependencies]` are
+            // exactly layers 2, F and K -- no `qsl-cst` (layer 1) and no
+            // root crate. Its other entries are third-party crates and the
+            // FCD crates, which `fcd_is_named_by_model_intake_only` below
+            // confines to `model::intake`.
+            let mut workspace_normal: Vec<&str> = package
+                .normal
+                .iter()
+                .map(String::as_str)
+                .filter(|dependency| workspace_crates.contains(dependency))
+                .collect();
+            workspace_normal.sort_unstable();
+            assert_eq!(workspace_normal, allowed, "{crate_name}'s [dependencies]");
+            assert!(
+                !package
+                    .normal
+                    .iter()
+                    .any(|dependency| dependency == "qsl-cst"),
+                "{crate_name} depends on layer-1 qsl-cst"
+            );
+            fcd_is_named_by_model_intake_only(&package.normal);
+        }
         for (kind, dependencies) in [("normal", &package.normal), ("dev", &package.dev)] {
             for dependency in dependencies {
                 assert!(
@@ -286,13 +337,68 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
     }
 }
 
-/// QSL-181 (#371 review L8): `test-support` turns on fixture constructors
-/// that forge crate-issued capabilities (`ReaderAuthority::fixture`) and
-/// test-only views of `pub(crate)` items. It is for tests only: no workspace
-/// package enables it by default, and no normal or build dependency edge
-/// enables it on a workspace crate (a dev-dependency may, which is how a
-/// crate's own tests reach it). Cargo feature unification would otherwise
-/// switch it on in a shipped build.
+/// The FCD crates `qsl-semantics` depends on are named by
+/// `qsl-semantics/src/model/intake.rs` and by no other file of that crate
+/// (ADR-011 §6.1: FCD from `model::intake` only). A plain text search for
+/// each crate's Rust name, so a `use`, an inline path and a macro argument
+/// are all caught.
+fn fcd_is_named_by_model_intake_only(dependencies: &[String]) {
+    let fcd: Vec<String> = dependencies
+        .iter()
+        .filter(|dependency| dependency.starts_with("agent-ix-"))
+        .map(|dependency| dependency.replace('-', "_"))
+        .collect();
+    assert!(!fcd.is_empty(), "qsl-semantics names no FCD crate");
+    let root = workspace_root().join("qsl-semantics/src");
+    let mut pending = vec![root.clone()];
+    let mut naming = std::collections::BTreeSet::new();
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("the source tree lists") {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = std::fs::read_to_string(&path).expect("a source file reads");
+                if fcd.iter().any(|name| source.contains(name.as_str())) {
+                    let relative = path.strip_prefix(&root).expect("under the root");
+                    naming.insert(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+    }
+    assert_eq!(
+        naming.into_iter().collect::<Vec<_>>(),
+        ["model/intake.rs"],
+        "files of qsl-semantics naming an FCD crate"
+    );
+}
+
+/// Whether a `[features]` value forwards to a workspace crate's
+/// `test-support`: `<crate>/test-support` or `<crate>?/test-support`.
+fn forwards_to_test_support(value: &str, workspace_crates: &[&str]) -> bool {
+    value.split_once('/').is_some_and(|(dependency, feature)| {
+        feature == "test-support"
+            && workspace_crates.contains(&dependency.strip_suffix('?').unwrap_or(dependency))
+    })
+}
+
+/// QSL-181 (#371 review L8, #372 review M1): `test-support` turns on fixture
+/// constructors that forge crate-issued capabilities
+/// (`ReaderAuthority::fixture`) and test-only views of `pub(crate)` items.
+/// It is for tests only:
+///
+/// - no workspace package enables its own `test-support` by default;
+/// - no normal or build dependency edge enables it on a workspace crate (a
+///   dev-dependency may, which is how a crate's own tests reach it);
+/// - no `[features]` entry other than a package's own `test-support`
+///   forwards to a workspace crate's `test-support` (`default =
+///   ["qsl-semantics/test-support"]`, or any feature a shipped dependent
+///   could enable). Forwarding `test-support` to `test-support` is allowed:
+///   only a test build can turn the outer one on, by the two rules above.
+///
+/// Cargo feature unification would otherwise switch it on in a shipped
+/// build. Measured: a root `default = ["qsl-semantics/test-support"]` fails
+/// this test.
 #[trace("FR-087-AC-1", "TC-243")]
 #[test]
 fn no_shipped_dependency_enables_test_support() {
@@ -302,6 +408,21 @@ fn no_shipped_dependency_enables_test_support() {
         .map(|package| package.name.as_str())
         .collect();
     assert!(workspace_crates.contains(&"quire-spec-language"));
+    // The matcher sees both spellings, including the `?` one Cargo accepts
+    // only for an optional dependency, and nothing else.
+    for (value, forwards) in [
+        ("qsl-semantics/test-support", true),
+        ("qsl-semantics?/test-support", true),
+        ("qsl-semantics/other", false),
+        ("serde/test-support", false),
+        ("dep:qsl-semantics", false),
+    ] {
+        assert_eq!(
+            forwards_to_test_support(value, &workspace_crates),
+            forwards,
+            "{value}"
+        );
+    }
     for package in &packages {
         assert!(
             !package
@@ -311,6 +432,18 @@ fn no_shipped_dependency_enables_test_support() {
             "{} enables test-support by default",
             package.name
         );
+        for (feature, values) in &package.features {
+            if feature == "test-support" {
+                continue;
+            }
+            for value in values {
+                assert!(
+                    !forwards_to_test_support(value, &workspace_crates),
+                    "{}'s feature `{feature}` enables {value}, which a shipped build can reach",
+                    package.name
+                );
+            }
+        }
         for (dependency, features) in &package.shipped_features {
             assert!(
                 !(workspace_crates.contains(&dependency.as_str())

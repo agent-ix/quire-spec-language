@@ -17,24 +17,24 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
-use quire_spec_language::model::accounting::ModelNormalizationLimits;
-use quire_spec_language::model::dispatch::GeneralizationClosure;
-use quire_spec_language::model::domain_package::{
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::dispatch::GeneralizationClosure;
+use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
-use quire_spec_language::model::key::{DeclarationKey, EffectiveId};
-use quire_spec_language::model::normalize::{
+use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::normalize::{
     normalize, object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     OfferedSelection,
 };
-use quire_spec_language::model::population::{
+use qsl_semantics::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
     AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
     InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
     PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
+use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,
@@ -803,7 +803,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 /// decide well-formedness -- there is no separate caller-asserted
 /// classification to get out of sync with them. A present member's
 /// identity, passed through as plain UTF-8 bytes (exactly how
-/// [`bridge_lookup_key`](quire_spec_language::value) and [`lookup_key`]
+/// [`bridge_lookup_key`](qsl_semantics::value) and [`lookup_key`]
 /// both build it), is found.
 #[test]
 #[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]

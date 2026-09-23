@@ -41,9 +41,9 @@ which turns `FamilyResult` back into a shared cause list.
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
 2. Resolve every `use` edge and every inline path under `qsl-forms/src/`,
-   `src/model/`, `src/library/`, the `semantic_value` modules
+   `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the `semantic_value` modules
    (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
-   ADR-011 §6.2), `src/value/model_query.rs` (layer 3 `model`) and
+   ADR-011 §6.2), `qsl-semantics/src/value/model_query.rs` (layer 3 `model`) and
    `qsl-cst/src/`, and check whether any of them names one of the three
    types. `src/value/outcome.rs` (layer K) left this list under QSL-131 O2:
    its module was deleted, and every caller now imports
@@ -59,7 +59,7 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 ## Expected Results
 
 - Step 1 finds exactly one definition of each type, all in the `check`
-  core. Today that is `src/family/`, which its own module doc names as
+  core. Today that is `qsl-semantics/src/family/`, which its own module doc names as
   ADR-012 §13.1's check core.
 - Step 2 finds no edge.
 - Step 3 finds no edge.

@@ -52,8 +52,8 @@ fn exactly_one_checked_clause_kind_enum_is_defined_under_check() {
         "CheckedClauseKind must be defined exactly once: {locations:?}"
     );
     assert!(
-        locations[0].file.starts_with("src/check/"),
-        "CheckedClauseKind's one definition must live under src/check/, found {:?}",
+        locations[0].file.starts_with("qsl-semantics/src/check/"),
+        "CheckedClauseKind's one definition must live under qsl-semantics/src/check/, found {:?}",
         locations[0].file
     );
 }
@@ -93,15 +93,19 @@ fn syntax_clause_kind_variant_list_is_unchanged() {
 
 /// Step 4 (bounded, see this file's own doc): the literal fully-qualified
 /// spelling `syntax::ClauseKind` occurs in exactly as many `.rs` files
-/// under `src/` as it did when this test was written -- a plain count, so
+/// under `src/` and `qsl-semantics/src/` as it did when this test was written -- a plain count, so
 /// a new file spelling it out (a new consumer treating the lane-private
 /// enum as canonical) is caught, within this scan's own documented bound.
 #[trace("TC-257", "FR-088-AC-1")]
 #[test]
 fn syntax_clause_kind_qualified_spelling_gains_no_new_consumer_file() {
-    let root = workspace_root().join("src");
+    // The root crate's `src/` and the layer-3 crate's (QSL-181 moved
+    // `check` there).
     let mut files_naming_it = Vec::new();
-    let mut pending = vec![root];
+    let mut pending = vec![
+        workspace_root().join("src"),
+        workspace_root().join("qsl-semantics/src"),
+    ];
     while let Some(dir) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;

@@ -213,9 +213,12 @@ pub struct CrateDefinitions {
     pub methods: BTreeMap<(String, String), Vec<Definition>>,
 }
 
-/// Scan the whole crate's `src/` tree once.
+/// Scan the QSL crate's `src/` tree and its extracted layer-3 crate's
+/// (`qsl-semantics/src/`, QSL-181), once, as one set of definitions: `check`,
+/// `model` and `library` moved there, and the checks below still ask where
+/// in the QSL crate family an item is defined.
 pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
-    scan_dirs(workspace_root, &["src"])
+    scan_dirs(workspace_root, &["src", "qsl-semantics/src"])
 }
 
 /// Scan every `.rs` tree in `dirs` (relative to `workspace_root`) once, as
@@ -312,15 +315,17 @@ mod tests {
         );
     }
 
-    /// TC-170 step 1: `check` is declared at the crate root.
+    /// TC-170 step 1: `check` is declared at the root of `qsl-semantics`,
+    /// the layer-3 crate it moved into (QSL-181).
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn crate_root_declares_check() {
-        let mods = mod_declarations(&workspace_root(), "src/lib.rs").expect("scan runs");
+        let mods =
+            mod_declarations(&workspace_root(), "qsl-semantics/src/lib.rs").expect("scan runs");
         assert!(mods.iter().any(|name| name == "check"));
     }
 
-    /// Asserts `name` is defined exactly once under `src/check/` and not at
+    /// Asserts `name` is defined exactly once under `qsl-semantics/src/check/` and not at
     /// all under `src/value/expression/` -- TC-170's own actual intent ("no
     /// leftover in `value::expression`, no duplicate under `check`"), not a
     /// literal crate-wide uniqueness claim. Some CON-3/TC-173 names (e.g.
@@ -335,19 +340,19 @@ mod tests {
         let relevant: Vec<&Definition> = locations
             .iter()
             .filter(|location| {
-                location.file.starts_with("src/check/")
+                location.file.starts_with("qsl-semantics/src/check/")
                     || location.file.starts_with("src/value/expression/")
             })
             .collect();
         assert_eq!(
             relevant.len(),
             1,
-            "{name} has {} defining location(s) under src/check/ or src/value/expression/: {relevant:?} (all locations: {locations:?})",
+            "{name} has {} defining location(s) under qsl-semantics/src/check/ or src/value/expression/: {relevant:?} (all locations: {locations:?})",
             relevant.len()
         );
         assert!(
-            relevant[0].file.starts_with("src/check/"),
-            "{name} is defined at {:?}, not under src/check/",
+            relevant[0].file.starts_with("qsl-semantics/src/check/"),
+            "{name} is defined at {:?}, not under qsl-semantics/src/check/",
             relevant[0]
         );
     }
@@ -464,11 +469,11 @@ mod tests {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_eq!(locations.len(), 1, "{name}: {locations:?}");
             assert!(
-                locations[0].file.starts_with("src/check/"),
-                "{name} must now live in src/check/: {locations:?}"
+                locations[0].file.starts_with("qsl-semantics/src/check/"),
+                "{name} must now live in qsl-semantics/src/check/: {locations:?}"
             );
             assert!(
-                !locations[0].file.starts_with("src/model/"),
+                !locations[0].file.starts_with("qsl-semantics/src/model/"),
                 "{name}: {locations:?}"
             );
         }
@@ -490,6 +495,6 @@ mod tests {
             locations[0].file.starts_with("src/value/expression/"),
             "InputRefusal: {locations:?}"
         );
-        assert!(!locations[0].file.starts_with("src/check/"));
+        assert!(!locations[0].file.starts_with("qsl-semantics/src/check/"));
     }
 }

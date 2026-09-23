@@ -14,7 +14,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
-use quire_spec_language::check::Capability;
+use qsl_semantics::check::Capability;
 use quire_spec_language::route::{
     BackendDescriptor, BackendId, CandidateOutcome, Mode, Registry, ToolIdentity,
 };

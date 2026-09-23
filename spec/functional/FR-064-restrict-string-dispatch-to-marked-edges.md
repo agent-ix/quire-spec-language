@@ -135,10 +135,10 @@ entry (including all five ADR-010 §4.3 sites), and excludes test code.
 Every edge in the files #214 itself touches or adds (`xtask/src/*`) is
 marked and the scan is clean there. Running the scan against the whole QSL
 crate as it stands today reports 60 further occurrences, all outside
-`src/family/*` and `src/value/expression/*` -- in `src/cli.rs`,
-`src/complete/`, `src/model/`, `src/protocol_artifact/`, `src/linking.rs`,
+`qsl-semantics/src/family/*` and `src/value/expression/*` -- in `src/cli.rs`,
+`src/complete/`, `qsl-semantics/src/model/`, `src/protocol_artifact/`, `src/linking.rs`,
 `src/mapped.rs`, `src/package/intake.rs`, `src/state/evaluation.rs` and
-`src/value/definition.rs`. Almost all are branch-gating, so the allow-list
+`qsl-semantics/src/value/definition.rs`. Almost all are branch-gating, so the allow-list
 (which this requirement's own Behavior section forbids from admitting a
 branch-gating entry) cannot make them clean; converting them is real work
 belonging to whichever family or module owns that code, not to #214's own
@@ -182,7 +182,7 @@ tags as they exist in the delivered code today:**
   those five (the `"allocation"` relationship-category site, `QSL:model/
   systems.rs:269` per ADR-010 §4.3's own evidence column, which that same
   column already flags "PR-sensitive") is confirmed gone from
-  `src/model/systems.rs` on this branch, so a real test against the
+  `qsl-semantics/src/model/systems.rs` on this branch, so a real test against the
   current tree could not reject all five as currently named regardless.
   Owner: QSL-150.
 - FR-064-AC-6: unbacked, as this section's own paragraph above already

@@ -18,15 +18,15 @@
 //! admission decision). What remains this layer's own job:
 //!
 //! - minting the package's own typed `PackageId` from the admitted identity
-//!   preimage via [`crate::library::PackageId::of_preimage`] -- the only
+//!   preimage via [`qsl_semantics::library::PackageId::of_preimage`] -- the only
 //!   constructor;
 //! - deriving the FR-307 export node keys from that preimage
-//!   (`crate::library::declared_exports`/`verify_package`, layer-3);
+//!   (`qsl_semantics::library::declared_exports`/`verify_package`, layer-3);
 //! - refusing a lock that names `dependency_selections` this reader cannot
 //!   yet derive imports from (QC-10, ADR-013 TK-08, not yet mapped);
-//! - the ADR-011 §4 verified binding itself (`crate::library::verify_binding`,
+//! - the ADR-011 §4 verified binding itself (`qsl_semantics::library::verify_binding`,
 //!   layer-3, QSL-6 slice A1): once IR admits the wire, this reader mints
-//!   the condition-1 witness (`crate::library::SupportedV2Wire`, which only
+//!   the condition-1 witness (`qsl_semantics::library::SupportedV2Wire`, which only
 //!   this module constructs) and hands it, its digest-checked candidate and
 //!   the caller's `pinned` request to `library`, which applies conditions 2
 //!   and 3 and constructs the `VerifiedPackage` (FR-087-AC-1, AC-3) this
@@ -90,11 +90,11 @@ use quire_contract_ir::{
     CheckedPackageRefusalCode,
 };
 
-use crate::library::{
+use qsl_foundation::diagnostic::Code;
+use qsl_semantics::library::{
     declared_exports, verify_binding, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
     PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
-use qsl_foundation::diagnostic::Code;
 
 #[cfg(test)]
 mod tests;

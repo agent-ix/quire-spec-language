@@ -19,14 +19,14 @@ use sha2::{Digest, Sha256};
 use super::{
     read_checked_package_v2, V2ReadIncomplete, V2ReadLimits, V2ReadOutcome, V2ReadRefusal,
 };
-use crate::check::imports::ImportedNames;
-use crate::check::CheckCause;
-use crate::library::{
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
+use qsl_semantics::check::imports::ImportedNames;
+use qsl_semantics::check::CheckCause;
+use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     PreimageDefect, RefusalClass, Selection, StaleCause, StalePin,
 };
-use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";
@@ -220,7 +220,7 @@ fn pin(version: &str, package_id: PackageId) -> PinnedRequest {
 }
 
 fn pin_library(library: &str, version: &str, package_id: PackageId) -> PinnedRequest {
-    crate::library::fixtures::single_pin(
+    qsl_semantics::library::fixtures::single_pin(
         identity(library),
         Selection {
             version: version.to_owned(),

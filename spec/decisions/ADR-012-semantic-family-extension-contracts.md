@@ -798,7 +798,7 @@ ticket run the same scan in their repositories.
 
 | Site (ADR-010 §4.3, OBS-014, OBS-033) | OBS-014 site | Decision | Owner |
 |---|---|---|---|
-| `"allocation"` relationship category (`QSL:src/model/systems.rs:269`) | yes | typed category enum; QSL PR #200 removes the string | QSL `StateModel` |
+| `"allocation"` relationship category (`QSL:qsl-semantics/src/model/systems.rs:269`) | yes | typed category enum; QSL PR #200 removes the string | QSL `StateModel` |
 | `"quire.protocol.finite-global/v1"` (`QSL:src/protocol_artifact/validate.rs:287,291`) | yes | typed profile enum decoded once at protocol-artifact intake | QSL `ProtocolClause` |
 | `"filament-canonical-json-1"` (`QSL:src/state/evaluation.rs:2478-2484`) | yes | typed canonicalization enum decoded at state-input intake | QSL `StateModel` |
 | `"quire.state.authority-adapter"` (`QSL:src/state/evaluation.rs:2781-2783`) | yes | typed adapter-kind enum decoded at intake | QSL `StateModel` |
@@ -806,7 +806,7 @@ ticket run the same scan in their repositories.
 | composed `Backend{identity: &str}` (`QSL:src/linking/composed/requests.rs:80`) | no | removed from the linker; candidates use `BackendId` in the #185 registry (§7) | #185 |
 | value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | this is the replay executor entry; keyed by a typed `QualifiedName` (ADR-013 O-11, owner ruling on OQ-5), the one name lookup after checking that ADR-013 R-06 allows | #214 |
 | backend CLI argument | no | resolved to `BackendId` by registry lookup in `route`; it is the only backend choice. `--target` and `ProjectionTarget` (`QSL:src/lowering/target.rs:39-46`) are deleted with `lowering` (ADR-011 §7.3 M-6a). | #185 |
-| `CapabilityId(String)` (`QSL:src/complete/package.rs:690`) | no | replaced by the #213 capability type | #213 |
+| `CapabilityId(String)` (`QSL:qsl-semantics/src/complete/package.rs:690`) | no | replaced by the #213 capability type | #213 |
 | IR `CheckedNodeTag::from_wire`, `required_by(tag, form: &str)`, `DispatchIndex::resolve(&str)`, and the `as_str()` sites in IR `src/kani/` | no | wire strings decoded at v2 intake into closed tag and form enums; no vocabulary re-derived from a wire string after intake | agent-ix/quire-contract-ir#141 |
 | CG `semantic_form == "call"`, `node_tag == "state" && semantic_form == "frame"` | no | CG matches on IR's enums (seam S6) | CG (agent-ix/quire-contract-codegen#86) |
 | RT function lookup by name | no | keyed by the wire node id (`WireNodeId`, ADR-013 O-04) that RT receives in IR wire data. This is an id lookup, not name resolution, so ADR-013 R-06 holds. RT holds no `NodeKey` | RT |
@@ -1031,7 +1031,7 @@ item settles `invalid-request` with no preference order
 | CG enum matches in place of string compares | agent-ix/quire-contract-codegen#86 |
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
 | S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | [QSL-143](https://linear.app/agent-ix/issue/QSL-143) |
-| Marking or converting the QSL crate's remaining string-dispatch sites (outside `src/family/*`/`src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
+| Marking or converting the QSL crate's remaining string-dispatch sites (outside `qsl-semantics/src/family/*`/`src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
 | `FamilyContract`'s `requirements` (ADR-012 §2's sixth contract part) and a typed refusal `Cause`, for a family with a real FR-057 capability kind or a real typed refusal cause; `Relation`'s absence from S6a's input type (FR-090-AC-4); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage; AC-9's `package` fault-injection behavior (FR-062-AC-1, AC-4, AC-6, AC-8, AC-9) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
 | `StageLimits`'/`StageLimitKind`'s input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
 | FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |

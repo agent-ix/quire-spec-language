@@ -405,8 +405,8 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
 /// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2, QSL-177), `qsl-cst`
 /// (ADR-011 §7.3 X-3, QSL-178), `qsl-source` (ADR-011 §7.3 X-4, QSL-179),
-/// `qsl-forms` (ADR-011 §7.3 X-5, QSL-180) and
-/// `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
+/// `qsl-forms` (ADR-011 §7.3 X-5, QSL-180), `qsl-semantics` (ADR-011 §7.3
+/// X-6, QSL-181) and `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
 /// -- each extracted §6.1 layer crate adds its own entry here the same way).
 /// `qsl-attrs` is excluded -- it is a proc-macro identity transform with no
 /// string dispatch of any kind (its own module doc).
@@ -419,6 +419,7 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
         "qsl-cst/src",
         "qsl-source/src",
         "qsl-forms/src",
+        "qsl-semantics/src",
         "qsl-replay/src",
     ]
     .into_iter()

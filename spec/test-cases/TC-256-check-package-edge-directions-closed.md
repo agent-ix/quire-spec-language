@@ -49,16 +49,16 @@ depending on `check` is layer 4's permitted direction.
 ## Test Procedure
 
 1. Scan every shipped `use` line and every `crate::`-rooted inline path under
-   `src/check/` and confirm none resolves into `crate::package` or
+   `qsl-semantics/src/check/` and confirm none resolves into `crate::package` or
    `crate::checked_package`. This is FR-068-AC-6's layer rule; TC-175 runs
    the same scan, and this step reconfirms it.
-2. Search `src/check/` for any type, method, or field named
+2. Search `qsl-semantics/src/check/` for any type, method, or field named
    `CheckedPackage`; confirm none exists.
 3. Read `value::expression`'s re-export line for `CheckedPackage` and
    confirm it is exactly `pub use crate::checked_package::CheckedPackage;`
    — no glob, no additional name, and no import from any path other than
    `crate::checked_package`.
-4. Confirm no code under `src/check/` constructs a `LibraryLock`, mutates
+4. Confirm no code under `qsl-semantics/src/check/` constructs a `LibraryLock`, mutates
    one, or calls any method on it other than its read-only accessors.
 5. Read `package`'s `CheckedPackage` definition and confirm: it holds a
    `CheckedGraph` field (this package's own checked declarations) plus the

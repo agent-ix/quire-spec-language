@@ -194,7 +194,7 @@ their content digest are equal.
   environment query rule and AD-006 owns the decision to keep populations
   and closed dispatch sets in the model view. FR-153-AC-9 (the unbounded
   `p` case of FR-084-AC-5) landed in quire-specification PR #75, after
-  `src/model/population.rs`'s `all_instances` was first written; that
+  `qsl-semantics/src/model/population.rs`'s `all_instances` was first written; that
   function currently refuses `ill_typed`/`operator-ineligible` whenever `p`
   declares no maximum, rather than returning the unbounded `Set<Reference<T>>`
   this requirement states. FR-084-AC-5's unbounded-`p` clause does not ship

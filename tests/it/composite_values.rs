@@ -12,6 +12,21 @@ use std::cell::Cell;
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCause, CompleteCode, Limits};
 use qsl_foundation::SourceIdentity;
+use qsl_semantics::library::{
+    resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
+};
+use qsl_semantics::model::object_environment::{
+    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
+};
+use qsl_semantics::value::declaration::{
+    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
+    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+};
+use qsl_semantics::value::enumeration::EnumMemberIndex;
+use qsl_semantics::value::{
+    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph,
+};
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -22,21 +37,7 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
 };
-use quire_spec_language::library::{
-    resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
-};
-use quire_spec_language::model::object_environment::{
-    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-};
-use quire_spec_language::value::declaration::{
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
-};
-use quire_spec_language::value::enumeration::EnumMemberIndex;
-use quire_spec_language::value::{
-    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, QualifiedName, ValueGraph,
-};
+use quire_spec_language::value::QualifiedName;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -739,11 +740,11 @@ mod checked {
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
     use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
-    use quire_exact::{BoundViolation, Outcome, Refusal};
-    use quire_spec_language::check::{
+    use qsl_semantics::check::{
         CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
         PackageDeclarations,
     };
+    use quire_exact::{BoundViolation, Outcome, Refusal};
     use quire_spec_language::value::{
         CallFailure, CheckedPackage, CheckedPackageEvaluation, InputRefusal,
     };
@@ -867,7 +868,7 @@ mod checked {
             )
             .unwrap();
         match evaluation.outcome {
-            quire_spec_language::family::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
+            qsl_semantics::family::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
             other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
         }
     }

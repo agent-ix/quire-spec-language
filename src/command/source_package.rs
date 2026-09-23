@@ -8,7 +8,7 @@
 
 use qsl_cst::{CompleteDiagnostic, ParsedSource};
 
-use crate::complete::{
+use qsl_semantics::complete::{
     resolve_source_package, DefinitionCatalog, ModelCatalog, PackageLimits, PackageRefusal,
     ResolvedSourcePackage, SourceAuthority,
 };

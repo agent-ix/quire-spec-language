@@ -41,7 +41,7 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
    `package`.
 2. Read `src/value/expression/mod.rs` and confirm it declares none of
    `mod check;`, `mod facts;`, `mod ir;`, `mod termination;`.
-3. Confirm `src/check/` contains a file (or inlined module) providing each of
+3. Confirm `qsl-semantics/src/check/` contains a file (or inlined module) providing each of
    `check`, `facts`, `ir` and `termination`'s current content, and that
    `src/value/expression/` contains no file of the same name with checking
    content.
@@ -63,7 +63,7 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
    (variants/fields/signature) as FR-068-CON-3 requires.
 6. Separately from name-based search, enumerate every top-level item
    (`struct`, `enum`, `fn`, `const`, `type`) defined anywhere under
-   `src/check/`'s moved content (the former `check.rs`, `facts.rs`, `ir.rs`,
+   `qsl-semantics/src/check/`'s moved content (the former `check.rs`, `facts.rs`, `ir.rs`,
    `termination.rs` and `refusal.rs`'s check-cause portion) and, for each,
    search the rest of the compiled crate — including under
    `value::expression` — for any other item whose shape (fields, variants,
