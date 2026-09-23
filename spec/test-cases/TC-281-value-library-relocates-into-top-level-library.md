@@ -33,7 +33,7 @@ a call T12-B's own patterns do not match. Scope: FR-087-AC-11.
 1. Confirm `src/value/library.rs` and `src/value/package_identity.rs` no
    longer exist, and that `src/value/mod.rs` declares no `mod library;` or
    `mod package_identity;`.
-2. Confirm the new `src/library/` module exports `LibraryName`,
+2. Confirm the new `qsl-semantics/src/library/` module exports `LibraryName`,
    `LibraryPackage`, `PackageId`, `ImportDeclaration`, `LibraryLock`,
    `resolve_libraries`, and `package_identity`'s preimage-reading functions,
    each with a definition byte-identical to its pre-relocation body except

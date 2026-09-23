@@ -60,7 +60,7 @@ Scope: FR-068-AC-9, FR-068-CON-5.
    four names, no more, and `conformance.rs`'s holds exactly nine, no more;
    record any name beyond these thirteen that either file imports from
    `crate::check`.
-4. Enumerate every other file under `src/model/` (every file besides
+4. Enumerate every other file under `qsl-semantics/src/model/` (every file besides
    `checked_dispatch.rs` and `conformance.rs`) and search for any `use`
    statement resolving into `crate::check`, whether written directly or
    reached through `crate::value`'s aggregate re-export.

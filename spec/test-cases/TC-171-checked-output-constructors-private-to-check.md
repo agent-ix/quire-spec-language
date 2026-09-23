@@ -16,7 +16,7 @@ constructor carrying no visibility qualifier at their `check`-module
 definition site, so that `value::expression` (and every other module) can
 reach a value of these types only through `check`'s own checking entry
 points and public accessors. This test catches a split where the module
-boundary is cosmetic: files moved into `src/check/`, but a field or
+boundary is cosmetic: files moved into `qsl-semantics/src/check/`, but a field or
 constructor left reachable (`pub`, `pub(crate)`, `pub(super)`, or a field
 re-exported under a different name) so `value::expression` still builds the
 type directly, or reaches its state without going through `check`'s API.

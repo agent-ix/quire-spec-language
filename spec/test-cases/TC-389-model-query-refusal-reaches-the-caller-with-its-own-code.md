@@ -22,7 +22,7 @@ The carried refusal holds no native-v1 `qsl_foundation::diagnostic::Code`
 Scope: FR-090-AC-8.
 
 The fixture is the above-maximum refusal of `all_instances`
-(`src/model/population.rs`, `Code::CardinalityOutOfBound` with
+(`qsl-semantics/src/model/population.rs`, `Code::CardinalityOutOfBound` with
 `ModelRefusalCause::AboveMaximum`, cause tag `above-maximum`).
 
 This catches three faults: carrying the refusal as QSL's

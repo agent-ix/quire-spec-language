@@ -103,7 +103,7 @@ of:
 **Correction to merged spec (stage-participation table deleted, PR #262
 review, finding F7).** #214's first implementation pass built a
 stage-participation table --
-`stage_hooks(FamilyKind, Stage) -> HookStatus` in `src/family/mod.rs` -- as
+`stage_hooks(FamilyKind, Stage) -> HookStatus` in `qsl-semantics/src/family/mod.rs` -- as
 its own checked-in S1 location, distinct from `catalog_code_prefix`'s prefix
 arm. Review found that table's only non-test callers were three
 `assert_eq!(stage_hooks(...), Implemented)` sites, each passing a literal,

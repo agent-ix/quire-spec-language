@@ -20,7 +20,7 @@ component is the authored object identity, not a digest. Scope:
 FR-084-AC-7.
 
 This catches three faults: one universe per model over every root type
-(`src/model/normalize.rs:1819-1832`), one universe per root type, and a
+(`qsl-semantics/src/model/normalize.rs:1819-1832`), one universe per root type, and a
 digested object component.
 
 ## Test Procedure

@@ -181,7 +181,7 @@ registrations were added.
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
 Implemented under QSL-46 (PR #305) as `src/route.rs`, over the canonical
-`Capability` type (QSL-173, `src/check/capability.rs`).
+`Capability` type (QSL-173, `qsl-semantics/src/check/capability.rs`).
 `src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
 the lowering-target selector; it is deleted with `lowering` in ADR-011
 §7.3 M-6a (Description).

@@ -49,7 +49,7 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
 
 ## Test Procedure
 
-1. Enumerate every shipped (non-`#[cfg(test)]`) import under `src/check/`:
+1. Enumerate every shipped (non-`#[cfg(test)]`) import under `qsl-semantics/src/check/`:
    every `use` line, and every `crate::`-rooted path written inline in code.
    Resolve each to the module it names, resolving `super::` and `self::`
    paths relative to their file. Imports from `std` and third-party crates
@@ -76,7 +76,7 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
 6. Adverse checks, each run against a fixture tree rather than the real
    crate:
    - a shipped `use crate::checked_package::CheckedPackage;` under
-     `src/check/` fails step 2 and names the file, line and module;
+     `qsl-semantics/src/check/` fails step 2 and names the file, line and module;
    - a shipped inline path `crate::value::expression::Evaluation` with no
      `use` line fails step 2;
    - a shipped `use crate::value::Rational;` (flat aggregate) fails step 2;
@@ -91,7 +91,7 @@ failure. Scope: FR-068-AC-6, FR-068-AC-7 (retired).
 
 ## Expected Results
 
-- Steps 1-2: every shipped import under `src/check/` is permitted and
+- Steps 1-2: every shipped import under `qsl-semantics/src/check/` is permitted and
   submodule-qualified. A forbidden or unlisted import, or a flat `value`
   import, fails this step and names the file, line and resolved module. The
   number of items imported from a permitted module is not checked.

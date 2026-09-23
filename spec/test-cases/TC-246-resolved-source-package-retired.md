@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify that `ResolvedSourcePackage` (`src/complete/package.rs`, complete-V1
+Verify that `ResolvedSourcePackage` (`qsl-semantics/src/complete/package.rs`, complete-V1
 lane C2) is removed in the same change that adds `VerifiedPackage` and
 `ImportView`, with no compatibility alias, feature-flagged fallback, or
 wrapper keeping the old name or its construction path reachable, and no

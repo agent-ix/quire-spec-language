@@ -348,7 +348,7 @@ checker's definition permissions. Their ownership is decided in #211.
 Specified under
 [#229](https://github.com/agent-ix/quire-spec-language/issues/229). The
 canonical `Capability` value type and its total FR-290 wire conversion
-(ADR-013 C-24) are implemented (QSL-173, `src/check/capability.rs`).
+(ADR-013 C-24) are implemented (QSL-173, `qsl-semantics/src/check/capability.rs`).
 FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 are partial: each AC's value-type
 portion (label round-trip, refusal-with-bytes and label equality on this
 type) is passed under TC-153; each AC's admission portion (the composed

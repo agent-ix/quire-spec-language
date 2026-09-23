@@ -45,7 +45,7 @@ any symbol; see this test case's own Status section for why.
 `check_application_refuses_wrong_arity`,
 `check_application_refuses_an_unknown_name` and
 `check_application_refuses_a_type_mismatched_argument` (step 4, added
-this round) (`src/check/family.rs`, `checking_tests`), all tagged
+this round) (`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
 `#[trace("TC-376")]`.
 
 **Behavioral, not structural, per the

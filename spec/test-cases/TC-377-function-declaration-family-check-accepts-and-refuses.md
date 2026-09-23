@@ -49,7 +49,7 @@ not for FR-065-AC-5, which stays unbacked (PR #303 review, findings
 `check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls`,
 `check_declaration_body_refuses_an_ill_typed_body` and
 `check_declaration_body_refuses_an_undefined_body` (step 3, added this
-round) (`src/check/family.rs`, `checking_tests`), all tagged
+round) (`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
 `#[trace("TC-377")]`.
 
 **Behavioral, not structural, per the
@@ -72,7 +72,7 @@ AC-5's own condition.
 
 Termination checking itself is not part of this entry point and is not
 exercised by this test case -- see `check_declaration_body`'s own doc
-comment in `src/check/family.rs` and this ticket's report for why a
+comment in `qsl-semantics/src/check/family.rs` and this ticket's report for why a
 whole-package, cross-declaration call-graph analysis cannot move into a
 per-declaration `FamilyContract::check` call. `check::termination::check`
 remains an unchanged, separate whole-package pass in `check/mod.rs`, run

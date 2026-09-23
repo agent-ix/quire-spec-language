@@ -18,7 +18,7 @@ three, not only the first cascade encountered. Scope: FR-086-AC-1.
 
 Every fixture record here is a state real intake can produce: a component's
 `has_part_signature` is set unconditionally at intake from the construct's
-own Quire meaning id (`src/model/intake.rs`'s `read_component`), so no fixture
+own Quire meaning id (`qsl-semantics/src/model/intake.rs`'s `read_component`), so no fixture
 in this test constructs a component that intake could never emit; the two
 no-kind cascades instead come from endpoint-level conditions intake genuinely
 leaves open (an absent `direction` field, a producer-emitted `owner`

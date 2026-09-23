@@ -91,7 +91,7 @@ over its concrete descendants.
 The model checker SHALL bound the depth of the redefinition-family walk, at
 a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1` charge
 counter — the QSL implementation's `MAX_DISPATCH_DEPTH` constant in
-`src/model/dispatch.rs`, currently 128. If the walk would exceed the
+`qsl-semantics/src/model/dispatch.rs`, currently 128. If the walk would exceed the
 bound, the model checker SHALL refuse the family outright with a
 resource-exhaustion cause naming the bound and SHALL NOT report a linked
 table or an ambiguity result for that family. Exceeding this depth ceiling

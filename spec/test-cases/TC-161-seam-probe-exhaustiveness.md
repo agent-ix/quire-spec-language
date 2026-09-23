@@ -84,7 +84,7 @@ deliver.
    code.
 8. Inspect the checked-in seam-function list and confirm it names the one
    category #214 delivers (the `FamilyKind` prefix arm and the
-   stage-participation table, both in `src/family/mod.rs`); remove the
+   stage-participation table, both in `qsl-semantics/src/family/mod.rs`); remove the
    entry for that category and re-run `xtask seam-probe` against the real
    build. The other four categories FR-063-AC-6 names (the second S1 match
    is covered above; S2, S3 and S4) are not exercised by this step -- see
@@ -100,7 +100,7 @@ deliver.
 
 - Step 1: the collected `E0004` location set matches the checked-in list
   -- today, the `FamilyKind` prefix and stage-participation matches in
-  `src/family/mod.rs` (ADR-012 §5.1's S1). The parser entry table and check
+  `qsl-semantics/src/family/mod.rs` (ADR-012 §5.1's S1). The parser entry table and check
   seam (S2), the checked-node-enum evaluator/emitter/requirement-derivation
   matches (S3) and each family `Cause` enum's `catalog_code()` (S4) are not
   in this list; see this test case's "S2/S3/S4 category coverage" note.

@@ -22,7 +22,7 @@ implemented and exercised by unit fixtures, and is clean over every file
 #214 adds or touches (`xtask/src/*`). Step 7 (the lint-gate wiring) is
 implemented only as a standalone `make string-edge` target, not as part of
 `ci:`/the lint gate: the real QSL crate today has 60 pre-existing,
-unmarked, mostly branch-gating occurrences outside `src/family/*` and
+unmarked, mostly branch-gating occurrences outside `qsl-semantics/src/family/*` and
 `src/value/expression/*`, which the allow-list cannot admit and which
 #214 does not own converting (see
 [QSL-145](https://linear.app/agent-ix/issue/QSL-145) and FR-064's own

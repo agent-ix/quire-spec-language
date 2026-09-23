@@ -437,7 +437,7 @@ catalog states that a recognized name is not implementation support.
 
 The alias-cycle row uses `definition-cycle`, whose payload is dependency
 edges: the alias chain is those edges. The check stage uses the same code
-for an FR-151 call-graph cycle (`src/check/refusal.rs`,
+for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 `CheckCause::DefinitionCycle`). The duplicate-alias row follows
 `complete::package`, which refuses a duplicate selection alias as
 `ambiguous-name`.
@@ -530,7 +530,7 @@ test-only dispatch entry only, so every production CST refuses with
 `Expression` nodes carry no span. The forms `FunctionDeclaration` has no
 `using` field, and no parsed-unit type carries the unit's selections.
 `check` mints function identities over the constant
-`DEFAULT_PACKAGE_IDENTITY` (`src/check/family.rs`). `ValueType::Float`
+`DEFAULT_PACKAGE_IDENTITY` (`qsl-semantics/src/check/family.rs`). `ValueType::Float`
 holds only an `IeeeWidth` (`quire-exact/src/value.rs`; QSL-131 V5 retyped
 `src/value/composite.rs`'s own `ValueType` onto this one kernel definition,
 so it is no longer a second, QSL-local copy), and the evaluator applies
@@ -551,7 +551,7 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; extending it to `composite_type` and `function` nodes is a proposed QSpec extension. | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
 | FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` and in QSL, and the evaluator applies it. The assembler's floating-type refusal (FR-091-AC-19) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
-| FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
+| FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 
 ## Open Questions
 

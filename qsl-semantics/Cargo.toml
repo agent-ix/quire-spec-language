@@ -45,6 +45,8 @@ num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
 # `tests/it/import_view_names.rs` (TC-254) parses `library`'s own source.
 syn = { version = "=2.0.119", features = ["full", "visit"] }
+# Line numbers in that scan's findings, the same way `xtask` reads them.
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 
 [[test]]
 name = "it"

@@ -21,7 +21,7 @@ preimage: a two-state (`pre`/`post`-only) discriminator names an anchor
 side only for the binding an invocation attaches, so a `Direct` admission
 and a `Post` binding would carry an identical preimage whenever they share
 a domain package and `population_key` -- `admit_binding`
-(`src/model/population.rs:624`) cannot see its caller's role, and
+(`qsl-semantics/src/model/population.rs:624`) cannot see its caller's role, and
 `admit_invocation` (`:1105-1124`) calls it twice with identical arguments
 apart from `document`, and standalone callers of `admit_binding` also
 exist. The three-state discriminator (`Direct`, `Pre`, `Post`) closes this
@@ -32,7 +32,7 @@ Implemented: the closed three-state `AdmissionRole` (`Direct`/`Pre`/`Post`)
 discriminator is part of every `PopulationId`'s admission preimage
 (QSL-131 Slice B). Backed by
 `tc_296_standalone_direct_admission_distinct_from_invocation_post`
-(`tests/it/model_population.rs`).
+(`qsl-semantics/tests/it/model_population.rs`).
 
 Catches an implementation that models the admission-role component as a
 two-state `Option<AnchorSide>` (`None` for a standalone admission, `Some(Pre)`/

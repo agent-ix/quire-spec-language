@@ -142,13 +142,13 @@ per-group counts before moving this row to Passed.
 | FR-054 | FR-054-AC-3 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-4 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-056 | FR-056-AC-1 | TC-145 | 🚧 Planned; #131 -- one declaration per IR node, ascending by key, is covered, but `DomainPackageRecord` records carry no meaning, artifact id or span yet |
-| FR-056 | FR-056-AC-2 | TC-145 | ✅ Passed locally (`tests/model_intake.rs`, `src/model/intake.rs`) |
-| FR-056 | FR-056-AC-3 | TC-146 | ✅ Passed locally (`src/model/intake.rs`) |
-| FR-056 | FR-056-AC-4 | TC-145 | ✅ Passed locally (`src/model/intake.rs`) |
+| FR-056 | FR-056-AC-2 | TC-145 | ✅ Passed locally (`tests/model_intake.rs`, `qsl-semantics/src/model/intake.rs`) |
+| FR-056 | FR-056-AC-3 | TC-146 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
+| FR-056 | FR-056-AC-4 | TC-145 | ✅ Passed locally (`qsl-semantics/src/model/intake.rs`) |
 | FR-056 | FR-056-AC-5 | TC-145 | 🚧 Planned; #131 -- the refusal pair (no declared name, no source span) and all-or-nothing node ordering are covered, but a `relationship` export carries no name or span yet (same root cause as AC-1, `RelationshipRecord` holds only `key`/`source`/`target`/`direction`), and no `missing_declaration`/`missing-name` refusal exists for a relationship member or reference naming a node absent from the package (`validate_references` skips `Relationship`/`Allocation` outright; `systems::classify` reports `dangling_reference`/`unknown-endpoint` instead, and only for non-navigation relationships). Filed as Linear QSL-134 together with AC-1's record-shape gap. |
 | FR-056 | FR-056-AC-6 | TC-147 | ✅ Passed locally (`tests/model_intake.rs`: `charges_normalize_record_once_per_intake_declaration` -- the `normalize.record` charge itself is `crate::model::normalize`'s existing, shared `charge_all` mechanism; this proves it over this crate's own intake pipeline) |
 | FR-056 | FR-056-AC-7 | TC-145, TC-147 | 🚧 Planned; #131 -- the digest-domain-slot restriction is covered (FR-056-AC-2's tests), but no test yet compares the bundle entry point's and the intake seam's results for byte-identity |
-| FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Planned; #131 -- port/connection/allocation admission is covered under FR-152 (`src/model/systems.rs`), but the model linker (FR-036) does not yet consume intake's declarations (no in-crate caller of `crate::model::intake` yet) |
+| FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Planned; #131 -- port/connection/allocation admission is covered under FR-152 (`qsl-semantics/src/model/systems.rs`), but the model linker (FR-036) does not yet consume intake's declarations (no in-crate caller of `crate::model::intake` yet) |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -220,7 +220,7 @@ invented for that criterion.
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
-| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 AC-1, AC-2, AC-4 value-type portion ✅ Passed locally (`src/check/capability.rs`, QSL-173); admission portion, and AC-7/AC-10, stay 🚧 Planned; #213 |
+| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 AC-1, AC-2, AC-4 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`, QSL-173); admission portion, and AC-7/AC-10, stay 🚧 Planned; #213 |
 | TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 Planned; #211/#213 |
 | TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8, FR-057-AC-9 | 🚧 Planned; #213 (AC-5), #185 (AC-6, AC-8, AC-9) |
 
@@ -299,10 +299,10 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-036 | FR-036-AC-7 | TC-114 | ✅ Passed locally (tests/composed_binding.rs) |
 | FR-036 | FR-036-AC-8 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-036 | FR-036-AC-9 | TC-148 | 🚧 Planned; #131 |
-| FR-057 | FR-057-AC-1 | TC-153 | 🚧 value-type portion ✅ Passed locally (`src/check/capability.rs`); admission portion planned; #213 |
-| FR-057 | FR-057-AC-2 | TC-153 | 🚧 value-type portion ✅ Passed locally (`src/check/capability.rs`); admission portion planned; #213 |
+| FR-057 | FR-057-AC-1 | TC-153 | 🚧 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`); admission portion planned; #213 |
+| FR-057 | FR-057-AC-2 | TC-153 | 🚧 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`); admission portion planned; #213 |
 | FR-057 | FR-057-AC-3 | TC-154 | 🚧 Planned; #211/#213 |
-| FR-057 | FR-057-AC-4 | TC-153 | 🚧 value-type portion ✅ Passed locally (`src/check/capability.rs`); admission portion planned; #213 |
+| FR-057 | FR-057-AC-4 | TC-153 | 🚧 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`); admission portion planned; #213 |
 | FR-057 | FR-057-AC-5 | TC-155 | 🚧 Planned; #213 |
 | FR-057 | FR-057-AC-6 | TC-155 | 🚧 Planned; #185 |
 | FR-057 | FR-057-AC-7 | TC-153 | 🚧 Planned; #213 |

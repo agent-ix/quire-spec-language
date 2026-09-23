@@ -318,7 +318,7 @@ delivered code today:
   3). The fact AC-4 states is true of the delivered code:
   `infer_form`'s `Call` arm is exactly one call into
   `super::family::check_application` (`Value`'s function family's own
-  checking code, `src/check/family.rs`) and holds no other conditional,
+  checking code, `qsl-semantics/src/check/family.rs`) and holds no other conditional,
   lookup or loop. But AC-4 is itself a code-shape criterion ("a code-shape
   test... fails if a future change reintroduces branching logic directly in
   either arm"), and no test in the delivered code checks that shape:
@@ -346,7 +346,7 @@ delivered code today:
   it, does not satisfy this criterion." `Expression::Call` is that variant,
   and it is still present in `Expression` (`qsl-forms/src/`) -- checking moved
   (`Typer::call` is deleted, and `check_declaration_body`/
-  `check_application`, `src/check/family.rs`, are the real entry points
+  `check_application`, `qsl-semantics/src/check/family.rs`, are the real entry points
   `check::family::ValueFunctionFamily::check` now calls internally), but
   the variant itself was never removed, and QSL-148 does not add or claim a
   removal. `check_declaration_body_accepts_a_well_typed_declaration_and_
@@ -360,7 +360,7 @@ delivered code today:
   migration -- but they verify behavior, not AC-5's own enum-shape
   condition, and that condition is not met. See `TC-164`'s own Status
   section. Termination checking is explicitly excluded from this move --
-  see `check_declaration_body`'s doc comment (`src/check/family.rs`) and
+  see `check_declaration_body`'s doc comment (`qsl-semantics/src/check/family.rs`) and
   this ticket's report for why a whole-package, cross-declaration
   call-graph analysis cannot become a per-declaration `FamilyContract`-style
   check; `check::termination::check` remains an unchanged, separate
@@ -374,7 +374,7 @@ delivered code today:
 - FR-065-AC-7: backed (`TC-380`). Since QSL-148 (PR #303) the contract's
   `check` hook type-checks the body.
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
-  `src/check/family.rs` `checking_tests`) and
+  `qsl-semantics/src/check/family.rs` `checking_tests`) and
   `value_function_family_checks_through_the_contract` (admission half,
   `src/value/expression/family.rs`), are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.

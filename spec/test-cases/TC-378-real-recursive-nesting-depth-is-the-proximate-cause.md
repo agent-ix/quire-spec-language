@@ -45,7 +45,7 @@ location and early-return-on-first-error behavior. Both the side-walk and
 the test that exercised it are deleted.
 
 `real_checker_depth_limit_is_the_proximate_cause`
-(`src/check/family.rs`, `checking_tests`, untagged)
+(`qsl-semantics/src/check/family.rs`, `checking_tests`, untagged)
 demonstrates the real mechanism this test case's fixture needs: a body
 nested to depth D (`Not(Not(Not(true)))`) checked through
 `ValueFunctionFamily::check`, which now drives `Typer` via
@@ -65,6 +65,6 @@ see FR-062's own Status section for AC-7 for the full reasoning. Reported
 as an open scoping question, not decided here.
 
 `nesting_depth_limit_is_the_proximate_cause`
-(`src/check/family.rs`, `checking_tests`) remains, untagged, as a narrower
+(`qsl-semantics/src/check/family.rs`, `checking_tests`) remains, untagged, as a narrower
 regression guard on `CheckContext`'s own per-declaration nesting charge;
 see that test's own doc comment.

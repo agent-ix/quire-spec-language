@@ -1287,6 +1287,7 @@ dependencies = [
  "ix-trace-rs",
  "num-bigint",
  "num-traits",
+ "proc-macro2",
  "qsl-forms",
  "qsl-foundation",
  "quire-exact",

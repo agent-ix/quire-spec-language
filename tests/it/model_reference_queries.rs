@@ -167,7 +167,7 @@ fn p1_population_key() -> DeclarationKey {
 /// declaration key, `model.pop.second` -- FR-089-AC-1's own distinct-
 /// `population_key` case (TC-291, TC-293) needs two population
 /// declarations on the *same* domain package. Same key spelling as
-/// `tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
+/// `qsl-semantics/tests/it/model_population.rs`'s own `SECOND_POPULATION` (PR #326
 /// review finding S4): the two files' `fixture_f1_with_second_population`
 /// helpers build on each file's own separately authored `fixture_f1`, so
 /// they are not merged into one shared helper, but nothing justifies them
@@ -1262,7 +1262,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// digest, never equal to this model's own `quire.model.object-universe/v1`
 /// digest); a byte-length other than 32 can no longer reach this layer at
 /// all, since `quire_exact::UniverseId` fixes the shape at construction
-/// (ADR-013 §8 OQ-C ruling) -- `tests/it/model_population.rs`'s
+/// (ADR-013 §8 OQ-C ruling) -- `qsl-semantics/tests/it/model_population.rs`'s
 /// `l04b_lookup_wrong_length_universe_refuses_as_foreign` covers a
 /// wrong-length universe directly, at `crate::model::population::lookup`'s
 /// own byte-comparison layer.
@@ -1327,7 +1327,7 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
 // `UniverseId` value to construct for them to exercise. The byte-level
 // defense they exercised through this full evaluator path still lives, and
 // is still tested directly, in `crate::model::population::lookup` itself:
-// see `tests/it/model_population.rs`'s
+// see `qsl-semantics/tests/it/model_population.rs`'s
 // `l03_lookup_refused_mode_malformed_identity_reports_hex_detail`, which
 // builds a `LookupKey` with `object: vec![0xFF, 0xFE]` directly, bypassing
 // `ObjectReference` entirely, exactly as a wire/replay caller that skipped

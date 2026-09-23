@@ -16,7 +16,7 @@ cardinality-out-of-bound; an unbounded population admits every selected
 count; a foreign-universe key refuses; and a non-binding receiver or a
 non-object-type `T` each refuse with their own cause. Scope: FR-084-AC-5.
 
-Known gap: `src/model/population.rs::all_instances` currently refuses
+Known gap: `qsl-semantics/src/model/population.rs::all_instances` currently refuses
 `ill_typed`/`operator-ineligible` whenever the population binding declares
 no maximum, rather than returning the unbounded `Set<Reference<T>>`
 quire-specification FR-153-AC-9 requires (landed after this function was
