@@ -2965,11 +2965,11 @@ fn built_refusals(built: &mut Built) -> Result<(), Refusals> {
 /// `build`, under [`ModelNormalizationLimits::UNLIMITED`]). Under
 /// `UNLIMITED` nothing ever runs out, so `build`'s own deferred refusal-vec
 /// fields are surfaced here directly rather than replayed through
-/// `charge_all` (see [`built_refusals`]). Returns [`Refusals`] rather than a
+/// `charge_all` (see `built_refusals`). Returns [`Refusals`] rather than a
 /// bare `Vec<ModelRefusal>` (M2 finding, PR #228 round 2 review): every
 /// `Err` here already comes from a non-empty source, so the type itself
 /// carries that guarantee forward to callers. Never returns an empty `Vec`
-/// (see [`Built::universes`]'s own doc).
+/// (see `Built::universes`'s own doc).
 pub fn object_universes(domain_package: &DomainPackage) -> Result<Vec<ObjectUniverse>, Refusals> {
     let mut built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
         .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
