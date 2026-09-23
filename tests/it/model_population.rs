@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits};
+use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -294,7 +294,7 @@ fn p1(model_identity: &str) -> PopulationDocument {
 }
 
 fn reference_key(
-    universe: &EffectiveId,
+    universe: &UniverseId,
     type_identity: &EffectiveId,
     object: &str,
 ) -> ReferenceKey {
@@ -313,7 +313,7 @@ fn reference_key(
 /// well-formedness from these same bytes.
 fn lookup_key(
     static_type: DeclarationKey,
-    universe: &EffectiveId,
+    universe: &UniverseId,
     type_identity: &EffectiveId,
     object: &str,
 ) -> LookupKey {

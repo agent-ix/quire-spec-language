@@ -5,8 +5,9 @@
 //! `unsupported` are per-item I13 provider dispositions, not evaluator outcomes,
 //! so they have no variant here.
 
-use super::reference::ObjectReference;
-use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, IeeeFlags, Incomplete};
+use quire_exact::{
+    BoundViolation, CardinalityBound, CollectionKind, IeeeFlags, Incomplete, ObjectReference,
+};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]

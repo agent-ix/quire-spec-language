@@ -10,15 +10,18 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
-use quire_exact::{Decimal, IeeeWidth, IllTypedCause, Presence, Rational, RoundingMode};
+use quire_exact::{
+    Decimal, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence, Rational,
+    RoundingMode, UniverseId,
+};
 use quire_spec_language::value::{
     CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
     CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock, DefinitionReference,
     DefinitionRevision, Evaluation, FamilyOutcome, FieldDeclaration, FieldValue, IeeeValue,
-    LocatedLoss, Location, MeasureObligation, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval,
-    QualifiedName, RationalDomain, TypeEnvironment, UniverseIdentity, Value, ValueLoss, ValueType,
+    LocatedLoss, Location, MeasureObligation, ObjectEnvironment, ObjectTypeDeclaration,
+    Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval, QualifiedName,
+    RationalDomain, TypeEnvironment, Value, ValueLoss, ValueType,
 };
 
 use sha2::{Digest, Sha256};
@@ -855,9 +858,9 @@ fn ieee_profile() -> quire_spec_language::value::AdmittedIeeeProfile {
 
 fn object() -> ObjectReference {
     ObjectReference::new(
-        UniverseIdentity::new(b"u1").unwrap(),
+        UniverseId::from_digest(Sha256::digest(b"u1").into()),
         object_type("M::Obj"),
-        ObjectIdentity::new(b"o1").unwrap(),
+        ObjectId::new("o1").unwrap(),
     )
 }
 

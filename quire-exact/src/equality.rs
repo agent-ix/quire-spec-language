@@ -322,11 +322,11 @@ mod tests {
         }
 
         let object_type = EffectiveId::from_digest(digest(1));
-        let object = ObjectId::from_digest(digest(2));
+        let object = ObjectId::new("o1").unwrap();
         let left = Value::Reference(ObjectReference::new(
             UniverseId::from_digest(digest(10)),
             object_type,
-            object,
+            object.clone(),
         ));
         let right = Value::Reference(ObjectReference::new(
             UniverseId::from_digest(digest(20)),

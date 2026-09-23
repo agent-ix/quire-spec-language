@@ -12,8 +12,10 @@
 //! `quire.model.object-universe/v1` and `quire.model.effective-declaration/v1`
 //! digests. The type component is the kernel [`EffectiveId`] on both sides
 //! (ADR-013 O-05), so it passes through unchanged: no `EffectiveId` <->
-//! `NodeKey` transfer exists (ADR-010 OBS-018). The universe is carried as
-//! its raw bytes in [`UniverseIdentity`], never re-hashed.
+//! `NodeKey` transfer exists (ADR-010 OBS-018). The universe is the kernel
+//! [`quire_exact::UniverseId`] `model` already computes
+//! (`crate::model::population::ReferenceKey::universe`, ADR-013 §8 OQ-C
+//! ruling), never re-hashed.
 //!
 //! `crate::model::population::all_instances`/`lookup` already perform every
 //! FR-153 charge (`lookup.key`, `lookup.result-retain`, `population.visit`,
@@ -26,27 +28,27 @@
 //! # Malformed references
 //!
 //! A checked `Reference<T>` value's identity triple is supplied by an
-//! untrusted producer, so not every component is well-formed: its universe
-//! ([`UniverseIdentity`]) or object identity ([`ObjectIdentity`]) may carry
-//! bytes no real [`PopulationBinding`] could ever admit. [`bridge_lookup_key`]
-//! never substitutes a derived value for either component, never classifies
-//! either one itself, and cannot itself fail: it hands [`LookupKey`] `r`'s
-//! own raw bytes exactly as supplied, and [`lookup`] alone decides the
-//! outcome for a well-formed and a malformed reference alike, in its own
-//! single order (`type_conforms(S, T)`, then `lookup.key`, then the universe
-//! check, then membership or absence -- see [`LookupKey`]'s own doc
-//! comment). A universe is carried as its raw bytes rather than a bridged
-//! [`EffectiveId`]: a length other than 32 can never equal a real universe,
-//! so [`lookup`]'s own byte comparison already decides it correctly with no
-//! separate malformed case. An object identity is carried as its own raw
-//! bytes too, never a lossily decoded substitute: [`lookup`] treats them as
-//! a candidate member identity only when they are valid UTF-8 (every real
-//! population member's own identity is a JSON string, `PopulationDocument`'s
-//! member records), since a lossy decode of arbitrary invalid bytes can
-//! coincide with a real, validly admitted member's own identity string
-//! (`String::from_utf8_lossy(&[0xFF, 0xFE])` is `"\u{FFFD}\u{FFFD}"`, a value
-//! a population is free to admit) and so could let a malformed reference be
-//! mistaken for that member.
+//! untrusted producer, but ADR-013 §8's OQ-C ruling now bounds what "not
+//! well-formed" can mean: the kernel [`quire_exact::UniverseId`] is always a
+//! 32-byte digest and the kernel [`quire_exact::ObjectId`] is always
+//! non-empty, exact UTF-8 (its one constructor, `ObjectId::new`, refuses
+//! anything else), so a `Value::Reference` can no longer carry a
+//! wrong-length universe or invalid-UTF-8 object identity at all -- those
+//! byte-level malformations are prevented at construction, not handled at
+//! lookup time. What remains representable, and what [`lookup`] still
+//! decides, is a *foreign* reference: a well-formed universe or object
+//! identity that simply names no member of the bound population.
+//! [`bridge_lookup_key`] never substitutes a derived value for either
+//! component and never classifies it itself: it hands [`LookupKey`] `r`'s
+//! own bytes exactly as supplied, and [`lookup`] alone decides the outcome,
+//! in its own single order (`type_conforms(S, T)`, then `lookup.key`, then
+//! the universe check, then membership or absence -- see [`LookupKey`]'s own
+//! doc comment). `LookupKey.universe`/`.object` stay raw bytes there because
+//! `crate::model::population`'s own direct callers (`tests/it/
+//! model_population.rs`) still exercise `lookup`'s byte-level defenses
+//! (wrong-length universe, non-UTF-8 identity) directly, bypassing
+//! `ObjectReference` -- those callers, not this bridge, are where a
+//! genuinely malformed `LookupKey` can still originate.
 //!
 //! # The TypeEnvironment island
 //!
@@ -83,8 +85,7 @@ use qsl_foundation::diagnostic::Code;
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
 use super::outcome::{Refusal, Stop};
-use super::reference::{ObjectIdentity, ObjectReference, UniverseIdentity};
-use quire_exact::{Incomplete, Meter, PopulationId};
+use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, PopulationId};
 
 /// Why a population query stopped without a value. The evaluator
 /// (`value::expression`, layer 5) turns `Refused` and `AbsentKey` into the
@@ -119,29 +120,30 @@ fn invariant() -> ModelQueryHalt {
     ModelQueryHalt::Stop(Stop::Refused(Refusal::CheckedInvariant))
 }
 
-/// The FR-143 conversion of a model [`ReferenceKey`] into its
-/// `crate::value` [`ObjectReference`]: the type component is the same
-/// [`EffectiveId`], and the universe and object are their own bytes. Fails
-/// only when a byte component is empty, which an admitted
+/// The FR-143 conversion of a model [`ReferenceKey`] into its kernel
+/// [`ObjectReference`]: the universe is already the same
+/// [`quire_exact::UniverseId`] (ADR-013 §8 OQ-C ruling), the type is the same
+/// [`EffectiveId`], and the object identity is minted as an
+/// [`quire_exact::ObjectId`] from `key.object`'s own authored bytes. Fails
+/// only when the object identity is empty, which an admitted
 /// [`PopulationBinding`] never produces (a checked invariant).
 fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQueryHalt> {
-    let universe = UniverseIdentity::new(key.universe.as_bytes()).map_err(|_| invariant())?;
-    let identity = ObjectIdentity::new(key.object.as_bytes()).map_err(|_| invariant())?;
-    Ok(ObjectReference::new(universe, key.type_identity, identity))
+    let object = ObjectId::new(key.object.clone()).map_err(|_| invariant())?;
+    Ok(ObjectReference::new(key.universe, key.type_identity, object))
 }
 
 /// `reference`'s own identity triple as a [`LookupKey`] for [`lookup`],
 /// paired with `static_type`. Always succeeds (see the module docs): the
 /// type is `reference`'s own [`EffectiveId`], and `universe` and `object` are
-/// its own raw bytes, exactly as supplied, never bridged, classified or
+/// its own bytes, exactly as supplied, never bridged, classified or
 /// substituted here -- [`lookup`] alone decides whether `universe` or
-/// `object` is well-formed.
+/// `object` names a member.
 fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -> LookupKey {
     LookupKey {
         static_type,
         universe: reference.universe().as_bytes().to_vec(),
         type_identity: reference.object_type(),
-        object: reference.identity().as_bytes().to_vec(),
+        object: reference.object().as_str().as_bytes().to_vec(),
     }
 }
 

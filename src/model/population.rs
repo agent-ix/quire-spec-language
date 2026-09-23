@@ -150,7 +150,7 @@ use sha2::{Digest, Sha256};
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
     Incomplete as ScalarIncomplete, Integer, LimitKind as ScalarLimitKind, Meter as ScalarMeter,
-    POPULATION_ID_DOMAIN,
+    UniverseId, POPULATION_ID_DOMAIN,
 };
 
 /// The kernel's canonical `PopulationId` (ADR-013 O-13 Population row,
@@ -385,8 +385,9 @@ impl AdmissionMeter {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ReferenceKey {
     /// The object universe this reference is a member of
-    /// (`quire.model.object-universe/v1` identity).
-    pub universe: EffectiveId,
+    /// (`quire.model.object-universe/v1` identity, ADR-013 §8 OQ-C ruling:
+    /// a `UniverseId`, not an `EffectiveId`).
+    pub universe: UniverseId,
     /// The effective identity of the referenced object's most-specific type.
     pub type_identity: EffectiveId,
     /// The object's own declared identity.
@@ -497,8 +498,9 @@ pub struct PopulationBinding {
     /// The domain package this binding was admitted against. `Arc`, so cloning a
     /// binding never re-clones the domain package's own records.
     domain_package: Arc<DomainPackage>,
-    /// This binding's own object universe, computed once at admission.
-    universe: EffectiveId,
+    /// This binding's own object universe, computed once at admission
+    /// (ADR-013 §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId`).
+    universe: UniverseId,
     /// Every admitted member, ascending by [`ReferenceKey`].
     members: BTreeMap<ReferenceKey, DeclarationKey>,
     /// The binding's declared maximum, or `None` for a binding with no
@@ -570,7 +572,7 @@ impl PopulationBinding {
     }
 
     /// This binding's own object universe.
-    pub fn universe(&self) -> &EffectiveId {
+    pub fn universe(&self) -> &UniverseId {
         &self.universe
     }
 

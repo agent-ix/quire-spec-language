@@ -9,13 +9,13 @@ use quire_exact::{
 };
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
-    ScalarLimits,
+    ObjectId, ObjectReference, ScalarLimits, UniverseId,
 };
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
     CompositeShape, Deferred, EqualityOperand, EqualityOperator, FamilyOutcome, FieldDeclaration,
-    FieldValue, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome,
-    Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    FieldValue, ObjectTypeDeclaration, OptionValue, Outcome, Refusal, TextPayload, TypeEnvironment,
+    Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -338,11 +338,15 @@ fn holder_environment() -> TypeEnvironment {
     .unwrap()
 }
 
+fn universe_id(tag: &str) -> UniverseId {
+    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+}
+
 fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
     let reference = ObjectReference::new(
-        UniverseIdentity::new(universe.as_bytes()).unwrap(),
+        universe_id(universe),
         object_type("M::Obj"),
-        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+        ObjectId::new(identity).unwrap(),
     );
     env.record(
         key("Holder"),
@@ -871,9 +875,9 @@ mod checked {
             ["h1", "h2"].map(|identity| {
                 (
                     ObjectReference::new(
-                        UniverseIdentity::new(b"u1").unwrap(),
+                        universe_id("u1"),
                         object_type("M::Obj"),
-                        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+                        ObjectId::new(identity).unwrap(),
                     ),
                     Vec::new(),
                 )

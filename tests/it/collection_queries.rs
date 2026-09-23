@@ -8,15 +8,15 @@ use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
-    IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
+    IntegerInterval, LimitKind, Meter, ObjectId, ObjectReference, Outcome, Refusal, ScalarLimits,
+    Undefined, UniverseId,
 };
 use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::value::{
     CheckCause, CheckMode, CheckRefusal, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
     CollectionLoss, CollectionProperty, CollectionType, CompositeDeclaration, CompositeShape,
-    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, PackageDeclarations, ProvedInterval,
-    TypeEnvironment, UniverseIdentity, Value, ValueType,
+    FamilyOutcome, FieldDeclaration, FieldValue, ObjectEnvironment, ObjectTypeDeclaration,
+    Obligation, PackageDeclarations, ProvedInterval, TypeEnvironment, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -807,11 +807,15 @@ fn holder_environment() -> TypeEnvironment {
     .unwrap()
 }
 
+fn universe_id(tag: &str) -> UniverseId {
+    UniverseId::from_digest(Sha256::digest(tag.as_bytes()).into())
+}
+
 fn object(identity: &str) -> ObjectReference {
     ObjectReference::new(
-        UniverseIdentity::new(b"u1").unwrap(),
+        universe_id("u1"),
         object_type("M::Obj"),
-        ObjectIdentity::new(identity.as_bytes()).unwrap(),
+        ObjectId::new(identity).unwrap(),
     )
 }
 

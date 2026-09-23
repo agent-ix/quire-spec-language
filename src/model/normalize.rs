@@ -568,9 +568,12 @@ impl ObjectUniverse {
         Value::Object(object)
     }
 
-    /// This universe's `quire.model.object-universe/v1` identity.
-    pub fn identity(&self) -> EffectiveId {
-        digest_of(&self.to_json())
+    /// This universe's `quire.model.object-universe/v1` identity (ADR-013
+    /// §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId` -- the two
+    /// digests use the same SHA-256 computation over the same preimage
+    /// shape, differing only in which kernel newtype carries the result).
+    pub fn identity(&self) -> quire_exact::UniverseId {
+        crate::model::key::universe_digest_of(&self.to_json())
     }
 
     /// The exact JCS bytes of this universe (for `normalize.hash` accounting,

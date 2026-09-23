@@ -6,16 +6,21 @@
 //! and equality never inspects referenced state. This is a fresh cut, not a
 //! verbatim port, of QSL `value::reference`: the original `ObjectReference`
 //! carries a `NodeKey` object type plus raw `UniverseIdentity`/
-//! `ObjectIdentity` byte strings; ADR-013 T-6 replaces all three with opaque
-//! digest ids QSL mints from its own preimage (ADR-013 QC-15). The original
+//! `ObjectIdentity` byte strings; ADR-013 T-6 replaces the type with an
+//! `EffectiveId` and the universe with a `UniverseId`, both opaque digests
+//! QSL `model` mints from its own preimage (ADR-013 QC-15), and replaces the
+//! object identity with `ObjectId`, the object's own authored UTF-8 bytes,
+//! never a digest (ADR-013 §8 OQ-C ruling). The original
 //! `ObjectEnvironment` (a closed reference graph checked against a
 //! `TypeEnvironment`) is dropped entirely: it is a declaration-registry
 //! concern and stays layer 3 in QSL per ADR-013 O-15, not the kernel.
 
 use crate::identity::{EffectiveId, ObjectId, UniverseId};
 
-/// A `Reference<T>` value: its identity triple (ADR-013 T-6).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// A `Reference<T>` value: its identity triple (ADR-013 T-6). Not `Copy`:
+/// `ObjectId` (ADR-013 §8 OQ-C ruling) carries its own authored bytes rather
+/// than a fixed-size digest, so cloning a reference clones those bytes.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObjectReference {
     universe: UniverseId,
     object_type: EffectiveId,
@@ -44,8 +49,8 @@ impl ObjectReference {
     }
 
     /// The object identity.
-    pub fn object(&self) -> ObjectId {
-        self.object
+    pub fn object(&self) -> &ObjectId {
+        &self.object
     }
 }
 
@@ -69,10 +74,10 @@ mod tests {
     fn tc_316_reference_equality_follows_the_identity_triple() {
         let universe = UniverseId::from_digest(digest(1));
         let object_type = EffectiveId::from_digest(digest(2));
-        let object = ObjectId::from_digest(digest(3));
-        let a = ObjectReference::new(universe, object_type, object);
+        let object = ObjectId::new("o1").unwrap();
+        let a = ObjectReference::new(universe, object_type, object.clone());
         let b = ObjectReference::new(universe, object_type, object);
-        let c = ObjectReference::new(universe, object_type, ObjectId::from_digest(digest(4)));
+        let c = ObjectReference::new(universe, object_type, ObjectId::new("o2").unwrap());
         assert_eq!(a, b);
         assert_ne!(a, c);
     }

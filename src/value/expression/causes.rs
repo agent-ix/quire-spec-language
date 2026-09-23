@@ -110,7 +110,7 @@ impl UndefinedCoded for StateModelUndefined {
                     ("selected", failure.selected.clone()),
                     (
                         "receiver",
-                        identity_string(failure.receiver.identity().as_bytes()),
+                        identity_string(failure.receiver.object().as_str().as_bytes()),
                     ),
                 ]),
             },
