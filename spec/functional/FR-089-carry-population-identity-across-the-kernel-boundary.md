@@ -116,7 +116,9 @@ declared maximum live in `model`. Kernel `ValueType::admits` SHALL return `false
 with `Refusal::CheckedInvariant`, and `key::compare_keys` SHALL yield no key
 (`None`) for a pair of `Value::Population` values: a population is neither an
 equality operand nor a key participant in the kernel, matching QSL's own
-`value::equality`/`value::key`.
+`value::key` (`value::equality`'s matching check was deleted by QSL-131 V5b,
+which repointed QSL onto the kernel's own `quire_exact::member_equal`
+directly).
 
 ## Acceptance Criteria
 
