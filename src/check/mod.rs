@@ -1154,9 +1154,9 @@ mod tests {
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
         use crate::value::composite::{
-            CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
+            CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         };
-        use quire_exact::NodeKey;
+        use quire_exact::{NodeKey, Presence};
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x11; 32]);
@@ -1197,9 +1197,9 @@ mod tests {
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
         use crate::value::composite::{
-            CompositeDeclaration, CompositeShape, FieldDeclaration, Presence, TypeEnvironment,
+            CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         };
-        use quire_exact::NodeKey;
+        use quire_exact::{NodeKey, Presence};
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x22; 32]);
@@ -1236,8 +1236,9 @@ mod tests {
     fn enum_declaration_becomes_a_real_checked_type_node() {
         use crate::value::{
             EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeOwner,
-            OwnerSelection, OwnerSubject, NODE_KEY_DOMAIN,
+            OwnerSelection, OwnerSubject,
         };
+        use quire_exact::NODE_KEY_DOMAIN;
         use serde_json::json;
 
         let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {

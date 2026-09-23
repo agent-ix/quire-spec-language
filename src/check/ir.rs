@@ -8,10 +8,9 @@ use crate::value::composite::{Value, ValueType};
 use crate::value::decimal::DecimalType;
 use crate::value::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
 use crate::value::node::NodeKey;
-use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
-use crate::value::rational::RationalDomain;
 use qsl_foundation::absence::AbsenceMode;
-use quire_exact::{CollectionKind, IntegerInterval};
+use quire_exact::{ArithmeticOperator, OrderingOperator};
+use quire_exact::{CollectionKind, IntegerInterval, RationalDomain};
 use std::collections::BTreeSet;
 
 /// FR-062/FR-065: a checked function-application node's identity (ADR-013

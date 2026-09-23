@@ -38,7 +38,7 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `semantic_value` modules (`value::definition`, `value::enumeration`,
 `value::unit`, `value::quantity`, `value::key`, `value::reference`,
 `value::containment`) and `value::declaration`, and the `value` K-copy
-modules while each exists (`value::collection`, `value::comparison`,
+modules while each exists (`value::collection`,
 `value::composite`, `value::decimal`, `value::division`, `value::equality`,
 `value::ieee`, `value::node`, `value::numeric`, `value::outcome`,
 `value::rational`, `value::text`). `check` imports nothing from a later

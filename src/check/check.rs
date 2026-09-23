@@ -54,17 +54,18 @@ use crate::forms::{
     FunctionDeclaration,
 };
 use crate::value::collection::CollectionType;
-use crate::value::comparison::IllTypedCause;
-use crate::value::composite::{CompositeShape, Presence, TypeEnvironment, Value, ValueType};
+use crate::value::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
 use crate::value::decimal::DecimalType;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
 use crate::value::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
 use crate::value::ieee::AdmittedIeeeProfile;
 use crate::value::node::NodeKey;
-use crate::value::numeric::{ArithmeticOperator, OrderingOperator};
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
-use crate::value::rational::Rational;
 use qsl_foundation::absence::AbsenceMode;
+use quire_exact::IllTypedCause;
+use quire_exact::Presence;
+use quire_exact::Rational;
+use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, Integer};
 
 /// The largest expression nesting depth a checker may declare. It keeps every

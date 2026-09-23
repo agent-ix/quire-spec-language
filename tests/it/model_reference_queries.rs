@@ -21,6 +21,7 @@ use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, ScalarLimits,
 };
+use quire_exact::{IllTypedCause, Presence};
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
@@ -40,9 +41,9 @@ use quire_spec_language::value::{
     BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType, CompositeDeclaration,
     CompositeShape, DeclarationCause, Expression, FieldDeclaration, FunctionDeclaration,
-    IllTypedCause, InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Outcome, PackageDeclarations, Presence, QualifiedName, Refusal,
-    TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
+    InputRefusal, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    ObjectTypeDeclaration, Outcome, PackageDeclarations, QualifiedName, Refusal, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType, WrongSnapshotCause,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

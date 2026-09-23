@@ -11,28 +11,21 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use super::super::collection::{form, form_grouped, member_equal, CollectionValue};
-use super::super::comparison::ComparisonOperator;
 use super::super::composite::{
     retain_composite, CompositeShape, FieldValue, OptionValue, Value, ValueType,
 };
-use super::super::decimal::{
-    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType, RoundingMode,
-};
+use super::super::decimal::{evaluate_decimal, DecimalLoss, DecimalType};
 use super::super::enumeration::compare_enum;
 use super::super::equality::operand_value;
-use super::super::ieee::{
-    evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
-};
+use super::super::ieee::{evaluate_ieee, ieee_to_exact, IeeeExactTarget};
 use super::super::key::compare_keys;
 use super::super::model_query::{evaluate_all_instances, evaluate_lookup};
 use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
-    retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
-    OrderingOperator, RationalArithmetic,
+    retain_boolean,
 };
 use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{compare_quantity, evaluate_quantity, QuantityOperation};
-use super::super::rational::Rational;
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
 use crate::check::{
@@ -41,10 +34,18 @@ use crate::check::{
 };
 use crate::model::population::PopulationBinding;
 use qsl_foundation::diagnostic::InternalFault;
+use quire_exact::ComparisonOperator;
+use quire_exact::Rational;
+use quire_exact::{
+    ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands, OrderingOperator,
+    RationalArithmetic,
+};
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
 };
+use quire_exact::{Decimal, DecimalOperation, RoundingMode};
+use quire_exact::{IeeeExactLoss, IeeeFlags, IeeeOperation};
 
 /// A completed, undefined, refused or incomplete evaluation, located at the
 /// expression where a non-completed outcome originated.

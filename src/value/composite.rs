@@ -30,19 +30,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::collection::{CollectionType, CollectionValue};
-use super::comparison::{IllTyped, IllTypedCause};
-use super::decimal::{Decimal, DecimalType};
+use super::decimal::DecimalType;
 use super::enumeration::EnumValue;
-use super::ieee::{IeeeValue, IeeeWidth};
 use super::node::NodeKey;
 use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{Quantity, QuantityUnit};
-use super::rational::{Rational, RationalDomain};
 use super::reference::ObjectReference;
-use super::text::{Text, TextType};
+use super::text::Text;
+use quire_exact::Decimal;
+use quire_exact::IeeeWidth;
+use quire_exact::Rational;
+use quire_exact::TextType;
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Integer, IntegerInterval, LimitKind, Meter, PopulationId,
+    Charge, ChargePoint, CollectionKind, IeeeValue, Integer, IntegerInterval, LimitKind, Meter,
+    PopulationId, Presence, RationalDomain,
 };
+use quire_exact::{IllTyped, IllTypedCause};
 
 /// A declared complete-V1 value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.
@@ -298,11 +301,6 @@ impl OptionValue {
         self.payload.as_ref()
     }
 }
-
-// `Presence` is `quire_exact`'s own canonical type (QSL-131): it is a plain
-// two-variant enum with no dependency on the diverged `Value`/`ValueType`
-// kernel types, so it is byte-identical between the two crates.
-pub use quire_exact::Presence;
 
 /// The state of one field slot.
 #[derive(Clone, Debug)]

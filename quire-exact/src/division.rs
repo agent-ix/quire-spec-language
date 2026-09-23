@@ -12,6 +12,13 @@
 //! match: it takes the selected [`DivisionProfile`] directly, in place of
 //! the original `&AdmittedIntegerDivision` (a QSL `definition` type wrapping
 //! that same profile plus the now-dropped negotiation state).
+//!
+//! QSL-131 K1 widened [`DivisionProfile::apply`] from `fn`-private to
+//! `pub`: `quire_spec_language::value::division`'s own `paired`/
+//! `euclidean_remainder`, still local because they return this crate's own
+//! `Outcome`, call it directly rather than porting a second copy. It is
+//! pure unmetered integer division/modulus arithmetic, the same class
+//! already public on [`Integer`] itself, so widening exposes nothing new.
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::integer::{Integer, IntegerDomain};
@@ -42,7 +49,15 @@ impl DivisionProfile {
     }
 
     /// The unique `(q, r)` with `a = b*q + r` under this law; `b` is nonzero.
-    fn apply(self, dividend: &Integer, divisor: &Integer) -> (Integer, Integer) {
+    ///
+    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// division`'s own `paired`/`euclidean_remainder`, still local because
+    /// they return this crate's own `Outcome`, call it directly rather than
+    /// porting a second copy. It is pure unmetered integer division/
+    /// modulus arithmetic, the same class already public on `Integer`
+    /// itself (`div_rem_truncating`, `div_mod_floor`), so widening exposes
+    /// nothing new.
+    pub fn apply(self, dividend: &Integer, divisor: &Integer) -> (Integer, Integer) {
         match self {
             Self::Truncating => dividend.div_rem_truncating(divisor),
             Self::Floor => dividend.div_mod_floor(divisor),

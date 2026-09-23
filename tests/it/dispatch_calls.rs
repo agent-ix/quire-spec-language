@@ -15,6 +15,7 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use qsl_foundation::diagnostic::Code;
+use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, ScalarLimits};
 use quire_spec_language::check::{
     checked_dispatch_operation, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
@@ -33,11 +34,10 @@ use quire_spec_language::value::{
     decode_function_package_v2, BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     ClauseKind, DeclaredClauseKind, DispatchCandidate, DispatchFunctionRole, DispatchOperation,
-    DispatchTable, Expression, FunctionDeclaration, IllTypedCause, InputRefusal,
-    InvalidDispatchDeclaration, Location, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Origin, Outcome, PackageDeclarations,
-    PreconditionFailure, QualifiedName, TypeEnvironment, Undefined, UniverseIdentity, Value,
-    ValueType,
+    DispatchTable, Expression, FunctionDeclaration, InputRefusal, InvalidDispatchDeclaration,
+    Location, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    Origin, Outcome, PackageDeclarations, PreconditionFailure, QualifiedName, TypeEnvironment,
+    Undefined, UniverseIdentity, Value, ValueType,
 };
 
 // This crate's own `value::Origin` (imported above) is a different type

@@ -19,13 +19,16 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
     ScalarLimits,
 };
+use quire_exact::{
+    Decimal, IeeeExactLoss, IeeeFlags, IeeeOperation, IeeeWidth, IllTyped, IllTypedCause, Rational,
+    RoundingMode,
+};
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, Decimal, DecimalType, DefinitionLock,
-    DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
-    IeeeWidth, IllTyped, IllTypedCause, Outcome, PackageCause, PackageRefusalCode, Rational,
-    RationalDomain, Refusal, RoundingMode, Undefined, IEEE_DEFINITION,
+    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, DecimalType, DefinitionLock,
+    DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact,
+    IeeeExactTarget, IeeeFlag, IeeeOperand, IeeeResult, IeeeValue, Outcome, PackageCause,
+    PackageRefusalCode, RationalDomain, Refusal, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
