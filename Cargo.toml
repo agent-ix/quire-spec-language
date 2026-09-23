@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval"]
 resolver = "2"
 
 [package]

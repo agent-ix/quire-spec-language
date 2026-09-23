@@ -27,7 +27,7 @@ use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
-use quire_spec_language::value::{
+use qsl_eval::value::{
     CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
 };
 

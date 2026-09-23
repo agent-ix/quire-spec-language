@@ -53,7 +53,7 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
-use quire_spec_language::value::{
+use qsl_eval::value::{
     CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 

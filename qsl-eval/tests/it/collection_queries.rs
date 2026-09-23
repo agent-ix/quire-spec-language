@@ -23,7 +23,7 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
-use quire_spec_language::value::CheckedPackageEvaluation;
+use qsl_eval::value::CheckedPackageEvaluation;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

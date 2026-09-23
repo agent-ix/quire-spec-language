@@ -25,11 +25,9 @@ pub mod package;
 mod parser;
 pub mod protocol_artifact;
 pub mod runtime;
-pub mod simulation;
 pub mod state;
 pub mod syntax;
 pub mod temporal;
-pub mod value;
 
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
 pub use parser::{parse, parse_native, parse_native_source, parse_source};

@@ -28,7 +28,7 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
-use quire_spec_language::value::{
+use qsl_eval::value::{
     CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 

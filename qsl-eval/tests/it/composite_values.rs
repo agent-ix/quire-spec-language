@@ -4,14 +4,13 @@
 //!
 //! Declaration node keys are opaque producer-assigned fixture keys; the
 //! declarations that intentionally share names and shapes get distinct keys.
-//! R04 runs through the complete-source parser and R03's library-import row
-//! through FR-307 library resolution.
+//! R03's library-import row runs through FR-307 library resolution. R04, a
+//! layer-1 parse refusal, is in `qsl-cst/tests/it/complete_cst.rs`
+//! (QSL-183).
 
 use std::cell::Cell;
 
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCause, CompleteCode, Limits};
-use qsl_foundation::SourceIdentity;
 use qsl_semantics::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
@@ -37,7 +36,7 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
 };
-use quire_spec_language::value::QualifiedName;
+use qsl_eval::value::QualifiedName;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -746,7 +745,7 @@ mod checked {
         PackageDeclarations,
     };
     use quire_exact::{BoundViolation, Outcome, Refusal};
-    use quire_spec_language::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
 
     fn name(spelling: &str) -> Expression {
         Expression::Name(spelling.to_owned())
@@ -1160,29 +1159,6 @@ mod checked {
             assert_completed(&outcome, Value::Boolean(expected));
         }
     }
-}
-
-#[trace("TC-188", "FR-143-AC-10")]
-#[test]
-fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
-    let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
-    let parsed = qsl_cst::parse(
-        SourceIdentity {
-            identity: "test:tc-188".into(),
-            revision: "1".into(),
-        },
-        "tc-188.native",
-        text.as_bytes(),
-        Limits::default(),
-    )
-    .unwrap();
-    assert!(!parsed.is_admissible());
-    let diagnostic = &parsed.diagnostics()[0];
-    assert_eq!(
-        (diagnostic.code, diagnostic.cause),
-        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
-    );
-    assert_eq!(diagnostic.span.start.byte, text.find("variant").unwrap());
 }
 
 mod library_import {

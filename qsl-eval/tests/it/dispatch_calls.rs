@@ -46,7 +46,7 @@ use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
-use quire_spec_language::value::{
+use qsl_eval::value::{
     decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
     QualifiedName,
 };

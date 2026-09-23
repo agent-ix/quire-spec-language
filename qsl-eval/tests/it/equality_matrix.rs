@@ -50,7 +50,7 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
-use quire_spec_language::value::{
+use qsl_eval::value::{
     CallFailure, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss,
 };
 use serde_json::json;

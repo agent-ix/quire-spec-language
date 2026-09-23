@@ -591,7 +591,7 @@ mod checked {
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause};
     use quire_exact::NODE_KEY_DOMAIN;
-    use quire_spec_language::value::CheckedPackageEvaluation;
+    use qsl_eval::value::CheckedPackageEvaluation;
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

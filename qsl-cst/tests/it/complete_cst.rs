@@ -332,3 +332,29 @@ fn revision_bound_node_identity_includes_the_document_identity() {
         "opaque caller labels cannot substitute for the exact source digest"
     );
 }
+
+/// TC-188 R04 (FR-143-AC-10): a sum declaration is a layer-1 parse refusal
+/// at `variant`. Moved here from the root crate's `composite_values.rs`
+/// (QSL-183): it calls only `qsl_cst::parse`.
+#[trace("TC-188", "FR-143-AC-10")]
+#[test]
+fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
+    let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
+    let parsed = qsl_cst::parse(
+        SourceIdentity {
+            identity: "test:tc-188".into(),
+            revision: "1".into(),
+        },
+        "tc-188.native",
+        text.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert!(!parsed.is_admissible());
+    let diagnostic = &parsed.diagnostics()[0];
+    assert_eq!(
+        (diagnostic.code, diagnostic.cause),
+        (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
+    );
+    assert_eq!(diagnostic.span.start.byte, text.find("variant").unwrap());
+}

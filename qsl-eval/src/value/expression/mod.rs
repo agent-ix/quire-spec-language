@@ -20,7 +20,7 @@
 //! carries the real absence check, against the file-per-module convention:
 //!
 //! ```compile_fail
-//! use quire_spec_language::value::expression::syntax::Expression;
+//! use qsl_eval::value::expression::syntax::Expression;
 //! ```
 
 mod causes;

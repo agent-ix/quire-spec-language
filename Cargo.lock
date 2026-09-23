@@ -1248,6 +1248,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-eval"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-attrs",
+ "qsl-forms",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-semantics",
+ "quire-exact",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-forms"
 version = "0.1.0"
 dependencies = [
