@@ -13,9 +13,10 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
-    CompositeShape, Deferred, EqualityOperand, EqualityOperator, FamilyOutcome, FieldDeclaration,
-    FieldValue, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome,
-    Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    CompositeShape, Deferred, EnumMemberIndex, EqualityOperand, EqualityOperator, FamilyOutcome,
+    FieldDeclaration, FieldValue, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    OptionValue, Outcome, Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -100,6 +101,7 @@ fn equal(env: &TypeEnvironment, value_type: &ValueType, left: &Value, right: &Va
             EqualityOperator::Equal,
             EqualityOperand::typed(value_type.clone()),
             EqualityOperand::typed(value_type.clone()),
+            &EnumMemberIndex::default(),
         )
         .unwrap();
     match checked.evaluate(left, right, &mut Meter::new(UNLIMITED)) {
@@ -543,6 +545,7 @@ fn c11_the_bound_is_part_of_the_collection_type() {
             EqualityOperator::Equal,
             EqualityOperand::typed(x),
             EqualityOperand::typed(s),
+            &EnumMemberIndex::default(),
         ),
         Err(IllTyped {
             cause: IllTypedCause::TypeMismatch
@@ -757,14 +760,15 @@ mod checked {
     }
 
     fn member(binding: &EnumBinding, case: &str) -> Value {
-        Value::Enum(
-            binding
-                .members
-                .iter()
-                .find(|member| member.case() == case)
-                .cloned()
-                .unwrap(),
-        )
+        let member = binding
+            .members
+            .iter()
+            .find(|member| member.case() == case)
+            .unwrap();
+        Value::Enum(quire_exact::EnumMember::new(
+            member.variant(),
+            u32::try_from(member.position()).unwrap(),
+        ))
     }
 
     fn formed(value_type: &CollectionType, values: Vec<Value>) -> Value {
@@ -776,22 +780,16 @@ mod checked {
 
     #[trace("TC-189", "FR-144-AC-7")]
     #[trace("TC-189", "FR-144-AC-9")]
+    // Also TC-409 steps 3-4 (FR-088-AC-11): a real kernel Set formed from
+    // admitted enum values visits an unordered enum's members in
+    // case-identifier byte order and an ordered enum's in declaration order.
+    #[trace("TC-409", "FR-088-AC-11")]
     #[test]
     fn c05_enum_keys_order_unordered_members_by_identifier_bytes() {
         let color = admit("Color", false, &["blue", "green", "red"]);
         let level = admit("Level", true, &["high", "low"]);
-        let colors = collection_type(
-            CollectionKind::Set,
-            ValueType::Enum(color.declaration.key()),
-            0,
-            3,
-        );
-        let levels = collection_type(
-            CollectionKind::Set,
-            ValueType::Enum(level.declaration.key()),
-            0,
-            2,
-        );
+        let colors = collection_type(CollectionKind::Set, ValueType::Enum(color.shape()), 0, 3);
+        let levels = collection_type(CollectionKind::Set, ValueType::Enum(level.shape()), 0, 2);
         let package = package(PackageDeclarations {
             enums: vec![color.clone(), level.clone()],
             ..PackageDeclarations::default()

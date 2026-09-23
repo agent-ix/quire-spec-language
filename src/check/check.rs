@@ -56,7 +56,7 @@ use crate::value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator, TypeEnvironment,
 };
 use crate::value::definition::AdmittedIeeeProfile;
-use crate::value::enumeration::{EnumDeclaration, EnumValue};
+use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -64,6 +64,8 @@ use qsl_forms::{
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::EffectiveId;
+use quire_exact::EnumMember;
+use quire_exact::EnumShape;
 use quire_exact::IllTypedCause;
 use quire_exact::Presence;
 use quire_exact::Rational;
@@ -186,8 +188,37 @@ pub struct EnumBinding {
     pub name: String,
     /// The admitted declaration.
     pub declaration: EnumDeclaration,
-    /// Its admitted members.
+    /// Its admitted members, in FR-141 canonical order (declaration order
+    /// for an ordered enum, case-identifier byte order otherwise --
+    /// `EnumDeclaration::admit` already refuses any other order).
     pub members: Vec<EnumValue>,
+}
+
+impl EnumBinding {
+    /// This binding's kernel `ValueType::Enum` shape (ADR-013 O-14): the
+    /// FR-141 canonical, ranked member list. `self.members` is already in
+    /// that order, so each member's rank is exactly its index here.
+    pub fn shape(&self) -> EnumShape {
+        EnumShape::new(
+            self.declaration.preimage().is_ordered(),
+            self.members.iter().map(EnumValue::variant),
+        )
+    }
+}
+
+/// ADR-013 T-6 (last sentence): build the checked `VariantId -> EnumValue`
+/// index `TypeEnvironment::check_equality_in`'s `Enum` schedule needs to
+/// evaluate a comparison later, and `value::expression::evaluate::Machine`
+/// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no enum
+/// declarations (those are `scope.enums`, ADR-011 §6.1's own module split).
+pub(crate) fn enum_member_index(scope: &Scope) -> EnumMemberIndex {
+    let mut index = EnumMemberIndex::default();
+    for binding in &scope.enums {
+        for member in &binding.members {
+            index.record(member.clone());
+        }
+    }
+    index
 }
 
 /// A function's resolved signature: its parameters' names paired with each
@@ -356,6 +387,13 @@ pub(crate) struct Typer<'a> {
     /// The package's quantity units, then every compound unit this pass
     /// formed as a product or quotient type.
     units: UnitScope<'a>,
+    /// The checked `VariantId -> EnumValue` index (ADR-013 T-6, last
+    /// sentence), built once here from `scope.enums` -- `scope` is fixed for
+    /// this `Typer`'s whole lifetime, so every `contains`/`=`/`!=` site this
+    /// pass checks reads the same index rather than rebuilding it (M1,
+    /// SR-511 review of PR #365), matching `value::expression::evaluate::
+    /// Machine::new`'s equivalent one-time build.
+    enum_members: EnumMemberIndex,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -487,6 +525,7 @@ impl<'a> Typer<'a> {
             slots: 0,
             clause_kind,
             units: UnitScope::new(scope.types.units()),
+            enum_members: enum_member_index(scope),
         }
     }
 
@@ -714,12 +753,20 @@ impl<'a> Typer<'a> {
         let mut pending = vec![value_type];
         while let Some(value_type) = pending.pop() {
             match value_type {
-                ValueType::Enum(key) => {
+                ValueType::Enum(shape) => {
+                    // The checker only ever builds a `ValueType::Enum` from
+                    // one of `self.scope.enums`' own bindings (`Typer::name`,
+                    // `resolve_named_type`), never from a caller-supplied
+                    // shape, so a shape naming no admitted binding is a
+                    // checker-internal mismatch, not something an author's
+                    // source can trigger today. The check stays here as
+                    // defense in depth, matching `Composite`/`Reference`'s
+                    // own (`TypeEnvironment`-level) declaration checks.
                     if !self
                         .scope
                         .enums
                         .iter()
-                        .any(|binding| binding.declaration.key() == *key)
+                        .any(|binding| binding.shape() == *shape)
                     {
                         return Err(mismatch(location));
                     }
@@ -1135,6 +1182,7 @@ impl<'a> Typer<'a> {
                         EqualityOperator::Equal,
                         EqualityOperand::typed(element.clone()),
                         EqualityOperand::typed(element),
+                        &self.enum_members,
                     )
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 Ok(node(
@@ -1207,22 +1255,35 @@ impl<'a> Typer<'a> {
                 location,
             ));
         }
-        let members: Vec<&EnumValue> =
-            self.scope
-                .enums
-                .iter()
-                .flat_map(|binding| {
-                    binding.members.iter().filter(move |member| {
-                        format!("{}::{}", binding.name, member.case()) == name
-                    })
-                })
-                .collect();
+        let members: Vec<(&EnumBinding, &EnumValue)> = self
+            .scope
+            .enums
+            .iter()
+            .flat_map(|binding| {
+                binding
+                    .members
+                    .iter()
+                    .filter(move |member| format!("{}::{}", binding.name, member.case()) == name)
+                    .map(move |member| (binding, member))
+            })
+            .collect();
         match members.as_slice() {
-            [member] => Ok(node(
-                NodeKind::Literal(Value::Enum((*member).clone())),
-                ValueType::Enum(member.declaration()),
-                location,
-            )),
+            [(binding, member)] => {
+                // ADR-013 O-14/OQ-D: the literal's rank is its case's own
+                // canonical position, never a value this site invents --
+                // `member.position()` is exactly that, verified at
+                // `EnumDeclaration::admit_member` (`value/enumeration.rs`).
+                let rank = u32::try_from(member.position())
+                    .expect("an admitted enum has far fewer than u32::MAX members");
+                Ok(node(
+                    NodeKind::Literal(Value::Enum(EnumMember::new(
+                        mint_variant_id(binding.declaration.key(), member.case()),
+                        rank,
+                    ))),
+                    ValueType::Enum(binding.shape()),
+                    location,
+                ))
+            }
             [] if self
                 .signatures
                 .iter()
@@ -1380,7 +1441,13 @@ impl<'a> Typer<'a> {
         let checked = self
             .scope
             .types
-            .check_equality_in(&self.units, operator, left_operand, right_operand)
+            .check_equality_in(
+                &self.units,
+                operator,
+                left_operand,
+                right_operand,
+                &self.enum_members,
+            )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(
             NodeKind::Equality(operator, Box::new(checked), Box::new(left), Box::new(right)),
@@ -1407,14 +1474,10 @@ impl<'a> Typer<'a> {
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
             (ValueType::Decimal(_), ValueType::Decimal(_)) => OrderedKind::Decimals,
             (ValueType::Enum(l), ValueType::Enum(r)) if l == r => {
-                let ordered = self
-                    .scope
-                    .enums
-                    .iter()
-                    .find(|binding| binding.declaration.key() == *l)
-                    .map(|binding| binding.declaration.preimage().is_ordered())
-                    .ok_or_else(|| mismatch(location))?;
-                if !ordered {
+                // ADR-013 O-14: the shape itself carries whether its
+                // declaration selects `ordered enum` semantics, so this
+                // needs no `scope.enums` lookup (FR-141-AC-5).
+                if !l.is_ordered() {
                     return Err(ineligible(location));
                 }
                 OrderedKind::Enums

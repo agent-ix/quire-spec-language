@@ -227,13 +227,6 @@ impl Preimage {
         self.write_bytes(text.as_bytes());
     }
 
-    /// The finished buffer, for a minter (`check::identity`'s own,
-    /// PR #300 review finding 10) that has no `IdentityPreimageMetrics` of
-    /// its own to report and only wants the bytes to hash.
-    pub(super) fn finish(self) -> Vec<u8> {
-        self.bytes
-    }
-
     fn write_u64(&mut self, value: u64) {
         self.writes += 1;
         self.input_bytes = self
@@ -405,9 +398,12 @@ fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
             out.write_u64(text_type.max());
             out.write_str(text_profile_tag(text_type.profile()));
         }
-        ValueType::Enum(key) => {
+        ValueType::Enum(shape) => {
             out.write_str("enum");
-            out.write_str(&key.to_string());
+            out.write_bool(shape.is_ordered());
+            for variant in shape.variants() {
+                out.write_str(&variant.to_string());
+            }
         }
         ValueType::Option(payload) => {
             out.write_str("option");

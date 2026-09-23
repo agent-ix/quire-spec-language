@@ -62,7 +62,7 @@ pub(crate) fn resolve_named_type(
             .enums
             .iter()
             .filter(|binding| binding.name == name)
-            .map(|binding| ValueType::Enum(binding.declaration.key())),
+            .map(|binding| ValueType::Enum(binding.shape())),
     );
     candidates.extend(
         scope

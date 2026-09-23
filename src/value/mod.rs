@@ -158,7 +158,8 @@ pub use definition::{
     PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
 };
 pub use enumeration::{
-    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
+    compare_enum, mint_variant_id, EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex,
+    EnumMemberPreimage, EnumValue,
 };
 pub use equality::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of

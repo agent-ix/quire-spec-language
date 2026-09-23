@@ -60,4 +60,22 @@ Tag the test `#[trace("FR-088-AC-11", "TC-409")]`.
 
 ## Status
 
-Planned; no test backs this case. Remaining work: QSL-131.
+Passed locally; QSL-131 V3 (PR #365, follow-up fixing SR-511's review). Steps
+2, 3, 4, 5 and 6 are covered by retagged existing tests rather than one
+end-to-end test built from the literal `E{b, a, c}` source in this
+procedure: `check::identity::tests::mint_variant_id_matches_a_checked_in_digest`
+(step 2), `c26_sum_preserves_node_id_and_mints_name_derived_variant_ids`
+(steps 2, 5), `c26_ordered_sum_rank_follows_declared_order_not_identity`
+(step 3), `sum_variants_refuses_an_unsorted_unordered_declaration` (step 4),
+`c26_declaration_identity_change_mints_new_variant_ids_at_the_same_ranks`
+(step 6 -- using a declaration-identity change directly rather than a
+package version bump: SR-511 FND-007 found the version-bump framing this
+procedure's own step 6 text uses unsupported by QSpec), `quire_exact::value::
+tests::{tc_308_enum_shape_admits_only_its_own_variants,
+admits_refuses_a_known_variant_at_the_wrong_rank,
+enum_shape_rank_matches_canonical_position}` (steps 3, 5), and
+`collection_algebra::checked::c05_enum_keys_order_unordered_members_by_identifier_bytes`
+(steps 3-4, a real kernel Set's visiting order). Step 7 (a declaration key
+must never be accepted as a `VariantId`) is newly covered by
+`text_enum_identity::tc_409_declaration_key_is_never_accepted_as_a_member_key`
+-- the one fault SR-511 FND-006 found untested anywhere in the repo.
