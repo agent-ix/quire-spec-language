@@ -93,38 +93,23 @@ fn syntax_clause_kind_variant_list_is_unchanged() {
 
 /// Step 4 (bounded, see this file's own doc): the literal fully-qualified
 /// spelling `syntax::ClauseKind` occurs in exactly as many `.rs` files
-/// under `src/` and `qsl-semantics/src/` as it did when this test was written -- a plain count, so
+/// under every workspace member's `src/` as it did when this test was written -- a plain count, so
 /// a new file spelling it out (a new consumer treating the lane-private
 /// enum as canonical) is caught, within this scan's own documented bound.
 #[trace("TC-257", "FR-088-AC-1")]
 #[test]
 fn syntax_clause_kind_qualified_spelling_gains_no_new_consumer_file() {
-    // The root crate's `src/` and the layer-3 crate's (QSL-181 moved
-    // `check` there).
+    // Every workspace member's `src/`, read from `cargo metadata` (QSL-183
+    // review I6), so a crate extracted later is covered without an edit. A
+    // member whose `src/` cannot be read fails the scan (review L6).
+    let roots = crate::support::workspace::member_src_roots(&[]);
     let mut files_naming_it = Vec::new();
-    let mut pending = vec![
-        workspace_root().join("src"),
-        workspace_root().join("qsl-semantics/src"),
-    ];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-                continue;
-            }
-            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
-                continue;
-            }
-            let Ok(contents) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            if contents.contains("syntax::ClauseKind") {
-                files_naming_it.push(path);
-            }
+    for relative in crate::support::workspace::rust_files_under(&roots) {
+        let path = workspace_root().join(&relative);
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: cannot be read: {error}", path.display()));
+        if contents.contains("syntax::ClauseKind") {
+            files_naming_it.push(relative);
         }
     }
     // Six pre-existing, already-reviewed occurrences, measured against the

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
 //! and S7 seams by building the QSL workspace crates that hold seams under
-//! `RUSTFLAGS=--cfg seam_probe` (two normal builds and three probe builds,
+//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and four probe builds,
 //! `PROBE_BUILDS` and `NORMAL_BUILDS`) and comparing the `E0004`
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
@@ -112,7 +112,7 @@ pub struct SeamLocation {
 /// as_str`.
 ///
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
-/// `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
+/// `qsl-eval`'s `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
 /// `S6aFamilyKind::family` mapping to `FamilyKind`, and the one
 /// `match` over `crate::family::FamilyOutcome` (`ValueFunctionFamily::
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
@@ -132,19 +132,19 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "same_kind".to_owned(),
         },
         SeamLocation {
-            file: "src/value/expression/causes.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/causes.rs".to_owned(),
             item: "ProtocolClauseSnapshot::catalog_code".to_owned(),
         },
         SeamLocation {
-            file: "src/value/expression/mod.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/mod.rs".to_owned(),
             item: "evaluate_declaration".to_owned(),
         },
         SeamLocation {
-            file: "src/value/expression/s6a.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/s6a.rs".to_owned(),
             item: "S6aFamilyKind::family".to_owned(),
         },
         SeamLocation {
-            file: "src/value/expression/family.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/family.rs".to_owned(),
             item: "ValueFunctionFamily::evaluate".to_owned(),
         },
     ]
@@ -223,8 +223,8 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// resolution failing before rustc ever runs).
 ///
 /// **Its own `--target-dir` (PR #262 review, finding F7).** This function
-/// runs `cargo build` five times with different `RUSTFLAGS` (two plain
-/// builds, then three under `--cfg seam_probe`); without a target dir of its own, it inherited whatever
+/// runs `cargo build` seven times with different `RUSTFLAGS` (three plain
+/// builds, then four under `--cfg seam_probe`); without a target dir of its own, it inherited whatever
 /// `CARGO_TARGET_DIR` the caller had set -- the same directory `cargo
 /// test`/`cargo clippy` use elsewhere in the same `make ci` run. Each
 /// RUSTFLAGS flip invalidates that whole dependency graph's incremental
@@ -337,21 +337,27 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// own seam its probe arm so that crate compiles and the root crate's seams
 /// are reached. `qsl-route` (QSL-184) gets a downstream build of its own:
 /// the root crate names it only as a dev dependency, so building the root
-/// crate's `--lib` never compiles it. Each build must fail; together they
-/// must report exactly the checked-in list.
-const PROBE_BUILDS: [(&str, &str); 3] = [
+/// crate's `--lib` never compiles it. `qsl-eval` (QSL-183) gets one for
+/// the same reason: the root crate does not depend on it at all, so its
+/// S6a seams (`value::expression`) are reached only by a build of its own.
+/// When a crate above `qsl-eval` comes to depend on it, `qsl-eval`'s seams
+/// need a downstream probe arm of their own, as `qsl-semantics`' have, or
+/// that crate's build stops inside `qsl-eval`. Each build must fail;
+/// together they must report exactly the checked-in list.
+const PROBE_BUILDS: [(&str, &str); 4] = [
     ("qsl-semantics", "--cfg seam_probe"),
     (
         "quire-spec-language",
         "--cfg seam_probe --cfg seam_probe_downstream",
     ),
     ("qsl-route", "--cfg seam_probe --cfg seam_probe_downstream"),
+    ("qsl-eval", "--cfg seam_probe --cfg seam_probe_downstream"),
 ];
 
 /// The normal builds, with no probe cfg: the root crate, which builds every
-/// crate it depends on, and `qsl-route`, which it does not (see
-/// [`PROBE_BUILDS`]).
-const NORMAL_BUILDS: [&str; 2] = ["quire-spec-language", "qsl-route"];
+/// crate it depends on, and `qsl-route` and `qsl-eval`, which it does not
+/// (see [`PROBE_BUILDS`]).
+const NORMAL_BUILDS: [&str; 3] = ["quire-spec-language", "qsl-route", "qsl-eval"];
 
 /// One probe build's result: whether it compiled, and the `E0004`
 /// locations it reported.
@@ -444,7 +450,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     compare_probe_builds(&probe_results, &checked_in)?;
     Ok(format!(
         "seam-probe: {} checked-in S1/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe \
-         (qsl-semantics, then quire-spec-language and qsl-route); normal builds have none. `stage_hooks`'s former \
+         (qsl-semantics, then quire-spec-language, qsl-route and qsl-eval); normal builds have none. `stage_hooks`'s former \
          second S1 location is deleted (PR #262 review F7). S2/S3 (QSL-143) and S4 (no \
          cause-bearing family yet) are not covered by this checked-in list.\n",
         checked_in.len()

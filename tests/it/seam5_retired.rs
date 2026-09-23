@@ -67,21 +67,30 @@ fn no_source_or_build_input_file_references_the_retired_seam() {
     let names = banned_names();
     let mut offending = Vec::new();
     let mut scanned = 0_usize;
-    // `src/`, `tests/`, `xtask/`, `examples/`, `qsl-forms/` (the S2
-    // forms crate, ADR-011 §7.3 X-5) and `qsl-semantics/` (layer 3, X-6),
-    // not `src/` alone; `benches/` does not
-    // exist in this repository, and `files_under` treats that as zero
-    // files, not an error. This scan does not reach `spec/` or `docs/`,
-    // which name these three symbols by design (FR-067-AC-6).
-    for root in [
-        "src",
-        "tests",
-        "benches",
-        "xtask",
-        "examples",
-        "qsl-forms",
-        "qsl-semantics",
-    ] {
+    // The root crate's `src/`, `tests/`, `benches/`, `examples/` and
+    // `tools/fixture-audit/` (its second binary), and
+    // every other workspace member's whole directory, read from `cargo
+    // metadata` (QSL-183 review I6), so a crate extracted later is covered
+    // without an edit. `benches/` does not exist in this repository, and
+    // `files_under` treats that as zero files, not an error. This scan does
+    // not reach `spec/` or `docs/`, which name these three symbols by design
+    // (FR-067-AC-6).
+    let members = crate::support::workspace::member_dirs();
+    assert!(
+        members.iter().any(|member| member.as_os_str().is_empty()),
+        "cargo metadata lists no root crate: {members:?}"
+    );
+    let roots: Vec<std::path::PathBuf> =
+        ["src", "tests", "benches", "examples", "tools/fixture-audit"]
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .chain(
+                members
+                    .into_iter()
+                    .filter(|member| !member.as_os_str().is_empty()),
+            )
+            .collect();
+    for root in &roots {
         let mut files = Vec::new();
         files_under(&manifest_dir.join(root), &mut files);
         for path in files {

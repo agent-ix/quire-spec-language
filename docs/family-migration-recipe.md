@@ -53,9 +53,9 @@ FR-066-AC-2's three categories, per family:
    converting a checked node plus its typing-context `Env` into the
    family's `Observed` outcome, or the family's `Refused` reason. In the
    same change, reach it from S6a: add the family's `S6aFamilyKind` variant
-   to the `s6a_family_kinds!` list in `src/value/expression/s6a.rs` (which also puts
+   to the `s6a_family_kinds!` list in `qsl-eval/src/value/expression/s6a.rs` (which also puts
    it in `S6aFamilyKind::ALL`), its `S6aFamilyKind::family` arm, its
-   `evaluate_declaration` arm in `src/value/expression/mod.rs`, and its arm
+   `evaluate_declaration` arm in `qsl-eval/src/value/expression/mod.rs`, and its arm
    in TC-385's `s6a_family_name` match. `Relation` has no evaluator: S6a's
    input type has no `Relation` variant (ADR-012 §2, FR-090-AC-4).
 3. **Requirement derivation**: the family's pure `requirements()` function
@@ -127,7 +127,7 @@ This ticket's own migration is the concrete instance of every category
 above.
 
 **Required tests, as delivered:**
-- Clause-level unit: `src/value/expression/family.rs`'s
+- Clause-level unit: `qsl-eval/src/value/expression/family.rs`'s
   `family_contract_tests::value_function_family_checks_through_the_contract`,
   and `qsl-semantics/src/check/family.rs`'s
   `checking_tests::two_contexts_from_the_same_declarations_check_identically`.
@@ -151,18 +151,18 @@ above.
 
 **Required conversions, as delivered:**
 - v2 emitter: `CheckedPackage::emit_function_package_v2` in
-  `src/value/expression/mod.rs`, calling `family::emit_v2`/`decode_v2`
+  `qsl-eval/src/value/expression/mod.rs`, calling `family::emit_v2`/`decode_v2`
   directly. `FamilyContract::package` (and `ValueFunctionFamily`'s
   implementation of it) is deleted (PR #262 review, findings F1/F2 -- see
   the entry below): `emit_function_package_v2` originally called it into a
   scratch buffer nothing read, then built its real returned bytes
   independently, so the hook had no consumer.
 - Evaluator: `impl ReferenceEvaluation for ValueFunctionFamily` in
-  `src/value/expression/family.rs` (`evaluate`); the trait is layer 5's, in
-  `src/value/expression/s6a.rs` beside `S6aFamilyKind`, so the impl sits in
+  `qsl-eval/src/value/expression/family.rs` (`evaluate`); the trait is layer 5's, in
+  `qsl-eval/src/value/expression/s6a.rs` beside `S6aFamilyKind`, so the impl sits in
   the trait's crate (the orphan rule) while `ValueFunctionFamily` stays in
   layer-3 `check`. It is reached through the S6a
-  seam `evaluate_declaration` in `src/value/expression/mod.rs`, which
+  seam `evaluate_declaration` in `qsl-eval/src/value/expression/mod.rs`, which
   `CheckedPackage::call` calls.
 - Requirement derivation: deferred for this family, per this document's own
   note above.
@@ -214,7 +214,7 @@ someone can find:
   `ValueFunctionFamily::check` (`src/value/expression/family.rs`) -- deleted
   along with `StageFailure::Fault` above, for the same reason.
 
-**Real test file added:** `src/value/expression/family.rs`'s
+**Real test file added:** `qsl-eval/src/value/expression/family.rs`'s
 `family_contract_tests` module (added by this migration); `xtask/src/
 seam_probe.rs` (new file, this migration's seam-probe implementation).
 

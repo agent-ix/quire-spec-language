@@ -14,6 +14,10 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
+use qsl_eval::value::{
+    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
+    QualifiedName,
+};
 use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
 };
@@ -46,10 +50,6 @@ use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
-use quire_spec_language::value::{
-    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
-    QualifiedName,
-};
 
 // This crate's own `value::Origin` (imported above) is a different type
 // from `quire_exact::Origin` -- `CheckedPackage::occurrence` takes the
@@ -1216,7 +1216,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 /// clause expression's own root (`Origin::Expression`, path `[]`).
 /// `DispatchGuard` carries the dispatch node's own location, set at push
 /// time from the `NodeKind::Dispatch` node the D06 tests above dispatch
-/// through (`src/value/expression/evaluate.rs`).
+/// through (`qsl-eval/src/value/expression/evaluate.rs`).
 #[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
@@ -1886,7 +1886,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// parameter's declared `Reference<T>`, with no subtype allowance, so no
 /// top-level parameter binding can carry a `B` instance where the checked
 /// declaration says `Reference<A>` — the same boundary
-/// `tests/model_reference_queries.rs` documents as "the `TypeEnvironment`
+/// `qsl-eval/tests/it/model_reference_queries.rs` documents as "the `TypeEnvironment`
 /// island" for `allInstances`/`lookup`. Resolving a dispatch call's receiver
 /// against its instance's most-specific type end to end needs that same
 /// identity bridge (`crate::value::model_query`) or an equivalent, which is

@@ -135,7 +135,7 @@ entry (including all five ADR-010 §4.3 sites), and excludes test code.
 Every edge in the files #214 itself touches or adds (`xtask/src/*`) is
 marked and the scan is clean there. Running the scan against the whole QSL
 crate as it stands today reports 60 further occurrences, all outside
-`qsl-semantics/src/family/*` and `src/value/expression/*` -- in `src/cli.rs`,
+`qsl-semantics/src/family/*` and `qsl-eval/src/value/expression/*` -- in `src/cli.rs`,
 `src/complete/`, `qsl-semantics/src/model/`, `src/protocol_artifact/`, `src/linking.rs`,
 `src/mapped.rs`, `src/package/intake.rs`, `src/state/evaluation.rs` and
 `qsl-semantics/src/value/definition.rs`. Almost all are branch-gating, so the allow-list

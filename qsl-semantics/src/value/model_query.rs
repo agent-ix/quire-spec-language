@@ -190,7 +190,7 @@ fn resolve_target(
 
 /// `allInstances<T>(p)` (FR-153). `collection_type` is this call's own
 /// checked `Set<Reference<T>>[0,N]` result type
-/// (`quire_spec_language::value::expression::ir::NodeKind::AllInstances`'s node's own
+/// (`qsl_semantics::check::NodeKind::AllInstances`'s node's own
 /// `value_type`); its element names `T`.
 pub fn evaluate_all_instances(
     binding: &PopulationBinding,
@@ -216,7 +216,7 @@ pub fn evaluate_all_instances(
 }
 
 /// `lookup<T>(p, r) absent m` (FR-153). `target` is `T`; `static_type` is
-/// `r`'s own declared static type `S` (`quire_spec_language::value::expression::ir::Node`'s
+/// `r`'s own declared static type `S` (`qsl_semantics::check::Node`'s
 /// generic `value_type` field on the `reference` child, read by the caller);
 /// `result_type` is this call's own checked result type (a bare
 /// `Reference<T>` for `undefined`/`refused`, an `Option<Reference<T>>` for

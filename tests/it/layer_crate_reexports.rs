@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §7.2 (QSL-181 AC-3, QSL-182 AC-3): the root crate re-exports no
+//! ADR-011 §7.2 (QSL-181 AC-3, QSL-182 AC-3, QSL-183 AC-3): the root crate re-exports no
 //! item of an extracted layer crate. Callers name each item at its layer
 //! crate's own path (`qsl_package::CheckedPackage`,
 //! `qsl_semantics::check::CheckedExpression`), so this crate's public
@@ -277,10 +277,12 @@ fn root_sources() -> Vec<(String, String)> {
         .collect()
 }
 
-/// TC-256 step 3 and TC-172 step 6 as amended by QSL-182 and QSL-181:
-/// `value::expression` re-exports neither `CheckedPackage` nor any `check`
-/// item, and no other public item of the root crate exposes a layer
-/// crate's item.
+/// TC-256 step 3 and TC-172 step 6 as amended by QSL-182 and QSL-181: no
+/// public item of the root crate exposes a layer crate's item, including
+/// `CheckedPackage` and the `check` items `value::expression` once
+/// re-exported. `value::expression` itself left the root crate for
+/// `qsl-eval` with QSL-183; the root crate does not depend on `qsl-eval`,
+/// so it cannot re-export it at all.
 #[trace("FR-087-AC-9", "TC-256", "TC-172")]
 #[test]
 fn the_root_crate_reexports_no_layer_crate_item() {

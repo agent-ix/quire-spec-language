@@ -292,9 +292,9 @@ delivered code today:
 - FR-065-AC-1: unbacked. No `#[trace(..., "FR-065-AC-1")]` tag exists.
   Owner: QSL-154.
 - FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
-  (`src/value/expression/family.rs`) and
+  (`qsl-eval/src/value/expression/family.rs`) and
   `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
-  (`tests/dispatch_calls.rs`). Identity/provenance minting is the part this
+  (`qsl-eval/tests/it/dispatch_calls.rs`). Identity/provenance minting is the part this
   ticket actually delivers. **Rebuilt (PR #262 review, coordinator round
   3, finding 2).** The reordering half was previously backed by
   `identity_ignores_unrelated_declarations`
@@ -305,7 +305,7 @@ delivered code today:
   independent of. It is deleted; the reordering clause is now backed by a
   real fixture at the `PackageDeclarations::check` level (two functions,
   checked in both orders, `CheckedPackage::function_identity` compared
-  across both) in `tests/dispatch_calls.rs`, which also gives real test
+  across both) in `qsl-eval/tests/it/dispatch_calls.rs`, which also gives real test
   callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
   `decode_function_package_v2` (PR #262 review, coordinator round 3,
   finding 3).
@@ -367,7 +367,7 @@ delivered code today:
   whole-package pass.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
-  (`src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
+  (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
   in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
   QSL-5 / #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
@@ -376,7 +376,7 @@ delivered code today:
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
   `qsl-semantics/src/check/family.rs` `checking_tests`) and
   `value_function_family_checks_through_the_contract` (admission half,
-  `src/value/expression/family.rs`), are both tagged
+  `qsl-eval/src/value/expression/family.rs`), are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
 
 Two of this requirement's seven Acceptance Criteria are backed (AC-2,

@@ -534,7 +534,7 @@ test-only dispatch entry only, so every production CST refuses with
 holds only an `IeeeWidth` (`quire-exact/src/value.rs`; QSL-131 V5 retyped
 `src/value/composite.rs`'s own `ValueType` onto this one kernel definition,
 so it is no longer a second, QSL-local copy), and the evaluator applies
-`RoundingMode::Exact` to every IEEE step (`src/value/expression/evaluate.rs`).
+`RoundingMode::Exact` to every IEEE step (`qsl-eval/src/value/expression/evaluate.rs`).
 `qsl-cst` requires `[mode]` on `Float32` and `Float64`. `qsl-foundation`'s
 `Code` has no `stage_limit_exceeded` spelling.
 

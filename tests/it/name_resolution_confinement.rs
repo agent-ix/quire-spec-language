@@ -63,46 +63,33 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// Every regular `.rs` file under `root`, relative to `workspace_root`,
-/// excluding `exclude_prefixes` (checked against the relative path).
+/// Every regular `.rs` file of the scanned crates, relative to
+/// `workspace_root`, excluding `exclude_prefixes` (checked against the
+/// relative path).
+///
+/// The scanned crates are every workspace member read from `cargo metadata`
+/// (QSL-183 review I6), so a crate extracted later is covered without an
+/// edit, except [`UNSCANNED_MEMBERS`]. A member's `src/` that cannot be read
+/// fails the scan (review L6).
 fn source_files(workspace_root: &Path, exclude_prefixes: &[&str]) -> Vec<String> {
-    // This crate's `src/` and its layer-3 crate's (QSL-181 moved `check`,
-    // `model` and `library` into `qsl-semantics`).
-    let mut files = Vec::new();
-    let mut pending = vec![
-        workspace_root.join("src"),
-        workspace_root.join("qsl-semantics/src"),
-    ];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-                continue;
-            }
-            if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
-                continue;
-            }
-            let relative = path
-                .strip_prefix(workspace_root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .replace('\\', "/");
-            if exclude_prefixes
+    assert_eq!(workspace_root, crate::support::workspace::root());
+    let roots = crate::support::workspace::member_src_roots(UNSCANNED_MEMBERS);
+    crate::support::workspace::rust_files_under(&roots)
+        .into_iter()
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| {
+            !exclude_prefixes
                 .iter()
                 .any(|prefix| relative.starts_with(prefix))
-            {
-                continue;
-            }
-            files.push(relative);
-        }
-    }
-    files.sort();
-    files
+        })
+        .collect()
 }
+
+/// The workspace members this scan leaves out: `xtask` and
+/// `tools/arch-lint` are build tooling, not on the stage DAG (ADR-011
+/// §6.2), so TC-251's rule about QSL's own name resolution does not reach
+/// them.
+const UNSCANNED_MEMBERS: &[&str] = &["xtask", "tools/arch-lint"];
 
 /// Whether `ty` names `ident` as an exact path segment anywhere in its own
 /// structure (a parameter or return type mentioning it, through a
@@ -208,7 +195,7 @@ impl<'ast> Visit<'ast> for SignatureScanner {
 fn no_signature_outside_check_or_replay_resolves_a_qualified_name_to_an_identity() {
     let root = workspace_root();
     let mut violations = Vec::new();
-    for file in source_files(&root, &["qsl-semantics/src/check/"]) {
+    for file in source_files(&root, &["qsl-semantics/src/check/", "qsl-replay/src/"]) {
         let path = root.join(&file);
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("{file}: failed to read: {error}"));

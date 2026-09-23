@@ -59,7 +59,7 @@ FR-065-AC-4.
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
 `identity_survives_v2_round_trip` and
 `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
-(`tests/dispatch_calls.rs`) -- see FR-065's own Status section for the
+(`qsl-eval/tests/it/dispatch_calls.rs`) -- see FR-065's own Status section for the
 current per-AC accounting; AC-1 and AC-3 remain unbacked (owner QSL-154).
 
 Step 6 (FR-065-AC-4) is not implemented by a code-shape/AST test in the

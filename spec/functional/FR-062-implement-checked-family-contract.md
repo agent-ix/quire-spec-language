@@ -245,7 +245,7 @@ they exist in the delivered code today:
 - FR-062-AC-4: unbacked. `requirements` is not implemented; no family #214
   migrates carries an FR-057 capability kind (`qsl-semantics/src/family/mod.rs`'s module
   doc). Owner: QSL-152.
-- FR-062-AC-5: backed at the hook level (`TC-160`, `src/value/expression/
+- FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
@@ -313,18 +313,18 @@ they exist in the delivered code today:
   kept as an unbacked "package" row while claiming AC-9's fault-injection
   behavior; see `contract.rs`'s own doc on `FamilyContract`. Owner: QSL-152.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
-  `QualifiedName` lookup is implemented (`src/value/expression/mod.rs`),
+  `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
 - FR-062-AC-11: backed (`TC-381`):
   `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
-  (`tests/it/total_functions.rs`).
+  (`qsl-eval/tests/it/total_functions.rs`).
 
 Three of this requirement's eleven Acceptance Criteria are backed (AC-2,
 AC-5, AC-11). AC-5's two tagged tests are
 `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`
-(`src/value/expression/family.rs`; PR #303 review round 3, finding F3).
+(`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the
 reasons above -- not silently. AC-7 in particular stays unbacked pending a
 scoping decision on the `Typer` entanglement described in its row above.

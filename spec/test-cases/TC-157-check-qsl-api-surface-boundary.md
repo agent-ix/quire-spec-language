@@ -37,7 +37,9 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
    - a shipped `NodeKey::from_digest(` call in a `check` submodule;
    - a shipped `.map(NodeKey::from_digest)` in a module outside `check`, in a
      function not on the debt list;
-   - a shipped mint in a function that is on the debt list;
+   - a shipped mint in a function that is on the debt list, and the same
+     module and function in another crate (a debt-list entry names its
+     crate, QSL-183);
    - a debt-list entry whose function no longer mints;
    - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
      `check`;
@@ -72,7 +74,8 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
   not tuned to exclude any finding.
 - Step 6: the `check` submodule mint is not reported; the function-value
   mint outside `check` fails T12-B and is named; the debt-list mint is
-  reported as debt and does not fail T12-B; the stale debt-list entry fails
+  reported as debt and does not fail T12-B, while the same module and
+  function in another crate fails it; the stale debt-list entry fails
   T12-B and names the entry; the `#[cfg(test)]` mint and the doc-comment
   match are not reported.
 - Step 7: the call fails T12-C and is named with file, line, module and

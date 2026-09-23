@@ -29,7 +29,7 @@ symbol FR-068-CON-3 names (`CheckCause`, `CheckRefusal`, `Obligation`,
 `CheckedFunction`, `PackageDeclarations`, `CheckingLimits`,
 `DepthAboveMaximum`, `DispatchOperation`, `EnumBinding`,
 `MAX_CHECKING_DEPTH` and `CheckMode`) — not only the four checking methods — because a
-renamed leftover (for example a stray `src/value/expression/typing.rs` still
+renamed leftover (for example a stray `qsl-eval/src/value/expression/typing.rs` still
 defining a second `Typer`-adjacent type under a different file name) is not
 by itself a build error, and the four-method-only scan this test originally
 ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
@@ -39,11 +39,11 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
 1. Read `src/lib.rs` and confirm a `pub mod check;` (or `mod check;`)
    declaration exists at the crate root, alongside `forms`, `model` and
    `package`.
-2. Read `src/value/expression/mod.rs` and confirm it declares none of
+2. Read `qsl-eval/src/value/expression/mod.rs` and confirm it declares none of
    `mod check;`, `mod facts;`, `mod ir;`, `mod termination;`.
 3. Confirm `qsl-semantics/src/check/` contains a file (or inlined module) providing each of
    `check`, `facts`, `ir` and `termination`'s current content, and that
-   `src/value/expression/` contains no file of the same name with checking
+   `qsl-eval/src/value/expression/` contains no file of the same name with checking
    content.
 4. For each of `PackageDeclarations::check`, `CheckedPackage::check_expression`,
    `CheckedPackage::check_postcondition_expression`,
@@ -69,7 +69,7 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
    `value::expression` — for any other item whose shape (fields, variants,
    or signature) matches it structurally, regardless of name. This catches
    a renamed leftover a name-based scan misses — for example a stray
-   `src/value/expression/typing.rs` still defining a second
+   `qsl-eval/src/value/expression/typing.rs` still defining a second
    `Typer`-adjacent type under a different name, structurally identical to
    its counterpart in `check` — which is not by itself a build error and
    would pass steps 4-5 untouched.

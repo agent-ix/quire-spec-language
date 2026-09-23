@@ -506,12 +506,12 @@ questions ruled.
 Family(FamilyResult) }` is the `evaluate` hook's return shape.
 `Evaluation { outcome: FamilyOutcome<Value>, location, losses }` is
 `CheckedPackage::call`'s and `CheckedPackage::evaluate`'s result
-(`src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
+(`qsl-eval/src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
 records `location` and `losses` as owned fields of its `EvaluationEnv` on
 every `Ok` return, and the S6a seam builds the `Evaluation` from them.
 
 The family cause types are defined in `value::expression`
-(`src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
+(`qsl-eval/src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
 `StateModelUndefined { PreconditionFalse, AbsentKey { binding, key } }` and
 `ModelQueryRefusal { cause, detail }`, the model-query refusal S6a carries,
 which holds no native-v1 `Code`. `value::model_query` returns a
@@ -526,10 +526,10 @@ repointed every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
 directly.
 
 The S6a family kind is `S6aFamilyKind { Value }`
-(`src/value/expression/s6a.rs`, layer 5, beside the `ReferenceEvaluation`
+(`qsl-eval/src/value/expression/s6a.rs`, layer 5, beside the `ReferenceEvaluation`
 trait since QSL-181): `Value` is the family that implements
 `ReferenceEvaluation`. The S6a seam
-`evaluate_declaration` (`src/value/expression/mod.rs`) matches it with one
+`evaluate_declaration` (`qsl-eval/src/value/expression/mod.rs`) matches it with one
 arm per variant and no `_` arm, and `CheckedPackage::call` evaluates
 through it (QSL-191).
 

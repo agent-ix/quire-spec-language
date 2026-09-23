@@ -19,7 +19,7 @@ a kernel `Outcome::Refused` inside `FamilyOutcome::Evaluated`, not an
 admission refusal and not a panic. The kernel `Refusal` has no
 `WrongSnapshot` variant (ADR-013 O-16, T-6). Scope: FR-090-AC-7.
 
-This test replaces `tests/it/model_reference_queries.rs`'s
+This test replaces `qsl-eval/tests/it/model_reference_queries.rs`'s
 `pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor` (FR-042-AC-4,
 TC-198). That test asserts
 `Outcome::Refused(Refusal::WrongSnapshot(WrongSnapshotCause::WrongAnchor))`
@@ -27,7 +27,7 @@ on QSL's kernel copy, which is the shape T-6 removes.
 
 ## Test Procedure
 
-1. Reuse `tests/it/model_reference_queries.rs`'s scenario: a package with a
+1. Reuse `qsl-eval/tests/it/model_reference_queries.rs`'s scenario: a package with a
    postcondition parameter `p: Population<A>[3]` and the expression
    `pre(allInstances<A>(p))`.
 2. Admit the population argument through `admit_binding` directly. This

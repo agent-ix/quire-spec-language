@@ -30,7 +30,7 @@ admits no kernel `Value` variant today, even though `Value::Population` is a
 live runtime value with a real producer
 ([`model::population::admit_binding`](../../src/model/population.rs),
 [`admit_invocation`]) and a real consumer (the evaluator,
-[`value::expression::evaluate`](../../src/value/expression/evaluate.rs)).
+[`value::expression::evaluate`](../../qsl-eval/src/value/expression/evaluate.rs)).
 Deleting `Value::Population` would remove that evaluation path; moving
 `PopulationBinding` into the kernel would violate ADR-011 §6.1's K-leaf rule.
 This requirement follows the O-14 `VariantId` precedent instead: the kernel
@@ -90,7 +90,7 @@ state.
 `model` SHALL record the `PopulationId` → `PopulationBinding` correspondence
 for every binding it admits. Wherever the evaluator today matches
 `Value::Population(binding)` and reads `binding` directly
-(`src/value/expression/evaluate.rs:921,934`), it SHALL instead match
+(`qsl-eval/src/value/expression/evaluate.rs:921,934`), it SHALL instead match
 `Value::Population(population_id)` and resolve the `PopulationBinding` by
 lookup of `population_id` in that recorded correspondence. A `population_id`
 absent from the correspondence SHALL produce a typed evaluator refusal,
@@ -105,7 +105,7 @@ binding's own declared maximum equals `maximum`: QSL `model`/the evaluator
 resolves `population_id` to its `PopulationBinding` through the recorded
 correspondence, then compares that binding's declared maximum with `maximum`.
 QSL performs this pairing in argument admission (`value::expression::validate`,
-`src/value/expression/mod.rs`), before the kernel `ValueType::admits` runs. The
+`qsl-eval/src/value/expression/mod.rs`), before the kernel `ValueType::admits` runs. The
 kernel `admits` refuses every `(Population, Population)` pair (FR-089-AC-6).
 
 The kernel is a leaf under ADR-011 §6.1's K-leaf rule: the
@@ -157,11 +157,11 @@ mint_population_id` mints a `PopulationId` at admission time
 (`admit_binding`/`admit_invocation`), `ObjectEnvironment` records the
 `PopulationId` -> `PopulationBinding` correspondence
 (`with_population`/`resolve_population`), and `CheckedPackage::call`/
-`evaluate`'s own argument-admission `validate` (`src/value/expression/
+`evaluate`'s own argument-admission `validate` (`qsl-eval/src/value/expression/
 mod.rs`) resolves and compares the declared maximum for every
 `Population<T>[N]` parameter, refusing an unresolved identity or a
 mismatched maximum whether or not the checked body consumes it; the
-evaluator's own `Machine::resolve_population` (`src/value/expression/
+evaluator's own `Machine::resolve_population` (`qsl-eval/src/value/expression/
 evaluate.rs`) performs the identical resolution at its `allInstances`/
 `lookup` consumption sites, kept as defence in depth.
 

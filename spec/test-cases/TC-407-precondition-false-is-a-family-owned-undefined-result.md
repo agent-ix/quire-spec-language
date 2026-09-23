@@ -20,7 +20,7 @@ The result is not a family refusal, not a kernel `Outcome::Undefined` inside
 `FamilyOutcome::Evaluated` and not a panic. The kernel `Undefined` has no `PreconditionFalse` variant (ADR-013
 O-13, O-16). Scope: FR-090-AC-11.
 
-The fixture is `tests/it/dispatch_calls.rs`'s D06 scenario (QSpec TC-196
+The fixture is `qsl-eval/tests/it/dispatch_calls.rs`'s D06 scenario (QSpec TC-196
 D06): an `A`-typed receiver whose operation `size` has precondition `false`.
 That test asserts `Outcome::Undefined(Undefined::PreconditionFalse(_))` on
 QSL's kernel copy, which is the shape ADR-013 O-16 removes.
@@ -32,7 +32,7 @@ expression as the call locus instead of the dispatched call node.
 
 ## Test Procedure
 
-1. Reuse `tests/it/dispatch_calls.rs`'s D06 package: an `A`-typed receiver
+1. Reuse `qsl-eval/tests/it/dispatch_calls.rs`'s D06 package: an `A`-typed receiver
    `a1` whose operation `size` has precondition `false` and no redefinition
    ancestor.
 2. Evaluate the checked clause expression holding the dispatched call

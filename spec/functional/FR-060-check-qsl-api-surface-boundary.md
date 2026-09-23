@@ -131,7 +131,7 @@ comment that names the constructor, is not an identity the crate mints.
 
 Each of the two rules has a debt list. Every shipped mint outside the rule's
 allowed callers SHALL be in a function on that rule's list. A list is keyed
-by enclosing module and function, not by line number, and it only shrinks:
+by crate, enclosing module and function, not by line number, and it only shrinks:
 an entry leaves in the change that removes its last mint, and no entry is
 added. A mint outside the allowed callers in a function not on the list
 fails the rule. An entry with no remaining mint also fails the rule until it
@@ -143,9 +143,9 @@ patterns become more accurate.
 
 T12-B's debt list:
 
-| Module | Function | Why it is debt |
-| --- | --- | --- |
-| `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
+| Crate | Module | Function | Why it is debt |
+| --- | --- | --- | --- |
+| `qsl-eval` (QSL-183) | `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
 
 T12-C's debt list is empty: QSL-131 typed a reference's type component as
 `EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in
@@ -244,14 +244,14 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
 - T12-B reports its one debt-list function as debt:
-  `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
+  `qsl-eval`'s `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
   `value::enumeration`, `value::unit` and `value::node` entries, and
   QSL-131 V1 the `value::model_query` entry, by deleting their mints.
   T12-B fails on the one `value::application_key` mint QSL-156 A4a added
   (#356, `application_node_key`), which is on no list.
 - T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
-  outside `model`, `src/value/expression/evaluate.rs`, is a test literal
+  outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal
   inside `#[cfg(test)]`.
 
 Remediating the debt-list sites is #211/#213's work, not this requirement's.

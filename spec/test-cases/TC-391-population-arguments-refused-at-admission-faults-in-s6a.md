@@ -60,7 +60,7 @@ never a refusal-shaped wrapper -- rather than the `CheckedPackage::call`-level
 - Steps 1-3 (admission, `CheckedPackage::call`):
   `tc_391_call_refuses_an_unresolved_population_id_at_admission` and
   `tc_391_call_refuses_a_population_maximum_mismatch_at_admission`, in
-  `tests/it/model_reference_queries.rs`, each tagged
+  `qsl-eval/tests/it/model_reference_queries.rs`, each tagged
   `#[trace("TC-391", "FR-090-AC-10")]`, asserting `Err(CallFailure::
   Input(InputRefusal::WrongValueKind { .. }))` and an empty meter.
 - Step 4 (bypassing admission, called directly against the S6a seam,
@@ -69,7 +69,7 @@ never a refusal-shaped wrapper -- rather than the `CheckedPackage::call`-level
   `evaluate_bypassing_admission_with_an_unresolved_population_id_is_an_internal_fault`
   and
   `evaluate_bypassing_admission_with_a_population_maximum_mismatch_is_an_internal_fault`,
-  in `src/value/expression/evaluate.rs`, each tagged
+  in `qsl-eval/src/value/expression/evaluate.rs`, each tagged
   `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(fault)` -- a bare
   `InternalFault` from `ValueFunctionFamily::evaluate`'s own hook -- with
   `fault.category() == Category::InternalFailure` and the two conditions'

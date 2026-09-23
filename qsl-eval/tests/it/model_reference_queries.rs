@@ -18,6 +18,9 @@
 //! does (ADR-013 §8 OQ-C ruling).
 
 use ix_trace_rs::trace;
+use qsl_eval::value::{
+    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
+};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
@@ -53,9 +56,6 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
-use quire_spec_language::value::{
-    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
-};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

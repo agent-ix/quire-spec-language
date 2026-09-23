@@ -9,7 +9,7 @@
 //! promises to preserve.
 
 use ix_trace_rs::trace;
-use quire_spec_language::simulation::{
+use qsl_eval::simulation::{
     explore, replay, sample, CounterSampler, EmptyInitial, Limit, Limits, Outcome, ReplayError,
     Sampler, StateKey, Stats, Step, StopReason, Trace, TransitionSystem,
 };

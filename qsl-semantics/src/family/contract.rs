@@ -126,7 +126,7 @@ impl ScopeStack {
 /// for it (`CheckingLimits::default()`, `crate::check::check`) --
 /// `input_bytes` now has one (`CheckingLimits::with_input_bytes`); the
 /// mechanism is real and exercised directly against tight fixtures
-/// (`src/value/expression/family.rs`'s `family_contract_tests`).
+/// (`qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StageLimits {
     pub(crate) nesting_depth: u64,

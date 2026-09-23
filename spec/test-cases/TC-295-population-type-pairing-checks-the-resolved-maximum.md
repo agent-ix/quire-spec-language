@@ -15,7 +15,7 @@ admitting a `Value::Population(population_id)` exactly when the binding that
 `population_id` resolves to, through `model`'s recorded correspondence, has a
 declared maximum equal to `maximum` -- the pairing
 `CheckedPackage::call`/`evaluate`'s own argument-admission `validate`
-(`src/value/expression/mod.rs`) performs between
+(`qsl-eval/src/value/expression/mod.rs`) performs between
 `ValueType::Population(maximum)` and `Value::Population(binding)`. The kernel
 `ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297); this
 comparison is the QSL layer's. Scope: FR-089-AC-5.
@@ -31,7 +31,7 @@ resolves `population_id` through it, and refuses
 maximum differs from the checked parameter's `maximum` -- whether or not
 the checked body actually consumes the parameter (PR #326 review finding
 F1). The evaluator's own `Machine::resolve_population`
-(`src/value/expression/evaluate.rs`'s `AllInstances`/`Lookup` sites)
+(`qsl-eval/src/value/expression/evaluate.rs`'s `AllInstances`/`Lookup` sites)
 performs the identical comparison and is exercised by this test case's own
 consumed-parameter procedure; it is unreachable through either public entry
 point for a checked program once `validate` already refuses first, and is

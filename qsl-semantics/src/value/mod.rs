@@ -109,8 +109,8 @@
 // ADR-011 §6.1 layer 3: the §6.2 `semantic_value` submodules,
 // `value::model_query` (§6.2: `model`) and `value::application_key` (§6.2:
 // `check`), with the flat re-exports of their own items. The layer-5 S6a
-// evaluator, `value::expression`, stays in the root crate's own `value`
-// module (QSL-181 X-6b) and imports these by their
+// evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
+// module (QSL-183 X-8) and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
 // it imports by submodule path: `declaration`, `enumeration`, `quantity`,
 // `model_query` and `stop`. `definition` and `semantic_node` stay

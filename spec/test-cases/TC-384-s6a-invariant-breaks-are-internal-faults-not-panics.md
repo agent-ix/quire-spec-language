@@ -59,7 +59,7 @@ Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
 ## Status
 
 `✅ Passed locally`. Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
-`src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
+`qsl-eval/src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
 The test calls `ValueFunctionFamily::evaluate` (the S6a seam's own hook)
 directly, rather than through `CheckedPackage::call`, so it asserts the
 hook's own `Result<EvalOutcome<Value>, InternalFault>` shape: step 3 is

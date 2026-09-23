@@ -2129,7 +2129,7 @@ impl<'a> Typer<'a> {
 
     /// `lookup<T>(p, r) absent m` (FR-153). `r`'s own checked static type `S`
     /// (never `T`) is `reference.value_type` at evaluation time
-    /// (`quire_spec_language::value::expression::evaluate`), so [`NodeKind::Lookup`] does
+    /// (`qsl-eval`'s `value::expression::evaluate`), so [`NodeKind::Lookup`] does
     /// not restate it. FR-153 also refuses `ill_typed`/`type-mismatch` at
     /// check time when `S` does not conform to `T` (TC-198 L03's last case,
     /// "before any charge") -- this checker cannot decide that here without
