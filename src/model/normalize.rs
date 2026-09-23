@@ -547,8 +547,10 @@ impl EffectiveView {
 pub struct ObjectUniverse {
     /// The model selection this universe was normalized under.
     pub model_selection: DomainPackageRef,
-    /// Every root effective type (no generalization ancestor), ascending by
-    /// [`EffectiveId`].
+    /// Every root effective type (no generalization ancestor) of this
+    /// universe's own connected component of the object-type supertype
+    /// graph (ADR-013 §8 OQ-E), ascending by [`EffectiveId`] -- never every
+    /// root type in the domain package.
     pub root_types: Vec<EffectiveId>,
 }
 
@@ -708,6 +710,58 @@ impl Index {
         generals.sort();
         generals
     }
+}
+
+/// Every declared object type's connected-component id in the undirected
+/// supertype graph restricted to object types (ADR-013 §8 OQ-E:
+/// `model-complete.md`'s "Object universe" -- "the connected component of
+/// `T` in the supertype graph restricted to object types"). `supertypes[]`
+/// edges are read in both directions: `type_keys` and every key
+/// `generals_by_specific` names are already guaranteed declared object types
+/// by the time this runs (a dangling supertype reference is an intake
+/// refusal reported before `build` ever reaches this call, and
+/// `generals_by_specific` (`crate::model::conformance`) only ever collects
+/// `ObjectTypeRecord.supertypes[]` entries). A type with no supertype and no
+/// subtype is its own singleton component. Component ids are assigned in
+/// `type_keys`' own ascending order and carry no meaning beyond grouping --
+/// callers needing a stable, spec-meaningful order sort the resulting
+/// universes by their own first root type identity instead (`build`'s own
+/// call site does exactly that).
+fn connected_components(
+    type_keys: &[DeclarationKey],
+    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
+) -> HashMap<DeclarationKey, usize> {
+    let mut adjacency: HashMap<&DeclarationKey, Vec<&DeclarationKey>> = HashMap::new();
+    for key in type_keys {
+        adjacency.entry(key).or_default();
+    }
+    for (specific, generals) in generals_by_specific {
+        for general in generals {
+            adjacency.entry(specific).or_default().push(general);
+            adjacency.entry(general).or_default().push(specific);
+        }
+    }
+    let mut component_of: HashMap<DeclarationKey, usize> = HashMap::new();
+    let mut next_component = 0usize;
+    for start in type_keys {
+        if component_of.contains_key(start) {
+            continue;
+        }
+        let mut stack = vec![start];
+        component_of.insert(start.clone(), next_component);
+        while let Some(node) = stack.pop() {
+            if let Some(neighbors) = adjacency.get(node) {
+                for &neighbor in neighbors {
+                    if !component_of.contains_key(neighbor) {
+                        component_of.insert(neighbor.clone(), next_component);
+                        stack.push(neighbor);
+                    }
+                }
+            }
+        }
+        next_component += 1;
+    }
+    component_of
 }
 
 /// One path from a type to a strict ancestor: the ordered chain of
@@ -1029,7 +1083,21 @@ struct Built {
     phase3_refusals: Vec<ModelRefusal>,
     declarations: Vec<PendingDeclaration>,
     view: EffectiveView,
-    universe: ObjectUniverse,
+    /// Every object universe this domain package normalizes to, one per
+    /// connected component of the object-type supertype graph (ADR-013 §8
+    /// OQ-E), ascending by each universe's own first root type identity --
+    /// the exact `normalize.hash` charge order (`value-accounting.md`:495).
+    /// Never empty: a domain package with no declared object type still
+    /// gets one universe, with empty `root_types`, matching the single
+    /// whole-package universe every domain package produced before OQ-E was
+    /// implemented (the identity a single-component model hashes to is
+    /// unchanged by this partition -- see `tests/it/model_normalization.rs`'s
+    /// pinned-digest regression test).
+    universes: Vec<ObjectUniverse>,
+    /// `universes`' own index, keyed by every declared object type's key.
+    /// Every key `Index::types` names appears here exactly once, pointing at
+    /// its own connected component's entry in `universes`.
+    universe_index_by_type: BTreeMap<DeclarationKey, usize>,
     /// Every phase-4 `normalize.redefinition-check` charge's own exact
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
     /// per redefining member in the entire domain package (field and operation
@@ -1446,10 +1514,11 @@ fn build(
                 declarations: Vec::new(),
                 type_identities: BTreeMap::new(),
             },
-            universe: ObjectUniverse {
+            universes: vec![ObjectUniverse {
                 model_selection: domain_package.model_selection.clone(),
                 root_types: Vec::new(),
-            },
+            }],
+            universe_index_by_type: BTreeMap::new(),
             redefinition_check_work: Vec::new(),
             phase4_fact_count: 0,
             conflict_check_work: Vec::new(),
@@ -1844,12 +1913,61 @@ fn build(
     }
     entries.sort_by_key(|a| a.effective_id);
 
-    let mut root_types: Vec<EffectiveId> = type_keys
-        .iter()
-        .filter(|key| !index.non_root.contains(*key))
-        .map(|key| type_effective_ids[key])
+    // ADR-013 §8 OQ-E: one universe per connected component of the
+    // object-type supertype graph, never one universe over every root type
+    // in the domain package (`model-complete.md`'s "Object universe").
+    let component_of = connected_components(&type_keys, &index.generals_by_specific);
+    let mut members_by_component: HashMap<usize, Vec<DeclarationKey>> = HashMap::new();
+    for key in &type_keys {
+        members_by_component
+            .entry(component_of[key])
+            .or_default()
+            .push(key.clone());
+    }
+    let mut components: Vec<(Vec<DeclarationKey>, ObjectUniverse)> = members_by_component
+        .into_values()
+        .map(|members| {
+            let mut root_types: Vec<EffectiveId> = members
+                .iter()
+                .filter(|key| !index.non_root.contains(*key))
+                .map(|key| type_effective_ids[key])
+                .collect();
+            root_types.sort();
+            let universe = ObjectUniverse {
+                model_selection: domain_package.model_selection.clone(),
+                root_types,
+            };
+            (members, universe)
+        })
         .collect();
-    root_types.sort();
+    // `value-accounting.md`:495: "each object universe preimage ascending
+    // by its first root type identity". A component with no root type at
+    // all (every member's `supertypes[]` is non-empty, i.e. a pure cycle)
+    // can only arise on a package phase 3 already refuses -- `charge_all`
+    // and `object_universe`/`object_universes` both report that refusal
+    // before this order is ever charged or read, so `None` sorting first is
+    // an arbitrary but harmless placement, never observed on a successful
+    // normalization.
+    components.sort_by_key(|(_, universe)| universe.root_types.first().copied());
+    // A domain package with no declared object type at all still produces
+    // exactly one (empty) universe, matching every domain package's
+    // behavior before OQ-E's per-component partition existed.
+    if components.is_empty() {
+        components.push((
+            Vec::new(),
+            ObjectUniverse {
+                model_selection: domain_package.model_selection.clone(),
+                root_types: Vec::new(),
+            },
+        ));
+    }
+    let mut universe_index_by_type: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
+    for (component_index, (members, _)) in components.iter().enumerate() {
+        for member in members {
+            universe_index_by_type.insert(member.clone(), component_index);
+        }
+    }
+    let universes: Vec<ObjectUniverse> = components.into_iter().map(|(_, u)| u).collect();
 
     let type_identities = type_keys
         .iter()
@@ -1860,10 +1978,6 @@ fn build(
         declarations: entries,
         type_identities,
     };
-    let universe = ObjectUniverse {
-        model_selection: domain_package.model_selection.clone(),
-        root_types,
-    };
 
     Ok(Built {
         intake_refusals: Vec::new(),
@@ -1872,7 +1986,8 @@ fn build(
         phase3_refusals,
         declarations,
         view,
-        universe,
+        universes,
+        universe_index_by_type,
         redefinition_check_work,
         phase4_fact_count,
         conflict_check_work,
@@ -2753,10 +2868,15 @@ fn charge_all(
         )?;
     }
 
-    meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
-        LimitKind::HashedBytes,
-        length_amount(built.universe.jcs_bytes().len()),
-    ))?;
+    // `value-accounting.md`:495: "each object universe preimage ascending
+    // by its first root type identity, then the effective view preimage" --
+    // `built.universes` is already in that order (`build`'s own sort).
+    for universe in &built.universes {
+        meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
+            LimitKind::HashedBytes,
+            length_amount(universe.jcs_bytes().len()),
+        ))?;
+    }
     meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
         LimitKind::HashedBytes,
         length_amount(built.view.jcs_bytes().len()),
@@ -2816,28 +2936,16 @@ pub fn normalize_with_meter(
     (outcome, meter)
 }
 
-/// The object universe `domain_package` normalizes to, independent of `charge_all`'s
-/// bookkeeping (test and caller convenience; recomputes via `build`, under
-/// [`ModelNormalizationLimits::UNLIMITED`]). Under `UNLIMITED` nothing ever
-/// runs out, so `build`'s own deferred refusal-vec fields (`intake_refusals`,
-/// `phase3_refusals`, `phase4_refusals` — see the module docs) are surfaced
-/// here directly rather than replayed through `charge_all`, checked in that
-/// same stage order; this convenience wrapper returns whichever stage's
-/// full refusal bundle is non-empty first, the same charge-ordered bundle
-/// [`NormalizeOutcome::Refused`] carries (L2 finding, PR #228 review: the
-/// previous single-`ModelRefusal` shape dropped every refusal after the
-/// first). Returns [`Refusals`] rather than a bare `Vec<ModelRefusal>` (M2
-/// finding, PR #228 round 2 review): every `Err` here already comes from a
-/// non-empty source (a single freshly built refusal, or one of `built`'s own
-/// non-empty-checked fields), so the type itself carries that guarantee
-/// forward to `object_universe`'s own callers.
-pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, Refusals> {
-    let built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
-        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
+/// Every stage-ordered refusal bundle a freshly [`build`] result carries,
+/// checked in `build`'s own deferred order (`intake_refusals`, then
+/// `phase3_refusals`, then `phase4_refusals` -- see the module docs),
+/// factored out of [`object_universe`]/[`object_universes`]/
+/// [`object_universe_of`] so all three check it identically.
+fn built_refusals(built: &mut Built) -> Result<(), Refusals> {
     for refusals in [
-        built.intake_refusals,
-        built.phase3_refusals,
-        built.phase4_refusals,
+        std::mem::take(&mut built.intake_refusals),
+        std::mem::take(&mut built.phase3_refusals),
+        std::mem::take(&mut built.phase4_refusals),
     ] {
         // `Refusals::try_from` in an `if let` (L1 finding, PR #228 round 2
         // review): no `.expect()` needed -- an empty stage's refusal `Vec`
@@ -2847,7 +2955,70 @@ pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse,
             return Err(refusals);
         }
     }
-    Ok(built.universe)
+    Ok(())
+}
+
+/// Every object universe `domain_package` normalizes to, one per connected
+/// component of the object-type supertype graph (ADR-013 §8 OQ-E), ascending
+/// by each universe's own first root type identity -- independent of
+/// `charge_all`'s bookkeeping (test and caller convenience; recomputes via
+/// `build`, under [`ModelNormalizationLimits::UNLIMITED`]). Under
+/// `UNLIMITED` nothing ever runs out, so `build`'s own deferred refusal-vec
+/// fields are surfaced here directly rather than replayed through
+/// `charge_all` (see [`built_refusals`]). Returns [`Refusals`] rather than a
+/// bare `Vec<ModelRefusal>` (M2 finding, PR #228 round 2 review): every
+/// `Err` here already comes from a non-empty source, so the type itself
+/// carries that guarantee forward to callers. Never returns an empty `Vec`
+/// (see [`Built::universes`]'s own doc).
+pub fn object_universes(domain_package: &DomainPackage) -> Result<Vec<ObjectUniverse>, Refusals> {
+    let mut built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
+        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
+    built_refusals(&mut built)?;
+    Ok(built.universes)
+}
+
+/// `type_key`'s own object universe (ADR-013 §8 OQ-E): the universe of the
+/// connected component of the object-type supertype graph that contains
+/// `type_key`, never every root type in the domain package. `type_key` must
+/// name a declared object type of `domain_package` -- a population's
+/// `member_types` entry, for instance, which `build`'s own intake pass
+/// already validates (`UnknownPopulationMemberType`) before this function's
+/// own `build` call can succeed with no refusals; a `type_key` a *validated*
+/// `domain_package` never declared is a caller programming error, not a data
+/// error to refuse.
+///
+/// # Panics
+///
+/// Panics if `domain_package` normalizes with no refusals and `type_key`
+/// does not name one of its declared object types.
+pub fn object_universe_of(
+    domain_package: &DomainPackage,
+    type_key: &DeclarationKey,
+) -> Result<ObjectUniverse, Refusals> {
+    let mut built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
+        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
+    built_refusals(&mut built)?;
+    let index = *built
+        .universe_index_by_type
+        .get(type_key)
+        .unwrap_or_else(|| {
+            panic!("{type_key:?} is not a declared object type of this domain package")
+        });
+    Ok(built.universes[index].clone())
+}
+
+/// The sole object universe of a domain package whose object-type supertype
+/// graph has exactly one connected component (test and caller convenience).
+/// A domain package with more than one component still returns a single
+/// [`ObjectUniverse`] -- ascending by first root type identity, the same
+/// order [`object_universes`] returns -- rather than refusing; callers that
+/// need a *specific* type's universe call [`object_universe_of`], and
+/// callers that need every universe call [`object_universes`].
+pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, Refusals> {
+    Ok(object_universes(domain_package)?
+        .into_iter()
+        .next()
+        .expect("object_universes never returns an empty Vec"))
 }
 
 #[cfg(test)]

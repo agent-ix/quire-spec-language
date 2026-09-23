@@ -50,22 +50,25 @@
 //! [`TypedReference`] (the queried type `T` alongside the realized key).
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components
-//! (`NodeKey`/`UniverseIdentity`/`ObjectIdentity`, `crate::value::reference`)
-//! belong to FR-143's own closed object environment, so this rung's typed
-//! wrappers stay in `crate::model`'s own identity domain rather than
-//! constructing that type themselves. `crate::value::model_query` is the
-//! documented canonical encoding this module's own module docs once called
-//! for: FR-143 defines a reference's `universe` and most-specific `type` as
-//! literally this crate's own `quire.model.object-universe/v1` and
+//! (kernel [`quire_exact::UniverseId`]/[`quire_exact::ObjectId`],
+//! `crate::value::reference`) belong to FR-143's own closed object
+//! environment, so this rung's typed wrappers stay in `crate::model`'s own
+//! identity domain rather than constructing that type themselves.
+//! `crate::value::model_query` is the documented canonical encoding this
+//! module's own module docs once called for: FR-143 defines a reference's
+//! `universe` and most-specific `type` as literally this crate's own
+//! `quire.model.object-universe/v1` and
 //! `quire.model.effective-declaration/v1` digests, so that bridge carries
 //! the type component as the same `EffectiveId` (ADR-013 O-05) and the
-//! universe as its own bytes in `UniverseIdentity`, never a re-hash.
+//! universe as its own bytes in the kernel `UniverseId`, never a re-hash.
 //!
 //! # Binding/domain package correspondence
 //!
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
 //! only constructor, and it stores the admitted `DomainPackage` itself (as an
-//! `Arc`, cheap to clone) alongside the universe that domain package normalized to.
+//! `Arc`, cheap to clone) alongside the universe of the binding's own declared
+//! type's connected component (ADR-013 §8 OQ-E) -- never a single universe
+//! for the whole domain package.
 //! [`all_instances`] and [`lookup`] read that bound domain package — neither takes a
 //! separate `domain_package` argument — so there is no mismatched-domain-package class to
 //! guard against at query time: a query can only ever be evaluated against
@@ -140,7 +143,8 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
-    object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection,
+    object_universe, object_universe_of, EffectiveView, ModelRefusal, ModelRefusalCause,
+    OfferedSelection,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
@@ -878,15 +882,25 @@ fn admit_binding_as(
         });
     }
 
-    let universe = match object_universe(domain_package) {
+    // ADR-013 §8 OQ-E: this binding's universe is its own declared type's
+    // connected component, never the whole domain package's -- a population
+    // with no declared member type at all (FR-153 never requires one) has
+    // no type of its own to key that lookup on, so it falls back to
+    // `object_universe`'s whole-package convenience instead.
+    let universe_result = match population.member_types.first() {
+        Some(type_key) => object_universe_of(domain_package, type_key),
+        None => object_universe(domain_package),
+    };
+    let universe = match universe_result {
         Ok(universe) => universe.identity(),
-        // `object_universe` now returns its full charge-ordered refusal
-        // bundle (L2 finding, PR #228 review); this FR-153 admission path
-        // stays single-refusal (`AdmissionOutcome::Refused`'s own shape,
-        // unchanged here), so only the first is surfaced, exactly as before
-        // this fix. `Refusals::into_first` reads it directly (M2 finding, PR
-        // #228 round 2 review): `Refusals` is non-empty by construction, so
-        // there is no empty case left to `.expect()` past.
+        // `object_universe`/`object_universe_of` return their full
+        // charge-ordered refusal bundle (L2 finding, PR #228 review); this
+        // FR-153 admission path stays single-refusal
+        // (`AdmissionOutcome::Refused`'s own shape, unchanged here), so only
+        // the first is surfaced, exactly as before this fix.
+        // `Refusals::into_first` reads it directly (M2 finding, PR #228
+        // round 2 review): `Refusals` is non-empty by construction, so there
+        // is no empty case left to `.expect()` past.
         Err(refusals) => return AdmissionOutcome::Refused(refusals.into_first()),
     };
 

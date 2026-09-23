@@ -1255,9 +1255,10 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// digest, never equal to this model's own `quire.model.object-universe/v1`
 /// digest); a byte-length other than 32 can no longer reach this layer at
 /// all, since `quire_exact::UniverseId` fixes the shape at construction
-/// (ADR-013 §8 OQ-C ruling) -- `tests/it/model_population.rs`'s direct
-/// `LookupKey` construction still covers a wrong-length universe at
-/// `crate::model::population::lookup`'s own byte-comparison layer.
+/// (ADR-013 §8 OQ-C ruling) -- `tests/it/model_population.rs`'s
+/// `l04b_lookup_wrong_length_universe_refuses_as_foreign` covers a
+/// wrong-length universe directly, at `crate::model::population::lookup`'s
+/// own byte-comparison layer.
 /// `crate::value::model_query::bridge_lookup_key` carries the foreign
 /// universe's own bytes, so `lookup` itself -- the single owner of the
 /// FR-153 lookup order -- reaches this same outcome by its own byte
