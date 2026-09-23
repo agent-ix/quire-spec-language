@@ -6,9 +6,13 @@
 //! surface never becomes a second path to a moved item.
 //!
 //! The layer crates are read from `cargo metadata`: every workspace crate
-//! the root crate names in `[dependencies]` (a `path` dependency), by its
-//! Rust name. A crate extracted later is covered as soon as the root crate
-//! depends on it.
+//! the root crate names as a `path` dependency, by its Rust name, in any
+//! dependency table. `[dev-dependencies]` count too: `qsl-route` (QSL-184)
+//! has no shipped caller in the root crate, so it is a dev dependency only,
+//! and a `#[cfg(test)]` item of `src/` can still name it. A crate extracted
+//! later is covered as soon as the root crate depends on it. The one
+//! non-layer path dependency, the dev-only `xtask`, joins the set too; no
+//! file under `src/` names it, so it adds nothing to find.
 //!
 //! The scan parses every `.rs` file under `src/` with `syn`, not text,
 //! because the forms it must see are structural: a `use` tree's root after
@@ -42,7 +46,8 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// Rust names of the workspace crates the root crate depends on.
+/// Rust names of the workspace crates the root crate depends on, in its
+/// normal, dev and build tables alike.
 fn layer_crates() -> BTreeSet<String> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
     let output = std::process::Command::new(cargo)
@@ -73,7 +78,7 @@ fn layer_crates() -> BTreeSet<String> {
         .as_array()
         .expect("a dependency list")
         .iter()
-        .filter(|dependency| dependency["kind"].is_null() && dependency["path"].is_string())
+        .filter(|dependency| dependency["path"].is_string())
         .map(|dependency| {
             dependency["rename"]
                 .as_str()
@@ -285,6 +290,7 @@ fn the_root_crate_reexports_no_layer_crate_item() {
         "qsl_foundation",
         "qsl_semantics",
         "qsl_package",
+        "qsl_route",
     ] {
         assert!(
             layers.contains(expected),
