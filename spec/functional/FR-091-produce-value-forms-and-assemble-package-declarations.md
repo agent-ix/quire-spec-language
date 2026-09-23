@@ -292,7 +292,9 @@ child is one deeper than its parent. A body whose deepest node is at depth
 names limit kind nesting depth, the bound `L`, and the span of the first node
 at depth `L + 1` in source order. It is never a truncated form and never a
 `NoDispatchEntry` or `UnrepresentedConstruct` refusal. The S2 bound applies
-to sources that S1 admits: S1's own nesting clamp is independent of it.
+to sources that S1 admits. S1's delimiter-nesting ceiling
+([NFR-001](../non-functional/NFR-001-bound-syntax-work.md) "Nesting level")
+counts delimiter pairs, a different quantity, and is enforced independently.
 
 ### S2 layering
 

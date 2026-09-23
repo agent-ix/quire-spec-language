@@ -116,24 +116,10 @@ span before and after the checked-package boundary: the occurrence-keyed
 source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
-**Correction: the identity preimage is a pragmatic stopgap, not the
-external schema (PR #262 review, finding F10).** This requirement's
-implementation mints each identity as a SHA-256 over the package identity
-and the declaration's or call's own **parsed** structure, rendered through
-Rust's `Debug` formatting (`{:?}`) -- name, parameters, result, measure and
-body for a declaration; callee name and parsed arguments for a call -- not
-the checked/typed tree, so the hash is independent of unrelated
-declarations' reordering (AC-2). This is a pragmatic content-address for
-this ticket's own scope, not a claim of interop with the external
-`quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema
-(`resources/complete-value/.../node-identity-preimage.schema.json`): that
-schema's `Operation` identity for an arbitrary applied operator has no
-landed implementation this ticket could follow for a user-declared
-function, and a `Debug`-rendered preimage is not that schema's own
-preimage format. Structural identity within one check run -- reordering
-independence and survival across S4 linking and v2 emission, what AC-2 and
-AC-3 actually test -- holds regardless of this gap. Building the real
-`PreimageTerm`-conformant preimage is separate work; QSL-156 owns it.
+The identity is the ADR-013 O-04 checked node id: the digest of the RFC 8785
+encoding of the QSpec FR-322 node-identity preimage. It is computed from the
+declaration's or call's checked content and its owner, so it does not depend
+on the order of unrelated declarations (AC-2).
 
 ### The composed function checker is deleted in this change
 

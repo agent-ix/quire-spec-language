@@ -113,6 +113,14 @@ ADR-011 E9, the one exception R-06 names.
 | normalized | Equal iff the digests over a canonical encoding are equal under the same digest domain. The canonical encoding is RFC 8785 JCS of a closed preimage schema. | checked node id, `package_id`, `EffectiveId`, domain-package `sha256-jcs` digest |
 | semantic | Equal by meaning under a published law. | kernel `Value` equality under the QSpec operation catalog, `quire.op.ieee.numeric_equal` |
 
+One RFC 8785 JCS implementation produces every canonical encoding: the
+`quire-canonical` crate (`agent-ix/quire-canonical`). Every normalized identity
+above and every lexical comparison over an RFC 8785 encoding (O-24, O-26, O-27)
+encodes through it, in QSL, Contract IR, quoin and FCD alike. It orders object
+members by UTF-16 code unit itself, so its bytes do not depend on how a JSON map
+type is backed or on any Cargo feature. A digest domain stays separate by its
+domain label and golden vectors, never by a second encoder.
+
 ### 3. Canonical owners
 
 Each table gives: owner (repository and stage), implementing ticket, public type
