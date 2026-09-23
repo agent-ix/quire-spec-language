@@ -210,7 +210,7 @@ impl EnumBinding {
 /// evaluate a comparison later, and `value::expression::evaluate::Machine`
 /// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no enum
 /// declarations (those are `scope.enums`, ADR-011 §6.1's own module split).
-pub(crate) fn enum_member_index(scope: &Scope) -> EnumMemberIndex {
+pub fn enum_member_index(scope: &Scope) -> EnumMemberIndex {
     let mut index = EnumMemberIndex::default();
     for binding in &scope.enums {
         for member in &binding.members {
@@ -322,13 +322,17 @@ pub struct DispatchOperation {
 
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
-pub(crate) struct Scope {
-    pub(crate) types: TypeEnvironment,
+pub struct Scope {
+    /// The package's composite and object type declarations.
+    pub types: TypeEnvironment,
     pub(crate) enums: Vec<EnumBinding>,
     pub(crate) aliases: Vec<(String, ValueType)>,
     pub(crate) model_operations: Vec<String>,
-    pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
-    pub(crate) dispatch_operations: Vec<DispatchOperation>,
+    /// The package's admitted IEEE profile, if it selects one.
+    pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The package's FR-151 dispatch operations, indexed by a checked
+    /// `NodeKind::Dispatch`'s `operation`.
+    pub dispatch_operations: Vec<DispatchOperation>,
 }
 
 /// A function's declared signature.

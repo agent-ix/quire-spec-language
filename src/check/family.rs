@@ -1271,10 +1271,10 @@ pub(crate) struct CheckedDeclaration {
 /// associated function over `Self::Form`/`Self::Checked`, with no instance
 /// state (ADR-012 §2's contract is static, dispatched through closed enums,
 /// not through an object). Its evaluation half
-/// ([`crate::family::ReferenceEvaluation`]) is implemented in
+/// (`crate::family::ReferenceEvaluation`) is implemented in
 /// `value::expression::family`, over this type re-exported through
 /// `crate::check`.
-pub(crate) struct ValueFunctionFamily;
+pub struct ValueFunctionFamily;
 
 impl crate::family::FamilyContract for ValueFunctionFamily {
     type Form = FunctionDeclaration;

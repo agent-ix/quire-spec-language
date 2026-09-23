@@ -98,8 +98,8 @@ use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
-pub(crate) use check::Scope;
-pub(crate) use family::ValueFunctionFamily;
+pub use check::Scope;
+pub use family::ValueFunctionFamily;
 // `OccurrenceMap`, `DEFAULT_PACKAGE_IDENTITY`
 // and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
 // family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
@@ -131,17 +131,16 @@ pub(crate) use family::{OccurrenceMap, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_U
 pub(crate) use family::checking_tests::{
     declarations_for, empty_scope, mint_resolved, root_location,
 };
-pub(crate) use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     ResolvedSignatures, MAX_CHECKING_DEPTH,
 };
-// Crate-internal only (unlike the list above, `value::mod.rs` does not
-// re-export this): `value::expression::evaluate::Machine` is the one
-// consumer outside `check` itself.
-pub(crate) use check::enum_member_index;
+// `value::expression::evaluate::Machine` is the one consumer outside `check`
+// itself.
+pub use check::enum_member_index;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
@@ -271,22 +270,20 @@ impl CheckedExpression {
     }
 
     /// The declared parameters, in evaluation-slot order -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] reads to
+    /// `value::expression::CheckedPackageEvaluation::evaluate` reads to
     /// validate its caller's arguments (ADR-011 §4: evaluation never reads
-    /// this type's fields directly). Crate-internal only: `Node` (see
-    /// [`Self::root`]) is `pub(crate)`, so this whole accessor surface stays
-    /// no more public than that.
-    pub(crate) fn parameters(&self) -> &[(String, ValueType)] {
+    /// this type's fields directly).
+    pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
     }
 
     /// The checked expression tree evaluation runs.
-    pub(crate) fn root(&self) -> &Node {
+    pub fn root(&self) -> &Node {
         &self.root
     }
 
     /// The evaluation slot count evaluation allocates.
-    pub(crate) fn slots(&self) -> usize {
+    pub fn slots(&self) -> usize {
         self.slots
     }
 }
@@ -294,28 +291,27 @@ impl CheckedExpression {
 /// One admitted function's evaluation-visible state: exactly what
 /// `value::expression`'s evaluator needs (name, checked body, slot count --
 /// FR-068's own Description names these as the accessor surface), without
-/// exposing `CheckedFunction`'s private representation. Crate-internal only:
-/// `body`'s `Node` type is `pub(crate)`.
-pub(crate) struct FunctionState<'a> {
+/// exposing `CheckedFunction`'s private representation.
+pub struct FunctionState<'a> {
     /// The declared name.
-    pub(crate) name: &'a str,
+    pub name: &'a str,
     /// The checked body.
-    pub(crate) body: &'a Node,
+    pub body: &'a Node,
     /// The evaluation slot count.
-    pub(crate) slots: usize,
+    pub slots: usize,
 }
 
 /// One callable function's evaluation-visible identity and signature --
-/// what [`crate::value::CheckedPackageEvaluation::call`] needs to route a
+/// what `value::expression::CheckedPackageEvaluation::call` needs to route a
 /// runtime `QualifiedName` lookup through
-/// [`crate::family::ReferenceEvaluation::evaluate`] and validate its
+/// `crate::family::ReferenceEvaluation::evaluate` and validate its
 /// caller's arguments, without a direct field read.
-pub(crate) struct CallableFunction<'a> {
-    /// The minted identity [`crate::family::ReferenceEvaluation::evaluate`]
+pub struct CallableFunction<'a> {
+    /// The minted identity `crate::family::ReferenceEvaluation::evaluate`
     /// resolves against.
-    pub(crate) identity: quire_exact::NodeKey,
+    pub identity: quire_exact::NodeKey,
     /// The declared parameters, for argument admission.
-    pub(crate) parameters: &'a [(String, ValueType)],
+    pub parameters: &'a [(String, ValueType)],
 }
 
 fn root(origin: Origin) -> Location {
@@ -1044,11 +1040,11 @@ impl CheckedGraph {
 
     /// Every admitted function's own name, checked body and evaluation slot
     /// count -- the accessor surface
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] reads to build
+    /// `value::expression::CheckedPackageEvaluation::evaluate` reads to build
     /// its own `Callable` list, since `Callable` is a layer-5 type this
     /// module must not construct itself (that would be a `check` ->
     /// `value::expression` edge, forbidden by FR-068-AC-3).
-    pub(crate) fn function_states(&self) -> impl Iterator<Item = FunctionState<'_>> + '_ {
+    pub fn function_states(&self) -> impl Iterator<Item = FunctionState<'_>> + '_ {
         self.functions.iter().map(|function| FunctionState {
             name: &function.signature.name,
             body: &function.body,
@@ -1058,10 +1054,10 @@ impl CheckedGraph {
 
     /// One admitted function's evaluation-visible state, by its minted
     /// identity -- the accessor
-    /// [`crate::family::ReferenceEvaluation::evaluate`]'s `Value` family
+    /// `crate::family::ReferenceEvaluation::evaluate`'s `Value` family
     /// implementation (`value::expression::family`) resolves a checked call
     /// against.
-    pub(crate) fn function_by_identity(
+    pub fn function_by_identity(
         &self,
         identity: quire_exact::NodeKey,
     ) -> Option<FunctionState<'_>> {
@@ -1075,11 +1071,11 @@ impl CheckedGraph {
 
     /// `name`'s identity and declared parameters, filtered to functions a
     /// plain named call may resolve to (`callable_by_name`) -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::call`] uses to resolve a
+    /// `value::expression::CheckedPackageEvaluation::call` uses to resolve a
     /// runtime `QualifiedName` lookup and validate its caller's arguments,
     /// without a direct field read (TC-196 D07's bypass: a crate-internal
     /// FR-151 synthesized dispatch candidate is never reachable this way).
-    pub(crate) fn callable(&self, name: &str) -> Option<CallableFunction<'_>> {
+    pub fn callable(&self, name: &str) -> Option<CallableFunction<'_>> {
         self.function(name)
             .filter(|(_, function)| function.signature.callable_by_name)
             .map(|(_, function)| CallableFunction {
@@ -1090,28 +1086,26 @@ impl CheckedGraph {
 
     /// Every admitted function's own name and minted identity -- the
     /// accessor
-    /// [`crate::value::CheckedPackageEvaluation::emit_function_package_v2`]
+    /// `value::expression::CheckedPackageEvaluation::emit_function_package_v2`
     /// reads to build its v2 entries, since the v2 codec and `QualifiedName`
     /// are `value::expression::family` types this module must not import
     /// (FR-068-AC-3).
-    pub(crate) fn function_identities(
-        &self,
-    ) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
+    pub fn function_identities(&self) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
         self.functions
             .iter()
             .map(|function| (function.signature.name.as_str(), function.identity))
     }
 
     /// The scope every declared name resolves against -- the accessor
-    /// [`crate::value::CheckedPackageEvaluation::evaluate`] passes through
+    /// `value::expression::CheckedPackageEvaluation::evaluate` passes through
     /// to the evaluator.
-    pub(crate) fn scope(&self) -> &Scope {
+    pub fn scope(&self) -> &Scope {
         &self.scope
     }
 
     /// The checked dispatch tables `scope`'s dispatch operations index into
     /// -- the accessor the evaluator reads directly, alongside `scope`.
-    pub(crate) fn dispatch_tables(&self) -> &[DispatchTable] {
+    pub fn dispatch_tables(&self) -> &[DispatchTable] {
         &self.dispatch_tables
     }
 }

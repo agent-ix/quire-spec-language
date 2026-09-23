@@ -66,7 +66,7 @@ mod binding_tests;
 mod package_identity;
 mod witness;
 
-pub(crate) use package_identity::PACKAGE_ID_VERSION;
+pub use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
 pub(crate) use witness::SupportedV2Wire;
@@ -123,7 +123,7 @@ impl PackageId {
     /// `of_preimage` remains the only way to produce a `PackageId` that
     /// flows anywhere as an actual identity; this only formats one that
     /// already exists, for reporting or cross-checking.
-    pub(crate) fn hex(&self) -> String {
+    pub fn hex(&self) -> String {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }
@@ -637,17 +637,17 @@ impl VerifiedPackage {
 /// condition 3 reads it: at most one [`Selection`] per library identity, so
 /// the binding's answer never depends on the order entries were supplied.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct PinnedRequest(BTreeMap<LibraryName, Selection>);
+pub struct PinnedRequest(BTreeMap<LibraryName, Selection>);
 
 /// Two entries of one pinned request select different versions or
 /// `package_id`s for one library identity (ADR-011 I2's second rule).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("two pins for one library identity select different packages")]
-pub(crate) struct ConflictingPin {
+pub struct ConflictingPin {
     /// The library identity pinned twice.
-    pub(crate) library: LibraryName,
+    pub library: LibraryName,
     /// The earlier entry, then the later, conflicting one.
-    pub(crate) selections: Box<[Selection; 2]>,
+    pub selections: Box<[Selection; 2]>,
 }
 
 impl PinnedRequest {
@@ -658,7 +658,7 @@ impl PinnedRequest {
         dead_code,
         reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
     )]
-    pub(crate) fn new(
+    pub fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,
     ) -> Result<Self, ConflictingPin> {
         let mut pins: BTreeMap<LibraryName, Selection> = BTreeMap::new();
@@ -782,14 +782,14 @@ impl ImportView {
 /// package's local declarations are exactly its exports", this module's own
 /// doc). The layer-4 `checked_package` I2 reader calls this to populate a freshly
 /// wire-read [`LibraryPackage::exports`] before handing the candidate to
-/// [`verify_package`]: a package read straight from its own wire bytes
+/// `verify_package`: a package read straight from its own wire bytes
 /// carries no separate export selection, so its exports are exactly what its
 /// preimage declares.
 #[allow(
     dead_code,
     reason = "no production caller yet: the I2 reader (`checked_package::checked_v2`) is `pub(crate)` with no caller until ADR-011 §4's round trip (QSL-6 slice S3) lands; until then only its own tests reach this"
 )]
-pub(crate) fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
+pub fn declared_exports(identity_preimage: &[u8]) -> Result<Vec<String>, PreimageDefect> {
     Ok(project_declarations(identity_preimage)?
         .declared_names()
         .into_iter()

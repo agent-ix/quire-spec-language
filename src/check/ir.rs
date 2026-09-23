@@ -21,38 +21,51 @@ use std::collections::BTreeSet;
 pub(crate) use quire_exact::NodeKey as FamilyNodeKey;
 
 /// A local slot of one function frame or checked expression.
-pub(crate) type Slot = usize;
+pub type Slot = usize;
 
 /// One typed node.
 #[derive(Clone, Debug)]
-pub(crate) struct Node {
-    pub(crate) kind: NodeKind,
-    pub(crate) value_type: ValueType,
-    pub(crate) location: Location,
+pub struct Node {
+    /// What the node computes.
+    pub kind: NodeKind,
+    /// The node's checked static type.
+    pub value_type: ValueType,
+    /// The node's source location.
+    pub location: Location,
 }
 
 /// A connective with a skippable right operand.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Connective {
+pub enum Connective {
+    /// `and`.
     And,
+    /// `or`.
     Or,
+    /// `implies`.
     Implies,
 }
 
 /// An integer arithmetic operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Arithmetic {
+pub enum Arithmetic {
+    /// `+`.
     Add,
+    /// Binary `-`.
     Subtract,
+    /// `*`.
     Multiply,
 }
 
 /// Which values an ordering compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum OrderedKind {
+pub enum OrderedKind {
+    /// Integers, by value.
     Integers,
+    /// Rationals, by value.
     Rationals,
+    /// Decimals, by value.
     Decimals,
+    /// Members of one ordered enum, by declared rank.
     Enums,
     /// Text of one profile, by the FR-141 profile order.
     Texts,
@@ -62,19 +75,27 @@ pub(crate) enum OrderedKind {
 
 /// One record slot in declaration order.
 #[derive(Clone, Debug)]
-pub(crate) enum RecordSlot {
+pub enum RecordSlot {
+    /// An omitted optional field.
     Absent,
+    /// An optional field given `null`.
     Null,
+    /// A field given a value.
     Present(Box<Node>),
 }
 
 /// A one-binder query that visits every occurrence or stops early.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Visit {
+pub enum Visit {
+    /// `map`: the body's value at every occurrence.
     Map,
+    /// `filter`: the occurrences the body admits.
     Filter,
+    /// `forall`: stops at the first occurrence the body refuses.
     Forall,
+    /// `exists`: stops at the first occurrence the body admits.
     Exists,
+    /// `count`: how many occurrences the body admits.
     Count,
     /// `sum<N>` over integer summands.
     Sum,
@@ -183,7 +204,7 @@ impl DispatchTable {
     }
 
     /// The linked candidate for the receiver's most-specific runtime type.
-    pub(crate) fn linked_for(&self, subtype: &EffectiveId) -> Option<&DispatchCandidate> {
+    pub fn linked_for(&self, subtype: &EffectiveId) -> Option<&DispatchCandidate> {
         self.entries
             .iter()
             .find(|(key, _)| key == subtype)
@@ -191,7 +212,7 @@ impl DispatchTable {
     }
 
     /// The table's own distinct-candidate count, for `dispatch.select`.
-    pub(crate) fn candidate_count(&self) -> u64 {
+    pub fn candidate_count(&self) -> u64 {
         self.candidate_count
     }
 
@@ -219,44 +240,68 @@ impl DispatchTable {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum NodeKind {
+/// What a checked [`Node`] computes.
+pub enum NodeKind {
+    /// A literal value.
     Literal(Value),
     /// An integer operand admitted into `Int[..]`: a static range obligation
     /// and an uncharged runtime membership check.
     Coerce(Box<Node>, IntegerInterval),
+    /// A read of a local slot.
     Local(Slot),
+    /// `let slot = value in body`.
     Let {
+        /// The bound slot.
         slot: Slot,
+        /// The bound value.
         value: Box<Node>,
+        /// The body the binding scopes.
         body: Box<Node>,
     },
+    /// `if condition then then else otherwise`.
     If {
+        /// The condition.
         condition: Box<Node>,
+        /// The branch taken when the condition holds.
         then: Box<Node>,
+        /// The branch taken otherwise.
         otherwise: Box<Node>,
     },
+    /// Integer arithmetic.
     Arithmetic(Arithmetic, Box<Node>, Box<Node>),
+    /// Unary integer `-`.
     Negate(Box<Node>),
     /// Integer `/` producing `Rational[..]`.
     Divide {
+        /// The dividend.
         left: Box<Node>,
+        /// The divisor.
         right: Box<Node>,
+        /// The result domain.
         domain: RationalDomain,
     },
     /// FR-044 `Rational[..]` arithmetic into `domain`.
     Rational {
+        /// The operator.
         operator: ArithmeticOperator,
+        /// The left operand.
         left: Box<Node>,
+        /// The right operand.
         right: Box<Node>,
+        /// The result domain.
         domain: RationalDomain,
     },
     /// Unary `-` of a `Rational[..]` into `domain`.
     RationalNegate(Box<Node>, RationalDomain),
     /// FR-140 decimal arithmetic into `target`.
     Decimal {
+        /// The operator.
         operator: ArithmeticOperator,
+        /// The left operand.
         left: Box<Node>,
+        /// The right operand.
         right: Box<Node>,
+        /// The result decimal type.
         target: DecimalType,
     },
     /// Unary `-` of a decimal into `target`.
@@ -269,72 +314,115 @@ pub(crate) enum NodeKind {
     /// An ordinary FR-140 conversion of a rational or decimal into `target`,
     /// with its loss record.
     ConvertDecimal(Box<Node>, DecimalType),
+    /// An ordering comparison of two values of one [`OrderedKind`].
     Order(OrderingOperator, OrderedKind, Box<Node>, Box<Node>),
+    /// An FR-149 equality comparison under its checked schedule.
     Equality(EqualityOperator, Box<CheckedEquality>, Box<Node>, Box<Node>),
+    /// A boolean connective with a skippable right operand.
     Connective(Connective, Box<Node>, Box<Node>),
+    /// `not`.
     Not(Box<Node>),
     /// A record field slot; an optional field projects to `Option<T>`.
     Field {
+        /// The record.
         operand: Box<Node>,
+        /// The field's declaration-order slot.
         index: usize,
+        /// Whether the field is optional.
         optional: bool,
     },
     /// `deref(r).f` of a model object attribute.
     Attribute {
+        /// The object reference.
         reference: Box<Node>,
+        /// The attribute name.
         name: String,
+        /// Whether the attribute is optional.
         optional: bool,
     },
+    /// Whether an `Option` operand holds a value.
     Present(Box<Node>),
+    /// The payload of an `Option` operand.
     Value(Box<Node>),
+    /// A call of a function of this package.
     Call {
         /// FR-062/FR-065: content-addressed identity, minted once at check
         /// from the call's parsed structure (not from `function`, which is
         /// a position-dependent index -- see
-        /// [`super::family::mint_call_identity`]'s doc).
+        /// `super::family::mint_call_identity`'s doc).
         identity: FamilyNodeKey,
+        /// The callee's function index in this package.
         function: usize,
+        /// The arguments, in parameter order.
         arguments: Vec<Node>,
     },
+    /// A tuple of a declared tuple type.
     Tuple {
+        /// The tuple type's declaration.
         declaration: NodeKey,
+        /// The components, in order.
         arguments: Vec<Node>,
     },
+    /// A record of a declared record type.
     Record {
+        /// The record type's declaration.
         declaration: NodeKey,
+        /// The fields, in declaration order.
         slots: Vec<RecordSlot>,
     },
+    /// A collection literal.
     Collection {
+        /// The collection type.
         collection_type: CollectionType,
+        /// The elements, in source order.
         elements: Vec<Node>,
     },
+    /// A collection kind conversion.
     ConvertCollection {
+        /// The target collection type.
         target: CollectionType,
+        /// The collection converted.
         operand: Box<Node>,
     },
+    /// A scalar conversion of the operand into the equality operand's target type.
     ConvertScalar(EqualityOperand, Box<Node>),
+    /// An exact conversion of an IEEE value into `domain`.
     IeeeToRational(Box<Node>, RationalDomain),
+    /// A one-binder query over `source`, binding each occurrence to `slot`.
     Query {
+        /// What the query computes.
         visit: Visit,
+        /// The slot each occurrence binds.
         slot: Slot,
+        /// The collection visited.
         source: Box<Node>,
+        /// The body evaluated per occurrence.
         body: Box<Node>,
     },
+    /// A collection of collections, flattened.
     Flatten(Box<Node>),
+    /// `fold`/`reduce` over `source`.
     Fold {
+        /// The accumulator slot.
         accumulator: Slot,
+        /// The slot each occurrence binds.
         binder: Slot,
+        /// The collection folded.
         source: Box<Node>,
+        /// The step evaluated per occurrence.
         step: Box<Node>,
         /// `None` for `reduce`.
         identity: Option<Box<Node>>,
     },
+    /// A collection's size.
     Size(Box<Node>),
+    /// Whether a collection contains an item.
     Contains(Box<Node>, Box<Node>),
     /// `allInstances<T>(p)` (FR-153). `T`, `N` and the bound `[0,N]` are
     /// exactly this node's own checked `value_type`
     /// (`ValueType::Collection`), never restated here.
     AllInstances {
+        /// The population.
         population: Box<Node>,
     },
     /// `lookup<T>(p, r) absent m` (FR-153). `T` is exactly this node's own
@@ -342,8 +430,11 @@ pub(crate) enum NodeKind {
     /// `undefined`/`refused`, an `Option<Reference<T>>` for `empty`), never
     /// restated here.
     Lookup {
+        /// The population.
         population: Box<Node>,
+        /// The reference looked up.
         reference: Box<Node>,
+        /// The authored absence mode.
         absence: AbsenceMode,
     },
     /// `receiver.member(args)` (FR-151), resolved at check time to one
@@ -355,9 +446,13 @@ pub(crate) enum NodeKind {
     /// operation's `member` when two call sites share a table), selected at
     /// runtime by the receiver's most-specific type (TC-196 D06).
     Dispatch {
+        /// The receiver.
         receiver: Box<Node>,
+        /// The dispatch table index.
         table: usize,
+        /// The dispatch operation index.
         operation: usize,
+        /// The arguments after the receiver.
         arguments: Vec<Node>,
     },
     /// `pre(e)` (FR-153): evaluate `e` with `allInstances`/`lookup`
@@ -368,7 +463,7 @@ pub(crate) enum NodeKind {
 
 impl Node {
     /// Direct children in evaluation order.
-    pub(crate) fn children(&self) -> Vec<&Node> {
+    pub fn children(&self) -> Vec<&Node> {
         match &self.kind {
             NodeKind::Literal(_) | NodeKind::Local(_) => Vec::new(),
             NodeKind::Coerce(operand, _)
