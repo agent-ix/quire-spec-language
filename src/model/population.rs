@@ -892,7 +892,7 @@ fn admit_binding_as(
     // `admitted` would otherwise each be linearly searched per member,
     // making admission O(n^2) against the O(n) `binding.member` charges it
     // records.
-    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view.type_identities();
+    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view.type_identities().clone();
 
     // Computed once here rather than once per `all_instances`/`lookup` call;
     // see the `generals` field's own doc comment.

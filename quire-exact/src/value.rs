@@ -16,10 +16,11 @@
 //!   itself carries. A bare `Value::Enum(VariantId)` (T-6: "no `NodeKey`") is
 //!   unaffected: it names one variant, and the shape says which variants a
 //!   given enum type admits.
-//! - `ValueType::Reference(NodeKey)` becomes `ValueType::Reference(EffectiveId)`
-//!   and `Value::Reference(ObjectReference)` carries the T-6 triple
-//!   (`EffectiveId`, `UniverseId`, `ObjectId`) from [`crate::reference`],
-//!   not a `NodeKey` plus raw identity bytes.
+//! - `ValueType::Reference(EffectiveId)` is the same type in both (ADR-013
+//!   O-05). Only the value payload diverges: `Value::Reference(ObjectReference)`
+//!   carries the T-6 triple (`EffectiveId`, `UniverseId`, `ObjectId`) from
+//!   [`crate::reference`], where QSL's carries its `EffectiveId` with raw
+//!   `UniverseIdentity`/`ObjectIdentity` bytes.
 //! - `ValueType::Quantity(QuantityUnit)` becomes `ValueType::Quantity(UnitId)`;
 //!   `Value::Quantity` carries [`crate::quantity::Quantity`], a bare
 //!   `(magnitude, UnitId)` pair with no unit-graph declaration.

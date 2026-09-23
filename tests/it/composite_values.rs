@@ -694,6 +694,31 @@ fn malformed_declarations_refuse_at_admission() {
     }
 }
 
+/// An object type whose declared supertype names no admitted object type
+/// refuses at admission as `UnknownObjectType` (`invalid_semantic_graph`),
+/// rather than being admitted with a dangling ancestor.
+#[trace("TC-188", "FR-143-AC-4")]
+#[test]
+fn unknown_supertype_refuses_at_admission() {
+    let unknown = EffectiveId::from_digest([9; 32]);
+    let refused = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(object_type("M::Sub"), "Sub", vec![])
+                .with_supertypes(vec![unknown]),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(
+        refused,
+        InvalidDeclaration {
+            declaration: "Sub".into(),
+            cause: DeclarationCause::UnknownObjectType(unknown),
+        }
+    );
+    assert_eq!(refused.code(), "invalid_semantic_graph");
+}
+
 /// Rows that need the FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;

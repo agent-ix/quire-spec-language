@@ -28,8 +28,8 @@ use quire_spec_language::check::{
 use quire_spec_language::model::accounting::ModelNormalizationLimits;
 use quire_spec_language::model::dispatch::GeneralizationClosure;
 use quire_spec_language::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
-    OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    ObjectTypeRecord, OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
 use quire_spec_language::model::key::DeclarationKey;
 use quire_spec_language::model::normalize::{
@@ -72,10 +72,17 @@ fn object_type(label: &str) -> EffectiveId {
 
 /// `label`'s effective identity in `view`: the identity the bridge resolves a
 /// linked subtype to, and so the one a `Reference<T>` naming it carries.
+/// Read from `view`'s declarations directly -- the type-level entry (no
+/// owner effective type) whose original key is `label` -- never through
+/// `EffectiveView::type_identities`, the accessor the bridge itself uses.
 fn view_type(view: &EffectiveView, label: &str) -> EffectiveId {
-    view.type_identities()
-        .get(&DeclarationKey::fixture(label))
-        .copied()
+    let original = DeclarationKey::fixture(label);
+    view.declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.is_none() && entry.preimage.original == original
+        })
+        .map(|entry| entry.effective_id)
         .unwrap_or_else(|| panic!("{label} has a type-level effective declaration"))
 }
 
@@ -1799,6 +1806,49 @@ fn bridge_keys_object_types_by_their_effective_identity() {
     .unwrap();
     assert!(types.conforms(b, a));
     assert!(!types.conforms(a, b));
+}
+
+/// `EffectiveView::type_identities` holds exactly the view's type-level
+/// declarations, each with its own entry's effective identity: the two
+/// object types, never a member declaration.
+#[trace("TC-196", "FR-151")]
+#[test]
+fn type_identities_hold_only_type_level_declarations() {
+    // `bridge_bundle` plus one field member `model.A.next: model.A`, which
+    // `B` inherits, so the view carries member entries next to the types.
+    let mut domain_package = bridge_bundle();
+    domain_package
+        .records
+        .push(DomainPackageRecord::FieldMember(FieldMemberRecord {
+            key: DeclarationKey::fixture("model.A.next"),
+            owner: DeclarationKey::fixture("model.A"),
+            value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
+            multiplicity: Multiplicity {
+                lower: 0,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+            subsets: Vec::new(),
+            redefines: None,
+        }));
+    let view = bridge_view(&domain_package);
+    let expected: BTreeMap<DeclarationKey, EffectiveId> = ["model.A", "model.B"]
+        .into_iter()
+        .map(|label| (DeclarationKey::fixture(label), view_type(&view, label)))
+        .collect();
+    assert_eq!(view.type_identities(), &expected);
+
+    let members: Vec<&DeclarationKey> = view
+        .declarations()
+        .iter()
+        .filter(|entry| entry.preimage.owner_effective_type.is_some())
+        .map(|entry| &entry.preimage.original)
+        .collect();
+    assert!(!members.is_empty(), "the fixture must declare a member");
+    for member in members {
+        assert!(!view.type_identities().contains_key(member), "{member:?}");
+    }
 }
 
 fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {

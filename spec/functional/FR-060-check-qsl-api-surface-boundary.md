@@ -193,9 +193,8 @@ review, MEDIUM-5).
 ### Honest reporting of real findings
 
 Running the check against QSL's real source tree at any commit SHALL report
-whatever it finds, including a pre-existing violation ADR-013's own text
-already names as known architecture debt, and any real call site the check
-finds that ADR-011 §1's text does not enumerate. The check SHALL NOT
+whatever it finds, including every named debt-list mint and any real call
+site the check finds that ADR-011 §1's text does not enumerate. The check SHALL NOT
 be tuned to exclude a known finding, or widened to admit an unwanted one, to
 make a run pass (#249 review R1). T12-B's and T12-C's debt lists are not
 such an exclusion: each entry is reported as debt in the check's output, and
@@ -239,14 +238,13 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
-- T12-B reports its two debt-list functions as debt:
-  `value/model_query.rs` and `value/expression/family.rs`. QSL-131 K4
-  removed the six `value::enumeration`, `value::unit` and `value::node`
-  entries by deleting their mints. T12-B fails on the one
-  `value::application_key` mint QSL-156 A4a added (#356,
-  `application_node_key`), which is on no list.
-- T12-C passes. Its two debt-list functions are reported as debt:
-  `value/model_query.rs` 124 and 156.
+- T12-B reports its one debt-list function as debt:
+  `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
+  `value::enumeration`, `value::unit` and `value::node` entries, and
+  QSL-131 V1 the `value::model_query` entry, by deleting their mints.
+  T12-B fails on the one `value::application_key` mint QSL-156 A4a added
+  (#356, `application_node_key`), which is on no list.
+- T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
   outside `model`, `src/value/expression/evaluate.rs`, is a test literal
   inside `#[cfg(test)]`.
