@@ -293,11 +293,7 @@ fn p1(model_identity: &str) -> PopulationDocument {
     }
 }
 
-fn reference_key(
-    universe: &UniverseId,
-    type_identity: &EffectiveId,
-    object: &str,
-) -> ReferenceKey {
+fn reference_key(universe: &UniverseId, type_identity: &EffectiveId, object: &str) -> ReferenceKey {
     ReferenceKey {
         universe: *universe,
         type_identity: *type_identity,

@@ -8,8 +8,8 @@ use quire_exact::{
     BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextProfile, TextType,
 };
 use quire_exact::{
-    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
-    ObjectId, ObjectReference, ScalarLimits, UniverseId,
+    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
+    ObjectReference, ScalarLimits, UniverseId,
 };
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,

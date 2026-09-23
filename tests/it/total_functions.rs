@@ -11,17 +11,17 @@ use quire_exact::{
     Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_exact::{
-    Decimal, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence, Rational,
-    RoundingMode, UniverseId,
+    Decimal, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence, Rational, RoundingMode,
+    UniverseId,
 };
 use quire_spec_language::value::{
     CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
     CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage, CollectionType,
     CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock, DefinitionReference,
     DefinitionRevision, Evaluation, FamilyOutcome, FieldDeclaration, FieldValue, IeeeValue,
-    LocatedLoss, Location, MeasureObligation, ObjectEnvironment, ObjectTypeDeclaration,
-    Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval, QualifiedName,
-    RationalDomain, TypeEnvironment, Value, ValueLoss, ValueType,
+    LocatedLoss, Location, MeasureObligation, ObjectEnvironment, ObjectTypeDeclaration, Obligation,
+    OptionValue, Origin, PackageDeclarations, ProvedInterval, QualifiedName, RationalDomain,
+    TypeEnvironment, Value, ValueLoss, ValueType,
 };
 
 use sha2::{Digest, Sha256};

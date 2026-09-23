@@ -16,9 +16,9 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use quire_exact::UniverseId;
 use qsl_foundation::diagnostic::CatalogCode;
 use qsl_foundation::source::LocatedSpan;
+use quire_exact::UniverseId;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// three sites (#163 review finding: a revision-only mismatch must stay

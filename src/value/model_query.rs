@@ -129,7 +129,11 @@ fn invariant() -> ModelQueryHalt {
 /// [`PopulationBinding`] never produces (a checked invariant).
 fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQueryHalt> {
     let object = ObjectId::new(key.object.clone()).map_err(|_| invariant())?;
-    Ok(ObjectReference::new(key.universe, key.type_identity, object))
+    Ok(ObjectReference::new(
+        key.universe,
+        key.type_identity,
+        object,
+    ))
 }
 
 /// `reference`'s own identity triple as a [`LookupKey`] for [`lookup`],

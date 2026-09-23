@@ -18,7 +18,9 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
     ScalarLimits,
 };
-use quire_exact::{EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_exact::{
+    EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
+};
 use quire_spec_language::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };

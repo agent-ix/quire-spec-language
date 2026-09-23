@@ -362,7 +362,10 @@ mod tests {
         let c = ObjectId::new("o2").unwrap();
         assert_eq!(a, b);
         assert_eq!(a.as_str(), b.as_str());
-        assert_eq!(std::collections::HashSet::from([a.clone(), b, c.clone()]).len(), 2);
+        assert_eq!(
+            std::collections::HashSet::from([a.clone(), b, c.clone()]).len(),
+            2
+        );
         assert!(a < c);
     }
 
