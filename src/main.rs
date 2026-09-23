@@ -3,28 +3,83 @@
 mod cli;
 
 use cli::{Command, SyntaxCommand};
-use qsl_foundation::{Diagnostic, SourceIdentity};
+use qsl_cst::CompleteDiagnostic;
+use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
 use quire_spec_language::{format::format, parse, Limits};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+/// One refusal line: the fields every syntax-command diagnostic shares.
+struct Refusal<'a> {
+    code: Code,
+    phase: Phase,
+    source: &'a SourceIdentity,
+    path: &'a str,
+    span: &'a LocatedSpan,
+    message: &'a str,
+}
+
+impl Refusal<'_> {
+    fn render(&self) -> (u8, String) {
+        let span = self.span;
+        let output =
+            json!({ "status": if self.code.is_incomplete() { "incomplete" } else { "refused" },
+            "phase": self.phase.as_str(), "code": self.code.as_str(),
+            "source": {"identity": self.source.identity, "revision": self.source.revision},
+            "path": self.path, "span": {
+                "start": {"byte":span.start.byte,"line":span.start.line,"column":span.start.column},
+                "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
+            "message": self.message })
+            .to_string();
+        // FR-301's contract, via Code::exit_code(): a recognized construct this
+        // profile does not admit is unsupported (21); other incomplete work is
+        // 22; a refused syntax request is otherwise invalid input (20).
+        (self.code.exit_code(), output)
+    }
+}
+
 fn diagnostic(value: &Diagnostic) -> (u8, String) {
-    let incomplete = value.is_incomplete();
-    let span = value.span;
-    let output = json!({ "status": if incomplete { "incomplete" } else { "refused" },
-        "phase": value.phase.as_str(), "code": value.code.as_str(),
-        "source": {"identity": value.source.identity, "revision": value.source.revision},
-        "path": value.path, "span": {
-            "start": {"byte":span.start.byte,"line":span.start.line,"column":span.start.column},
-            "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}},
-        "message": value.message })
-    .to_string();
-    // FR-301's contract, via Code::exit_code(): a recognized construct this
-    // profile does not admit is unsupported (21); other incomplete work is
-    // 22; a refused syntax request is otherwise invalid input (20).
-    (value.exit_code(), output)
+    Refusal {
+        code: value.code,
+        phase: value.phase,
+        source: &value.source,
+        path: &value.path,
+        span: &value.span,
+        message: &value.message,
+    }
+    .render()
+}
+
+fn complete_diagnostic(value: &CompleteDiagnostic) -> (u8, String) {
+    Refusal {
+        code: value.code,
+        phase: value.phase,
+        source: &value.source,
+        path: &value.path,
+        span: &value.span,
+        message: &value.message,
+    }
+    .render()
+}
+
+/// Read at most the source ceiling plus one byte, so an oversized file
+/// reaches the parser's own size refusal without an unbounded read.
+fn read_bounded(path: &Path, source_bytes: usize) -> Result<Vec<u8>, (u8, String)> {
+    let display_path = path.to_string_lossy();
+    let file = std::fs::File::open(path)
+        .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
+    let mut bytes = Vec::new();
+    // Unreachable on any 64-bit target: usize -> u64 cannot overflow. A
+    // platform where it did would be a build/platform defect, not invalid
+    // input, so FR-301's tool-failure code (30) is the truer classification.
+    let ceiling = u64::try_from(source_bytes)
+        .map_err(|error| (30, format!("invalid source ceiling: {error}")))?;
+    file.take(ceiling.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;
+    Ok(bytes)
 }
 
 fn syntax(
@@ -33,37 +88,32 @@ fn syntax(
     revision: &str,
     path: &Path,
 ) -> Result<String, (u8, String)> {
-    let limits = Limits::default();
+    let source_identity = SourceIdentity {
+        identity: identity.into(),
+        revision: revision.into(),
+    };
     let display_path = path.to_string_lossy();
-    let file = std::fs::File::open(path)
-        .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
-    let mut bytes = Vec::new();
-    // Unreachable on any 64-bit target: usize -> u64 cannot overflow. A
-    // platform where it did would be a build/platform defect, not invalid
-    // input, so FR-301's tool-failure code (30) is the truer classification.
-    let ceiling = u64::try_from(limits.source_bytes)
-        .map_err(|error| (30, format!("invalid source ceiling: {error}")))?;
-    file.take(ceiling.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;
-    let unit = parse(
-        SourceIdentity {
-            identity: identity.into(),
-            revision: revision.into(),
-        },
-        display_path.as_ref(),
-        &bytes,
-        limits,
-    )
-    .map_err(|error| diagnostic(&error))?;
-    if command == SyntaxCommand::Format {
-        return format(&unit).map_err(|error| diagnostic(&error));
+    match command {
+        // FR-003: `format` reads the S1 lossless CST (ADR-011 §6.2, §7.3 M-6a).
+        SyntaxCommand::Format => {
+            let limits = qsl_cst::Limits::default();
+            let bytes = read_bounded(path, limits.source_bytes)?;
+            let parsed = qsl_cst::parse(source_identity, display_path.as_ref(), &bytes, limits)
+                .map_err(|error| complete_diagnostic(&error))?;
+            format(&parsed).map_err(|refusal| complete_diagnostic(refusal.diagnostic()))
+        }
+        SyntaxCommand::Parse => {
+            let limits = Limits::default();
+            let bytes = read_bounded(path, limits.source_bytes)?;
+            let unit = parse(source_identity, display_path.as_ref(), &bytes, limits)
+                .map_err(|error| diagnostic(&error))?;
+            Ok(
+                json!({"status":"parsed", "source":{"identity":identity,"revision":revision,"digest":unit.source().digest().to_string()},
+                "path":display_path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
+                .to_string(),
+            )
+        }
     }
-    Ok(
-        json!({"status":"parsed", "source":{"identity":identity,"revision":revision,"digest":unit.source().digest().to_string()},
-        "path":display_path, "imports":unit.imports().len(), "clauses":unit.clauses().len() })
-        .to_string(),
-    )
 }
 
 enum Output {

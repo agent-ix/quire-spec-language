@@ -1048,7 +1048,7 @@ old path and its replacement both run:
 
 | Lane | Deleted | In the PR that lands |
 |---|---|---|
-| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST. Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
+| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST, and native-edition `format` retires with no replacement. That retirement is a scoped exception, by owner decision on 2026-09-22, to the 2026-09-19 ruling that nothing working is removed early: `format` is tooling with no downstream artifact, the native lane is retiring, and native `run` does not need formatted input (Rulings 2026-09-22, native-edition `format`). Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
 | M-6b proof and replay | nothing: its former contents, SEAM-4 and `lowering`, are deleted in M-6a | #217 widens the skeleton spine to the function-application exemplar and deletes nothing. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
 | M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them; native `run` (native-run/1 clause execution over snapshots and invocations) and the SEAM-1 modules only it reaches, including `package::NativePackage`, the native-linked-package/1 reader, `runtime`, `mapped` and `model_source` (ADR-011-OQ-2) | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222). The PR that lands spine clause execution deletes native `run`. |
 | M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 (design #223), with agent-ix/quire-contract-ir#141 |
@@ -1294,6 +1294,14 @@ sections it names.
 - **OQ-4: `format` over a recovering CST.** Refused, as FR-003's Behavior
   and FR-003-AC-8 state. FR-003-AC-7 and FR-003-AC-8 supersede the
   recovery-node criterion proposed in a QSL-8 comment.
+- **Native-edition `format`.** Native-edition `format` retires in M-6a,
+  with no replacement (§7.3 M-6a row). `format` reads the complete-V1 CST
+  (FR-003), and a native-edition source refuses with `unknown_edition`. This
+  is a scoped exception to the 2026-09-19 ruling that nothing working is
+  removed early, decided by the owner on 2026-09-22. Reason: `format` is
+  tooling with no downstream artifact, the native lane is retiring, and
+  native `run` does not need formatted input. The exception covers `format`
+  only; native `run` stays until M-6c (OQ-1).
 - **OQ-5: `dependency_selections`.** Each entry holds the dependency's
   `package_id`; QSpec's schema typing is a QSpec defect. Until QSpec corrects
   it, `dependency_selections` is `[]` and an `import` is refused (§2.4). It is

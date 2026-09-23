@@ -254,7 +254,7 @@ phase until the previous command has completed.
 
 ```sh
 cargo run --locked --target-dir target -- parse test:parent fixture:1 tests/fixtures/parent.native
-cargo run --locked --target-dir target -- format test:parent fixture:1 tests/fixtures/parent.native
+cargo run --locked --target-dir target -- format test:value-format fixture:1 tests/fixtures/value-format.native
 ```
 
 Run the full local gate with `make ci`: formatting, clippy and `cargo test`
