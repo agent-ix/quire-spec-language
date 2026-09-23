@@ -271,8 +271,8 @@ mod tests {
     }
 
     /// TC-302 (H-7/H-8, strengthened): each of the six single-domain digest
-    /// identities (QC-15's, plus QC-21's `PopulationId`; `UnitId` is TC-411's
-    /// below) treats equal digest bytes
+    /// identities (QC-15's, plus QC-21's `PopulationId`; `UnitId`'s own test
+    /// is below) treats equal digest bytes
     /// as interchangeable ids -- not just `==`, but hashing equal (either
     /// stands in for the other as a set/map key) -- and distinct digests as
     /// distinct, differently ordered ids (ADR-013 QC-15, QC-21).

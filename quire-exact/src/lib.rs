@@ -120,7 +120,7 @@ mod value;
 // divided_by_power_of_ten`/`divided_by_power_of_two`, `decimal::
 // DecimalRepresentation::to_rational`, `decimal::compare_shifted`,
 // `decimal::power_of_ten_bits`/`sbits`/`sdigits`, `decimal::DecimalType::
-// placement` with `Placement`/`Placed`, `numeric::rational_arithmetic_bits`,
+// placement` with `Placement`/`Placed`/`Admitted`, `numeric::rational_arithmetic_bits`,
 // `decimal::DecimalLoss::exact`/`exact_denominator` and
 // `equality::plan_equality` are all `pub`
 // and exported below: each is unmetered exact arithmetic or comparison --
@@ -150,9 +150,9 @@ pub use collection::{
 };
 pub use comparison::{ComparisonOperator, IllTyped, IllTypedCause};
 pub use decimal::{
-    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Decimal, DecimalLoss,
-    DecimalOperation, DecimalRepresentation, DecimalResult, DecimalType, Placed, Placement,
-    RoundingMode,
+    compare_shifted, evaluate_decimal, power_of_ten_bits, sbits, sdigits, Admitted, Decimal,
+    DecimalLoss, DecimalOperation, DecimalRepresentation, DecimalResult, DecimalType, Placed,
+    Placement, RoundingMode,
 };
 pub use division::{divide, modulo, DivisionProfile, QuotientRemainder};
 pub use equality::{plan_equality, planned_equality, EqualityPlan};

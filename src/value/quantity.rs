@@ -282,8 +282,18 @@ pub fn evaluate_quantity(
     operation: QuantityOperation<'_>,
     meter: &mut Meter,
 ) -> Result<Outcome<Quantity>, IllTyped> {
-    type_check(operation)?;
-    Ok(Outcome::from_stop(evaluate(operation, meter)))
+    evaluate_quantity_unit(operation, meter).map(|(outcome, _)| outcome)
+}
+
+/// [`evaluate_quantity`] with the result's unit, formed once at type time
+/// and carried by the result quantity's id, for a caller that records it.
+pub(crate) fn evaluate_quantity_unit(
+    operation: QuantityOperation<'_>,
+    meter: &mut Meter,
+) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {
+    let unit = type_check(operation)?;
+    let outcome = Outcome::from_stop(evaluate(operation, unit.id(), meter));
+    Ok((outcome, unit))
 }
 
 /// Explicitly convert `source` into `unit` with the `target` representation.
@@ -420,21 +430,22 @@ fn charge_retain(meter: &mut Meter) -> Result<(), Stop> {
 }
 
 /// The type-time refusals of an operation, in cause order: incompatible
-/// dimensions, affine-unit arithmetic, distinct units.
-fn type_check(operation: QuantityOperation<'_>) -> Result<(), IllTyped> {
+/// dimensions, affine-unit arithmetic, distinct units; otherwise its result
+/// unit.
+fn type_check(operation: QuantityOperation<'_>) -> Result<QuantityUnit, IllTyped> {
     let (unit_operation, a, b) = match operation {
         QuantityOperation::Add(a, b) => (UnitOperation::Add, a, b),
         QuantityOperation::Subtract(a, b) => (UnitOperation::Subtract, a, b),
         QuantityOperation::Multiply(a, b) => (UnitOperation::Multiply, a, b),
         QuantityOperation::Divide(a, b) => (UnitOperation::Divide, a, b),
-        QuantityOperation::Power(a, _) => {
+        QuantityOperation::Power(a, n) => {
             if a.unit.is_affine() {
                 return Err(ill_typed(IllTypedCause::AffineUnitArithmetic));
             }
-            return Ok(());
+            return Ok(QuantityUnit::Compound(a.unit.canonical_compound().power(n)));
         }
     };
-    result_unit(unit_operation, a.unit, b.unit).map(|_| ())
+    result_unit(unit_operation, a.unit, b.unit)
 }
 
 /// A binary quantity operation, before its operand values exist.
@@ -514,7 +525,12 @@ fn check_undefined(operation: QuantityOperation<'_>) -> Result<(), Stop> {
     Ok(())
 }
 
-fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quantity, Stop> {
+/// Evaluate a type-checked operation whose result unit has id `unit`.
+fn evaluate(
+    operation: QuantityOperation<'_>,
+    unit: UnitId,
+    meter: &mut Meter,
+) -> Result<Quantity, Stop> {
     let operands = match operation {
         QuantityOperation::Add(a, b)
         | QuantityOperation::Subtract(a, b)
@@ -527,30 +543,23 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
     let result = match operation {
         QuantityOperation::Add(a, b) => Quantity::new(
             rational_event(RationalArithmetic::Add(a.value(), b.value()), meter)?,
-            a.unit.id(),
+            unit,
         ),
         QuantityOperation::Subtract(a, b) => Quantity::new(
             rational_event(RationalArithmetic::Subtract(a.value(), b.value()), meter)?,
-            a.unit.id(),
+            unit,
         ),
         QuantityOperation::Multiply(a, b) | QuantityOperation::Divide(a, b) => {
             let (left_edges, right_edges) = (to_root(a.unit), to_root(b.unit));
             charge_edges(left_edges.len() + right_edges.len(), meter)?;
             let left = events(a.value(), &left_edges, meter)?;
             let right = events(b.value(), &right_edges, meter)?;
-            let (left_unit, right_unit) =
-                (a.unit.canonical_compound(), b.unit.canonical_compound());
-            if matches!(operation, QuantityOperation::Multiply(..)) {
-                Quantity::new(
-                    rational_event(RationalArithmetic::Multiply(&left, &right), meter)?,
-                    left_unit.multiply(&right_unit).id(),
-                )
+            let value = if matches!(operation, QuantityOperation::Multiply(..)) {
+                rational_event(RationalArithmetic::Multiply(&left, &right), meter)?
             } else {
-                Quantity::new(
-                    rational_event(RationalArithmetic::Divide(&left, &right), meter)?,
-                    left_unit.divide(&right_unit).id(),
-                )
-            }
+                rational_event(RationalArithmetic::Divide(&left, &right), meter)?
+            };
+            Quantity::new(value, unit)
         }
         QuantityOperation::Power(a, exponent) => {
             let edges = to_root(a.unit);
@@ -558,7 +567,7 @@ fn evaluate(operation: QuantityOperation<'_>, meter: &mut Meter) -> Result<Quant
             let base = events(a.value(), &edges, meter)?;
             Quantity::new(
                 power(&base, exponent, meter)?.ok_or(Stop::Undefined(Undefined::DivisionByZero))?,
-                a.unit.canonical_compound().power(exponent).id(),
+                unit,
             )
         }
     };
@@ -642,17 +651,21 @@ fn convert(
             ConvertedValue::Exact(exact)
         }
         Target::Decimal(decimal) => {
-            let placed = place(&exact, decimal, Retained::Decimal, meter)?;
-            placed.check_membership(decimal).map_err(refused)?;
+            let admitted = place(&exact, decimal, Retained::Decimal, meter)?
+                .admit()
+                .map_err(refused)?;
             charge_retain(meter)?;
-            ConvertedValue::Decimal(placed.retain(decimal))
+            ConvertedValue::Decimal(admitted.retain())
         }
         Target::Integer { placement, domain } => {
-            let (coefficient, loss) =
-                place(&exact, placement, Retained::Integer, meter)?.into_integer();
-            let value = domain
-                .admit(coefficient)
-                .map_err(|_| Stop::Refused(Refusal::IntegerOutOfDomain))?;
+            let out_of_domain = || Stop::Refused(Refusal::IntegerOutOfDomain);
+            // The scale-zero placement's membership is the integer domain.
+            let (coefficient, loss) = place(&exact, placement, Retained::Integer, meter)?
+                .admit()
+                .map_err(|_| out_of_domain())?
+                .into_integer()
+                .ok_or(Stop::Refused(Refusal::CheckedInvariant))?;
+            let value = domain.admit(coefficient).map_err(|_| out_of_domain())?;
             charge_retain(meter)?;
             ConvertedValue::Integer { value, loss }
         }
@@ -698,7 +711,7 @@ fn place(
         }
         Retained::Integer => charge.size(LimitKind::IntegerBits, numerator.magnitude_bits()),
     })?;
-    placement.materialize(decimal).map_err(refused)
+    placement.materialize().map_err(refused)
 }
 
 /// The top-level equality and ordering schedule: both root paths, left then

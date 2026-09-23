@@ -23,6 +23,8 @@
 //! `quire.value.compound-unit/v1` digest ([`CompoundUnit::id`]).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -831,23 +833,38 @@ impl CompoundUnitPreimage {
 }
 
 /// A normalized compound unit: canonical root-unit keys to nonzero exponents.
-/// The empty map is the sole dimensionless unit.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// The empty map is the sole dimensionless unit. Two compound units are equal
+/// exactly when their terms are, which is also when their ids are.
+#[derive(Clone, Debug)]
 pub struct CompoundUnit {
     terms: BTreeMap<NodeKey, Integer>,
     dimension: Dimension,
-    /// The `quire.value.compound-unit/v1` identity of `terms`, computed once
-    /// when the terms are fixed.
-    id: UnitId,
+    /// The `quire.value.compound-unit/v1` identity of `terms`, hashed on first
+    /// use: the intermediate roots and products an operation builds never
+    /// need it.
+    id: OnceLock<UnitId>,
+}
+
+impl PartialEq for CompoundUnit {
+    fn eq(&self, other: &Self) -> bool {
+        self.terms == other.terms
+    }
+}
+
+impl Eq for CompoundUnit {}
+
+impl Hash for CompoundUnit {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.terms.hash(state);
+    }
 }
 
 impl CompoundUnit {
     fn new(terms: BTreeMap<NodeKey, Integer>, dimension: Dimension) -> Self {
-        let id = compound_id(terms.iter().map(|(key, exponent)| (*key, exponent)));
         Self {
             terms,
             dimension,
-            id,
+            id: OnceLock::new(),
         }
     }
 
@@ -874,7 +891,9 @@ impl CompoundUnit {
     /// The compound-arm [`UnitId`]: the `quire.value.compound-unit/v1`
     /// digest of the terms (ADR-013 T-6, OQ-B).
     pub fn id(&self) -> UnitId {
-        self.id
+        *self
+            .id
+            .get_or_init(|| compound_id(self.terms.iter().map(|(key, exponent)| (*key, exponent))))
     }
 
     pub(crate) fn multiply(&self, other: &Self) -> Self {

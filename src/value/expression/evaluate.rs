@@ -24,7 +24,7 @@ use super::super::numeric::{
 };
 use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{
-    compare_quantity, evaluate_quantity, result_unit, QuantityOperation, UnitOperation, UnitScope,
+    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
 use super::super::reference::ObjectEnvironment;
 use super::super::text::compare_text;
@@ -123,6 +123,17 @@ enum Halt {
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
     Fault(InternalFault),
+}
+
+/// A quantity whose `UnitId` neither the package's unit table nor this
+/// evaluation's formed units resolve. Checking resolves every quantity type
+/// and admission matches every argument's unit id to its parameter's, so this
+/// is an S6a invariant break, never caller input (FR-090-AC-3).
+fn unresolved_unit() -> Halt {
+    Halt::Fault(InternalFault::new(
+        "S6a",
+        "quantity-unit-unresolved-past-admission",
+    ))
 }
 
 impl From<Stop> for Halt {
@@ -849,26 +860,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 let (Some(l), Some(r)) = (self.units.resolve(&left), self.units.resolve(&right))
                 else {
-                    return Err(invariant());
+                    return Err(unresolved_unit());
                 };
-                let (unit_operation, operation) = match operator {
-                    ArithmeticOperator::Add => (UnitOperation::Add, QuantityOperation::Add(l, r)),
-                    ArithmeticOperator::Subtract => {
-                        (UnitOperation::Subtract, QuantityOperation::Subtract(l, r))
-                    }
-                    ArithmeticOperator::Multiply => {
-                        (UnitOperation::Multiply, QuantityOperation::Multiply(l, r))
-                    }
-                    ArithmeticOperator::Divide => {
-                        (UnitOperation::Divide, QuantityOperation::Divide(l, r))
-                    }
+                let operation = match operator {
+                    ArithmeticOperator::Add => QuantityOperation::Add(l, r),
+                    ArithmeticOperator::Subtract => QuantityOperation::Subtract(l, r),
+                    ArithmeticOperator::Multiply => QuantityOperation::Multiply(l, r),
+                    ArithmeticOperator::Divide => QuantityOperation::Divide(l, r),
                 };
-                let unit =
-                    result_unit(unit_operation, l.unit(), r.unit()).map_err(|_| invariant())?;
-                let quantity = evaluate_quantity(operation, self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()?;
-                // A later operation reads this result's unit by its id.
+                let (outcome, unit) =
+                    evaluate_quantity_unit(operation, self.meter).map_err(|_| invariant())?;
+                let quantity = outcome.into_stop()?;
+                // A later operation reads this result's unit by its id; the
+                // scope keeps one entry per distinct unit.
                 self.units.form(unit);
                 Value::Quantity(quantity)
             }
@@ -1261,7 +1265,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
                 let (Some(l), Some(r)) = (self.units.resolve(l), self.units.resolve(r)) else {
-                    return Err(invariant());
+                    return Err(unresolved_unit());
                 };
                 return compare_quantity(comparison(operator), l, r, self.meter)
                     .map_err(|_| invariant())?

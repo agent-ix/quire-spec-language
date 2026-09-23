@@ -24,16 +24,17 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     admit_text, compare_ieee, convert_ieee_width, form_collection, plan_equality,
-    AdmittedIeeeProfile, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedEquality,
-    CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionType,
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision, DimensionPreimage,
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EqualityOperand,
-    EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration, FieldExpression, FieldValue,
-    IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection,
-    OwnerSubject, PackageDeclarations, RationalDomain, Refusal, Text, TextPayload, TypeEnvironment,
-    Undefined, UnitGraph, UnitPreimage, UnitTable, UniverseIdentity, Value, ValueLoss, ValueType,
+    AdmittedIeeeProfile, CallFailure, CatalogRole, CheckCause, CheckMode, CheckRefusal,
+    CheckedEquality, CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits,
+    CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
+    DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    EqualityOperand, EqualityOperator, Evaluation, FamilyOutcome, FieldDeclaration,
+    FieldExpression, FieldValue, IeeeComparison, IeeeFlag, IeeeValue, LocatedLoss, NodeOwner,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Outcome, OwnerSelection, OwnerSubject, PackageDeclarations, RationalDomain,
+    Refusal, Text, TextPayload, TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UnitTable,
+    UniverseIdentity, Value, ValueLoss, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -2080,15 +2081,65 @@ fn x04_compound_results_feed_further_quantity_operations() {
     assert_eq!(quotient.unit().domain(), UnitDomain::Compound);
     assert_ne!(quotient.unit(), units.m);
 
-    let (ordered, _) = run_in(
-        &package,
-        &parameters,
-        &binary(BinaryOperator::Less, times_t("x"), times_t("y")),
-        None,
-        arguments(),
-        UNLIMITED,
+    // Ordering and FR-149 equality over two compound operands: checking
+    // resolves the formed unit, and the checked equality evaluates with it.
+    for (operator, left, right, expected) in [
+        (BinaryOperator::Less, "x", "y", true),
+        (BinaryOperator::Equal, "x", "y", false),
+        (BinaryOperator::Equal, "x", "x", true),
+        (BinaryOperator::NotEqual, "x", "y", true),
+        (BinaryOperator::NotEqual, "x", "x", false),
+    ] {
+        let (compared, _) = run_in(
+            &package,
+            &parameters,
+            &binary(operator, times_t(left), times_t(right)),
+            None,
+            arguments(),
+            UNLIMITED,
+        );
+        completed_as(&compared, &Value::Boolean(expected));
+    }
+}
+
+/// An S6a invariant break, not a refusal: a quantity expression checked
+/// against one package's units and evaluated in a package whose table lacks
+/// them passes admission (the argument's unit id matches the parameter's) and
+/// reaches an operation whose operand unit nothing resolves.
+#[trace("TC-384", "FR-090-AC-3")]
+#[test]
+fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
+    let units = units();
+    let with_units = expression_package(
+        TypeEnvironment::default().with_units(units.table.clone()),
+        false,
     );
-    completed_as(&ordered, &Value::Boolean(true));
+    let parameters = [("x", ValueType::Quantity(units.m))];
+    let one_metre = Value::Quantity(Quantity::new(Rational::from_integer(integer(1)), units.m));
+    for operator in [BinaryOperator::Add, BinaryOperator::Less] {
+        let checked = check_in(
+            &with_units,
+            &parameters,
+            &operation(operator, "x", "x"),
+            None,
+            CheckMode::Kernel,
+        )
+        .unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        let failure = plain_package()
+            .evaluate(
+                &checked,
+                vec![one_metre.clone()],
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+            .expect_err("an unresolved unit must fault, never evaluate");
+        let CallFailure::Fault(fault) = failure else {
+            panic!("expected an internal fault, got {failure:?}");
+        };
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.invariant(), "quantity-unit-unresolved-past-admission");
+    }
 }
 
 #[trace("TC-193", "FR-148-AC-8")]

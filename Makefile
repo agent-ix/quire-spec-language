@@ -127,6 +127,9 @@ ci: check-no-committed-binaries check-index-completeness ci-default-features ci-
 # when the test did not actually check the vectors (a renamed test filters to
 # zero tests and would otherwise pass).
 CONFORMANCE_TEST := value::application_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
+# TC-411 step 3 (FR-088-AC-12): the compound-unit `UnitId`s against QSpec's
+# `value-compound-unit-vectors.json`, guarded the same way.
+CONFORMANCE_UNIT_TEST := quantities::tc_411_compound_unit_ids_match_qspec_vectors
 conformance:
 	@if [ -z "$(QSPEC_DIR)" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
@@ -137,6 +140,11 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: ' || { echo "conformance: the vector check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked --test it -- --exact $(CONFORMANCE_UNIT_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* compound-unit vectors$$' || { echo "conformance: the compound-unit vector check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059
