@@ -2,6 +2,7 @@
 //! TC-189 collection kind algebra over the real `value` boundary (FR-144).
 
 use ix_trace_rs::trace;
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextProfile, TextType,
@@ -33,6 +34,12 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 
 fn key(label: &str) -> NodeKey {
     NodeKey::from_digest(Sha256::digest(label.as_bytes()).into())
+}
+
+/// A model object type's effective-declaration identity (ADR-013 O-05): the
+/// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn int(value: i64) -> Value {
@@ -308,7 +315,7 @@ fn holder_environment() -> TypeEnvironment {
                 "Holder",
                 CompositeShape::Record(vec![FieldDeclaration::new(
                     "r",
-                    ValueType::Reference(key("M::Obj")),
+                    ValueType::Reference(object_type("M::Obj")),
                     Presence::Required,
                 )]),
             ),
@@ -322,7 +329,11 @@ fn holder_environment() -> TypeEnvironment {
                 )]),
             ),
         ],
-        [ObjectTypeDeclaration::new(key("M::Obj"), "Obj", vec![])],
+        [ObjectTypeDeclaration::new(
+            object_type("M::Obj"),
+            "Obj",
+            vec![],
+        )],
     )
     .unwrap()
 }
@@ -330,7 +341,7 @@ fn holder_environment() -> TypeEnvironment {
 fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
     let reference = ObjectReference::new(
         UniverseIdentity::new(universe.as_bytes()).unwrap(),
-        key("M::Obj"),
+        object_type("M::Obj"),
         ObjectIdentity::new(identity.as_bytes()).unwrap(),
     );
     env.record(
@@ -861,7 +872,7 @@ mod checked {
                 (
                     ObjectReference::new(
                         UniverseIdentity::new(b"u1").unwrap(),
-                        key("M::Obj"),
+                        object_type("M::Obj"),
                         ObjectIdentity::new(identity.as_bytes()).unwrap(),
                     ),
                     Vec::new(),

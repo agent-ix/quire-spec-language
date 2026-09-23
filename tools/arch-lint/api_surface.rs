@@ -200,10 +200,7 @@ pub(crate) const RULES: &[Rule] = &[
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
         // leaves in the change that removes its last mint.
-        debt_list: &[
-            ("value::model_query", "to_object_reference"),
-            ("value::expression::family", "decode_v2"),
-        ],
+        debt_list: &[("value::expression::family", "decode_v2")],
     },
     Rule {
         id: "T12-C",
@@ -227,12 +224,10 @@ pub(crate) const RULES: &[Rule] = &[
              name an allowed-caller mapping for either, not decided here (#213)",
         ),
         shipped_only: true,
-        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists"
-        // (OBS-018).
-        debt_list: &[
-            ("value::model_query", "bridge_lookup_key"),
-            ("value::model_query", "resolve_target"),
-        ],
+        // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists".
+        // Empty since QSL-131 V1 retyped reference types to `EffectiveId`
+        // (ADR-013 O-05, OBS-018), so any shipped mint outside `model` fails.
+        debt_list: &[],
     },
     Rule {
         id: "T12-D",
@@ -1534,15 +1529,15 @@ mod tests {
     fn tc_157_debt_list_mint_is_reported_as_debt() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        let rule = &RULES[1]; // T12-B: debt list has (value::model_query, to_object_reference)
+        let rule = &RULES[1]; // T12-B: debt list has (value::expression::family, decode_v2)
         seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
-        // Overwrite `value::model_query`'s seeded baseline with a
+        // Overwrite `value::expression::family`'s seeded baseline with a
         // shaped-like-the-real-thing mint -- T12-B's debt list has exactly
         // one entry in this module, so nothing else to preserve.
         write(
             dir.path(),
-            "src/value/model_query.rs",
-            "fn to_object_reference(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
+            "src/value/expression/family.rs",
+            "fn decode_v2(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
         );
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
@@ -1550,8 +1545,8 @@ mod tests {
             outcome
                 .debt
                 .iter()
-                .any(|site| site.module == "value::model_query"
-                    && site.function == "to_object_reference"),
+                .any(|site| site.module == "value::expression::family"
+                    && site.function == "decode_v2"),
             "{:?}",
             outcome.debt
         );
@@ -1574,8 +1569,8 @@ mod tests {
         write(dir.path(), "src/check/mod.rs", "pub struct NodeKey;\n");
         write(
             dir.path(),
-            "src/value/model_query.rs",
-            "fn to_object_reference() -> u8 {\n    0\n}\n",
+            "src/value/expression/family.rs",
+            "fn decode_v2() -> u8 {\n    0\n}\n",
         );
         let rule = &RULES[1]; // T12-B
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
@@ -1583,7 +1578,7 @@ mod tests {
         assert!(outcome.debt.is_empty());
         assert!(outcome
             .stale_debt_entries
-            .contains(&("value::model_query", "to_object_reference")));
+            .contains(&("value::expression::family", "decode_v2")));
         assert!(!outcome.passed());
     }
 

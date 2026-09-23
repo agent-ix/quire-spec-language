@@ -1553,19 +1553,14 @@ mod tests {
             other => panic!("expected a completed effective view, got {other:?}"),
         };
         let a = view
-            .declarations()
-            .iter()
-            .find(|entry| {
-                entry.preimage.owner_effective_type.is_none()
-                    && entry.preimage.original == DeclarationKey::fixture("model.A")
-            })
-            .map(|entry| entry.effective_id)
+            .type_identities()
+            .get(&DeclarationKey::fixture("model.A"))
+            .copied()
             .expect("model.A has a type-level effective declaration");
-        let node_a = quire_exact::NodeKey::from_digest(*a.as_bytes());
         let types = crate::value::declaration::TypeEnvironment::new(
             [],
             [crate::value::declaration::ObjectTypeDeclaration::new(
-                node_a,
+                a,
                 "M::A",
                 Vec::new(),
             )],

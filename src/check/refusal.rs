@@ -2,8 +2,8 @@
 //! Located checking refusals and their closed codes and causes.
 
 use qsl_foundation::diagnostic::Code;
+use quire_exact::EffectiveId;
 use quire_exact::Integer;
-use quire_exact::NodeKey;
 use quire_exact::{IllTyped, IllTypedCause};
 
 /// The declaration a location belongs to.
@@ -369,8 +369,9 @@ pub enum InvalidDispatchDeclaration {
     /// overlapping roots, and name lookup at a call site would otherwise
     /// silently pick whichever entry happens to come first.
     DuplicateOperation {
-        /// The receiver type both operations declare.
-        receiver_type: NodeKey,
+        /// The receiver type both operations declare, by its effective
+        /// identity.
+        receiver_type: EffectiveId,
         /// The shared member name.
         member: String,
     },

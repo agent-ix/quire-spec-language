@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
+use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
@@ -97,6 +98,12 @@ fn fixture_key(preimage: &serde_json::Value) -> NodeKey {
 /// An opaque producer-assigned declaration key.
 fn key(label: &str) -> NodeKey {
     hex(label.as_bytes())
+}
+
+/// A model object type's effective-declaration identity (ADR-013 O-05): the
+/// identity `Reference<T>` and `ObjectTypeDeclaration` carry.
+fn object_type(label: &str) -> EffectiveId {
+    EffectiveId::from_digest(Sha256::digest(label.as_bytes()).into())
 }
 
 fn owners() -> OwnerSelection {
@@ -821,12 +828,12 @@ fn object_environment() -> TypeEnvironment {
             "Holder",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "r",
-                ValueType::Reference(key("M::Obj")),
+                ValueType::Reference(object_type("M::Obj")),
                 Presence::Required,
             )]),
         )],
         [ObjectTypeDeclaration::new(
-            key("M::Obj"),
+            object_type("M::Obj"),
             "Obj",
             vec![FieldDeclaration::new(
                 "balance",
@@ -841,7 +848,7 @@ fn object_environment() -> TypeEnvironment {
 fn reference(universe: &str, identity: &str) -> ObjectReference {
     ObjectReference::new(
         UniverseIdentity::new(universe.as_bytes()).unwrap(),
-        key("M::Obj"),
+        object_type("M::Obj"),
         ObjectIdentity::new(identity.as_bytes()).unwrap(),
     )
 }
@@ -865,7 +872,7 @@ fn e16_references_compare_identity_triple_only() {
         other => panic!("balance is a present integer, not {other:?}"),
     };
     assert_ne!(balance(&before), balance(&after));
-    let r = ValueType::Reference(key("M::Obj"));
+    let r = ValueType::Reference(object_type("M::Obj"));
     let left = Value::Reference(a.clone());
     assert_eq!(
         equal(&env, (&r, &left), (&r, &Value::Reference(a))),
@@ -1352,7 +1359,7 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
         ..ZERO
     };
     let decimal_type = decimal_type(0, 100, 1, 2);
-    let reference_type = ValueType::Reference(key("M::Obj"));
+    let reference_type = ValueType::Reference(object_type("M::Obj"));
     let a = Value::Reference(reference("u1", "a"));
     let rows: [(EqualityOperator, &ValueType, Value, Value, bool); 4] = [
         (
