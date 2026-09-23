@@ -602,8 +602,8 @@ the candidate presented, so `LibraryRefusal::StaleDependency` carries
 `pin: StalePin` (an import declaration, or a pinned entry) in place of
 `import: ImportDeclaration`; AC-11 lists this payload change.
 
-Backed: FR-087-AC-3 (TC-253), FR-087-AC-5 (TC-245) and FR-087-AC-12
-(TC-282). TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
+Backed: FR-087-AC-3 (TC-253), FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245)
+and FR-087-AC-12 (TC-282). TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
 the wire path (`checked_v2` tests). Step 3 runs at the `library` level
 (`library::binding_tests`), because on the wire path IR refuses a
 non-recomputing `package_id` first and names it `stale_dependency`
@@ -617,18 +617,33 @@ constructor is referenced anywhere but one call in the v2 reader's
 `AdmittedV2` arm, including inside a macro; the witness's private field in
 `library::witness` makes the compiler refuse any other construction.
 
-Not backed: FR-087-AC-4 (TC-254). TC-254's tests show a two-export
-`ImportView` carrying each export at its own `WireNodeId`, and a scan of
-`library` finds no `NodeKey` and no name → `NodeKey`/`PackageNodeKey`
-function. But `ImportView` maps an exported *name* to a `WireNodeId`, and
-`library::package_identity::ProjectedDeclarations::node(&str) ->
-Option<WireNodeId>` maps a name to a node id while admitting a package.
-AC-4 as written ("no function in `library` takes a name ... and returns a
-declaration or node id"), TC-254 steps 2-4 ("keyed by its `WireNodeId` ...
-not by its declared name") and ADR-011 §2.1 I2 ("data keyed by
-`WireNodeId`") forbid both, and AC-11 and this requirement's Behavior
-("No name → identity lookup SHALL exist in `library`") say the same.
-Which of those texts changes is not yet ruled. Remaining work: QSL-6.
+FR-087-AC-4 (TC-254) is backed. `ImportView` holds its exports keyed by
+`WireNodeId` and exposes them only as `(name, PackageNodeKey)` entries, in
+node-id order; it has no method that takes a name. `library`'s admission
+checks a package's export list against its declared names, and keeps only
+the listed declarations, by membership alone
+(`ProjectedDeclarations::undeclared`, which returns a name, and
+`retain_exported`); neither maps a name to a node id. The checker builds
+its own name index from the view's entries (`check::imports`) and resolves
+a name there, refusing an unexported name `missing_declaration` /
+`missing-name`. Steps 1-2 and 5 run on the wire path (`checked_v2` tests:
+two exports whose node-id order is the reverse of their name order, and
+the checker's index over them) and at the `library` level (two exports of
+different node kinds, and a view holding only the listed export). Steps 3-4
+are `tests/it/import_view_names.rs`, a `syn` scan of every `library` file.
+It fails on any function taking a name and returning a `WireNodeId`,
+`NodeKey`, `PackageNodeKey`, `ImportView`, a `library` type carrying one,
+`Self::X` bound to one, or a generic built from one; on any name → node id
+map (`BTreeMap`, `HashMap`, `IndexMap`, a reference to or an iterator over
+one) as a return type, field or type alias; and on any `ImportView` method
+taking a name. It covers trait default and required methods, traits
+implemented for `ImportView`, generics bounded by `AsRef<str>`-like
+traits, `str` aliases and renames, newtypes over a name, and signatures
+inside macro tokens, each with a synthetic positive. It does not see a node
+id returned as raw digest bytes, a hex `String` or a `usize` position; a
+name passed as `&[u8]`; a closure without type annotations, including one
+held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
+type inside a function body.
 
 AC-1 (constructor/field privacy across all five stage-output types) stays
 an Inspection criterion across all five types together and is not flipped
