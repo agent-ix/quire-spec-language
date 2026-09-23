@@ -580,6 +580,7 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
 mod checked {
     use super::*;
     use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
+    use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
         CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, EnumBinding,
         PackageDeclarations,
@@ -590,7 +591,7 @@ mod checked {
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause};
     use quire_exact::NODE_KEY_DOMAIN;
-    use quire_spec_language::value::{CheckedPackage, CheckedPackageEvaluation};
+    use quire_spec_language::value::CheckedPackageEvaluation;
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package"]
 resolver = "2"
 
 [package]
@@ -34,6 +34,10 @@ qsl-forms = { path = "qsl-forms" }
 # re-exports none of its items (ADR-011 §7.2); callers name them at
 # `qsl_semantics::...`.
 qsl-semantics = { path = "qsl-semantics" }
+# ADR-011 §7.3 X-7 (QSL-182): layer 4, extracted out of this crate. This crate
+# re-exports none of its items (ADR-011 §7.2); callers name them at
+# `qsl_package::...`.
+qsl-package = { path = "qsl-package" }
 # ADR-011 §7.3 X-4 (QSL-179): layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }
