@@ -104,6 +104,52 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
     Ok(Some(member))
 }
 
+/// The mode value whose `as_str` spells `text`, among `candidates`.
+fn spelled<E: serde::de::Error, T: Copy>(
+    value: Value,
+    candidates: &[T],
+    spelling: fn(T) -> &'static str,
+) -> Result<T, E> {
+    let Value::String(text) = value else {
+        return Err(E::custom(format!("mode value {value} is not a string")));
+    };
+    candidates
+        .iter()
+        .copied()
+        .find(|candidate| spelling(*candidate) == text)
+        .ok_or_else(|| E::custom(format!("unknown mode value {text}")))
+}
+
+impl<'de> Deserialize<'de> for OperationMode {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            kind: String,
+            value: Value,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let value = wire.value;
+        match wire.kind.as_str() {
+            "rounding" => spelled::<D::Error, _>(value, &RoundingMode::ALL, RoundingMode::as_str)
+                .map(Self::Rounding),
+            "text_profile" => spelled::<D::Error, _>(value, &TextProfile::ALL, TextProfile::as_str)
+                .map(Self::TextProfile),
+            "absence" => spelled::<D::Error, _>(
+                value,
+                &[
+                    AbsenceMode::Undefined,
+                    AbsenceMode::Empty,
+                    AbsenceMode::Refused,
+                ],
+                AbsenceMode::as_str,
+            )
+            .map(Self::Absence),
+            other => Err(D::Error::custom(format!("unknown mode kind {other}"))),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // QSL-authored cases: the parts QSpec's vectors leave uncovered (every
 // published vector has `declaration: null` and `recursion: null`).
@@ -143,7 +189,7 @@ fn identifiers(names: &[&str]) -> Vec<Identifier> {
 
 fn node<'a>(body: &'a SemanticTerm) -> ApplicationNode<'a> {
     ApplicationNode {
-        node_tag: "expression",
+        node_tag: NodeTag::Expression,
         semantic_form: "binary",
         semantic_type: key(3),
         declaration: None,
@@ -163,11 +209,11 @@ fn preimage_bytes_are_pinned() {
     let group = [key(1), key(2)];
     let declaration = identifiers(&["pkg", "total"]);
     let node = ApplicationNode {
-        node_tag: "function",
+        node_tag: NodeTag::Function,
         semantic_form: "function",
         semantic_type: key(3),
         declaration: Some(&declaration),
-        recursion: RecursionGroup::new(&group, 1),
+        recursion: Some(RecursionGroup::new(&group, 1).expect("group is valid")),
         body: &body,
     };
     let node_ref = |fill: u8| {
@@ -216,7 +262,7 @@ fn group_references_are_rewritten_in_every_nested_term() {
     };
     let group = [key(1), key(2)];
     let node = ApplicationNode {
-        recursion: RecursionGroup::new(&group, 0),
+        recursion: Some(RecursionGroup::new(&group, 0).expect("group is valid")),
         ..node(&body)
     };
 
@@ -245,11 +291,11 @@ fn the_key_does_not_depend_on_group_member_keys() {
     let first_group = [key(1), key(2)];
     let second_group = [key(7), key(8)];
     let first = ApplicationNode {
-        recursion: RecursionGroup::new(&first_group, 1),
+        recursion: Some(RecursionGroup::new(&first_group, 1).expect("group is valid")),
         ..node(&first_body)
     };
     let second = ApplicationNode {
-        recursion: RecursionGroup::new(&second_group, 1),
+        recursion: Some(RecursionGroup::new(&second_group, 1).expect("group is valid")),
         ..node(&second_body)
     };
     let outside = ApplicationNode {
@@ -282,11 +328,11 @@ fn declaration_and_recursion_each_enter_the_key() {
         ..bare
     };
     let first = ApplicationNode {
-        recursion: RecursionGroup::new(&group, 0),
+        recursion: Some(RecursionGroup::new(&group, 0).expect("group is valid")),
         ..bare
     };
     let second = ApplicationNode {
-        recursion: RecursionGroup::new(&group, 1),
+        recursion: Some(RecursionGroup::new(&group, 1).expect("group is valid")),
         ..bare
     };
 
@@ -330,6 +376,7 @@ fn a_body_without_an_application_is_refused() {
 
 #[test]
 fn a_literal_integer_outside_the_exact_range_is_refused() {
+    let safe = i64::try_from(JCS_SAFE_INTEGER).expect("2^53 - 1 fits i64");
     let literal = |value: i64| {
         add(vec![SemanticTerm::Literal {
             ty: NodeRef(key(3)),
@@ -337,33 +384,253 @@ fn a_literal_integer_outside_the_exact_range_is_refused() {
             value: Some(LiteralValue::Integer(value)),
         }])
     };
-    let edge = literal(JCS_SAFE_INTEGER);
-    let negative_edge = literal(-JCS_SAFE_INTEGER);
-    let beyond = literal(JCS_SAFE_INTEGER + 1);
-    let negative_beyond = literal(-JCS_SAFE_INTEGER - 1);
+    let edge = literal(safe);
+    let negative_edge = literal(-safe);
+    let beyond = literal(safe + 1);
+    let negative_beyond = literal(-safe - 1);
 
     assert!(application_node_key(&node(&edge)).is_ok());
     assert!(application_node_key(&node(&negative_edge)).is_ok());
     assert_eq!(
         application_node_key(&node(&beyond)),
         Err(ApplicationKeyRefusal::UnsafeInteger {
+            site: IntegerSite::Literal,
             value: JCS_SAFE_INTEGER + 1
         })
     );
     assert_eq!(
         application_node_key(&node(&negative_beyond)),
         Err(ApplicationKeyRefusal::UnsafeInteger {
+            site: IntegerSite::Literal,
             value: -JCS_SAFE_INTEGER - 1
         })
     );
 }
 
 #[test]
-fn a_recursion_ordinal_must_be_a_group_position() {
+fn a_member_position_outside_the_exact_range_is_refused() {
+    let safe = u64::try_from(JCS_SAFE_INTEGER).expect("2^53 - 1 fits u64");
+    let positioned = |position: u64| {
+        let SemanticTerm::Application {
+            operator,
+            mut operation,
+            result_type,
+            arguments,
+        } = add(Vec::new())
+        else {
+            unreachable!("add builds an application")
+        };
+        operation.member = Some(Member::Position {
+            declaration: key(12),
+            position,
+        });
+        SemanticTerm::Application {
+            operator,
+            operation,
+            result_type,
+            arguments,
+        }
+    };
+    let edge = positioned(safe);
+    let beyond = positioned(safe + 1);
+
+    assert!(application_node_key(&node(&edge)).is_ok());
+    assert_eq!(
+        application_node_key(&node(&beyond)),
+        Err(ApplicationKeyRefusal::UnsafeInteger {
+            site: IntegerSite::MemberPosition,
+            value: JCS_SAFE_INTEGER + 1
+        })
+    );
+}
+
+#[test]
+fn a_recursion_group_needs_an_in_range_ordinal_and_distinct_members() {
     let group = [key(1), key(2)];
-    assert!(RecursionGroup::new(&group, 1).is_some());
-    assert_eq!(RecursionGroup::new(&group, 2), None);
-    assert_eq!(RecursionGroup::new(&[], 0), None);
+    assert!(RecursionGroup::new(&group, 1).is_ok());
+    assert_eq!(
+        RecursionGroup::new(&group, 2),
+        Err(RecursionGroupRefusal::OrdinalOutOfRange {
+            ordinal: 2,
+            size: 2
+        })
+    );
+    assert_eq!(
+        RecursionGroup::new(&[], 0),
+        Err(RecursionGroupRefusal::OrdinalOutOfRange {
+            ordinal: 0,
+            size: 0
+        })
+    );
+    assert_eq!(
+        RecursionGroup::new(&[key(1), key(2), key(1)], 1),
+        Err(RecursionGroupRefusal::DuplicateMember { member: key(1) })
+    );
+}
+
+#[test]
+fn empty_names_and_forms_are_refused() {
+    let body = add(vec![reference(1)]);
+    let empty_name: [Identifier; 0] = [];
+    let empty_binding = SemanticTerm::Binding {
+        name: String::new(),
+        value: Box::new(add(Vec::new())),
+    };
+
+    assert_eq!(
+        application_node_key(&ApplicationNode {
+            declaration: Some(&empty_name),
+            ..node(&body)
+        }),
+        Err(ApplicationKeyRefusal::EmptyQualifiedName)
+    );
+    assert_eq!(
+        application_node_key(&ApplicationNode {
+            semantic_form: "",
+            ..node(&body)
+        }),
+        Err(ApplicationKeyRefusal::EmptySemanticForm)
+    );
+    assert_eq!(
+        application_node_key(&node(&empty_binding)),
+        Err(ApplicationKeyRefusal::EmptyBindingName)
+    );
+}
+
+/// A body `depth` terms deep: `depth - 1` bindings around one application.
+fn nested(depth: u64) -> SemanticTerm {
+    (1..depth).fold(add(Vec::new()), |inner, _| SemanticTerm::Binding {
+        name: "x".to_owned(),
+        value: Box::new(inner),
+    })
+}
+
+#[test]
+fn a_body_deeper_than_the_checking_limit_is_refused() {
+    let at_limit = nested(MAX_CHECKING_DEPTH);
+    let beyond = nested(MAX_CHECKING_DEPTH + 1);
+    let nested_arguments = (1..=MAX_CHECKING_DEPTH).fold(reference(1), |inner, _| add(vec![inner]));
+
+    assert!(application_node_key(&node(&at_limit)).is_ok());
+    assert_eq!(
+        application_node_key(&node(&beyond)),
+        Err(ApplicationKeyRefusal::TooDeep {
+            limit: MAX_CHECKING_DEPTH
+        })
+    );
+    assert_eq!(
+        application_node_key(&node(&nested_arguments)),
+        Err(ApplicationKeyRefusal::TooDeep {
+            limit: MAX_CHECKING_DEPTH
+        }),
+        "application arguments count toward depth"
+    );
+}
+
+/// M1: the operation encoding (law, all three mode kinds, a `position`
+/// member, `position:N`/`inner`/`field:` leaf segments) and literal terms
+/// (integer, text with an escaped quote, null), pinned against
+/// hand-written bytes with fill-byte keys. None of this comes from QSpec.
+#[test]
+fn operation_and_literal_bytes_are_pinned() {
+    let law = OperationLaw {
+        role: LawRole::TextProfile,
+        definition: DefinitionReference {
+            authority: "agent-ix".to_owned(),
+            identity: "test.law/v1".to_owned(),
+            revision: crate::value::DefinitionRevision {
+                namespace: "test".to_owned(),
+                value: "1".to_owned(),
+            },
+            digest_domain: "quire.definition.bytes/v1".to_owned(),
+            digest: key(11).to_string(),
+        },
+    };
+    let literal =
+        |fill: u8, value_kind: LiteralKind, value: Option<LiteralValue>| SemanticTerm::Literal {
+            ty: NodeRef(key(fill)),
+            value_kind,
+            value,
+        };
+    let body = SemanticTerm::Application {
+        operator: Operator::Binary,
+        operation: Operation {
+            identity: "quire.op.decimal.div".to_owned(),
+            laws: vec![law],
+            mode: Some(OperationMode::Rounding(RoundingMode::NearestEven)),
+            member: Some(Member::Position {
+                declaration: key(12),
+                position: 2,
+            }),
+            leaves: vec![
+                OperationLeaf {
+                    path: vec![LeafSegment::Position(1), LeafSegment::Inner],
+                    laws: Vec::new(),
+                    mode: Some(OperationMode::TextProfile(TextProfile::Nfc)),
+                },
+                OperationLeaf {
+                    path: vec![LeafSegment::Field(
+                        Identifier::new("name").expect("test identifier is valid"),
+                    )],
+                    laws: Vec::new(),
+                    mode: Some(OperationMode::Absence(AbsenceMode::Empty)),
+                },
+            ],
+        },
+        result_type: NodeRef(key(3)),
+        arguments: vec![
+            literal(4, LiteralKind::Integer, Some(LiteralValue::Integer(42))),
+            literal(
+                5,
+                LiteralKind::Text,
+                Some(LiteralValue::Text("a\"b".to_owned())),
+            ),
+            literal(6, LiteralKind::None, None),
+        ],
+    };
+    let node_ref = |fill: u8| {
+        format!(
+            r#"{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}}"#,
+            key(fill)
+        )
+    };
+    let expected = format!(
+        concat!(
+            r#"{{"body":{{"arguments":["#,
+            r#"{{"term":"literal","type":{four},"value":42,"value_kind":"integer"}},"#,
+            r#"{{"term":"literal","type":{five},"value":"a\"b","value_kind":"text"}},"#,
+            r#"{{"term":"literal","type":{six},"value":null,"value_kind":"none"}}],"#,
+            r#""operation":{{"identity":"quire.op.decimal.div","#,
+            r#""laws":[{{"definition":{{"authority":"agent-ix","digest":"{law_digest}","#,
+            r#""digest_domain":"quire.definition.bytes/v1","identity":"test.law/v1","#,
+            r#""revision":{{"namespace":"test","value":"1"}}}},"role":"text_profile"}}],"#,
+            r#""leaves":[{{"laws":[],"mode":{{"kind":"text_profile","value":"nfc"}},"path":["position:1","inner"]}},"#,
+            r#"{{"laws":[],"mode":{{"kind":"absence","value":"empty"}},"path":["field:name"]}}],"#,
+            r#""member":{{"declaration":{twelve},"kind":"position","position":2}},"#,
+            r#""mode":{{"kind":"rounding","value":"nearest-even"}}}},"#,
+            r#""operator":"binary","result_type":{three},"term":"application"}},"#,
+            r#""declaration":null,"node_tag":"expression","recursion":null,"#,
+            r#""semantic_form":"binary","semantic_type":{three},"#,
+            r#""version":"quire.application-node/v1"}}"#,
+        ),
+        four = node_ref(4),
+        five = node_ref(5),
+        six = node_ref(6),
+        twelve = node_ref(12),
+        three = node_ref(3),
+        law_digest = key(11),
+    );
+
+    let computed = application_node_key(&node(&body)).expect("node has an application");
+
+    assert_eq!(
+        String::from_utf8(computed.preimage.clone()).expect("preimage is UTF-8"),
+        expected
+    );
+    assert_eq!(
+        computed.key,
+        NodeKey::from_digest(Sha256::digest(expected.as_bytes()).into())
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -375,7 +642,7 @@ fn a_recursion_ordinal_must_be_a_group_position() {
 #[serde(deny_unknown_fields)]
 struct VectorPreimage {
     version: String,
-    node_tag: String,
+    node_tag: NodeTag,
     semantic_form: String,
     semantic_type: NodeRef,
     declaration: Option<VectorDeclaration>,
@@ -437,7 +704,7 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
                 .collect::<Vec<_>>()
         });
         let node = ApplicationNode {
-            node_tag: &decoded.node_tag,
+            node_tag: decoded.node_tag,
             semantic_form: &decoded.semantic_form,
             semantic_type: decoded.semantic_type.0,
             declaration: declaration.as_deref(),

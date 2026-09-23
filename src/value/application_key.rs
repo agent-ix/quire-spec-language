@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#![allow(
-    dead_code,
-    reason = "no production caller yet: QSL-156 slice A4b switches node identity to this key once the lock-evidence and type-node rulings land; until then only this module's own tests call it"
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "no production caller yet: QSL-156 slice A4b switches node identity to this key once the lock-evidence and type-node rulings land; until then only this module's own tests call it"
+    )
 )]
 //! QSpec FR-322 `application_node_preimage` (QSL-156 slice A4a): the node key
 //! of every checked node whose body contains an application.
@@ -18,40 +21,50 @@
 //! The body is typed ([`SemanticTerm`] and its parts mirror the v2 schema's
 //! closed `SemanticTerm`, `Operation`, `OperationLaw`, `OperationMode` and
 //! `OperationLeaf` definitions), so the preimage has a field list the compiler
-//! checks rather than a `serde_json::Value` assembled by hand. Type-node keys
-//! (`semantic_type`, `result_type`, literal `type`) are inputs, used exactly as
-//! given: how builtin and anonymous type nodes are keyed is a separate ruling
-//! (OQ-7), wired in by A4b.
+//! checks rather than a `serde_json::Value` assembled by hand. Mode values are
+//! the crate's own domain enums (`quire_exact::RoundingMode`,
+//! `quire_exact::TextProfile`, `qsl_foundation::absence::AbsenceMode`),
+//! spelled through their `as_str`. Type-node keys (`semantic_type`,
+//! `result_type`, literal `type`) are inputs, used exactly as given: how
+//! builtin and anonymous type nodes are keyed is a separate ruling (OQ-7),
+//! wired in by A4b.
 //!
 //! Canonical bytes: the typed preimage is converted to a `serde_json::Value`
 //! and serialized. `serde_json`'s map is ordered by key (this crate does not
 //! enable `preserve_order`), every preimage key is a fixed ASCII schema name,
 //! so byte order equals RFC 8785's UTF-16 code-unit order; strings use
 //! `serde_json`'s escaping, which matches RFC 8785 for the ASCII escapes it
-//! emits. The only numbers are `recursion`'s counts and literal integers;
-//! an integer RFC 8785 cannot render exactly (outside the IEEE-754 safe
-//! range) is refused rather than hashed. `tests::preimage_bytes_are_pinned`
-//! pins the exact bytes.
+//! emits. The numbers in a preimage are `recursion`'s size and ordinal, an
+//! `operation.member` position and literal integers; each is refused when
+//! RFC 8785 cannot render it exactly (outside the IEEE-754 safe range)
+//! rather than hashed. The pinned-bytes tests fix the exact encoding.
+//!
+//! The body walk is bounded: a body nested deeper than
+//! [`MAX_CHECKING_DEPTH`] terms is refused, whatever path built it.
 //!
 //! Conformance against QSpec's own published `operation_vectors` is the
 //! opt-in `conformance` test below (`make conformance` with `QSPEC_DIR`
 //! pointing at a quire-specification checkout). QSpec is not public yet, so
 //! nothing of it is copied here; the test reads the vectors at run time.
 
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use quire_exact::Identifier;
+use qsl_foundation::absence::AbsenceMode;
+use quire_exact::{Identifier, RoundingMode, TextProfile};
 
 use super::definition::DefinitionReference;
 use super::member::Member;
 use super::node::{NodeKey, NODE_KEY_DOMAIN};
+use super::MAX_CHECKING_DEPTH;
 
 /// FR-322's application-node preimage version.
 pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";
 
 /// The largest integer magnitude RFC 8785 renders exactly (2^53 - 1).
-const JCS_SAFE_INTEGER: i64 = (1 << 53) - 1;
+const JCS_SAFE_INTEGER: i128 = (1 << 53) - 1;
 
 /// A `NodeRef` (`{domain, digest}`) naming a checked node by key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +83,39 @@ impl Serialize for NodeRef {
         }
         .serialize(serializer)
     }
+}
+
+/// The preimage schema's closed `ApplicationNode.node_tag` vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum NodeTag {
+    /// `scalar_type`.
+    ScalarType,
+    /// `composite_type`.
+    CompositeType,
+    /// `bounded_domain`.
+    BoundedDomain,
+    /// `value`.
+    Value,
+    /// `expression`.
+    Expression,
+    /// `function`.
+    Function,
+    /// `model`.
+    Model,
+    /// `relation`.
+    Relation,
+    /// `state`.
+    State,
+    /// `temporal`.
+    Temporal,
+    /// `protocol`.
+    Protocol,
+    /// `claim`.
+    Claim,
+    /// `correspondence`.
+    Correspondence,
 }
 
 /// The v2 schema's closed `SemanticTerm` union.
@@ -110,23 +156,11 @@ pub(crate) enum SemanticTerm {
     },
     /// A named binding of a term.
     Binding {
-        /// The bound name (schema `Nonempty`).
+        /// The bound name (schema `Nonempty`; an empty name is refused).
         name: String,
         /// The bound term.
         value: Box<SemanticTerm>,
     },
-}
-
-impl SemanticTerm {
-    /// Whether this term is, or contains, an application.
-    fn contains_application(&self) -> bool {
-        match self {
-            Self::Application { .. } => true,
-            Self::Aggregate { members } => members.iter().any(Self::contains_application),
-            Self::Binding { value, .. } => value.contains_application(),
-            Self::Literal { .. } | Self::Reference { .. } => false,
-        }
-    }
 }
 
 /// The schema's closed literal `value_kind` vocabulary.
@@ -259,73 +293,38 @@ pub(crate) enum LawRole {
     ProtocolProfile,
 }
 
-/// The schema's non-null `OperationMode` (`{kind, value}`).
+/// The schema's non-null `OperationMode` (`{kind, value}`), carrying the
+/// crate's own mode enums.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum OperationMode {
     /// `rounding`.
-    Rounding(RoundingMode),
+    Rounding(#[serde(serialize_with = "rounding_spelling")] RoundingMode),
     /// `text_profile`.
-    TextProfile(TextProfileMode),
+    TextProfile(#[serde(serialize_with = "text_profile_spelling")] TextProfile),
     /// `absence`.
-    Absence(AbsenceMode),
+    Absence(#[serde(serialize_with = "absence_spelling")] AbsenceMode),
 }
 
-/// The `rounding` mode values.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum RoundingMode {
-    /// `exact`.
-    Exact,
-    /// `toward-zero`.
-    TowardZero,
-    /// `toward-positive`.
-    TowardPositive,
-    /// `toward-negative`.
-    TowardNegative,
-    /// `nearest-even`.
-    NearestEven,
-    /// `nearest-away`.
-    NearestAway,
+fn rounding_spelling<S: serde::Serializer>(
+    mode: &RoundingMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(mode.as_str())
 }
 
-/// The `text_profile` mode values.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum TextProfileMode {
-    /// `unicode-scalars`.
-    UnicodeScalars,
-    /// `nfc`.
-    Nfc,
-    /// `nfd`.
-    Nfd,
-    /// `nfkc`.
-    Nfkc,
-    /// `nfkd`.
-    Nfkd,
-    /// `binary-utf8`.
-    BinaryUtf8,
+fn text_profile_spelling<S: serde::Serializer>(
+    profile: &TextProfile,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(profile.as_str())
 }
 
-/// The `absence` mode values.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize))]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum AbsenceMode {
-    /// `undefined`.
-    Undefined,
-    /// `empty`.
-    Empty,
-    /// `refused`.
-    Refused,
+fn absence_spelling<S: serde::Serializer>(
+    mode: &AbsenceMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(mode.as_str())
 }
 
 /// The schema's `OperationLeaf`.
@@ -365,32 +364,65 @@ impl Serialize for LeafSegment {
     }
 }
 
-/// A node's place in its recursion group: the group's member keys in graph
-/// order and this node's ordinal among them.
+/// A node's place in its recursion group: the group's distinct member keys
+/// in graph order and this node's ordinal among them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RecursionGroup<'a> {
     members: &'a [NodeKey],
     ordinal: usize,
 }
 
+/// Why a [`RecursionGroup`] cannot be formed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum RecursionGroupRefusal {
+    /// `ordinal` is not a position in the member list.
+    #[error("ordinal {ordinal} is outside a group of {size}")]
+    OrdinalOutOfRange {
+        /// The requested ordinal.
+        ordinal: usize,
+        /// The group size.
+        size: usize,
+    },
+    /// A key appears twice, so a reference to it has no single ordinal.
+    #[error("recursion group member {member} appears more than once")]
+    DuplicateMember {
+        /// The repeated key.
+        member: NodeKey,
+    },
+}
+
 impl<'a> RecursionGroup<'a> {
-    /// The group `members` (graph order) with this node at `ordinal`, or
-    /// `None` when `ordinal` is not a position in `members`.
-    pub(crate) fn new(members: &'a [NodeKey], ordinal: usize) -> Option<Self> {
-        (ordinal < members.len()).then_some(Self { members, ordinal })
+    /// The group `members` (graph order) with this node at `ordinal`.
+    pub(crate) fn new(
+        members: &'a [NodeKey],
+        ordinal: usize,
+    ) -> Result<Self, RecursionGroupRefusal> {
+        if ordinal >= members.len() {
+            return Err(RecursionGroupRefusal::OrdinalOutOfRange {
+                ordinal,
+                size: members.len(),
+            });
+        }
+        let mut seen = BTreeSet::new();
+        if let Some(member) = members.iter().find(|member| !seen.insert(**member)) {
+            return Err(RecursionGroupRefusal::DuplicateMember { member: *member });
+        }
+        Ok(Self { members, ordinal })
     }
 }
 
 /// The inputs of one application-bearing node's FR-322 key.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ApplicationNode<'a> {
-    /// The node's v2 `node_tag`, spelled as on the wire.
-    pub(crate) node_tag: &'a str,
-    /// The node's v2 `semantic_form`, spelled as on the wire.
+    /// The node's v2 `node_tag`.
+    pub(crate) node_tag: NodeTag,
+    /// The node's v2 `semantic_form`, spelled as on the wire (schema
+    /// `Nonempty`; an empty form is refused).
     pub(crate) semantic_form: &'a str,
     /// The node's semantic type key.
     pub(crate) semantic_type: NodeKey,
-    /// The node's `declaration.qualified_name`, when it carries one.
+    /// The node's `declaration.qualified_name`, when it carries one (schema
+    /// `minItems: 1`; an empty name is refused).
     pub(crate) declaration: Option<&'a [Identifier]>,
     /// The node's recursion group, when it is in one.
     pub(crate) recursion: Option<RecursionGroup<'a>>,
@@ -407,6 +439,17 @@ pub(crate) struct ApplicationKey {
     pub(crate) key: NodeKey,
 }
 
+/// Where a preimage number sits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum IntegerSite {
+    /// A literal term's integer value.
+    Literal,
+    /// An `operation.member` position.
+    MemberPosition,
+    /// The `recursion` group size.
+    RecursionSize,
+}
+
 /// Why no FR-322 application key exists for a node.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum ApplicationKeyRefusal {
@@ -414,13 +457,33 @@ pub(crate) enum ApplicationKeyRefusal {
     /// preimage does not key this node.
     #[error("the node body contains no application term")]
     NoApplication,
-    /// A literal integer lies outside the range RFC 8785 renders exactly.
-    #[error("literal integer {value} is outside the RFC 8785 exact-integer range")]
+    /// The `semantic_form` is empty.
+    #[error("the semantic form is empty")]
+    EmptySemanticForm,
+    /// The `declaration.qualified_name` has no segment.
+    #[error("the declaration's qualified name is empty")]
+    EmptyQualifiedName,
+    /// A `binding` term's name is empty.
+    #[error("a binding name is empty")]
+    EmptyBindingName,
+    /// A number lies outside the range RFC 8785 renders exactly.
+    #[error("{site:?} {value} is outside the RFC 8785 exact-integer range")]
     UnsafeInteger {
-        /// The offending literal value.
-        value: i64,
+        /// Where the number sits.
+        site: IntegerSite,
+        /// The offending value.
+        value: i128,
     },
-    /// The typed preimage failed to serialize.
+    /// The body nests deeper than [`MAX_CHECKING_DEPTH`] terms.
+    #[error("the body nests deeper than {limit} terms")]
+    TooDeep {
+        /// The depth limit.
+        limit: u64,
+    },
+    /// The typed preimage failed to convert to a JSON value. Unreachable for
+    /// these types (every map key is a fixed string and no `Serialize` impl
+    /// here errors), but `serde_json::to_value` is fallible and this module
+    /// does not panic on an input path.
     #[error("the preimage failed to serialize: {reason}")]
     Serialize {
         /// `serde_json`'s own message.
@@ -428,14 +491,35 @@ pub(crate) enum ApplicationKeyRefusal {
     },
 }
 
+/// Refuse `value` at `site` when RFC 8785 cannot render it exactly.
+fn exact_integer(site: IntegerSite, value: i128) -> Result<(), ApplicationKeyRefusal> {
+    if (-JCS_SAFE_INTEGER..=JCS_SAFE_INTEGER).contains(&value) {
+        Ok(())
+    } else {
+        Err(ApplicationKeyRefusal::UnsafeInteger { site, value })
+    }
+}
+
 /// The FR-322 `application_node_preimage` key of `node`.
 pub(crate) fn application_node_key(
     node: &ApplicationNode<'_>,
 ) -> Result<ApplicationKey, ApplicationKeyRefusal> {
-    if !node.body.contains_application() {
-        return Err(ApplicationKeyRefusal::NoApplication);
+    if node.semantic_form.is_empty() {
+        return Err(ApplicationKeyRefusal::EmptySemanticForm);
+    }
+    if node.declaration.is_some_and(<[Identifier]>::is_empty) {
+        return Err(ApplicationKeyRefusal::EmptyQualifiedName);
+    }
+    if let Some(group) = node.recursion {
+        let size = i128::try_from(group.members.len()).unwrap_or(i128::MAX);
+        exact_integer(IntegerSite::RecursionSize, size)?;
     }
     let group = node.recursion.map_or(&[][..], |group| group.members);
+    let walk = Walk { group };
+    let (body, has_application) = walk.term(node.body, 1)?;
+    if !has_application {
+        return Err(ApplicationKeyRefusal::NoApplication);
+    }
     let preimage = Preimage {
         version: APPLICATION_NODE_VERSION,
         node_tag: node.node_tag,
@@ -448,13 +532,13 @@ pub(crate) fn application_node_key(
             size: group.members.len(),
             ordinal: group.ordinal,
         }),
-        body: preimage_term(node.body, group)?,
+        body,
     };
-    let serialize = |error: serde_json::Error| ApplicationKeyRefusal::Serialize {
-        reason: error.to_string(),
-    };
-    let canonical = serde_json::to_value(&preimage).map_err(serialize)?;
-    let bytes = serde_json::to_vec(&canonical).map_err(serialize)?;
+    let canonical =
+        serde_json::to_value(&preimage).map_err(|error| ApplicationKeyRefusal::Serialize {
+            reason: error.to_string(),
+        })?;
+    let bytes = canonical.to_string().into_bytes();
     let key = NodeKey::from_digest(Sha256::digest(&bytes).into());
     Ok(ApplicationKey {
         preimage: bytes,
@@ -465,7 +549,7 @@ pub(crate) fn application_node_key(
 #[derive(Serialize)]
 struct Preimage<'a> {
     version: &'static str,
-    node_tag: &'a str,
+    node_tag: NodeTag,
     semantic_form: &'a str,
     semantic_type: NodeRef,
     declaration: Option<DeclarationPreimage<'a>>,
@@ -516,59 +600,94 @@ enum PreimageTerm<'a> {
     },
 }
 
-/// `term` in preimage form over the recursion group `group` (graph order).
-fn preimage_term<'a>(
-    term: &'a SemanticTerm,
-    group: &[NodeKey],
-) -> Result<PreimageTerm<'a>, ApplicationKeyRefusal> {
-    let terms = |terms: &'a [SemanticTerm]| {
-        terms
-            .iter()
-            .map(|term| preimage_term(term, group))
-            .collect::<Result<Vec<_>, _>>()
-    };
-    Ok(match term {
-        SemanticTerm::Literal {
-            ty,
-            value_kind,
-            value,
-        } => {
-            if let Some(LiteralValue::Integer(integer)) = value {
-                if !(-JCS_SAFE_INTEGER..=JCS_SAFE_INTEGER).contains(integer) {
-                    return Err(ApplicationKeyRefusal::UnsafeInteger { value: *integer });
-                }
-            }
-            PreimageTerm::Literal {
-                ty: *ty,
-                value_kind: *value_kind,
+/// One pass over a body: builds its preimage form, reports whether it
+/// contains an application, and enforces the depth and number bounds.
+struct Walk<'g> {
+    /// The recursion group's member keys, in graph order.
+    group: &'g [NodeKey],
+}
+
+impl Walk<'_> {
+    /// `term` at nesting `depth` (the body root is depth 1) in preimage form,
+    /// and whether it is or contains an application.
+    fn term<'a>(
+        &self,
+        term: &'a SemanticTerm,
+        depth: u64,
+    ) -> Result<(PreimageTerm<'a>, bool), ApplicationKeyRefusal> {
+        if depth > MAX_CHECKING_DEPTH {
+            return Err(ApplicationKeyRefusal::TooDeep {
+                limit: MAX_CHECKING_DEPTH,
+            });
+        }
+        let terms = |terms: &'a [SemanticTerm]| {
+            terms.iter().try_fold(
+                (Vec::with_capacity(terms.len()), false),
+                |(mut mapped, any), term| {
+                    let (preimage, has) = self.term(term, depth + 1)?;
+                    mapped.push(preimage);
+                    Ok::<_, ApplicationKeyRefusal>((mapped, any || has))
+                },
+            )
+        };
+        Ok(match term {
+            SemanticTerm::Literal {
+                ty,
+                value_kind,
                 value,
+            } => {
+                if let Some(LiteralValue::Integer(integer)) = value {
+                    exact_integer(IntegerSite::Literal, i128::from(*integer))?;
+                }
+                let preimage = PreimageTerm::Literal {
+                    ty: *ty,
+                    value_kind: *value_kind,
+                    value,
+                };
+                (preimage, false)
             }
-        }
-        SemanticTerm::Reference { target } => {
-            match group.iter().position(|member| *member == target.0) {
-                Some(ordinal) => PreimageTerm::GroupReference { ordinal },
-                None => PreimageTerm::Reference { target: *target },
+            SemanticTerm::Reference { target } => {
+                let preimage = match self.group.iter().position(|member| *member == target.0) {
+                    Some(ordinal) => PreimageTerm::GroupReference { ordinal },
+                    None => PreimageTerm::Reference { target: *target },
+                };
+                (preimage, false)
             }
-        }
-        SemanticTerm::Application {
-            operator,
-            operation,
-            result_type,
-            arguments,
-        } => PreimageTerm::Application {
-            operator: *operator,
-            operation,
-            result_type: *result_type,
-            arguments: terms(arguments)?,
-        },
-        SemanticTerm::Aggregate { members } => PreimageTerm::Aggregate {
-            members: terms(members)?,
-        },
-        SemanticTerm::Binding { name, value } => PreimageTerm::Binding {
-            name,
-            value: Box::new(preimage_term(value, group)?),
-        },
-    })
+            SemanticTerm::Application {
+                operator,
+                operation,
+                result_type,
+                arguments,
+            } => {
+                if let Some(Member::Position { position, .. }) = &operation.member {
+                    exact_integer(IntegerSite::MemberPosition, i128::from(*position))?;
+                }
+                let (arguments, _) = terms(arguments)?;
+                let preimage = PreimageTerm::Application {
+                    operator: *operator,
+                    operation,
+                    result_type: *result_type,
+                    arguments,
+                };
+                (preimage, true)
+            }
+            SemanticTerm::Aggregate { members } => {
+                let (members, has) = terms(members)?;
+                (PreimageTerm::Aggregate { members }, has)
+            }
+            SemanticTerm::Binding { name, value } => {
+                if name.is_empty() {
+                    return Err(ApplicationKeyRefusal::EmptyBindingName);
+                }
+                let (value, has) = self.term(value, depth + 1)?;
+                let preimage = PreimageTerm::Binding {
+                    name,
+                    value: Box::new(value),
+                };
+                (preimage, has)
+            }
+        })
+    }
 }
 
 #[cfg(test)]
