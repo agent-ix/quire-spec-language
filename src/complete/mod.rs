@@ -25,11 +25,12 @@ pub use editor::{
 pub use package::{
     resolve_source_package, CompleteBundle, Definition, DefinitionCatalog, DefinitionConflict,
     DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
-    ReaderAuthority, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
+    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
 };
-pub use package::{CapabilityId, PackageError, ProfileCatalog, SourceDigest};
+pub use package::{CapabilityId, PackageError, SourceDigest};
 
 use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
+use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::SourceIdentity;
 
 /// Parse while validating every selected profile against an exact definition

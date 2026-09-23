@@ -181,7 +181,7 @@ mod tests {
             let code = ProtocolClauseSnapshot(cause).catalog_code();
             assert_eq!(category_of(&code), Some(Category::Refusal), "{code}");
         }
-        let samples = crate::model::refusal::tests::exhaustive_samples();
+        let samples = crate::model::refusal::fixtures::exhaustive_samples();
         assert!(!samples.is_empty());
         for cause in samples {
             let code = cause.catalog_code();

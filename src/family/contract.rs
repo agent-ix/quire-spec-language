@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-062-AC-1, ADR-012 §2: the static `FamilyContract`/`ReferenceEvaluation`
-//! traits and the mutable typing context (`CheckContext`) every family's
-//! `check` receives.
+//! FR-062-AC-1, ADR-012 §2: the static `FamilyContract` trait and the
+//! mutable typing context (`CheckContext`) every family's `check` receives.
+//! Its S6a subtrait, `ReferenceEvaluation`, is layer 5's
+//! (`value::expression::s6a`, ADR-011 §6.2 `family` row).
 
 use super::outcome::CheckOutcome;
-use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::Meter;
 
 /// A diagnostic a family's `check` records against the scope it was raised
@@ -12,7 +12,7 @@ use quire_exact::Meter;
 /// is the sink's own record shape (a message plus the scope name active when
 /// it was raised), independent of any one family's `Cause` enum.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Diagnostic {
+pub struct Diagnostic {
     pub(crate) scope: String,
     pub(crate) message: String,
 }
@@ -20,7 +20,7 @@ pub(crate) struct Diagnostic {
 /// The only mutable diagnostic sink `check` may write through
 /// (FR-062-AC-3): an ordinary append-only log, read back for assertions.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DiagnosticSink {
+pub struct DiagnosticSink {
     entries: Vec<Diagnostic>,
 }
 
@@ -40,9 +40,10 @@ impl DiagnosticSink {
     /// production callers never need to read the sink back, only write
     /// through it -- so the compiler is told that directly rather than
     /// having the lint silenced over a real (non-test) reader that does
-    /// not exist.
-    #[cfg(test)]
-    pub(crate) fn entries(&self) -> &[Diagnostic] {
+    /// not exist. `test-support` makes it reachable from the layer-5
+    /// evaluator's tests across the QSL-181 crate boundary.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn entries(&self) -> &[Diagnostic] {
         &self.entries
     }
 }
@@ -50,7 +51,7 @@ impl DiagnosticSink {
 /// The only mutable scope stack `check` may push/pop through
 /// (FR-062-AC-3). Named scopes only -- no family-specific payload.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ScopeStack {
+pub struct ScopeStack {
     frames: Vec<String>,
 }
 
@@ -77,7 +78,7 @@ impl ScopeStack {
 /// deleted these, along with `work_budget`: nothing in #214's one migrated
 /// stage entry produced or read them. QSL-153 restores them with a real
 /// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
-/// row for this ticket), matching the shape [`CheckContext::enter_nesting`]
+/// row for this ticket), matching the shape `CheckContext::enter_nesting`
 /// already established for `nesting_depth`:
 ///
 /// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
@@ -89,10 +90,10 @@ impl ScopeStack {
 ///   the pass writes, not read back from the buffer afterward -- see
 ///   `Preimage`'s own doc for why); `node_count` is the number of
 ///   `Expression` nodes the same pass visits.
-/// - **Consumer**: [`CheckContext::check_input_bytes`] and
-///   [`CheckContext::check_node_count`] each compare their metric against
+/// - **Consumer**: `CheckContext::check_input_bytes` and
+///   `CheckContext::check_node_count` each compare their metric against
 ///   this struct's matching field and return
-///   [`StageLimitKind`](super::outcome::StageLimitKind)'s matching variant
+///   `StageLimitKind`'s matching variant
 ///   on the first one exceeded, exactly like `enter_nesting`'s own
 ///   `NestingDepth` case -- `ValueFunctionFamily::check`
 ///   (`crate::check::family`) calls both before minting succeeds, so a
@@ -107,7 +108,7 @@ impl ScopeStack {
 /// meaningful sense; two declarations of equal real complexity could differ
 /// in write count for reasons internal to the encoding, not to any resource
 /// a caller actually wants to bound. `StageLimitKind::WorkBudget` is
-/// restored instead through [`CheckContext::meter`] -- the *shared kernel*
+/// restored instead through `CheckContext::meter` -- the *shared kernel*
 /// budget every family's `check` already receives (FR-062 "checked input"):
 /// `ValueFunctionFamily::check` charges it one `ChargePoint::
 /// DeclarationCheck`, sized by the same preimage pass's field-write count,
@@ -127,7 +128,7 @@ impl ScopeStack {
 /// mechanism is real and exercised directly against tight fixtures
 /// (`src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct StageLimits {
+pub struct StageLimits {
     pub(crate) nesting_depth: u64,
     /// Maximum length-prefixed preimage byte count for one checked
     /// declaration.
@@ -144,7 +145,7 @@ pub(crate) struct StageLimits {
 ///
 /// `D` is the family's own read-only resolved-declarations/type-environment
 /// type; the shared contract takes no position on its shape.
-pub(crate) struct CheckContext<'a, D> {
+pub struct CheckContext<'a, D> {
     declarations: &'a D,
     limits: StageLimits,
     pub(crate) meter: &'a mut Meter,
@@ -266,7 +267,7 @@ impl<'a, D> CheckContext<'a, D> {
 /// nodes must compose into one all-or-nothing emission a shared caller
 /// drives) adds `package` back as part of that work, with a real consumer
 /// in the same change.
-pub(crate) trait FamilyContract {
+pub trait FamilyContract {
     /// This family's parsed semantic form (typed subnodes; ADR-012 §4).
     type Form;
     /// This family's checked payload, carrying identity and provenance.
@@ -281,7 +282,7 @@ pub(crate) trait FamilyContract {
     /// whose declarations genuinely borrow from the caller's own package
     /// state for the one `check` call (`Value`'s does -- scope, signatures
     /// and dispatch tables it does not own) ties that borrow to `check`'s
-    /// own `'a`, the same way [`ReferenceEvaluation::Env`] already does for
+    /// own `'a`, the same way `value::expression`'s `ReferenceEvaluation::Env` does for
     /// `evaluate`.
     type Declarations<'a>;
 
@@ -304,49 +305,4 @@ pub(crate) trait FamilyContract {
         form: &Self::Form,
         cx: &mut CheckContext<'a, Self::Declarations<'a>>,
     ) -> CheckOutcome<Self::Checked, Self::Cause>;
-}
-
-/// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
-/// implements except `Relation` (which has no native evaluation: S6a's input
-/// type admits no `Relation`, ADR-012 §2 and FR-090-AC-4, so no S6a arm or
-/// refusal exists for it).
-///
-/// `Env` is a GAT (`type Env<'a>`), not a plain associated type: a family's
-/// real evaluation environment (for `Value`, the checked package it
-/// resolves `checked`'s identity against, the caller's object environment
-/// and its own accounting meter) is borrowed for the one call, not owned by
-/// the family marker type.
-pub(crate) trait ReferenceEvaluation: FamilyContract {
-    /// The observed evaluation result (a kernel value, a state observation
-    /// or a trace verdict, depending on the family).
-    type Observed;
-    /// The evaluation environment every family's `evaluate` reads.
-    type Env<'a>;
-    /// What a runtime caller actually has in hand to look `evaluate` up by
-    /// (PR #303 review, finding N3): always a bare identity at call sites
-    /// like `CheckedPackage::call`, which only ever stores the minted
-    /// identity a checked declaration resolved to, not the full
-    /// `Self::Checked` payload `check` produced it alongside. Distinct from
-    /// `Self::Checked` on purpose -- QSL-148 makes `Checked` a richer struct
-    /// (the minted identity together with the real checked body, so `check`
-    /// can return both through its ordinary `Ok` rather than a side
-    /// channel); `evaluate` still only ever needs the identity half, so it
-    /// keeps its own narrower type instead of forcing every caller to carry
-    /// a full checked payload just to look up an evaluation.
-    type Key;
-
-    /// Evaluate `checked` under `env` and `meter`. Returns
-    /// `Ok(EvalOutcome::Kernel(o))` for the kernel evaluation outcome
-    /// unchanged -- ADR-012 §2 reserves this hook alone for returning a
-    /// meter-budget `Incomplete` outcome (`check` never does, FR-062-AC-5),
-    /// which travels here as `EvalOutcome::Kernel(Outcome::Incomplete(_))` --
-    /// `Ok(EvalOutcome::Family(r))` for a family-owned evaluation-time
-    /// refusal or undefined result (ADR-013 O-16), or `Err(InternalFault)`
-    /// for a broken S6a invariant (FR-090-AC-3), never a `FamilyResult` or
-    /// a kernel-shaped refusal.
-    fn evaluate<'a>(
-        checked: &Self::Key,
-        env: &mut Self::Env<'a>,
-        meter: &mut Meter,
-    ) -> Result<super::EvalOutcome<Self::Observed>, InternalFault>;
 }

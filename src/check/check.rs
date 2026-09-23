@@ -351,7 +351,7 @@ impl Scope {
 
 /// A function's declared signature.
 #[derive(Clone, Debug)]
-pub(crate) struct Signature {
+pub struct Signature {
     pub(crate) name: String,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) result: ValueType,

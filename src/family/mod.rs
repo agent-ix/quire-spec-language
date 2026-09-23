@@ -80,11 +80,17 @@ mod contract;
 mod evaluation;
 mod outcome;
 
-pub(crate) use contract::{
-    CheckContext, DiagnosticSink, FamilyContract, ReferenceEvaluation, ScopeStack, StageLimits,
-};
+pub use contract::{CheckContext, FamilyContract};
+// Public only under `test-support`: the layer-5 evaluator's tests build a
+// `CheckContext` through `check::check_context`; no shipped caller outside
+// layer 3 names them (QSL-181).
+#[cfg(any(test, feature = "test-support"))]
+pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
-pub(crate) use outcome::{CheckOutcome, LimitExceeded, StageFailure, StageLimitKind, Staged};
+pub(crate) use outcome::StageLimitKind;
+pub use outcome::{CheckOutcome, LimitExceeded, StageFailure, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at
@@ -99,94 +105,24 @@ pub(crate) use outcome::{CheckOutcome, LimitExceeded, StageFailure, StageLimitKi
 /// adds one probe-only variant (FR-063) that no non-probe code constructs or
 /// matches.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum FamilyKind {
+pub enum FamilyKind {
+    /// `Value`: values, expressions and function declarations.
     Value,
+    /// `StateModel`: state models.
     StateModel,
+    /// `SumCase`: sum-type cases.
     SumCase,
+    /// `TemporalTrace`: temporal traces.
     TemporalTrace,
+    /// `ProtocolClause`: protocol clauses.
     ProtocolClause,
+    /// `Relation`: relations, which have no native evaluation.
     Relation,
     /// FR-063: exists only so `--cfg seam_probe` makes every match
     /// below non-exhaustive. Never constructed outside the probe build.
     #[cfg(seam_probe)]
     __SeamProbe,
 }
-
-/// Declares [`S6aFamilyKind`] and its [`S6aFamilyKind::ALL`] from one
-/// variant list, so `ALL` cannot miss a variant.
-macro_rules! s6a_family_kinds {
-    ($($(#[$doc:meta])* $variant:ident),+ $(,)?) => {
-        /// The S6a family kind (FR-090-AC-4, ADR-012 §5.1 S1): the closed
-        /// family set the S6a seam dispatches over. It has one variant per
-        /// family that implements `ReferenceEvaluation`, and never a
-        /// `Relation` variant, so no S6a call can name a `Relation`
-        /// declaration (ADR-013 O-16). A family gains its variant, its
-        /// `S6aFamilyKind::family` arm and its seam arm in the change that
-        /// implements its `ReferenceEvaluation` hook. `#[cfg(seam_probe)]`
-        /// adds one probe-only variant (FR-063) that no non-probe code
-        /// constructs or matches.
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        pub enum S6aFamilyKind {
-            $($(#[$doc])* $variant,)+
-            /// FR-063: exists only so `--cfg seam_probe` makes every
-            /// `match` over `S6aFamilyKind` non-exhaustive. Never
-            /// constructed outside the probe build.
-            #[cfg(seam_probe)]
-            __SeamProbe,
-        }
-
-        impl S6aFamilyKind {
-            /// Every S6a family kind, in declaration order.
-            pub(crate) const ALL: [Self; [$(Self::$variant),+].len()] = [$(Self::$variant),+];
-        }
-    };
-}
-
-s6a_family_kinds! {
-    /// `Value`, through `ValueFunctionFamily`'s `evaluate` hook.
-    Value,
-}
-
-impl S6aFamilyKind {
-    /// The [`FamilyKind`] this S6a family kind evaluates. The compile-time
-    /// check below rejects a mapping to `FamilyKind::Relation` and two S6a
-    /// kinds mapping to one family.
-    ///
-    /// FR-063 seam: adding an `S6aFamilyKind` variant with no arm here fails
-    /// `--cfg seam_probe` with `E0004`.
-    pub(crate) const fn family(self) -> FamilyKind {
-        match self {
-            Self::Value => FamilyKind::Value,
-            // FR-063: no arm for `Self::__SeamProbe` -- under
-            // `--cfg seam_probe` this match is deliberately non-exhaustive
-            // (`E0004`). Do not add a catch-all to make it compile.
-        }
-    }
-}
-
-/// FR-090-AC-4 checked at compile time, in every build: no S6a family kind
-/// maps to `FamilyKind::Relation`, and no two map to one family, so a
-/// `Relation` variant cannot be added by routing it through another
-/// family's arm.
-const _: () = {
-    let kinds = S6aFamilyKind::ALL;
-    let mut i = 0;
-    while i < kinds.len() {
-        assert!(
-            !matches!(kinds[i].family(), FamilyKind::Relation),
-            "an S6a family kind maps to FamilyKind::Relation"
-        );
-        let mut j = i + 1;
-        while j < kinds.len() {
-            assert!(
-                kinds[i].family() as u8 != kinds[j].family() as u8,
-                "two S6a family kinds map to one FamilyKind"
-            );
-            j += 1;
-        }
-        i += 1;
-    }
-};
 
 impl FamilyKind {
     /// The `catalog_code()` family prefix (ADR-012 §5.1 S1: "the `FamilyKind`

@@ -78,6 +78,12 @@ mod facts;
 mod family;
 mod field_refinement;
 mod identity;
+// `imports` has no production caller yet (E3 imported-name resolution,
+// FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
+// only under `test-support` (QSL-181: no test-only `pub`).
+#[cfg(any(test, feature = "test-support"))]
+pub mod imports;
+#[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
 mod ir;
 mod refusal;
@@ -87,9 +93,12 @@ mod type_form;
 use std::collections::BTreeMap;
 
 use check::{bind_parameters, Typer};
-// Re-exported so `value::expression::family`'s `#[cfg(test)]` modules can
-// build the resolved `Signature` `declarations_for` takes as
-// `own_signature`.
+// `Signature` is public only under `test-support`: the layer-5 evaluator's
+// tests build the resolved `Signature` `declarations_for` takes as
+// `own_signature`; no shipped caller outside `check` names it (QSL-181).
+#[cfg(any(test, feature = "test-support"))]
+pub use check::Signature;
+#[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use check::Signature;
 use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
@@ -99,23 +108,10 @@ use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use quire_exact::ValueType;
 
 pub use check::Scope;
-pub use family::ValueFunctionFamily;
-// `DEFAULT_PACKAGE_IDENTITY` and `SCALAR_LIMITS_UNLIMITED` are consumed only by `value::expression::
-// family`'s `#[cfg(test)]` modules (layer 5 depending on layer 3 is
-// permitted), so this re-export is itself `#[cfg(test)]`-gated rather than
-// plain: a plain `pub(crate) use` here is genuinely unused in a non-test
-// build (`cargo check`/`cargo build`/`cargo clippy` without
-// `--all-targets`), and `-D warnings` promotes that to a hard compile error
-// before cargo ever reaches the test binaries where it would be used --
-// gating on `cfg(test)` keeps both builds clean instead of papering over
-// the non-test one with `#[allow(unused_imports)]`. `SCALAR_LIMITS_UNLIMITED`
-// joined this list in PR #302 review (finding 2): `CheckedPackage::call`'s
-// `contract_meter` used to be an unconditionally unlimited `Meter` built
-// from it, a real (non-test) production use; it is now built from the
-// caller's own configured limits (`*meter.limits()`) instead, so this
-// constant has no production reader left.
-#[cfg(test)]
-pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
+pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
+// Named only by `fixtures::mint_resolved`'s return type.
+#[cfg(any(test, feature = "test-support"))]
+pub use family::IdentityPreimageMetrics;
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -126,10 +122,16 @@ pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // `declarations_for` joined this list in PR #303 review round 3 (finding
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
-#[cfg(test)]
-pub(crate) use family::checking_tests::{
-    declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
-    root_location,
+//
+// QSL-181: `check_context`, `staged_identity` and the two constants are
+// test-support views of `pub(crate)` items (`CheckContext::new`,
+// `Staged::value`, `DEFAULT_PACKAGE_IDENTITY`, `SCALAR_LIMITS_UNLIMITED`),
+// so the layer-5 evaluator's tests reach them without widening the items.
+#[cfg(any(test, feature = "test-support"))]
+pub use family::fixtures::{
+    check_context, declaration, declaration_signature, declarations_for, empty_scope, limits,
+    mint_resolved, root_location, staged_identity, DEFAULT_PACKAGE_IDENTITY,
+    SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
@@ -305,11 +307,11 @@ pub struct FunctionState<'a> {
 /// One callable function's evaluation-visible identity and signature --
 /// what `value::expression::CheckedPackageEvaluation::call` needs to route a
 /// runtime `QualifiedName` lookup through
-/// `crate::family::ReferenceEvaluation::evaluate` and validate its
+/// `value::expression`'s `ReferenceEvaluation::evaluate` and validate its
 /// caller's arguments, without a direct field read.
 #[non_exhaustive]
 pub struct CallableFunction<'a> {
-    /// The minted identity `crate::family::ReferenceEvaluation::evaluate`
+    /// The minted identity `value::expression`'s `ReferenceEvaluation::evaluate`
     /// resolves against.
     pub identity: quire_exact::NodeKey,
     /// The declared parameters, for argument admission.
@@ -1056,7 +1058,7 @@ impl CheckedGraph {
 
     /// One admitted function's evaluation-visible state, by its minted
     /// identity -- the accessor
-    /// `crate::family::ReferenceEvaluation::evaluate`'s `Value` family
+    /// `value::expression`'s `ReferenceEvaluation::evaluate`'s `Value` family
     /// implementation (`value::expression::family`) resolves a checked call
     /// against.
     pub fn function_by_identity(
@@ -1373,8 +1375,8 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let scope = family::checking_tests::empty_scope();
-        let location = family::checking_tests::root_location();
+        let scope = family::fixtures::empty_scope();
+        let location = family::fixtures::root_location();
         let call_identity = family::mint_call_identity(
             family::DEFAULT_PACKAGE_IDENTITY,
             "helper",

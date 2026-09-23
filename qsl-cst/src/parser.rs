@@ -5,15 +5,19 @@ use std::collections::BTreeSet;
 use logos::Logos;
 
 use super::cst::{
-    self, CstElement, DefinitionDigest, DefinitionRef, ImportSelection, InvalidDefinitionComponent,
-    InvalidModelComponent, LosslessCst, ModelDigest, ModelRef, ModelSelection, Production, RawNode,
-    Recovery, RecoveryKind, SourceSelections, TokenClass, TokenKind,
+    self, CstElement, LosslessCst, Production, RawNode, Recovery, RecoveryKind, TokenClass,
+    TokenKind,
 };
 use super::diagnostic::{CompleteCause, HostCause};
 use super::grammar::{self, Grammar, Rule, Terminal};
-use super::{CompleteCode, CompleteDiagnostic, ParsedSource, ProfileSelection};
+use super::{CompleteCode, CompleteDiagnostic, ParsedSource};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
+use qsl_foundation::selection::{
+    DefinitionDigest, DefinitionRef, ImportSelection, InvalidDefinitionComponent,
+    InvalidModelComponent, ModelDigest, ModelRef, ModelSelection, ProfileSelection,
+    SourceSelections,
+};
 use qsl_foundation::{Phase, Source, Span};
 
 #[derive(Clone, Debug)]
@@ -349,19 +353,17 @@ fn extract_selections(
         };
         let identity_value = text(identity).ok_or_else(invalid_identity)?;
         let version_value = text(version).ok_or_else(invalid_version)?;
-        DefinitionRef::validate_components(identity_value, version_value).map_err(|component| {
-            match component {
-                InvalidDefinitionComponent::Identity => invalid_identity(),
-                InvalidDefinitionComponent::Version => invalid_version(),
-            }
-        })?;
+        let invalid_component = |component| match component {
+            InvalidDefinitionComponent::Identity => invalid_identity(),
+            InvalidDefinitionComponent::Version => invalid_version(),
+        };
+        // Components first, so an invalid identity or version is located
+        // before the digest is read.
+        DefinitionRef::validate_components(identity_value, version_value)
+            .map_err(invalid_component)?;
         let digest_value = DefinitionDigest::parse(text(digest).ok_or_else(invalid_digest)?)
             .map_err(|_| invalid_digest())?;
-        Ok(DefinitionRef::from_validated(
-            identity_value.to_owned(),
-            version_value.to_owned(),
-            digest_value,
-        ))
+        DefinitionRef::new(identity_value, version_value, digest_value).map_err(invalid_component)
     }
 
     fn model<'a>(
@@ -386,19 +388,16 @@ fn extract_selections(
         };
         let identity_value = text(identity).ok_or_else(invalid_identity)?;
         let version_value = text(version).ok_or_else(invalid_version)?;
-        ModelRef::validate_components(identity_value, version_value).map_err(|component| {
-            match component {
-                InvalidModelComponent::Identity => invalid_identity(),
-                InvalidModelComponent::Version => invalid_version(),
-            }
-        })?;
+        let invalid_component = |component| match component {
+            InvalidModelComponent::Identity => invalid_identity(),
+            InvalidModelComponent::Version => invalid_version(),
+        };
+        // Components first, so an invalid identity or version is located
+        // before the digest is read.
+        ModelRef::validate_components(identity_value, version_value).map_err(invalid_component)?;
         let digest_value = ModelDigest::parse(text(digest).ok_or_else(invalid_digest)?)
             .map_err(|_| invalid_digest())?;
-        Ok(ModelRef::from_validated(
-            identity_value.to_owned(),
-            version_value.to_owned(),
-            digest_value,
-        ))
+        ModelRef::new(identity_value, version_value, digest_value).map_err(invalid_component)
     }
 
     fn record_invalid(

@@ -800,15 +800,17 @@ impl std::fmt::Display for ModelRefusalCause {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
+    //! One sample of every [`ModelRefusalCause`] variant, shared by this
+    //! module's tests and the layer-5 evaluator's catalog tests
+    //! (`value::expression::causes`), which reach it across the QSL-181
+    //! crate boundary through `test-support`.
     use serde_json::Value;
 
     use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::{digest_of, DeclarationKey};
-    use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::CatalogCode;
     use qsl_foundation::source::{LocatedSpan, Position};
     use quire_exact::UniverseId;
 
@@ -837,7 +839,7 @@ pub(crate) mod tests {
     /// an exhaustive match over the listed variant names with no `_` arm,
     /// so a variant left out of the list fails to compile (E0004), and it
     /// asserts each sample is the variant it is listed under.
-    pub(crate) fn exhaustive_samples() -> Vec<ModelRefusalCause> {
+    pub fn exhaustive_samples() -> Vec<ModelRefusalCause> {
         macro_rules! samples {
             ($($variant:ident => $sample:expr),* $(,)?) => {{
                 fn covered(cause: &ModelRefusalCause) {
@@ -1082,6 +1084,14 @@ pub(crate) mod tests {
         },
         ]
     }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::fixtures::exhaustive_samples;
+    use super::ModelRefusalCause;
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::CatalogCode;
 
     /// #141 review finding 1, #163 re-review fix 4: the wire spellings had
     /// no test naming every variant's exact tag. This match has no

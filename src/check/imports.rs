@@ -23,16 +23,16 @@ use super::refusal::CheckCause;
 /// entries with one name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
-    not(test),
+    not(any(test, feature = "test-support")),
     expect(
         dead_code,
         reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
     )
 )]
-pub(crate) struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
+pub struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
 
 #[cfg_attr(
-    not(test),
+    not(any(test, feature = "test-support")),
     expect(
         dead_code,
         reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
@@ -40,14 +40,14 @@ pub(crate) struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
 )]
 impl<'a> ImportedNames<'a> {
     /// The name index of `view`'s entries.
-    pub(crate) fn of(view: &'a ImportView) -> Self {
+    pub fn of(view: &'a ImportView) -> Self {
         Self(view.exports().collect())
     }
 
     /// The node `name` resolves to among the imported package's exports,
     /// or `missing_declaration` / `missing-name` when it exports no
     /// declaration of that name.
-    pub(crate) fn resolve(&self, name: &str) -> Result<PackageNodeKey, CheckCause> {
+    pub fn resolve(&self, name: &str) -> Result<PackageNodeKey, CheckCause> {
         self.0
             .get(name)
             .copied()

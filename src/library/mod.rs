@@ -26,12 +26,15 @@
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
 //! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
 //! layer-4 `package` reader (`checked_package::checked_v2`) reads
-//! `quire.checked-package/v2` bytes and calls the crate-private
-//! `verify_binding` here, handing it the condition-1 witness only that
-//! reader constructs, to apply the ADR-011 §4 verified binding and construct
-//! `VerifiedPackage`; [`VerifiedPackage::into_import_view`] is the only
-//! `ImportView` constructor. No constructor of either type is reachable from
-//! outside this crate.
+//! `quire.checked-package/v2` bytes and calls `verify_binding` here, handing
+//! it the condition-1 witness only that reader mints, to apply the ADR-011
+//! §4 verified binding and construct `VerifiedPackage`;
+//! [`VerifiedPackage::into_import_view`] is the only `ImportView`
+//! constructor. Both types' fields are private to this module. The witness
+//! minter and `verify_binding` are `pub` so the layer-4 reader can call them
+//! across the QSL-181 crate boundary; within the QSL workspace, arch-lint
+//! rule T12-E and `tests/it/verified_binding_witness.rs` confine the
+//! minter's callers to that reader (see `library::witness`).
 //!
 //! [`PackageNodeKey`]`{package: package_id, node: WireNodeId}` (ADR-013 T-3)
 //! is the sole cross-package node reference this module defines. `node`'s
@@ -69,7 +72,21 @@ mod witness;
 pub use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};
-pub(crate) use witness::SupportedV2Wire;
+pub use witness::SupportedV2Wire;
+
+/// Test fixtures for the layer-4 reader's tests, which reach `library`
+/// across the QSL-181 crate boundary through `test-support`. Never compiled
+/// into a production build.
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
+    use super::{LibraryName, PinnedRequest, Selection};
+
+    /// A pinned request with one entry, through `PinnedRequest::new`
+    /// (`pub(crate)`: no production caller yet).
+    pub fn single_pin(library: LibraryName, selection: Selection) -> PinnedRequest {
+        PinnedRequest::new([(library, selection)]).expect("one entry never conflicts")
+    }
+}
 
 /// A qualified library identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -565,9 +582,11 @@ pub(crate) fn verify_package(
 
 /// A package admitted through the ADR-011 §4 verified binding (ADR-013 T-1,
 /// T-2): a [`LibraryPackage`] read from v2 wire bytes for which all three
-/// conditions held -- 1, a supported schema version (witnessed by the
-/// crate-private `SupportedV2Wire`, which only the layer-4 v2 reader
-/// constructs); 2, the FR-322 `package_id` recompute (`verify_package`); and
+/// conditions held -- 1, a supported schema version (witnessed by
+/// [`SupportedV2Wire`], which within the QSL workspace only the layer-4 v2
+/// reader mints: its minter is `pub` for the crate boundary and
+/// `library::witness`'s two gates confine its callers); 2, the FR-322
+/// `package_id` recompute (`verify_package`); and
 /// 3, this identity and version listed in the consumer's library lock or
 /// pinned request (`PinnedRequest`). Not checked typestate
 /// (R-10): a `VerifiedPackage` is
@@ -575,8 +594,8 @@ pub(crate) fn verify_package(
 /// `CheckedPackage` -- only [`Self::into_import_view`] converts it, into an
 /// `ImportView`.
 ///
-/// Both fields are private to this module, and the crate-private
-/// `verify_binding` is the sole constructor (FR-087-AC-1). Naming the
+/// Both fields are private to this module, and [`verify_binding`] is the
+/// sole constructor (FR-087-AC-1). Naming the
 /// fields directly from outside `library` does not compile:
 /// ```compile_fail,E0451
 /// use quire_spec_language::library::VerifiedPackage;
@@ -586,15 +605,20 @@ pub(crate) fn verify_package(
 /// };
 /// ```
 ///
-/// A crate-external caller cannot build a `VerifiedPackage` from a
-/// hand-built candidate either: `verify_binding` and its condition-1
-/// witness `SupportedV2Wire` are both crate-private, and making the two
-/// public lets this snippet compile, so the test fails. (Stable rustdoc does
-/// not check a `compile_fail` error code, so none is claimed here.)
+/// `verify_binding` is `pub` for the QSL-181 crate boundary: it only
+/// verifies, and it needs a condition-1 witness. A crate-external caller
+/// cannot build that witness itself (its field is private), so it cannot
+/// verify a hand-built candidate without calling the `pub` witness minter.
+/// Within the QSL workspace, `library::witness`'s two gates confine the
+/// minter's callers to the layer-4 v2 reader; a crate outside the workspace
+/// is not scanned and can call it. Making the
+/// witness's field public lets this snippet compile, so the test fails.
+/// (Stable rustdoc does not check a `compile_fail` error code, so none is
+/// claimed here.)
 /// ```compile_fail
-/// use quire_spec_language::library::{verify_binding, LibraryPackage};
+/// use quire_spec_language::library::{verify_binding, LibraryPackage, SupportedV2Wire};
 /// let candidate: LibraryPackage = todo!();
-/// let _ = verify_binding(todo!(), candidate, todo!());
+/// let _ = verify_binding(SupportedV2Wire(()), candidate, todo!());
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPackage {
@@ -701,7 +725,7 @@ impl From<&LibraryLock> for PinnedRequest {
 /// `MissingImport`. Every refusal names its cause and yields nothing
 /// (FR-087-AC-3): no partial `VerifiedPackage`, and no fallback to a digest
 /// of the file bytes, a lock file or the source.
-pub(crate) fn verify_binding(
+pub fn verify_binding(
     _admitted: SupportedV2Wire,
     candidate: LibraryPackage,
     pinned: &PinnedRequest,

@@ -220,14 +220,13 @@ fn pin(version: &str, package_id: PackageId) -> PinnedRequest {
 }
 
 fn pin_library(library: &str, version: &str, package_id: PackageId) -> PinnedRequest {
-    PinnedRequest::new([(
+    crate::library::fixtures::single_pin(
         identity(library),
         Selection {
             version: version.to_owned(),
             package_id,
         },
-    )])
-    .expect("one entry never conflicts")
+    )
 }
 
 /// ADR-011 §4 condition 3's own input: `pkg`/`"1"` pinned at the `package_id`

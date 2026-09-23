@@ -110,7 +110,7 @@ pub struct SeamLocation {
 /// as_str`.
 ///
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
-/// `crate::family::S6aFamilyKind` (`evaluate_declaration`), its
+/// `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
 /// `S6aFamilyKind::family` mapping to `FamilyKind`, and the one
 /// `match` over `crate::family::FamilyOutcome` (`ValueFunctionFamily::
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
@@ -138,7 +138,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "evaluate_declaration".to_owned(),
         },
         SeamLocation {
-            file: "src/family/mod.rs".to_owned(),
+            file: "src/value/expression/s6a.rs".to_owned(),
             item: "S6aFamilyKind::family".to_owned(),
         },
         SeamLocation {

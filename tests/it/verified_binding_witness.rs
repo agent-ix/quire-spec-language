@@ -11,7 +11,8 @@
 //! an ancestor module (E0742), so no visibility confines that call to the
 //! reader. This `syn` scan does. Outside `library::witness` and `library`'s
 //! test-only `binding_tests.rs`, it requires exactly one reference to the
-//! constructor in `src/`: a direct call inside `read_checked_package_v2`,
+//! constructor in every workspace crate's `src/`: a direct call inside
+//! `read_checked_package_v2`,
 //! within a match arm whose pattern names `AdmittedV2`. It also fails on:
 //!
 //! - any reference inside a macro's tokens, anywhere, since `syn::visit`
@@ -21,8 +22,16 @@
 //! - a tuple or struct construction of `SupportedV2Wire` outside
 //!   `library::witness`, as a second check on what the compiler refuses.
 //!
-//! Code outside the crate cannot reach the constructor or `verify_binding`
-//! at all; `VerifiedPackage`'s `compile_fail` doctest shows that.
+//! The constructor and `verify_binding` are `pub` for the QSL-181 crate
+//! boundary. Two gates confine the constructor within the QSL workspace,
+//! and neither is complete alone: arch-lint rule T12-E fails on any
+//! reference outside `checked_package::checked_v2`, but not on a wrapper
+//! inside `checked_v2` (a `#[macro_export]` macro, a trait method or a
+//! helper fn) that other modules call; this scan fails on exactly those,
+//! because it requires the one reference in `checked_v2` to be the direct
+//! call in `read_checked_package_v2`'s `AdmittedV2` arm. It scans every
+//! workspace crate's `src/`, so it follows `library` into `qsl-semantics`
+//! (X-6b) and `checked_package` into `qsl-package` (X-7).
 use std::path::{Path, PathBuf};
 
 use ix_trace_rs::trace;
@@ -40,24 +49,39 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-fn source_files() -> Vec<String> {
+/// Every Rust source file of every workspace crate: the root crate's
+/// `src/` and each `<crate>/src/` beside it, so the scan follows `library`
+/// and `checked_package` when QSL-181 (X-6b) and X-7 move them into
+/// `qsl-semantics` and `qsl-package`. Each file is named relative to its own
+/// crate root (`src/library/witness.rs`), which is how [`EXEMPT`] and
+/// [`READER_FILE`] name it, and paired with its path from the workspace root.
+fn source_files() -> Vec<(String, PathBuf)> {
     let root = root();
+    let mut crate_roots = vec![root.clone()];
+    for entry in std::fs::read_dir(&root).expect("the workspace root lists") {
+        let path = entry.expect("directory entry reads").path();
+        if path.join("Cargo.toml").is_file() && path.join("src").is_dir() {
+            crate_roots.push(path);
+        }
+    }
     let mut files = Vec::new();
-    let mut pending = vec![root.join("src")];
-    while let Some(dir) = pending.pop() {
-        let entries = std::fs::read_dir(&dir)
-            .unwrap_or_else(|error| panic!("{}: failed to list: {error}", dir.display()));
-        for entry in entries {
-            let path = entry.expect("directory entry reads").path();
-            if path.is_dir() {
-                pending.push(path);
-            } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
-                let relative = path
-                    .strip_prefix(&root)
-                    .expect("under the manifest dir")
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                files.push(relative);
+    for crate_root in crate_roots {
+        let mut pending = vec![crate_root.join("src")];
+        while let Some(dir) = pending.pop() {
+            let entries = std::fs::read_dir(&dir)
+                .unwrap_or_else(|error| panic!("{}: failed to list: {error}", dir.display()));
+            for entry in entries {
+                let path = entry.expect("directory entry reads").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+                    let relative = path
+                        .strip_prefix(&crate_root)
+                        .expect("under its crate root")
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    files.push((relative, path));
+                }
             }
         }
     }
@@ -229,7 +253,8 @@ impl<'ast> Visit<'ast> for Scan {
     }
 }
 
-/// The violations in one file, given its path relative to the crate root.
+/// The violations in one file, given its path relative to its own crate
+/// root.
 fn violations(file: &str, source: &str) -> Vec<String> {
     if EXEMPT.contains(&file) {
         return Vec::new();
@@ -266,16 +291,21 @@ fn violations(file: &str, source: &str) -> Vec<String> {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn only_the_v2_reader_mints_the_condition_1_witness() {
-    let root = root();
     let files = source_files();
+    assert_eq!(
+        files.iter().filter(|(file, _)| file == READER_FILE).count(),
+        1,
+        "the scan must reach exactly one {READER_FILE}"
+    );
     assert!(
-        files.iter().any(|file| file == READER_FILE),
-        "the scan must reach {READER_FILE}"
+        files.iter().any(|(file, _)| file == EXEMPT[0]),
+        "the scan must reach the witness module {}",
+        EXEMPT[0]
     );
     let mut found = Vec::new();
-    for file in files {
-        let source = std::fs::read_to_string(root.join(&file))
-            .unwrap_or_else(|error| panic!("{file}: failed to read: {error}"));
+    for (file, path) in files {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: failed to read: {error}", path.display()));
         found.extend(violations(&file, &source));
     }
     assert!(
