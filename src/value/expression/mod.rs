@@ -16,12 +16,21 @@ mod family;
 
 use super::composite::{Value, ValueType};
 use super::reference::ObjectEnvironment;
-use crate::family::ReferenceEvaluation;
+use crate::family::{EvalOutcome, ReferenceEvaluation};
 use evaluate::{Callable, Machine};
 use quire_exact::Meter;
 
+pub use crate::family::FamilyResult;
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
 pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
+
+/// FR-090's target S6a result type, monomorphized over `Value`: the
+/// `Evaluated` arm's kernel `Outcome<T>` (ADR-013 O-16) is `Outcome<Value>`
+/// at this crate's one migrated family. `crate::family::FamilyOutcome<T>`
+/// stays generic (`ReferenceEvaluation`'s own hook signature needs it for
+/// every family's own `Observed` type); this alias is [`CheckedPackage::
+/// call`]/[`CheckedPackage::evaluate`]'s own public return type.
+pub type FamilyOutcome = crate::family::FamilyOutcome<Value>;
 
 // ADR-011 §4's mechanism (FR-068-AC-10, amended by ADR-013 T-1/FR-087,
 // QSL-158 S-3a): `CheckedExpression` is `check`'s own checked-output type,
@@ -242,10 +251,15 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// declarations do not resolve refuses with `UnknownFunction`, naming
     /// it; it never falls back to a display-name string comparison.
     ///
-    /// FR-090 (ADR-013 T-4): an ordinary caller-input refusal is
-    /// `Err(CallFailure::Input(_))`, admitted before any S6a evaluation
-    /// runs; a broken S6a invariant is `Err(CallFailure::Fault(_))`, never
-    /// a caller-input refusal.
+    /// FR-090: returns `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),
+    /// .. })` for the kernel evaluation outcome unchanged,
+    /// `Ok(Evaluation { outcome: FamilyOutcome::FamilyEvaluated(r), .. })`
+    /// for a family-owned evaluation-time result, or
+    /// `Err(CallFailure::Fault(_))` for a broken S6a invariant -- the same
+    /// three outcomes [`Self::evaluate`] returns, since both route through
+    /// the same `ValueFunctionFamily::evaluate` hook (FR-090-OQ-3, ruled
+    /// option A: `location`/`losses` travel on `Evaluation`, read back from
+    /// the hook's own `EvaluationEnv` out-params).
     fn call(
         &self,
         function: &QualifiedName,
@@ -255,6 +269,20 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     ) -> Result<Evaluation, CallFailure>;
 
     /// Evaluate a checked expression with `arguments` for its parameters.
+    ///
+    /// FR-090's target S6a entry point for a checked clause expression: it
+    /// admits `arguments` before S6a, then returns S6a's `Ok` result
+    /// unchanged -- `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),
+    /// .. })` for the kernel evaluation outcome unchanged
+    /// (`super::outcome::ProtocolClauseSnapshot`'s `wrong_snapshot`, a
+    /// refused model query and a false dispatched precondition never reach
+    /// this arm any more, ADR-013 T-6), or `Ok(Evaluation { outcome:
+    /// FamilyOutcome::FamilyEvaluated(r), .. })` for one of those
+    /// family-owned evaluation-time results (FR-090-AC-7/AC-8/AC-11/AC-12)
+    /// -- and an S6a `Err(InternalFault)` as `Err(CallFailure::Fault(_))`.
+    /// `Machine::run` already returns this method's own target `Evaluation`
+    /// shape (FR-090-OQ-3, ruled option A), so this method forwards it
+    /// unchanged.
     fn evaluate(
         &self,
         expression: &CheckedExpression,
@@ -321,24 +349,37 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // configured with `meter`'s own limits (`*meter.limits()`), not an
         // unconditionally unlimited stand-in: a caller who configures
         // `meter` with, say, `work_units: 0` genuinely cannot afford even
-        // this call's own admission charge, and `EvaluateFailure::
-        // Incomplete` is how that surfaces (mapped to a kernel
-        // `Outcome::Incomplete` below, the same shape a denied
-        // `env.local_meter` charge inside the call's own body already
-        // takes -- one uniform way for a caller to observe "this call ran
-        // out of budget," regardless of which internal meter denied it).
+        // this call's own admission charge, and a denied charge surfaces as
+        // `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(_)))`, the same
+        // shape a denied `env.local_meter` charge inside the call's own body
+        // already takes -- one uniform way for a caller to observe "this
+        // call ran out of budget," regardless of which internal meter
+        // denied it.
         let mut contract_meter = Meter::new(*meter.limits());
+        let mut location = None;
+        let mut losses = Vec::new();
         let mut env = family::EvaluationEnv {
             package: self,
             objects,
             arguments: Some(arguments),
             local_meter: meter,
+            location: &mut location,
+            losses: &mut losses,
         };
-        match crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-        {
-            Ok(evaluation) => Ok(evaluation),
-            Err(failure) => map_evaluate_failure(failure),
-        }
+        let outcome = match crate::check::ValueFunctionFamily::evaluate(
+            &identity,
+            &mut env,
+            &mut contract_meter,
+        ) {
+            Ok(EvalOutcome::Kernel(outcome)) => FamilyOutcome::Evaluated(outcome),
+            Ok(EvalOutcome::Family(result)) => FamilyOutcome::FamilyEvaluated(result),
+            Err(fault) => return Err(CallFailure::Fault(fault)),
+        };
+        Ok(Evaluation {
+            outcome,
+            location,
+            losses,
+        })
     }
 
     fn evaluate(
@@ -374,35 +415,6 @@ impl CheckedPackageEvaluation for CheckedPackage {
     }
 }
 
-/// Maps `ValueFunctionFamily::evaluate`'s failure onto [`CheckedPackage::
-/// call`]'s own public error shape. FR-090-AC-3 (ADR-013 T-4): `evaluate`
-/// itself is the S6a seam and already raises `EvaluateFailure::Fault`
-/// directly for its own two invariants (an unresolved identity, or a
-/// second call on one `EvaluationEnv`) and forwards it unchanged from
-/// `Machine::run`'s own population-argument invariant (FR-090-AC-10); this
-/// adapter's only job is the shared `Incomplete` case, never re-deriving a
-/// fault from a refusal (there is none left to derive one from).
-fn map_evaluate_failure(
-    failure: crate::family::EvaluateFailure,
-) -> Result<Evaluation, CallFailure> {
-    match failure {
-        crate::family::EvaluateFailure::Fault(fault) => Err(CallFailure::Fault(fault)),
-        // PR #302 review finding 2: no `unreachable!()` here. Denying this
-        // call's own admission charge is a real, reachable outcome now that
-        // `contract_meter` carries the caller's own configured limits -- and
-        // it is a budget outcome, not an invalid-input one, so it surfaces
-        // the same way a denied `env.local_meter` charge already does: a
-        // kernel `Outcome::Incomplete`, inside a successful `Evaluation`,
-        // never `InputRefusal` (whose own doc scopes it to refusals made
-        // *before* any charge).
-        crate::family::EvaluateFailure::Incomplete(record) => Ok(Evaluation {
-            outcome: crate::value::Outcome::Incomplete(record),
-            location: None,
-            losses: Vec::new(),
-        }),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,18 +439,16 @@ mod tests {
 
     /// TC-384 (FR-090-AC-3): the two S6a invariant breaks -- a consumed
     /// evaluation environment, and a checked identity the package does not
-    /// resolve -- return `Err(EvaluateFailure::Fault(_))` from the S6a seam
-    /// itself (`ValueFunctionFamily::evaluate`), name stage `"S6a"`, carry
-    /// category `Category::InternalFailure`, and never share one invariant
+    /// resolve -- return `Err(InternalFault)` from the S6a seam itself
+    /// (`ValueFunctionFamily::evaluate`), name stage `"S6a"`, carry category
+    /// `Category::InternalFailure`, and never share one invariant
     /// identifier. Asserts `evaluate`'s own result directly, not
-    /// `map_evaluate_failure(evaluate(..))`: `map_evaluate_failure` only
-    /// forwards `Fault` unchanged into `CallFailure::Fault` (see its own
-    /// doc), so the fault this test is about is produced entirely inside
-    /// the seam, not by `CheckedPackage::call`'s adapter. `EvaluationEnv`'s
-    /// one real (non-test) constructor is `CheckedPackage::call`, which
-    /// always builds a fresh one and calls `evaluate` exactly once, so
-    /// reaching the consumed-environment and unknown-identity conditions
-    /// here bypasses `call` the same way `family.rs`'s own
+    /// `CheckedPackage::call`'s wrapping: the fault this test is about is
+    /// produced entirely inside the seam, not by `call`'s own match arm.
+    /// `EvaluationEnv`'s one real (non-test) constructor is `CheckedPackage::
+    /// call`, which always builds a fresh one and calls `evaluate` exactly
+    /// once, so reaching the consumed-environment and unknown-identity
+    /// conditions here bypasses `call` the same way `family.rs`'s own
     /// `evaluate_faults_on_a_second_call_on_the_same_env` does.
     ///
     /// Previously: the consumed-environment case ended `CheckedPackage::
@@ -464,11 +474,15 @@ mod tests {
         // Steps 2-3: one evaluation environment, carrying the arguments
         // [3], consumed by a first, real S6a call.
         let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut location = None;
+        let mut losses = Vec::new();
         let mut env = family::EvaluationEnv {
             package: &package,
             objects: &objects,
             arguments: Some(vec![Value::Integer(Integer::from(3_i64))]),
             local_meter: &mut local_meter,
+            location: &mut location,
+            losses: &mut losses,
         };
         let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let first =
@@ -476,24 +490,19 @@ mod tests {
                 .expect("the first call, with real arguments still present, evaluates cleanly");
         assert!(
             matches!(
-                &first.outcome,
-                crate::value::Outcome::Completed(Value::Integer(value))
+                &first,
+                EvalOutcome::Kernel(quire_exact::Outcome::Completed(Value::Integer(value)))
                     if *value == Integer::from(3_i64)
             ),
-            "expected Completed(Integer(3)), got {:?}",
-            first.outcome
+            "expected EvalOutcome::Kernel(Outcome::Completed(Integer(3))), got {first:?}",
         );
 
         // Step 4: a second S6a call on that same, now-consumed environment.
-        let second =
+        let consumed_fault =
             crate::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
                 .expect_err(
                     "a second call on the same env, arguments already consumed, must fault",
                 );
-        let consumed_fault = match second {
-            crate::family::EvaluateFailure::Fault(fault) => fault,
-            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
-        };
         assert_eq!(consumed_fault.stage(), "S6a");
         assert_eq!(consumed_fault.category(), Category::InternalFailure);
         assert_eq!(
@@ -505,23 +514,23 @@ mod tests {
         // function in this package.
         let unknown_identity = NodeKey::from_digest([0xAB; 32]);
         let mut fresh_local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut fresh_location = None;
+        let mut fresh_losses = Vec::new();
         let mut fresh_env = family::EvaluationEnv {
             package: &package,
             objects: &objects,
             arguments: Some(Vec::new()),
             local_meter: &mut fresh_local_meter,
+            location: &mut fresh_location,
+            losses: &mut fresh_losses,
         };
         let mut fresh_contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let unknown = crate::check::ValueFunctionFamily::evaluate(
+        let unknown_fault = crate::check::ValueFunctionFamily::evaluate(
             &unknown_identity,
             &mut fresh_env,
             &mut fresh_contract_meter,
         )
         .expect_err("an identity this package never declared must fault");
-        let unknown_fault = match unknown {
-            crate::family::EvaluateFailure::Fault(fault) => fault,
-            other => panic!("expected EvaluateFailure::Fault(_), got {other:?}"),
-        };
         assert_eq!(unknown_fault.stage(), "S6a");
         assert_eq!(unknown_fault.category(), Category::InternalFailure);
         assert_eq!(

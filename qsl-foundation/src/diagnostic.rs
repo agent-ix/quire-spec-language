@@ -675,6 +675,75 @@ impl InternalFault {
     }
 }
 
+/// ADR-013 O-16/O-17 (QSL-174): a family-owned evaluation-time refusal
+/// cause, held only through this trait so the layer-3 `check` core and this
+/// crate itself never name the concrete cause type -- "a cause belongs to
+/// the family whose construct produces it" (ADR-013 O-16). The supertraits
+/// make a `FamilyResult`/`FamilyOutcome` built from a `Box<dyn CatalogCoded>`
+/// `Debug`, able to cross a thread, and free of any borrow (ADR-013 O-16
+/// "Representation").
+pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
+    /// This cause's catalog code (O-17's method); its O-16 category is
+    /// always `Category::Refusal`.
+    fn catalog_code(&self) -> CatalogCode;
+}
+
+/// ADR-013 O-16 (QSL-174): a family-owned evaluation-time undefined cause,
+/// held only through this trait -- the undefined-category counterpart of
+/// [`CatalogCoded`].
+pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
+    /// This cause's [`UndefinedRecord`]; its O-16 category is always
+    /// `Category::Undefined`.
+    fn undefined_record(&self) -> UndefinedRecord;
+}
+
+/// ADR-013 O-16 (QSL-174): the closed reason set of the
+/// `quire.native.diagnostics/v1` "Undefined reasons" table -- the catalog
+/// states this is not a refusal code or cause. Grows by one variant each
+/// time a family adds a new evaluation-time undefined result, the same way
+/// a family-dispatch cause set grows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum UndefinedReason {
+    /// FR-151 dispatch: an FR-151 dispatched call's selected method's
+    /// effective precondition evaluated to `false`.
+    PreconditionFalse,
+    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
+    /// names no member of the population bound to `p`.
+    AbsentKey,
+}
+
+impl UndefinedReason {
+    /// The catalog's own reason spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PreconditionFalse => "precondition-false",
+            Self::AbsentKey => "absent-key",
+        }
+    }
+}
+
+impl std::fmt::Display for UndefinedReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// ADR-013 O-16 (QSL-174): the undefined-side counterpart of O-17's
+/// `RefusalRecord` (held back for #213 S-5b): `reason` plus the catalog's
+/// own structured payload for that reason. [`UndefinedCoded::undefined_record`]
+/// returns this record, not the bare reason, because the catalog requires
+/// the payload and a consumer outside the producing family holds only the
+/// trait object -- without the record it could reach the payload only by
+/// downcasting to the family's own cause type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndefinedRecord {
+    /// The catalog's closed undefined reason.
+    pub reason: UndefinedReason,
+    /// The catalog's structured payload for `reason`, keyed by the
+    /// catalog's own field names.
+    pub fields: std::collections::BTreeMap<&'static str, String>,
+}
+
 #[cfg(test)]
 mod foundation_tests {
     use super::{CatalogCode, Category, InternalFault};

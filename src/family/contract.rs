@@ -335,74 +335,19 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// a full checked payload just to look up an evaluation.
     type Key;
 
-    /// Evaluate `checked` under `env` and `meter`. ADR-012 §2 reserves this
-    /// hook alone for returning a meter-budget `Incomplete` outcome (`check`
-    /// never does, FR-062-AC-5); [`EvaluateFailure::Incomplete`] is that
-    /// outcome (QSL-153, once `quire_exact::Meter::charge` was exported).
-    /// FR-090-AC-3 (ADR-013 T-4) is the other failure shape this hook
-    /// returns: a broken S6a invariant, [`EvaluateFailure::Fault`], never a
-    /// `FamilyResult` or a kernel-shaped refusal.
+    /// Evaluate `checked` under `env` and `meter`. Returns
+    /// `Ok(EvalOutcome::Kernel(o))` for the kernel evaluation outcome
+    /// unchanged -- ADR-012 §2 reserves this hook alone for returning a
+    /// meter-budget `Incomplete` outcome (`check` never does, FR-062-AC-5),
+    /// which travels here as `EvalOutcome::Kernel(Outcome::Incomplete(_))`
+    /// (QSL-153, once `quire_exact::Meter::charge` was exported) --
+    /// `Ok(EvalOutcome::Family(r))` for a family-owned evaluation-time
+    /// refusal or undefined result (ADR-013 O-16), or `Err(InternalFault)`
+    /// for a broken S6a invariant (FR-090-AC-3), never a `FamilyResult` or
+    /// a kernel-shaped refusal.
     fn evaluate<'a>(
         checked: &Self::Key,
         env: &mut Self::Env<'a>,
         meter: &mut Meter,
-    ) -> Result<Self::Observed, EvaluateFailure>;
-}
-
-/// `evaluate`'s full failure shape: the shared kernel meter's own
-/// `Incomplete` (QSL-153, ADR-012 §2's "a refusal... or `Incomplete`, a
-/// meter-budget outcome", FR-062-AC-5), or an S6a invariant break
-/// (FR-090-AC-3/AC-10, ADR-013 T-4).
-///
-/// **No `Refused` variant.** An earlier version also carried
-/// `Refused(EvaluateRefusal)`, with two variants -- `UnknownIdentity` (no
-/// checked function admitted for the identity `evaluate` was asked to run)
-/// and `EnvironmentAlreadyConsumed` (this crate's own code called
-/// `evaluate` twice on one `EvaluationEnv`) -- both constructed only from
-/// `checked`/`env`, never from a display string. FR-090-AC-3 rules that
-/// both conditions are broken S6a invariants, not caller-input refusals:
-/// `ValueFunctionFamily::evaluate` (`value::expression::family.rs`)
-/// constructs `Fault(InternalFault::new("S6a", ..))` directly for each,
-/// with its own stable invariant identifier, so `EvaluateRefusal` had no
-/// variant and no constructor left and was deleted along with it.
-/// `CheckedPackage::call`'s own `map_evaluate_failure` adapter
-/// (`value::expression::mod.rs`) now forwards `Fault` unchanged into
-/// `CallFailure::Fault` rather than re-deriving it from a refusal.
-///
-/// **Real producer, not always reachable through today's one production
-/// caller.** `ValueFunctionFamily::evaluate` (`crate::check::family`'s
-/// evaluation half, `src/value/expression/family.rs`) charges
-/// `ChargePoint::FunctionCall` against its own `meter` parameter on every
-/// call -- genuine production code, not a test-only hook. `CheckedPackage::
-/// call` (`src/value/expression/mod.rs`), the one real (non-test) caller of
-/// `evaluate`, builds that meter with unlimited scalar limits today, so an
-/// `Incomplete` can never actually surface through `call()` -- the same
-/// real-mechanism-behind-an-unlimited-default shape `nesting_depth` itself
-/// had before a caller-configurable knob existed for it. The mechanism is
-/// exercised directly, against a deliberately tight meter, by
-/// `src/value/expression/family.rs`'s `family_contract_tests` (FR-062-AC-5).
-/// `call` also never reaches either `Fault` case -- it always resolves the
-/// identity from this same package and builds a fresh `EvaluationEnv` --
-/// so both are exercised directly against `evaluate`, bypassing `call`,
-/// by `family.rs`'s `evaluate_faults_on_a_second_call_on_the_same_env` and
-/// `value::expression::mod.rs`'s `s6a_invariant_breaks_are_internal_faults_
-/// not_panics` (FR-090-AC-3, TC-384).
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum EvaluateFailure {
-    /// The shared kernel meter's budget is exhausted (FR-062-AC-5's
-    /// `Incomplete` half).
-    #[error("evaluate exhausted the kernel meter budget: {0:?}")]
-    Incomplete(quire_exact::Incomplete),
-    /// FR-090-AC-3/AC-10 (ADR-013 T-4): a broken S6a invariant -- never a
-    /// `FamilyResult`/kernel `Refused`. `Value`'s own `evaluate` hook
-    /// (`value::expression::family::ValueFunctionFamily::evaluate`) raises
-    /// this directly for its own two invariants (an unresolved identity, or
-    /// a second call on one `EvaluationEnv`), and forwards it unchanged from
-    /// `Machine::run` (`value::expression::evaluate.rs`), which raises it
-    /// when a checked program's own `Value::Population` argument cannot be
-    /// resolved past the point `CheckedPackage::call`'s own `validate`
-    /// already admitted it -- both internal-only conditions, never a
-    /// caller-input refusal.
-    #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
-    Fault(InternalFault),
+    ) -> Result<super::EvalOutcome<Self::Observed>, InternalFault>;
 }

@@ -8,8 +8,11 @@
 use super::ieee::IeeeFlags;
 use super::reference::ObjectReference;
 use crate::check::WrongSnapshotCause;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{
+    CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
+};
 use quire_exact::{CardinalityBound, CollectionKind, Incomplete};
+use std::collections::BTreeMap;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +39,86 @@ impl<T> Outcome<T> {
 }
 
 impl<T> Outcome<T> {
+    /// FR-090-AC-1: this QSL kernel-copy outcome, mapped onto the real
+    /// `quire_exact::Outcome<T>` `FamilyOutcome::Evaluated`/`EvalOutcome::
+    /// Kernel` carry (ADR-013 O-16). A total, one-to-one re-tagging, not a
+    /// migration: since `ProtocolClause`'s `wrong_snapshot`, the
+    /// model-query refusal, `precondition-false` and `absent-key` are all
+    /// intercepted earlier (`Halt::Family`, `EvalHalt::Family`) and never
+    /// reach this copy's `Refused`/`Undefined` any more (ADR-013 T-6), the
+    /// two enums are already structurally identical to their kernel
+    /// counterparts, member for member -- QSL-131's remaining work is
+    /// deleting this copy in favor of the kernel type directly, not
+    /// reconciling a shape difference.
+    pub(crate) fn into_kernel(self) -> quire_exact::Outcome<T> {
+        match self {
+            Self::Completed(value) => quire_exact::Outcome::Completed(value),
+            Self::Undefined(undefined) => quire_exact::Outcome::Undefined(undefined.into_kernel()),
+            Self::Refused(refusal) => quire_exact::Outcome::Refused(refusal.into_kernel()),
+            Self::Incomplete(record) => quire_exact::Outcome::Incomplete(record),
+        }
+    }
+}
+
+impl Undefined {
+    fn into_kernel(self) -> quire_exact::Undefined {
+        match self {
+            Self::DivisionByZero => quire_exact::Undefined::DivisionByZero,
+            Self::IeeeNotFinite => quire_exact::Undefined::IeeeNotFinite,
+            Self::EmptyReduction => quire_exact::Undefined::EmptyReduction,
+            Self::NoneValue => quire_exact::Undefined::NoneValue,
+        }
+    }
+}
+
+impl Refusal {
+    fn into_kernel(self) -> quire_exact::Refusal {
+        match self {
+            Self::InexactDecimal => quire_exact::Refusal::InexactDecimal,
+            Self::DecimalOutOfDomain => quire_exact::Refusal::DecimalOutOfDomain,
+            Self::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            } => quire_exact::Refusal::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            },
+            Self::ModuloOutOfDomain => quire_exact::Refusal::ModuloOutOfDomain,
+            Self::TextLengthOutOfDomain => quire_exact::Refusal::TextLengthOutOfDomain,
+            Self::IntegerOutOfDomain => quire_exact::Refusal::IntegerOutOfDomain,
+            Self::RationalOutOfDomain => quire_exact::Refusal::RationalOutOfDomain,
+            Self::IeeeNotExact { would_be } => quire_exact::Refusal::IeeeNotExact { would_be },
+            Self::IeeeNanPayloadNotRepresentable => {
+                quire_exact::Refusal::IeeeNanPayloadNotRepresentable
+            }
+            Self::IeeeRationalOutOfDomain => quire_exact::Refusal::IeeeRationalOutOfDomain,
+            Self::ForeignReference => quire_exact::Refusal::ForeignReference,
+            Self::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            } => quire_exact::Refusal::CardinalityOutOfBound {
+                violation: violation.into_kernel(),
+                kind,
+                bound,
+                count,
+            },
+            Self::CheckedInvariant => quire_exact::Refusal::CheckedInvariant,
+        }
+    }
+}
+
+impl BoundViolation {
+    fn into_kernel(self) -> quire_exact::BoundViolation {
+        match self {
+            Self::BelowMinimum => quire_exact::BoundViolation::BelowMinimum,
+            Self::AboveMaximum => quire_exact::BoundViolation::AboveMaximum,
+        }
+    }
+}
+
+impl<T> Outcome<T> {
     pub(crate) fn from_stop(result: Result<T, Stop>) -> Self {
         match result {
             Ok(value) => Self::Completed(value),
@@ -56,6 +139,13 @@ impl<T> Outcome<T> {
 }
 
 /// Why an operation is undefined.
+///
+/// **`AbsentKey` and `PreconditionFalse` are removed (ADR-013 T-6,
+/// FR-090-AC-11/AC-12).** Both were family-owned undefined causes sitting
+/// in the kernel copy's own closed set; O-16 keeps model/dispatch
+/// vocabulary out of the kernel entirely. `StateModelUndefined` (this
+/// module) is their real replacement, carried in `FamilyResult::Undefined`
+/// through `CatalogCoded`'s undefined-side counterpart, `UndefinedCoded`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Undefined {
     /// A divisor is (normalized) zero.
@@ -68,17 +158,6 @@ pub enum Undefined {
     /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
     /// expression can meet it.
     NoneValue,
-    /// FR-153 `lookup<T>(p, r) absent undefined`'s catalogued `absent-key`
-    /// reason: `r` is not a member of the bound population, and the query
-    /// names no mathematical value for that case.
-    AbsentKey,
-    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
-    /// linked candidate's effective precondition (its own, or the nearest
-    /// redefinition ancestor's, disjoined per FR-151-AC's redefinition rule)
-    /// evaluated to `false`; the call's result is not a mathematical value
-    /// for that receiver. Carries the `precondition-false`
-    /// (`native-diagnostics.md`) payload.
-    PreconditionFalse(Box<PreconditionFailure>),
 }
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
@@ -152,28 +231,18 @@ pub enum Refusal {
     /// A checked-program invariant failed during evaluation; unreachable for
     /// an admitted program.
     CheckedInvariant,
-    /// FR-153's `pre(..)` anchor selection (`evaluate.rs`'s `select_anchor`)
-    /// meeting a `Value::Population` with no attached pre binding --
-    /// `wrong_snapshot`, with the identical closed [`WrongSnapshotCause`]
-    /// cause set the checker uses (`crate::check`'s own
-    /// `WrongSnapshotCause`, reused rather than a separately invented
-    /// runtime cause, since FR-272/native-diagnostics.md catalogues exactly
-    /// one `wrong_snapshot` cause list). The checker only admits `pre(..)`
-    /// syntactically -- clause context, an eligible operand not itself a
-    /// captured `let` alias -- it cannot see whether the population value a
-    /// caller supplies at evaluation time was actually admitted through
-    /// [`crate::model::population::admit_invocation`] (the only constructor
-    /// that attaches a pre anchor) rather than
-    /// [`crate::model::population::admit_binding`] directly, so this is a
-    /// real, caller-input-reachable refusal, never a broken-evaluator
-    /// [`Self::CheckedInvariant`].
-    WrongSnapshot(WrongSnapshotCause),
-    /// FR-153's `allInstances<T>(p)`/`lookup<T>(p, r) absent refused`
-    /// refused the query outright
-    /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
-    Model(ModelQueryRefusal),
+    // `WrongSnapshot(WrongSnapshotCause)` and `Model(ModelQueryRefusal)` are
+    // removed (ADR-013 T-6, FR-090-AC-7/AC-8). Both were evaluation-time
+    // causes wrapped in the kernel-shaped `Refused` outcome; O-16 keeps
+    // family evaluation causes out of the kernel entirely; ADR-013 T-6
+    // states the removal explicitly ("`WrongSnapshotCause` leaves the
+    // kernel `Refusal`... it becomes an evaluation cause of
+    // `ProtocolClause`"). `ProtocolClauseSnapshot` (this module) and
+    // `crate::model::normalize::ModelRefusal`'s own `CatalogCoded` impl are
+    // their real replacements, carried in `FamilyResult::Refused`.
+    //
     // FR-089-AC-4/AC-5's `UnresolvedPopulation`/`PopulationMaximumMismatch`
-    // variants are deleted (FR-090-AC-10, ADR-013 T-4): a consumed
+    // variants are also deleted (FR-090-AC-10, ADR-013 T-4): a consumed
     // `Value::Population(population_id)` that names no recorded binding, or
     // whose resolved binding's declared maximum differs from the checked
     // parameter's, is refused at admission (`CallFailure::Input`,
@@ -181,20 +250,7 @@ pub enum Refusal {
     // runs; meeting either condition inside S6a (`Machine::
     // resolve_population`, `expression/evaluate.rs`) is now an
     // `InternalFault`, never a kernel `Refused` outcome -- so this public
-    // `Refusal` enum has no variant left for either case.
-}
-
-/// The closed code and FR-272 cause tag of an FR-153 population-query
-/// refusal (`crate::model::normalize::ModelRefusal`'s own `code` and `cause`
-/// fields, never its free-text `detail`, which is diagnostic prose rather
-/// than part of the closed contract every other [`Refusal`] variant exposes
-/// through [`Refusal::code`]/[`Refusal::cause`]).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct ModelQueryRefusal {
-    /// The native code.
-    pub code: Code,
-    /// The FR-272 cause tag.
-    pub cause: &'static str,
+    // `Refusal` enum has no variant left for any of the three cases.
 }
 
 impl Refusal {
@@ -205,8 +261,6 @@ impl Refusal {
             Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
             Self::ForeignReference => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
-            Self::Model(refusal) => Some(refusal.code.as_str()),
-            Self::WrongSnapshot(_) => Some(Code::WrongSnapshot.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
@@ -223,8 +277,6 @@ impl Refusal {
     pub fn cause(self) -> Option<&'static str> {
         match self {
             Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
-            Self::Model(refusal) => Some(refusal.cause),
-            Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
@@ -257,6 +309,110 @@ impl BoundViolation {
             Self::BelowMinimum => "below-minimum",
             Self::AboveMaximum => "above-maximum",
         }
+    }
+}
+
+/// ADR-013 T-6: `ProtocolClause`'s own evaluation-time refusal cause,
+/// carrying [`WrongSnapshotCause`] -- `ProtocolClause` is the family that
+/// owns `Pre` (ADR-012 §4.3; FR-091-AC-8). Defined here, beside
+/// [`crate::value::expression::evaluate::Machine::select_anchor`], the one
+/// evaluation-time production site: only [`WrongSnapshotCause::WrongAnchor`]
+/// is reachable there, since [`WrongSnapshotCause::ForbiddenPreRead`] is a
+/// checking-time-only cause (`crate::check::check`). `catalog_code()`
+/// (TC-387) is exhaustive over both variants regardless, matching O-17's
+/// "one exhaustive `catalog_code()`" for the whole cause type.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ProtocolClauseSnapshot(pub(crate) WrongSnapshotCause);
+
+impl CatalogCoded for ProtocolClauseSnapshot {
+    fn catalog_code(&self) -> CatalogCode {
+        match self.0 {
+            WrongSnapshotCause::WrongAnchor => CatalogCode::new("wrong_snapshot", "wrong-anchor"),
+            WrongSnapshotCause::ForbiddenPreRead => {
+                CatalogCode::new("wrong_snapshot", "forbidden-pre-read")
+            }
+        }
+    }
+}
+
+/// The identity string a catalog payload field carries for a member: every
+/// real population member's own identity is a JSON string
+/// (`crate::value::model_query`'s own doc), rendered lossily only for a
+/// malformed reference no admitted program produces.
+pub(crate) fn identity_string(identity: &[u8]) -> String {
+    String::from_utf8_lossy(identity).into_owned()
+}
+
+/// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
+/// (FR-090-AC-11/AC-12). ADR-012 assigns dispatch, dispatch preconditions
+/// and population lookup to `StateModel` (ADR-012 §1, §3, §4.3), even
+/// though both evaluators run inside `Value`'s own
+/// [`crate::value::expression::evaluate::Machine`] -- layer 5
+/// `value::expression` holds every family's evaluator (ADR-011 §6.1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum StateModelUndefined {
+    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
+    /// selected method's effective precondition evaluated to `false`.
+    PreconditionFalse(PreconditionFailure),
+    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
+    /// names no member of the population bound to `p`.
+    AbsentKey {
+        /// The population binding `p` is bound to, rendered for the
+        /// catalog payload.
+        binding: String,
+        /// The requested reference key `r`, rendered for the catalog
+        /// payload.
+        key: String,
+    },
+}
+
+impl UndefinedCoded for StateModelUndefined {
+    fn undefined_record(&self) -> UndefinedRecord {
+        match self {
+            Self::PreconditionFalse(failure) => UndefinedRecord {
+                reason: UndefinedReason::PreconditionFalse,
+                fields: BTreeMap::from([
+                    ("operation", failure.operation.clone()),
+                    ("selected", failure.selected.clone()),
+                    (
+                        "receiver",
+                        identity_string(failure.receiver.identity().as_bytes()),
+                    ),
+                ]),
+            },
+            Self::AbsentKey { binding, key } => UndefinedRecord {
+                reason: UndefinedReason::AbsentKey,
+                fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
+            },
+        }
+    }
+}
+
+/// The evaluator's own early-exit carrier, extended with the family-owned
+/// evaluation-time result a handful of `value/*.rs` computations produce
+/// (FR-090-AC-7/AC-8/AC-11/AC-12): [`Stop`] alone cannot carry a
+/// `FamilyResult`, since it stays shared by roughly two dozen kernel-shaped
+/// computations that all convert through [`Outcome::from_stop`] and must
+/// never gain a non-kernel-shaped arm (see [`Stop`]'s own doc). `Machine`'s
+/// crate-private `Halt` converts an `EvalHalt::Family` the same way it
+/// converts an S6a invariant break: intercepted before anything calls
+/// `Outcome::from_stop`.
+pub(crate) enum EvalHalt {
+    /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
+    Stop(Stop),
+    /// A family-owned evaluation-time refusal or undefined result.
+    Family(crate::family::FamilyResult),
+}
+
+impl From<Stop> for EvalHalt {
+    fn from(stop: Stop) -> Self {
+        Self::Stop(stop)
+    }
+}
+
+impl From<Incomplete> for EvalHalt {
+    fn from(record: Incomplete) -> Self {
+        Self::Stop(Stop::Incomplete(record))
     }
 }
 

@@ -51,9 +51,10 @@ Tag the test `#[trace("FR-090-AC-10", "TC-391")]`.
 
 ## Status
 
-Backed, in two parts (`FamilyOutcome` is not yet built, so the S6a-internal
-half asserts today's
-real `EvaluateFailure`/`InternalFault` types rather than the literal
+`✅ Passed locally`. Backed, in two parts (the S6a-internal half calls
+`ValueFunctionFamily::evaluate` directly, so it asserts that hook's own
+`Result<EvalOutcome<Value>, InternalFault>` shape -- a bare `InternalFault`,
+never a refusal-shaped wrapper -- rather than the `CheckedPackage::call`-level
 `FamilyOutcome`/kernel-`Refused` spelling above):
 
 - Steps 1-3 (admission, `CheckedPackage::call`):
@@ -69,10 +70,11 @@ real `EvaluateFailure`/`InternalFault` types rather than the literal
   and
   `evaluate_bypassing_admission_with_a_population_maximum_mismatch_is_an_internal_fault`,
   in `src/value/expression/evaluate.rs`, each tagged
-  `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(crate::family::
-  EvaluateFailure::Fault(fault))` with `fault.category() ==
-  Category::InternalFailure` and the two conditions' own distinct invariant
-  identifiers, never a panic. Proven by mutation (PR #334 review round 2,
+  `#[trace("FR-090-AC-10", "TC-391")]`, asserting `Err(fault)` -- a bare
+  `InternalFault` from `ValueFunctionFamily::evaluate`'s own hook -- with
+  `fault.category() == Category::InternalFailure` and the two conditions'
+  own distinct invariant identifiers, never a panic. Proven by mutation
+  (PR #334 review round 2,
   finding F2/N1): deleting the interception that keeps a fault out of the
   shared `Stop`/`Outcome` path makes both tests fail -- by a compile error
   once the fault can no longer be represented as a `Stop` at all, not by a

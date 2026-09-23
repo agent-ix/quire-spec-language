@@ -5,19 +5,31 @@
 use ix_trace_rs::trace;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
-    Meter, ScalarLimits,
+    Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference,
-    DefinitionRevision, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
-    IeeeWidth, IllTypedCause, MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome,
-    PackageDeclarations, Presence, ProvedInterval, QualifiedName, Rational, RationalDomain,
-    Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    DefinitionRevision, Evaluation, Expression, FamilyOutcome, FieldDeclaration, FieldValue,
+    FunctionDeclaration, IeeeValue, IeeeWidth, IllTypedCause, MeasureObligation, NodeKey,
+    ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, Obligation,
+    OptionValue, Origin, PackageDeclarations, Presence, ProvedInterval, QualifiedName, Rational,
+    RationalDomain, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
+
 use sha2::{Digest, Sha256};
+
+/// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
+/// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
+/// file evaluates through the kernel path, so extracting `Evaluated`'s
+/// outcome is all these tests need.
+fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    }
+}
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -515,7 +527,7 @@ fn p06_each_call_charges_function_call() {
         )
         .unwrap();
     assert_eq!(
-        format!("{:?}", evaluation.outcome),
+        format!("{:?}", evaluated(evaluation)),
         format!("{:?}", Outcome::Completed(int(3)))
     );
     // PR #302 review finding 2: 2, not 3 -- one `function.call` charge per
@@ -539,7 +551,7 @@ fn p06_each_call_charges_function_call() {
         )
         .unwrap();
     assert_eq!(
-        format!("{:?}", evaluation.outcome),
+        format!("{:?}", evaluated(evaluation)),
         format!(
             "{:?}",
             Outcome::<Value>::Incomplete(Incomplete {
@@ -922,7 +934,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 &mut meter,
             )
             .unwrap();
-        (evaluation.outcome, meter.admitted_charges().to_vec())
+        (evaluated(evaluation), meter.admitted_charges().to_vec())
     };
     let (nan, charges) = convert(0x7FF8_0000_0000_0000);
     assert!(matches!(nan, Outcome::Undefined(Undefined::IeeeNotFinite)));
@@ -1147,7 +1159,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
             )
             .unwrap();
         (
-            format!("{:?}", evaluation.outcome),
+            format!("{:?}", evaluated(evaluation)),
             meter.consumed(LimitKind::WorkUnits),
             meter.consumed(LimitKind::ResultUnits),
         )
@@ -1206,15 +1218,16 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     assert_eq!(
         format!(
             "{:?}",
-            package
-                .call(
-                    &QualifiedName::unqualified("q").unwrap(),
-                    vec![int(3), int(2)],
-                    &objects,
-                    &mut narrow,
-                )
-                .unwrap()
-                .outcome
+            evaluated(
+                package
+                    .call(
+                        &QualifiedName::unqualified("q").unwrap(),
+                        vec![int(3), int(2)],
+                        &objects,
+                        &mut narrow,
+                    )
+                    .unwrap()
+            )
         ),
         format!(
             "{:?}",
@@ -1256,7 +1269,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
             .evaluate(&checked, vec![int(a), int(2)], &objects, &mut meter)
             .unwrap();
         assert_eq!(
-            format!("{:?}", evaluation.outcome),
+            format!("{:?}", evaluated(evaluation)),
             format!("{:?}", Outcome::Completed(Value::Boolean(true)))
         );
         assert_eq!(

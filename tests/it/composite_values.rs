@@ -685,11 +685,17 @@ fn malformed_declarations_refuse_at_admission() {
 /// Rows that need the FR-146 checker and evaluator boundary.
 mod checked {
     use super::*;
+    // FR-090: `CheckedPackage::evaluate` now returns `FamilyOutcome`, whose
+    // `Evaluated` arm carries the kernel `quire_exact::Outcome<T>` (ADR-013
+    // O-16), not this crate's own kernel-copy `Outcome`/`Refusal`/
+    // `BoundViolation` the outer module's glob import brings in -- these
+    // three explicit imports shadow that glob for every real evaluation
+    // result this submodule compares.
+    use quire_exact::{BoundViolation, Outcome, Refusal};
     use quire_spec_language::value::{
-        BinaryOperator, BoundViolation, CallFailure, CheckCause, CheckMode, CheckRefusal,
-        CheckedExpression, CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression,
-        FieldInitializer, FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations,
-        Refusal,
+        BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
+        CheckedPackage, CheckedPackageEvaluation, CheckingLimits, Expression, FieldInitializer,
+        FunctionDeclaration, InputRefusal, Obligation, PackageDeclarations,
     };
 
     fn name(spelling: &str) -> Expression {
@@ -790,7 +796,10 @@ mod checked {
                 &mut meter,
             )
             .unwrap();
-        (evaluation.outcome, meter)
+        match evaluation.outcome {
+            quire_spec_language::value::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
+            other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+        }
     }
 
     fn cause(result: Result<CheckedExpression, CheckRefusal>) -> CheckCause {

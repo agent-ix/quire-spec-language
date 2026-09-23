@@ -9,9 +9,10 @@ use quire_exact::{
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, BoundViolation, CollectionType,
     CompositeDeclaration, CompositeShape, Deferred, EqualityOperand, EqualityOperator,
-    FieldDeclaration, FieldValue, IeeeWidth, IllTyped, IllTypedCause, NodeKey, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Presence, Refusal, TextPayload,
-    TextProfile, TextType, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    FamilyOutcome, FieldDeclaration, FieldValue, IeeeWidth, IllTyped, IllTypedCause, NodeKey,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Presence,
+    Refusal, TextPayload, TextProfile, TextType, TypeEnvironment, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -647,7 +648,9 @@ mod checked {
             .evaluate(&checked, arguments, objects, &mut meter)
             .unwrap();
         match evaluation.outcome {
-            Outcome::Completed(value) => (value, meter.admitted_charges().to_vec()),
+            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) => {
+                (value, meter.admitted_charges().to_vec())
+            }
             other => panic!("a completed value, not {other:?}"),
         }
     }

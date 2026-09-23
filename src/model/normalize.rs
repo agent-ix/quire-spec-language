@@ -237,6 +237,29 @@ pub struct ModelRefusal {
     pub detail: String,
 }
 
+/// ADR-013 O-17 (FR-090-AC-8): `ModelRefusal`'s one exhaustive
+/// `catalog_code()`, so an `allInstances`/`lookup` query
+/// `model::population` refuses can be carried in `FamilyResult::Refused`
+/// with its own catalog code, never QSL's now-removed
+/// `value::outcome::ModelQueryRefusal` (ADR-013 T-6).
+///
+/// `self.code` and `self.cause` are already this refusal's exact catalog
+/// code and cause tag -- every one of this crate's ~100 `ModelRefusal`
+/// construction sites assigns `code` to the native-v1 `Code` variant the
+/// `quire.native.diagnostics/v1` catalog defines for that exact
+/// `ModelRefusalCause`, and `ModelRefusalCause::as_str()` is already the
+/// catalog's own cause tag (`#141`). Reusing them here, rather than a
+/// second, independently hand-authored ~65-arm mapping straight off
+/// `ModelRefusalCause`, avoids the two mappings silently drifting apart;
+/// `Code`'s own doc reserves it "no new consumer" (ADR-013 R-09) once its
+/// lane is deleted, so this reuse is flagged for revisiting then, not a
+/// permanent second canonical role for `Code`.
+impl qsl_foundation::diagnostic::CatalogCoded for ModelRefusal {
+    fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
+        qsl_foundation::diagnostic::CatalogCode::new(self.code.as_str(), self.cause.as_str())
+    }
+}
+
 /// A non-empty [`ModelRefusal`] list (L1 finding, PR #228 review):
 /// `value-accounting.md:505-511`'s "every refusal that work exposes is
 /// reported, in charge order, when its stage ends" means a real defect

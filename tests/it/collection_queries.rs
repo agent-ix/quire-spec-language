@@ -4,16 +4,16 @@
 
 use ix_trace_rs::trace;
 use quire_exact::{
-    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
-    Meter, ScalarLimits,
+    BoundViolation, CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer,
+    IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_spec_language::value::{
-    Accumulation, BinaryOperator, BinderQuery, BoundViolation, CheckCause, CheckMode, CheckRefusal,
-    CheckedPackage, CheckedPackageEvaluation, CheckingLimits, CollectionLoss, CollectionProperty,
-    CollectionType, CompositeDeclaration, CompositeShape, Expression, FieldDeclaration, FieldValue,
+    Accumulation, BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimits, CollectionLoss, CollectionProperty, CollectionType,
+    CompositeDeclaration, CompositeShape, Expression, FamilyOutcome, FieldDeclaration, FieldValue,
     FunctionDeclaration, IllTypedCause, NodeKey, ObjectEnvironment, ObjectIdentity,
-    ObjectReference, ObjectTypeDeclaration, Obligation, Outcome, PackageDeclarations, Presence,
-    ProvedInterval, Refusal, TypeEnvironment, Undefined, UniverseIdentity, Value, ValueType,
+    ObjectReference, ObjectTypeDeclaration, Obligation, PackageDeclarations, Presence,
+    ProvedInterval, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -230,8 +230,12 @@ fn run_in(
     let evaluation = package
         .evaluate(&checked, arguments, objects, &mut meter)
         .unwrap();
+    let outcome = match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    };
     Run {
-        outcome: evaluation.outcome,
+        outcome,
         work: meter.consumed(LimitKind::WorkUnits),
         results: meter.consumed(LimitKind::ResultUnits),
     }
@@ -447,8 +451,10 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             .unwrap();
         assert!(matches!(
             evaluation.outcome,
-            Outcome::Undefined(Undefined::EmptyReduction)
+            FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::EmptyReduction))
         ));
+        // FR-090-OQ-3 (ruled option A): `Evaluation.location` carries the
+        // locus alongside `FamilyOutcome`.
         assert!(evaluation.location.is_some());
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 0);
     }
