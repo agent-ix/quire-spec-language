@@ -9,11 +9,7 @@ use crate::formal_source::{FormalSource, SourceIdentities};
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
 use crate::native_model::NativeModel;
 use qsl_foundation::{Code, Diagnostic, Source};
-use qsl_source::{
-    read_semantic_block, BundleIndex, ClausesOutcome, SemanticContext, SemanticFailure,
-    CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
-};
-use serde_json::json;
+use qsl_source::{ClausesOutcome, SemanticContext, SemanticFailure};
 
 /// Unsupported combinations at the extracted-command boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error, serde::Serialize)]
@@ -276,20 +272,11 @@ impl Selected<'_> {
         let binding = self.binding.bind()?;
         let body = self.body.bind()?;
         let original = intake.source(self.source)?;
-        // Quire validates its own clause-only context; native imports retain model authority.
-        let module = read_semantic_block(
-            &json!({
-                "contract_version": CONTRACT_VERSION, "semantic_core": SEMANTIC_CORE_VERSION,
-                "package": binding.requirement.package().as_str(),
-                "exports": [], "targets": ["markdown"]
-            }),
-            &[],
-            &|_| false,
-        )
-        .map_err(|failures| RunCause::Extraction(Box::new(ExtractionError::Context(failures))))?;
         let context =
-            SemanticContext::new(module, original.source().path(), BundleIndex::default())
-                .with_source_identity(original.source().identity().identity.clone());
+            qsl_source::clause_context(binding.requirement.package().as_str(), original.source())
+                .map_err(|failures| {
+                RunCause::Extraction(Box::new(ExtractionError::Context(failures)))
+            })?;
         let package = extract_and_compile(
             original.source().clone(),
             &context,
@@ -328,15 +315,10 @@ mod tests {
         Source::read(identity(), "rules.md", text.as_bytes(), 1_048_576).unwrap()
     }
 
+    /// The production clause-only context. It names only the path and source
+    /// identity, which every `source(..)` fixture shares.
     fn context() -> SemanticContext {
-        let module = read_semantic_block(
-            &json!({"contract_version":"1.0.0","semantic_core":"0.1.0","package":"example/runtime-rules","exports":["entity"],"targets":["markdown"]}),
-            &["entity".to_owned()],
-            &|name| name == "entity",
-        )
-        .unwrap();
-        SemanticContext::new(module, "rules.md", BundleIndex::default())
-            .with_source_identity(identity().identity)
+        qsl_source::clause_context("example/runtime-rules", &source("")).unwrap()
     }
 
     fn binding() -> ClauseBinding {

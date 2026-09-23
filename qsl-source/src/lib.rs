@@ -4,24 +4,26 @@
 //! ADR-011 §2.1 I3: verify Quire's reported extraction against the original document
 //! and yield S0 bytes plus a document `SourceMap`. Quire retains Markdown, availability
 //! and schema ownership. This adapter never reaches the native compiler; the join lives
-//! at the SEAM-1 caller (the root crate's `command::extraction`). It depends only on
-//! `qsl-foundation` (layer F) and, under this crate's `quire-extraction` feature, on
-//! quire-rs. Without that feature the crate is empty.
+//! at the SEAM-1 caller (the root crate's `command::extraction`). Every dependency,
+//! `qsl-foundation` (layer F) and quire-rs among them, is behind this crate's
+//! `quire-extraction` feature. Without that feature the crate is empty.
 //!
-//! This crate is the root crate's only path to quire-rs (ADR-011 §6.1 layer-6 row).
+//! This crate is the root crate's only code path to quire-rs (ADR-011 §6.1 layer-6
+//! row): the root crate names no quire-rs dependency. quire-rs is still built
+//! transitively through FCD's `agent-ix-extraction-frontend` (`model::intake`).
 
 #![cfg(feature = "quire-extraction")]
 
 use quire_rs::semantic::{extract_clauses, SourceLocus};
+use quire_rs::semantic::{read_semantic_block, BundleIndex};
 /// Pinned Quire-owned input/result contracts deliberately exposed by this crate.
 /// Changes to their upstream shape require consumer compatibility review.
-/// `read_semantic_block`, `BundleIndex`, `SemanticFailure`, `ClauseRef`,
-/// `KindAvailability` and `SemanticDiagnostic` are here because the root crate's
-/// extracted `run` command builds its clause-only context and renders Quire's
-/// result through them, and it reaches quire-rs only through this crate.
+/// `ClauseRef`, `KindAvailability`, `SemanticDiagnostic` and `SemanticFailure` are
+/// the field and failure types of `ClausesOutcome` and of [`clause_context`]; the root
+/// crate's extracted `run` command renders Quire's result through them unchanged.
 pub use quire_rs::semantic::{
-    read_semantic_block, AvailabilityState, BundleIndex, ClauseRef, ClausesOutcome,
-    KindAvailability, SemanticContext, SemanticDiagnostic, SemanticFailure,
+    AvailabilityState, ClauseRef, ClausesOutcome, KindAvailability, SemanticContext,
+    SemanticDiagnostic, SemanticFailure,
 };
 
 mod preflight;
@@ -161,6 +163,30 @@ impl ExtractedSource {
     pub fn into_parts(self) -> (SourceMap, String, ClausesOutcome) {
         (self.map, self.language, self.extraction)
     }
+}
+
+/// Quire's own validated clause-only context for `original` and the authored `package`.
+///
+/// It selects [`CONTRACT_VERSION`] and [`SEMANTIC_CORE_VERSION`], exports nothing,
+/// installs no archetype schemas and targets Markdown; it names `original`'s path and
+/// source identity. Native imports keep model authority. Quire validates the block
+/// and its failures are returned unchanged.
+pub fn clause_context(
+    package: &str,
+    original: &Source,
+) -> Result<SemanticContext, Vec<SemanticFailure>> {
+    let module = read_semantic_block(
+        &serde_json::json!({
+            "contract_version": CONTRACT_VERSION, "semantic_core": SEMANTIC_CORE_VERSION,
+            "package": package, "exports": [], "targets": ["markdown"]
+        }),
+        &[],
+        &|_| false,
+    )?;
+    Ok(
+        SemanticContext::new(module, original.path(), BundleIndex::default())
+            .with_source_identity(original.identity().identity.clone()),
+    )
 }
 
 fn failure(source: &Source, code: Code, message: &str) -> Box<Diagnostic> {

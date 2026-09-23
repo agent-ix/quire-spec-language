@@ -307,10 +307,11 @@ or change extraction availability. Run `cargo test --test it mapped::` for the
 mapped parent workflow and stage refusals.
 
 With `quire-extraction`, `qsl_source::extract(original, context, selection,
-limits)` from the `qsl-source` crate calls Quire's actual pinned Rust extractor and returns an
-`ExtractedSource`: the verified native body in its document source map, the
-clause's declared language and Quire's unchanged result. Supply a digest-verified
-original Source, a loaded Quire SemanticContext and a `Selection` of the authored
+limits)` from the `qsl-source` crate calls Quire's actual pinned Rust extractor
+and returns an `ExtractedSource`: the verified native body in its document
+source map, the clause's declared language and Quire's unchanged result. Supply
+a digest-verified original Source, a loaded Quire SemanticContext (the `run`
+command uses `qsl_source::clause_context`) and a `Selection` of the authored
 clause ID, package and body identity. The adapter checks source coordinates and
 exact bytes, including Quire's omitted final LF on CRLF input, before building
 the source map. It does not compile. The `run` command's extraction path

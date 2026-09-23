@@ -7,11 +7,8 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
-use qsl_source::{
-    extract, read_semantic_block, BundleIndex, Cause, Limits, PreflightFailure, Selection,
-    SemanticContext,
-};
-use quire_rs::semantic::extract_clauses;
+use qsl_source::{extract, Cause, Limits, PreflightFailure, Selection, SemanticContext};
+use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
 
 /// The authored requirement's owning package, which the Quire context names too.
@@ -37,7 +34,7 @@ fn source(text: &str) -> Source {
 fn context() -> SemanticContext {
     // Use Quire's real module validator, not an invented semantic context decoder.
     let module = read_semantic_block(
-        &json!({"contract_version":"1.0.0","semantic_core":"0.1.0","package":"example/runtime-rules","exports":["entity"],"targets":["markdown"]}),
+        &json!({"contract_version":"1.0.0","semantic_core":"0.1.0","package":PACKAGE,"exports":["entity"],"targets":["markdown"]}),
         &["entity".to_owned()],
         &|name| name == "entity",
     ).unwrap();

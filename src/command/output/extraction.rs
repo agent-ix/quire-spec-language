@@ -218,13 +218,19 @@ mod tests {
     #[test]
     #[trace("TC-109", "FR-031-AC-2")]
     fn rejected_quire_context_keeps_producer_diagnostics_and_selected_versions() {
-        let diagnostics = qsl_source::read_semantic_block(
-            &serde_json::json!({"contract_version":"future", "semantic_core":SEMANTIC_CORE_VERSION,
-                "package":"example/rules", "exports":[], "targets":["markdown"]}),
-            &[],
-            &|_| false,
+        // Quire refuses a package that is not `<org>/<repo>`; its diagnostics are
+        // producer-owned and reach the output unchanged.
+        let original = qsl_foundation::Source::read(
+            SourceIdentity {
+                identity: "ix://example/rules/spec".into(),
+                revision: "draft:1".into(),
+            },
+            "rules.md",
+            b"",
+            1,
         )
-        .unwrap_err();
+        .unwrap();
+        let diagnostics = qsl_source::clause_context("not-a-package", &original).unwrap_err();
         assert!(!diagnostics.is_empty());
         let expected = serde_json::to_value(&diagnostics).unwrap();
         let error = RunError {
