@@ -48,7 +48,7 @@ case's steps 6-7 no longer apply. Scope: FR-087-AC-10.
    that is the expiry condition being met, not a failure of this step.
 3. Confirm neither module re-exports the other's `EmittedPackage` under a
    glob or a named `pub use` that would put both into the same import
-   scope (for example, a `use crate::checked_package::*;` combined with
+   scope (for example, a `use qsl_package::*;` combined with
    `use crate::protocol_artifact::native::*;` in the same scope resolving
    ambiguously).
 4. Confirm the two `EmittedPackage` types' field lists and methods are
@@ -62,10 +62,10 @@ case's steps 6-7 no longer apply. Scope: FR-087-AC-10.
    (unrenamed, unaliased) after this requirement's implementation, for as
    long as `checking`'s lane exists (ADR-011 §8, Q209-1); this step does
    not apply once that lane's own convergence PR deletes it.
-7. Confirm no file under `src/package/` or `src/checked_package/` brings
+7. Confirm no file under `src/package/` or `qsl-package/src/` brings
    both `crate::checking::CheckedPackage` and this requirement's canonical
-   `checked_package::CheckedPackage` (layer-4 `package`'s interim module
-   until X-7, ADR-011 §6.2) into the same scope under the bare name
+   `qsl_package::CheckedPackage` (layer-4 `package`, the crate
+   `qsl-package` since X-7, ADR-011 §6.2) into the same scope under the bare name
    `CheckedPackage` (which would be a compile-time ambiguity, not merely a
    readability concern).
 

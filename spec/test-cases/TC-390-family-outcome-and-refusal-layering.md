@@ -52,7 +52,8 @@ which turns `FamilyResult` back into a shared cause list.
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.
 4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
-   `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`.
+   `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`, and both dependency
+   tables of `qsl-package/Cargo.toml` (layer 4, QSL-182).
 
 Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 
@@ -66,7 +67,11 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 - Step 4 finds that none of the three manifests names the crate that defines
   the three types, or any crate at layer 3 or above. `qsl-foundation` may name
   `quire-exact`, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
-  (ADR-011 §6.1).
+  (ADR-011 §6.1). `qsl-package`'s `[dependencies]` name `qsl-semantics` and
+  no workspace crate outside `qsl-semantics`, `qsl-foundation` and
+  `quire-exact`, and `quire-contract-model` as their one ecosystem crate
+  outside the workspace; its `[dev-dependencies]` may also name
+  `qsl-forms`.
 
 ## Status
 

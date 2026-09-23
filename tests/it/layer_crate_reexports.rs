@@ -106,7 +106,7 @@ fn layer_crate_reexports(src: &Path) -> Vec<(String, String)> {
 /// `value::expression` re-exports neither `CheckedPackage` nor any `check`
 /// item, and no other root-crate module re-exports a layer crate's item.
 /// The scanner itself is checked against a planted re-export of each shape.
-#[trace("FR-087-AC-9", "TC-256")]
+#[trace("FR-087-AC-9", "TC-256", "TC-172")]
 #[test]
 fn the_root_crate_reexports_no_layer_crate_item() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

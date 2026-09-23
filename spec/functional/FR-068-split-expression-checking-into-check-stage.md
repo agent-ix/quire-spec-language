@@ -136,7 +136,9 @@ that inconsistency is recorded, not resolved, here.
   accessors; `value::expression` names the type through one `pub use` and
   implements `call` over those accessors, so
   `value::expression::CheckedPackage::call` is the contract, not a second
-  type. §4 decides this mechanism only, not which layer owns `CheckedPackage`:
+  type. (QSL-182 amends §4: once `CheckedPackage` is in `qsl-package`, the
+  `pub use` is a root-crate re-export of a moved item, so it is deleted and
+  callers name `qsl_package::CheckedPackage`.) §4 decides this mechanism only, not which layer owns `CheckedPackage`:
   §4's own text names `package` (layer 4) as the S4 type's owner, while this
   requirement places `CheckedPackage`/`CheckedExpression`/`CheckedFunction` in
   `check` (layer 3) instead. This requirement applies §4's mechanism (private
@@ -347,7 +349,7 @@ module not on it fails even when the module is not on the forbidden list.
 
 `check` MUST NOT import any later layer:
 
-- layer 4: `checked_package` and `package`;
+- layer 4: `package` (the crate `qsl-package`, QSL-182);
 - layer 5: `value::expression`;
 - R: `route`;
 - layer 6: `replay`;
@@ -364,15 +366,15 @@ inline path into a later layer is the same edge. This includes a `use`
 inside a function body, a path written inside a macro invocation's
 arguments, and a later path through a module a `use` binds (`use
 crate::value;` followed by `value::Presence`). A `use` that binds a module
-by name (`use crate::checked_package;`) is classified on that module. A
+by name (`use crate::library;`) is classified on that module. A
 `super::` or `self::` path is resolved relative to its file before it is
 classified. The rule
 classifies this crate's own modules and the workspace crates `quire_exact`
 and `qsl_foundation`; `std` and third-party crates (`serde_json`, `sha2`,
 `ix_trace_rs`) are governed by the Cargo manifest, not by this rule. Test code is excluded
 because the Cargo dependency graph that replaces this gate governs shipped
-code only; `check`'s own tests link a `CheckedPackage` from `checked_package`
-to test the S3-to-S4 handoff. FR-068-AC-3's `value::expression` prohibition
+code only; the S3-to-S4 handoff is tested in `qsl-package`, which links a
+`CheckedPackage` from a checked graph. FR-068-AC-3's `value::expression` prohibition
 is separate and still covers test code.
 
 **Every `value` import names its submodule.** `check` SHALL write each
@@ -492,7 +494,7 @@ FR-068-AC-8, retired).
 | FR-068-AC-7 | **RETIRED by FR-074 (ADR-011 §7.3 M-2, QSL-7, 2026-09-21).** After this requirement's implementation, `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` remain defined in `model`, unchanged, and are absent from `check`. A type/function-definition scan over `check` confirms neither symbol appears there; this criterion fails on an implementation that moves either one into `check` ahead of M-2, even if every other criterion in this requirement passes. This criterion asserted FR-068's own scope boundary (M-5 before M-2). FR-074 is M-2: both symbols are now defined in `check` and absent from `model`, the exact inverse of what this criterion required. This criterion is false by design from FR-074 onward and is retired, not amended: see FR-074-AC-1/FR-074-AC-2 and TC-261, its closer. | Test (TC-175), superseded by TC-261 |
 | FR-068-AC-8 | **RETIRED by QSL-131 O2 (2026-09-23), which deletes `value/outcome.rs`.** `value::outcome.rs`'s import of `WrongSnapshotCause` resolves to `crate::check::WrongSnapshotCause` after this requirement's implementation, and the crate compiles with this one import path updated and no other change to `value::outcome.rs`. This criterion was satisfied by the path update alone; it did not require, and a correct implementation did not attempt, removing the K→3 direction of this edge (ADR-011 §6.1's X-1 obligation, QSL-131's scope). `value/outcome.rs` no longer exists: QSL-131 O2 deletes the module and repoints every caller onto `quire_exact::{Outcome, Refusal, Undefined}` directly (TC-390), so the file and the one import path this criterion named are both gone, not relocated. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor file or edge for it to describe. | Test (TC-173), retired |
 | FR-068-AC-9 | **RETIRED by FR-074 (ADR-011 §7.3 M-2, QSL-7, 2026-09-21).** The resolved import graph shows `model` → `check` bounded to exactly two files and exactly thirteen names: `model/checked_dispatch.rs` importing `DispatchCandidate`, `DispatchOperation`, `DispatchTable`, `PackageDeclarations` directly from `crate::check`, and `model/conformance.rs` importing `established_field_fact`, `Connective`, `Established`, `Location`, `Node`, `NodeKind`, `OrderedKind`, `Origin`, `ProvedInterval` directly from `crate::check` — neither file routed through `crate::value`'s aggregate re-export for these thirteen names. This criterion fails if a third `model` file gains a `check` import, if either named file's import list grows beyond its own name count (`checked_dispatch.rs`: four; `conformance.rs`: nine), or if either file reaches these names indirectly through `crate::value` instead of directly, since the indirect form would satisfy a textual `use`-line scan of `model` while hiding the edge from it — this criterion requires the resolved-level check to also hold, not only the textual one. FR-074 closed the edge this criterion bounded: `model/checked_dispatch.rs` and `model/conformance.rs` no longer exist as import sites for `crate::check` at all (the code that needed the import moved to `check` itself), so the resolved `model` → `check` edge is now bounded to zero files and zero names, not two and thirteen. This criterion is false by design from FR-074 onward and is retired, not amended: see FR-074-AC-3 and TC-262, its closer. | Test (TC-176), superseded by TC-262 |
-| FR-068-AC-10 | **RETIRED by QSL-181 (ADR-011 §7.2, lead ruling R3 2026-09-23), which removes `value::expression`'s `pub use crate::check::CheckedExpression;`.** `value::expression`'s own re-export of the relocated checked-output types is exactly `pub use crate::check::{CheckedPackage, CheckedExpression};` — a closed, two-name list naming `check` by its crate-absolute path (since `check` is a top-level sibling of `value`, not a name in scope by a bare `check::` path from inside `value::expression`), never a glob (`pub use crate::check::*;`) and never a third name. A source scan of `value::expression`'s `pub use crate::check::{...}` line fails this criterion if it names anything other than exactly `CheckedPackage` and `CheckedExpression`, if it is a glob import, or if it does not use the `crate::check` path. **Amended by FR-087 (owner ruling on QSL-158, 2026-09-21): the two-name re-export splits into two single-name re-exports from two different crate-absolute paths, because `CheckedPackage` no longer lives in `check`.** After FR-087, `value::expression` names `CheckedExpression` through `pub use crate::check::{CheckedExpression};` (this criterion, narrowed to one name) and `CheckedPackage` through `pub use crate::checked_package::CheckedPackage;` (layer-4 `package`'s interim module until X-7, ADR-011 §6.2; a new re-export, FR-087-AC-9's own closed-list assertion, not a third name added to this criterion's `crate::check` line). This criterion no longer governs `CheckedPackage`'s re-export path. QSL-181 moves `check` into the `qsl-semantics` crate, and ADR-011 §7.2 ("The root crate re-exports no moved item") and QSL-181's own acceptance criteria forbid the root crate re-exporting it; they are the later and more specific rules. `value::expression` now imports `CheckedExpression` from `crate::check` without re-exporting it, and every caller names it at `check::CheckedExpression`, its one public path. This criterion existed so callers could name the type; the direct path still does that. It is retired, not amended, because the re-export line it describes no longer exists. FR-087-AC-9's `CheckedPackage` re-export is not affected. | Test (TC-172), retired |
+| FR-068-AC-10 | **RETIRED by QSL-181 (ADR-011 §7.2, lead ruling R3 2026-09-23), which removes `value::expression`'s `pub use crate::check::CheckedExpression;`.** `value::expression`'s own re-export of the relocated checked-output types is exactly `pub use crate::check::{CheckedPackage, CheckedExpression};` — a closed, two-name list naming `check` by its crate-absolute path (since `check` is a top-level sibling of `value`, not a name in scope by a bare `check::` path from inside `value::expression`), never a glob (`pub use crate::check::*;`) and never a third name. A source scan of `value::expression`'s `pub use crate::check::{...}` line fails this criterion if it names anything other than exactly `CheckedPackage` and `CheckedExpression`, if it is a glob import, or if it does not use the `crate::check` path. **Amended by FR-087 (owner ruling on QSL-158, 2026-09-21): the two-name re-export splits into two single-name re-exports from two different crate-absolute paths, because `CheckedPackage` no longer lives in `check`.** After FR-087, `value::expression` names `CheckedExpression` through `pub use crate::check::{CheckedExpression};` (this criterion, narrowed to one name) and `CheckedPackage` through `pub use crate::checked_package::CheckedPackage;` (layer-4 `package`'s interim module until X-7, ADR-011 §6.2; a new re-export, FR-087-AC-9's own closed-list assertion, not a third name added to this criterion's `crate::check` line). This criterion no longer governs `CheckedPackage`'s re-export path. QSL-181 moves `check` into the `qsl-semantics` crate, and ADR-011 §7.2 ("The root crate re-exports no moved item") and QSL-181's own acceptance criteria forbid the root crate re-exporting it; they are the later and more specific rules. `value::expression` now imports `CheckedExpression` from `crate::check` without re-exporting it, and every caller names it at `check::CheckedExpression`, its one public path. This criterion existed so callers could name the type; the direct path still does that. It is retired, not amended, because the re-export line it describes no longer exists. FR-087-AC-9's `CheckedPackage` re-export was not affected; QSL-182 later removed it for the same reason. | Test (TC-172), retired |
 
 ## Dependencies
 
@@ -545,8 +547,8 @@ body's; every `crate::`/`super::`/`self::`-rooted inline path, including
 one inside a macro invocation's arguments; and every later path through a
 module a `use` binds. The test `real_check_layer_edges_have_no_violation`
 (TC-175) runs it over the real tree in `make ci` and finds no violation.
-The `crate::checked_package` paths under `qsl-semantics/src/check/` are in doc comments
-or `#[cfg(test)]` code.
+The `checked_package` names under `qsl-semantics/src/check/` are in doc
+comments.
 
 **Amended by FR-087, owner ruling on QSL-158 (2026-09-21): `CheckedPackage`
 relocates from `check` to layer-4 `package`.** This requirement's own
