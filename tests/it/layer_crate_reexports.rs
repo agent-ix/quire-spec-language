@@ -145,11 +145,11 @@ fn layer_names(items: &[syn::Item], layers: &BTreeSet<String>) -> BTreeSet<Strin
                         }
                     }
                 }
-                syn::Item::ExternCrate(extern_crate) => {
-                    if layers.contains(&extern_crate.ident.to_string()) {
-                        if let Some((_, rename)) = &extern_crate.rename {
-                            names.insert(rename.to_string());
-                        }
+                syn::Item::ExternCrate(extern_crate)
+                    if layers.contains(&extern_crate.ident.to_string()) =>
+                {
+                    if let Some((_, rename)) = &extern_crate.rename {
+                        names.insert(rename.to_string());
                     }
                 }
                 _ => {}
