@@ -49,10 +49,6 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     WrongSnapshotCause,
 };
-use crate::forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
-    FunctionDeclaration,
-};
 use crate::value::collection::CollectionType;
 use crate::value::composite::{Value, ValueType};
 use crate::value::decimal::DecimalType;
@@ -63,6 +59,10 @@ use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
 use crate::value::node::NodeKey;
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
+use qsl_forms::{
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    FunctionDeclaration,
+};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::IllTypedCause;
 use quire_exact::Presence;
@@ -759,7 +759,7 @@ impl<'a> Typer<'a> {
     /// qualified-name case.
     pub(crate) fn resolve_type(
         &self,
-        form: &crate::forms::TypeForm,
+        form: &qsl_forms::TypeForm,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
         super::type_form::resolve_type_form(self.scope, form, location)
@@ -1939,7 +1939,7 @@ impl<'a> Typer<'a> {
 
     fn convert(
         &mut self,
-        target: &crate::forms::TypeForm,
+        target: &qsl_forms::TypeForm,
         operand: &Expression,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
@@ -2004,7 +2004,7 @@ impl<'a> Typer<'a> {
     /// `[0,N]` directly; no runtime value is consulted at check time.
     fn all_instances(
         &mut self,
-        target: &crate::forms::TypeForm,
+        target: &qsl_forms::TypeForm,
         population: &Expression,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
@@ -2049,7 +2049,7 @@ impl<'a> Typer<'a> {
     /// (`crate::value::evaluate_lookup`).
     fn lookup(
         &mut self,
-        target: &crate::forms::TypeForm,
+        target: &qsl_forms::TypeForm,
         population: &Expression,
         reference: &Expression,
         absence: AbsenceMode,

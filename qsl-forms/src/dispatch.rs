@@ -36,14 +36,14 @@ use qsl_foundation::Span;
 /// TC-167 step 3); this fails to compile because neither method exists:
 ///
 /// ```compile_fail
-/// use quire_spec_language::forms::ParsedForm;
+/// use qsl_forms::ParsedForm;
 /// fn read_identity(form: &ParsedForm) {
 ///     let _ = form.node_key();
 /// }
 /// ```
 ///
 /// ```compile_fail
-/// use quire_spec_language::forms::ParsedForm;
+/// use qsl_forms::ParsedForm;
 /// fn read_declaration(form: &ParsedForm) {
 ///     let _ = form.declaration_key();
 /// }

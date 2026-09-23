@@ -829,9 +829,9 @@ impl LosslessCst {
     ///
     /// Gated on `feature = "test-support"` (rather than a bare
     /// `#[cfg(test)]`) because `cfg(test)` gates only qsl-cst's own test
-    /// build, never a downstream crate's: the root crate's
-    /// `forms::dispatch` unit tests are the only caller, and reach this
-    /// through its `[dev-dependencies]` enabling the feature, in both the
+    /// build, never a downstream crate's: `qsl-forms`'s `dispatch` unit
+    /// tests are the only caller, and reach this through its
+    /// `[dev-dependencies]` enabling the feature, in both the
     /// default-feature and `--all-features` lanes (mirrors the repo's own
     /// convention, e.g. `src/model/key.rs`'s `DeclarationKey::fixture`).
     #[cfg(any(test, feature = "test-support"))]

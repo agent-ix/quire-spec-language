@@ -19,12 +19,12 @@
 //! `one`'s smaller slot count.
 
 use ix_trace_rs::trace;
+use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use quire_exact::{Integer, Meter, ScalarLimits};
 use quire_spec_language::value::{
-    BinaryOperator, CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
-    CheckedPackageEvaluation, CheckingLimits, Evaluation, Expression, FamilyOutcome,
-    FunctionDeclaration, InputRefusal, ObjectEnvironment, Outcome, PackageDeclarations,
-    QualifiedName, Value, ValueType,
+    CallFailure, CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckedPackage,
+    CheckedPackageEvaluation, CheckingLimits, Evaluation, FamilyOutcome, InputRefusal,
+    ObjectEnvironment, Outcome, PackageDeclarations, QualifiedName, Value, ValueType,
 };
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:

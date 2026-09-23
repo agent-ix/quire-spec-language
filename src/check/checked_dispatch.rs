@@ -100,9 +100,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::check::{DispatchOperation, PackageDeclarations};
 use super::ir::{DispatchCandidate, DispatchTable};
-use crate::forms::{
-    BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
-};
 use crate::model::accounting::Meter;
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
@@ -112,6 +109,9 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::value::composite::ValueType;
 use crate::value::node::NodeKey;
+use qsl_forms::{
+    BinaryOperator, DeclaredClauseKind, Expression, FieldInitializer, FunctionDeclaration,
+};
 use qsl_foundation::diagnostic::Code;
 
 /// Bounds the effective-precondition ancestor walk. Mirrors
@@ -285,8 +285,8 @@ fn require_expression(
 /// `OperationClauses` gave, and identity is minted over that resolved
 /// signature. A synthesized clause is not parsed source, so layer 3 does not
 /// render its resolved types back into syntax to parse them again.
-fn opaque_type_form() -> crate::forms::TypeForm {
-    crate::forms::TypeForm::name(
+fn opaque_type_form() -> qsl_forms::TypeForm {
+    qsl_forms::TypeForm::name(
         "check::checked_dispatch synthesized (never resolved; see resolved_signatures)",
         qsl_foundation::Span { start: 0, end: 0 },
     )
@@ -295,7 +295,7 @@ fn opaque_type_form() -> crate::forms::TypeForm {
 /// [`opaque_type_form`] for every one of `parameters`, keeping each
 /// parameter's own declared name (`bind_parameters`/`Definedness::new` still
 /// need the right arity and names; only the type is opaque).
-fn opaque_parameters(parameters: &[(String, ValueType)]) -> Vec<(String, crate::forms::TypeForm)> {
+fn opaque_parameters(parameters: &[(String, ValueType)]) -> Vec<(String, qsl_forms::TypeForm)> {
     parameters
         .iter()
         .map(|(name, _)| (name.clone(), opaque_type_form()))
@@ -1072,7 +1072,8 @@ mod tests {
     };
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
-    use crate::value::{Expression, ValueType};
+    use crate::value::ValueType;
+    use qsl_forms::Expression;
 
     /// `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
     /// rather than silently truncating the closure. A straight redefinition

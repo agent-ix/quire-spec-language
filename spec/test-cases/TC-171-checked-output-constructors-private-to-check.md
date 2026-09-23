@@ -24,9 +24,8 @@ type directly, or reaches its state without going through `check`'s API.
 This test is Inspection, not a compiled negative test, and round 1 of this
 PR's review wrongly specified it as a `compile_fail` unit test placed inside
 the crate. `compile_fail` is a doctest-only attribute in this repository:
-every one of the 17 existing `compile_fail` sites (`src/package.rs:188`,
-`src/temporal/mapping.rs:125`, `src/forms/dispatch.rs:38`,
-`src/forms/syntax.rs:709`, and the remainder) is a doctest, and there is no
+every existing `compile_fail` site (`src/package.rs:188`,
+`src/temporal/mapping.rs:125` and the remainder) is a doctest, and there is no
 `trybuild` or `compiletest` dependency to run an in-crate compile-fail check
 instead. A doctest links the crate externally — the same vantage an
 integration test in `tests/` has, from which `CheckedPackage`'s,

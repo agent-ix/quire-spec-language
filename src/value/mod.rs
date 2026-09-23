@@ -164,9 +164,8 @@ pub use equality::{plan_equality, EqualityPlan};
 // ADR-011 §7.3 M-5 (QSL-139/FR-068) relocated the checking half of
 // `value::expression` to the layer-3 `check` module; `value`'s own
 // aggregation path continues, only its source module changes
-// (FR-068-CON-4, the same "re-export naming a new source module is not a
-// second definition" pattern FR-067-AC-9 already established for the
-// `forms` move) -- `check` is these types' one remaining defining module.
+// (FR-068-CON-4: a re-export naming a new source module is not a second
+// definition) -- `check` is these types' one remaining defining module.
 pub use crate::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckedGraph, CheckingLimitKind,
     CheckingLimits, CheckingStage, CollectionLoss, CollectionProperty, DepthAboveMaximum,
@@ -194,17 +193,6 @@ pub use expression::{
     decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
     FamilyOutcome, FamilyResult, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
     ValueLoss,
-};
-// The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
-// moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
-// is their one defining module (FR-067-AC-9). `value::Expression` etc. were
-// already this module's own aggregation path before the move (this file
-// re-exports dozens of other types the same way, from their own owning
-// submodules); the move changes which module they aggregate from, not
-// whether `value` aggregates them.
-pub use crate::forms::{
-    Accumulation, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclaredClauseKind,
-    Expression, FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

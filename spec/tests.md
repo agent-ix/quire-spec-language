@@ -176,7 +176,7 @@ operational validation remains outside this audit-only plan.
 | TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141 |
 | TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141 |
 | TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
-| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Planned; QSL-141 |
+| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Partial: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 1's family-module edges and step 3 planned, QSL-141 |
 | TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | 🚧 Planned; QSL-141 |
 | TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | 🚧 Planned; QSL-141 |
 | TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; source owner needs QSL-159 |
@@ -475,7 +475,8 @@ carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 §4.3, and ADR-013 O-11, O-17, R-07, T-4 and T-5 for the `Value` family's S2
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
 `check` core. TC-392 to TC-403, TC-405, TC-406 and TC-412 are `🚧 Planned`
-under QSL-141. TC-398 and TC-402 use the resolved-import and definition-scan
+under QSL-141, except TC-398's crate edges and its step 2 over the existing
+forms types, which pass locally (`🚧 Partial`). TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
 source to `CheckedPackage::call`. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
