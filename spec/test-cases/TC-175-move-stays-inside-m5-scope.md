@@ -39,12 +39,12 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `value::unit`, `value::quantity`, `value::key`, `value::reference`,
 `value::containment`, `value::semantic_node`) and `value::declaration`, and the `value` K-copy
 modules while each exists (`value::collection`,
-`value::composite`, `value::decimal`, `value::equality`,
-`value::ieee`, `value::numeric`,
-`value::rational`, `value::text`; `value::outcome` left this list under
-QSL-131 O2, which deleted the module). `check` imports nothing from a later
-layer: `checked_package`, `package`, `value::expression`, `route`, `replay`
-or `lowering`. Every `value` import names its submodule.
+`value::composite`, `value::equality`, `value::rational`;
+`value::outcome` left this list under QSL-131 O2, which deleted the module;
+`value::decimal`, `value::ieee`, `value::numeric` and `value::text` left it
+under QSL-131 O3, which deleted the four modules). `check` imports nothing
+from a later layer: `checked_package`, `package`, `value::expression`,
+`route`, `replay` or `lowering`. Every `value` import names its submodule.
 
 The failure this catches is a later-layer edge into `check`, the direction
 ADR-011 §6.1 forbids. An extra item from an already-permitted module is not a

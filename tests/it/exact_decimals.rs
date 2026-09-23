@@ -9,14 +9,13 @@ use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::Pow;
 use quire_exact::{
+    evaluate_decimal, order_numbers, Decimal, DecimalOperation, DecimalResult, DecimalType,
+    IllTyped, IllTypedCause, OrderedOperands, OrderingOperator, RoundingMode,
+};
+use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits, Undefined,
 };
-use quire_exact::{
-    Decimal, DecimalOperation, IllTyped, IllTypedCause, OrderedOperands, OrderingOperator,
-    RoundingMode,
-};
-use quire_spec_language::value::{evaluate_decimal, order_numbers, DecimalResult, DecimalType};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,

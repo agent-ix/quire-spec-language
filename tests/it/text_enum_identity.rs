@@ -14,18 +14,17 @@ use qsl_cst::{Limits, ParsedSource};
 use qsl_foundation::{Code, SourceIdentity};
 use quire_exact::NodeKey;
 use quire_exact::{
+    admit_text, compare_text, ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause,
+    InvalidUtf8, Text, TextPayload, TextProfile, TextProvenance, TextType, NODE_KEY_DOMAIN,
+};
+use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits,
 };
-use quire_exact::{
-    ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause, InvalidUtf8, TextProfile,
-    TextProvenance, TextType, NODE_KEY_DOMAIN,
-};
 use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
-    admit_text, compare_enum, compare_text, EnumDeclaration, EnumDeclarationPreimage,
-    EnumMemberPreimage, EnumValue, InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject,
-    SemanticGraphCause, Text, TextPayload,
+    compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
+    InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -51,6 +50,22 @@ use TextProfile::{BinaryUtf8, Nfc, Nfd, Nfkc, Nfkd, UnicodeScalars};
 
 fn runtime(text: &str) -> TextPayload {
     TextPayload::from_utf8(text.as_bytes()).unwrap()
+}
+
+/// Decode a complete quoted source literal, such as `"é"`, the JSON string
+/// grammar the source lexer already delegates to: lone surrogates and raw
+/// controls refuse, and a spelling that is not exactly one quoted string
+/// refuses too. QSL-131 O3: `quire_exact::text`'s own module doc states this
+/// decode step is a source-stage concern the kernel deliberately excludes
+/// (only this test still exercises it); the decoded text is tagged with the
+/// kernel's `TextPayload::from_source_literal(text, spelling)` constructor,
+/// which is infallible over an already-decoded sequence.
+fn decode_source_literal(spelling: &str) -> Result<TextPayload, ()> {
+    if !(spelling.len() >= 2 && spelling.starts_with('"') && spelling.ends_with('"')) {
+        return Err(());
+    }
+    let text: String = serde_json::from_str(spelling).map_err(|_| ())?;
+    Ok(TextPayload::from_source_literal(text, spelling))
 }
 
 fn text_type(min: u64, max: u64, profile: TextProfile) -> TextType {
@@ -192,11 +207,11 @@ fn t06_t06b_utf8_reader_refuses_invalid_bytes_and_payloads_keep_provenance() {
         Err(InvalidUtf8 { valid_up_to: 0 })
     );
     // Lone surrogates are not scalars and refuse at the source literal too.
-    assert!(TextPayload::from_source_literal("\"\\ud800\"").is_err());
-    assert!(TextPayload::from_source_literal("\"a\" \"b\"").is_err());
+    assert!(decode_source_literal("\"\\ud800\"").is_err());
+    assert!(decode_source_literal("\"a\" \"b\"").is_err());
 
-    let raw = TextPayload::from_source_literal("\"\u{e9}\"").unwrap();
-    let escaped = TextPayload::from_source_literal("\"\\u00e9\"").unwrap();
+    let raw = decode_source_literal("\"\u{e9}\"").unwrap();
+    let escaped = decode_source_literal("\"\\u00e9\"").unwrap();
     let bytes = TextPayload::from_utf8(&[0xc3, 0xa9]).unwrap();
     let binary = text_type(2, 2, BinaryUtf8);
     let values: Vec<Text> = [&raw, &escaped, &bytes]

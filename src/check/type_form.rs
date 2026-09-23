@@ -15,12 +15,11 @@ use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal, Location};
 use crate::value::collection::CollectionType;
 use crate::value::composite::ValueType;
-use crate::value::decimal::DecimalType;
 use crate::value::rational::RationalDomain;
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use quire_exact::{
-    CardinalityBound, IeeeWidth, IllTypedCause, Integer, IntegerInterval, RoundingMode,
-    TextProfile, TextType,
+    CardinalityBound, DecimalType, IeeeWidth, IllTypedCause, Integer, IntegerInterval,
+    RoundingMode, TextProfile, TextType,
 };
 
 fn mismatch(location: &Location) -> CheckRefusal {

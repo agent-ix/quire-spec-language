@@ -31,22 +31,34 @@ rather than an untagged or type-error `compile_fail`, plus a positive-control
 doctest confirming a surviving name (`AdmittedIeeeProfile`) still resolves
 from the same path. `cargo test --doc -p quire-spec-language` runs them.
 
+**Steps 1-3 are retired.** They described a source scan over `value::ieee`
+and `value::division` as modules; neither module exists any more.
+`value::division` was deleted by QSL-131 K2 (#339); `value::ieee` was
+deleted by QSL-131 O3. There is no module left for a source scan of it to
+read, so the two-module-scoped scans these steps described have no
+successor and are not replaced. Step 4 is unaffected — it was already
+crate-wide, not module-scoped — and remains exactly what the nine
+`compile_fail,E0432` doctests above enforce, at the whole-crate level.
+
 ## Test Procedure
 
-1. After the removal change, run a source scan over `value::ieee` and
+1. ~~After the removal change, run a source scan over `value::ieee` and
    `value::division` for any function definition whose name matches the
-   pattern `negotiate_*`.
-2. Run a source scan over the same two modules for a type definition named
-   `IeeeBackendCapabilities`.
-3. Run a source scan over the same two modules for any function whose
+   pattern `negotiate_*`.~~ Retired: neither module exists (see Description).
+2. ~~Run a source scan over the same two modules for a type definition named
+   `IeeeBackendCapabilities`.~~ Retired: neither module exists (see
+   Description).
+3. ~~Run a source scan over the same two modules for any function whose
    parameters or return type reference a backend-capability-predicate
    shape (a set of `(capability, mode)` pairs consumed to decide backend
-   support), regardless of its name, to catch a rename-only removal.
+   support), regardless of its name, to catch a rename-only removal.~~
+   Retired: neither module exists (see Description).
 4. Confirm no call site in the crate references `negotiate_ieee`,
    `negotiate_integer_division`, or `IeeeBackendCapabilities`.
 
 ## Expected Results
 
-Steps 1 and 2 find no matches. Step 3 finds no function of that shape
-remaining in either module. Step 4 finds no remaining reference anywhere in
-the crate.
+Steps 1-3: retired (see Description); this test has no expected results for
+them. Step 4 finds no remaining reference anywhere in the crate: the
+doctest suite fails to compile as an unexpected pass, not a `compile_fail`,
+if any of the nine removed names becomes resolvable again.

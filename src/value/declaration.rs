@@ -24,25 +24,24 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
-    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Outcome,
-    Presence, Quantity, Rational, Refusal,
+    Decimal, DecimalOperation, DecimalType, IllTyped, IllTypedCause, Integer, LimitKind, Meter,
+    Outcome, Presence, Quantity, Rational, Refusal,
 };
 
 use super::composite::{
     composite, fill_slots, match_names, refuse, retain_composite, Component, ConstructionCause,
     ConstructionRefusal, Deferred, FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
 };
-use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::equality::planned_equality;
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
 use super::stop::{outcome_from_stop, outcome_into_stop, Stop};
-use super::text::compare_text;
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
+use quire_exact::{compare_text, evaluate_decimal};
 
 /// The shape of a composite declaration. Complete V1 has no variant or sum
 /// declaration.

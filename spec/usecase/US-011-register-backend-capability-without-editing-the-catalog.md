@@ -40,9 +40,11 @@ built with the `targets!` macro. Every new backend needs a QSL code change to
 add a variant, and there is no registration boundary a backend implements
 once. Separately, the composed linker still reads backend support directly
 when it records a capability request, and QSL's `value::ieee` and
-`value::division` modules still carry `negotiate_*` functions left over from
+`value::division` modules carried `negotiate_*` functions left over from
 before capability negotiation moved to `quire-contract-codegen`'s single
-`negotiate_*` point (ADR-012 §7, §10 OBS-003, OBS-004). Kani is the first
+`negotiate_*` point (ADR-012 §7, §10 OBS-003, OBS-004). FR-078 (QSL-131) has
+since removed those functions, and QSL-131 has since deleted both modules
+entirely (K2, #339 for `value::division`; O3 for `value::ieee`). Kani is the first
 and, for this story, only backend that actually registers; the registration
 contract is what this story asks to exist, not multiple backends.
 
