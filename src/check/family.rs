@@ -136,8 +136,8 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 /// that impossible regardless of what the string contains). Every tag
 /// written is an explicit `&'static str` literal chosen at its `match` arm,
 /// never a derived discriminant, and every `match` below (`encode_expression`,
-/// `encode_value_type`, and their small closed-enum helpers) is exhaustive:
-/// adding a variant to `Expression`, `ValueType` or any nested enum this
+/// `encode_type_form`, and their small closed-enum helpers) is exhaustive:
+/// adding a variant to `Expression`, `TypeForm` or any nested enum this
 /// preimage reads is a compile error here, forcing this file to pick an
 /// explicit new tag, not a silent reinterpretation of the old bytes.
 ///
@@ -324,138 +324,38 @@ fn collection_kind_tag(kind: CollectionKind) -> &'static str {
     }
 }
 
-fn rounding_mode_tag(mode: RoundingMode) -> &'static str {
-    match mode {
-        RoundingMode::Exact => "exact",
-        RoundingMode::TowardZero => "toward-zero",
-        RoundingMode::TowardPositive => "toward-positive",
-        RoundingMode::TowardNegative => "toward-negative",
-        RoundingMode::NearestEven => "nearest-even",
-        RoundingMode::NearestAway => "nearest-away",
-    }
-}
-
-fn text_profile_tag(profile: TextProfile) -> &'static str {
-    match profile {
-        TextProfile::UnicodeScalars => "unicode-scalars",
-        TextProfile::Nfc => "nfc",
-        TextProfile::Nfd => "nfd",
-        TextProfile::Nfkc => "nfkc",
-        TextProfile::Nfkd => "nfkd",
-        TextProfile::BinaryUtf8 => "binary-utf8",
-    }
-}
-
-fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
-    match unit {
-        // Both arms read the unit's own already-content-addressed identity
-        // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
-        // than re-deriving one from the unit's internal dimension/edge
-        // graph: those identities are this codebase's own established
-        // stable-identity mechanism (RFC 8785 JCS preimages, `value::node`),
-        // not `Debug`.
-        QuantityUnit::Declared(unit) => {
-            out.write_str("declared");
-            out.write_str(&unit.key().to_string());
+/// QSL-180 K5: encodes a `forms::TypeForm` (S2's syntactic declared type)
+/// into the declaration/expression preimage, in the position a `ValueType`
+/// encoder occupied there before this cut retyped `FunctionDeclaration`'s
+/// parameters/result and `Expression::{Convert, AllInstances, Lookup}`'s
+/// target from `ValueType` to `TypeForm`. The span
+/// carries no identity (ADR-011 §2.2 row E2:
+/// "identity: none: forms carry position only"), so it is not written here,
+/// matching `encode_expression`'s own doc for why identity is minted from
+/// parsed structure, not from where in the source it was written.
+fn encode_type_form(out: &mut Preimage, form: &crate::forms::TypeForm) {
+    use crate::forms::TypeFormHead;
+    match &form.head {
+        TypeFormHead::Keyword(kind) => {
+            out.write_str("keyword");
+            out.write_str(kind.description());
         }
-        QuantityUnit::Compound(unit) => {
-            out.write_str("compound");
-            out.write_str(&unit.identity().to_string());
-        }
-    }
-}
-
-// PR #262 review, round 2: this function and `encode_expression` write
-// several `quire_exact::Integer` leaves through `.to_string()`
-// (`Int`/`Rational`/`Decimal` bounds below; `Expression::Integer`/
-// `Rational` literals in `encode_expression`) -- `Display`, the same
-// mechanism `{:?}` (`Debug`) was rejected for elsewhere in this file. The
-// two are not equivalent here: `Integer`'s `Display` is not incidental
-// formatting `std` warns is unstable, it is `quire_exact::integer::
-// Integer`'s own documented "canonical wire spelling used by complete-V1
-// schemas" (`quire-exact/src/integer.rs`'s `FromStr` doc), paired with a
-// `FromStr` that refuses any non-canonical spelling (leading zeros, `+`,
-// etc.) -- a real, enforced, round-tripping contract, not a Debug-style
-// dump of whatever fields happen to exist. `src/value/node.rs`'s own
-// `CanonicalRational` already relies on exactly this contract for this
-// codebase's other content-addressed digest (RFC 8785 JCS preimages).
-// Repointing these leaves at a bespoke byte encoding would introduce a
-// second, parallel integer serialization where one canonical, tested one
-// already exists and is already trusted for identity purposes -- so they
-// are left on `Integer::to_string()` deliberately, not as an oversight.
-// PR #300 review finding 3 (QSL-158 S-3b): `pub(super)` so `check::identity`
-// can encode a package type declaration's own declared shape (composite
-// field types, a bounded domain's element type, and so on) into its O-04
-// preimage through this exact, already-tested encoding, rather than
-// inventing a second one.
-pub(super) fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
-    match value_type {
-        ValueType::Boolean => out.write_str("boolean"),
-        ValueType::Integer => out.write_str("integer"),
-        ValueType::Int(interval) => {
-            out.write_str("int");
-            out.write_str(&interval.lower().to_string());
-            out.write_str(&interval.upper().to_string());
-        }
-        ValueType::Rational(domain) => {
-            out.write_str("rational");
-            out.write_str(&domain.numerator().lower().to_string());
-            out.write_str(&domain.numerator().upper().to_string());
-            out.write_str(&domain.denominator().lower().to_string());
-            out.write_str(&domain.denominator().upper().to_string());
-        }
-        ValueType::Decimal(decimal) => {
-            out.write_str("decimal");
-            out.write_str(&decimal.lower().to_string());
-            out.write_str(&decimal.upper().to_string());
-            out.write_u64(u64::from(decimal.min_scale()));
-            out.write_u64(u64::from(decimal.max_scale()));
-            out.write_str(rounding_mode_tag(decimal.rounding()));
-        }
-        ValueType::Float(width) => {
-            out.write_str("float");
-            out.write_str(match width {
-                IeeeWidth::Binary32 => "binary32",
-                IeeeWidth::Binary64 => "binary64",
-            });
-        }
-        ValueType::Quantity(unit) => {
-            out.write_str("quantity");
-            encode_quantity_unit(out, unit);
-        }
-        ValueType::Text(text_type) => {
-            out.write_str("text");
-            out.write_u64(text_type.min());
-            out.write_u64(text_type.max());
-            out.write_str(text_profile_tag(text_type.profile()));
-        }
-        ValueType::Enum(key) => {
-            out.write_str("enum");
-            out.write_str(&key.to_string());
-        }
-        ValueType::Option(payload) => {
-            out.write_str("option");
-            encode_value_type(out, payload);
-        }
-        ValueType::Composite(key) => {
-            out.write_str("composite");
-            out.write_str(&key.to_string());
-        }
-        ValueType::Collection(collection_type) => {
+        TypeFormHead::Collection(kind) => {
             out.write_str("collection");
-            out.write_str(collection_kind_tag(collection_type.kind()));
-            encode_value_type(out, collection_type.element());
-            out.write_u64(collection_type.bound().minimum());
-            out.write_u64(collection_type.bound().maximum());
+            out.write_str(collection_kind_tag(*kind));
         }
-        ValueType::Reference(key) => {
-            out.write_str("reference");
-            out.write_str(&key.to_string());
+        TypeFormHead::Name(name) => {
+            out.write_str("name");
+            out.write_str(name);
         }
-        ValueType::Population(maximum) => {
-            out.write_str("population");
-            out.write_u64(*maximum);
-        }
+    }
+    out.write_u64(form.arguments.len() as u64);
+    for argument in &form.arguments {
+        encode_type_form(out, argument);
+    }
+    out.write_u64(form.bounds.len() as u64);
+    for bound in &form.bounds {
+        out.write_str(bound);
     }
 }
 
@@ -570,7 +470,7 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
         }
         Expression::Convert { target, operand } => {
             out.write_str("convert");
-            encode_value_type(out, target);
+            encode_type_form(out, target);
             encode_expression(out, operand);
         }
         Expression::Query {
@@ -645,7 +545,7 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
         }
         Expression::AllInstances { target, population } => {
             out.write_str("all-instances");
-            encode_value_type(out, target);
+            encode_type_form(out, target);
             encode_expression(out, population);
         }
         Expression::Lookup {
@@ -655,7 +555,7 @@ fn encode_expression(out: &mut Preimage, expr: &Expression) {
             absence,
         } => {
             out.write_str("lookup");
-            encode_value_type(out, target);
+            encode_type_form(out, target);
             encode_expression(out, population);
             encode_expression(out, reference);
             out.write_str(absence_mode_tag(*absence));
@@ -721,11 +621,11 @@ pub(crate) fn mint_declaration_identity(
     preimage.write_str(package_identity);
     preimage.write_str(&declaration.name);
     preimage.write_u64(declaration.parameters.len() as u64);
-    for (name, value_type) in &declaration.parameters {
+    for (name, type_form) in &declaration.parameters {
         preimage.write_str(name);
-        encode_value_type(&mut preimage, value_type);
+        encode_type_form(&mut preimage, type_form);
     }
-    encode_value_type(&mut preimage, &declaration.result);
+    encode_type_form(&mut preimage, &declaration.result);
     preimage.write_bool(declaration.measure.is_some());
     if let Some(measure) = &declaration.measure {
         encode_expression(&mut preimage, measure);
@@ -1037,6 +937,13 @@ pub(crate) fn check_declaration_body(
     form: &FunctionDeclaration,
 ) -> Result<CheckedDeclarationBody, CheckRefusal> {
     let mut nodes = input.nodes_used;
+    // QSL-180 K5: parameter/result `ValueType`s come from `input.
+    // own_signature` (already resolved, before this function ever runs),
+    // not from `form.parameters`/`form.result` -- those are S2 syntax
+    // (`TypeForm`) post-K5, not the kernel type `bind_parameters`/
+    // `check_as` need.
+    let parameters = &input.own_signature.parameters;
+    let result = &input.own_signature.result;
     let mut typer = Typer::new(
         input.scope,
         input.signatures,
@@ -1044,9 +951,9 @@ pub(crate) fn check_declaration_body(
         &mut nodes,
         form.clause_kind,
     );
-    bind_parameters(&mut typer, &form.parameters, input.location)?;
-    typer.check_declared_type(&form.result, input.location)?;
-    let body = typer.check_as(&form.body, &form.result, input.location)?;
+    bind_parameters(&mut typer, parameters, input.location)?;
+    typer.check_declared_type(result, input.location)?;
+    let body = typer.check_as(&form.body, result, input.location)?;
     let slots = typer.slots();
     let measure = match &form.measure {
         Some(measure) => {
@@ -1063,13 +970,13 @@ pub(crate) fn check_declaration_body(
                 &mut nodes,
                 ClauseKind::Body,
             );
-            bind_parameters(&mut measure_typer, &form.parameters, input.measure_location)?;
+            bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             Some(measure_typer.infer(measure, None, input.measure_location)?)
         }
         None => None,
     };
     let mut definedness = Definedness::new(
-        form.parameters.len(),
+        parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     );
@@ -1080,7 +987,7 @@ pub(crate) fn check_declaration_body(
     // its measure.
     if let Some(measure) = &measure {
         Definedness::new(
-            form.parameters.len(),
+            parameters.len(),
             input.dispatch_tables,
             &input.scope.dispatch_operations,
         )
@@ -1210,6 +1117,14 @@ pub(crate) struct ValueDeclarations<'a> {
     pub(crate) package_identity: &'a str,
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a [Signature],
+    /// QSL-180 K5: the declaration currently being checked's own resolved
+    /// signature (`check::mod`'s per-declaration loop already has it, at
+    /// `signatures[index]`, from resolving `form`'s own `TypeForm`
+    /// parameters/result before this loop starts). `check_declaration_body`
+    /// reads parameter/result `ValueType`s from here, never from `form`
+    /// directly: `form.parameters`/`form.result` are syntax post-K5, not the
+    /// kernel type `bind_parameters`/`check_as` need.
+    pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
     pub(crate) location: &'a CheckLocation,
@@ -1428,41 +1343,40 @@ mod tests {
     /// compare two identities minted in the same process, or round-trip
     /// through `value::expression::family`'s `emit_v2`/`decode_v2` -- none
     /// of them can catch a change to the preimage's own byte grammar.
-    /// `encode_expression`/`encode_value_type`'s exhaustive `match`es only
-    /// force a compile error for a *new* variant; reordering two
-    /// `write_str` calls, or renaming a tag (`"add"` to `"plus"`),
-    /// recompiles clean and passes every other test in this file while
-    /// silently changing every identity this preimage mints. This fixture
-    /// exercises `Let`, `If`, `Binary`, `Call`, `Collection` and `Convert`
-    /// on the `Expression` side and `Int`, `Text` and `Collection` (with a
-    /// nested `Int` element) on the `ValueType` side -- enough surface that
-    /// a reordered write or a renamed tag anywhere in either `match` moves
-    /// the digest below. A failure here means the wire preimage grammar
-    /// changed; regenerate the constant only when that change is the one
-    /// actually intended (and say so in the commit, per this repository's
-    /// own digest-freshness rule in `CLAUDE.md`), never to make a red test
-    /// green.
+    /// `encode_expression`/`encode_type_form`'s
+    /// exhaustive `match`es only force a compile error for a *new* variant;
+    /// reordering two `write_str` calls, or renaming a tag (`"add"` to
+    /// `"plus"`), recompiles clean and passes every other test in this file
+    /// while silently changing every identity this preimage mints. This
+    /// fixture exercises `Let`, `If`, `Binary`, `Call`, `Collection` and
+    /// `Convert` on the `Expression` side, and (QSL-180 K5) keyword heads
+    /// with and without bounds, and a collection head with a type argument
+    /// -- `Int[0,10]`, `Text[1,100;profile]`, `Integer` and
+    /// `Sequence<Int[0,10]>[0,5]` -- on the
+    /// `TypeForm` side, enough surface that a reordered write or a renamed
+    /// tag anywhere in either `match` moves the digest below. A failure here
+    /// means the wire preimage grammar changed; regenerate the constant only
+    /// when that change is the one actually intended (and say so in the
+    /// commit, per this repository's own digest-freshness rule in
+    /// `CLAUDE.md`), never to make a red test green.
     #[test]
     fn mint_declaration_identity_matches_a_checked_in_digest() {
-        let element_type = ValueType::Int(
-            quire_exact::IntegerInterval::new(
-                quire_exact::Integer::from(0_i64),
-                quire_exact::Integer::from(10_i64),
-            )
-            .unwrap(),
-        );
+        let span = qsl_foundation::Span { start: 0, end: 0 };
+        let int_type_form = crate::forms::TypeForm::keyword(qsl_cst::token::Kind::IntType, span)
+            .with_bounds(vec!["0".to_owned(), "10".to_owned()]);
+        let text_type_form = crate::forms::TypeForm::keyword(qsl_cst::token::Kind::TextType, span)
+            .with_bounds(vec![
+                "1".to_owned(),
+                "100".to_owned(),
+                "UnicodeScalars".to_owned(),
+            ]);
         let parameters = vec![
-            ("n".to_owned(), element_type.clone()),
-            (
-                "label".to_owned(),
-                ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
-            ),
+            ("n".to_owned(), int_type_form.clone()),
+            ("label".to_owned(), text_type_form),
         ];
-        let result = ValueType::Collection(Box::new(CollectionType::new(
-            CollectionKind::Sequence,
-            element_type,
-            CardinalityBound::new(0, 5).unwrap(),
-        )));
+        let result = crate::forms::TypeForm::collection(CollectionKind::Sequence, span)
+            .with_arguments(vec![int_type_form])
+            .with_bounds(vec!["0".to_owned(), "5".to_owned()]);
         let body = Expression::Let {
             name: "x".to_owned(),
             value: Box::new(Expression::Integer(quire_exact::Integer::from(2_i64))),
@@ -1477,7 +1391,10 @@ mod tests {
                     arguments: vec![Expression::Name("x".to_owned())],
                 }),
                 otherwise: Box::new(Expression::Convert {
-                    target: ValueType::Integer,
+                    target: crate::forms::TypeForm::keyword(
+                        qsl_cst::token::Kind::IntegerType,
+                        span,
+                    ),
                     operand: Box::new(Expression::Collection {
                         kind: CollectionKind::Sequence,
                         elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
@@ -1488,9 +1405,16 @@ mod tests {
         let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
         let (identity, _) =
             mint_declaration_identity(DEFAULT_PACKAGE_IDENTITY, &declaration, u64::MAX);
+        // QSL-180 K5: `FunctionDeclaration`'s parameters/result and
+        // `Expression::Convert`'s target retyped from `ValueType` to
+        // `TypeForm` (`forms::syntax`), so the preimage now encodes each
+        // through `encode_type_form`, not `encode_value_type` -- the wire
+        // grammar genuinely changed, and this digest is regenerated to
+        // match, per this test's own doc above and this repository's
+        // digest-freshness rule.
         assert_eq!(
             identity.to_string(),
-            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
+            "d48e10f28383c6877d787fbfd64c663c017b548991d1b438adc81b37b2a78c8c",
             "the preimage byte grammar changed -- see this test's own doc \
              before regenerating this constant"
         );
@@ -1531,6 +1455,28 @@ pub(crate) mod checking_tests {
             result: ValueType::Boolean,
             callable_by_name: true,
         }
+    }
+
+    /// QSL-180 K5: a bare `Boolean` `TypeForm`, for tests building a
+    /// `FunctionDeclaration` directly (`forms::FunctionDeclaration`'s
+    /// `parameters`/`result` are syntax post-K5, not `ValueType`).
+    fn boolean_type_form() -> crate::forms::TypeForm {
+        crate::forms::TypeForm::keyword(
+            qsl_cst::token::Kind::BooleanType,
+            qsl_foundation::Span { start: 0, end: 0 },
+        )
+    }
+
+    /// QSL-180 K5: an `Option<Integer>` `TypeForm`.
+    fn option_integer_type_form() -> crate::forms::TypeForm {
+        crate::forms::TypeForm::keyword(
+            qsl_cst::token::Kind::OptionType,
+            qsl_foundation::Span { start: 0, end: 0 },
+        )
+        .with_arguments(vec![crate::forms::TypeForm::keyword(
+            qsl_cst::token::Kind::IntegerType,
+            qsl_foundation::Span { start: 0, end: 0 },
+        )])
     }
 
     /// See [`root_location`]'s own doc (PR #303 review, finding N7b): the
@@ -1667,6 +1613,7 @@ pub(crate) mod checking_tests {
         package_identity: &'a str,
         scope: &'a Scope,
         signatures: &'a [Signature],
+        own_signature: &'a Signature,
         dispatch_tables: &'a [DispatchTable],
         checking_limits: CheckingLimits,
         location: &'a CheckLocation,
@@ -1675,6 +1622,7 @@ pub(crate) mod checking_tests {
             package_identity,
             scope,
             signatures,
+            own_signature,
             dispatch_tables,
             checking_limits,
             location,
@@ -1691,17 +1639,15 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_declaration_body_accepts_a_well_typed_declaration_and_reports_its_calls() {
         let scope = empty_scope();
-        let callee = FunctionDeclaration::new(
-            "f",
-            vec![("x".to_owned(), ValueType::Boolean)],
-            ValueType::Boolean,
-            None,
-            Expression::Name("x".to_owned()),
-        );
+        // `f`'s own declaration is not built here: post-K5, `resolve_signature`
+        // (`check::mod`) is what turns a `FunctionDeclaration`'s `TypeForm`s
+        // into a `Signature`, and this test's `input` is built directly from
+        // an already-resolved `signatures` list below, matching how
+        // `check_declaration_body` actually receives it in the real pipeline.
         let caller = FunctionDeclaration::new(
             "g",
             Vec::new(),
-            ValueType::Boolean,
+            boolean_type_form(),
             None,
             Expression::Call {
                 name: "f".to_owned(),
@@ -1711,14 +1657,14 @@ pub(crate) mod checking_tests {
         let signatures = vec![
             Signature {
                 name: "f".to_owned(),
-                parameters: callee.parameters.clone(),
-                result: callee.result.clone(),
+                parameters: vec![("x".to_owned(), ValueType::Boolean)],
+                result: ValueType::Boolean,
                 callable_by_name: true,
             },
             Signature {
                 name: "g".to_owned(),
-                parameters: caller.parameters.clone(),
-                result: caller.result.clone(),
+                parameters: Vec::new(),
+                result: ValueType::Boolean,
                 callable_by_name: true,
             },
         ];
@@ -1728,6 +1674,7 @@ pub(crate) mod checking_tests {
             DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
+            &signatures[1],
             &dispatch_tables,
             CheckingLimits::default(),
             &location,
@@ -1749,12 +1696,18 @@ pub(crate) mod checking_tests {
     fn check_declaration_body_refuses_an_ill_typed_body() {
         let scope = empty_scope();
         let signatures: Vec<Signature> = Vec::new();
+        let own_signature = Signature {
+            name: "g".to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Boolean,
+            callable_by_name: true,
+        };
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
         let location = root_location();
         let form = FunctionDeclaration::new(
             "g",
             Vec::new(),
-            ValueType::Boolean,
+            boolean_type_form(),
             None,
             Expression::Integer(quire_exact::Integer::from(1_i64)),
         );
@@ -1762,6 +1715,7 @@ pub(crate) mod checking_tests {
             DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
+            &own_signature,
             &dispatch_tables,
             CheckingLimits::default(),
             &location,
@@ -1788,12 +1742,21 @@ pub(crate) mod checking_tests {
     fn check_declaration_body_refuses_an_undefined_body() {
         let scope = empty_scope();
         let signatures: Vec<Signature> = Vec::new();
+        let own_signature = Signature {
+            name: "v".to_owned(),
+            parameters: vec![("o".to_owned(), ValueType::option(ValueType::Integer))],
+            result: ValueType::Integer,
+            callable_by_name: true,
+        };
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
         let location = root_location();
         let form = FunctionDeclaration::new(
             "v",
-            vec![("o".to_owned(), ValueType::option(ValueType::Integer))],
-            ValueType::Integer,
+            vec![("o".to_owned(), option_integer_type_form())],
+            crate::forms::TypeForm::keyword(
+                qsl_cst::token::Kind::IntegerType,
+                qsl_foundation::Span { start: 0, end: 0 },
+            ),
             None,
             Expression::Value(Box::new(Expression::Name("o".to_owned()))),
         );
@@ -1801,6 +1764,7 @@ pub(crate) mod checking_tests {
             DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
+            &own_signature,
             &dispatch_tables,
             CheckingLimits::default(),
             &location,

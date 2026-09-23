@@ -8,9 +8,107 @@
 //! a refusal is the path of child indices from the declaration root, each
 //! index numbered as [`Expression::children`] lists the children.
 
-use crate::value::ValueType;
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
+
+/// A [`TypeForm`]'s head: a layer-1 keyword the grammar already recognizes
+/// (`qsl_cst`'s `token::Kind`, e.g. `Boolean`, `Int`), a collection kind,
+/// or a qualified name that `check` resolves against a declared alias,
+/// record/tuple, enum or model object type
+/// (`check::type_form::resolve_named_type`).
+#[derive(Clone, Debug)]
+pub enum TypeFormHead {
+    /// A builtin keyword type.
+    Keyword(qsl_cst::token::Kind),
+    /// A collection type (`Sequence`, `Set`, `Bag`, `OrderedSet`), carried
+    /// as the kernel [`CollectionKind`] the same way
+    /// [`Expression::Collection`] carries it (ADR-011 §6.1: layer 2 depends
+    /// on "1, F, K"; ADR-013 OQ-A).
+    Collection(CollectionKind),
+    /// A qualified name.
+    Name(String),
+}
+
+/// A declared type as spelled in source (S2 (QSL-180 K5); ADR-011 §1's stage
+/// table: "Unchecked syntactic forms per family, each with a span. No
+/// semantic identity."; §2.2 row E2: identity "none: forms carry position
+/// only", proof metadata "Declared bounds and extents carried as syntax").
+///
+/// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11): [`Self::head`]
+/// is a bare keyword, a kernel collection kind or a name, [`Self::arguments`] are
+/// this same syntactic type recursively (an element or payload type), and
+/// [`Self::bounds`] are declared bound or extent literals, spelled exactly
+/// as written (e.g. `Int[0, 10]`'s `"0"`, `"10"`; `Population<M::A>[3]`'s
+/// `"3"`) -- never a parsed `Integer` or `u64`. `check::Typer::resolve_type`
+/// (E3) resolves this to the kernel `ValueType` (ADR-013 O-14/C-26: "Checked
+/// type node -> kernel `ValueType` (QSL checker)"), the same E2/E3 split
+/// this file's own `Accumulate.accumulator_type`/`Count.result_type`/
+/// `Sum.result_type` already draw with a qualified-name `String` resolved
+/// at E3 by `Typer::type_named`.
+#[derive(Clone, Debug)]
+pub struct TypeForm {
+    /// The type's head.
+    pub head: TypeFormHead,
+    /// Type arguments in source order (e.g. `Sequence<Int[0,10]>`'s element,
+    /// `Option<T>`'s payload, or `Population<M::A>[3]`'s named element type,
+    /// which the kernel `ValueType::Population` does not itself carry).
+    pub arguments: Vec<TypeForm>,
+    /// Declared bound or extent literals, spelled exactly as written, in
+    /// source order.
+    pub bounds: Vec<String>,
+    /// The source span.
+    pub span: Span,
+}
+
+impl TypeForm {
+    /// A bare keyword type with no arguments or bounds, e.g. `Boolean`.
+    pub fn keyword(kind: qsl_cst::token::Kind, span: Span) -> Self {
+        Self {
+            head: TypeFormHead::Keyword(kind),
+            arguments: Vec::new(),
+            bounds: Vec::new(),
+            span,
+        }
+    }
+
+    /// A collection type of `kind` with no element argument or bounds yet,
+    /// e.g. `Sequence`.
+    pub fn collection(kind: CollectionKind, span: Span) -> Self {
+        Self {
+            head: TypeFormHead::Collection(kind),
+            arguments: Vec::new(),
+            bounds: Vec::new(),
+            span,
+        }
+    }
+
+    /// A bare qualified name with no arguments or bounds, e.g. a record,
+    /// tuple, enum or model object type's own declared name.
+    pub fn name(name: impl Into<String>, span: Span) -> Self {
+        Self {
+            head: TypeFormHead::Name(name.into()),
+            arguments: Vec::new(),
+            bounds: Vec::new(),
+            span,
+        }
+    }
+
+    /// This type's own declared type arguments, in source order.
+    #[must_use]
+    pub fn with_arguments(mut self, arguments: Vec<TypeForm>) -> Self {
+        self.arguments = arguments;
+        self
+    }
+
+    /// This type's own declared bound or extent literals, spelled exactly as
+    /// written, in source order.
+    #[must_use]
+    pub fn with_bounds(mut self, bounds: Vec<String>) -> Self {
+        self.bounds = bounds;
+        self
+    }
+}
 
 /// A binary operator of the expression grammar.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -203,7 +301,7 @@ pub enum Expression {
     /// `convert<T>(e)`.
     Convert {
         /// The target type.
-        target: ValueType,
+        target: TypeForm,
         /// The converted operand.
         operand: Box<Expression>,
     },
@@ -274,14 +372,14 @@ pub enum Expression {
     /// most-specific type conforms to `T`.
     AllInstances {
         /// The queried type `T`.
-        target: ValueType,
+        target: TypeForm,
         /// The population operand `p`.
         population: Box<Expression>,
     },
     /// `lookup<T>(p, r) absent m` (FR-153): `r`'s presence in `p`, per `m`.
     Lookup {
         /// The queried type `T`.
-        target: ValueType,
+        target: TypeForm,
         /// The population operand `p`.
         population: Box<Expression>,
         /// The reference operand `r`.
@@ -403,9 +501,9 @@ pub struct FunctionDeclaration {
     /// The declared name.
     pub name: String,
     /// Parameters in order.
-    pub parameters: Vec<(String, ValueType)>,
+    pub parameters: Vec<(String, TypeForm)>,
     /// The declared result type.
-    pub result: ValueType,
+    pub result: TypeForm,
     /// The `decreases` measure, when written.
     pub measure: Option<Expression>,
     /// The body.
@@ -427,8 +525,8 @@ impl FunctionDeclaration {
     /// as [`ClauseKind::Body`].
     pub fn new(
         name: impl Into<String>,
-        parameters: Vec<(String, ValueType)>,
-        result: ValueType,
+        parameters: Vec<(String, TypeForm)>,
+        result: TypeForm,
         measure: Option<Expression>,
         body: Expression,
     ) -> Self {
@@ -460,8 +558,8 @@ impl FunctionDeclaration {
     /// [`CheckedGraph::check_postcondition_expression`]: crate::value::CheckedGraph::check_postcondition_expression
     pub fn clause(
         name: impl Into<String>,
-        parameters: Vec<(String, ValueType)>,
-        result: ValueType,
+        parameters: Vec<(String, TypeForm)>,
+        result: TypeForm,
         measure: Option<Expression>,
         body: Expression,
         clause_kind: DeclaredClauseKind,
@@ -591,7 +689,7 @@ mod tests {
         let declaration = FunctionDeclaration::new(
             "f",
             Vec::new(),
-            ValueType::Boolean,
+            TypeForm::keyword(qsl_cst::token::Kind::BooleanType, Span { start: 0, end: 0 }),
             None,
             Expression::Boolean(true),
         );

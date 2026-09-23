@@ -81,10 +81,18 @@ mod identity;
 mod ir;
 mod refusal;
 mod termination;
+mod type_form;
 
 use std::collections::BTreeMap;
 
-use check::{bind_parameters, Signature, Typer};
+use check::{bind_parameters, Typer};
+// QSL-180 K5: re-exported (not just `use`d) so `value::expression::family`'s
+// own `#[cfg(test)]` modules can build a `Signature` directly for
+// `declarations_for`'s `own_signature` parameter (`check_declaration_body`
+// reads a declaration's own resolved parameters/result from there now,
+// never from a `FunctionDeclaration`'s `parameters`/`result`, which are
+// syntax post-K5).
+pub(crate) use check::Signature;
 use facts::{CallSite, Definedness};
 use quire_exact::Identifier;
 
@@ -328,36 +336,44 @@ fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> C
 /// exists (valid `index`) is located at its own real
 /// [`Origin::Body`]; an out-of-range `index` names no real declaration to
 /// point at, so it is located at [`Origin::Expression`] instead.
+/// QSL-180 K5: takes `signatures` (each function's own resolved
+/// `ValueType` parameters/result, `check`'s own already-built
+/// `Vec<Signature>`, index-aligned with `self.functions`) rather than
+/// `&[FunctionDeclaration]` -- a dispatch candidate's declared parameter and
+/// result types are compared against `operation.parameters`/`.result`
+/// (already-resolved `ValueType`s), and a `FunctionDeclaration`'s own
+/// `parameters`/`result` are syntactic `TypeForm`s post-K5, not directly
+/// comparable.
 fn validate_dispatch_function(
-    functions: &[FunctionDeclaration],
+    signatures: &[Signature],
     index: usize,
     call_parameters: &[ValueType],
     result: &ValueType,
     role: DispatchFunctionRole,
 ) -> Result<(), CheckRefusal> {
-    let Some(function) = functions.get(index) else {
+    let Some(signature) = signatures.get(index) else {
         return Err(invalid_dispatch(
             root(Origin::Expression),
             InvalidDispatchDeclaration::FunctionOutOfRange { role, index },
         ));
     };
     let location = root(Origin::Body {
-        function: function.name.clone(),
+        function: signature.name.clone(),
         index,
     });
     let expected_arity = call_parameters.len() + 1;
-    if function.parameters.len() != expected_arity {
+    if signature.parameters.len() != expected_arity {
         return Err(invalid_dispatch(
             location,
             InvalidDispatchDeclaration::Arity {
                 role,
                 index,
-                declared: function.parameters.len(),
+                declared: signature.parameters.len(),
                 expected: expected_arity,
             },
         ));
     }
-    let mismatched = function
+    let mismatched = signature
         .parameters
         .iter()
         .skip(1)
@@ -370,13 +386,42 @@ fn validate_dispatch_function(
             InvalidDispatchDeclaration::ParameterType { role, index },
         ));
     }
-    if &function.result != result {
+    if &signature.result != result {
         return Err(invalid_dispatch(
             location,
             InvalidDispatchDeclaration::ResultType { role, index },
         ));
     }
     Ok(())
+}
+
+/// QSL-180 K5: resolve one declared function's own `TypeForm` parameters and
+/// result to the kernel `ValueType` (E3, `check::type_form::
+/// resolve_type_form`), collecting every refusal across the whole signature
+/// rather than stopping at the first, matching this module's own
+/// ambiguous-name and dispatch-validation loops' all-refusals-before-any-
+/// charge style.
+fn resolve_signature(
+    scope: &Scope,
+    function: &FunctionDeclaration,
+    location: &Location,
+) -> Result<check::ResolvedSignature, Vec<CheckRefusal>> {
+    let mut refusals = Vec::new();
+    let mut parameters = Vec::with_capacity(function.parameters.len());
+    for (name, type_form) in &function.parameters {
+        match type_form::resolve_type_form(scope, type_form, location) {
+            Ok(value_type) => parameters.push((name.clone(), value_type)),
+            Err(refusal) => refusals.push(refusal),
+        }
+    }
+    match type_form::resolve_type_form(scope, &function.result, location) {
+        Ok(result) if refusals.is_empty() => Ok((parameters, result)),
+        Ok(_) => Err(refusals),
+        Err(refusal) => {
+            refusals.push(refusal);
+            Err(refusals)
+        }
+    }
 }
 
 impl PackageDeclarations {
@@ -413,8 +458,51 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        // QSL-180 K5: `scope` (and `dispatch_tables`) move out of `self`
+        // here, ahead of the dispatch-operation validation below, so every
+        // remaining step reads them from one place. This also gives the
+        // signature-resolution pass right after a `Scope` to resolve each
+        // declared function's own `TypeForm` parameters/result against
+        // (aliases, composites, enums, object types), before dispatch
+        // validation needs the *resolved* signatures to compare -- a
+        // `FunctionDeclaration`'s `parameters`/`result` are syntax
+        // (`TypeForm`) post-K5, not directly comparable to
+        // `DispatchOperation`'s already-resolved `ValueType`s the way they
+        // were before this cut.
+        let scope = Scope {
+            types: self.types,
+            enums: self.enums,
+            aliases: self.aliases,
+            model_operations: self.model_operations,
+            ieee_profile: self.ieee_profile,
+            dispatch_operations: self.dispatch_operations,
+        };
+        let dispatch_tables = self.dispatch_tables;
+        let mut signatures: Vec<Signature> = Vec::with_capacity(self.functions.len());
+        for (index, function) in self.functions.iter().enumerate() {
+            let location = body_location(index, &function.name);
+            let resolved = match self.resolved_signatures.get(&index) {
+                // `check::checked_dispatch`'s synthesized clauses: already
+                // resolved from a model signature, never rendered back into
+                // syntax (see that module's own doc).
+                Some((parameters, result)) => Ok((parameters.clone(), result.clone())),
+                None => resolve_signature(&scope, function, &location),
+            };
+            match resolved {
+                Ok((parameters, result)) => signatures.push(Signature {
+                    name: function.name.clone(),
+                    parameters,
+                    result,
+                    callable_by_name: function.callable_by_name,
+                }),
+                Err(mut function_refusals) => refusals.append(&mut function_refusals),
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         let mut seen_operations = std::collections::BTreeSet::new();
-        for operation in &self.dispatch_operations {
+        for operation in &scope.dispatch_operations {
             if !seen_operations.insert((operation.receiver_type, operation.member.clone())) {
                 refusals.push(invalid_dispatch(
                     root(Origin::Expression),
@@ -428,8 +516,8 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        for operation in &self.dispatch_operations {
-            let Some(table) = self.dispatch_tables.get(operation.table) else {
+        for operation in &scope.dispatch_operations {
+            let Some(table) = dispatch_tables.get(operation.table) else {
                 refusals.push(invalid_dispatch(
                     root(Origin::Expression),
                     InvalidDispatchDeclaration::TableOutOfRange {
@@ -441,7 +529,7 @@ impl PackageDeclarations {
             };
             for (_, candidate) in table.entries() {
                 if let Err(refusal) = validate_dispatch_function(
-                    &self.functions,
+                    &signatures,
                     candidate.body,
                     &operation.parameters,
                     &operation.result,
@@ -451,7 +539,7 @@ impl PackageDeclarations {
                 }
                 if let Some(precondition) = candidate.precondition {
                     if let Err(refusal) = validate_dispatch_function(
-                        &self.functions,
+                        &signatures,
                         precondition,
                         &operation.parameters,
                         &ValueType::Boolean,
@@ -462,7 +550,7 @@ impl PackageDeclarations {
                 }
                 for &clause in &candidate.precondition_clauses {
                     if let Err(refusal) = validate_dispatch_function(
-                        &self.functions,
+                        &signatures,
                         clause,
                         &operation.parameters,
                         &ValueType::Boolean,
@@ -476,25 +564,6 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let scope = Scope {
-            types: self.types,
-            enums: self.enums,
-            aliases: self.aliases,
-            model_operations: self.model_operations,
-            ieee_profile: self.ieee_profile,
-            dispatch_operations: self.dispatch_operations,
-        };
-        let dispatch_tables = self.dispatch_tables;
-        let signatures: Vec<Signature> = self
-            .functions
-            .iter()
-            .map(|function| Signature {
-                name: function.name.clone(),
-                parameters: function.parameters.clone(),
-                result: function.result.clone(),
-                callable_by_name: function.callable_by_name,
-            })
-            .collect();
         let mut functions = Vec::with_capacity(self.functions.len());
         let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
@@ -668,6 +737,7 @@ impl PackageDeclarations {
                 package_identity: &package_identity,
                 scope: &scope,
                 signatures: &signatures,
+                own_signature: &signatures[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
                 location: &location,
@@ -698,12 +768,12 @@ impl PackageDeclarations {
                     nodes_used = checked.body.nodes_used;
                     functions.push(CheckedFunction {
                         identity: checked.identity,
-                        signature: Signature {
-                            name: function.name,
-                            parameters: function.parameters,
-                            result: function.result,
-                            callable_by_name: function.callable_by_name,
-                        },
+                        // QSL-180 K5: `signatures[index]` is already this
+                        // declaration's own resolved `Signature` (built
+                        // above, before this loop) -- `function.parameters`/
+                        // `.result` are syntax (`TypeForm`) post-K5, not a
+                        // second copy of the same `ValueType` data.
+                        signature: signatures[index].clone(),
                         body: checked.body.body,
                         measure: checked.body.measure,
                         slots: checked.body.slots,
@@ -1326,7 +1396,16 @@ mod tests {
     #[test]
     fn call_occurrences_of_the_same_callee_share_an_identity_and_disambiguate_by_occurrence_key() {
         fn literal_function(name: &str, body: Expression) -> FunctionDeclaration {
-            FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+            FunctionDeclaration::new(
+                name,
+                Vec::new(),
+                crate::forms::TypeForm::keyword(
+                    qsl_cst::token::Kind::BooleanType,
+                    qsl_foundation::Span { start: 0, end: 0 },
+                ),
+                None,
+                body,
+            )
         }
         let call_helper = || Expression::Call {
             name: "helper".to_owned(),

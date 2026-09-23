@@ -278,10 +278,38 @@ fn require_expression(
         .ok_or_else(|| missing(operation, field))
 }
 
+/// QSL-180 K5: the `TypeForm` every synthesized `FunctionDeclaration` this
+/// module builds carries in place of a real declared type. `check` never
+/// resolves it: `checked_dispatch_operation`'s own `PackageDeclarations::
+/// resolved_signatures` entry (recorded alongside every `functions.push`
+/// call, keyed by that same index) overrides resolution with the real,
+/// already-resolved `ValueType` `OperationClauses` supplied. A synthesized
+/// clause is not real S2 syntax to begin with -- its types come straight
+/// from a model signature bridge, not from parsed source -- so rendering
+/// the resolved `ValueType` back into a `TypeForm` merely to have `check`
+/// parse it straight back out would be exactly the "layer 3 renders a
+/// resolved type back into syntax" the K5 plan (§2.3) rules out.
+fn opaque_type_form() -> crate::forms::TypeForm {
+    crate::forms::TypeForm::name(
+        "check::checked_dispatch synthesized (never resolved; see resolved_signatures)",
+        qsl_foundation::Span { start: 0, end: 0 },
+    )
+}
+
+/// [`opaque_type_form`] for every one of `parameters`, keeping each
+/// parameter's own declared name (`bind_parameters`/`Definedness::new` still
+/// need the right arity and names; only the type is opaque).
+fn opaque_parameters(parameters: &[(String, ValueType)]) -> Vec<(String, crate::forms::TypeForm)> {
+    parameters
+        .iter()
+        .map(|(name, _)| (name.clone(), opaque_type_form()))
+        .collect()
+}
+
 fn require_signature(
     clauses: &OperationClauses,
     operation: &DeclarationKey,
-) -> Result<(Vec<(String, ValueType)>, ValueType), DispatchBridgeRefusal> {
+) -> Result<super::check::ResolvedSignature, DispatchBridgeRefusal> {
     let parameters = clauses
         .parameters
         .get(operation)
@@ -842,6 +870,14 @@ pub fn checked_dispatch_operation(
     // One shared checked function per authored clause, in source declaration
     // order, built before any candidate body or combinator.
     let mut functions: Vec<FunctionDeclaration> = Vec::new();
+    // QSL-180 K5: every synthesized `FunctionDeclaration` pushed below
+    // carries an opaque `TypeForm` (never resolved -- see
+    // `opaque_type_form`'s own doc); this map records the real, already-
+    // resolved signature `OperationClauses` supplied, keyed by that
+    // declaration's index into `functions`, for
+    // `PackageDeclarations::resolved_signatures` to override resolution
+    // with.
+    let mut resolved_signatures: BTreeMap<usize, super::check::ResolvedSignature> = BTreeMap::new();
     let mut authored_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for member in &authored {
         let (parameters, _) = require_signature(clauses, member)?;
@@ -851,10 +887,12 @@ pub fn checked_dispatch_operation(
             MissingClauseField::OwnPrecondition,
         )?;
         let index = functions.len();
+        let declared_parameters = opaque_parameters(&parameters);
+        resolved_signatures.insert(index, (parameters, ValueType::Boolean));
         functions.push(FunctionDeclaration::clause(
             format!("{}.precondition", member.node),
-            parameters,
-            ValueType::Boolean,
+            declared_parameters,
+            opaque_type_form(),
             None,
             body,
             DeclaredClauseKind::Precondition,
@@ -888,10 +926,12 @@ pub fn checked_dispatch_operation(
                     })
                     .ok_or_else(|| missing(candidate, MissingClauseField::OwnPrecondition))?;
                 let index = functions.len();
+                let declared_parameters = opaque_parameters(&parameters);
+                resolved_signatures.insert(index, (parameters.clone(), ValueType::Boolean));
                 functions.push(FunctionDeclaration::clause(
                     format!("{}.precondition.effective", candidate.node),
-                    parameters.clone(),
-                    ValueType::Boolean,
+                    declared_parameters,
+                    opaque_type_form(),
                     None,
                     combined,
                     DeclaredClauseKind::Precondition,
@@ -916,10 +956,12 @@ pub fn checked_dispatch_operation(
         let own_body =
             require_expression(&clauses.own_body, candidate, MissingClauseField::OwnBody)?;
         let index = functions.len();
+        let declared_parameters = opaque_parameters(&parameters);
+        resolved_signatures.insert(index, (parameters, result));
         functions.push(FunctionDeclaration::clause(
             candidate.node.clone(),
-            parameters,
-            result,
+            declared_parameters,
+            opaque_type_form(),
             None,
             own_body,
             DeclaredClauseKind::Body,
@@ -1023,6 +1065,7 @@ pub fn checked_dispatch_operation(
         functions,
         dispatch_operations,
         dispatch_tables: vec![checked_table],
+        resolved_signatures,
         ..PackageDeclarations::default()
     })
 }

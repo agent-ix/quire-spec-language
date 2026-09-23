@@ -595,6 +595,15 @@ impl TypeEnvironment {
         self.object_types.get(&key)
     }
 
+    /// Every admitted object type in key order (QSL-180 K5:
+    /// `check::type_form::resolve_named_type`'s own name search, alongside
+    /// [`Self::composites`]/enum members, so a `TypeForm` naming a declared
+    /// object type resolves to `ValueType::Reference` the same way one
+    /// naming a record, tuple or enum resolves to `Composite`/`Enum`).
+    pub(crate) fn object_types(&self) -> impl Iterator<Item = &ObjectTypeDeclaration> {
+        self.object_types.values()
+    }
+
     /// Whether `sub` conforms to `sup` (H1, #204 round 1): reflexive
     /// (`sub == sup` always conforms), or `sup` is a proper ancestor of
     /// `sub` in the admitted supertypes graph. `false` for either key

@@ -562,7 +562,7 @@ mod checked {
         BinaryOperator, BinderQuery, CheckCause, CheckMode, CheckRefusal, CheckedExpression,
         CheckedPackage, CheckedPackageEvaluation, CheckingLimits, EnumBinding, EnumDeclaration,
         EnumDeclarationPreimage, EnumMemberPreimage, Expression, NodeOwner, ObjectEnvironment,
-        OwnerSelection, OwnerSubject, PackageDeclarations, SemanticGraphCause,
+        OwnerSelection, OwnerSubject, PackageDeclarations, SemanticGraphCause, TypeForm,
     };
     use serde_json::json;
 
@@ -885,12 +885,9 @@ mod checked {
         });
         assert_eq!(format!("{:?}", elements(&mapped)), ordered);
         let converted = run(Expression::Convert {
-            target: ValueType::collection(collection_type(
-                CollectionKind::Sequence,
-                ValueType::Composite(key("Holder")),
-                0,
-                2,
-            )),
+            target: TypeForm::collection(CollectionKind::Sequence, crate::support::type_form::SPAN)
+                .with_arguments(vec![crate::support::type_form::named_type_form("Holder")])
+                .with_bounds(vec!["0".to_owned(), "2".to_owned()]),
             operand: Box::new(name("hs")),
         });
         let Value::Collection(sequence) = &converted else {
@@ -933,7 +930,9 @@ mod checked {
         let widened = Expression::Let {
             name: "y".to_owned(),
             value: Box::new(Expression::Convert {
-                target: ValueType::collection(s_type.clone()),
+                target: crate::support::type_form::type_form(&ValueType::collection(
+                    s_type.clone(),
+                )),
                 operand: Box::new(name("x")),
             }),
             body: Box::new(equal(name("y"), name("s"))),

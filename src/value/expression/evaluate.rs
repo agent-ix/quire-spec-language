@@ -1388,8 +1388,10 @@ mod tests {
     use super::*;
     use crate::check::{CheckingLimits, PackageDeclarations};
     use crate::family::ReferenceEvaluation;
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::model::accounting::ModelNormalizationLimits;
+    // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
+    const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
     use crate::model::dispatch::GeneralizationClosure;
     use crate::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
@@ -1499,11 +1501,16 @@ mod tests {
             types,
             functions: vec![FunctionDeclaration::new(
                 "F",
-                vec![("p".to_owned(), ValueType::Population(3))],
-                ValueType::Integer,
+                vec![(
+                    "p".to_owned(),
+                    TypeForm::name("Population", SPAN)
+                        .with_arguments(vec![TypeForm::name("M::A", SPAN)])
+                        .with_bounds(vec!["3".to_owned()]),
+                )],
+                TypeForm::keyword(qsl_cst::token::Kind::IntegerType, SPAN),
                 None,
                 Expression::Size(Box::new(Expression::AllInstances {
-                    target: ValueType::Reference(node_a),
+                    target: TypeForm::name("M::A", SPAN),
                     population: Box::new(Expression::Name("p".to_owned())),
                 })),
             )],

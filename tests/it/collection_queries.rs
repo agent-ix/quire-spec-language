@@ -120,7 +120,7 @@ fn accumulate(
 
 fn convert(target: ValueType, operand: &str) -> Expression {
     Expression::Convert {
-        target,
+        target: crate::support::type_form::type_form(&target),
         operand: Box::new(name(operand)),
     }
 }
@@ -458,8 +458,11 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
         aliases: aliases(),
         functions: vec![FunctionDeclaration::new(
             "r".to_owned(),
-            vec![("e".to_owned(), integers(CollectionKind::Set, 0, 2))],
-            ValueType::Integer,
+            vec![(
+                "e".to_owned(),
+                crate::support::type_form::type_form(&integers(CollectionKind::Set, 0, 2)),
+            )],
+            crate::support::type_form::type_form(&ValueType::Integer),
             None,
             reduce,
         )],
@@ -502,10 +505,16 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
     let add = FunctionDeclaration::new(
         "add".to_owned(),
         vec![
-            ("a".to_owned(), ValueType::Integer),
-            ("b".to_owned(), ValueType::Integer),
+            (
+                "a".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Integer),
+            ),
+            (
+                "b".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Integer),
+            ),
         ],
-        ValueType::Integer,
+        crate::support::type_form::type_form(&ValueType::Integer),
         None,
         binary(BinaryOperator::Add, name("a"), name("b")),
     );

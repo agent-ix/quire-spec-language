@@ -202,7 +202,7 @@ pub use expression::{
 // whether `value` aggregates them.
 pub use crate::forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, DeclaredClauseKind, Expression,
-    FieldInitializer, FunctionDeclaration,
+    FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,

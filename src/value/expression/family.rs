@@ -397,14 +397,14 @@ mod family_contract_tests {
     use super::*;
     use crate::check::{
         declarations_for, empty_scope, mint_declaration_identity, root_location, CheckCause,
-        CheckingLimitKind, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
-        SCALAR_LIMITS_UNLIMITED,
+        CheckingLimitKind, CheckingLimits, PackageDeclarations, Signature,
+        DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvaluateFailure, FamilyContract, ReferenceEvaluation,
         ScopeStack, StageLimits,
     };
-    use crate::forms::{Expression, FunctionDeclaration};
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use crate::value::composite::{TypeEnvironment, ValueType};
     use crate::value::reference::ObjectEnvironment;
     use ix_trace_rs::trace;
@@ -425,8 +425,32 @@ mod family_contract_tests {
         }
     }
 
+    /// QSL-180 K5: a bare `Boolean` `TypeForm` (`forms::FunctionDeclaration`'s
+    /// `result` is syntax post-K5, not `ValueType`).
+    fn boolean_type_form() -> TypeForm {
+        TypeForm::keyword(
+            qsl_cst::token::Kind::BooleanType,
+            qsl_foundation::Span { start: 0, end: 0 },
+        )
+    }
+
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
+    }
+
+    /// QSL-180 K5: the resolved [`Signature`] every [`declaration`] fixture
+    /// in this module needs as `declarations_for`'s `own_signature` --
+    /// `declaration`'s own no-parameters, `Boolean`-result shape, already
+    /// resolved (`check_declaration_body` reads it instead of a
+    /// `FunctionDeclaration`'s `parameters`/`result`, which are syntax
+    /// post-K5).
+    fn declaration_signature(name: &str) -> Signature {
+        Signature {
+            name: name.to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Boolean,
+            callable_by_name: true,
+        }
     }
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
@@ -446,10 +470,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -491,10 +517,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("g");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -512,7 +540,7 @@ mod family_contract_tests {
         let form = FunctionDeclaration::new(
             "g",
             Vec::new(),
-            ValueType::Boolean,
+            boolean_type_form(),
             None,
             Expression::Integer(quire_exact::Integer::from(1_i64)),
         );
@@ -745,6 +773,7 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scalar_limits = SCALAR_LIMITS_UNLIMITED;
         let form = declaration("f", Expression::Boolean(true));
+        let own_signature = declaration_signature("f");
 
         let scope_a = empty_scope();
         let location_a = root_location();
@@ -752,6 +781,7 @@ mod family_contract_tests {
             &package_identity,
             &scope_a,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location_a,
@@ -774,6 +804,7 @@ mod family_contract_tests {
             &package_identity,
             &scope_b,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location_b,
@@ -808,10 +839,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -868,10 +901,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -956,10 +991,12 @@ mod family_contract_tests {
         let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
+        let own_signature = declaration_signature("f");
         let declarations = declarations_for(
             &package_identity,
             &scope,
             &[],
+            &own_signature,
             &[],
             CheckingLimits::default(),
             &location,
@@ -1046,9 +1083,18 @@ mod family_contract_tests {
             Box::new(Expression::Boolean(true)),
         )))));
         let form = declaration("f", nested);
+        let own_signature = declaration_signature("f");
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, &[], &[], tight, &location);
+        let declarations = declarations_for(
+            &package_identity,
+            &scope,
+            &[],
+            &own_signature,
+            &[],
+            tight,
+            &location,
+        );
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -1076,7 +1122,15 @@ mod family_contract_tests {
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&package_identity, &scope, &[], &[], wide, &location);
+        let declarations = declarations_for(
+            &package_identity,
+            &scope,
+            &[],
+            &own_signature,
+            &[],
+            wide,
+            &location,
+        );
         let mut cx = CheckContext::new(
             &declarations,
             limits(),
@@ -1096,12 +1150,20 @@ mod family_contract_tests {
 mod tests {
     use super::*;
     use crate::check::{mint_declaration_identity, OccurrenceMap, DEFAULT_PACKAGE_IDENTITY};
-    use crate::forms::{Expression, FunctionDeclaration};
-    use crate::value::composite::ValueType;
+    use crate::forms::{Expression, FunctionDeclaration, TypeForm};
     use ix_trace_rs::trace;
 
     fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), ValueType::Boolean, None, body)
+        FunctionDeclaration::new(
+            name,
+            Vec::new(),
+            TypeForm::keyword(
+                qsl_cst::token::Kind::BooleanType,
+                qsl_foundation::Span { start: 0, end: 0 },
+            ),
+            None,
+            body,
+        )
     }
 
     /// FR-062-AC-2/FR-065-AC-2: two structurally identical declarations mint
