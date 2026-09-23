@@ -369,24 +369,34 @@ mod tests {
             "[package]\nname = \"quire-spec-language\"\nversion = \"0.2.0\"\n",
         );
         for relative in [
+            "src",
             "qsl-foundation/src",
             "qsl-cst/src",
             "qsl-source/src",
             "qsl-forms/src",
+            "qsl-semantics/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
         write(root, "qsl-replay/src/lib.rs", "pub fn run() {}\n");
-        write(root, "src/check/mod.rs", "pub struct NodeKey;\n");
-        write(root, "src/model/key.rs", "pub struct EffectiveId;\n");
         write(
             root,
-            "src/model/population.rs",
+            "qsl-semantics/src/check/mod.rs",
+            "pub struct NodeKey;\n",
+        );
+        write(
+            root,
+            "qsl-semantics/src/model/key.rs",
+            "pub struct EffectiveId;\n",
+        );
+        write(
+            root,
+            "qsl-semantics/src/model/population.rs",
             "pub struct PopulationId;\n",
         );
         write(
             root,
-            "src/value/model_query.rs",
+            "qsl-semantics/src/value/model_query.rs",
             "fn f() {\n    NodeKey::from_digest(k);\n    EffectiveId::from_digest(d);\n}\n",
         );
 

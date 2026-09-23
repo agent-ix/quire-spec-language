@@ -11,6 +11,7 @@
 
 mod complete_value_lock;
 mod ieee_profiles;
+mod import_view_names;
 mod integer_division;
 mod library_resolution;
 #[cfg(feature = "test-support")]

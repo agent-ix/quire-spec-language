@@ -43,6 +43,8 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
+# `tests/it/import_view_names.rs` (TC-254) parses `library`'s own source.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 
 [[test]]
 name = "it"
@@ -52,8 +54,10 @@ path = "tests/it/main.rs"
 unsafe_code = "forbid"
 missing_docs = "warn"
 # FR-063: `seam_probe` is the `RUSTFLAGS`-set `--cfg` `xtask seam-probe`
-# builds this crate under (see the root crate's own `[lints.rust]` note).
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
+# builds this crate under (see the root crate's own `[lints.rust]` note);
+# `seam_probe_downstream` is set only in its build of the crates above this
+# one (`FamilyKind::catalog_code_prefix`'s own comment says why).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)"] }
 
 [lints.clippy]
 all = "deny"

@@ -85,7 +85,7 @@ pub struct SeamLocation {
 
 /// FR-063-AC-6's S1 and S7 categories, checked in.
 ///
-/// S1: the one `match` over `FamilyKind` in `src/family/mod.rs` --
+/// S1: the one `match` over `FamilyKind` in `qsl-semantics/src/family/mod.rs` --
 /// `catalog_code_prefix`'s prefix arm. `stage_hooks`'s stage-participation
 /// table match is deleted (this module's own doc, PR #262 review finding
 /// F7), narrowing this list from two locations to one. Exactly one location
@@ -118,7 +118,7 @@ pub struct SeamLocation {
 pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
     [
         SeamLocation {
-            file: "src/family/mod.rs".to_owned(),
+            file: "qsl-semantics/src/family/mod.rs".to_owned(),
             item: "FamilyKind::catalog_code_prefix".to_owned(),
         },
         SeamLocation {
@@ -213,7 +213,7 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
     visitor.found.map(|(name, _)| name)
 }
 
-/// Build the QSL crate's `--lib` target with `rustflags` appended to
+/// Build `package`'s `--lib` target with `rustflags` appended to
 /// `RUSTFLAGS` (empty for a normal build) and collect every `E0004`
 /// diagnostic's primary span, resolved to its enclosing item ([`SeamLocation`]),
 /// plus whether the build itself succeeded and its raw stderr (F15: needed
@@ -233,6 +233,7 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// shared one.
 fn build_and_collect_e0004(
     workspace_root: &Path,
+    package: &str,
     rustflags: &str,
 ) -> Result<(bool, BTreeSet<SeamLocation>, String)> {
     let mut command = Command::new("cargo");
@@ -240,7 +241,7 @@ fn build_and_collect_e0004(
         "build",
         "--offline",
         "-p",
-        "quire-spec-language",
+        package,
         "--lib",
         "--message-format=json",
         "--target-dir",
@@ -319,17 +320,41 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
     stderr.contains("--offline")
 }
 
-/// `cargo xtask seam-probe`: FR-063's two required assertions (a probe
-/// build that fails with exactly the checked-in `E0004` locations, and a
-/// normal build that succeeds with none), then the checked-in-list
-/// comparison itself.
+/// One probe build: a workspace package whose seams it reports, and the
+/// `RUSTFLAGS` it is built under.
+///
+/// **One probe build per crate (QSL-181).** A seam `match` makes its own
+/// crate fail to compile under `--cfg seam_probe`, and a crate that fails
+/// stops every crate that depends on it: rustc never reaches them. Since X-6b
+/// moved `check` and `family` into `qsl-semantics`, the S1 seam
+/// (`FamilyKind::catalog_code_prefix`) is in that crate, while the root
+/// crate's seams match over `qsl-semantics`' probe variants. So the probe
+/// builds `qsl-semantics` alone under `--cfg seam_probe`, which reports its
+/// own seam, and then the root crate under `--cfg seam_probe --cfg
+/// seam_probe_downstream`, where the downstream cfg gives each lower crate's
+/// own seam its probe arm so that crate compiles and the root crate's seams
+/// are reached. Each build must fail; together they must report exactly the
+/// checked-in list.
+const PROBE_BUILDS: [(&str, &str); 2] = [
+    ("qsl-semantics", "--cfg seam_probe"),
+    (
+        "quire-spec-language",
+        "--cfg seam_probe --cfg seam_probe_downstream",
+    ),
+];
+
+/// `cargo xtask seam-probe`: FR-063's two required assertions (probe builds
+/// that fail with exactly the checked-in `E0004` locations, and a normal
+/// build that succeeds with none), then the checked-in-list comparison
+/// itself.
 pub fn run(workspace_root: &Path) -> Result<String> {
     // FR-063 constraint: assert the probe build fails AND the normal build
     // succeeds -- one without the other is half a test. If `--cfg
     // seam_probe` silently stopped being applied, only checking the normal
-    // build would never notice.
+    // build would never notice. The normal build of the root crate builds
+    // every crate below it too.
     let (normal_succeeded, normal_locations, normal_stderr) =
-        build_and_collect_e0004(workspace_root, "")?;
+        build_and_collect_e0004(workspace_root, "quire-spec-language", "")?;
     if !normal_succeeded {
         if offline_registry_unavailable(&normal_stderr) {
             return Err(Error::SeamProbeOfflineRegistryUnavailable {
@@ -345,15 +370,19 @@ pub fn run(workspace_root: &Path) -> Result<String> {
             locations: format!("{normal_locations:?}"),
         });
     }
-    let (probe_succeeded, probe_locations, probe_stderr) =
-        build_and_collect_e0004(workspace_root, "--cfg seam_probe")?;
-    if probe_succeeded {
-        return Err(Error::SeamProbeBuildUnexpectedlySucceeded);
-    }
-    if probe_locations.is_empty() && offline_registry_unavailable(&probe_stderr) {
-        return Err(Error::SeamProbeOfflineRegistryUnavailable {
-            stderr: probe_stderr,
-        });
+    let mut probe_locations = BTreeSet::new();
+    for (package, rustflags) in PROBE_BUILDS {
+        let (probe_succeeded, locations, probe_stderr) =
+            build_and_collect_e0004(workspace_root, package, rustflags)?;
+        if probe_succeeded {
+            return Err(Error::SeamProbeBuildUnexpectedlySucceeded);
+        }
+        if locations.is_empty() && offline_registry_unavailable(&probe_stderr) {
+            return Err(Error::SeamProbeOfflineRegistryUnavailable {
+                stderr: probe_stderr,
+            });
+        }
+        probe_locations.extend(locations);
     }
     let checked_in = checked_in_locations();
     let unexpected_but_present: Vec<_> = probe_locations.difference(&checked_in).cloned().collect();
@@ -365,10 +394,10 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         });
     }
     Ok(format!(
-        "seam-probe: {} checked-in S1/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe; \
-         normal build has none. `stage_hooks`'s former second S1 location is deleted (PR #262 \
-         review F7). S2/S3 (QSL-143) and S4 (no cause-bearing family yet) are not covered by \
-         this checked-in list.\n",
+        "seam-probe: {} checked-in S1/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe \
+         (qsl-semantics, then quire-spec-language); normal build has none. `stage_hooks`'s former \
+         second S1 location is deleted (PR #262 review F7). S2/S3 (QSL-143) and S4 (no \
+         cause-bearing family yet) are not covered by this checked-in list.\n",
         checked_in.len()
     ))
 }

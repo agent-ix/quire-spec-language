@@ -141,11 +141,22 @@ impl FamilyKind {
             Self::TemporalTrace => "temporal-trace",
             Self::ProtocolClause => "protocol-clause",
             Self::Relation => "relation",
-            // FR-063: no arm for `Self::__SeamProbe` -- under
-            // `--cfg seam_probe` this match is deliberately
-            // non-exhaustive (`E0004`), the seam probe's evidence for the
-            // "`FamilyKind` prefix arm of `catalog_code()`" seam
-            // (ADR-012 §5.1 S1). Do not add a catch-all to make it compile.
+            // FR-063: no arm for `Self::__SeamProbe` under `--cfg
+            // seam_probe` alone -- this match is deliberately
+            // non-exhaustive (`E0004`) in `xtask seam-probe`'s build of this
+            // crate, the seam probe's evidence for the "`FamilyKind` prefix
+            // arm of `catalog_code()`" seam (ADR-012 §5.1 S1). Do not add a
+            // catch-all to make it compile.
+            //
+            // The arm below exists only in the probe's build of the crates
+            // that depend on this one (`--cfg seam_probe --cfg
+            // seam_probe_downstream`): they match over this crate's probe
+            // variants (`Capability`, `WrongSnapshotCause`, `FamilyOutcome`),
+            // so this crate must compile there for their `E0004`s to be
+            // reported at all (QSL-181: one crate's failed build stops every
+            // crate above it).
+            #[cfg(seam_probe_downstream)]
+            Self::__SeamProbe => "__seam_probe__",
         }
     }
 }
