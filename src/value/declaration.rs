@@ -2,35 +2,21 @@
 //! The FR-143 declared record, tuple and model object-type registry, and
 //! the FR-149 checked equality layer over it.
 //!
-//! ADR-011 §6.1 (:656-657): "`TypeEnvironment` and `ObjectTypeDeclaration`
-//! in `composite` are not kernel types and stay in layer 3." QSL-131 K3
-//! moved both, with their "friends" (`CompositeDeclaration`,
-//! `CompositeShape`, `InvalidDeclaration`, `RecursionEdges`,
-//! `DeclarationCause`), out of the K-designated `value::composite`; and
-//! moved the check-level equality layer (`EqualityOperator`,
-//! `EqualityOperand`, `EqualitySchedule`, `CheckedEquality`,
-//! `TypeEnvironment::check_equality`, `admits_equality_conversion`,
-//! `operand_value`) out of the K-designated `value::equality`, into this
-//! one new file. Both halves are a pure move: still over QSL's own
-//! `Value`/`ValueType` (`value::composite`'s module doc), behaviour
-//! unchanged.
+//! It owns the registry (`TypeEnvironment`, `ObjectTypeDeclaration`,
+//! `CompositeDeclaration`, `CompositeShape`, `InvalidDeclaration`,
+//! `RecursionEdges`, `DeclarationCause`) and the check-level equality layer
+//! (`EqualityOperator`, `EqualityOperand`, `EqualitySchedule`,
+//! `CheckedEquality`, `TypeEnvironment::check_equality`,
+//! `admits_equality_conversion`, `operand_value`). None of these are kernel
+//! types (ADR-011 §6.1: "`TypeEnvironment` and `ObjectTypeDeclaration` ...
+//! are not kernel types and stay in layer 3"), so this is a layer-3
+//! `semantic_value` module, over this crate's own `Value`/`ValueType`
+//! (`value::composite`'s module doc).
 //!
-//! ADR-011 §6.2 names `semantic_value`'s module set as `value`'s six
-//! non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`,
-//! `key`, `reference`. This file is not one of those six -- it did not
-//! exist when that row was written -- but belongs to the same layer-3
-//! `semantic_value` set by the same test §6.1 applies to `composite`'s
-//! registry: it is QSL-only, never a kernel type, and stays there
-//! permanently, not merely until some future cut. Named `declaration`,
-//! matching that set's single-lowercase-noun convention (`definition`
-//! already names the sibling package-catalog concept, so this file names
-//! the composite/object-type *declaration* registry and what checks
-//! equality between declared types, not to be confused with it).
-//!
-//! `plan_pairs`/`planned_equality`/`plan_equality` themselves stay in
-//! `value::equality`: they walk this crate's own `Value` directly, with no
-//! dependency on a `TypeEnvironment` or a checked type, so they are not
-//! part of this "checked type" layer -- remaining work, Linear QSL-131.
+//! The equality layer lives here because it is parameterized over a
+//! `TypeEnvironment` and a checked `ValueType`. The occurrence-pair walk it
+//! schedules (`plan_pairs`/`planned_equality`/`plan_equality`) takes only a
+//! pair of completed `Value`s and is owned by `value::equality`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,8 +27,8 @@ use quire_exact::{
 };
 
 use super::composite::{
-    composite, match_names, Component, ConstructionCause, ConstructionRefusal, Deferred,
-    FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
+    composite, fill_slots, match_names, refuse, retain_composite, Component, ConstructionCause,
+    ConstructionRefusal, Deferred, FieldDeclaration, FieldExpression, FieldValue, Value, ValueType,
 };
 use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::compare_enum;
@@ -677,7 +663,7 @@ impl TypeEnvironment {
         let Some(CompositeShape::Record(declared)) = self.shape(declaration) else {
             return refuse(Component::Value, ConstructionCause::UnknownDeclaration);
         };
-        let slots = super::composite::fill_slots(declared, fields)?;
+        let slots = fill_slots(declared, fields)?;
         Ok(composite(declaration, slots))
     }
 
@@ -746,7 +732,7 @@ impl TypeEnvironment {
             };
             slots.push(slot);
         }
-        Ok(Outcome::from_stop(super::composite::retain_composite(
+        Ok(Outcome::from_stop(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
         )))
@@ -769,7 +755,7 @@ impl TypeEnvironment {
                 Err(stop) => return Ok(Outcome::from_stop(Err(stop))),
             }
         }
-        Ok(Outcome::from_stop(super::composite::retain_composite(
+        Ok(Outcome::from_stop(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
         )))
@@ -809,9 +795,8 @@ fn duplicate_name(fields: &[FieldDeclaration]) -> Option<String> {
 }
 
 /// The completed value of a deferred expression, which a checked program
-/// guarantees is a member of `value_type`. Stays with the registry (not
-/// `composite.rs`): its only callers are `evaluate_record`/`evaluate_tuple`
-/// below.
+/// guarantees is a member of `value_type`. Its only callers are
+/// `evaluate_record`/`evaluate_tuple` below.
 fn admitted(value_type: &ValueType, outcome: Outcome<Value>) -> Result<Value, Stop> {
     let value = outcome.into_stop()?;
     if value_type.admits(&value) {
@@ -819,10 +804,6 @@ fn admitted(value_type: &ValueType, outcome: Outcome<Value>) -> Result<Value, St
     } else {
         Err(Stop::Refused(Refusal::CheckedInvariant))
     }
-}
-
-fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, ConstructionRefusal> {
-    Err(ConstructionRefusal { component, cause })
 }
 
 /// The grammar's equality operators.

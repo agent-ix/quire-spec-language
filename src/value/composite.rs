@@ -4,7 +4,7 @@
 //!
 //! `ValueType`, `Value`, `OptionValue`, `FieldValue`, `FieldDeclaration` and
 //! `CompositeValue`, and the construction functions over them (`fill_slots`,
-//! `retain_composite`, the private `composite`/`match_names`/`refuse`), are
+//! `retain_composite`, the crate-internal `composite`/`match_names`/`refuse`), are
 //! the K-designated shadow of `quire_exact::value`: this crate's own cut,
 //! parameterized over this module's own `ValueType`/`Value`, not
 //! `quire_exact`'s. Per `quire_exact::value`'s own module doc, `ValueType::
@@ -16,16 +16,13 @@
 //! is `quire_exact`'s type here. Remaining work, Linear QSL-131.
 //!
 //! The registry that admits a closed set of these declarations
-//! (`TypeEnvironment`, `ObjectTypeDeclaration` and friends) is not a kernel
-//! type by design (ADR-013 O-15; ADR-011 §6.1) and never was a shadow of
-//! anything in `quire_exact` -- QSL-131 K3 moved it, and the FR-149
-//! check-level equality layer built on it, out of this K-designated file
-//! into `value::declaration`, a `semantic_value` file. `composite` (the
-//! private constructor) and `match_names` stay here as `pub(crate)`, since
-//! `declaration`'s `TypeEnvironment` construction methods still call them
-//! (`composite` is the only place that can build a
-//! [`CompositeValue`]'s private fields; `match_names` is shared, generic
-//! matching logic [`fill_slots`] also uses).
+//! (`TypeEnvironment`, `ObjectTypeDeclaration` and friends) and the FR-149
+//! check-level equality layer are not kernel types (ADR-013 O-15; ADR-011
+//! §6.1); `value::declaration` owns them. `composite`, `match_names`,
+//! `fill_slots`, `retain_composite` and `refuse` are `pub(crate)` because
+//! `declaration`'s `TypeEnvironment` construction methods call them:
+//! `composite` is the only place that can build a [`CompositeValue`]'s
+//! private fields.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -435,13 +432,17 @@ impl ConstructionRefusal {
     pub const CODE: &'static str = IllTyped::CODE;
 }
 
-fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, ConstructionRefusal> {
+/// Refuse construction of `component` with `cause`.
+pub(crate) fn refuse<T>(
+    component: Component,
+    cause: ConstructionCause,
+) -> Result<T, ConstructionRefusal> {
     Err(ConstructionRefusal { component, cause })
 }
 
 /// Index supplied entries by declared name, refusing an undeclared or
-/// repeated name. `pub(crate)`: also called by `value::declaration`'s
-/// `TypeEnvironment::evaluate_record` (QSL-131 K3), matching supplied
+/// repeated name. `value::declaration`'s `TypeEnvironment::evaluate_record`
+/// uses it to match supplied
 /// `FieldExpression`s to declared fields the same way this module's own
 /// [`fill_slots`] matches supplied `FieldValue`s.
 pub(crate) fn match_names<'n, T>(
@@ -498,10 +499,10 @@ pub(crate) fn slots_occ(slots: &[FieldValue]) -> Integer {
     })
 }
 
-/// `pub(crate)`: also called by `value::declaration`'s `TypeEnvironment`
-/// construction methods (QSL-131 K3), the only place outside this module
-/// that ever names a declaration key -- the field is otherwise unreachable,
-/// since [`CompositeValue`]'s own fields stay private to this module.
+/// Build a composite value of `declaration` from its slots. This is the only
+/// constructor of [`CompositeValue`], whose fields are private to this
+/// module; `value::declaration`'s `TypeEnvironment` construction methods
+/// call it.
 pub(crate) fn composite(declaration: NodeKey, slots: Box<[FieldValue]>) -> Value {
     let occ = slots_occ(&slots);
     Value::Composite(Arc::new(CompositeValue {

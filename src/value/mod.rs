@@ -145,10 +145,8 @@ pub use composite::{
 };
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
-// QSL-131 K3: the declaration registry (`TypeEnvironment`,
-// `ObjectTypeDeclaration` and friends, ADR-011 §6.1's "not kernel types")
-// and the FR-149 check-level equality layer built on it moved out of the
-// K-designated `composite`/`equality` into this one `semantic_value` file.
+// `declaration` owns the FR-143 registry and the FR-149 check-level
+// equality layer; neither is a kernel type (ADR-011 §6.1).
 pub use declaration::{
     admits_equality_conversion, CheckedEquality, CompositeDeclaration, CompositeShape,
     DeclarationCause, EqualityOperand, EqualityOperator, EqualitySchedule, InvalidDeclaration,

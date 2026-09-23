@@ -10,15 +10,12 @@
 //! itself is `quire_exact`'s type here: it wraps an `Integer` pair count with
 //! no dependency on either crate's `Value`.
 //!
-//! The type-checked layer built on these functions (`EqualityOperator`,
-//! `EqualityOperand`, `EqualitySchedule`, `CheckedEquality`,
-//! `TypeEnvironment::check_equality`, `admits_equality_conversion` and
-//! `operand_value`) moved to `value::declaration` in QSL-131 K3: unlike the
-//! functions that remain here, it is parameterized over a `TypeEnvironment`
-//! and a checked `ValueType`, not over a bare pair of completed `Value`s, so
-//! it belongs with the rest of the declaration registry rather than with
-//! this module's plain occurrence walk. What stays here has no such
-//! dependency and is not part of that move: remaining work, Linear QSL-131.
+//! These functions take only a pair of completed `Value`s. The type-checked
+//! layer built on them (`EqualityOperator`, `EqualityOperand`,
+//! `EqualitySchedule`, `CheckedEquality`, `TypeEnvironment::check_equality`,
+//! `admits_equality_conversion`, `operand_value`) is parameterized over a
+//! `TypeEnvironment` and a checked `ValueType`, so `value::declaration` owns
+//! it.
 
 use super::composite::{FieldValue, Value};
 use super::outcome::{Refusal, Stop};
@@ -39,9 +36,9 @@ pub fn plan_equality(left: &Value, right: &Value) -> Result<EqualityPlan, Refusa
     plan_pairs(left, right).map(|plan| EqualityPlan::new(plan.pairs))
 }
 
-/// The equality schedule over completed operands of one type. `pub(crate)`:
-/// also called by `value::declaration`'s `CheckedEquality::run` (QSL-131 K3)
-/// for the `EqualitySchedule::Plan` schedule.
+/// The equality schedule over completed operands of one type.
+/// `value::declaration`'s `CheckedEquality::run` uses it for the
+/// `EqualitySchedule::Plan` schedule.
 pub(crate) fn planned_equality(
     left: &Value,
     right: &Value,
