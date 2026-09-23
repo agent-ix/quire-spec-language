@@ -34,6 +34,19 @@ impl<T> Outcome<T> {
     }
 }
 
+/// A kernel outcome, carried over variant by variant. `Incomplete` is the
+/// kernel's own type on both sides.
+impl<T> From<quire_exact::Outcome<T>> for Outcome<T> {
+    fn from(outcome: quire_exact::Outcome<T>) -> Self {
+        match outcome {
+            quire_exact::Outcome::Completed(value) => Self::Completed(value),
+            quire_exact::Outcome::Undefined(reason) => Self::Undefined(reason.into()),
+            quire_exact::Outcome::Refused(reason) => Self::Refused(reason.into()),
+            quire_exact::Outcome::Incomplete(record) => Self::Incomplete(record),
+        }
+    }
+}
+
 impl<T> Outcome<T> {
     pub(crate) fn from_stop(result: Result<T, Stop>) -> Self {
         match result {
@@ -78,6 +91,20 @@ pub enum Undefined {
     /// for that receiver. Carries the `precondition-false`
     /// (`native-diagnostics.md`) payload.
     PreconditionFalse(Box<PreconditionFailure>),
+}
+
+/// Every kernel reason is a QSL reason of the same name. The match is
+/// exhaustive, so a variant added to the kernel fails to compile here.
+impl From<quire_exact::Undefined> for Undefined {
+    fn from(reason: quire_exact::Undefined) -> Self {
+        match reason {
+            quire_exact::Undefined::DivisionByZero => Self::DivisionByZero,
+            quire_exact::Undefined::IeeeNotFinite => Self::IeeeNotFinite,
+            quire_exact::Undefined::EmptyReduction => Self::EmptyReduction,
+            quire_exact::Undefined::NoneValue => Self::NoneValue,
+            quire_exact::Undefined::AbsentKey => Self::AbsentKey,
+        }
+    }
 }
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
@@ -181,6 +208,48 @@ pub enum Refusal {
     // resolve_population`, `expression/evaluate.rs`) is now an
     // `InternalFault`, never a kernel `Refused` outcome -- so this public
     // `Refusal` enum has no variant left for either case.
+}
+
+/// Every kernel refusal is a QSL refusal of the same name and payload. The
+/// match is exhaustive, so a variant added to the kernel fails to compile
+/// here. `BoundViolation`, `CardinalityBound`, `CollectionKind` and
+/// `IeeeFlags` are the kernel's own types on both sides.
+impl From<quire_exact::Refusal> for Refusal {
+    fn from(reason: quire_exact::Refusal) -> Self {
+        match reason {
+            quire_exact::Refusal::InexactDecimal => Self::InexactDecimal,
+            quire_exact::Refusal::DecimalOutOfDomain => Self::DecimalOutOfDomain,
+            quire_exact::Refusal::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            } => Self::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            },
+            quire_exact::Refusal::ModuloOutOfDomain => Self::ModuloOutOfDomain,
+            quire_exact::Refusal::TextLengthOutOfDomain => Self::TextLengthOutOfDomain,
+            quire_exact::Refusal::IntegerOutOfDomain => Self::IntegerOutOfDomain,
+            quire_exact::Refusal::RationalOutOfDomain => Self::RationalOutOfDomain,
+            quire_exact::Refusal::IeeeNotExact { would_be } => Self::IeeeNotExact { would_be },
+            quire_exact::Refusal::IeeeNanPayloadNotRepresentable => {
+                Self::IeeeNanPayloadNotRepresentable
+            }
+            quire_exact::Refusal::IeeeRationalOutOfDomain => Self::IeeeRationalOutOfDomain,
+            quire_exact::Refusal::ForeignReference => Self::ForeignReference,
+            quire_exact::Refusal::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            } => Self::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            },
+            quire_exact::Refusal::CheckedInvariant => Self::CheckedInvariant,
+        }
+    }
 }
 
 /// The closed code and FR-272 cause tag of an FR-153 population-query

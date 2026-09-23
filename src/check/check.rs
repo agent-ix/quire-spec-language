@@ -56,9 +56,9 @@ use crate::forms::{
 use crate::value::collection::CollectionType;
 use crate::value::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
 use crate::value::decimal::DecimalType;
+use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
 use crate::value::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
-use crate::value::ieee::AdmittedIeeeProfile;
 use crate::value::node::NodeKey;
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
 use qsl_foundation::absence::AbsenceMode;

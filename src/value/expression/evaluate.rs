@@ -778,8 +778,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Multiply => IeeeOperation::Multiply(left, right),
                     ArithmeticOperator::Divide => IeeeOperation::Divide(left, right),
                 };
-                let profile = self.scope.ieee_profile.as_ref().ok_or_else(invariant)?;
-                let result = evaluate_ieee(profile, operation, RoundingMode::Exact, self.meter)
+                if self.scope.ieee_profile.is_none() {
+                    return Err(invariant());
+                }
+                let result = evaluate_ieee(operation, RoundingMode::Exact, self.meter)
                     .map_err(|_| invariant())?
                     .into_stop()?;
                 if result.flags() != IeeeFlags::EMPTY {
@@ -961,15 +963,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Float(value) = self.pop()? else {
                     return Err(invariant());
                 };
-                let profile = self.scope.ieee_profile.as_ref().ok_or_else(invariant)?;
-                let exact = ieee_to_exact(
-                    profile,
-                    value,
-                    IeeeExactTarget::Rational(domain),
-                    self.meter,
-                )
-                .map_err(|_| invariant())?
-                .into_stop()?;
+                if self.scope.ieee_profile.is_none() {
+                    return Err(invariant());
+                }
+                let exact = ieee_to_exact(value, IeeeExactTarget::Rational(domain), self.meter)
+                    .map_err(|_| invariant())?
+                    .into_stop()?;
                 if let Some(loss) = exact.loss() {
                     self.record(node, ValueLoss::IeeeExact(loss));
                 }

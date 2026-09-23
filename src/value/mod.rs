@@ -91,7 +91,7 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-// PR #282 review, F2: these eleven submodules are `pub(crate)`, not private
+// PR #282 review, F2: these twelve submodules are `pub(crate)`, not private
 // `mod`, so `check`'s tier-1/tier-2 imports (FR-068's Behavior section, "The
 // layer-3 sibling imports `check.rs` keeps") can name them by their real,
 // submodule-qualified crate-absolute path (`crate::value::numeric::
@@ -107,8 +107,7 @@ pub(crate) mod collection;
 pub(crate) mod composite;
 mod containment;
 pub(crate) mod decimal;
-mod definition;
-mod division;
+pub(crate) mod definition;
 pub(crate) mod enumeration;
 pub(crate) mod equality;
 mod expression;
@@ -148,11 +147,10 @@ pub use composite::{
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 pub use decimal::{evaluate_decimal, DecimalLoss, DecimalResult, DecimalType};
 pub use definition::{
-    AdmittedIntegerDivision, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
-    DefinitionReference, DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
-    SelectionRefusalCode, Trigger,
+    divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
+    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
+    PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
 };
-pub use division::{divide, modulo, QuotientRemainder};
 pub use enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
@@ -206,9 +204,8 @@ pub use crate::forms::{
 };
 pub use ieee::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget,
-    IeeeFlag, IeeeOperand, IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue,
-    IEEE_DEFINITION,
+    ieee_to_exact, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget, IeeeFlag, IeeeOperand,
+    IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue, IEEE_DEFINITION,
 };
 pub use member::Member;
 pub use node::{
