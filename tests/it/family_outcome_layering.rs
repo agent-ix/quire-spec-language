@@ -259,7 +259,7 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// in `[dependencies]`, and has no `[build-dependencies]`. `qsl-eval` (layer
 /// 5, QSL-183) names exactly `qsl-attrs`, `qsl-foundation`, `qsl-package`,
 /// `qsl-semantics`, `quire-exact`, `serde`, `serde_json` and `thiserror` in
-/// `[dependencies]`; its `[dev-dependencies]` may also name the lower layer
+/// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layer
 /// `qsl-forms`. Every other
 /// workspace crate, `qsl-source` and this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
@@ -412,6 +412,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
+            );
+            assert!(
+                package.build.is_empty(),
+                "{crate_name}'s [build-dependencies]: {:?}",
+                package.build
             );
         }
         if crate_name == "qsl-route" {

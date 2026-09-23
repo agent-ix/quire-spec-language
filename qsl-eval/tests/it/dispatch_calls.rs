@@ -1886,7 +1886,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// parameter's declared `Reference<T>`, with no subtype allowance, so no
 /// top-level parameter binding can carry a `B` instance where the checked
 /// declaration says `Reference<A>` — the same boundary
-/// `tests/model_reference_queries.rs` documents as "the `TypeEnvironment`
+/// `qsl-eval/tests/it/model_reference_queries.rs` documents as "the `TypeEnvironment`
 /// island" for `allInstances`/`lookup`. Resolving a dispatch call's receiver
 /// against its instance's most-specific type end to end needs that same
 /// identity bridge (`crate::value::model_query`) or an equivalent, which is

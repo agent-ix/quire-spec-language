@@ -82,7 +82,7 @@
 //! each metered by its own [`AdmissionMeter`]) and attaches the pre binding
 //! to the post binding as its FR-153 [`PopulationBinding::pre_anchor`], so a
 //! `pre(..)`-anchored `allInstances`/`lookup` reads exactly the admitted pre
-//! population (`tests/model_reference_queries.rs`'s `l07_pre_*` tests). It
+//! population (`qsl-eval/tests/it/model_reference_queries.rs`'s `l07_pre_*` tests). It
 //! then runs two distinct checks over the two admitted bindings, both by
 //! `enforce_frame`:
 //!
@@ -117,7 +117,7 @@
 //! decision logic is mirrored here rather than called into directly).
 //!
 //! Switching a `pre(..)` expression's evaluation anchor between pre and post
-//! (`qsl_eval::value::expression::evaluate`'s `Anchor`/`Task::RestoreAnchor`) is
+//! (`qsl-eval`'s `value::expression::evaluate`'s `Anchor`/`Task::RestoreAnchor`) is
 //! not itself a charge: `value-accounting.md`'s "Model and graph evaluation"
 //! paragraph charges only static resolution, conformance, closure and
 //! foreign checks, and binding admission; selecting which already-admitted

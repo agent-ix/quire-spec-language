@@ -244,7 +244,7 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
 - T12-B reports its one debt-list function as debt:
-  `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
+  `qsl-eval`'s `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
   `value::enumeration`, `value::unit` and `value::node` entries, and
   QSL-131 V1 the `value::model_query` entry, by deleting their mints.
   T12-B fails on the one `value::application_key` mint QSL-156 A4a added

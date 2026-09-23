@@ -75,8 +75,9 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
   outside the workspace; its `[dev-dependencies]` may also name
   `qsl-forms`. `qsl-eval`'s `[dependencies]` are exactly `qsl-attrs`,
   `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-exact`, `serde`,
-  `serde_json` and `thiserror`; its `[dev-dependencies]` may also name
-  `qsl-forms`, and no other workspace crate. The root crate names
+  `serde_json` and `thiserror`, it has no `[build-dependencies]`, and its
+  `[dev-dependencies]` may also name `qsl-forms`, and no other workspace
+  crate. The root crate names
   `qsl-eval` in none of its tables: no root-crate code calls layer 5 yet.
 
 ## Status

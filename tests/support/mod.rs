@@ -42,6 +42,7 @@ pub mod package_vector_setup;
 pub mod protocol_artifact;
 pub mod standalone_setup;
 pub mod temporal;
+pub mod workspace;
 
 // See this module's own doc above: both are re-exports of copies nested
 // inside `standalone_setup`, not fresh `mod` declarations.

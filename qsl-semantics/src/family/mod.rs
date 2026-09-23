@@ -94,7 +94,7 @@ pub use outcome::{CheckOutcome, LimitExceeded, StageFailure, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at
-// `qsl_eval::value::expression::QualifiedName` today: it is `pub`, because
+// `qsl_eval::value::QualifiedName` today: it is `pub`, because
 // `CheckedPackage::call` -- the one entry point that needs it in this
 // ticket -- is part of `value::expression`'s own public API, and only
 // `Value`'s function family uses it yet. When the layer-6 `replay` facade

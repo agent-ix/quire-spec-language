@@ -8,7 +8,7 @@
 //! enforcement) is backed at this model layer below (the
 //! `l07_invocation_*` tests); the source-expression form of the same
 //! scenario (`Expression::Pre`, the real `Typer`/`Machine`) is
-//! `tests/model_reference_queries.rs`'s own `l07_pre_*` tests. L08 (FR-149
+//! `qsl-eval/tests/it/model_reference_queries.rs`'s own `l07_pre_*` tests. L08 (FR-149
 //! reference equality/upcast) and L10/L11 (`reaches`/`deref`, FR-043's graph
 //! navigation) stay out of this rung's scope.
 
@@ -2069,7 +2069,7 @@ fn invocation_context<'a>(
 /// the declared `deletes: [model.A]` grant -- and attaches the pre binding
 /// as the post binding's own `pre_anchor`, so `pre(allInstances(p))`/
 /// `pre(lookup(p, r) absent m)` (backed at the source-expression layer by
-/// `tests/model_reference_queries.rs`'s `l07_pre_*` tests) can read it. The
+/// `qsl-eval/tests/it/model_reference_queries.rs`'s `l07_pre_*` tests) can read it. The
 /// deleted object, `a2`, keeps its pre most-specific type in the attached
 /// pre anchor.
 ///

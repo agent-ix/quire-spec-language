@@ -294,7 +294,7 @@ delivered code today:
 - FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
   (`qsl-eval/src/value/expression/family.rs`) and
   `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
-  (`tests/dispatch_calls.rs`). Identity/provenance minting is the part this
+  (`qsl-eval/tests/it/dispatch_calls.rs`). Identity/provenance minting is the part this
   ticket actually delivers. **Rebuilt (PR #262 review, coordinator round
   3, finding 2).** The reordering half was previously backed by
   `identity_ignores_unrelated_declarations`
@@ -305,7 +305,7 @@ delivered code today:
   independent of. It is deleted; the reordering clause is now backed by a
   real fixture at the `PackageDeclarations::check` level (two functions,
   checked in both orders, `CheckedPackage::function_identity` compared
-  across both) in `tests/dispatch_calls.rs`, which also gives real test
+  across both) in `qsl-eval/tests/it/dispatch_calls.rs`, which also gives real test
   callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
   `decode_function_package_v2` (PR #262 review, coordinator round 3,
   finding 3).

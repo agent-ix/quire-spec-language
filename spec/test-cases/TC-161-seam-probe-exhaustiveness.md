@@ -117,7 +117,7 @@ deliver.
   corresponding location as unexpected-but-present.
 - Step 4: `xtask seam-probe` exits non-zero, naming that seam's location as
   expected-but-missing.
-- Step 5: both normal builds compile cleanly with zero `E0004` locations, so
+- Step 5: all three normal builds compile cleanly with zero `E0004` locations, so
   the probe variant is unreachable from any non-probe path in the builds
   that would actually catch it if it were not; the grep finds `seam_probe`
   set nowhere but `xtask seam-probe`'s own build invocation.

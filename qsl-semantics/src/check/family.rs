@@ -2616,7 +2616,7 @@ pub(crate) mod checking_tests {
     // two actual declarations checked in two actual orders, which
     // `mint_declaration_identity`'s single-declaration signature cannot
     // exercise -- see
-    // `tests/dispatch_calls.rs`'s
+    // `qsl-eval/tests/it/dispatch_calls.rs`'s
     // `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`,
     // built at the `PackageDeclarations::check` level instead, where
     // position could actually leak.

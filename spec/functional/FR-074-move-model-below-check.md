@@ -78,7 +78,7 @@ its one `check` dependency, since `semantic_value` does not exist yet.
   `DispatchBridgeRefusal`, `DispatchRoot`, `MissingClauseField`,
   `OperationClauses`) are re-exported from `check`'s own `mod.rs`, keeping
   the crate's public API for these items reachable at an equivalent path so
-  `tests/dispatch_calls.rs` continues to exercise them.
+  `qsl-eval/tests/it/dispatch_calls.rs` continues to exercise them.
 - `model::conformance::check_field_refinement_obligation`, with its seven
   exclusive helpers and one exclusive const, relocated to a new `check`
   submodule, re-exported the same way, so `tests/model_conformance.rs`
