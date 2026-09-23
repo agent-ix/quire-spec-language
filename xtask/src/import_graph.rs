@@ -969,7 +969,7 @@ fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
 /// `src/check/`, classified against the module-level layer rule, so one scan
 /// covers both `value`'s submodules and the `package`/`checked_package`/
 /// `route`/`replay`/`lowering` forbidden list. Inline paths resolve as
-/// [`FileEdges`] describes.
+/// `file_edges` describes.
 pub fn check_layer_edges(workspace_root: &Path) -> Result<Vec<LayerEdge>> {
     let submodule_reexports = value_submodule_reexports(workspace_root)?;
     let mut edges = Vec::new();
@@ -1015,7 +1015,7 @@ pub struct ResolvedPath {
 
 /// FR-090-AC-9/TC-390: every shipped `use` edge and inline path in each of
 /// `roots` (a `.rs` file or a directory, scanned recursively, relative to
-/// `workspace_root`), resolved as [`FileEdges`] describes.
+/// `workspace_root`), resolved as `file_edges` describes.
 pub fn resolved_paths(workspace_root: &Path, roots: &[&str]) -> Result<Vec<ResolvedPath>> {
     let mut paths = Vec::new();
     for root in roots {
