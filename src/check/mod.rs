@@ -1075,10 +1075,11 @@ mod tests {
     /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
     /// directly, which the prior version of this test read from.
     /// `checked_package` is `pub` at the crate root and this test module is
-    /// `#[cfg(test)]` (excluded from the FR-068-AC-6 `check_package_import_edges`
-    /// scan, whose own doc says so), so this is not a `check` ->
-    /// `checked_package` production edge (QSL-182 prep: relocated out of
-    /// `package` into its own sibling module, same non-edge either way).
+    /// `#[cfg(test)]` (excluded from the FR-068-AC-6 layer rule's
+    /// `check_layer_edges` scan, which covers shipped code only), so this
+    /// is not a `check` -> `checked_package` production edge (QSL-182 prep:
+    /// relocated out of `package` into its own sibling module, same
+    /// non-edge either way).
     #[trace("TC-248", "FR-088-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {

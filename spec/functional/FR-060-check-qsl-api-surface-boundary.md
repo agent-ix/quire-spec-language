@@ -91,8 +91,9 @@ four rules:
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.
 T12-C's pattern matches `EffectiveId::from_digest`, called or passed as a
-function value. T12-D's pattern is `PopulationId::from_digest(`, the kernel `PopulationId`'s
-one public constructor.
+function value. T12-D's pattern matches `PopulationId::from_digest`, the kernel
+`PopulationId`'s one public constructor, called or passed as a function
+value.
 
 ### T12-B: only `check` mints `NodeKey`
 
@@ -176,17 +177,26 @@ A rule with no call site outside its allowed callers SHALL report **passing**.
 
 ### Scanning method and its stated limitations
 
-The check SHALL scan source text for each rule's literal call patterns. It
-does not resolve import aliases or macro-expanded call sites; a call reached
+T12-B, T12-C and T12-D SHALL match each call pattern against the source
+file's tokens, not its text: `NodeKey::from_digest` is the token sequence
+`NodeKey`, `::`, `from_digest`. A comment or doc comment is not a token and a
+string literal is a single token, so a pattern named inside either never
+matches. A call split across lines, a constructor passed as a function
+value, a qualified-path spelling (`<NodeKey>::from_digest`) and a call
+inside a macro invocation's arguments all match. The three rules scan
+shipped code only: items under `#[cfg(test)]` are excluded (Behavior,
+"T12-B and T12-C: shipped code and debt lists"). T12-D has no debt list, so
+any shipped mint outside `model` fails it.
+
+T12-A scans CG's source text for its literal patterns, so a match inside a
+comment or string literal is reported (a possible false positive), not
+excluded.
+
+No rule resolves an import alias of the protected type (`use
+quire_exact::NodeKey as K;` followed by `K::from_digest`); a call reached
 only through a renamed import is a known limitation of this check, not a
-silent pass. T12-A and T12-D do not exclude a call pattern's text when that
-text appears inside a comment or a string literal, rather than as real code;
-a match inside either is a known limitation of those rules (a possible false
-positive), not a resolved parse. T12-B and T12-C exclude comments, because a
-false positive outside a debt-list function fails them (Behavior, "T12-B and
-T12-C: shipped code and debt lists"); a match inside a string literal
-remains a known limitation of all four rules. The check's own report SHALL
-state these limitations (#249 review, MEDIUM-5).
+silent pass. The check's own report SHALL state these limitations (#249
+review, MEDIUM-5).
 
 ### Honest reporting of real findings
 
@@ -227,33 +237,27 @@ each list can only shrink.
 
 Specified and implemented under
 [#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
-`arch-lint api-surface` subcommand (`tools/arch-lint/api_surface.rs`), with a
-per-rule role (`--qsl`/`--cg`) and a `node_key_of(` call pattern added at
-#249 review (R1, HIGH-2/MEDIUM-4). T12-A is CG-role and live: its target
-`qsl-replay/src/lib.rs` exists, and it scans the checkout passed with `--cg
-<checkout>` (the Makefile's `CG_CLONE` variable); without one it reports not
-evaluated while the other three rules run. T12-C is
-QSL-role and live; its only shipped mints outside `model`, on `main` at
-`dccf9175` and on #335's branch alike, are its two debt-list functions
-(`src/value/model_query.rs` lines 124 and 156). T12-D is QSL-role, live, and passes
-with zero call sites: `quire-exact`'s `PopulationId::from_digest` (QSL-131
-Slice B) has no caller outside `model` (tests
-`tc_arch_lint_api_surface_012_population_id_disallowed_caller_is_a_violation`
-and `tc_arch_lint_api_surface_013_population_id_allowed_caller_is_not_a_violation`
-back its failing and passing paths).
+`arch-lint api-surface` subcommand (`tools/arch-lint/api_surface.rs`, its
+own workspace crate `arch-lint`), with a per-rule role (`--qsl`/`--cg`) and
+a `node_key_of(` call pattern added at #249 review (R1, HIGH-2/MEDIUM-4).
+T12-B, T12-C and T12-D match tokens in shipped code, with T12-B's and
+T12-C's named debt lists (Behavior, "T12-B and T12-C: shipped code and debt
+lists"; "Scanning method and its stated limitations").
 
-T12-B is QSL-role and live. Its shipped mints outside `check`, on `main` at
-`dccf9175` and on #335's branch alike, are in exactly the eight debt-list
-functions (Behavior, "T12-B and T12-C: shipped code and debt lists"). On
-#335's branch they are `value/enumeration.rs` 126 and 171, `value/unit.rs`
-207 and 320, `value/expression/family.rs` 232, `value/model_query.rs` 109,
-and `value/node.rs` 198 (`.map(NodeKey::from_digest)`) and 282.
+Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 
-**Amended by the layer-rule ruling (2026-09-22); not yet implemented.**
-`tools/arch-lint/api_surface.rs` still carries T12-B's former allow-list
-(`value::expression::check`, `check::checked_dispatch`, `value::node`) and
-patterns (`NodeKey::of(`, `NodeKey::from_bytes(`, `node_key_of(`) that omit
-`from_digest` and `from_hex` and require an opening parenthesis, scans
-`#[cfg(test)]` code and comments, and has no debt lists. Remediating the
-debt-list sites is #211/#213's work, not this requirement's. Remaining work:
-#211, gate rewrite.
+- T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
+  with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
+  not evaluated and the run exits 2 while the other three rules run.
+- T12-B passes. Its eight debt-list functions are reported as debt:
+  `value/enumeration.rs` 126 and 171, `value/unit.rs` 207 and 320,
+  `value/node.rs` 198 (`.map(NodeKey::from_digest)`) and 277,
+  `value/model_query.rs` 109, and `value/expression/family.rs` 225.
+- T12-C passes. Its two debt-list functions are reported as debt:
+  `value/model_query.rs` 124 and 156.
+- T12-D passes with zero call sites. Its only `PopulationId::from_digest`
+  outside `model`, `src/value/expression/evaluate.rs`, is a test literal
+  inside `#[cfg(test)]`.
+
+Remediating the debt-list sites is #211/#213's work, not this requirement's.
+Remaining work: #211.

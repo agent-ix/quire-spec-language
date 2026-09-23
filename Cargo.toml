@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay"]
 resolver = "2"
 
 [package]
@@ -82,13 +82,6 @@ path = "src/main.rs"
 [[bin]]
 name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
-
-# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
-# checks over the QSL/IR/RT/CG ecosystem. Self-contained (does not link
-# `quire-spec-language`); see tools/arch-lint/main.rs.
-[[bin]]
-name = "arch-lint"
-path = "tools/arch-lint/main.rs"
 
 # QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for

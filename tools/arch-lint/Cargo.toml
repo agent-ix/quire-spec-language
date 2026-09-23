@@ -1,0 +1,35 @@
+[package]
+name = "arch-lint"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "FR-059/FR-060/FR-061 architecture-conformance checks over the QSL/IR/RT/CG ecosystem."
+
+# A workspace member of its own, like `xtask`, so its `syn`/`proc-macro2`
+# dependencies stay out of the `quire-spec-language` library's dependency
+# graph.
+[[bin]]
+name = "arch-lint"
+path = "main.rs"
+
+[dependencies]
+serde_json = { version = "=1.0.151" }
+thiserror = "=2.0.20"
+# FR-060 T12-B/T12-C/T12-D parse and tokenize QSL source: `#[cfg(test)]`
+# exclusion, enclosing-function resolution, and token-level pattern matching.
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+# `span-locations` gives each token its real source line.
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+tempfile = "=3.27.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

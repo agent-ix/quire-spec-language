@@ -120,11 +120,15 @@ ci-docs:
 ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe route-lint cargo-deny-bans ci-docs
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
-# checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059 and
-# FR-060 report real, already-tracked findings against QSL's own current
-# head (ADR-011 OBS-029, ADR-013 OBS-018), owned by #213/#211, not by this
-# target's caller. `arch-lint-direction` needs real local checkouts of the
-# three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+# checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059
+# reports real, already-tracked findings against QSL's own current head
+# (ADR-011 OBS-029), owned by #213, not by this target's caller.
+# `arch-lint-direction` needs real local checkouts of the three backend
+# repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+#
+# FR-060 T12-B/T12-C: `NodeKey`'s and `EffectiveId`'s mints outside
+# `check`/`model` (ADR-013 OBS-018 and FB-13) are a named, shrinking debt
+# list, reported as debt, not failures.
 # `arch-lint-api-surface`'s T12-A rule is CG-side (#249 review, HIGH-2/
 # MEDIUM-4): it scans CG_CLONE for calls into the `qsl-replay` facade crate.
 # Without CG_CLONE, T12-A reports NOT EVALUATED, T12-B, T12-C and T12-D still
@@ -132,16 +136,15 @@ ci: check-no-committed-binaries check-index-completeness ci-default-features ci-
 #
 # `arch-lint` (this repo's own checks: api-surface, duplicate-revisions on
 # QSL's own root lock, and duplicate-revisions on the current-head lane's own
-# lock) exits 1 by design today: T12-B and T12-C's real, already-tracked
-# findings above make `arch-lint-api-surface` fail, and QSL's own root
-# Cargo.lock's deliberate double pin of the IR repository
-# (`quire-contract-ir` vs. `quire-contract-model`, #249 review R2) makes
-# `arch-lint-duplicate-revisions` fail. `arch-lint-duplicate-revisions-lane`
+# lock) exits non-zero today: QSL's own root Cargo.lock's deliberate double
+# pin of the IR repository (`quire-contract-ir` vs. `quire-contract-model`,
+# #249 review R2) makes `arch-lint-duplicate-revisions` fail, and
+# `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
+# above. `arch-lint-duplicate-revisions-lane`
 # passes (R3: the lane's own lock converges via its own [patch] table) and is
 # included here so that convergence is routinely enforced, not merely
-# checkable on request. Neither of the two failing checks is remediated by
-# this target's caller. `arch-lint` joins `ci:` once #211/#213 remediate both.
-# Remaining work: #211.
+# checkable on request. `arch-lint` joins `ci:` once #211 remediates the
+# lockfile pin and a `CG_CLONE` checkout is routinely available.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
@@ -149,21 +152,21 @@ CG_CLONE ?=
 .PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane
 
 arch-lint-direction:
-	cargo run --locked --bin arch-lint -- direction \
+	cargo run --locked -p arch-lint -- direction \
 		--qsl . --ir $(IR_CLONE) --rt $(RT_CLONE) --cg $(CG_CLONE)
 
 arch-lint-api-surface:
-	cargo run --locked --bin arch-lint -- api-surface --qsl . $(if $(CG_CLONE),--cg $(CG_CLONE))
+	cargo run --locked -p arch-lint -- api-surface --qsl . $(if $(CG_CLONE),--cg $(CG_CLONE))
 
 arch-lint-duplicate-revisions:
-	cargo run --locked --bin arch-lint -- duplicate-revisions --lockfile Cargo.lock
+	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
 
 # FR-061 (#249 review R3): the current-head lane's own Cargo.lock is in scope
 # too -- it converges on one revision per ecosystem repository via the lane's
 # own [patch] table (integration/current-head/Cargo.toml), independent of the
 # root workspace's lock this target above checks.
 arch-lint-duplicate-revisions-lane:
-	cargo run --locked --bin arch-lint -- duplicate-revisions \
+	cargo run --locked -p arch-lint -- duplicate-revisions \
 		--lockfile integration/current-head/Cargo.lock
 
 # Runs the three checks that need only this repository (#249 review round 2

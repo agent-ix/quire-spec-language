@@ -181,10 +181,12 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     let mut summary = String::new();
     summary.push_str("FR-060 API-surface check (ADR-011 T-12)\n");
     summary.push_str(
-        "  Note: this is a textual scan. It does not resolve `use ... as` renamed \
-         imports or macro-expanded call sites, and it does not skip a call pattern \
-         found inside a comment or string literal -- both are stated limitations of \
-         this check, not silent gaps.\n",
+        "  Note: T12-B, T12-C and T12-D match source tokens in shipped code: comments, \
+         string literals and `#[cfg(test)]` items are excluded, and each mint's enclosing \
+         function is resolved against a named, shrinking debt list. T12-A is a textual \
+         scan of the CG tree, so a match inside a comment or string literal is reported. \
+         No rule resolves a `use ... as` rename of the constructor's type -- a stated \
+         limitation of this check, not a silent gap.\n",
     );
     let mut all_passed = true;
     // Flags a rule needed but was not given. Every rule is still evaluated,
@@ -217,7 +219,7 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                     missing_flags.push(flag);
                 }
             }
-            api_surface::RuleStatus::Live if outcome.violations.is_empty() => {
+            api_surface::RuleStatus::Live if passed => {
                 summary.push_str(&format!(
                     "  {} [{}]: PASS\n",
                     outcome.rule_id, rule.description
@@ -230,13 +232,32 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
                 ));
                 for site in &outcome.violations {
                     summary.push_str(&format!(
-                        "    {}:{} (module {})\n",
+                        "    {}:{} (module {}{})\n",
                         site.file.display(),
                         site.line,
-                        site.module
+                        site.module,
+                        if site.function.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", fn {}", site.function)
+                        }
+                    ));
+                }
+                for (module, function) in &outcome.stale_debt_entries {
+                    summary.push_str(&format!(
+                        "    stale debt entry, no remaining mint: {module}, fn {function}\n"
                     ));
                 }
             }
+        }
+        for site in &outcome.debt {
+            summary.push_str(&format!(
+                "    debt: {}:{} (module {}, fn {})\n",
+                site.file.display(),
+                site.line,
+                site.module,
+                site.function
+            ));
         }
         if let Some(note) = rule.scope_note {
             summary.push_str(&format!("    (not evaluated for every role: {note})\n"));
@@ -382,8 +403,8 @@ mod tests {
         assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
         assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
         assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
-        assert!(report.contains("model_query.rs:2 (module value::model_query)"));
-        assert!(report.contains("model_query.rs:3 (module value::model_query)"));
+        assert!(report.contains("model_query.rs:2 (module value::model_query, fn f)"));
+        assert!(report.contains("model_query.rs:3 (module value::model_query, fn f)"));
         assert!(report.ends_with("missing input: pass --cg to evaluate every rule"));
     }
 }

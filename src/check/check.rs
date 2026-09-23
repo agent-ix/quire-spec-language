@@ -55,7 +55,7 @@ use crate::forms::{
 };
 use crate::value::collection::CollectionType;
 use crate::value::comparison::IllTypedCause;
-use crate::value::composite::{CompositeShape, TypeEnvironment, Value, ValueType};
+use crate::value::composite::{CompositeShape, Presence, TypeEnvironment, Value, ValueType};
 use crate::value::decimal::DecimalType;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
 use crate::value::equality::{admits_equality_conversion, EqualityOperand, EqualityOperator};
@@ -1617,7 +1617,7 @@ impl<'a> Typer<'a> {
                         .find(|attribute| attribute.name() == field)
                 })
                 .ok_or_else(|| mismatch(location))?;
-            let optional = attribute.presence() == crate::value::Presence::Optional;
+            let optional = attribute.presence() == Presence::Optional;
             let value_type = if optional {
                 ValueType::option(attribute.value_type().clone())
             } else {
@@ -1650,7 +1650,7 @@ impl<'a> Typer<'a> {
             .enumerate()
             .find(|(_, declared)| declared.name() == field)
             .ok_or_else(|| mismatch(location))?;
-        let optional = declared.presence() == crate::value::Presence::Optional;
+        let optional = declared.presence() == Presence::Optional;
         let value_type = if optional {
             ValueType::option(declared.value_type().clone())
         } else {
@@ -1851,7 +1851,7 @@ impl<'a> Typer<'a> {
             if slot.is_some() {
                 return Err(mismatch(&field_location));
             }
-            let optional = declaration.presence() == crate::value::Presence::Optional;
+            let optional = declaration.presence() == Presence::Optional;
             *slot = Some(match initializer {
                 FieldInitializer::Null if optional => RecordSlot::Null,
                 FieldInitializer::Null => return Err(mismatch(&field_location)),
@@ -1864,9 +1864,7 @@ impl<'a> Typer<'a> {
         for (declaration, slot) in declared.iter().zip(supplied) {
             slots.push(match slot {
                 Some(slot) => slot,
-                None if declaration.presence() == crate::value::Presence::Optional => {
-                    RecordSlot::Absent
-                }
+                None if declaration.presence() == Presence::Optional => RecordSlot::Absent,
                 None => return Err(mismatch(location)),
             });
         }
