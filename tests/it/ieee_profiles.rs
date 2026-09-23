@@ -10,7 +10,6 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
@@ -25,10 +24,10 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, AdmittedIeeeProfile, CatalogRole, DecimalType, DefinitionLock,
-    DefinitionReference, DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact,
-    IeeeExactTarget, IeeeFlag, IeeeOperand, IeeeResult, IeeeValue, Outcome, PackageCause,
-    PackageRefusalCode, RationalDomain, Refusal, Undefined, IEEE_DEFINITION,
+    ieee_to_exact, CatalogRole, DecimalType, DefinitionLock, DefinitionReference,
+    DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget, IeeeFlag,
+    IeeeOperand, IeeeResult, IeeeValue, Outcome, PackageCause, PackageRefusalCode, RationalDomain,
+    Refusal, Undefined, IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -123,21 +122,12 @@ fn every_finite_ieee() -> RationalDomain {
 }
 
 fn to_rational(value: IeeeValue, domain: &RationalDomain, meter: &mut Meter) -> Outcome<IeeeExact> {
-    ieee_to_exact(profile(), value, IeeeExactTarget::Rational(domain), meter)
+    ieee_to_exact(value, IeeeExactTarget::Rational(domain), meter)
         .expect("a Rational[..] target is well-typed")
 }
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
-}
-
-fn profile() -> &'static AdmittedIeeeProfile {
-    static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
-    PROFILE.get_or_init(|| {
-        let lock = DefinitionLock::pinned();
-        lock.admit_ieee_profile(&[ieee_reference(lock)], &[])
-            .unwrap()
-    })
 }
 
 /// A well-formed [`DefinitionReference`] for the IEEE profile role, built
@@ -175,7 +165,7 @@ fn eval_with(
     mode: RoundingMode,
     meter: &mut Meter,
 ) -> Outcome<IeeeResult> {
-    evaluate_ieee(profile(), operation, mode, meter).expect("same-width operands")
+    evaluate_ieee(operation, mode, meter).expect("same-width operands")
 }
 
 fn eval(operation: IeeeOperation, mode: RoundingMode) -> Outcome<IeeeResult> {
@@ -195,13 +185,7 @@ fn bits_flags(outcome: Outcome<IeeeResult>) -> (u64, IeeeFlags) {
 }
 
 fn compare(comparison: IeeeComparison, left: IeeeValue, right: IeeeValue) -> bool {
-    match compare_ieee(
-        profile(),
-        comparison,
-        left,
-        right,
-        &mut Meter::new(UNLIMITED),
-    ) {
+    match compare_ieee(comparison, left, right, &mut Meter::new(UNLIMITED)) {
         Ok(Outcome::Completed(value)) => value,
         other => panic!("{comparison:?}: {other:?}"),
     }
@@ -299,7 +283,7 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
     for comparison in IeeeComparison::ALL {
         let mut meter = Meter::new(UNLIMITED);
         assert_eq!(
-            compare_ieee(profile(), comparison, narrow, wide, &mut meter),
+            compare_ieee(comparison, narrow, wide, &mut meter),
             Err(ill_typed)
         );
         assert!(meter.admitted_charges().is_empty());
@@ -307,7 +291,6 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
         evaluate_ieee(
-            profile(),
             IeeeOperation::Add(narrow, wide),
             RoundingMode::NearestEven,
             &mut meter
@@ -317,7 +300,6 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
     assert!(meter.admitted_charges().is_empty());
 
     let converted = done(convert_ieee_width(
-        profile(),
         narrow,
         IeeeWidth::Binary64,
         RoundingMode::Exact,
@@ -583,7 +565,6 @@ fn f15_f16_exact_subnormals_raise_nothing_and_tiny_inexact_underflows() {
 fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     let nan_equal = |meter: &mut Meter| {
         compare_ieee(
-            profile(),
             IeeeComparison::NumericEqual,
             f32v(0x7fc0_0001),
             f32v(0x3f80_0000),
@@ -820,9 +801,8 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
 #[trace("TC-193", "FR-148-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
-    let convert = |value, target, mode| {
-        convert_ieee_width(profile(), value, target, mode, &mut Meter::new(UNLIMITED))
-    };
+    let convert =
+        |value, target, mode| convert_ieee_width(value, target, mode, &mut Meter::new(UNLIMITED));
     let even = RoundingMode::NearestEven;
     assert_eq!(
         bits_flags(convert(
@@ -923,7 +903,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
             denominator.to_string().parse().unwrap(),
         )
         .unwrap();
-        exact_to_ieee(profile(), &value, width, mode, &mut Meter::new(UNLIMITED))
+        exact_to_ieee(&value, width, mode, &mut Meter::new(UNLIMITED))
     };
     let int = BigInt::from;
     assert_eq!(
@@ -1004,7 +984,6 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
             );
             let mut meter = Meter::new(UNLIMITED);
             let back = done(exact_to_ieee(
-                profile(),
                 exact.value(),
                 width,
                 RoundingMode::Exact,
@@ -1022,17 +1001,12 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
             assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
             for (index, point) in FINITE_CHARGES.into_iter().enumerate() {
                 assert_denied(
-                    exact_to_ieee(profile(), exact.value(), width, even, &mut injected(point)),
+                    exact_to_ieee(exact.value(), width, even, &mut injected(point)),
                     point,
                     index as u64,
                 );
-                let widened = convert_ieee_width(
-                    profile(),
-                    value,
-                    IeeeWidth::Binary64,
-                    even,
-                    &mut injected(point),
-                );
+                let widened =
+                    convert_ieee_width(value, IeeeWidth::Binary64, even, &mut injected(point));
                 assert_denied(widened, point, index as u64);
             }
             for (index, point) in TO_EXACT_CHARGES.into_iter().enumerate() {
@@ -1712,7 +1686,6 @@ fn a_largest_scale_decimal_source_is_sized_without_materializing_its_power() {
     let mut meter = Meter::new(limits(64, 1, 4, 1));
     assert_eq!(
         exact_to_ieee(
-            profile(),
             &source,
             IeeeWidth::Binary64,
             RoundingMode::NearestEven,
@@ -1736,7 +1709,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         let mut meter = Meter::new(limits(0, 0, 0, 0));
         assert_eq!(
             compare_ieee(
-                profile(),
                 comparison,
                 f32v(0x3f80_0000),
                 f64v(0x3ff0_0000_0000_0000),
@@ -1764,7 +1736,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
     for (attempt, cause) in [
         (
             evaluate_ieee(
-                profile(),
                 IeeeOperation::Add(f32v(0x3f80_0000), wide),
                 RoundingMode::NearestEven,
                 &mut Meter::new(limits(0, 0, 0, 0)),
@@ -1774,7 +1745,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         ),
         (
             evaluate_ieee(
-                profile(),
                 IeeeOperation::Add(
                     IeeeOperand::Ieee(f32v(0x3f80_0000)),
                     IeeeOperand::Exact(ExactScalar::from(&one)),
@@ -1787,7 +1757,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         ),
         (
             compare_ieee(
-                profile(),
                 IeeeComparison::NumericEqual,
                 f32v(0x3f80_0000),
                 ExactScalar::from(&one),
@@ -1798,7 +1767,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         ),
         (
             ieee_to_exact(
-                profile(),
                 f32v(0x3f80_0000),
                 IeeeExactTarget::Decimal(&decimal),
                 &mut Meter::new(limits(0, 0, 0, 0)),
@@ -1808,7 +1776,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         ),
         (
             ieee_to_exact(
-                profile(),
                 f32v(0x3f80_0000),
                 IeeeExactTarget::BoundedInteger(&bit),
                 &mut Meter::new(limits(0, 0, 0, 0)),
@@ -1818,7 +1785,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
         ),
         (
             ieee_to_exact(
-                profile(),
                 f32v(0x3f80_0000),
                 IeeeExactTarget::Integer,
                 &mut Meter::new(limits(0, 0, 0, 0)),
@@ -1933,7 +1899,6 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     let mut meter = Meter::new(limits(64, 1, 4, 1));
     assert_eq!(
         bits_flags(convert_ieee_width(
-            profile(),
             f32v(0x3f80_0000),
             IeeeWidth::Binary64,
             even,
@@ -1944,7 +1909,6 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
     assert_eq!(
         convert_ieee_width(
-            profile(),
             f32v(0x3f80_0000),
             IeeeWidth::Binary64,
             even,
@@ -1960,7 +1924,6 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     );
     assert_eq!(
         convert_ieee_width(
-            profile(),
             f64v(0x3ff0_0000_0000_0000),
             IeeeWidth::Binary32,
             even,
@@ -1978,19 +1941,12 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
     let third = Rational::new(Integer::from(1_i64), Integer::from(3_i64)).unwrap();
     let mut meter = Meter::new(limits(32, 1, 4, 1));
     assert_eq!(
-        bits_flags(exact_to_ieee(
-            profile(),
-            &third,
-            IeeeWidth::Binary32,
-            even,
-            &mut meter
-        )),
+        bits_flags(exact_to_ieee(&third, IeeeWidth::Binary32, even, &mut meter)),
         (0x3eaa_aaab, flags(&[IeeeFlag::Inexact]))
     );
     assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
     assert_eq!(
         exact_to_ieee(
-            profile(),
             &third,
             IeeeWidth::Binary32,
             even,
@@ -2050,13 +2006,7 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
         ),
     ] {
         let mut meter = Meter::new(limits(limit_bits, 1, 2, 1));
-        let result = done(convert_ieee_width(
-            profile(),
-            source,
-            target,
-            even,
-            &mut meter,
-        ));
+        let result = done(convert_ieee_width(source, target, even, &mut meter));
         assert_eq!((result.value().bits(), result.flags()), (expected, raised));
         assert_eq!(result.value().width(), target);
         assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
@@ -2065,19 +2015,12 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
     let wide_payload = f64v(0x7ff8_0000_0040_0000);
     let mut meter = Meter::new(limits(64, 1, 1, 0));
     assert_eq!(
-        convert_ieee_width(
-            profile(),
-            wide_payload,
-            IeeeWidth::Binary32,
-            even,
-            &mut meter
-        ),
+        convert_ieee_width(wide_payload, IeeeWidth::Binary32, even, &mut meter),
         Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
     );
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
     assert_eq!(
         convert_ieee_width(
-            profile(),
             wide_payload,
             IeeeWidth::Binary32,
             even,
@@ -2101,7 +2044,6 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
     let mut meter = Meter::new(limits(64, 1, 1, 0));
     assert_eq!(
         convert_ieee_width(
-            profile(),
             f64v(0x7ff0_0000_0040_0000),
             IeeeWidth::Binary32,
             even,
@@ -2119,7 +2061,6 @@ fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
     let mut meter = Meter::new(limits(64, 1, 4, 1));
     assert_eq!(
         bits_flags(convert_ieee_width(
-            profile(),
             f32v(0x8000_0000),
             IeeeWidth::Binary64,
             even,
@@ -2130,7 +2071,6 @@ fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
     assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
     assert_eq!(
         convert_ieee_width(
-            profile(),
             f32v(0x8000_0000),
             IeeeWidth::Binary64,
             even,
@@ -2320,7 +2260,6 @@ fn f28_decimal_source_is_sized_by_its_retained_representation() {
     let mut meter = Meter::new(limits(32, 1, 4, 1));
     assert_eq!(
         bits_flags(exact_to_ieee(
-            profile(),
             &decimal,
             IeeeWidth::Binary32,
             even,
@@ -2331,7 +2270,6 @@ fn f28_decimal_source_is_sized_by_its_retained_representation() {
     assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
     assert_eq!(
         exact_to_ieee(
-            profile(),
             &decimal,
             IeeeWidth::Binary32,
             even,
@@ -2401,7 +2339,7 @@ fn f30_square_root_of_negative_zero_is_negative_zero() {
 #[test]
 fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
     let narrow = |bits, mode, meter: &mut Meter| {
-        convert_ieee_width(profile(), f64v(bits), IeeeWidth::Binary32, mode, meter)
+        convert_ieee_width(f64v(bits), IeeeWidth::Binary32, mode, meter)
     };
     let even = RoundingMode::NearestEven;
     let retain_denied = |work| {

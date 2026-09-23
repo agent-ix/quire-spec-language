@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The closed `quire.value.definition-lock/v1` catalog, per-package selection
-//! admission and integer-division profile admission.
+//! admission, integer-division profile admission and IEEE profile admission.
+//!
+//! [`divide`] and [`modulo`] evaluate integer division under an admitted law.
+//! They call `quire_exact::divide`/`modulo` and carry the kernel outcome over
+//! into this crate's [`Outcome`].
 //!
 //! Profile misuse is refused here, at semantic admission, before any expression
 //! is evaluated. Selection refusals use the lock's closed
@@ -18,7 +22,10 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use quire_exact::DivisionProfile;
+use super::outcome::Outcome;
+use quire_exact::{
+    ieee_intrinsic_identities, DivisionProfile, Integer, IntegerDomain, Meter, QuotientRemainder,
+};
 
 /// The lock's `trigger_vocabulary`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -724,6 +731,98 @@ impl AdmittedIntegerDivision {
     /// The selected law.
     pub fn profile(&self) -> DivisionProfile {
         self.profile
+    }
+}
+
+/// Evaluate paired `div`/`rem` under the admitted package law.
+pub fn divide(
+    selection: &AdmittedIntegerDivision,
+    dividend: &Integer,
+    divisor: &Integer,
+    domain: &IntegerDomain,
+    meter: &mut Meter,
+) -> Outcome<QuotientRemainder> {
+    quire_exact::divide(selection.profile(), dividend, divisor, domain, meter).into()
+}
+
+/// Evaluate `mod`: always the Euclidean remainder, independent of any selected
+/// `div`/`rem` law, charged only at the four `integer-modulus.*` points.
+pub fn modulo(
+    dividend: &Integer,
+    divisor: &Integer,
+    domain: &IntegerDomain,
+    meter: &mut Meter,
+) -> Outcome<Integer> {
+    quire_exact::modulo(dividend, divisor, domain, meter).into()
+}
+
+/// An IEEE package whose profile definition closure was admitted. Only
+/// [`DefinitionLock::admit_ieee_profile`] constructs it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AdmittedIeeeProfile {
+    definition: DefinitionReference,
+}
+
+impl AdmittedIeeeProfile {
+    /// The retained, admitted DefinitionRef.
+    pub fn definition(&self) -> &DefinitionReference {
+        &self.definition
+    }
+}
+
+impl DefinitionLock {
+    /// Admit a checked package's IEEE profile closure.
+    ///
+    /// `retained` lists every DefinitionRef the package retains as IEEE policy;
+    /// `declarations` lists the qualified identities of user declarations. A
+    /// missing, repeated or mismatched profile, or a user declaration bound to a
+    /// reserved intrinsic identity, is `refused { code: invalid_package }`.
+    pub fn admit_ieee_profile(
+        &self,
+        retained: &[DefinitionReference],
+        declarations: &[&str],
+    ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
+        let expected = self
+            .entry(CatalogRole::IeeeProfile)
+            .ok_or(PackageRefusal::invalid_package(PackageCause::MissingMember))?;
+        for reference in retained {
+            let cause = if reference.identity != expected.identity
+                || reference.authority != expected.authority
+            {
+                Some(PackageCause::IncompatibleDefinition)
+            } else if reference.revision.namespace != expected.revision_namespace
+                || reference.revision.value != expected.revision_value
+            {
+                Some(PackageCause::RevisionMismatch)
+            } else if reference.digest_domain != DIGEST_DOMAIN {
+                Some(PackageCause::DigestDomainMismatch)
+            } else {
+                None
+            };
+            if let Some(cause) = cause {
+                return Err(PackageRefusal::invalid_package(cause));
+            }
+        }
+        let definition = match retained {
+            [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),
+            [definition] => definition.clone(),
+            [_, _, ..] => {
+                return Err(PackageRefusal::invalid_package(
+                    PackageCause::ConflictingDefinition,
+                ))
+            }
+        };
+        // FR-148: a user declaration bound to a reserved intrinsic identity is
+        // `invalid_package` with cause `conflicting-definition`.
+        if declarations
+            .iter()
+            .any(|declared| ieee_intrinsic_identities().any(|reserved| reserved == *declared))
+        {
+            return Err(PackageRefusal::invalid_package(
+                PackageCause::ConflictingDefinition,
+            ));
+        }
+        Ok(AdmittedIeeeProfile { definition })
     }
 }
 
