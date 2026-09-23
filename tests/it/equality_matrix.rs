@@ -28,9 +28,9 @@ use quire_spec_language::value::{
     CollectionType, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DecimalType, DefinitionLock, DefinitionReference, DefinitionRevision,
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
-    EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
-    FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeFlag, IeeeValue,
-    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    EqualityOperand, EqualityOperator, Evaluation, Expression, FamilyOutcome, FieldDeclaration,
+    FieldExpression, FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeFlag,
+    IeeeValue, LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
     PackageDeclarations, Quantity, QuantityUnit, RationalDomain, Refusal, Text, TextPayload,
     TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,
@@ -1733,6 +1733,8 @@ fn refused(result: Result<CheckedExpression, CheckRefusal>) -> CheckCause {
     }
 }
 
+/// Like [`run_in_losses`], discarding `location`/`losses` for the many
+/// fixtures in this file that do not assert on either.
 fn run_in(
     package: &CheckedPackage,
     parameters: &[(&str, ValueType)],
@@ -1740,10 +1742,29 @@ fn run_in(
     expected: Option<&ValueType>,
     arguments: Vec<Value>,
     limits: ScalarLimits,
-) -> (Evaluation, Meter) {
+) -> (quire_exact::Outcome<Value>, Meter) {
+    let (outcome, _losses, meter) =
+        run_in_losses(package, parameters, expression, expected, arguments, limits);
+    (outcome, meter)
+}
+
+/// FR-090: `CheckedPackage::evaluate` returns `Evaluation { outcome:
+/// FamilyOutcome, losses, .. }` (FR-090-OQ-3, ruled option A); `Evaluated`
+/// carries the kernel `quire_exact::Outcome<Value>` unchanged (ADR-013
+/// O-16). Every fixture in this file completes, refuses, is undefined or
+/// incomplete through the kernel path -- none hits a family-owned
+/// evaluation-time result.
+fn run_in_losses(
+    package: &CheckedPackage,
+    parameters: &[(&str, ValueType)],
+    expression: &Expression,
+    expected: Option<&ValueType>,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+) -> (quire_exact::Outcome<Value>, Vec<LocatedLoss>, Meter) {
     let checked = check_in(package, parameters, expression, expected, CheckMode::Kernel).unwrap();
     let mut meter = Meter::new(limits);
-    let evaluation = package
+    let evaluation: Evaluation = package
         .evaluate(
             &checked,
             arguments,
@@ -1751,12 +1772,16 @@ fn run_in(
             &mut meter,
         )
         .unwrap();
-    (evaluation, meter)
+    let outcome = match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    };
+    (outcome, evaluation.losses, meter)
 }
 
-fn completed_as(evaluation: &Evaluation, expected: &Value) {
+fn completed_as(outcome: &quire_exact::Outcome<Value>, expected: &Value) {
     assert_eq!(
-        format!("{:?}", evaluation.outcome),
+        format!("{outcome:?}"),
         format!("{:?}", Outcome::Completed(expected.clone()))
     );
 }
@@ -1821,8 +1846,8 @@ fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations()
         UNLIMITED,
     );
     assert!(matches!(
-        evaluation.outcome,
-        Outcome::Refused(Refusal::RationalOutOfDomain)
+        evaluation,
+        quire_exact::Outcome::Refused(quire_exact::Refusal::RationalOutOfDomain)
     ));
     assert_eq!(
         refused(check_in(
@@ -1846,7 +1871,7 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     ];
     let target = decimal_type_mode(0, 10_000, 2, 2, RoundingMode::NearestEven);
     let quotient = operation(BinaryOperator::Divide, "p", "q");
-    let (evaluation, _) = run_in(
+    let (evaluation, losses, _) = run_in_losses(
         &package,
         &parameters,
         &quotient,
@@ -1855,9 +1880,11 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
         UNLIMITED,
     );
     completed_as(&evaluation, &decimal(33, 2));
-    assert_eq!(evaluation.losses.len(), 1);
-    assert!(matches!(evaluation.losses[0].loss, ValueLoss::Decimal(_)));
-    assert_eq!(evaluation.losses[0].location.path, Vec::<usize>::new());
+    // FR-090-OQ-3 (ruled option A): `Evaluation.losses` carries the division's
+    // own rounding loss.
+    assert_eq!(losses.len(), 1);
+    assert!(matches!(losses[0].loss, ValueLoss::Decimal(_)));
+    assert_eq!(losses[0].location.path, Vec::<usize>::new());
     check_in(
         &package,
         &parameters,
@@ -1867,7 +1894,7 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     )
     .unwrap();
 
-    let (exact, _) = run_in(
+    let (exact, exact_losses, _) = run_in_losses(
         &package,
         &parameters,
         &operation(BinaryOperator::Add, "p", "q"),
@@ -1876,7 +1903,7 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
         UNLIMITED,
     );
     completed_as(&exact, &decimal(400, 2));
-    assert!(exact.losses.is_empty());
+    assert!(exact_losses.is_empty());
 
     let zero_divisor = [
         ("p", decimal_type(0, 100, 0, 0)),
@@ -2024,7 +2051,7 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     };
     let divide = operation(BinaryOperator::Divide, "f", "g");
     // An omitted rounding spelling is strict `exact`: `1 / 3` refuses.
-    let (inexact, _) = run_in(
+    let (inexact, inexact_losses, _) = run_in_losses(
         &package,
         &parameters,
         &divide,
@@ -2033,11 +2060,11 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         UNLIMITED,
     );
     assert!(matches!(
-        inexact.outcome,
-        Outcome::Refused(Refusal::IeeeNotExact { .. })
+        inexact,
+        quire_exact::Outcome::Refused(quire_exact::Refusal::IeeeNotExact { .. })
     ));
-    assert!(inexact.losses.is_empty());
-    let (infinite, _) = run_in(
+    assert!(inexact_losses.is_empty());
+    let (infinite, infinite_losses, _) = run_in_losses(
         &package,
         &parameters,
         &divide,
@@ -2049,7 +2076,9 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         &infinite,
         &Value::Float(IeeeValue::binary64(0x7ff0_0000_0000_0000)),
     );
-    match infinite.losses.as_slice() {
+    // FR-090-OQ-3 (ruled option A): `Evaluation.losses` carries the
+    // `DivideByZero` flag this division records.
+    match infinite_losses.as_slice() {
         [LocatedLoss {
             loss: ValueLoss::IeeeFlags(flags),
             ..
@@ -2058,7 +2087,7 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     }
 
     let negative_zero = IeeeValue::binary64(0x8000_0000_0000_0000);
-    let (exact, _) = run_in(
+    let (exact, exact_losses, _) = run_in_losses(
         &package,
         &parameters,
         &Expression::Convert {
@@ -2070,8 +2099,10 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         UNLIMITED,
     );
     completed_as(&exact, &rational(0, 1));
+    // FR-090-OQ-3 (ruled option A): `Evaluation.losses` carries the
+    // `NegativeZeroSign` loss this conversion records.
     assert!(matches!(
-        exact.losses.as_slice(),
+        exact_losses.as_slice(),
         [LocatedLoss {
             loss: ValueLoss::IeeeExact(IeeeExactLoss::NegativeZeroSign),
             ..
@@ -2187,8 +2218,8 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         ZERO,
     );
     assert!(matches!(
-        refused.outcome,
-        Outcome::Refused(Refusal::IntegerOutOfDomain)
+        refused,
+        quire_exact::Outcome::Refused(quire_exact::Refusal::IntegerOutOfDomain)
     ));
     assert!(meter.admitted_charges().is_empty());
 
@@ -2204,8 +2235,8 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
         ZERO,
     );
     assert!(matches!(
-        incomplete.outcome,
-        Outcome::Incomplete(Incomplete {
+        incomplete,
+        quire_exact::Outcome::Incomplete(Incomplete {
             charge_point: ChargePoint::IntegerArithmeticOperands,
             ..
         })
@@ -2226,7 +2257,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     };
 
     let whole = [("e", decimal_type(0, 9, 0, 0)), ("d", int_type(0, 9))];
-    let (evaluation, _) = run_in(
+    let (evaluation, evaluation_losses, _) = run_in_losses(
         &package,
         &whole,
         &let_equal(int_type(0, 9)),
@@ -2235,12 +2266,12 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
         UNLIMITED,
     );
     completed_as(&evaluation, &Value::Boolean(true));
-    assert!(evaluation.losses.is_empty());
+    assert!(evaluation_losses.is_empty());
 
     // E04's `r` and `d`: no equality conversion, but an ordinary FR-140 one.
     let target = decimal_type_mode(0, 100, 2, 2, RoundingMode::NearestEven);
     let thirds = [("e", rational_type(0, 1, 1, 3)), ("d", target.clone())];
-    let (evaluation, _) = run_in(
+    let (evaluation, evaluation_losses, _) = run_in_losses(
         &package,
         &thirds,
         &let_equal(target.clone()),
@@ -2249,7 +2280,9 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
         UNLIMITED,
     );
     completed_as(&evaluation, &Value::Boolean(true));
-    match evaluation.losses.as_slice() {
+    // FR-090-OQ-3 (ruled option A): `Evaluation.losses` carries this
+    // conversion's own decimal loss.
+    match evaluation_losses.as_slice() {
         [LocatedLoss {
             location,
             loss: ValueLoss::Decimal(_),

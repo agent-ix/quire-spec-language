@@ -58,15 +58,13 @@ Tag the test `#[trace("FR-090-AC-3", "TC-384")]`.
 
 ## Status
 
-Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
+`✅ Passed locally`. Backed: `s6a_invariant_breaks_are_internal_faults_not_panics`, in
 `src/value/expression/mod.rs`, tagged `#[trace("FR-090-AC-3", "TC-384")]`.
-`FamilyOutcome` is not yet built, and `Evaluation.outcome` is still the
-kernel copy's `Outcome<Value>`, so the test asserts today's real equivalent
-types rather than the literal `FamilyOutcome::Evaluated(Outcome::Completed(3))`/`Err(fault)`
-spelling above: `Ok(Evaluation { outcome: Outcome::Completed(Value::
-Integer(3)), .. })` for step 3, and `Err(crate::family::EvaluateFailure::
-Fault(fault))` -- the S6a seam's own result, asserted directly rather than
-through `CheckedPackage::call`'s `map_evaluate_failure` adapter -- for steps
-4 and 5, with `fault.stage()`, `fault.category()` and `fault.invariant()`
-checked exactly as specified and the two steps' invariant identifiers
-asserted distinct.
+The test calls `ValueFunctionFamily::evaluate` (the S6a seam's own hook)
+directly, rather than through `CheckedPackage::call`, so it asserts the
+hook's own `Result<EvalOutcome<Value>, InternalFault>` shape: step 3 is
+`Ok(EvalOutcome::Kernel(Outcome::Completed(Value::Integer(3))))`, and steps
+4 and 5 are `Err(fault)` -- a bare `InternalFault`, since the hook never
+wraps its fault in any refusal-shaped type -- with `fault.stage()`,
+`fault.category()` and `fault.invariant()` checked exactly as specified and
+the two steps' invariant identifiers asserted distinct.

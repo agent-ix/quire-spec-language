@@ -64,4 +64,6 @@ it holds with `assert_eq!`.
 
 ## Status
 
-Planned; no test backs this case.
+`✅ Passed locally`. Backed: `s6a_returns_kernel_outcomes_unchanged_in_evaluated`,
+in `tests/it/total_functions.rs`, through `CheckedPackage::call`. It also
+calls a rounding decimal division and asserts the one loss `call` returns.

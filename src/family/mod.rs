@@ -77,12 +77,14 @@
 //! against a real instance instead of guessed in advance.
 
 mod contract;
+mod evaluation;
 mod outcome;
 
 pub(crate) use contract::{
-    CheckContext, DiagnosticSink, EvaluateFailure, FamilyContract, ReferenceEvaluation, ScopeStack,
-    StageLimits,
+    CheckContext, DiagnosticSink, FamilyContract, ReferenceEvaluation, ScopeStack, StageLimits,
 };
+pub(crate) use evaluation::EvalOutcome;
+pub use evaluation::{FamilyOutcome, FamilyResult};
 pub(crate) use outcome::{CheckOutcome, LimitExceeded, StageFailure, StageLimitKind, Staged};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed

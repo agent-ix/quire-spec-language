@@ -6,20 +6,32 @@ use ix_trace_rs::trace;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
-    Meter, ScalarLimits,
+    Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
-use quire_exact::{IeeeWidth, IllTypedCause, Presence, Rational};
+use quire_exact::{Decimal, IeeeWidth, IllTypedCause, Presence, Rational, RoundingMode};
 use quire_spec_language::value::{
     Accumulation, BinaryOperator, CatalogRole, CheckCause, CheckMode, CheckRefusal, CheckedGraph,
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
-    CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference,
-    DefinitionRevision, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
+    CollectionType, CompositeDeclaration, CompositeShape, DecimalType, DefinitionLock,
+    DefinitionReference, DefinitionRevision, Evaluation, Expression, FamilyOutcome,
+    FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue, LocatedLoss, Location,
     MeasureObligation, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
-    Obligation, OptionValue, Origin, Outcome, PackageDeclarations, ProvedInterval, QualifiedName,
-    RationalDomain, Refusal, TypeEnvironment, TypeForm, Undefined, UniverseIdentity, Value,
-    ValueType,
+    Obligation, OptionValue, Origin, PackageDeclarations, ProvedInterval, QualifiedName,
+    RationalDomain, TypeEnvironment, TypeForm, UniverseIdentity, Value, ValueLoss, ValueType,
 };
+
 use sha2::{Digest, Sha256};
+
+/// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
+/// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this
+/// file evaluates through the kernel path, so extracting `Evaluated`'s
+/// outcome is all these tests need.
+fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
+    }
+}
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -543,7 +555,7 @@ fn p06_each_call_charges_function_call() {
         )
         .unwrap();
     assert_eq!(
-        format!("{:?}", evaluation.outcome),
+        format!("{:?}", evaluated(evaluation)),
         format!("{:?}", Outcome::Completed(int(3)))
     );
     // PR #302 review finding 2: 2, not 3 -- one `function.call` charge per
@@ -567,7 +579,7 @@ fn p06_each_call_charges_function_call() {
         )
         .unwrap();
     assert_eq!(
-        format!("{:?}", evaluation.outcome),
+        format!("{:?}", evaluated(evaluation)),
         format!(
             "{:?}",
             Outcome::<Value>::Incomplete(Incomplete {
@@ -950,7 +962,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 &mut meter,
             )
             .unwrap();
-        (evaluation.outcome, meter.admitted_charges().to_vec())
+        (evaluated(evaluation), meter.admitted_charges().to_vec())
     };
     let (nan, charges) = convert(0x7FF8_0000_0000_0000);
     assert!(matches!(nan, Outcome::Undefined(Undefined::IeeeNotFinite)));
@@ -1175,7 +1187,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
             )
             .unwrap();
         (
-            format!("{:?}", evaluation.outcome),
+            format!("{:?}", evaluated(evaluation)),
             meter.consumed(LimitKind::WorkUnits),
             meter.consumed(LimitKind::ResultUnits),
         )
@@ -1234,15 +1246,16 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     assert_eq!(
         format!(
             "{:?}",
-            package
-                .call(
-                    &QualifiedName::unqualified("q").unwrap(),
-                    vec![int(3), int(2)],
-                    &objects,
-                    &mut narrow,
-                )
-                .unwrap()
-                .outcome
+            evaluated(
+                package
+                    .call(
+                        &QualifiedName::unqualified("q").unwrap(),
+                        vec![int(3), int(2)],
+                        &objects,
+                        &mut narrow,
+                    )
+                    .unwrap()
+            )
         ),
         format!(
             "{:?}",
@@ -1284,7 +1297,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
             .evaluate(&checked, vec![int(a), int(2)], &objects, &mut meter)
             .unwrap();
         assert_eq!(
-            format!("{:?}", evaluation.outcome),
+            format!("{:?}", evaluated(evaluation)),
             format!("{:?}", Outcome::Completed(Value::Boolean(true)))
         );
         assert_eq!(
@@ -1295,4 +1308,136 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
             (work, results)
         );
     }
+}
+
+/// One S6a result through `CheckedPackage::call`: the kernel outcome inside
+/// `FamilyOutcome::Evaluated`, and the call's recorded location and losses.
+/// Any other arm or an `Err` fails the test.
+fn call_evaluated(
+    package: &CheckedPackage,
+    function: &str,
+    arguments: Vec<Value>,
+    limits: ScalarLimits,
+) -> (Outcome<Value>, Option<Location>, Vec<LocatedLoss>) {
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified(function.to_owned()).unwrap(),
+            arguments,
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap_or_else(|failure| panic!("{function}: expected Ok, got Err({failure:?})"));
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => (outcome, evaluation.location, evaluation.losses),
+        FamilyOutcome::FamilyEvaluated(result) => {
+            panic!("{function}: expected Evaluated, got FamilyEvaluated({result:?})")
+        }
+    }
+}
+
+/// TC-382 (FR-090-AC-1): S6a returns each kernel outcome of
+/// `f(x: Float[binary64]): Rational[-9..9 / 1..9] = convert(x)` unchanged in
+/// `FamilyOutcome::Evaluated`, through `CheckedPackage::call`, with the
+/// location and losses the hook records. Each outcome is compared with a
+/// fixed literal. A second function, a rounding decimal division, records a
+/// loss, so `call` is shown to carry the hook's losses too.
+#[trace("FR-090-AC-1", "TC-382")]
+#[test]
+fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
+    let package = PackageDeclarations {
+        functions: vec![
+            function(
+                "f",
+                &[("x", ValueType::Float(IeeeWidth::Binary64))],
+                quotient_type(),
+                None,
+                Expression::Convert {
+                    target: crate::support::type_form::type_form(&quotient_type()),
+                    operand: Box::new(name("x")),
+                },
+            ),
+            function(
+                "divide",
+                &[("p", decimal_type(0, 100)), ("q", decimal_type(1, 9))],
+                ValueType::Decimal(
+                    DecimalType::new(integer(0), integer(10_000), 2, 2, RoundingMode::NearestEven)
+                        .unwrap(),
+                ),
+                None,
+                binary(BinaryOperator::Divide, name("p"), name("q")),
+            ),
+        ],
+        ieee_profile: Some(ieee_profile()),
+        ..PackageDeclarations::default()
+    }
+    .check(CheckingLimits::default())
+    .expect("convert(x) carries no definedness obligation, and q is nonzero");
+    let package = CheckedPackage::link(package);
+    let float = |bits: u64| vec![Value::Float(IeeeValue::binary64(bits))];
+
+    let (half, location, losses) =
+        call_evaluated(&package, "f", float(0x3FE0_0000_0000_0000), UNLIMITED);
+    assert_eq!(
+        format!("{half:?}"),
+        format!(
+            "{:?}",
+            Outcome::<Value>::Completed(Value::Rational(
+                Rational::new(integer(1), integer(2)).unwrap()
+            ))
+        )
+    );
+    assert_eq!(location, None);
+    assert!(losses.is_empty());
+
+    let (nan, location, losses) =
+        call_evaluated(&package, "f", float(0x7FF8_0000_0000_0000), UNLIMITED);
+    assert!(
+        matches!(nan, Outcome::Undefined(Undefined::IeeeNotFinite)),
+        "{nan:?}"
+    );
+    assert!(location.is_some());
+    assert!(losses.is_empty());
+
+    let (twenty, location, losses) =
+        call_evaluated(&package, "f", float(0x4034_0000_0000_0000), UNLIMITED);
+    assert!(
+        matches!(twenty, Outcome::Refused(Refusal::IeeeRationalOutOfDomain)),
+        "{twenty:?}"
+    );
+    assert!(location.is_some());
+    assert!(losses.is_empty());
+
+    let (denied, location, losses) =
+        call_evaluated(&package, "f", float(0x3FE0_0000_0000_0000), work_limit(0));
+    let Outcome::Incomplete(incomplete) = denied else {
+        panic!("expected Incomplete for a zero work limit, got {denied:?}");
+    };
+    assert_eq!(incomplete.charge_point, ChargePoint::FunctionCall);
+    assert_eq!(location, None);
+    assert!(losses.is_empty());
+
+    let decimal = |coefficient: i64| Value::Decimal(Decimal::new(integer(coefficient), 0));
+    let (third, location, losses) =
+        call_evaluated(&package, "divide", vec![decimal(1), decimal(3)], UNLIMITED);
+    assert_eq!(
+        format!("{third:?}"),
+        format!(
+            "{:?}",
+            Outcome::<Value>::Completed(Value::Decimal(Decimal::new(integer(33), 2)))
+        )
+    );
+    assert_eq!(location, None);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        matches!(losses[0].loss, ValueLoss::Decimal(_)),
+        "{losses:?}"
+    );
+}
+
+/// `Decimal[lower..upper]` at scale 0, exact rounding.
+fn decimal_type(lower: i64, upper: i64) -> ValueType {
+    ValueType::Decimal(
+        DecimalType::new(integer(lower), integer(upper), 0, 0, RoundingMode::Exact).unwrap(),
+    )
 }

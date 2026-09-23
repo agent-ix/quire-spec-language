@@ -173,14 +173,22 @@ pub enum WrongSnapshotCause {
     /// re-anchoring any of these would silently do nothing rather than
     /// replay a real read under the pre observation.
     ForbiddenPreRead,
+    /// FR-063, TC-387: exists only so `--cfg seam_probe` makes the
+    /// `ProtocolClause` snapshot cause's `catalog_code()` match
+    /// non-exhaustive. Never constructed outside the probe build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
 }
 
 impl WrongSnapshotCause {
-    /// The closed FR-272 cause tag.
+    /// The closed FR-272 cause tag. Not a seam-probe location: it owns the
+    /// probe variant's own arm.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::WrongAnchor => "wrong-anchor",
             Self::ForbiddenPreRead => "forbidden-pre-read",
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => "__seam_probe__",
         }
     }
 }

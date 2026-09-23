@@ -26,6 +26,9 @@ pub mod source;
 pub mod source_map;
 pub mod wire_format;
 
-pub use diagnostic::{CatalogCode, Category, Code, Diagnostic, InternalFault, Phase};
+pub use diagnostic::{
+    CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, UndefinedCoded,
+    UndefinedReason, UndefinedRecord,
+};
 pub use digest::ByteDigest;
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};

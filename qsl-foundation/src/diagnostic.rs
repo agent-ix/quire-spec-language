@@ -675,9 +675,171 @@ impl InternalFault {
     }
 }
 
+/// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
+/// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+///
+/// A catalog code in QSL is carried by a refusal record (O-17: each cause
+/// type has a fixed category), so every code is `Category::Refusal` except:
+/// `runtime_invariant`, which is `InternalFault`'s one code and category
+/// `internal failure` (T-4); and `cancelled`, a caller cancellation, which
+/// O-16's `incomplete` row names. `resource_exhausted` is a refusal: QSL
+/// raises it only for a semantic maximum, which the catalog states is not a
+/// caller work budget; an exhausted S6a work budget is the kernel
+/// `Incomplete` outcome, which carries no catalog code. The `unsupported_*`
+/// codes are refusals too: the catalog has no category column, and O-16's
+/// evaluation column rules `unsupported` out of an evaluation outcome.
+/// [`Code::is_incomplete`] and [`Code::is_unsupported`] are the native-v1
+/// exit-code ladder (FR-301), not the O-16 category, so they may differ
+/// from this table.
+const CATALOG_CATEGORIES: [(&str, Category); 38] = [
+    ("invalid_syntax", Category::Refusal),
+    ("unsupported_construct", Category::Refusal),
+    ("unknown_language", Category::Refusal),
+    ("unknown_edition", Category::Refusal),
+    ("unknown_profile", Category::Refusal),
+    ("unknown_wire", Category::Refusal),
+    ("unknown_required_feature", Category::Refusal),
+    ("missing_import", Category::Refusal),
+    ("missing_declaration", Category::Refusal),
+    ("stale_dependency", Category::Refusal),
+    ("source_digest_mismatch", Category::Refusal),
+    ("ambiguous_declaration", Category::Refusal),
+    ("invalid_package", Category::Refusal),
+    ("invalid_model_binding", Category::Refusal),
+    ("ill_typed", Category::Refusal),
+    ("undefined_expression", Category::Refusal),
+    ("ambiguous_dispatch", Category::Refusal),
+    ("cardinality_out_of_bound", Category::Refusal),
+    ("wrong_snapshot", Category::Refusal),
+    ("invalid_runtime_input", Category::Refusal),
+    ("unavailable_observation", Category::Refusal),
+    ("incomplete_population", Category::Refusal),
+    ("foreign_reference", Category::Refusal),
+    ("dangling_reference", Category::Refusal),
+    ("population_delta_mismatch", Category::Refusal),
+    ("frame_violation", Category::Refusal),
+    ("resource_exhausted", Category::Refusal),
+    ("cancelled", Category::Incomplete),
+    ("duplicate_selection", Category::Refusal),
+    ("stage_limit_exceeded", Category::Refusal),
+    ("unsupported_projection", Category::Refusal),
+    ("invalid_capability", Category::Refusal),
+    ("projection_binding", Category::Refusal),
+    ("invalid_projection_correspondence", Category::Refusal),
+    ("extraction-requires-run", Category::Refusal),
+    ("extraction-package-conflict", Category::Refusal),
+    ("extraction-clause-count", Category::Refusal),
+    ("runtime_invariant", Category::InternalFailure),
+];
+
+/// FR-090-AC-5: the O-16 category of a catalog code, read from the code
+/// alone. `None` for a code the catalog does not define: an unknown code has
+/// no category, and this map never guesses one.
+pub fn category_of(code: &CatalogCode) -> Option<Category> {
+    CATALOG_CATEGORIES
+        .iter()
+        .find(|(spelling, _)| *spelling == code.code())
+        .map(|&(_, category)| category)
+}
+
+/// ADR-013 O-16/O-17 (QSL-174): a family-owned evaluation-time refusal
+/// cause, held only through this trait so the layer-3 `check` core and this
+/// crate itself never name the concrete cause type -- "a cause belongs to
+/// the family whose construct produces it" (ADR-013 O-16). The supertraits
+/// make a `FamilyResult`/`FamilyOutcome` built from a `Box<dyn CatalogCoded>`
+/// `Debug`, able to cross a thread, and free of any borrow (ADR-013 O-16
+/// "Representation").
+pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
+    /// This cause's catalog code (O-17's method); its O-16 category is
+    /// always `Category::Refusal`.
+    fn catalog_code(&self) -> CatalogCode;
+}
+
+/// ADR-013 O-16 (QSL-174): a family-owned evaluation-time undefined cause,
+/// held only through this trait -- the undefined-category counterpart of
+/// [`CatalogCoded`].
+pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
+    /// This cause's [`UndefinedRecord`]; its O-16 category is always
+    /// `Category::Undefined`.
+    fn undefined_record(&self) -> UndefinedRecord;
+}
+
+/// ADR-013 O-16 (QSL-174): the closed reason set of the
+/// `quire.native.diagnostics/v1` "Undefined reasons" table -- the catalog
+/// states this is not a refusal code or cause. Grows by one variant each
+/// time a family adds a new evaluation-time undefined result, the same way
+/// a family-dispatch cause set grows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum UndefinedReason {
+    /// FR-151 dispatch: an FR-151 dispatched call's selected method's
+    /// effective precondition evaluated to `false`.
+    PreconditionFalse,
+    /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
+    /// names no member of the population bound to `p`.
+    AbsentKey,
+}
+
+impl UndefinedReason {
+    /// The catalog's own reason spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PreconditionFalse => "precondition-false",
+            Self::AbsentKey => "absent-key",
+        }
+    }
+}
+
+impl std::fmt::Display for UndefinedReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// ADR-013 O-16 (QSL-174): the undefined-side counterpart of O-17's
+/// `RefusalRecord` (held back for #213 S-5b): `reason` plus the catalog's
+/// own structured payload for that reason. [`UndefinedCoded::undefined_record`]
+/// returns this record, not the bare reason, because the catalog requires
+/// the payload and a consumer outside the producing family holds only the
+/// trait object -- without the record it could reach the payload only by
+/// downcasting to the family's own cause type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndefinedRecord {
+    /// The catalog's closed undefined reason.
+    pub reason: UndefinedReason,
+    /// The catalog's structured payload for `reason`, keyed by the
+    /// catalog's own field names.
+    pub fields: std::collections::BTreeMap<&'static str, String>,
+}
+
 #[cfg(test)]
 mod foundation_tests {
-    use super::{CatalogCode, Category, InternalFault};
+    use super::{category_of, CatalogCode, Category, InternalFault, CATALOG_CATEGORIES};
+
+    /// FR-090-AC-5's map: one row per catalog code, the internal-fault code
+    /// is `internal failure`, and an unknown code has no category.
+    #[test]
+    fn category_of_reads_the_code_and_refuses_an_unknown_one() {
+        let mut spellings: Vec<&str> = CATALOG_CATEGORIES.iter().map(|(code, _)| *code).collect();
+        spellings.sort_unstable();
+        spellings.dedup();
+        assert_eq!(spellings.len(), CATALOG_CATEGORIES.len());
+        assert_eq!(
+            category_of(&InternalFault::new("S6a", "x").catalog_code()),
+            Some(Category::InternalFailure)
+        );
+        assert_eq!(
+            category_of(&CatalogCode::new("wrong_snapshot", "wrong-anchor")),
+            Some(Category::Refusal)
+        );
+        assert_eq!(
+            category_of(&CatalogCode::new("cancelled", "caller-cancelled")),
+            Some(Category::Incomplete)
+        );
+        assert_eq!(
+            category_of(&CatalogCode::new("not_a_catalog_code", "x")),
+            None
+        );
+    }
 
     #[test]
     fn category_has_exactly_the_adr_013_o16_eight_values() {

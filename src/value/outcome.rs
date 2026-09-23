@@ -6,8 +6,6 @@
 //! so they have no variant here.
 
 use super::reference::ObjectReference;
-use crate::check::WrongSnapshotCause;
-use qsl_foundation::diagnostic::Code;
 use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, IeeeFlags, Incomplete};
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -48,6 +46,71 @@ impl<T> From<quire_exact::Outcome<T>> for Outcome<T> {
 }
 
 impl<T> Outcome<T> {
+    /// FR-090-AC-1: this QSL kernel-copy outcome as the
+    /// `quire_exact::Outcome<T>` that `FamilyOutcome::Evaluated` and
+    /// `EvalOutcome::Kernel` carry (ADR-013 O-16). A total, one-to-one
+    /// re-tagging: the copy's `Undefined` and `Refusal` have exactly the
+    /// kernel's variants. Remaining work: QSL-131 deletes the copy.
+    pub(crate) fn into_kernel(self) -> quire_exact::Outcome<T> {
+        match self {
+            Self::Completed(value) => quire_exact::Outcome::Completed(value),
+            Self::Undefined(undefined) => quire_exact::Outcome::Undefined(undefined.into_kernel()),
+            Self::Refused(refusal) => quire_exact::Outcome::Refused(refusal.into_kernel()),
+            Self::Incomplete(record) => quire_exact::Outcome::Incomplete(record),
+        }
+    }
+}
+
+impl Undefined {
+    fn into_kernel(self) -> quire_exact::Undefined {
+        match self {
+            Self::DivisionByZero => quire_exact::Undefined::DivisionByZero,
+            Self::IeeeNotFinite => quire_exact::Undefined::IeeeNotFinite,
+            Self::EmptyReduction => quire_exact::Undefined::EmptyReduction,
+            Self::NoneValue => quire_exact::Undefined::NoneValue,
+        }
+    }
+}
+
+impl Refusal {
+    fn into_kernel(self) -> quire_exact::Refusal {
+        match self {
+            Self::InexactDecimal => quire_exact::Refusal::InexactDecimal,
+            Self::DecimalOutOfDomain => quire_exact::Refusal::DecimalOutOfDomain,
+            Self::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            } => quire_exact::Refusal::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+            },
+            Self::ModuloOutOfDomain => quire_exact::Refusal::ModuloOutOfDomain,
+            Self::TextLengthOutOfDomain => quire_exact::Refusal::TextLengthOutOfDomain,
+            Self::IntegerOutOfDomain => quire_exact::Refusal::IntegerOutOfDomain,
+            Self::RationalOutOfDomain => quire_exact::Refusal::RationalOutOfDomain,
+            Self::IeeeNotExact { would_be } => quire_exact::Refusal::IeeeNotExact { would_be },
+            Self::IeeeNanPayloadNotRepresentable => {
+                quire_exact::Refusal::IeeeNanPayloadNotRepresentable
+            }
+            Self::IeeeRationalOutOfDomain => quire_exact::Refusal::IeeeRationalOutOfDomain,
+            Self::ForeignReference => quire_exact::Refusal::ForeignReference,
+            Self::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            } => quire_exact::Refusal::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            },
+            Self::CheckedInvariant => quire_exact::Refusal::CheckedInvariant,
+        }
+    }
+}
+
+impl<T> Outcome<T> {
     pub(crate) fn from_stop(result: Result<T, Stop>) -> Self {
         match result {
             Ok(value) => Self::Completed(value),
@@ -67,7 +130,8 @@ impl<T> Outcome<T> {
     }
 }
 
-/// Why an operation is undefined.
+/// Why an operation is undefined. Holds kernel reasons only: the
+/// `StateModel` undefined results are family-owned (ADR-013 O-16, T-6).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Undefined {
     /// A divisor is (normalized) zero.
@@ -80,17 +144,6 @@ pub enum Undefined {
     /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
     /// expression can meet it.
     NoneValue,
-    /// FR-153 `lookup<T>(p, r) absent undefined`'s catalogued `absent-key`
-    /// reason: `r` is not a member of the bound population, and the query
-    /// names no mathematical value for that case.
-    AbsentKey,
-    /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
-    /// linked candidate's effective precondition (its own, or the nearest
-    /// redefinition ancestor's, disjoined per FR-151-AC's redefinition rule)
-    /// evaluated to `false`; the call's result is not a mathematical value
-    /// for that receiver. Carries the `precondition-false`
-    /// (`native-diagnostics.md`) payload.
-    PreconditionFalse(Box<PreconditionFailure>),
 }
 
 /// Every kernel reason is a QSL reason of the same name. The match is
@@ -102,7 +155,6 @@ impl From<quire_exact::Undefined> for Undefined {
             quire_exact::Undefined::IeeeNotFinite => Self::IeeeNotFinite,
             quire_exact::Undefined::EmptyReduction => Self::EmptyReduction,
             quire_exact::Undefined::NoneValue => Self::NoneValue,
-            quire_exact::Undefined::AbsentKey => Self::AbsentKey,
         }
     }
 }
@@ -124,6 +176,10 @@ pub struct PreconditionFailure {
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
+/// Holds kernel causes only: the evaluation-time `wrong_snapshot` and
+/// model-query refusals are family-owned (ADR-013 O-16, T-6), and an
+/// unresolved or mismatched population argument is refused at admission
+/// (`CallFailure::Input`) and is an `InternalFault` inside S6a (ADR-013 T-4).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal {
     /// Strict `exact` rounding would discard a nonzero digit.
@@ -178,36 +234,6 @@ pub enum Refusal {
     /// A checked-program invariant failed during evaluation; unreachable for
     /// an admitted program.
     CheckedInvariant,
-    /// FR-153's `pre(..)` anchor selection (`evaluate.rs`'s `select_anchor`)
-    /// meeting a `Value::Population` with no attached pre binding --
-    /// `wrong_snapshot`, with the identical closed [`WrongSnapshotCause`]
-    /// cause set the checker uses (`crate::check`'s own
-    /// `WrongSnapshotCause`, reused rather than a separately invented
-    /// runtime cause, since FR-272/native-diagnostics.md catalogues exactly
-    /// one `wrong_snapshot` cause list). The checker only admits `pre(..)`
-    /// syntactically -- clause context, an eligible operand not itself a
-    /// captured `let` alias -- it cannot see whether the population value a
-    /// caller supplies at evaluation time was actually admitted through
-    /// [`crate::model::population::admit_invocation`] (the only constructor
-    /// that attaches a pre anchor) rather than
-    /// [`crate::model::population::admit_binding`] directly, so this is a
-    /// real, caller-input-reachable refusal, never a broken-evaluator
-    /// [`Self::CheckedInvariant`].
-    WrongSnapshot(WrongSnapshotCause),
-    /// FR-153's `allInstances<T>(p)`/`lookup<T>(p, r) absent refused`
-    /// refused the query outright
-    /// (`crate::model::population::AllInstancesOutcome::Refused`/[`LookupOutcome::Refused`](crate::model::population::LookupOutcome::Refused)).
-    Model(ModelQueryRefusal),
-    // FR-089-AC-4/AC-5's `UnresolvedPopulation`/`PopulationMaximumMismatch`
-    // variants are deleted (FR-090-AC-10, ADR-013 T-4): a consumed
-    // `Value::Population(population_id)` that names no recorded binding, or
-    // whose resolved binding's declared maximum differs from the checked
-    // parameter's, is refused at admission (`CallFailure::Input`,
-    // `CheckedPackage::call`/`evaluate`'s own `validate`) before S6a ever
-    // runs; meeting either condition inside S6a (`Machine::
-    // resolve_population`, `expression/evaluate.rs`) is now an
-    // `InternalFault`, never a kernel `Refused` outcome -- so this public
-    // `Refusal` enum has no variant left for either case.
 }
 
 /// Every kernel refusal is a QSL refusal of the same name and payload. The
@@ -252,19 +278,6 @@ impl From<quire_exact::Refusal> for Refusal {
     }
 }
 
-/// The closed code and FR-272 cause tag of an FR-153 population-query
-/// refusal (`crate::model::normalize::ModelRefusal`'s own `code` and `cause`
-/// fields, never its free-text `detail`, which is diagnostic prose rather
-/// than part of the closed contract every other [`Refusal`] variant exposes
-/// through [`Refusal::code`]/[`Refusal::cause`]).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct ModelQueryRefusal {
-    /// The native code.
-    pub code: Code,
-    /// The FR-272 cause tag.
-    pub cause: &'static str,
-}
-
 impl Refusal {
     /// The closed `refused { code }` spelling, where the language defines one.
     pub fn code(self) -> Option<&'static str> {
@@ -273,8 +286,6 @@ impl Refusal {
             Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
             Self::ForeignReference => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
-            Self::Model(refusal) => Some(refusal.code.as_str()),
-            Self::WrongSnapshot(_) => Some(Code::WrongSnapshot.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }
@@ -291,8 +302,6 @@ impl Refusal {
     pub fn cause(self) -> Option<&'static str> {
         match self {
             Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
-            Self::Model(refusal) => Some(refusal.cause),
-            Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
             | Self::DivisionPairOutOfDomain { .. }

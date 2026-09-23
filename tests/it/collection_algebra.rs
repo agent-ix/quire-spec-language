@@ -12,9 +12,9 @@ use quire_exact::{
 };
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
-    CompositeShape, Deferred, EqualityOperand, EqualityOperator, FieldDeclaration, FieldValue,
-    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Refusal,
-    TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
+    CompositeShape, Deferred, EqualityOperand, EqualityOperator, FamilyOutcome, FieldDeclaration,
+    FieldValue, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome,
+    Refusal, TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};
 
@@ -651,7 +651,9 @@ mod checked {
             .evaluate(&checked, arguments, objects, &mut meter)
             .unwrap();
         match evaluation.outcome {
-            Outcome::Completed(value) => (value, meter.admitted_charges().to_vec()),
+            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) => {
+                (value, meter.admitted_charges().to_vec())
+            }
             other => panic!("a completed value, not {other:?}"),
         }
     }

@@ -173,11 +173,12 @@ impl<'ast> Visit<'ast> for DefScanner {
     }
 }
 
-/// Every non-test `.rs` file under `src/`, relative to `workspace_root`
-/// (`tests`, `target` and `.git` directory entries excluded, matching
-/// `xtask::string_edge::source_files`'s own exclusion list).
-fn source_files(workspace_root: &Path) -> Result<Vec<String>> {
-    let root = workspace_root.join("src");
+/// Every non-test `.rs` file under `dir` (relative to `workspace_root`),
+/// relative to `workspace_root` (`tests`, `target` and `.git` directory
+/// entries excluded, matching `xtask::string_edge::source_files`'s own
+/// exclusion list).
+fn source_files(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
+    let root = workspace_root.join(dir);
     let mut files = Vec::new();
     let mut pending = vec![root];
     while let Some(dir) = pending.pop() {
@@ -214,9 +215,20 @@ pub struct CrateDefinitions {
 
 /// Scan the whole crate's `src/` tree once.
 pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
+    scan_dirs(workspace_root, &["src"])
+}
+
+/// Scan every `.rs` tree in `dirs` (relative to `workspace_root`) once, as
+/// one set of definitions -- FR-090-AC-9/TC-390 counts one type's
+/// definitions across the root crate, `quire-exact` and `qsl-foundation`.
+pub fn scan_dirs(workspace_root: &Path, dirs: &[&str]) -> Result<CrateDefinitions> {
     let mut items: BTreeMap<String, Vec<Definition>> = BTreeMap::new();
     let mut methods: BTreeMap<(String, String), Vec<Definition>> = BTreeMap::new();
-    for file in source_files(workspace_root)? {
+    let mut files = Vec::new();
+    for dir in dirs {
+        files.extend(source_files(workspace_root, dir)?);
+    }
+    for file in files {
         let parsed = parse_file(workspace_root, &file)?;
         let mut scanner = DefScanner {
             file: file.clone(),
@@ -272,11 +284,12 @@ mod tests {
 
     /// TC-170 step 2: `value::expression::mod.rs` declares none of `check`,
     /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
-    /// module's own doc): its *only* declarations are the two the post-move
-    /// tree keeps (`evaluate`, `family` -- `family` stays split, since
-    /// `value::expression::family.rs` keeps the evaluation half and
-    /// `check::family.rs` keeps the checking half, PR #282 review F4), so an
-    /// unexpected fifth module cannot be hiding a renamed leftover here.
+    /// module's own doc): its *only* declarations are `evaluate`, `family`
+    /// (`value::expression::family.rs` keeps the evaluation half and
+    /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
+    /// `causes` (FR-090's family evaluation causes, defined beside the
+    /// evaluator), so an unexpected module cannot be hiding a renamed
+    /// leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn value_expression_mod_declares_no_check_stage_module() {
@@ -289,11 +302,11 @@ mod tests {
             );
         }
         let expected: std::collections::BTreeSet<&str> =
-            ["evaluate", "family"].into_iter().collect();
+            ["causes", "evaluate", "family"].into_iter().collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond evaluate/family"
+            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family"
         );
     }
 

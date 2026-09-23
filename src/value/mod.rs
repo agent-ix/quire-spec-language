@@ -192,7 +192,8 @@ pub use expression::CheckedPackage;
 // beside the v2 codec it wraps.
 pub use expression::{
     decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
-    InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
+    FamilyOutcome, FamilyResult, InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName,
+    ValueLoss,
 };
 // The S2 parsed-form types (ADR-011 §6.2 module map: `value::expression::syntax`
 // moves to layer-2 `forms`, M-3a). Re-exported here, not re-defined: `forms`
