@@ -24,7 +24,6 @@ pub mod native_model;
 pub mod package;
 mod parser;
 pub mod protocol_artifact;
-pub mod route;
 pub mod runtime;
 pub mod simulation;
 pub mod state;

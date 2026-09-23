@@ -22,7 +22,7 @@
 //! `UnfinishedSubject`, `UnknownSubject`). The former backend-dependent
 //! dispositions `UnsupportedCapability` and `UnsupportedFamily` are
 //! removed, unconditionally: candidates and routing live only in the
-//! `#185` registry (`crate::route`), and every disposition that depends on
+//! `#185` registry (`qsl_route`), and every disposition that depends on
 //! backend support is settled only by `quire-contract-codegen`'s
 //! `negotiate_*` (quire-contract-codegen#86).
 //!
@@ -331,7 +331,7 @@ pub fn family(namespace: &SyntaxNamespace, declaration: DeclarationId) -> Option
 /// state. It reports each pair's admission-level disposition only
 /// (`Admitted` when the subject bound and the claim applies to the
 /// declaration's family); whether any backend actually supports the claim
-/// is computed downstream by the `#185` registry (`crate::route`) and
+/// is computed downstream by the `#185` registry (`qsl_route`) and
 /// settled by `quire-contract-codegen`'s `negotiate_*`.
 pub fn report(
     bound: &binding::Report<'_>,

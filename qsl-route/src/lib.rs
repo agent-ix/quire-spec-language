@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Layer R: the `#185` capability-backend registry and router (ADR-011
-//! §6.1 layer R; ADR-012 §6, §7).
+//! `qsl-route`: the ADR-011 §6.1 layer **R** crate (QSL-184, ADR-011 §7.3
+//! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
+//! §7). It depends only on `qsl-semantics` (layer 3) and `qsl-foundation`
+//! (layer F).
 //!
 //! `route` answers one question -- **which registered backends, if any,
 //! advertise the capability kind a requested item needs** -- and nothing
@@ -161,9 +163,10 @@ impl BackendDescriptor {
     /// (FR-080-AC-5) instead of silently comparing unequal. Checked in as an
     /// S7 seam-probe location (`xtask seam_probe::checked_in_locations`,
     /// `same_kind`): `cargo xtask seam-probe` builds this crate under
-    /// `RUSTFLAGS=--cfg seam_probe`, which adds a `#[cfg(seam_probe)]` probe
-    /// variant to `Capability` (`src/check/capability.rs`), and confirms
-    /// this match fails to compile with `E0004` (non-exhaustive) against it.
+    /// `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`, which adds a
+    /// `#[cfg(seam_probe)]` probe variant to `Capability`
+    /// (`qsl-semantics/src/check/capability.rs`), and confirms this match
+    /// fails to compile with `E0004` (non-exhaustive) against it.
     fn advertises_kind(&self, kind: Capability) -> bool {
         fn same_kind(a: Capability, b: Capability) -> bool {
             match a {
