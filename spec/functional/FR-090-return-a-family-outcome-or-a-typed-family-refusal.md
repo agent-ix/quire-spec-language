@@ -516,9 +516,11 @@ model-layer `ModelQueryHalt`, and the evaluator turns it into a
 `FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
 with no `_` arm (`src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
 delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
-O-16 category. `quire_exact::Undefined` and `Refusal`, and QSL's kernel copy
-in `src/value/outcome.rs`, have no `PreconditionFalse`, `AbsentKey`,
-`WrongSnapshot` or `Model` variant.
+O-16 category. `quire_exact::Undefined` and `Refusal` have no
+`PreconditionFalse`, `AbsentKey`, `WrongSnapshot` or `Model` variant; nor did
+QSL's kernel copy, before QSL-131 O2 deleted `src/value/outcome.rs` and
+repointed every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
+directly.
 
 The S6a family kind is `S6aFamilyKind { Value }` (`src/family/mod.rs`):
 `Value` is the family that implements `ReferenceEvaluation`. The S6a seam

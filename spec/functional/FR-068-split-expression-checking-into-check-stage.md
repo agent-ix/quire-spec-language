@@ -456,19 +456,22 @@ exact thirteen names.
 
 ### The K-designated `outcome.rs` edge: path update only, not a fix
 
-`src/value/outcome.rs` — a `value` kernel submodule the module table
-assigns to K (`quire-exact`) — imports `WrongSnapshotCause` from
-`super::expression` today. ADR-011 §6.1 names this exact edge
-(`value/outcome.rs:10,13`) among those "X-1 must cut" so that K stays a leaf;
-X-1 is reported landed, yet this one edge is still present on disk (see
-Open Questions). This requirement relocates `WrongSnapshotCause`'s defining
-module from `value::expression` to `check`; `value::outcome.rs`'s import
-SHALL be updated to name the new module (`crate::check::WrongSnapshotCause`)
-so the crate keeps compiling. This requirement SHALL NOT otherwise change
-`value::outcome.rs`, and SHALL NOT attempt to cut the K→3 direction of that
-edge: removing the edge's direction, as distinct from updating its path, is
-ADR-011 §6.1's X-1 obligation and QSL-131's tracked scope, not this
-requirement's.
+**`src/value/outcome.rs` no longer exists (QSL-131 O2 deleted it); this
+section describes a since-completed step, not a live edge.** At the time
+this requirement was implemented, `src/value/outcome.rs` — a `value` kernel
+submodule the module table assigned to K (`quire-exact`) — imported
+`WrongSnapshotCause` from `super::expression`. ADR-011 §6.1 named this exact
+edge (`value/outcome.rs:10,13`) among those "X-1 must cut" so that K stays a
+leaf; X-1 was reported landed while this one edge remained present on disk
+(see Open Questions). This requirement relocated `WrongSnapshotCause`'s
+defining module from `value::expression` to `check`; `value::outcome.rs`'s
+import was updated to name the new module (`crate::check::WrongSnapshotCause`)
+so the crate kept compiling, and this requirement made no other change to
+`value::outcome.rs`, per its original SHALL NOT. QSL-131 O2 later cut the
+K→3 direction of the edge outright, by deleting `value::outcome.rs` and
+repointing every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
+directly — the removal FR-068 itself was scoped not to attempt (see
+FR-068-AC-8, retired).
 
 ## Constraints
 
@@ -578,6 +581,12 @@ boundaries continues to hold unchanged.
 
 ## Open Questions
 
+- **Resolved by QSL-131 O2 (2026-09-23): `value::outcome.rs` is deleted, so
+  the edge this question asked about no longer exists to be open or closed.**
+  QSL-131 O2 removed the module entirely and repointed every caller onto
+  `quire_exact::{Outcome, Refusal, Undefined}` directly, which cuts the
+  edge's direction, not only its path — the question below, preserved for
+  its reasoning, is answered: QSL-131's scope did cover this line.
 - **The `value::outcome.rs` → `WrongSnapshotCause` edge is still live on
   disk, despite X-1 being reported landed.** ADR-011 §6.1 lists this exact
   edge (`value/outcome.rs:10,13`) among those X-1 "must cut" so K stays a

@@ -159,9 +159,12 @@ declared interim edge (four names for `checked_dispatch.rs`, nine for
 flat form, valid inside `model`, to the crate-absolute, submodule-qualified
 form `check`'s own files already use — `crate::forms::{...}`,
 `crate::value::composite::{...}`, `quire_exact::NodeKey`,
-`crate::value::numeric::OrderingOperator` — per the existing FR-068-AC-6
-tier rule for `check`'s own shipped `value` imports, which now applies to
-these files for the first time because they are now under `src/check/`) but
+`quire_exact::OrderingOperator` (named `crate::value::numeric::OrderingOperator`
+at the time of this move; QSL-131 O3 later deleted `value::numeric` and
+repointed the import directly onto `quire_exact`) — per the existing
+FR-068-AC-6 tier rule for `check`'s own shipped `value` imports, which now
+applies to these files for the first time because they are now under
+`src/check/`) but
 SHALL NOT change *what* they import: the same items, resolving to the same
 definitions, before and after the move.
 
