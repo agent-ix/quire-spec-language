@@ -6,7 +6,7 @@ use super::refusal::Location;
 use crate::value::collection::CollectionType;
 use crate::value::composite::{Value, ValueType};
 use crate::value::decimal::DecimalType;
-use crate::value::equality::{CheckedEquality, EqualityOperand, EqualityOperator};
+use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator};
 use crate::value::node::NodeKey;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
