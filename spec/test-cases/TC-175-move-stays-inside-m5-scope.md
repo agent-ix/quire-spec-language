@@ -36,14 +36,10 @@ FR-068-AC-6's module-level layer rule. `check` may import any item of a
 permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `family`, `model` and `value::model_query`, `library`, the §6.2
 `semantic_value` modules (`value::definition`, `value::enumeration`,
-`value::unit`, `value::quantity`, `value::key`, `value::reference`,
-`value::containment`, `value::semantic_node`) and `value::declaration`. The
-`value` K-copy list is now empty (`value::outcome` left it under QSL-131
-O2, which deleted the module; `value::decimal`, `value::ieee`,
-`value::numeric` and `value::text` left it under QSL-131 O3, which deleted
-the four modules; `value::collection`, `value::composite`,
-`value::equality` and `value::rational` left it under QSL-131 V5b, which
-deleted the four modules). `check` imports nothing from a later layer:
+`value::unit`, `value::quantity`, `value::reference`,
+`value::containment`, `value::semantic_node`, `value::declaration`). There
+is no `value` K-copy module; `check` reaches every kernel item through
+`quire_exact`. `check` imports nothing from a later layer:
 `checked_package`, `package`, `value::expression`, `route`, `replay` or
 `lowering`. Every `value` import names its submodule.
 
