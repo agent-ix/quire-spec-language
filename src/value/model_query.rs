@@ -130,12 +130,12 @@ fn to_object_reference(key: &ReferenceKey) -> Result<ObjectReference, ModelQuery
     Ok(ObjectReference::new(universe, key.type_identity, identity))
 }
 
-/// The FR-143 byte transfer of `reference`'s own identity triple into a
-/// [`LookupKey`] for [`lookup`], paired with `static_type`. Always succeeds
-/// (see the module docs): every component is carried as `reference`'s own
-/// raw bytes, exactly as supplied, never bridged, classified or substituted
-/// here -- [`lookup`] alone decides whether `universe` or `object` is
-/// well-formed.
+/// `reference`'s own identity triple as a [`LookupKey`] for [`lookup`],
+/// paired with `static_type`. Always succeeds (see the module docs): the
+/// type is `reference`'s own [`EffectiveId`], and `universe` and `object` are
+/// its own raw bytes, exactly as supplied, never bridged, classified or
+/// substituted here -- [`lookup`] alone decides whether `universe` or
+/// `object` is well-formed.
 fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -> LookupKey {
     LookupKey {
         static_type,

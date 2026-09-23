@@ -57,9 +57,9 @@
 //! documented canonical encoding this module's own module docs once called
 //! for: FR-143 defines a reference's `universe` and most-specific `type` as
 //! literally this crate's own `quire.model.object-universe/v1` and
-//! `quire.model.effective-declaration/v1` digests, so that bridge is a
-//! direct byte transfer between `EffectiveId`/`DeclarationKey` and
-//! `NodeKey`/`UniverseIdentity`, never a re-hash.
+//! `quire.model.effective-declaration/v1` digests, so that bridge carries
+//! the type component as the same `EffectiveId` (ADR-013 O-05) and the
+//! universe as its own bytes in `UniverseIdentity`, never a re-hash.
 //!
 //! # Binding/domain package correspondence
 //!
