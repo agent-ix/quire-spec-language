@@ -21,10 +21,10 @@ use super::composite::{
 };
 use super::equality::plan_pairs;
 use super::key::compare_keys;
-use super::outcome::{Outcome, Refusal, Stop};
+use super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::{
     length_amount, BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Integer,
-    LimitKind, Meter,
+    LimitKind, Meter, Outcome, Refusal,
 };
 
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own FR-144
@@ -141,7 +141,7 @@ pub fn construct_collection(
     elements: Vec<Deferred<'_>>,
     meter: &mut Meter,
 ) -> Outcome<Value> {
-    Outcome::from_stop(construct(collection_type, elements, meter))
+    outcome_from_stop(construct(collection_type, elements, meter))
 }
 
 fn construct(
@@ -152,7 +152,7 @@ fn construct(
     let mut occurrences = Vec::with_capacity(elements.len());
     for element in elements {
         meter.charge(Charge::new(ChargePoint::CollectionElement))?;
-        let value = element(meter).into_stop()?;
+        let value = outcome_into_stop(element(meter))?;
         if !collection_type.element.admits(&value) {
             return Err(Stop::Refused(Refusal::CheckedInvariant));
         }
@@ -179,11 +179,7 @@ pub fn form_collection(
             cause: ConstructionCause::TypeMismatch,
         });
     }
-    Ok(Outcome::from_stop(form(
-        collection_type,
-        occurrences,
-        meter,
-    )))
+    Ok(outcome_from_stop(form(collection_type, occurrences, meter)))
 }
 
 pub(crate) fn form(

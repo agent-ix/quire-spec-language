@@ -18,8 +18,8 @@
 //! it.
 
 use super::composite::{FieldValue, Value};
-use super::outcome::{Refusal, Stop};
-use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter};
+use super::stop::Stop;
+use quire_exact::{Charge, ChargePoint, Integer, LimitKind, Meter, Refusal};
 
 // `EqualityPlan` is `quire_exact`'s own canonical type (QSL-131): it wraps
 // nothing but an `Integer` pair count, so it carries no dependency on

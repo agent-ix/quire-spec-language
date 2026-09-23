@@ -15,8 +15,8 @@ use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use quire_exact::{
-    ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
-    ScalarLimits,
+    ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
+    Refusal, ScalarLimits, Undefined,
 };
 use quire_exact::{
     Decimal, IeeeExactLoss, IeeeFlags, IeeeOperation, IeeeWidth, IllTyped, IllTypedCause, Rational,
@@ -26,8 +26,8 @@ use quire_spec_language::value::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
     ieee_to_exact, CatalogRole, DecimalType, DefinitionLock, DefinitionReference,
     DefinitionRevision, ExactScalar, IeeeComparison, IeeeExact, IeeeExactTarget, IeeeFlag,
-    IeeeOperand, IeeeResult, IeeeValue, Outcome, PackageCause, PackageRefusalCode, RationalDomain,
-    Refusal, Undefined, IEEE_DEFINITION,
+    IeeeOperand, IeeeResult, IeeeValue, PackageCause, PackageRefusalCode, RationalDomain,
+    IEEE_DEFINITION,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

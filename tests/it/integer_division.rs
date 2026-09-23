@@ -10,12 +10,12 @@ use std::num::NonZeroU32;
 use ix_trace_rs::trace;
 use quire_exact::{
     ChargePoint, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
-    IntegerInterval, LimitKind, Meter, QuotientRemainder, ScalarLimits,
+    IntegerInterval, LimitKind, Meter, Outcome, QuotientRemainder, Refusal, ScalarLimits,
+    Undefined,
 };
 use quire_spec_language::value::{
     divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
-    DefinitionRevision, Outcome, PackageCause, PackageRefusal, PackageRefusalCode, Refusal,
-    Undefined,
+    DefinitionRevision, PackageCause, PackageRefusal, PackageRefusalCode,
 };
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

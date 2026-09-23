@@ -33,8 +33,10 @@
 //!    `and`/`or`/`implies`/`not` over
 //!    [`BooleanConnective`](quire_exact::BooleanConnective) operands — all
 //!    under `quire.value.accounting/v1` (QSL #119);
-//! 5. the distinct evaluator [`Outcome`] with typed [`Undefined`], [`Refusal`]
-//!    and [`Incomplete`](quire_exact::Incomplete) reasons;
+//! 5. the distinct evaluator [`Outcome`](quire_exact::Outcome) with typed
+//!    [`Undefined`](quire_exact::Undefined), [`Refusal`](quire_exact::Refusal)
+//!    and [`Incomplete`](quire_exact::Incomplete) reasons -- the kernel's own
+//!    types (QSL-131 O2 deleted this module's byte-identical copy);
 //! 6. `quire.value.accounting/v1` metering through
 //!    [`Meter`](quire_exact::Meter).
 //!
@@ -117,11 +119,11 @@ mod key;
 mod member;
 mod model_query;
 pub(crate) mod numeric;
-mod outcome;
 pub(crate) mod quantity;
 pub(crate) mod rational;
 mod reference;
 pub(crate) mod semantic_node;
+mod stop;
 pub(crate) mod text;
 mod unit;
 
@@ -204,7 +206,18 @@ pub use member::Member;
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
 };
-pub use outcome::{Outcome, PreconditionFailure, Refusal, Undefined};
+// QSL-131 O2: `Outcome`, `Undefined` and `Refusal` were this module's own
+// `outcome` submodule, a byte-identical duplicate of `quire_exact`'s O-16
+// kernel types (ADR-011 §6.1's K row), re-exported from here. That
+// submodule is deleted; every former consumer now imports
+// `quire_exact::{Outcome, Undefined, Refusal}` directly -- one definition,
+// one import path, no re-export standing in for the deleted module.
+// `PreconditionFailure` was `outcome`'s own non-kernel type (FR-151 dispatch
+// vocabulary, ADR-013 T-6); it moved to `value::expression::causes`, the
+// module that owns the `StateModel` undefined cause it is the payload of,
+// narrowed to `pub(crate)` since its only consumers are inside
+// `value::expression` (rust-review "narrow API" bar: `pub` only for what
+// consumers outside the crate use).
 pub use quantity::{
     compare_quantity, convert_quantity, evaluate_quantity, Conversion, ConvertedValue,
     QuantityOperation, QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,

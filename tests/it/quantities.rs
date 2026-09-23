@@ -12,8 +12,8 @@ use num_bigint::{BigInt, BigUint};
 use num_traits::Pow;
 use quire_exact::NodeKey;
 use quire_exact::{
-    ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
-    ScalarLimits,
+    ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
+    Refusal, ScalarLimits, Undefined,
 };
 use quire_exact::{
     ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
@@ -24,9 +24,8 @@ use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
     compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
     ConvertedValue, Dimension, DimensionPreimage, InvalidCompoundUnit, InvalidSemanticGraph,
-    NodeOwner, NotAUnitKey, Outcome, OwnerSelection, OwnerSubject, QuantityOperation,
-    QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined, UnitGraph, UnitPreimage,
-    UnitQuantity, UnitTable,
+    NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, QuantityOperation, QuantityTarget,
+    QuantityUnit, SemanticGraphCause, UnitGraph, UnitPreimage, UnitQuantity, UnitTable,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

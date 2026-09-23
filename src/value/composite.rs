@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use super::collection::{CollectionType, CollectionValue};
 use super::decimal::DecimalType;
-use super::outcome::{Outcome, Stop};
+use super::stop::Stop;
 use super::text::Text;
 use quire_exact::Decimal;
 use quire_exact::EffectiveId;
@@ -51,6 +51,7 @@ use quire_exact::IeeeWidth;
 use quire_exact::IllTyped;
 use quire_exact::NodeKey;
 use quire_exact::ObjectReference;
+use quire_exact::Outcome;
 use quire_exact::Rational;
 use quire_exact::TextType;
 use quire_exact::{

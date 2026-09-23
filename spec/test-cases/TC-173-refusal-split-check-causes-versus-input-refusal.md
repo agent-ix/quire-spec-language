@@ -18,13 +18,22 @@ for `value::expression::refusal`: `check` defines every check-cause type
 `WrongSnapshotCause`) and does not define `InputRefusal`; `value::expression`
 defines `InputRefusal`, relocated beside `CheckedPackage::call`'s and
 `CheckedPackage::evaluate`'s admission code, and does not define any of the
-twelve check-cause types. It also verifies the one mechanical consequence of
-relocating `WrongSnapshotCause`: `value::outcome.rs`'s import updates to name
-`check`, with no other change to that file. This test catches both an
-over-move (`InputRefusal` folded into `check`, collapsing the split ADR-011
-requires) and an under-move (one or more check-cause types left behind in
-`value::expression`, so `check`'s own checking methods cannot use them
-without a reverse edge). Scope: FR-068-AC-4, FR-068-AC-8.
+twelve check-cause types. This test catches both an over-move (`InputRefusal`
+folded into `check`, collapsing the split ADR-011 requires) and an
+under-move (one or more check-cause types left behind in `value::expression`,
+so `check`'s own checking methods cannot use them without a reverse edge).
+Scope: FR-068-AC-4, FR-068-AC-8 (retired).
+
+**Steps 4-5 are retired under QSL-131 O2, which deletes `value/outcome.rs`.**
+This test formerly also verified the one mechanical consequence of
+relocating `WrongSnapshotCause` onto that file: its import updating to name
+`check`, with no other change to the file. `value/outcome.rs` does not exist
+now — QSL-131 O2 deletes the module and repoints every `value` caller onto
+`quire_exact::{Outcome, Refusal, Undefined}` directly (TC-390) — so there is
+no file left for steps 4-5 to read or diff, and FR-068-AC-8, the criterion
+they verified, is retired for the same reason. Nothing takes their place: the
+one import path they checked is gone along with the file that carried it,
+not relocated to a successor.
 
 ## Test Procedure
 
@@ -34,10 +43,6 @@ without a reverse edge). Scope: FR-068-AC-4, FR-068-AC-8.
 3. Confirm `InputRefusal`'s defining location is textually adjacent to (in
    the same file as, or a file dedicated to) `CheckedPackage::call`'s and
    `CheckedPackage::evaluate`'s admission logic, inside `value::expression`.
-4. Read `src/value/outcome.rs`'s import list and confirm its
-   `WrongSnapshotCause` import resolves to `crate::check::WrongSnapshotCause`.
-5. Diff `src/value/outcome.rs` against its pre-move baseline and confirm the
-   only change is the one import path.
 
 ## Expected Results
 
@@ -53,7 +58,5 @@ without a reverse edge). Scope: FR-068-AC-4, FR-068-AC-8.
   failure of FR-068-AC-4's letter — record it as a note if found without the
   physical relocation, since the criterion's binding requirement is the
   type/module split, not the exact line position.
-- Step 4: the import resolves to `crate::check::WrongSnapshotCause`; any
-  other resolution, or a compile error, fails this step.
-- Step 5: no other line of `value::outcome.rs` differs from the pre-move
-  baseline; any other diff fails this step and names it.
+- Steps 4-5: retired (see Description); this test has no expected results
+  for them.

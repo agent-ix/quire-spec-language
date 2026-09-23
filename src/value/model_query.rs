@@ -84,8 +84,8 @@ use qsl_foundation::diagnostic::Code;
 
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
-use super::outcome::{Refusal, Stop};
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, PopulationId};
+use super::stop::Stop;
+use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, PopulationId, Refusal};
 
 /// Why a population query stopped without a value. The evaluator
 /// (`value::expression`, layer 5) turns `Refused` and `AbsentKey` into the

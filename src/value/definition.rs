@@ -3,8 +3,8 @@
 //! admission, integer-division profile admission and IEEE profile admission.
 //!
 //! [`divide`] and [`modulo`] evaluate integer division under an admitted law.
-//! They call `quire_exact::divide`/`modulo` and carry the kernel outcome over
-//! into this crate's [`Outcome`].
+//! They call `quire_exact::divide`/`modulo` and carry the kernel
+//! [`Outcome`](quire_exact::Outcome) straight through.
 //!
 //! Profile misuse is refused here, at semantic admission, before any expression
 //! is evaluated. Selection refusals use the lock's closed
@@ -22,9 +22,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::outcome::Outcome;
 use quire_exact::{
-    ieee_intrinsic_identities, DivisionProfile, Integer, IntegerDomain, Meter, QuotientRemainder,
+    ieee_intrinsic_identities, DivisionProfile, Integer, IntegerDomain, Meter, Outcome,
+    QuotientRemainder,
 };
 
 /// The lock's `trigger_vocabulary`.
@@ -742,7 +742,7 @@ pub fn divide(
     domain: &IntegerDomain,
     meter: &mut Meter,
 ) -> Outcome<QuotientRemainder> {
-    quire_exact::divide(selection.profile(), dividend, divisor, domain, meter).into()
+    quire_exact::divide(selection.profile(), dividend, divisor, domain, meter)
 }
 
 /// Evaluate `mod`: always the Euclidean remainder, independent of any selected
@@ -753,7 +753,7 @@ pub fn modulo(
     domain: &IntegerDomain,
     meter: &mut Meter,
 ) -> Outcome<Integer> {
-    quire_exact::modulo(dividend, divisor, domain, meter).into()
+    quire_exact::modulo(dividend, divisor, domain, meter)
 }
 
 /// An IEEE package whose profile definition closure was admitted. Only

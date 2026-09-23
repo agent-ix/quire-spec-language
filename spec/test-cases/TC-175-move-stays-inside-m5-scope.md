@@ -40,8 +40,9 @@ permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
 `value::containment`, `value::semantic_node`) and `value::declaration`, and the `value` K-copy
 modules while each exists (`value::collection`,
 `value::composite`, `value::decimal`, `value::equality`,
-`value::ieee`, `value::numeric`, `value::outcome`,
-`value::rational`, `value::text`). `check` imports nothing from a later
+`value::ieee`, `value::numeric`,
+`value::rational`, `value::text`; `value::outcome` left this list under
+QSL-131 O2, which deleted the module). `check` imports nothing from a later
 layer: `checked_package`, `package`, `value::expression`, `route`, `replay`
 or `lowering`. Every `value` import names its submodule.
 

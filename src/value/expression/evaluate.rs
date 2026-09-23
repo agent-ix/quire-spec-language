@@ -22,14 +22,15 @@ use super::super::numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean,
 };
-use super::super::outcome::{Outcome, PreconditionFailure, Refusal, Stop, Undefined};
 use super::super::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
 use super::super::reference::ObjectEnvironment;
+use super::super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use super::super::text::compare_text;
 use super::causes::{
-    identity_string, ModelQueryRefusal, ProtocolClauseSnapshot, StateModelUndefined,
+    identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
+    StateModelUndefined,
 };
 use super::FamilyOutcome;
 use crate::check::{
@@ -51,6 +52,7 @@ use quire_exact::{
 };
 use quire_exact::{Decimal, DecimalOperation, RoundingMode};
 use quire_exact::{IeeeExactLoss, IeeeFlags, IeeeOperation};
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome
@@ -114,8 +116,8 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
 /// `Family` becomes `Ok(Evaluation { outcome: FamilyOutcome::
 /// FamilyEvaluated(_), .. })` located at the current task like a `Stop`
 /// (FR-090-OQ-3), and `Stop` goes through [`Self::stopped`]/
-/// [`Outcome::from_stop`]. No `Stop` variant carries a fault, so no
-/// `Stop`-returning helper can pass one to `Outcome::from_stop`.
+/// [`outcome_from_stop`]. No `Stop` variant carries a fault, so no
+/// `Stop`-returning helper can pass one to [`outcome_from_stop`].
 enum Halt {
     /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
     Stop(Stop),
@@ -407,7 +409,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         }
         match (self.values.pop(), self.values.is_empty()) {
             (Some(value), true) => Ok(Evaluation {
-                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value).into_kernel()),
+                outcome: FamilyOutcome::Evaluated(Outcome::Completed(value)),
                 location: None,
                 losses: self.losses,
             }),
@@ -417,7 +419,7 @@ impl<'a, 'm> Machine<'a, 'm> {
 
     fn stopped(stop: Stop, location: &Location) -> Evaluation {
         Evaluation {
-            outcome: FamilyOutcome::Evaluated(Outcome::from_stop(Err(stop)).into_kernel()),
+            outcome: FamilyOutcome::Evaluated(outcome_from_stop(Err(stop))),
             location: Some(location.clone()),
             losses: Vec::new(),
         }
@@ -481,7 +483,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         operation: DecimalOperation<'_>,
         target: &DecimalType,
     ) -> Result<Value, Stop> {
-        let result = evaluate_decimal(operation, target, self.meter).into_stop()?;
+        let result = outcome_into_stop(evaluate_decimal(operation, target, self.meter))?;
         if let Some(loss) = result.loss() {
             self.record(node, ValueLoss::Decimal(loss.clone()));
         }
@@ -754,32 +756,26 @@ impl<'a, 'm> Machine<'a, 'm> {
                     Arithmetic::Subtract => IntegerArithmetic::Subtract(&left, &right),
                     Arithmetic::Multiply => IntegerArithmetic::Multiply(&left, &right),
                 };
-                Value::Integer(
-                    evaluate_integer_arithmetic(operation, None, self.meter).into_stop()?,
-                )
+                Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
+                    operation, None, self.meter,
+                ))?)
             }
             NodeKind::Negate(_) => {
                 let operand = self.pop_integer()?;
-                Value::Integer(
-                    evaluate_integer_arithmetic(
-                        IntegerArithmetic::Negate(&operand),
-                        None,
-                        self.meter,
-                    )
-                    .into_stop()?,
-                )
+                Value::Integer(outcome_into_stop(evaluate_integer_arithmetic(
+                    IntegerArithmetic::Negate(&operand),
+                    None,
+                    self.meter,
+                ))?)
             }
             NodeKind::Divide { domain, .. } => {
                 let right = Rational::from_integer(self.pop_integer()?);
                 let left = Rational::from_integer(self.pop_integer()?);
-                Value::Rational(
-                    evaluate_rational_arithmetic(
-                        RationalArithmetic::Divide(&left, &right),
-                        Some(domain),
-                        self.meter,
-                    )
-                    .into_stop()?,
-                )
+                Value::Rational(outcome_into_stop(evaluate_rational_arithmetic(
+                    RationalArithmetic::Divide(&left, &right),
+                    Some(domain),
+                    self.meter,
+                ))?)
             }
             NodeKind::Rational {
                 operator, domain, ..
@@ -792,21 +788,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                     ArithmeticOperator::Multiply => RationalArithmetic::Multiply(&left, &right),
                     ArithmeticOperator::Divide => RationalArithmetic::Divide(&left, &right),
                 };
-                Value::Rational(
-                    evaluate_rational_arithmetic(operation, Some(domain), self.meter)
-                        .into_stop()?,
-                )
+                Value::Rational(outcome_into_stop(evaluate_rational_arithmetic(
+                    operation,
+                    Some(domain),
+                    self.meter,
+                ))?)
             }
             NodeKind::RationalNegate(_, domain) => {
                 let operand = self.pop_rational()?;
-                Value::Rational(
-                    evaluate_rational_arithmetic(
-                        RationalArithmetic::Negate(&operand),
-                        Some(domain),
-                        self.meter,
-                    )
-                    .into_stop()?,
-                )
+                Value::Rational(outcome_into_stop(evaluate_rational_arithmetic(
+                    RationalArithmetic::Negate(&operand),
+                    Some(domain),
+                    self.meter,
+                ))?)
             }
             NodeKind::Decimal {
                 operator, target, ..
@@ -853,9 +847,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 if self.scope.ieee_profile.is_none() {
                     return Err(invariant());
                 }
-                let result = evaluate_ieee(operation, RoundingMode::Exact, self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()?;
+                let result = outcome_into_stop(
+                    evaluate_ieee(operation, RoundingMode::Exact, self.meter)
+                        .map_err(|_| invariant())?,
+                )?;
                 if result.flags() != IeeeFlags::EMPTY {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()));
                 }
@@ -878,7 +873,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 let (outcome, unit) =
                     evaluate_quantity_unit(operation, self.meter).map_err(|_| invariant())?;
-                let quantity = outcome.into_stop()?;
+                let quantity = outcome_into_stop(outcome)?;
                 // A later operation reads this result's unit by its id; the
                 // scope keeps one entry per distinct unit.
                 self.units.form(unit);
@@ -892,13 +887,16 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Equality(_, checked, _, _) => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                Value::Boolean(checked.evaluate(&left, &right, self.meter).into_stop()?)
+                Value::Boolean(outcome_into_stop(
+                    checked.evaluate(&left, &right, self.meter),
+                )?)
             }
             NodeKind::Not(_) => {
                 let operand = self.pop_boolean()?;
-                Value::Boolean(
-                    evaluate_boolean(BooleanConnective::Not(operand), self.meter).into_stop()?,
-                )
+                Value::Boolean(outcome_into_stop(evaluate_boolean(
+                    BooleanConnective::Not(operand),
+                    self.meter,
+                ))?)
             }
             NodeKind::Field {
                 index, optional, ..
@@ -1044,9 +1042,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 if self.scope.ieee_profile.is_none() {
                     return Err(invariant());
                 }
-                let exact = ieee_to_exact(value, IeeeExactTarget::Rational(domain), self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()?;
+                let exact = outcome_into_stop(
+                    ieee_to_exact(value, IeeeExactTarget::Rational(domain), self.meter)
+                        .map_err(|_| invariant())?,
+                )?;
                 if let Some(loss) = exact.loss() {
                     self.record(node, ValueLoss::IeeeExact(loss));
                 }
@@ -1266,31 +1265,32 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ) else {
                     return Err(invariant());
                 };
-                return compare_enum(comparison(operator), l, r, self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()
-                    .map_err(Into::into);
+                return outcome_into_stop(
+                    compare_enum(comparison(operator), l, r, self.meter)
+                        .map_err(|_| invariant())?,
+                )
+                .map_err(Into::into);
             }
             (OrderedKind::Texts, Value::Text(l), Value::Text(r)) => {
-                return compare_text(comparison(operator), l, r, self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()
-                    .map_err(Into::into);
+                return outcome_into_stop(
+                    compare_text(comparison(operator), l, r, self.meter)
+                        .map_err(|_| invariant())?,
+                )
+                .map_err(Into::into);
             }
             (OrderedKind::Quantities, Value::Quantity(l), Value::Quantity(r)) => {
                 let (Some(l), Some(r)) = (self.units.resolve(l), self.units.resolve(r)) else {
                     return Err(unresolved_unit());
                 };
-                return compare_quantity(comparison(operator), l, r, self.meter)
-                    .map_err(|_| invariant())?
-                    .into_stop()
-                    .map_err(Into::into);
+                return outcome_into_stop(
+                    compare_quantity(comparison(operator), l, r, self.meter)
+                        .map_err(|_| invariant())?,
+                )
+                .map_err(Into::into);
             }
             _ => return Err(invariant()),
         };
-        order_numbers(operator, operands, self.meter)
-            .into_stop()
-            .map_err(Into::into)
+        outcome_into_stop(order_numbers(operator, operands, self.meter)).map_err(Into::into)
     }
 
     fn start_iteration(&mut self, node: &'a Node) -> Result<(), Halt> {
@@ -1357,12 +1357,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                         iteration.accumulator =
                             Some(Value::Integer(match iteration.accumulator.take() {
                                 None => summand,
-                                Some(Value::Integer(total)) => evaluate_integer_arithmetic(
-                                    IntegerArithmetic::Add(&total, &summand),
-                                    sum_domain(&node.value_type),
-                                    self.meter,
-                                )
-                                .into_stop()?,
+                                Some(Value::Integer(total)) => {
+                                    outcome_into_stop(evaluate_integer_arithmetic(
+                                        IntegerArithmetic::Add(&total, &summand),
+                                        sum_domain(&node.value_type),
+                                        self.meter,
+                                    ))?
+                                }
                                 Some(_) => return Err(invariant()),
                             }));
                         false

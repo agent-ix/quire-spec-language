@@ -20,14 +20,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::outcome::{Outcome, Stop};
 use super::semantic_node::{
     is_qualified_name, preimage_digest, refuse, retains, CanonicalNodeId, CanonicalOwner,
     InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     SemanticGraphCause,
 };
+use super::stop::{outcome_from_stop, Stop};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NodeKey;
+use quire_exact::Outcome;
 use quire_exact::VariantId;
 use quire_exact::{is_identifier, Charge, ChargePoint, LimitKind, Meter};
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
@@ -387,7 +388,7 @@ pub fn compare_enum(
             cause: IllTypedCause::UnorderedEnumOrdering,
         });
     }
-    Ok(Outcome::from_stop(compare(operator, left, right, meter)))
+    Ok(outcome_from_stop(compare(operator, left, right, meter)))
 }
 
 fn compare(

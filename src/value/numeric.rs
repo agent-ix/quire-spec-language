@@ -6,12 +6,13 @@
 //! Every size amount is derived before the value it measures is retained; no
 //! power of ten is allocated to measure an aligned decimal coefficient.
 
-use super::outcome::{Outcome, Refusal, Stop, Undefined};
+use super::stop::{outcome_from_stop, Stop};
 use quire_exact::{
     sbits, sdigits, BooleanConnective, Charge, ChargePoint, Incomplete, Integer, IntegerArithmetic,
     IntegerInterval, LimitKind, Meter, OrderedOperands, OrderingOperator, Rational,
     RationalArithmetic, RationalDomain,
 };
+use quire_exact::{Outcome, Refusal, Undefined};
 
 /// Order two exact numbers: `ordering.operands`, `ordering.arithmetic`, then
 /// `ordering.result-retain`.
@@ -20,7 +21,7 @@ pub fn order_numbers(
     operands: OrderedOperands<'_>,
     meter: &mut Meter,
 ) -> Outcome<bool> {
-    Outcome::from_stop(order(operator, operands, meter))
+    outcome_from_stop(order(operator, operands, meter))
 }
 
 fn order(
@@ -172,7 +173,7 @@ pub fn evaluate_integer_arithmetic(
     bound: Option<&IntegerInterval>,
     meter: &mut Meter,
 ) -> Outcome<Integer> {
-    Outcome::from_stop(integer_arithmetic(operation, bound, meter))
+    outcome_from_stop(integer_arithmetic(operation, bound, meter))
 }
 
 fn integer_arithmetic(
@@ -220,7 +221,7 @@ pub fn evaluate_rational_arithmetic(
     domain: Option<&RationalDomain>,
     meter: &mut Meter,
 ) -> Outcome<Rational> {
-    Outcome::from_stop(rational_arithmetic(operation, domain, meter))
+    outcome_from_stop(rational_arithmetic(operation, domain, meter))
 }
 
 fn rational_arithmetic(
@@ -297,7 +298,7 @@ pub fn evaluate_boolean(connective: BooleanConnective, meter: &mut Meter) -> Out
         BooleanConnective::Implies(left, right) => !left || right,
         BooleanConnective::Not(operand) => !operand,
     };
-    Outcome::from_stop(retain_boolean(result, meter).map_err(Stop::from))
+    outcome_from_stop(retain_boolean(result, meter).map_err(Stop::from))
 }
 
 /// Charge `boolean.result-retain` for a decided connective result.

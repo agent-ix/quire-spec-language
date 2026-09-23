@@ -12,11 +12,31 @@ use std::collections::BTreeMap;
 use qsl_foundation::diagnostic::{
     CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
+use quire_exact::ObjectReference;
 
-use super::super::outcome::PreconditionFailure;
 use crate::check::WrongSnapshotCause;
 use crate::model::key::hex;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+
+/// The `precondition-false` payload (`native-diagnostics.md`): the called
+/// effective operation, the selected method's effective identity, the
+/// receiver reference and the call locus. The call locus is the evaluator's
+/// own [`crate::value::Evaluation::location`], not repeated here. Moved from
+/// the now-deleted `value::outcome` (QSL-131 O2): not a kernel type
+/// (ADR-013 T-6 -- FR-151 dispatch resolution is QSL `model`/`check`
+/// vocabulary), and narrowed to `pub(crate)` since its only consumers are
+/// [`StateModelUndefined::PreconditionFalse`] here and `Machine`'s
+/// `DispatchGuard` in `value::expression::evaluate`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PreconditionFailure {
+    /// The called effective operation's unqualified member name.
+    pub(crate) operation: String,
+    /// The selected method's effective identity: the redefinition candidate
+    /// the receiver's most-specific runtime type actually linked to.
+    pub(crate) selected: String,
+    /// The receiver reference the call was made on.
+    pub(crate) receiver: ObjectReference,
+}
 
 /// ADR-013 T-6: `ProtocolClause`'s evaluation-time refusal cause, carrying
 /// [`WrongSnapshotCause`]. `ProtocolClause` owns `Pre` (ADR-012 §4.3;

@@ -15,8 +15,8 @@ use qsl_foundation::SourceIdentity;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
-    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter,
-    ScalarLimits,
+    CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, Outcome,
+    Refusal, ScalarLimits,
 };
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
@@ -29,8 +29,8 @@ use quire_spec_language::value::{
     ConstructionRefusal, DeclarationCause, EnumMemberIndex, EqualityOperand, EqualityOperator,
     FieldDeclaration, FieldExpression, FieldValue, GraphCause, GraphNode, GraphNodeId,
     GraphRefusal, GraphSlot, InvalidDeclaration, ObjectEnvironment, ObjectEnvironmentCause,
-    ObjectEnvironmentRefusal, ObjectTypeDeclaration, OptionValue, Outcome, QualifiedName,
-    RecursionEdges, TypeEnvironment, Value, ValueGraph, ValueType,
+    ObjectEnvironmentRefusal, ObjectTypeDeclaration, OptionValue, QualifiedName, RecursionEdges,
+    TypeEnvironment, Value, ValueGraph, ValueType,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -543,7 +543,7 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
                 (
                     "a",
                     FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
-                        Outcome::Refused(quire_spec_language::value::Refusal::CheckedInvariant)
+                        Outcome::Refused(Refusal::CheckedInvariant)
                     })),
                 ),
             ],
@@ -552,7 +552,7 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
         .unwrap();
     assert!(matches!(
         outcome,
-        Outcome::Refused(quire_spec_language::value::Refusal::CheckedInvariant)
+        Outcome::Refused(Refusal::CheckedInvariant)
     ));
     assert!(!b_ran.get());
     assert!(meter.admitted_charges().is_empty());

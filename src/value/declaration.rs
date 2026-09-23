@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
-    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Presence,
-    Quantity, Rational,
+    Decimal, DecimalOperation, IllTyped, IllTypedCause, Integer, LimitKind, Meter, Outcome,
+    Presence, Quantity, Rational, Refusal,
 };
 
 use super::composite::{
@@ -35,10 +35,10 @@ use super::composite::{
 use super::decimal::{evaluate_decimal, DecimalType};
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::equality::planned_equality;
-use super::outcome::{Outcome, Refusal, Stop};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
+use super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use super::text::compare_text;
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
@@ -750,13 +750,13 @@ impl TypeEnvironment {
                 Some(FieldExpression::Evaluate(expression)) => {
                     match admitted(field.value_type(), expression(meter)) {
                         Ok(value) => FieldValue::Present(value),
-                        Err(stop) => return Ok(Outcome::from_stop(Err(stop))),
+                        Err(stop) => return Ok(outcome_from_stop(Err(stop))),
                     }
                 }
             };
             slots.push(slot);
         }
-        Ok(Outcome::from_stop(retain_composite(
+        Ok(outcome_from_stop(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
         )))
@@ -776,10 +776,10 @@ impl TypeEnvironment {
         for (value_type, expression) in declared.iter().zip(positions) {
             match admitted(value_type, expression(meter)) {
                 Ok(value) => slots.push(FieldValue::Present(value)),
-                Err(stop) => return Ok(Outcome::from_stop(Err(stop))),
+                Err(stop) => return Ok(outcome_from_stop(Err(stop))),
             }
         }
-        Ok(Outcome::from_stop(retain_composite(
+        Ok(outcome_from_stop(retain_composite(
             composite(declaration, slots.into_boxed_slice()),
             meter,
         )))
@@ -822,7 +822,7 @@ fn duplicate_name(fields: &[FieldDeclaration]) -> Option<String> {
 /// guarantees is a member of `value_type`. Its only callers are
 /// `evaluate_record`/`evaluate_tuple` below.
 fn admitted(value_type: &ValueType, outcome: Outcome<Value>) -> Result<Value, Stop> {
-    let value = outcome.into_stop()?;
+    let value = outcome_into_stop(outcome)?;
     if value_type.admits(&value) {
         Ok(value)
     } else {
@@ -1044,7 +1044,7 @@ impl CheckedEquality {
     /// checking (ADR-013 T-6, last sentence) before calling [`compare_enum`],
     /// which needs none of the other schedules' declaration or unit data.
     pub fn evaluate(&self, left: &Value, right: &Value, meter: &mut Meter) -> Outcome<bool> {
-        Outcome::from_stop(self.run(left, right, meter))
+        outcome_from_stop(self.run(left, right, meter))
     }
 
     fn run(&self, left: &Value, right: &Value, meter: &mut Meter) -> Result<bool, Stop> {
@@ -1081,7 +1081,7 @@ impl CheckedEquality {
                 _,
             ) => return Err(invariant()),
         };
-        scheduled.map_err(|_| invariant())?.into_stop()
+        outcome_into_stop(scheduled.map_err(|_| invariant())?)
     }
 }
 
@@ -1216,8 +1216,11 @@ pub(crate) fn operand_value(
             decimal_to_rational(decimal, meter)?
         }
         (_, ValueType::Decimal(to), Value::Decimal(decimal)) => {
-            let result =
-                evaluate_decimal(DecimalOperation::Round(decimal), to, meter).into_stop()?;
+            let result = outcome_into_stop(evaluate_decimal(
+                DecimalOperation::Round(decimal),
+                to,
+                meter,
+            ))?;
             Value::Decimal(result.value().clone())
         }
         (_, ValueType::Integer | ValueType::Int(_), Value::Decimal(decimal)) => {
@@ -1231,9 +1234,10 @@ pub(crate) fn operand_value(
             let (Some(source), Some(target)) = (units.resolve(quantity), units.get(*unit)) else {
                 return Err(invariant());
             };
-            let conversion = convert_quantity(source, target, &QuantityTarget::Exact, meter)
-                .map_err(|_| invariant())?
-                .into_stop()?;
+            let conversion = outcome_into_stop(
+                convert_quantity(source, target, &QuantityTarget::Exact, meter)
+                    .map_err(|_| invariant())?,
+            )?;
             match conversion.value() {
                 ConvertedValue::Exact(exact) => {
                     Value::Quantity(Quantity::new(exact.clone(), *unit))
