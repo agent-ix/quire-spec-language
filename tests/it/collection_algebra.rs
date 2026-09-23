@@ -2,6 +2,7 @@
 //! TC-189 collection kind algebra over the real `value` boundary (FR-144).
 
 use ix_trace_rs::trace;
+use quire_exact::NodeKey;
 use quire_exact::{
     BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextProfile, TextType,
 };
@@ -12,7 +13,7 @@ use quire_exact::{
 use quire_spec_language::value::{
     admit_text, construct_collection, form_collection, CollectionType, CompositeDeclaration,
     CompositeShape, Deferred, EqualityOperand, EqualityOperator, FieldDeclaration, FieldValue,
-    NodeKey, ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Refusal,
+    ObjectIdentity, ObjectReference, ObjectTypeDeclaration, OptionValue, Outcome, Refusal,
     TextPayload, TypeEnvironment, UniverseIdentity, Value, ValueType,
 };
 use sha2::{Digest, Sha256};

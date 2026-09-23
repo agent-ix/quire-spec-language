@@ -57,7 +57,7 @@ use std::collections::BTreeMap;
 
 use sha2::{Digest, Sha256};
 
-use crate::value::node::is_qualified_name;
+use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 

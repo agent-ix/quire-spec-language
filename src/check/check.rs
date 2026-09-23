@@ -61,10 +61,10 @@ use crate::value::declaration::{
 };
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{EnumDeclaration, EnumValue};
-use crate::value::node::NodeKey;
 use crate::value::quantity::{check_comparable, result_unit, UnitOperation};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::IllTypedCause;
+use quire_exact::NodeKey;
 use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};

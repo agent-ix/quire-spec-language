@@ -5,8 +5,8 @@
 //! Each rule names a symbol (a constructor or a facade module) and the
 //! module prefixes allowed to call it. The `quire-exact` crate defines the
 //! kernel `EffectiveId`/`NodeKey` types; T12-B, T12-C and T12-D each match
-//! that type's `from_digest` constructor, and `src/value/node.rs` re-exports
-//! the kernel `NodeKey` type rather than defining its own.
+//! that type's `from_digest` constructor; QSL defines no `NodeKey` of its
+//! own.
 //!
 //! **Scanning method (FR-060 Behavior, "Scanning method and its stated
 //! limitations").** A `forbidden_patterns` entry is a violation from any
@@ -174,30 +174,22 @@ pub(crate) const RULES: &[Rule] = &[
         // public constructor. The pattern is the bare path
         // `NodeKey::from_digest`, not the call form `NodeKey::from_digest(`:
         // a bare-path match also catches the constructor passed as a value
-        // (`.map(NodeKey::from_digest)`, `value::node::NodeIdDocument::key`),
-        // which a call-form-only pattern misses. `node_key_of` is the
-        // crate-internal helper both `value::enumeration` and `value::unit`
-        // mint through, calling `from_digest` in turn -- scanning for it
-        // directly, rather than only its callee, is what surfaces those two
-        // modules' own minting sites (R1, #249 review, review item 7).
+        // (`.map(NodeKey::from_digest)`), which a call-form-only pattern
+        // misses. `node_key_of` was the crate-internal minting helper
+        // `value::enumeration` and `value::unit` called (R1, #249 review,
+        // review item 7); QSL-131 K4 deleted it, and the pattern stays so a
+        // reintroduced helper of that name is caught.
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
         // T12-B's allowed callers are `check` and every module under it
         // (ADR-013 O-04), including `check::family`'s
         // `mint_declaration_identity`/`mint_call_identity`.
-        //
-        // `value::node` re-exports the kernel `NodeKey` and is not
-        // allow-listed: `node_key_of`'s own mint and `NodeIdDocument::key`'s
-        // wire-digest-string parse-then-wrap (both in `src/value/node.rs`)
-        // are named debt here (FR-060's list, below) rather than this rule's
-        // sanctioned path.
         allowed_caller_prefixes: &["check"],
-        requires_path: Some("src/value/node.rs"),
-        // Genuinely unreachable for the same reason as T12-C's, below:
-        // `src/value/node.rs` already exists on origin/main as a `pub use
-        // quire_exact::NodeKey` re-export rather than a definition, but the
-        // marker path's presence is all this check tests.
-        pending_reason: "unreachable: src/value/node.rs already exists on origin/main",
+        // The allowed caller's own module root. Genuinely unreachable for
+        // the same reason as T12-C's, below: the marker path's presence is
+        // all this check tests.
+        requires_path: Some("src/check/mod.rs"),
+        pending_reason: "unreachable: src/check/mod.rs already exists on origin/main",
         scope_note: Some(
             "scoped to QSL's own tree only; does not scan quire-contract-runtime's \
              independently defined NodeKey type or quire-contract-codegen's generated call \
@@ -210,12 +202,6 @@ pub(crate) const RULES: &[Rule] = &[
         // enclosing module and function. This list only shrinks: an entry
         // leaves in the change that removes its last mint.
         debt_list: &[
-            ("value::enumeration", "EnumDeclarationPreimage::node_key"),
-            ("value::enumeration", "EnumMemberPreimage::node_key"),
-            ("value::unit", "DimensionPreimage::node_key"),
-            ("value::unit", "UnitPreimage::node_key"),
-            ("value::node", "node_key_of"),
-            ("value::node", "NodeIdDocument::key"),
             ("value::model_query", "to_object_reference"),
             ("value::expression::family", "decode_v2"),
         ],
@@ -919,6 +905,9 @@ mod tests {
             let relative = format!("src/{}.rs", module.replace("::", "/"));
             write(root, &relative, &body);
         }
+        if let Some(marker) = rule.requires_path.filter(|path| !root.join(path).exists()) {
+            write(root, marker, "");
+        }
     }
 
     /// tc_arch_lint_api_surface_001: module-path mapping matches Rust's own
@@ -970,7 +959,7 @@ mod tests {
         ensure_qsl_roots(dir.path());
         write(
             dir.path(),
-            "src/value/node.rs",
+            "src/check/mod.rs",
             "pub use quire_exact::NodeKey;\n",
         );
         write(
@@ -1037,16 +1026,10 @@ mod tests {
     }
 
     /// tc_arch_lint_api_surface_006 (negative control, R1/#249 review): a
-    /// call to the crate-internal `node_key_of` helper from a module outside
-    /// T12-B's allowed list is a violation, the same as a direct
-    /// `NodeKey::from_digest` call -- this is what surfaces
-    /// `value::enumeration` and `value::unit`'s real minting sites, which a
-    /// scan for the constructor pattern alone would miss (they call the
-    /// helper, not the constructor, directly). `value::node`'s own
-    /// `node_key_of` mint is separately named debt (FR-060's list, tested by
-    /// tc_arch_lint_api_surface_007), so this fixture's own caller -- an
-    /// ordinary function, not one of the named debt functions -- is the one
-    /// real violation here.
+    /// call to a `node_key_of` helper from a module outside T12-B's allowed
+    /// list is a violation, the same as a direct `NodeKey::from_digest`
+    /// call, so a minting helper that wraps the constructor cannot hide a
+    /// mint outside `check`.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
     fn tc_arch_lint_api_surface_006_node_key_of_helper_call_is_a_violation() {
@@ -1065,48 +1048,6 @@ mod tests {
         assert_eq!(outcome.violations[0].module, "value::enumeration");
         assert_eq!(outcome.violations[0].function, "an_unlisted_caller");
         assert!(!outcome.passed());
-    }
-
-    /// tc_arch_lint_api_surface_007: `value::node` re-exports the kernel
-    /// `NodeKey` type and is not allow-listed, so its own `node_key_of` mint
-    /// would be a violation like any other disallowed caller -- except that
-    /// `node_key_of` is itself one of FR-060 T12-B's named debt-list
-    /// functions, so it is reported as debt, not a failure.
-    #[trace("TC-157", "FR-060-AC-4")]
-    #[test]
-    fn tc_arch_lint_api_surface_007_value_node_mint_is_named_debt() {
-        let dir = tempfile::tempdir().unwrap();
-        ensure_qsl_roots(dir.path());
-        let rule = &RULES[1]; // T12-B
-        seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
-        // Overwrite the seeded `value::node` baseline with a
-        // shaped-like-the-real-thing mint for `node_key_of` specifically,
-        // keeping `NodeIdDocument::key`'s own seeded mint alongside it so
-        // both of this module's debt-list entries stay satisfied.
-        write(
-            dir.path(),
-            "src/value/node.rs",
-            "pub(crate) fn node_key_of() { let _ = NodeKey::from_digest([0; 32]); }\n\
-             pub struct NodeIdDocument;\n\
-             impl NodeIdDocument {\n    pub fn key(&self) { let _ = NodeKey::from_digest([0; 32]); }\n}\n",
-        );
-        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
-        assert_eq!(outcome.status, RuleStatus::Live);
-        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
-        assert!(
-            outcome
-                .debt
-                .iter()
-                .any(|site| site.module == "value::node" && site.function == "node_key_of"),
-            "{:?}",
-            outcome.debt
-        );
-        assert!(
-            outcome.stale_debt_entries.is_empty(),
-            "{:?}",
-            outcome.stale_debt_entries
-        );
-        assert!(outcome.passed());
     }
 
     /// tc_arch_lint_api_surface_008 (negative control, #249 review HIGH-2): a
@@ -1347,9 +1288,9 @@ mod tests {
     /// tc_arch_lint_api_surface_017 (R-1, review-335-v2): T12-B's pattern
     /// matches the bare path `NodeKey::from_digest`, not only the call form
     /// `NodeKey::from_digest(`, so the constructor passed as a value --
-    /// `.map(NodeKey::from_digest)`, the shape at `src/value/node.rs`'s
-    /// `NodeIdDocument::key` -- is caught the same as an ordinary call from
-    /// a disallowed module. Both spellings are planted in the same
+    /// `.map(NodeKey::from_digest)`, the shape the deleted
+    /// `value::node::NodeIdDocument::key` had -- is caught the same as an
+    /// ordinary call from a disallowed module. Both spellings are planted in the same
     /// disallowed module (`value::reference`, not on T12-B's debt list) to
     /// prove neither is missed.
     #[trace("TC-157", "FR-060-AC-3")]
@@ -1359,7 +1300,7 @@ mod tests {
         ensure_qsl_roots(dir.path());
         write(
             dir.path(),
-            "src/value/node.rs",
+            "src/check/mod.rs",
             "pub use quire_exact::NodeKey;\n",
         );
         write(
@@ -1487,7 +1428,7 @@ mod tests {
     fn tc_157_function_value_mint_outside_check_fails() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        write(dir.path(), "src/value/node.rs", "pub struct NodeKey;\n");
+        write(dir.path(), "src/check/mod.rs", "pub struct NodeKey;\n");
         write(
             dir.path(),
             "src/library/mod.rs",
@@ -1545,7 +1486,7 @@ mod tests {
     fn tc_157_stale_debt_entry_fails() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        write(dir.path(), "src/value/node.rs", "pub struct NodeKey;\n");
+        write(dir.path(), "src/check/mod.rs", "pub struct NodeKey;\n");
         write(
             dir.path(),
             "src/value/model_query.rs",

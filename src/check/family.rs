@@ -352,7 +352,7 @@ fn encode_quantity_unit(out: &mut Preimage, unit: &QuantityUnit) {
         // (`Unit::key`/`CompoundUnit::identity`, `src/value/unit.rs`) rather
         // than re-deriving one from the unit's internal dimension/edge
         // graph: those identities are this codebase's own established
-        // stable-identity mechanism (RFC 8785 JCS preimages, `value::node`),
+        // stable-identity mechanism (RFC 8785 JCS preimages, `value::semantic_node`),
         // not `Debug`.
         QuantityUnit::Declared(unit) => {
             out.write_str("declared");

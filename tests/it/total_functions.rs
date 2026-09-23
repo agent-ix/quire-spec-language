@@ -3,6 +3,7 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
+use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
     Meter, ScalarLimits,
@@ -13,10 +14,10 @@ use quire_spec_language::value::{
     CheckedPackage, CheckedPackageEvaluation, CheckingLimitKind, CheckingLimits, CheckingStage,
     CollectionType, CompositeDeclaration, CompositeShape, DefinitionLock, DefinitionReference,
     DefinitionRevision, Expression, FieldDeclaration, FieldValue, FunctionDeclaration, IeeeValue,
-    MeasureObligation, NodeKey, ObjectEnvironment, ObjectIdentity, ObjectReference,
-    ObjectTypeDeclaration, Obligation, OptionValue, Origin, Outcome, PackageDeclarations,
-    ProvedInterval, QualifiedName, RationalDomain, Refusal, TypeEnvironment, TypeForm, Undefined,
-    UniverseIdentity, Value, ValueType,
+    MeasureObligation, ObjectEnvironment, ObjectIdentity, ObjectReference, ObjectTypeDeclaration,
+    Obligation, OptionValue, Origin, Outcome, PackageDeclarations, ProvedInterval, QualifiedName,
+    RationalDomain, Refusal, TypeEnvironment, TypeForm, Undefined, UniverseIdentity, Value,
+    ValueType,
 };
 use sha2::{Digest, Sha256};
 

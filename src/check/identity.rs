@@ -57,9 +57,9 @@
 //! declaring package/source scope AC-7 requires). `check` now simply carries
 //! that existing key, unchanged byte for byte, into the `CheckedTypeNode`'s
 //! own node id: `CheckedTypeNode::Composite { node: composite.key() }`,
-//! `Sum { node: binding.declaration.key(), .. }`. `value::node::NodeKey`
-//! and this module's own `quire_exact::NodeKey` are the same kernel type (a
-//! `pub use`), so carrying the key across the module boundary re-hashes or
+//! `Sum { node: binding.declaration.key(), .. }`. Both declarations hold the
+//! kernel `quire_exact::NodeKey` this module uses, so carrying the key
+//! across the module boundary re-hashes or
 //! re-derives nothing and needs no conversion function -- exactly the
 //! identity `type_named` and field types already read (once carried into
 //! this space) -- closing HIGH-1 and, as a side effect, HIGH-2 (a qualified
@@ -456,8 +456,8 @@ impl SumVariants {
 /// shape, since the kernel `ValueType::Composite(NodeKey)` needs none -- the
 /// node's own id carries the declaration's own pre-existing key
 /// (`composite.key()`, `value/composite.rs`) unchanged into this module's
-/// checked-node-id space -- `value::node::NodeKey` and this module's own
-/// `NodeKey` are the same kernel type, so no conversion is needed -- the
+/// checked-node-id space -- the declaration holds the kernel `NodeKey` this
+/// module uses, so no conversion is needed -- the
 /// same identity `type_named` and field types already read, reused rather
 /// than minted afresh (PR #300 review round 2, HIGH-1).
 #[derive(Clone, Debug, Eq, PartialEq)]

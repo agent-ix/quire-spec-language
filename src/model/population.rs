@@ -449,7 +449,7 @@ pub struct PopulationDocument {
 /// constructor) precisely so a caller cannot assert a false classification
 /// for well-formed bytes and force a present member to read as absent, or
 /// the reverse. `type_identity` is always well-formed
-/// (`crate::value::node::NodeKey` is a fixed 32-byte digest already, so
+/// (`quire_exact::NodeKey` is a fixed 32-byte digest already, so
 /// there is nothing to bridge).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LookupKey {

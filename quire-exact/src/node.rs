@@ -21,17 +21,14 @@
 //! another digest type's bytes into a `NodeKey` has no canonical role
 //! either (ADR-013 O-05, OBS-018).
 //!
-//! Two QSL call sites built on `from_digest` do not conform to the minting
-//! rule above and are named debt (FR-060 T12-B's named-debt list), not this
-//! design's sanctioned path:
-//! `value::node::NodeIdDocument::key` parses a wire digest string and wraps
-//! it in a `NodeKey` directly, and `value::model_query::to_object_reference`
-//! bridges an `EffectiveId`'s bytes into a `NodeKey`.
+//! QSL call sites built on `from_digest` that do not conform to the minting
+//! rule above are named debt (FR-060 T12-B's named-debt list), not this
+//! design's sanctioned path; `value::model_query::to_object_reference`, for
+//! one, bridges an `EffectiveId`'s bytes into a `NodeKey`.
 //!
 //! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`)
 //! scans for the kernel constructor and reports every call site outside
-//! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`) -- including
-//! the two named above. `arch-lint` is not part of `make ci` (Makefile), so
+//! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`). `arch-lint` is not part of `make ci` (Makefile), so
 //! it is advisory, not gating, today.
 
 use std::fmt;

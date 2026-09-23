@@ -116,12 +116,12 @@ pub(crate) mod ieee;
 mod key;
 mod member;
 mod model_query;
-pub(crate) mod node;
 pub(crate) mod numeric;
 mod outcome;
 pub(crate) mod quantity;
 pub(crate) mod rational;
 mod reference;
+pub(crate) mod semantic_node;
 pub(crate) mod text;
 mod unit;
 
@@ -211,10 +211,6 @@ pub use ieee::{
     IeeeOperationKind, IeeeProvenance, IeeeResult, IeeeValue, IEEE_DEFINITION,
 };
 pub use member::Member;
-pub use node::{
-    InvalidSemanticGraph, ModelSubject, NodeKey, NodeOwner, OwnerSelection, OwnerSubject,
-    SemanticGraphCause,
-};
 pub use numeric::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
 };
@@ -227,6 +223,10 @@ pub use rational::{NonPositiveDenominatorBound, RationalDomain, ZeroDenominator}
 pub use reference::{
     InvalidObjectIdentity, ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
     ObjectIdentity, ObjectReference, PopulationConflict, UniverseIdentity,
+};
+pub use semantic_node::{
+    InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+    OwnerSubject, SemanticGraphCause,
 };
 pub use text::{admit_text, compare_text, InvalidTextLiteral, Text, TextPayload};
 pub use unit::{

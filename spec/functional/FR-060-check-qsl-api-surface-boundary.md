@@ -101,18 +101,18 @@ value.
 are `check` and every module under it, because ADR-013 O-04 says only
 `check` calls the `NodeKey` constructor. `check::family`'s
 `mint_declaration_identity` and `mint_call_identity`, and
-`check::checked_dispatch`, are allowed under that prefix. `value::node` is
-not exempt: it defines the `node_key_of` helper, not the kernel constructor,
-and its mints are debt.
+`check::checked_dispatch`, are allowed under that prefix. `value::enumeration`
+and `value::unit` compute node-identity preimage digests in
+`value::semantic_node` and never construct a `NodeKey`; a preimage node id
+they read stays a `WireNodeId` until a lookup resolves it (QSL-131 K4).
 
 T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
 shipped code, whether it is called or passed as a function value:
-`NodeKey::from_digest` (the kernel constructor), and, while QSL's own
-`value::node::NodeKey` type exists, its `of`, `from_bytes` and `from_hex`.
-T12-B also matches calls of `node_key_of`, the crate-internal helper that
-wraps the constructor (#249 review R1); the helper's own `fn node_key_of(`
-definition line is not a mint. A reference passed as a function value, such
-as `value::node`'s `NodeIdDocument::key` writing
+`NodeKey::from_digest` (the kernel constructor). T12-B also matches calls
+of `node_key_of`, the name of the crate-internal helper that wrapped the
+constructor until QSL-131 K4 deleted it (#249 review R1), so a reintroduced
+helper of that name is caught; a `fn node_key_of(` definition line is not a
+mint. A reference passed as a function value, such as
 `.map(NodeKey::from_digest)`, is a mint.
 
 ### T12-B and T12-C: shipped code and debt lists
@@ -138,12 +138,6 @@ T12-B's debt list:
 
 | Module | Function | Why it is debt |
 | --- | --- | --- |
-| `value::enumeration` | `EnumDeclarationPreimage::node_key` | mints through `node_key_of` outside `check` (ADR-011 FB-13) |
-| `value::enumeration` | `EnumMemberPreimage::node_key` | same |
-| `value::unit` | `DimensionPreimage::node_key` | same |
-| `value::unit` | `UnitPreimage::node_key` | same |
-| `value::node` | `node_key_of` | the helper the four entries above call; mints directly |
-| `value::node` | `NodeIdDocument::key` | wraps a digest string read from caller-supplied JSON into a `NodeKey`; O-04 says a wire-read id becomes a `NodeKey` only by lookup |
 | `value::model_query` | `to_object_reference` | OBS-018: builds a `NodeKey` from a model `ReferenceKey`'s bytes |
 | `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
 
@@ -249,10 +243,13 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
-- T12-B passes. Its eight debt-list functions are reported as debt:
-  `value/enumeration.rs` 126 and 171, `value/unit.rs` 207 and 320,
-  `value/node.rs` 198 (`.map(NodeKey::from_digest)`) and 277,
-  `value/model_query.rs` 109, and `value/expression/family.rs` 225.
+- T12-B reports its two debt-list functions as debt:
+  `value/model_query.rs` and `value/expression/family.rs`. QSL-131 K4
+  removed the six `value::enumeration`, `value::unit` and `value::node`
+  entries by deleting their mints. T12-B fails on the
+  `value::application_key` mints QSL-156 A4a added (#356), which are on no
+  list; `application_key/tests.rs` is `#[cfg(test)]` only through its `mod`
+  declaration, which the per-file scan does not see.
 - T12-C passes. Its two debt-list functions are reported as debt:
   `value/model_query.rs` 124 and 156.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`

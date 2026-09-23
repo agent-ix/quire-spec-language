@@ -10,15 +10,17 @@
 use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
 use num_traits::Pow;
+use quire_exact::NodeKey;
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter,
     ScalarLimits,
 };
 use quire_exact::{ComparisonOperator, Decimal, IllTyped, IllTypedCause, Rational, RoundingMode};
+use quire_spec_language::value::NodeIdentityPreimage;
 use quire_spec_language::value::{
     compare_quantity, convert_quantity, evaluate_quantity, CompoundUnitCause, CompoundUnitPreimage,
     ConvertedValue, DecimalType, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    InvalidSemanticGraph, NodeKey, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
+    InvalidSemanticGraph, NodeOwner, Outcome, OwnerSelection, OwnerSubject, Quantity,
     QuantityOperation, QuantityTarget, QuantityUnit, Refusal, SemanticGraphCause, Undefined,
     UnitGraph, UnitPreimage,
 };
@@ -353,9 +355,9 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             DimensionPreimage::from_json(preimage.clone())
                 .unwrap()
-                .node_key()
+                .digest()
                 .unwrap(),
-            *key
+            *key.as_bytes()
         );
     }
     for (preimage, key) in &units {
@@ -363,9 +365,9 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
         assert_eq!(
             UnitPreimage::from_json(preimage.clone())
                 .unwrap()
-                .node_key()
+                .digest()
                 .unwrap(),
-            *key
+            *key.as_bytes()
         );
     }
 

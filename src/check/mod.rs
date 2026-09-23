@@ -578,8 +578,8 @@ impl PackageDeclarations {
         // `CheckedTypeNode`, identified by that declaration's own
         // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
         // carried into this module's own checked-node space unchanged, byte
-        // for byte. `value::node::NodeKey` is `quire_exact::NodeKey` itself
-        // (a `pub use`), so no conversion function is needed -- never a
+        // for byte. Both declarations hold the kernel `quire_exact::NodeKey`,
+        // so no conversion function is needed -- never a
         // second, parallel id minted from the declared name and shape. This
         // is the same identity `Typer::
         // type_named` (`check.rs`) and every field type (`family.rs`)
@@ -1292,10 +1292,10 @@ mod tests {
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
         use crate::value::{
-            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeOwner,
-            OwnerSelection, OwnerSubject,
+            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, NodeIdentityPreimage,
+            NodeOwner, OwnerSelection, OwnerSubject,
         };
-        use quire_exact::NODE_KEY_DOMAIN;
+        use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
         use serde_json::json;
 
         let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
@@ -1310,7 +1310,7 @@ mod tests {
             "members": ["Active", "Closed"],
         });
         let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
-        let declaration_key = declaration_preimage.node_key().unwrap();
+        let declaration_key = NodeKey::from_digest(declaration_preimage.digest().unwrap());
         let declaration =
             EnumDeclaration::admit(declaration_preimage, declaration_key, &owners).unwrap();
 
@@ -1326,7 +1326,7 @@ mod tests {
                     "case": case,
                 });
                 let member_preimage = EnumMemberPreimage::from_json(member_json).unwrap();
-                let member_key = member_preimage.node_key().unwrap();
+                let member_key = NodeKey::from_digest(member_preimage.digest().unwrap());
                 declaration
                     .admit_member(&member_preimage, member_key)
                     .unwrap()

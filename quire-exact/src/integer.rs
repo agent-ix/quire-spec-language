@@ -33,7 +33,7 @@
 //! `value::expression::check`, `value::expression::evaluate`,
 //! `value::expression::facts`, `value::ieee`, `value::numeric`,
 //! `value::quantity`, `value::rational` and `value::unit` -- 15 modules.
-//! (`forms::syntax`, `model::conformance`, `value::node`,
+//! (`forms::syntax`, `model::conformance`, `value::semantic_node`,
 //! `value::expression::ir` and `value::expression::refusal` also import
 //! `Integer`/`IntegerInterval`, but only as a type, never calling one of
 //! these 17 methods, so reverting any of the 17 alone never errors there.)

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::composite::{Component, ConstructionCause, ConstructionRefusal, FieldValue, Value};
 use super::declaration::TypeEnvironment;
-use super::node::NodeKey;
+use quire_exact::NodeKey;
 
 /// A graph-local node name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

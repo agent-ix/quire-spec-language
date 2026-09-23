@@ -12,6 +12,7 @@ use std::cell::Cell;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
+use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
@@ -29,7 +30,7 @@ use quire_spec_language::value::{
     DimensionPreimage, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     EqualityOperand, EqualityOperator, Evaluation, Expression, FieldDeclaration, FieldExpression,
     FieldInitializer, FieldValue, FunctionDeclaration, IeeeComparison, IeeeFlag, IeeeValue,
-    LocatedLoss, NodeKey, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
+    LocatedLoss, NodeOwner, ObjectEnvironment, ObjectIdentity, ObjectReference,
     ObjectTypeDeclaration, Obligation, OptionValue, Outcome, OwnerSelection, OwnerSubject,
     PackageDeclarations, Quantity, QuantityUnit, RationalDomain, Refusal, Text, TextPayload,
     TypeEnvironment, Undefined, UnitGraph, UnitPreimage, UniverseIdentity, Value, ValueLoss,

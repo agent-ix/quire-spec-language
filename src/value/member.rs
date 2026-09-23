@@ -20,9 +20,9 @@
 
 use serde_json::{json, Value};
 
-use super::node::NodeKey;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
+use quire_exact::NodeKey;
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the

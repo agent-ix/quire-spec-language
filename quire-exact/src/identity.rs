@@ -18,9 +18,8 @@
 //! by scanning QSL's tree for each call pattern (#213 S-2 fixed T12-C's
 //! pattern to match this crate's real `from_digest`, in place of the
 //! pre-migration `from_digest_bytes(` name).
-//! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) still
-//! scans for the pre-migration `crate::value::node::NodeKey` names and is
-//! separate, unclaimed debt.
+//! `NodeKey`'s own T12-B rule (see the `node` module's doc comment) scans
+//! QSL's tree for `NodeKey::from_digest` the same way.
 //!
 //! The seven types share one shape (an opaque 32-byte digest,
 //! `Eq`/`Ord`/`Hash`, hex `Display`/`Debug`), so the `digest_identity!` macro

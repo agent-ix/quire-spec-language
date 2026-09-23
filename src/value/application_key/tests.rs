@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::*;
-use crate::value::node::NodeIdDocument;
+use crate::value::semantic_node::NodeIdDocument;
 
 // ---------------------------------------------------------------------
 // Test-only wire decoding. Production never reads these types from wire
@@ -20,8 +20,8 @@ use crate::value::node::NodeIdDocument;
 impl<'de> Deserialize<'de> for NodeRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         NodeIdDocument::deserialize(deserializer)?
-            .key()
-            .map(NodeRef)
+            .wire_id()
+            .map(|id| NodeRef(node_key(*id.as_bytes())))
             .ok_or_else(|| D::Error::custom("not a canonical checked-semantic-node reference"))
     }
 }
@@ -155,8 +155,13 @@ impl<'de> Deserialize<'de> for OperationMode {
 // published vector has `declaration: null` and `recursion: null`).
 // ---------------------------------------------------------------------
 
+/// A test fixture key over `digest`.
+fn node_key(digest: [u8; 32]) -> NodeKey {
+    NodeKey::from_digest(digest)
+}
+
 fn key(fill: u8) -> NodeKey {
-    NodeKey::from_digest([fill; 32])
+    node_key([fill; 32])
 }
 
 fn reference(fill: u8) -> SemanticTerm {

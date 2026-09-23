@@ -82,10 +82,10 @@ use qsl_foundation::diagnostic::Code;
 
 use super::collection::{self, CollectionType};
 use super::composite::{OptionValue, Value, ValueType};
-use super::node::NodeKey;
 use super::outcome::{ModelQueryRefusal, Refusal, Stop, Undefined};
 use super::reference::{ObjectIdentity, ObjectReference, UniverseIdentity};
 use quire_exact::Meter;
+use quire_exact::NodeKey;
 
 /// A reference's identity triple could not be bridged; unreachable for an
 /// admitted program (see the module docs).
