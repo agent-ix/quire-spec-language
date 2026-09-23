@@ -1115,8 +1115,9 @@ mod tests {
 
     /// The resolution mechanism `real_model_check_edge_is_empty` (TC-262)
     /// relies on: a flat `use crate::value::DispatchTable;` inside `model`
-    /// resolves into `check` only because `value::mod.rs` re-exports it
-    /// from there, and is recorded indirect (`direct: false`). Retagged
+    /// would resolve into `check` if `value::mod.rs` re-exported it from
+    /// there (the fixture below supplies that re-export; the real
+    /// `value::mod.rs` has none since QSL-181 X-6a), and is recorded indirect (`direct: false`). Retagged
     /// from TC-176/FR-068-AC-9 (retired by FR-074): the assertion this test
     /// backs -- that such a form must be absent from `model` -- moved to
     /// TC-262's empty-set requirement, but the resolution logic itself is
@@ -1220,14 +1221,14 @@ mod tests {
         );
     }
 
-    /// `value_reexports` against the real tree finds the `expression`
-    /// aggregate block non-empty, confirming this resolver is reading
-    /// `value::mod.rs`'s actual current content, not silently matching
-    /// nothing. The `crate::check` block is empty: QSL-181 X-6a removed
+    /// `value_reexports` against the real tree: the `expression` block is
+    /// non-empty, so the resolver is reading `value::mod.rs`'s actual
+    /// content, and the `crate::check` block is empty. QSL-181 X-6a removed
     /// `value`'s re-export of `check` items, since layer-3 `value`
-    /// (`semantic_value`) sits before `check` in ADR-011 §6.1's order.
+    /// (`semantic_value`) sits before `check` in ADR-011 §6.1's order; this
+    /// fails if one comes back.
     #[test]
-    fn real_value_reexports_are_non_empty() {
+    fn real_value_reexports_expression_only() {
         let reexports = value_reexports(&workspace_root()).expect("scan runs");
         assert!(reexports.expression.contains("Evaluation"));
         assert!(reexports.check.is_empty(), "{:?}", reexports.check);

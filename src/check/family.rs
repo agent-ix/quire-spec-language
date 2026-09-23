@@ -2070,11 +2070,13 @@ pub(crate) mod checking_tests {
     // `check` hook and the identity minting under it, so they live here, in
     // layer-3 `check`, rather than beside the layer-5 evaluator in
     // `value::expression::family`, whose tests keep only what needs the
-    // evaluator or the v2 codec.
+    // evaluator or the v2 codec. The three fixtures below are shared with
+    // those tests through `check::mod`'s `#[cfg(test)]` re-export (PR #303
+    // N7b), not copied.
 
     /// The contract-level stage limits these tests check under: nothing
     /// is bounded except where a test tightens one field.
-    fn limits() -> StageLimits {
+    pub(crate) fn limits() -> StageLimits {
         StageLimits {
             nesting_depth: 128,
             input_bytes: u64::MAX,
@@ -2083,13 +2085,13 @@ pub(crate) mod checking_tests {
     }
 
     /// A `Boolean`-result, parameterless declaration of `body`.
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
+    pub(crate) fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
         FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
     }
 
     /// The resolved signature of a [`declaration`] fixture (no parameters,
     /// `Boolean` result), for `declarations_for`'s `own_signature`.
-    fn declaration_signature(name: &str) -> Signature {
+    pub(crate) fn declaration_signature(name: &str) -> Signature {
         boolean_signature(name, 0)
     }
 

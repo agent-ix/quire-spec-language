@@ -128,7 +128,8 @@ pub(crate) use family::{DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED};
 // two different parameter shapes.
 #[cfg(test)]
 pub(crate) use family::checking_tests::{
-    declarations_for, empty_scope, mint_resolved, root_location,
+    declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
+    root_location,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 

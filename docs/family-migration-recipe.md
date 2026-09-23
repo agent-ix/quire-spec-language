@@ -128,8 +128,9 @@ above.
 
 **Required tests, as delivered:**
 - Clause-level unit: `src/value/expression/family.rs`'s
-  `family_contract_tests::value_function_family_checks_through_the_contract`
-  and `two_contexts_from_the_same_declarations_check_identically`.
+  `family_contract_tests::value_function_family_checks_through_the_contract`,
+  and `src/check/family.rs`'s
+  `checking_tests::two_contexts_from_the_same_declarations_check_identically`.
 - Builder-ordering: not applicable to this family -- a function declaration
   has no independently meaningful clause sequence (ADR-012 §4.1's test);
   this is recorded rather than silently skipped.

@@ -746,7 +746,7 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
 /// `ValueFunctionFamily::check`, and `Typer`'s own separate
 /// `CheckingLimits.depth` bound on that real descent is demonstrated by
 /// `real_checker_depth_limit_is_the_proximate_cause`
-/// (`value::expression::family`, also untagged) -- but neither test backs
+/// (`check::family`'s `checking_tests`, also untagged) -- but neither test backs
 /// FR-062-AC-7 itself: that criterion's own `Limit`-outcome-on-real-descent
 /// requirement would need `CheckContext` threaded through `Typer`'s
 /// recursive engine, which is out of scope here. See FR-062's own Status

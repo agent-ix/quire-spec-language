@@ -230,7 +230,7 @@ rather than an oversight. By Acceptance Criterion, with real trace tags as
 they exist in the delivered code today:
 - FR-062-AC-1: unbacked (untagged; the six-part shape it describes is
   narrowed to `check` alone, per `contract.rs`'s own doc). Owner: QSL-152.
-- FR-062-AC-2: backed (`TC-160`, `src/value/expression/family.rs`).
+- FR-062-AC-2: backed (`TC-160`, `src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: unbacked (untagged; PR #262 review, coordinator round 3,
   finding 5). The one test tagged for this criterion,
   `two_contexts_from_the_same_declarations_check_identically`, backs only
@@ -286,7 +286,7 @@ they exist in the delivered code today:
   (`src/check/check.rs`) is charged once per real recursive `infer`/
   `check_as` call and is what actually bounds a function body's real
   recursive descent today; `real_checker_depth_limit_is_the_proximate_cause`
-  (`src/value/expression/family.rs`, untagged) demonstrates that bound
+  (`src/check/family.rs` `checking_tests`, untagged) demonstrates that bound
   through `ValueFunctionFamily::check` end-to-end (a body nested 4 deep,
   limit 3 refuses via `CheckCause::ResourceExhausted{kind: Depth}`, limit 4
   admits). But that refusal surfaces as `StageFailure::Refused`, not the
@@ -321,7 +321,8 @@ they exist in the delivered code today:
 
 Three of this requirement's eleven Acceptance Criteria are backed (AC-2,
 AC-5, AC-11). AC-5's two tagged tests are
-`stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
+`stage_limits_restored_kinds_refuse_one_below_the_real_metric`
+(`src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`
 (`src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the

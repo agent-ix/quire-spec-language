@@ -435,19 +435,18 @@ impl crate::family::ReferenceEvaluation for ValueFunctionFamily {
 mod family_contract_tests {
     use super::*;
     use crate::check::{
-        declarations_for, empty_scope, mint_resolved, root_location, CheckingLimits,
-        PackageDeclarations, Signature, DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+        declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
+        root_location, CheckingLimits, PackageDeclarations, DEFAULT_PACKAGE_IDENTITY,
+        SCALAR_LIMITS_UNLIMITED,
     };
     use crate::family::{
         CheckContext, DiagnosticSink, EvalOutcome, FamilyContract, ReferenceEvaluation, ScopeStack,
-        StageLimits,
     };
     use crate::model::object_environment::ObjectEnvironment;
     use crate::value::declaration::TypeEnvironment;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use quire_exact::Meter;
-    use quire_exact::ValueType;
 
     // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
     // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
@@ -455,37 +454,6 @@ mod family_contract_tests {
     // (previously two distinct types with the same name in different
     // crates) -- `evaluate_faults_on_a_second_call_on_the_same_env` still
     // needs two separate *instances*, one per role.
-
-    fn limits() -> StageLimits {
-        StageLimits {
-            nesting_depth: 128,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        }
-    }
-
-    /// A bare `Boolean` type form.
-    fn boolean_type_form() -> TypeForm {
-        TypeForm::builtin(
-            qsl_forms::BuiltinType::Boolean,
-            qsl_foundation::Span { start: 0, end: 0 },
-        )
-    }
-
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(name, Vec::new(), boolean_type_form(), None, body)
-    }
-
-    /// The resolved signature of a [`declaration`] fixture (no parameters,
-    /// `Boolean` result), for `declarations_for`'s `own_signature`.
-    fn declaration_signature(name: &str) -> Signature {
-        Signature {
-            name: name.to_owned(),
-            parameters: Vec::new(),
-            result: ValueType::Boolean,
-            callable_by_name: true,
-        }
-    }
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
@@ -824,22 +792,9 @@ mod family_contract_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::{empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
+    use crate::check::{declaration, empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
     use ix_trace_rs::trace;
-    use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
-
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(
-            name,
-            Vec::new(),
-            TypeForm::builtin(
-                qsl_forms::BuiltinType::Boolean,
-                qsl_foundation::Span { start: 0, end: 0 },
-            ),
-            None,
-            body,
-        )
-    }
+    use qsl_forms::Expression;
 
     /// FR-065-AC-2: identity read after `check` survives a real v2
     /// emit/decode round trip unchanged. Does not exercise a distinct
