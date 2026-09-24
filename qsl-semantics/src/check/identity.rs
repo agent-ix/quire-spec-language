@@ -40,34 +40,16 @@
 //! [`CheckedTypeNode`], and `CheckedGraph` exposes them by node id
 //! (`CheckedGraph::checked_type_node`).
 //!
-//! **Round 1 minted a second, parallel type identity; round 2 (HIGH-1)
-//! deletes it.** Round 1's `mint_type_declaration_identity` minted a fresh
-//! node id from a declaration's name and shape -- an id nothing else in the
-//! checker ever read, since `type_named` (`check.rs`), field types
-//! (`family.rs`) and `EnumValue`'s own member keys all still resolved
-//! through `composite.key()`/`EnumDeclaration::key()`, the declaration's
-//! pre-existing identity. FR-088-AC-7 requires every reference to resolve to
-//! "the one node id the single declaration was minted with" -- a second,
-//! unused id cannot satisfy that. The fix is not to build a third scheme:
-//! `check` was never the minter of a composite's or enum's own declaration
-//! identity in the first place (`CompositeDeclaration`'s key is
-//! producer-assigned, `value/declaration.rs`; `EnumDeclaration`'s key is
-//! verified against its own content-addressed preimage at `admit`,
-//! `value/enumeration.rs`, whose `owner` field already carries the
-//! declaring package/source scope AC-7 requires). `check` now simply carries
-//! that existing key, unchanged byte for byte, into the `CheckedTypeNode`'s
-//! own node id: `CheckedTypeNode::Composite { node: composite.key() }`,
-//! `Sum { node: binding.declaration.key(), .. }`. Both declarations hold the
-//! kernel `quire_exact::NodeKey` this module uses, so carrying the key
-//! across the module boundary re-hashes or
-//! re-derives nothing and needs no conversion function -- exactly the
-//! identity `type_named` and field types already read (once carried into
-//! this space) -- closing HIGH-1 and, as a side effect, HIGH-2 (a qualified
-//! declared name like `"P::R"` no longer needs validating at all here, since
-//! no name-keyed preimage is minted from it). [`mint_variant_id`] stays:
-//! AC-10's `VariantId` is still computed from the declaring sum and its
-//! member, now from the sum's own existing (converted) key rather than a
-//! minted one.
+//! **One id per declaration.** A composite's checked type node id is its
+//! FR-092 node key, the key `check` mints for the record or tuple's
+//! `quire.structural-node/v1` node (FR-092-AC-12,
+//! `CheckedTypeNode::Composite { node }`); the handle a caller passes to
+//! `CompositeDeclaration::new` selects the declaration inside one check and
+//! enters no id. An enum's id is its `EnumDeclaration::key()`, verified
+//! against its own content-addressed QSpec preimage at `admit`
+//! (`value/enumeration.rs`): `Sum { node: binding.declaration.key(), .. }`.
+//! [`mint_variant_id`] computes AC-10's `VariantId` from that key and the
+//! member.
 //!
 //! The model correspondence ([`ModelCorrespondence`]) is populated from
 //! `PackageDeclarations`' own `model_correspondence` field

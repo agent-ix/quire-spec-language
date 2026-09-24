@@ -17,9 +17,13 @@
 //! dimension and unit preimages (FR-092 rule 1) are QSpec's own, built by
 //! `value::enumeration` and `value::unit`.
 //!
-//! `declaration` is the node's `declaration` member or `null`; `recursion`
-//! is `null` or `{size, ordinal}` of the node inside its recursion group in
-//! graph order, and a body `reference` to a member of that group becomes
+//! `declaration` is the node's `declaration` member or `null`. [`node_key`]
+//! keys a node outside every recursion group (`recursion` `null`);
+//! [`group_keys`] keys a group's members by FR-092's group order: shapes,
+//! refinement signatures, classes, ordinals and the group digest. An
+//! in-group node's `recursion` is `{size, ordinal}` (application) or
+//! `{group, size, ordinal}` (structural), and each position naming a member
+//! of its group, a body `reference` or its `semantic_type`, becomes
 //! `{term: "group_reference", ordinal}`.
 //!
 //! The body is typed ([`SemanticTerm`] and its parts mirror the v2 schema's
@@ -44,7 +48,8 @@
 //! it exactly (outside the IEEE-754 safe range) rather than hashed. No
 //! `Debug` or `Display` formatting of a Rust value is on the path except the
 //! canonical wire spellings `NodeKey` (lowercase hex) and `Integer` (the
-//! complete-V1 canonical decimal) document as contracts. The pinned-bytes
+//! complete-V1 canonical decimal) document as contracts, and this module's
+//! own lowercase-hex spelling of a group digest or signature. The pinned-bytes
 //! tests fix the exact encoding.
 //!
 //! The body walk is bounded: a body nested deeper than
@@ -58,6 +63,7 @@
 use std::collections::BTreeSet;
 
 use serde::Serialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use qsl_foundation::absence::AbsenceMode;
@@ -630,62 +636,6 @@ impl Serialize for LeafSegment {
     }
 }
 
-/// A node's place in its recursion group: the group's distinct member keys
-/// in graph order and this node's ordinal among them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct RecursionGroup<'a> {
-    members: &'a [NodeKey],
-    ordinal: usize,
-}
-
-/// Why a [`RecursionGroup`] cannot be formed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum RecursionGroupRefusal {
-    /// `ordinal` is not a position in the member list.
-    #[error("ordinal {ordinal} is outside a group of {size}")]
-    OrdinalOutOfRange {
-        /// The requested ordinal.
-        ordinal: usize,
-        /// The group size.
-        size: usize,
-    },
-    /// A key appears twice, so a reference to it has no single ordinal.
-    #[error("recursion group member {member} appears more than once")]
-    DuplicateMember {
-        /// The repeated key.
-        member: NodeKey,
-    },
-}
-
-impl<'a> RecursionGroup<'a> {
-    /// The group `members` (graph order) with this node at `ordinal`.
-    // Only the tests build a group: `check` refuses every recursion group
-    // (FR-092-AC-7, FR-092-OQ-1) before it would key a member.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "FR-092-OQ-1: check refuses recursion groups until QSpec decides their key"
-        )
-    )]
-    pub(crate) fn new(
-        members: &'a [NodeKey],
-        ordinal: usize,
-    ) -> Result<Self, RecursionGroupRefusal> {
-        if ordinal >= members.len() {
-            return Err(RecursionGroupRefusal::OrdinalOutOfRange {
-                ordinal,
-                size: members.len(),
-            });
-        }
-        let mut seen = BTreeSet::new();
-        if let Some(member) = members.iter().find(|member| !seen.insert(**member)) {
-            return Err(RecursionGroupRefusal::DuplicateMember { member: *member });
-        }
-        Ok(Self { members, ordinal })
-    }
-}
-
 /// The inputs of one node's key: every member of either preimage.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NodeInput<'a> {
@@ -705,8 +655,6 @@ pub(crate) struct NodeInput<'a> {
     /// The node's `declaration.qualified_name`, when it carries one (schema
     /// `minItems: 1`; an empty name is refused).
     pub(crate) declaration: Option<&'a [Identifier]>,
-    /// The node's recursion group, when it is in one.
-    pub(crate) recursion: Option<RecursionGroup<'a>>,
     /// The node's body.
     pub(crate) body: &'a SemanticTerm,
 }
@@ -724,8 +672,6 @@ pub(crate) struct ApplicationNode<'a> {
     pub(crate) semantic_type: NodeKey,
     /// The node's `declaration.qualified_name`, when it carries one.
     pub(crate) declaration: Option<&'a [Identifier]>,
-    /// The node's recursion group, when it is in one.
-    pub(crate) recursion: Option<RecursionGroup<'a>>,
     /// The node's body.
     pub(crate) body: &'a SemanticTerm,
 }
@@ -789,6 +735,16 @@ pub enum NodeKeyRefusal {
         /// The depth limit.
         limit: u64,
     },
+    /// A recursion group has no member, or names one member twice.
+    #[error("a recursion group is empty or names a member twice")]
+    InvalidGroup,
+    /// A literal's `type`, an application's `result_type` or an operation
+    /// member's `declaration` names a member of the node's own recursion
+    /// group. FR-092: those positions name type and model nodes, which are
+    /// never in an expression's, value's or function's group, and a type
+    /// node's literals are typed at builtin scalars.
+    #[error("a type position names a member of the node's own recursion group")]
+    GroupMemberAtTypePosition,
     /// The typed preimage failed to convert to a JSON value. Unreachable for
     /// these types (every map key is a fixed string and no `Serialize` impl
     /// here errors), but `serde_json::to_value` is fallible and this module
@@ -823,41 +779,264 @@ pub(crate) fn application_node_key(
         semantic_form: node.semantic_form,
         semantic_type: Some(node.semantic_type),
         declaration: node.declaration,
-        recursion: node.recursion,
         body: node.body,
     };
-    let group = node.recursion.map_or(&[][..], |group| group.members);
-    let (_, has_application) = Walk { group }.term(node.body, 1)?;
+    let (_, has_application) = Walk::OUTSIDE.term(node.body, 1)?;
     if !has_application {
         return Err(NodeKeyRefusal::NoApplication);
     }
     node_key(&input)
 }
 
-/// The key of `node` (FR-092 "Which preimage keys a node"): the FR-322
-/// application-node preimage when its body contains an application, else the
-/// FR-092 structural-node preimage.
+/// The key of `node`, a node outside every recursion group (FR-092 "Which
+/// preimage keys a node"): the FR-322 application-node preimage when its
+/// body contains an application, else the FR-092 structural-node preimage,
+/// with `recursion` `null`.
 pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
+    let (value, _) = preimage_value(node, Walk::OUTSIDE, None)?;
+    Ok(keyed(value.to_string().into_bytes()))
+}
+
+/// The keys of one recursion group's members (FR-092 "Recursion groups").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GroupKeys {
+    /// Each member's preimage and key, in input order. Members of one class
+    /// have equal preimages.
+    pub(crate) members: Vec<KeyedPreimage>,
+    /// Each member's ordinal (its class's rank), in input order.
+    pub(crate) ordinals: Vec<usize>,
+    /// The number of classes.
+    pub(crate) size: usize,
+    /// The group digest.
+    pub(crate) digest: [u8; 32],
+    /// Each member's anonymous-pass signature, lowercase hex, in input order.
+    pub(crate) anonymous: Vec<String>,
+    /// Each member's full-pass signature, lowercase hex, in input order.
+    pub(crate) full: Vec<String>,
+}
+
+/// Key the recursion group `members` (FR-092 "The group order"). Each
+/// member's references to another member name it by its handle, the
+/// matching entry of `handles`: any key that is not a member's key, since
+/// no member's key exists before its group is keyed. `semantic_form` is the
+/// member's own (a function member's is `recursive_function`).
+///
+/// No step reads a handle's value: the shapes write every in-group position
+/// as `{term: "group_reference"}`, so the order, ordinals, digest and keys
+/// are the same whatever handles name the members.
+pub(crate) fn group_keys(
+    members: &[NodeInput<'_>],
+    handles: &[NodeKey],
+) -> Result<GroupKeys, NodeKeyRefusal> {
+    let mut distinct = BTreeSet::new();
+    if members.is_empty()
+        || members.len() != handles.len()
+        || !handles.iter().all(|handle| distinct.insert(*handle))
+    {
+        return Err(NodeKeyRefusal::InvalidGroup);
+    }
+    let count = members.len();
+    // 1-2. Each member's full and anonymous shapes and its targets: the
+    // placeholders carry the target's input index as their ordinal, which
+    // `shape_targets` removes in RFC 8785 order.
+    let identity: Vec<usize> = (0..count).collect();
+    let mut full_shapes = Vec::with_capacity(count);
+    let mut anonymous_shapes = Vec::with_capacity(count);
+    let mut targets = Vec::with_capacity(count);
+    for member in members {
+        let walk = Walk {
+            group: handles,
+            ordinals: &identity,
+        };
+        let (mut shape, _) = preimage_value(member, walk, None)?;
+        let mut member_targets = Vec::new();
+        shape_targets(&mut shape, &mut member_targets);
+        full_shapes.push(shape.to_string());
+        if let Value::Object(map) = &mut shape {
+            map.insert("declaration".to_owned(), Value::Null);
+            map.remove("owner");
+        }
+        anonymous_shapes.push(shape.to_string());
+        targets.push(member_targets);
+    }
+    // 3-4. One refinement pass per kind of shape, then the order.
+    let anonymous = refine(&anonymous_shapes, &targets);
+    let full = refine(&full_shapes, &targets);
+    let mut order: Vec<usize> = (0..count).collect();
+    order.sort_by(|left, right| {
+        (&anonymous[*left], &full[*left]).cmp(&(&anonymous[*right], &full[*right]))
+    });
+    // 5. Equal full signatures are one class; a class's ordinal is its rank.
+    let mut classes: Vec<&str> = Vec::new();
+    let mut ordinals = vec![0; count];
+    for member in order {
+        let signature = full[member].as_str();
+        let ordinal = match classes.iter().position(|class| *class == signature) {
+            Some(ordinal) => ordinal,
+            None => {
+                classes.push(signature);
+                classes.len() - 1
+            }
+        };
+        ordinals[member] = ordinal;
+    }
+    let size = classes.len();
+    exact_integer(IntegerSite::RecursionSize, size as u64)?;
+    // The group digest: over each class's group-local preimage, in ordinal
+    // order.
+    let mut local = Vec::with_capacity(size);
+    for ordinal in 0..size {
+        let Some(member) = ordinals.iter().position(|of| *of == ordinal) else {
+            return Err(NodeKeyRefusal::InvalidGroup);
+        };
+        let walk = Walk {
+            group: handles,
+            ordinals: &ordinals,
+        };
+        let recursion = RecursionPreimage {
+            group: None,
+            ordinal,
+            size,
+        };
+        let (value, _) = preimage_value(&members[member], walk, Some(recursion))?;
+        local.push(Value::String(hex(&Sha256::digest(
+            value.to_string().as_bytes(),
+        ))));
+    }
+    let digest: [u8; 32] = Sha256::digest(Value::Array(local).to_string().as_bytes()).into();
+    let digest_hex = hex(&digest);
+    let mut keys = Vec::with_capacity(count);
+    for (member, ordinal) in members.iter().zip(&ordinals) {
+        let walk = Walk {
+            group: handles,
+            ordinals: &ordinals,
+        };
+        let recursion = RecursionPreimage {
+            group: Some(digest_hex.clone()),
+            ordinal: *ordinal,
+            size,
+        };
+        let (value, _) = preimage_value(member, walk, Some(recursion))?;
+        keys.push(keyed(value.to_string().into_bytes()));
+    }
+    Ok(GroupKeys {
+        members: keys,
+        ordinals,
+        size,
+        digest,
+        anonymous,
+        full,
+    })
+}
+
+/// A refinement pass (FR-092 "The group order", step 3): each member's
+/// signature over `shapes`, lowercase hex.
+fn refine(shapes: &[String], targets: &[Vec<usize>]) -> Vec<String> {
+    let initial: Vec<String> = shapes
+        .iter()
+        .map(|shape| hex(&Sha256::digest(shape.as_bytes())))
+        .collect();
+    let distinct = |signatures: &[String]| signatures.iter().collect::<BTreeSet<_>>().len();
+    let mut previous = initial.clone();
+    // Each round before the last adds a distinct value, so at most one
+    // round per member runs.
+    for _ in 0..shapes.len() {
+        let next: Vec<String> = initial
+            .iter()
+            .zip(targets)
+            .map(|(shape, member_targets)| {
+                let round = serde_json::json!({
+                    "shape": shape,
+                    "targets": member_targets
+                        .iter()
+                        .filter_map(|target| previous.get(*target))
+                        .collect::<Vec<_>>(),
+                });
+                hex(&Sha256::digest(round.to_string().as_bytes()))
+            })
+            .collect();
+        let stable = distinct(&next) == distinct(&previous);
+        previous = next;
+        if stable {
+            break;
+        }
+    }
+    previous
+}
+
+/// Remove each placeholder's ordinal from `value`, in RFC 8785 order (a
+/// `serde_json` map iterates its keys sorted, which is RFC 8785's order for
+/// these ASCII names), appending it to `targets`.
+fn shape_targets(value: &mut Value, targets: &mut Vec<usize>) {
+    match value {
+        Value::Object(map) => {
+            if map.get("term").and_then(Value::as_str) == Some("group_reference") {
+                if let Some(ordinal) = map.remove("ordinal").as_ref().and_then(Value::as_u64) {
+                    targets.push(usize::try_from(ordinal).unwrap_or(usize::MAX));
+                }
+                return;
+            }
+            for member in map.values_mut() {
+                shape_targets(member, targets);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                shape_targets(item, targets);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+/// Lowercase hex, the spelling FR-092 gives every digest inside a preimage
+/// or a signature round.
+fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    bytes
+        .iter()
+        .flat_map(|byte| {
+            [
+                char::from(DIGITS[usize::from(byte >> 4)]),
+                char::from(DIGITS[usize::from(byte & 0x0f)]),
+            ]
+        })
+        .collect()
+}
+
+fn keyed(preimage: Vec<u8>) -> KeyedPreimage {
+    let key = NodeKey::from_digest(Sha256::digest(&preimage).into());
+    KeyedPreimage { preimage, key }
+}
+
+/// `node`'s preimage as a JSON value, with `walk` rewriting references to
+/// its group's members, and whether it has an application. A structural
+/// preimage's `recursion` keeps `group`; an application preimage's drops it.
+fn preimage_value(
+    node: &NodeInput<'_>,
+    walk: Walk<'_>,
+    recursion: Option<RecursionPreimage>,
+) -> Result<(Value, bool), NodeKeyRefusal> {
     if node.semantic_form.is_empty() {
         return Err(NodeKeyRefusal::EmptySemanticForm);
     }
     if node.declaration.is_some_and(<[Identifier]>::is_empty) {
         return Err(NodeKeyRefusal::EmptyQualifiedName);
     }
-    if let Some(group) = node.recursion {
-        let size = u64::try_from(group.members.len()).unwrap_or(u64::MAX);
-        exact_integer(IntegerSite::RecursionSize, size)?;
-    }
-    let group = node.recursion.map_or(&[][..], |group| group.members);
-    let (body, has_application) = Walk { group }.term(node.body, 1)?;
-    let version = if has_application {
+    let (body, has_application) = walk.term(node.body, 1)?;
+    let (version, recursion) = if has_application {
         if node.owner.is_some() {
             return Err(NodeKeyRefusal::OwnedApplication);
         }
         if node.semantic_type.is_none() {
             return Err(NodeKeyRefusal::UntypedApplication);
         }
-        APPLICATION_NODE_VERSION
+        // FR-322: an application node's `recursion` is `{size, ordinal}`.
+        let recursion = recursion.map(|recursion| RecursionPreimage {
+            group: None,
+            ..recursion
+        });
+        (APPLICATION_NODE_VERSION, recursion)
     } else {
         // FR-092: a `SourceOwner` exactly when `declaration` is present;
         // FR-094: a model-owned node's `declaration` is `null`.
@@ -868,32 +1047,32 @@ pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRef
         if !consistent {
             return Err(NodeKeyRefusal::OwnerDeclarationMismatch);
         }
-        STRUCTURAL_NODE_VERSION
+        (STRUCTURAL_NODE_VERSION, recursion)
     };
+    let semantic_type = node
+        .semantic_type
+        .map(|semantic_type| match walk.ordinal(semantic_type) {
+            Some(ordinal) => PreimageTerm::GroupReference { ordinal },
+            None => PreimageTerm::Reference {
+                target: NodeRef(semantic_type),
+            },
+        });
     let preimage = Preimage {
         version,
         owner: node.owner,
         node_tag: node.node_tag,
         semantic_form: node.semantic_form,
-        semantic_type: node.semantic_type.map(NodeRef),
+        semantic_type: semantic_type.map(SemanticTypePreimage),
         declaration: node.declaration.map(|segments| DeclarationPreimage {
             qualified_name: segments.iter().map(Identifier::as_str).collect(),
         }),
-        recursion: node.recursion.map(|group| RecursionPreimage {
-            size: group.members.len(),
-            ordinal: group.ordinal,
-        }),
+        recursion,
         body,
     };
-    let canonical = serde_json::to_value(&preimage).map_err(|error| NodeKeyRefusal::Serialize {
+    let value = serde_json::to_value(&preimage).map_err(|error| NodeKeyRefusal::Serialize {
         reason: error.to_string(),
     })?;
-    let bytes = canonical.to_string().into_bytes();
-    let key = NodeKey::from_digest(Sha256::digest(&bytes).into());
-    Ok(KeyedPreimage {
-        preimage: bytes,
-        key,
-    })
+    Ok((value, has_application))
 }
 
 #[derive(Serialize)]
@@ -903,10 +1082,23 @@ struct Preimage<'a> {
     owner: Option<&'a Owner>,
     node_tag: NodeTag,
     semantic_form: &'a str,
-    semantic_type: Option<NodeRef>,
+    semantic_type: Option<SemanticTypePreimage<'a>>,
     declaration: Option<DeclarationPreimage<'a>>,
     recursion: Option<RecursionPreimage>,
     body: PreimageTerm<'a>,
+}
+
+/// A `semantic_type` as it enters the preimage: a `NodeRef`, or a
+/// `group_reference` when it names a member of the node's own group (G9).
+struct SemanticTypePreimage<'a>(PreimageTerm<'a>);
+
+impl Serialize for SemanticTypePreimage<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match &self.0 {
+            PreimageTerm::Reference { target } => target.serialize(serializer),
+            term => term.serialize(serializer),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -916,8 +1108,10 @@ struct DeclarationPreimage<'a> {
 
 #[derive(Serialize)]
 struct RecursionPreimage {
-    size: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
     ordinal: usize,
+    size: usize,
 }
 
 /// A body term as it enters the preimage: [`SemanticTerm`] with references
@@ -952,14 +1146,153 @@ enum PreimageTerm<'a> {
     },
 }
 
+/// The declaring node an operation member names, if any.
+fn member_declaration(member: &Member) -> Option<NodeKey> {
+    match member {
+        Member::Field { declaration, .. }
+        | Member::Position { declaration, .. }
+        | Member::Element { declaration }
+        | Member::RelationshipEnd { declaration, .. }
+        | Member::Operation { declaration, .. }
+        | Member::TypeArgument { declaration } => Some(*declaration),
+        Member::ProfileOperator { .. } => None,
+    }
+}
+
+impl SemanticTerm {
+    /// Call `visit` with every node key this term names (FR-092 "names"):
+    /// each `reference` target, literal `type`, application `result_type`
+    /// and operation member `declaration`.
+    pub(crate) fn for_each_key(&self, visit: &mut impl FnMut(NodeKey)) {
+        match self {
+            Self::Literal { ty, .. } => visit(ty.0),
+            Self::Reference { target } => visit(target.0),
+            Self::Application {
+                operation,
+                result_type,
+                arguments,
+                ..
+            } => {
+                if let Some(declaration) = operation.member.as_ref().and_then(member_declaration) {
+                    visit(declaration);
+                }
+                visit(result_type.0);
+                for argument in arguments {
+                    argument.for_each_key(visit);
+                }
+            }
+            Self::Aggregate { members } => {
+                for member in members {
+                    member.for_each_key(visit);
+                }
+            }
+            Self::Binding { value, .. } => value.for_each_key(visit),
+        }
+    }
+
+    /// This term with every node key it names replaced by `map`'s image.
+    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Literal { ty, value } => Self::Literal {
+                ty: NodeRef(map(ty.0)),
+                value: value.clone(),
+            },
+            Self::Reference { target } => Self::Reference {
+                target: NodeRef(map(target.0)),
+            },
+            Self::Application {
+                operator,
+                operation,
+                result_type,
+                arguments,
+            } => {
+                let mut operation = operation.clone();
+                operation.member = operation.member.map(|member| map_member(member, map));
+                Self::Application {
+                    operator: *operator,
+                    operation,
+                    result_type: NodeRef(map(result_type.0)),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| argument.map_keys(map))
+                        .collect(),
+                }
+            }
+            Self::Aggregate { members } => Self::Aggregate {
+                members: members.iter().map(|member| member.map_keys(map)).collect(),
+            },
+            Self::Binding { name, value } => Self::Binding {
+                name: name.clone(),
+                value: Box::new(value.map_keys(map)),
+            },
+        }
+    }
+}
+
+/// `member` with its declaring node replaced by `map`'s image.
+fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Member {
+    match member {
+        Member::Field { declaration, name } => Member::Field {
+            declaration: map(declaration),
+            name,
+        },
+        Member::Position {
+            declaration,
+            position,
+        } => Member::Position {
+            declaration: map(declaration),
+            position,
+        },
+        Member::Element { declaration } => Member::Element {
+            declaration: map(declaration),
+        },
+        Member::RelationshipEnd { declaration, name } => Member::RelationshipEnd {
+            declaration: map(declaration),
+            name,
+        },
+        Member::Operation { declaration, name } => Member::Operation {
+            declaration: map(declaration),
+            name,
+        },
+        Member::TypeArgument { declaration } => Member::TypeArgument {
+            declaration: map(declaration),
+        },
+        Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
+    }
+}
+
 /// One pass over a body: builds its preimage form, reports whether it
 /// contains an application, and enforces the depth and number bounds.
+#[derive(Clone, Copy)]
 struct Walk<'g> {
-    /// The recursion group's member keys, in graph order.
+    /// The handles naming the recursion group's members.
     group: &'g [NodeKey],
+    /// The ordinal each member's `group_reference` carries, by position in
+    /// `group`.
+    ordinals: &'g [usize],
 }
 
 impl Walk<'_> {
+    /// The walk of a node outside every group.
+    const OUTSIDE: Walk<'static> = Walk {
+        group: &[],
+        ordinals: &[],
+    };
+
+    /// The `group_reference` ordinal of `key`, when it names a member.
+    fn ordinal(&self, key: NodeKey) -> Option<usize> {
+        let position = self.group.iter().position(|member| *member == key)?;
+        self.ordinals.get(position).copied()
+    }
+
+    /// Refuse `key` at a type position when it names a member.
+    fn type_position(&self, key: NodeKey) -> Result<(), NodeKeyRefusal> {
+        match self.ordinal(key) {
+            Some(_) => Err(NodeKeyRefusal::GroupMemberAtTypePosition),
+            None => Ok(()),
+        }
+    }
+
     /// `term` at nesting `depth` (the body root is depth 1) in preimage form,
     /// and whether it is or contains an application.
     fn term<'a>(
@@ -984,10 +1317,11 @@ impl Walk<'_> {
         };
         Ok(match term {
             SemanticTerm::Literal { ty, value } => {
+                self.type_position(ty.0)?;
                 (PreimageTerm::Literal { ty: *ty, value }, false)
             }
             SemanticTerm::Reference { target } => {
-                let preimage = match self.group.iter().position(|member| *member == target.0) {
+                let preimage = match self.ordinal(target.0) {
                     Some(ordinal) => PreimageTerm::GroupReference { ordinal },
                     None => PreimageTerm::Reference { target: *target },
                 };
@@ -1002,6 +1336,10 @@ impl Walk<'_> {
                 if let Some(Member::Position { position, .. }) = &operation.member {
                     exact_integer(IntegerSite::MemberPosition, *position)?;
                 }
+                if let Some(declaration) = operation.member.as_ref().and_then(member_declaration) {
+                    self.type_position(declaration)?;
+                }
+                self.type_position(result_type.0)?;
                 let (arguments, _) = terms(arguments)?;
                 let preimage = PreimageTerm::Application {
                     operator: *operator,

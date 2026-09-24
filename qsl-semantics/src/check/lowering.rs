@@ -17,7 +17,11 @@
 //!   root node and its measure's (FR-092 "Function nodes").
 //!
 //! Every node is content-addressed: equal content is one node, and each
-//! source occurrence of it is its own occurrence entry. Every key comes from
+//! source occurrence of it is its own occurrence entry. Recursive functions
+//! and records form recursion groups (FR-092 "Recursion groups"): their
+//! nodes are keyed together, in dependency order, by the group order
+//! ([`super::node_key::group_keys`]), and two groups whose members' keys
+//! coincide refuse. Every key comes from
 //! [`super::node_key::node_key`]. Laws come only from the package's lock
 //! evidence ([`LockEvidence`]); a law it does not supply refuses the node
 //! (`missing_declaration`/`missing-selection`), never a constant.
@@ -30,6 +34,8 @@
 
 use std::collections::BTreeMap;
 
+use sha2::{Digest, Sha256};
+
 use quire_exact::{
     ArithmeticOperator, CollectionKind, EffectiveId, Identifier, Integer, NodeKey,
     OrderingOperator, TextProfile, Value, ValueType,
@@ -39,8 +45,9 @@ use super::check::Scope;
 use super::family::OccurrenceMap;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
-    node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag, Operation,
-    OperationLaw, OperationLeaf, OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
+    group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
+    Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, SemanticTerm,
+    SourceOwner,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
@@ -88,6 +95,33 @@ impl LockEvidence {
     }
 }
 
+/// A node's place in its recursion group (FR-092 "Recursion groups"): the
+/// group digest, the node's ordinal and the number of the group's nodes.
+/// FR-093's emission writes a group's nodes in ordinal order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NodeRecursion {
+    group: [u8; 32],
+    ordinal: usize,
+    size: usize,
+}
+
+impl NodeRecursion {
+    /// The group digest.
+    pub fn group(&self) -> &[u8; 32] {
+        &self.group
+    }
+
+    /// The node's ordinal: its rank in the group order.
+    pub fn ordinal(&self) -> usize {
+        self.ordinal
+    }
+
+    /// The number of the group's nodes.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
 /// One lowered, keyed node of the checked semantic graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticNode {
@@ -98,6 +132,7 @@ pub struct SemanticNode {
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
+    recursion: Option<NodeRecursion>,
     body: SemanticTerm,
 }
 
@@ -138,7 +173,13 @@ impl SemanticNode {
         self.owner.as_ref()
     }
 
-    /// The node's FR-322 body.
+    /// The node's recursion group, when it is in one.
+    pub fn recursion(&self) -> Option<&NodeRecursion> {
+        self.recursion.as_ref()
+    }
+
+    /// The node's FR-322 body. A reference to a member of the node's own
+    /// recursion group names that member's key.
     pub fn body(&self) -> &SemanticTerm {
         &self.body
     }
@@ -205,7 +246,43 @@ struct Binders<'s> {
     scope: Vec<Binder>,
 }
 
+/// A node whose key waits on its recursion group (FR-092 "Recursion
+/// groups"): its content names a placeholder or another draft.
+struct Draft {
+    location: Location,
+    node_tag: NodeTag,
+    semantic_form: &'static str,
+    semantic_type: Option<NodeKey>,
+    declaration: Option<Vec<Identifier>>,
+    owner: Option<Owner>,
+    body: SemanticTerm,
+}
+
+/// A package's functions that call each other, lowered together: callees
+/// outside the group come earlier in [`lowering_order`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FunctionGroup {
+    /// The functions' indices, ascending.
+    pub(crate) members: Vec<usize>,
+    /// Whether the functions call each other (or one calls itself).
+    pub(crate) recursive: bool,
+}
+
+/// What lowering yields: the graph, its model correspondence entries `(node
+/// key, DeclarationKey)` and each function's node key by index.
+pub(crate) struct Lowered {
+    pub(crate) graph: SemanticGraph,
+    pub(crate) correspondence: Vec<(NodeKey, DeclarationKey)>,
+    pub(crate) functions: Vec<Option<NodeKey>>,
+}
+
 /// Builds and keys the nodes of one package.
+///
+/// A node outside every recursion group is keyed when it is built. A node
+/// that names a function or record still being built names it by a
+/// placeholder, and is a [`Draft`] until nothing is left open; then
+/// [`Self::settle`] keys the drafts in dependency order, each recursion
+/// group by FR-092's group order.
 pub(crate) struct Lowering<'a> {
     scope: &'a Scope,
     owner: Owner,
@@ -222,8 +299,25 @@ pub(crate) struct Lowering<'a> {
     functions: Vec<Option<NodeKey>>,
     /// Each declared composite's node key, by its declaration key.
     composites: BTreeMap<NodeKey, NodeKey>,
-    /// Composites whose node is being built, for cycle detection.
+    /// Composites whose node is being built.
     composites_in_progress: Vec<NodeKey>,
+    /// The placeholder naming each composite in progress that reached
+    /// itself.
+    composite_placeholders: BTreeMap<NodeKey, NodeKey>,
+    /// Whether a recursive function group is being lowered.
+    functions_open: bool,
+    /// Each placeholder, and the draft it became once built.
+    placeholders: BTreeMap<NodeKey, Option<NodeKey>>,
+    /// How many placeholders this lowering has made.
+    placeholder_count: u64,
+    /// The drafts, by the digest of their content.
+    drafts: BTreeMap<NodeKey, Draft>,
+    /// Occurrences of drafts, recorded once the drafts are keyed.
+    draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
+    /// Each keyed recursion-group member's group digest.
+    group_of: BTreeMap<NodeKey, [u8; 32]>,
+    /// Each keyed group's declared members' regions, by group digest.
+    group_regions: BTreeMap<[u8; 32], Vec<Location>>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -328,22 +422,57 @@ impl<'a> Lowering<'a> {
             functions: vec![None; function_count],
             composites: BTreeMap::new(),
             composites_in_progress: Vec::new(),
+            composite_placeholders: BTreeMap::new(),
+            functions_open: false,
+            placeholders: BTreeMap::new(),
+            placeholder_count: 0,
+            drafts: BTreeMap::new(),
+            draft_occurrences: Vec::new(),
+            group_of: BTreeMap::new(),
+            group_regions: BTreeMap::new(),
         }
     }
 
-    /// The finished graph and its model correspondence entries, `(node
-    /// key, DeclarationKey)`. Every node that no region denotes gets its one
+    /// The finished graph, its model correspondence entries and each
+    /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
-    pub(crate) fn finish(self, root: &Location) -> (SemanticGraph, Vec<(NodeKey, DeclarationKey)>) {
+    pub(crate) fn finish(self, root: &Location) -> Lowered {
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(*key) {
                 self.occurrences.record(*key, "generated", root.clone());
             }
         }
-        (
-            self.graph,
-            model::correspondence_entries(self.correspondence),
-        )
+        Lowered {
+            graph: self.graph,
+            correspondence: model::correspondence_entries(self.correspondence),
+            functions: self.functions,
+        }
+    }
+
+    /// Record an occurrence of `key`: a draft's waits until it is keyed.
+    fn record(&mut self, key: NodeKey, role: &'static str, location: Location) {
+        if self.pending(key) {
+            self.draft_occurrences.push((key, role, location));
+        } else {
+            self.occurrences.record(key, role, location);
+        }
+    }
+
+    /// Whether `key` names a placeholder or a draft.
+    fn pending(&self, key: NodeKey) -> bool {
+        self.placeholders.contains_key(&key) || self.drafts.contains_key(&key)
+    }
+
+    /// A new placeholder: a digest over a counter under a label no preimage
+    /// begins with, so it equals no node key.
+    fn placeholder(&mut self) -> NodeKey {
+        self.placeholder_count += 1;
+        let mut hasher = Sha256::new();
+        hasher.update(b"qsl.check.lowering-placeholder\0");
+        hasher.update(self.placeholder_count.to_be_bytes());
+        let key = NodeKey::from_digest(hasher.finalize().into());
+        self.placeholders.insert(key, None);
+        key
     }
 
     /// Key an unowned or source-declared node and add it to the graph: a
@@ -408,11 +537,26 @@ impl<'a> Lowering<'a> {
             semantic_form,
             semantic_type,
             declaration: declaration.as_deref(),
-            recursion: None,
             body: &body,
         })
         .map_err(|refusal| preimage_refusal(location, refusal))?;
         let key = keyed.key;
+        let mut names_pending = semantic_type.is_some_and(|named| self.pending(named));
+        body.for_each_key(&mut |named| names_pending |= self.pending(named));
+        if names_pending {
+            // Keyed by `settle`; until then `key` digests the content with
+            // its placeholders, so equal drafts are one draft.
+            self.drafts.entry(key).or_insert_with(|| Draft {
+                location: location.clone(),
+                node_tag,
+                semantic_form,
+                semantic_type,
+                declaration,
+                owner,
+                body,
+            });
+            return Ok(key);
+        }
         self.graph.nodes.entry(key).or_insert_with(|| SemanticNode {
             key,
             preimage: keyed.preimage,
@@ -421,6 +565,7 @@ impl<'a> Lowering<'a> {
             semantic_type,
             declaration,
             owner,
+            recursion: None,
             body,
         });
         Ok(key)
@@ -686,13 +831,14 @@ impl<'a> Lowering<'a> {
             ));
         };
         if self.composites_in_progress.contains(&declaration) {
-            // A record reaching itself is a recursion group (FR-092-OQ-1).
-            return Err(refuse(
-                location,
-                CheckCause::UnsupportedFeature {
-                    loci: vec![location.clone()],
-                },
-            ));
+            // FR-092: a record reaching itself is in a recursion group; a
+            // placeholder names it until its node is built.
+            if let Some(placeholder) = self.composite_placeholders.get(&declaration) {
+                return Ok(*placeholder);
+            }
+            let placeholder = self.placeholder();
+            self.composite_placeholders.insert(declaration, placeholder);
+            return Ok(placeholder);
         }
         let name = qualified_name(composite.name(), location)?;
         let shape = composite.shape().clone();
@@ -708,8 +854,20 @@ impl<'a> Lowering<'a> {
             Some(name),
             body,
         )?;
+        if let Some(placeholder) = self.composite_placeholders.remove(&declaration) {
+            self.placeholders.insert(placeholder, Some(key));
+        }
         self.composites.insert(declaration, key);
-        Ok(key)
+        if self.composites_in_progress.is_empty() && !self.functions_open {
+            self.settle()?;
+        }
+        Ok(self.composites.get(&declaration).copied().unwrap_or(key))
+    }
+
+    /// The node of the declared composite `declaration` (FR-092-AC-12): its
+    /// checked type node's id.
+    pub(crate) fn composite_node(&mut self, declaration: NodeKey) -> Result<NodeKey, CheckRefusal> {
+        self.composite(declaration, &generated_location(), 0)
     }
 
     fn composite_body(
@@ -915,11 +1073,256 @@ impl<'a> Lowering<'a> {
                 ],
             },
         )?;
-        self.occurrences.record(key, "anchor", location.clone());
+        self.record(key, "anchor", location.clone());
         Ok(key)
     }
 
-    /// Lower and key `function`, whose callees are already lowered.
+    /// Lower and key the functions of `group`, each with its index. The
+    /// functions of a recursive group name each other by placeholders until
+    /// every one is built, then [`Self::settle`] keys them.
+    pub(crate) fn function_group(
+        &mut self,
+        group: &FunctionGroup,
+        functions: &[FunctionInput<'_>],
+    ) -> Vec<CheckRefusal> {
+        let mut refusals = Vec::new();
+        let mut placeholders = Vec::new();
+        if group.recursive {
+            self.functions_open = true;
+            for index in &group.members {
+                let placeholder = self.placeholder();
+                if let Some(slot) = self.functions.get_mut(*index) {
+                    *slot = Some(placeholder);
+                }
+                placeholders.push(placeholder);
+            }
+        }
+        for (position, (index, function)) in group.members.iter().zip(functions).enumerate() {
+            match self.function(*index, function) {
+                Ok(key) => {
+                    if let Some(placeholder) = placeholders.get(position) {
+                        self.placeholders.insert(*placeholder, Some(key));
+                    }
+                }
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        self.functions_open = false;
+        if let Err(refusal) = self.settle() {
+            refusals.push(refusal);
+        }
+        refusals
+    }
+
+    /// Key every draft (FR-092 "Recursion groups"), once nothing is open:
+    /// each strongly connected component of the drafts' names, in
+    /// dependency order, a single draft by its own preimage and a recursion
+    /// group by the group order. Then every key recorded under a draft or a
+    /// placeholder becomes the node's key.
+    fn settle(&mut self) -> Result<(), CheckRefusal> {
+        let placeholders = std::mem::take(&mut self.placeholders);
+        let drafts = std::mem::take(&mut self.drafts);
+        let occurrences = std::mem::take(&mut self.draft_occurrences);
+        self.composite_placeholders.clear();
+        let mut aliases = BTreeMap::new();
+        for (placeholder, built) in placeholders {
+            match built {
+                Some(built) => {
+                    aliases.insert(placeholder, built);
+                }
+                // A placeholder's function or record refused, and that
+                // refusal is already reported: the package has no graph.
+                None => return Ok(()),
+            }
+        }
+        let alias = |key: NodeKey| aliases.get(&key).copied().unwrap_or(key);
+        let handles: Vec<NodeKey> = drafts.keys().copied().collect();
+        let drafts: Vec<Draft> = drafts.into_values().collect();
+        let position: BTreeMap<NodeKey, usize> = handles
+            .iter()
+            .enumerate()
+            .map(|(position, handle)| (*handle, position))
+            .collect();
+        let edges: Vec<Vec<usize>> = drafts
+            .iter()
+            .map(|draft| {
+                let mut named = Vec::new();
+                let mut visit = |key: NodeKey| {
+                    if let Some(target) = position.get(&alias(key)) {
+                        named.push(*target);
+                    }
+                };
+                if let Some(semantic_type) = draft.semantic_type {
+                    visit(semantic_type);
+                }
+                draft.body.for_each_key(&mut visit);
+                named
+            })
+            .collect();
+        let mut resolved: BTreeMap<NodeKey, NodeKey> = BTreeMap::new();
+        for component in strongly_connected(&edges) {
+            let members: Vec<NodeKey> = component.iter().map(|at| handles[*at]).collect();
+            // Names outside the component take their keys; names inside it
+            // stay the members' handles.
+            let mut substitute = |key: NodeKey| {
+                let key = alias(key);
+                if members.contains(&key) {
+                    key
+                } else {
+                    resolved.get(&key).copied().unwrap_or(key)
+                }
+            };
+            let bodies: Vec<SemanticTerm> = component
+                .iter()
+                .map(|at| drafts[*at].body.map_keys(&mut substitute))
+                .collect();
+            let types: Vec<Option<NodeKey>> = component
+                .iter()
+                .map(|at| drafts[*at].semantic_type.map(&mut substitute))
+                .collect();
+            let recursive =
+                component.len() > 1 || component.first().is_some_and(|at| edges[*at].contains(at));
+            if recursive {
+                self.key_group(
+                    &component,
+                    &drafts,
+                    &members,
+                    &bodies,
+                    &types,
+                    &mut resolved,
+                )?;
+            } else if let (Some(at), Some(body), Some(semantic_type)) =
+                (component.first(), bodies.into_iter().next(), types.first())
+            {
+                let draft = &drafts[*at];
+                let key = self.insert_node(
+                    &draft.location,
+                    draft.node_tag,
+                    draft.semantic_form,
+                    *semantic_type,
+                    draft.declaration.clone(),
+                    draft.owner.clone(),
+                    body,
+                )?;
+                resolved.insert(handles[*at], key);
+            }
+        }
+        let resolve = |key: NodeKey| {
+            let key = alias(key);
+            resolved.get(&key).copied().unwrap_or(key)
+        };
+        for key in self.functions.iter_mut().flatten() {
+            *key = resolve(*key);
+        }
+        for key in self.composites.values_mut() {
+            *key = resolve(*key);
+        }
+        for (key, role, location) in occurrences {
+            self.occurrences.record(resolve(key), role, location);
+        }
+        Ok(())
+    }
+
+    /// Key the recursion group `component` of `drafts`, whose members are
+    /// named by `handles` and whose names outside the group are keyed in
+    /// `bodies` and `types`, and add its nodes. Two groups' members with
+    /// equal keys refuse (FR-092 "Groups that collide").
+    fn key_group(
+        &mut self,
+        component: &[usize],
+        drafts: &[Draft],
+        handles: &[NodeKey],
+        bodies: &[SemanticTerm],
+        types: &[Option<NodeKey>],
+        resolved: &mut BTreeMap<NodeKey, NodeKey>,
+    ) -> Result<(), CheckRefusal> {
+        let members: Vec<&Draft> = component.iter().map(|at| &drafts[*at]).collect();
+        let Some(first) = members.first() else {
+            return Ok(());
+        };
+        // FR-092: a function in a recursion group is a `recursive_function`.
+        let forms: Vec<&'static str> = members
+            .iter()
+            .map(|draft| {
+                if draft.node_tag == NodeTag::Function {
+                    "recursive_function"
+                } else {
+                    draft.semantic_form
+                }
+            })
+            .collect();
+        let inputs: Vec<NodeInput<'_>> = members
+            .iter()
+            .enumerate()
+            .map(|(at, draft)| NodeInput {
+                owner: draft.owner.as_ref(),
+                node_tag: draft.node_tag,
+                semantic_form: forms[at],
+                semantic_type: types[at],
+                declaration: draft.declaration.as_deref(),
+                body: &bodies[at],
+            })
+            .collect();
+        let keys = group_keys(&inputs, handles)
+            .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
+        let regions: Vec<Location> = members
+            .iter()
+            .filter(|draft| draft.declaration.is_some())
+            .map(|draft| draft.location.clone())
+            .collect();
+        let collision = keys.members.iter().find_map(|keyed| {
+            self.group_of
+                .get(&keyed.key)
+                .filter(|digest| **digest != keys.digest)
+        });
+        if let Some(other) = collision {
+            let mut loci = self.group_regions.get(other).cloned().unwrap_or_default();
+            loci.extend(regions);
+            let location = loci
+                .first()
+                .cloned()
+                .unwrap_or_else(|| first.location.clone());
+            return Err(refuse(&location, CheckCause::UnsupportedFeature { loci }));
+        }
+        let mut to_key = |key: NodeKey| {
+            handles
+                .iter()
+                .position(|handle| *handle == key)
+                .and_then(|at| keys.members.get(at))
+                .map_or(key, |keyed| keyed.key)
+        };
+        for (at, draft) in members.iter().enumerate() {
+            let keyed = &keys.members[at];
+            self.graph
+                .nodes
+                .entry(keyed.key)
+                .or_insert_with(|| SemanticNode {
+                    key: keyed.key,
+                    preimage: keyed.preimage.clone(),
+                    node_tag: draft.node_tag,
+                    semantic_form: forms[at],
+                    semantic_type: types[at].map(&mut to_key),
+                    declaration: draft.declaration.clone(),
+                    owner: draft.owner.clone(),
+                    recursion: Some(NodeRecursion {
+                        group: keys.digest,
+                        ordinal: keys.ordinals[at],
+                        size: keys.size,
+                    }),
+                    body: bodies[at].map_keys(&mut to_key),
+                });
+            self.group_of.insert(keyed.key, keys.digest);
+            resolved.insert(handles[at], keyed.key);
+        }
+        self.group_regions
+            .entry(keys.digest)
+            .or_default()
+            .extend(regions);
+        Ok(())
+    }
+
+    /// Lower and key `function`, whose callees outside its group are
+    /// already lowered.
     pub(crate) fn function(
         &mut self,
         index: usize,
@@ -930,8 +1333,7 @@ impl<'a> Lowering<'a> {
             let target = function.population_targets.get(level).copied().flatten();
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
-            self.occurrences
-                .record(type_key, "type", function.location.clone());
+            self.record(type_key, "type", function.location.clone());
             parameters.push(Binder {
                 slot: level,
                 parameter: key,
@@ -939,8 +1341,7 @@ impl<'a> Lowering<'a> {
             });
         }
         let result = self.type_node(function.result, function.location)?;
-        self.occurrences
-            .record(result, "type", function.location.clone());
+        self.record(result, "type", function.location.clone());
         let mut members = vec![SemanticTerm::binding(
             "parameters",
             SemanticTerm::Aggregate {
@@ -990,8 +1391,7 @@ impl<'a> Lowering<'a> {
                     Some(declaration),
                     SemanticTerm::Aggregate { members },
                 )?;
-                self.occurrences
-                    .record(key, "declaration", function.location.clone());
+                self.record(key, "declaration", function.location.clone());
                 key
             }
         };
@@ -1087,7 +1487,7 @@ impl<'a> Lowering<'a> {
                 arguments,
             },
         )?;
-        self.occurrences.record(key, "expression", location.clone());
+        self.record(key, "expression", location.clone());
         Ok(SemanticTerm::reference(key))
     }
 
@@ -1107,8 +1507,7 @@ impl<'a> Lowering<'a> {
             None,
             body,
         )?;
-        self.occurrences
-            .record(key, "expression", node.location.clone());
+        self.record(key, "expression", node.location.clone());
         Ok(SemanticTerm::reference(key))
     }
 
@@ -1182,8 +1581,7 @@ impl<'a> Lowering<'a> {
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                         )
                     })?;
-                self.occurrences
-                    .record(key, "expression", node.location.clone());
+                self.record(key, "expression", node.location.clone());
                 Ok(SemanticTerm::reference(key))
             }
             NodeKind::Coerce(operand, interval) => {
@@ -1893,8 +2291,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14).
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
-                self.occurrences
-                    .record(key, "expression", node.location.clone());
+                self.record(key, "expression", node.location.clone());
                 return Ok(SemanticTerm::reference(key));
             }
             Value::Decimal(_)
@@ -2022,77 +2419,86 @@ fn element_type(value_type: &ValueType, location: &Location) -> Result<ValueType
     }
 }
 
-/// The order to lower a package's functions in: every callee before its
-/// callers (a call node's key hashes its callee's key, FR-093). A function in
-/// a recursion group (a self-call, or a cycle of calls) cannot be keyed
-/// apart from another group's (FR-092-OQ-1), so each group refuses
-/// `unknown_required_feature`/`unsupported-feature`, naming every member's
-/// region (FR-092-AC-7).
-pub(crate) fn lowering_order(
-    callees: &[Vec<usize>],
-    locations: &[Location],
-) -> Result<Vec<usize>, Vec<CheckRefusal>> {
+/// The order to lower a package's functions in (FR-092 "Recursion
+/// groups"): each group of functions that call each other, every callee's
+/// group before its callers' (a call node's key hashes its callee's key,
+/// FR-093).
+pub(crate) fn lowering_order(callees: &[Vec<usize>]) -> Vec<FunctionGroup> {
     let count = callees.len();
-    let reach: Vec<std::collections::BTreeSet<usize>> = (0..count)
-        .map(|start| {
-            let mut seen = std::collections::BTreeSet::new();
-            let mut pending: Vec<usize> = callees[start].clone();
-            while let Some(next) = pending.pop() {
-                if next < count && seen.insert(next) {
-                    pending.extend(callees[next].iter().copied());
-                }
-            }
-            seen
+    let edges: Vec<Vec<usize>> = callees
+        .iter()
+        .map(|callees| {
+            callees
+                .iter()
+                .copied()
+                .filter(|callee| *callee < count)
+                .collect()
         })
         .collect();
-    let mut refusals = Vec::new();
-    let mut grouped = std::collections::BTreeSet::new();
-    for index in 0..count {
-        if grouped.contains(&index) || !reach[index].contains(&index) {
+    strongly_connected(&edges)
+        .into_iter()
+        .map(|mut members| {
+            members.sort_unstable();
+            let recursive = members.len() > 1
+                || members
+                    .first()
+                    .is_some_and(|member| edges[*member].contains(member));
+            FunctionGroup { members, recursive }
+        })
+        .collect()
+}
+
+/// The strongly connected components of the graph `edges` (Tarjan's
+/// algorithm, with an explicit stack), each component after every
+/// component it has an edge to.
+fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    const UNVISITED: usize = usize::MAX;
+    let count = edges.len();
+    let mut index = vec![UNVISITED; count];
+    let mut low = vec![0; count];
+    let mut on_stack = vec![false; count];
+    let mut stack = Vec::new();
+    let mut next = 0;
+    let mut components = Vec::new();
+    for root in 0..count {
+        if index[root] != UNVISITED {
             continue;
         }
-        let group: Vec<usize> = (0..count)
-            .filter(|&other| reach[index].contains(&other) && reach[other].contains(&index))
-            .collect();
-        grouped.extend(group.iter().copied());
-        let loci: Vec<Location> = group
-            .iter()
-            .filter_map(|&member| locations.get(member).cloned())
-            .collect();
-        if let Some(first) = loci.first() {
-            refusals.push(refuse(
-                first,
-                CheckCause::UnsupportedFeature { loci: loci.clone() },
-            ));
-        }
-    }
-    if !refusals.is_empty() {
-        return Err(refusals);
-    }
-    // Acyclic: a post-order walk puts every callee first.
-    let mut order = Vec::with_capacity(count);
-    let mut placed = vec![false; count];
-    for root in 0..count {
-        let mut stack = vec![(root, 0_usize)];
-        while let Some((node, next)) = stack.pop() {
-            if placed[node] {
+        let mut work = vec![(root, 0_usize)];
+        while let Some((node, edge)) = work.pop() {
+            if edge == 0 && index[node] == UNVISITED {
+                index[node] = next;
+                low[node] = next;
+                next += 1;
+                stack.push(node);
+                on_stack[node] = true;
+            }
+            if let Some(&target) = edges[node].get(edge) {
+                work.push((node, edge + 1));
+                if index[target] == UNVISITED {
+                    work.push((target, 0));
+                } else if on_stack[target] {
+                    low[node] = low[node].min(index[target]);
+                }
                 continue;
             }
-            match callees[node].get(next) {
-                Some(&callee) => {
-                    stack.push((node, next + 1));
-                    if callee < count && !placed[callee] {
-                        stack.push((callee, 0));
+            if low[node] == index[node] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
                     }
                 }
-                None => {
-                    placed[node] = true;
-                    order.push(node);
-                }
+                components.push(component);
+            }
+            if let Some((parent, _)) = work.last() {
+                low[*parent] = low[*parent].min(low[node]);
             }
         }
     }
-    Ok(order)
+    components
 }
 
 /// The package root location a `generated` occurrence names.

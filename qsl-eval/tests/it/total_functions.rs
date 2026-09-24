@@ -885,24 +885,7 @@ fn object() -> ObjectReference {
 /// FR-094: the domain package declaring `M::Obj`, under [`object_type`]'s
 /// fixed identity, whose declaration `check` keys `Reference<M::Obj>` by.
 fn obj_model() -> qsl_semantics::check::AdmittedModel {
-    use qsl_semantics::model::domain_package::{
-        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
-    };
-    use qsl_semantics::model::key::DeclarationKey;
-    let declaration = DeclarationKey::fixture("M::Obj");
-    let domain_package = DomainPackage::new(
-        DomainPackageRef::fixture("total-functions"),
-        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
-            key: declaration.clone(),
-            interface_features: None,
-            abstract_type: false,
-            supertypes: Vec::new(),
-        })],
-    );
-    qsl_semantics::check::AdmittedModel::fixture(
-        &domain_package,
-        [(object_type("M::Obj"), declaration)],
-    )
+    crate::support::model::object_model("total-functions", "M::Obj", object_type("M::Obj"))
 }
 
 fn box_environment() -> TypeEnvironment {

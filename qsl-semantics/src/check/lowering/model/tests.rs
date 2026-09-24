@@ -63,7 +63,7 @@ fn vectors() -> BTreeMap<String, (String, String)> {
             .to_owned();
         vectors.insert(name.to_owned(), (key, preimage));
     }
-    assert_eq!(vectors.len(), 38, "FR-094 publishes 38 golden vectors");
+    assert_eq!(vectors.len(), 39, "FR-094 publishes 39 golden vectors");
     vectors
 }
 
@@ -396,7 +396,7 @@ fn lower<T>(
         &mut occurrences,
     );
     let built = build(&mut lowering);
-    (built, lowering.finish(&generated_location()).0)
+    (built, lowering.finish(&generated_location()).graph)
 }
 
 // ---------------------------------------------------------------------
@@ -790,27 +790,25 @@ fn clause_functions_key_under_their_operation_members_model_owner() {
     assert_eq!(keys(relabelled.semantic_graph()), keys(graph));
 }
 
-/// TC-418 step 2 (FR-094-AC-5): under `2.0.0`, `Order.size`'s precondition
-/// carries the `2.0.0` owner, so it differs from C1.
-///
-/// FR-094's C3 vector keeps P7, the `self: Reference<M::Order>` parameter
-/// typed over the `1.0.0` model node M1, under the `2.0.0` owner. Under
-/// `2.0.0`, `check` types `self` over M2 (FR-094-AC-1: the owner scope comes
-/// through `T`'s model node), so no package `check` builds yields C3. This
-/// test asserts the owner and the key's difference from C1; the C3 vector
-/// itself is a reported FR-094 defect.
+/// TC-418 step 2 (FR-094-AC-5): under `2.0.0`, the receiver parameter
+/// keys to P9 over R2 and `Order.size`'s precondition to C3, which
+/// references P9 and differs from C1.
 #[trace("FR-094-AC-5", "TC-418")]
 #[test]
 fn a_clause_function_under_another_package_version_is_another_node() {
     let acme = admitted("2.0.0");
     let checked = check_declarations(dispatch(&acme, "Order/size"));
     let graph = checked.semantic_graph();
-    let preconditions = clause_function(graph, "Order/size", "precondition");
-    assert_eq!(preconditions.len(), 1);
-    let precondition = preimage(preconditions[0]);
-    assert_eq!(precondition["owner"]["version"], json!("2.0.0"));
-    assert_ne!(preconditions[0].key(), vector_key("C1"));
-    assert_holds(graph, "R2");
+    for vector in ["R2", "P9", "C3"] {
+        assert_holds(graph, vector);
+    }
+    let c3 = preimage(graph.node(vector_key("C3")).unwrap());
+    assert_eq!(c3["owner"]["version"], json!("2.0.0"));
+    assert_eq!(
+        c3["body"]["members"][0]["value"]["members"][0]["target"]["digest"],
+        json!(vector_key("P9").to_string())
+    );
+    assert_ne!(vector_key("C3"), vector_key("C1"));
 }
 
 /// TC-418 step 4 (FR-094-AC-5): `Sub.size`'s authored precondition is C5 and

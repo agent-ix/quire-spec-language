@@ -153,6 +153,13 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
         types,
         aliases: aliases(),
         functions,
+        // FR-094: `holder_environment`'s `Reference<M::Obj>` field keys
+        // over this model's node.
+        models: vec![crate::support::model::object_model(
+            "collection-queries",
+            "M::Obj",
+            object_type("M::Obj"),
+        )],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())

@@ -18,7 +18,7 @@ use serde_json::{json, Value as Json};
 
 use super::*;
 use crate::check::family::fixtures::{empty_scope, fixture_owner};
-use crate::check::{CheckedGraph, CheckingLimits, PackageDeclarations};
+use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -51,7 +51,7 @@ fn vectors() -> BTreeMap<String, (String, String)> {
             .to_owned();
         vectors.insert(name.to_owned(), (key, preimage));
     }
-    assert_eq!(vectors.len(), 30, "FR-092 publishes 30 golden vectors");
+    assert_eq!(vectors.len(), 50, "FR-092 publishes 50 golden vectors");
     vectors
 }
 
@@ -139,7 +139,7 @@ fn type_nodes(
                 .expect("the type keys")
         })
         .collect();
-    (lowering.finish(&location).0, keys)
+    (lowering.finish(&location).graph, keys)
 }
 
 /// TC-413 step 1 (FR-092-AC-1): the builtin, bounded and anonymous type
@@ -348,63 +348,290 @@ fn a_type_nested_past_the_depth_limit_refuses() {
     assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
 }
 
-/// TC-413 step 5 (FR-092-AC-7): two recursive functions of one body shape
-/// refuse, naming both functions' regions, and yield no key. FR-092-AC-7's
-/// own body `if x = 0 then true else f(0)` is refused earlier, by
-/// termination (`f(0)` is not proved to decrease `x`), so the fixture
-/// recurses on `x - 1` under `x > 0`, which termination admits.
+/// `function name(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then
+/// callee(x - 1) else true }`.
+fn recursive(name: &str, callee: &str) -> FunctionDeclaration {
+    function(
+        name,
+        &[("x", int_form(0, 9))],
+        boolean(),
+        Some(name_expr("x")),
+        Expression::If {
+            condition: Box::new(binary(
+                BinaryOperator::Greater,
+                name_expr("x"),
+                integer_expr(0),
+            )),
+            then: Box::new(Expression::Call {
+                name: callee.to_owned(),
+                arguments: vec![binary(
+                    BinaryOperator::Subtract,
+                    name_expr("x"),
+                    integer_expr(1),
+                )],
+            }),
+            otherwise: Box::new(Expression::Boolean(true)),
+        },
+    )
+}
+
+/// Assert `graph` holds vector `name`, bytes and key.
+fn assert_holds(graph: &SemanticGraph, name: &str) {
+    let key = node_by_key(graph, &vector_key(name)).key();
+    assert_vector(graph, key, name);
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Assert every node of `graph` in a recursion group carries its place in
+/// its preimage: a structural node `{group, ordinal, size}` with the group
+/// digest, an application node `{ordinal, size}`.
+fn assert_group_members_carry_their_recursion(graph: &SemanticGraph) {
+    for node in graph.nodes() {
+        let preimage = preimage(node);
+        let Some(recursion) = node.recursion() else {
+            assert!(preimage["recursion"].is_null());
+            continue;
+        };
+        let mut expected = json!({"ordinal": recursion.ordinal(), "size": recursion.size()});
+        if preimage["version"] == "quire.structural-node/v1" {
+            expected["group"] = json!(lower_hex(recursion.group()));
+        }
+        assert_eq!(preimage["recursion"], expected, "{}", node.key());
+    }
+}
+
+/// TC-413 step 9 (FR-092-AC-11): the self-recursive `f` keys to G4, G5 and
+/// G6 over L5, L6 and E11 to E13.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_self_recursive_function_keys_to_g4_to_g6() {
+    let graph = check(vec![recursive("f", "f")]).expect("f checks");
+    let graph = graph.semantic_graph();
+    for vector in ["L5", "L6", "E11", "E12", "E13", "G4", "G5", "G6"] {
+        assert_holds(graph, vector);
+    }
+    assert_group_members_carry_their_recursion(graph);
+    let g4 = node_by_key(graph, &vector_key("G4"));
+    assert_eq!(g4.semantic_form(), "recursive_function");
+    assert_eq!(
+        g4.recursion().map(|recursion| lower_hex(recursion.group())),
+        Some("0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50".to_owned())
+    );
+}
+
+/// TC-413 step 9 (FR-092-AC-11): `ping` and `pong` key to G10 to G15,
+/// whichever is declared first.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_mutually_recursive_pair_keys_to_g10_to_g15_in_either_order() {
+    let keys = |functions: Vec<FunctionDeclaration>| {
+        let checked = check(functions).expect("ping and pong check");
+        let graph = checked.semantic_graph();
+        for vector in ["G10", "G11", "G12", "G13", "G14", "G15"] {
+            assert_holds(graph, vector);
+        }
+        assert_group_members_carry_their_recursion(graph);
+        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
+    };
+    let ping_first = keys(vec![recursive("ping", "pong"), recursive("pong", "ping")]);
+    let pong_first = keys(vec![recursive("pong", "ping"), recursive("ping", "pong")]);
+    assert_eq!(ping_first, pong_first);
+}
+
+/// TC-413 step 9 (FR-092-AC-11): `List` keys to G2 and G3, and `Tree` to G7,
+/// G8 and G9, whose `semantic_type` is a `group_reference`.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn recursive_records_key_to_g2_g3_and_g7_to_g9() {
+    let list = NodeKey::from_digest([5; 32]);
+    let tree = NodeKey::from_digest([6; 32]);
+    let units = [
+        (
+            CompositeDeclaration::new(
+                list,
+                "List",
+                CompositeShape::Record(vec![FieldDeclaration::new(
+                    "next",
+                    ValueType::Composite(list),
+                    Presence::Optional,
+                )]),
+            ),
+            &["G2", "G3"][..],
+        ),
+        (
+            CompositeDeclaration::new(
+                tree,
+                "Tree",
+                CompositeShape::Record(vec![FieldDeclaration::new(
+                    "kids",
+                    sequence(ValueType::Composite(tree), Some((0, 3))),
+                    Presence::Required,
+                )]),
+            ),
+            &["G7", "G8", "G9"][..],
+        ),
+    ];
+    for (record, vectors) in units {
+        let types = TypeEnvironment::new([record], []).expect("FR-143 admits the record");
+        let checked = PackageDeclarations {
+            types,
+            ..PackageDeclarations::new(fixture_owner())
+        }
+        .check(CheckingLimits::default())
+        .expect("the record checks");
+        let graph = checked.semantic_graph();
+        for vector in vectors {
+            assert_holds(graph, vector);
+        }
+        assert_group_members_carry_their_recursion(graph);
+        // The record is its group's first vector and its checked type node.
+        let record = node_by_key(graph, &vector_key(vectors[0])).key();
+        let type_nodes: Vec<NodeKey> = checked
+            .checked_type_nodes()
+            .map(CheckedTypeNode::node)
+            .collect();
+        assert_eq!(type_nodes, [record]);
+        if vectors.contains(&"G9") {
+            assert_eq!(
+                preimage(node_by_key(graph, &vector_key("G9")))["semantic_type"],
+                json!({"term": "group_reference", "ordinal": 1})
+            );
+        }
+    }
+}
+
+/// TC-413 step 9 (FR-092-AC-11): in `h`, `h(x - 1) and h(x - 1)` calls `h`
+/// through one node, so `h`'s group has four nodes.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn equal_recursive_calls_are_one_node() {
+    let call = || Expression::Call {
+        name: "h".to_owned(),
+        arguments: vec![binary(
+            BinaryOperator::Subtract,
+            name_expr("x"),
+            integer_expr(1),
+        )],
+    };
+    let h = function(
+        "h",
+        &[("x", int_form(0, 9))],
+        boolean(),
+        Some(name_expr("x")),
+        Expression::If {
+            condition: Box::new(binary(
+                BinaryOperator::Greater,
+                name_expr("x"),
+                integer_expr(0),
+            )),
+            then: Box::new(binary(BinaryOperator::And, call(), call())),
+            otherwise: Box::new(Expression::Boolean(true)),
+        },
+    );
+    let checked = check(vec![h]).expect("h checks");
+    let members: Vec<&SemanticNode> = checked
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.recursion().is_some())
+        .collect();
+    assert_eq!(
+        members.len(),
+        4,
+        "h, the conditional, the conjunction and the call"
+    );
+    assert!(members
+        .iter()
+        .all(|node| node.recursion().map(|recursion| recursion.size()) == Some(4)));
+    let mut forms: Vec<&str> = members.iter().map(|node| node.semantic_form()).collect();
+    forms.sort_unstable();
+    assert_eq!(
+        forms,
+        ["binary", "call", "conditional", "recursive_function"]
+    );
+}
+
+/// TC-413 step 5 (FR-092-AC-7): `f` and the same declaration named `g`
+/// give conditionals that both hash to G5, so the package refuses, naming
+/// both functions' regions, and yields no key.
 #[trace("FR-092-AC-7", "TC-413")]
 #[test]
-fn recursion_groups_refuse_naming_their_members() {
-    let recursive = |name: &str| {
-        function(
-            name,
-            &[("x", int_form(0, 9))],
-            boolean(),
-            Some(name_expr("x")),
-            Expression::If {
-                condition: Box::new(binary(
-                    BinaryOperator::Greater,
-                    name_expr("x"),
-                    integer_expr(0),
-                )),
-                then: Box::new(Expression::Call {
-                    name: name.to_owned(),
-                    arguments: vec![binary(
-                        BinaryOperator::Subtract,
-                        name_expr("x"),
-                        integer_expr(1),
-                    )],
-                }),
-                otherwise: Box::new(Expression::Boolean(true)),
-            },
-        )
+fn groups_that_differ_only_in_names_collide_and_refuse() {
+    for name in ["f", "g"] {
+        let checked = check(vec![recursive(name, name)]).expect("one group checks");
+        assert_holds(checked.semantic_graph(), "G5");
+    }
+    let refusals =
+        check(vec![recursive("f", "f"), recursive("g", "g")]).expect_err("the groups collide");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    let CheckCause::UnsupportedFeature { loci } = &refusals[0].cause else {
+        panic!("{refusals:?}");
     };
-    let refusals = check(vec![recursive("f"), recursive("g")]).expect_err("recursion refuses");
-    let loci: Vec<Vec<Location>> = refusals
+    let functions: Vec<&str> = loci
         .iter()
-        .filter_map(|refusal| match &refusal.cause {
-            CheckCause::UnsupportedFeature { loci } => Some(loci.clone()),
+        .filter_map(|location| match &location.origin {
+            Origin::Body { function, .. } => Some(function.as_str()),
             _ => None,
         })
         .collect();
-    assert_eq!(loci.len(), 2, "{refusals:?}");
-    let named: Vec<&Origin> = loci
-        .iter()
-        .flatten()
-        .map(|location| &location.origin)
-        .collect();
-    assert!(named
-        .iter()
-        .any(|origin| matches!(origin, Origin::Body { function, .. } if function == "f")));
-    assert!(named
-        .iter()
-        .any(|origin| matches!(origin, Origin::Body { function, .. } if function == "g")));
+    assert_eq!(functions, ["f", "g"]);
     assert_eq!(
         refusals[0].cause.code().as_str(),
         "unknown_required_feature"
     );
     assert_eq!(refusals[0].cause.cause(), Some("unsupported-feature"));
+}
+
+/// TC-413 step 10 (FR-092-AC-12): `Point`, declared through a
+/// `CompositeDeclaration` keyed `0x11…` and again through one keyed
+/// `0x22…`, keys to D1 both times, and D1 is its checked type node's id; no
+/// node or type node holds either supplied key.
+#[trace("FR-092-AC-12", "TC-413")]
+#[test]
+fn a_declared_records_node_id_is_its_key_not_its_handle() {
+    for fill in [0x11, 0x22] {
+        let handle = NodeKey::from_digest([fill; 32]);
+        let types = TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                handle,
+                "Point",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("x", int(0, 9), Presence::Required),
+                    FieldDeclaration::new("y", int(0, 9), Presence::Required),
+                ]),
+            )],
+            [],
+        )
+        .expect("Point admits");
+        let checked = PackageDeclarations {
+            types,
+            ..PackageDeclarations::new(fixture_owner())
+        }
+        .check(CheckingLimits::default())
+        .expect("Point checks");
+        let graph = checked.semantic_graph();
+        assert_holds(graph, "D1");
+        let d1 = node_by_key(graph, &vector_key("D1")).key();
+        let type_nodes: Vec<NodeKey> = checked
+            .checked_type_nodes()
+            .map(CheckedTypeNode::node)
+            .collect();
+        assert_eq!(type_nodes, [d1]);
+        let supplied = handle.to_string();
+        assert!(checked.checked_type_node(handle).is_none());
+        for node in graph.nodes() {
+            assert_ne!(node.key(), handle);
+            assert!(
+                !std::str::from_utf8(node.preimage())
+                    .expect("UTF-8")
+                    .contains(&supplied),
+                "{} holds the supplied key",
+                node.key()
+            );
+        }
+    }
 }
 
 /// TC-413 step 4 (FR-092-AC-3): an alias adds no node; the parameter is
@@ -866,24 +1093,24 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
             operand: Box::new(name_expr("x")),
         },
     );
-    let s = TypeForm::collection(CollectionKind::Sequence, SPAN)
-        .with_arguments(vec![int_form(0, 9)])
-        .with_bounds(vec!["0".into(), "5".into()]);
-    // FR-093-AC-4 writes the body `sequence[x]`, a collection literal the
-    // checker cannot type without a hint; the fixture flat-maps `s` itself.
-    let result = TypeForm::collection(CollectionKind::Sequence, SPAN)
-        .with_arguments(vec![int_form(0, 9)])
-        .with_bounds(vec!["0".into(), "25".into()]);
-    let flat = function(
-        "flat",
-        &[("s", s)],
-        result,
+    let bounded_sequence = |element: TypeForm, maximum: &str| {
+        TypeForm::collection(CollectionKind::Sequence, SPAN)
+            .with_arguments(vec![element])
+            .with_bounds(vec!["0".into(), maximum.into()])
+    };
+    let fm = function(
+        "fm",
+        &[(
+            "s",
+            bounded_sequence(bounded_sequence(int_form(0, 9), "2"), "3"),
+        )],
+        bounded_sequence(int_form(0, 9), "6"),
         None,
         Expression::Query {
             query: BinderQuery::FlatMap,
             binder: "x".to_owned(),
             source: Box::new(name_expr("s")),
-            body: Box::new(name_expr("s")),
+            body: Box::new(name_expr("x")),
         },
     );
 
@@ -919,7 +1146,7 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
     let graph = check(vec![c3]).expect("c3 checks");
     application(graph.semantic_graph(), "quire.op.numeric.convert");
 
-    let graph = check(vec![flat]).expect("flat checks");
+    let graph = check(vec![fm]).expect("fm checks");
     application(graph.semantic_graph(), "quire.op.collection.flat_map");
     assert!(graph
         .semantic_graph()

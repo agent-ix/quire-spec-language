@@ -606,44 +606,13 @@ impl PackageDeclarations {
         // only through it. Termination stays below, over every declaration's
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
-        // ADR-013 O-14/C-26 (PR #300 review round 2, HIGH-1): every admitted
-        // composite and enum type declaration this package's own
-        // `TypeEnvironment`/`enums` already carry becomes a real
-        // `CheckedTypeNode`, identified by that declaration's own
-        // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
-        // carried into this module's own checked-node space unchanged, byte
-        // for byte. Both declarations hold the kernel `quire_exact::NodeKey`,
-        // so no conversion function is needed -- never a
-        // second, parallel id minted from the declared name and shape. This
-        // is the same identity `Typer::
-        // type_named` (`check.rs`) and every field type (`family.rs`)
-        // already resolve a reference against, so a checked type node's id
-        // is exactly what those other sites already use, once carried into
-        // this module's own identity space -- FR-088-AC-7 step 4
-        // ("references resolve to the one node id the single declaration
-        // was minted with"). Round 1 minted a fresh, unused id here instead
-        // (`identity::mint_type_declaration_identity`, deleted); see
-        // `identity`'s own module doc for the full account of why that was
-        // wrong and why no third scheme is needed: package scoping (AC-7)
-        // and "not an identity in its own right" (AC-6) are already
-        // properties of these pre-existing keys, not something `check` needs
-        // to (re)establish.
-        //
-        // This also closes HIGH-2 (qualified declared names silently
-        // dropped): the prior code required a composite's or enum's own
-        // *name* to be a single valid `Identifier` before it would mint an
-        // id from it, so a package-qualified name like `"P::R"` produced no
-        // `CheckedTypeNode` at all, with no refusal or diagnostic. Reusing
-        // the declaration's own key needs no name validation in the first
-        // place -- the key is already minted (by the declaration's own
-        // producer), so every admitted composite and enum gets a checked
-        // type node, `"P::R"` included (see `composite_type_node_for_a_qualified_declared_name`
-        // below).
+        // ADR-013 O-14/C-26: every admitted enum declaration becomes a
+        // `CheckedTypeNode::Sum` identified by its `EnumDeclaration::key()`,
+        // and every admitted composite (below, once lowering has keyed it)
+        // a `CheckedTypeNode::Composite` identified by its FR-092 key.
+        // FR-092-AC-12: a declared composite's checked type node takes its
+        // FR-092 key, which `check` mints below, not the caller's handle.
         let mut type_nodes = BTreeMap::new();
-        for composite in scope.types.composites() {
-            let node = composite.key();
-            type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
-        }
         for enum_binding in &scope.enums {
             let node = enum_binding.declaration.key();
             // Every case name here was already validated as
@@ -857,9 +826,8 @@ impl PackageDeclarations {
                 callees
             })
             .collect();
-        let order = lowering::lowering_order(&callees, &locations)?;
+        let order = lowering::lowering_order(&callees);
         let mut occurrences = family::OccurrenceMap::default();
-        let mut identities: Vec<Option<quire_exact::NodeKey>> = vec![None; drafts.len()];
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
         let mut units = scope.types.units().clone();
@@ -876,34 +844,45 @@ impl PackageDeclarations {
             drafts.len(),
             &mut occurrences,
         );
-        for index in order {
-            let Some((signature, body)) = drafts.get(index) else {
-                continue;
-            };
-            let input = lowering::FunctionInput {
-                name: &signature.name,
-                location: &locations[index],
-                parameters: &signature.parameters,
-                result: &signature.result,
-                body: &body.body,
-                body_slots: &body.slot_names,
-                measure: body.measure.as_ref(),
-                measure_slots: &body.measure_slot_names,
-                population_targets: population_targets
-                    .get(index)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-                clause: model_clauses.get(&index),
-            };
-            match lowering.function(index, &input) {
-                Ok(key) => identities[index] = Some(key),
+        for group in &order {
+            let inputs: Vec<lowering::FunctionInput<'_>> = group
+                .members
+                .iter()
+                .filter_map(|&index| {
+                    let (signature, body) = drafts.get(index)?;
+                    Some(lowering::FunctionInput {
+                        name: &signature.name,
+                        location: &locations[index],
+                        parameters: &signature.parameters,
+                        result: &signature.result,
+                        body: &body.body,
+                        body_slots: &body.slot_names,
+                        measure: body.measure.as_ref(),
+                        measure_slots: &body.measure_slot_names,
+                        population_targets: population_targets
+                            .get(index)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                        clause: model_clauses.get(&index),
+                    })
+                })
+                .collect();
+            refusals.extend(lowering.function_group(group, &inputs));
+        }
+        for composite in scope.types.composites() {
+            match lowering.composite_node(composite.key()) {
+                Ok(node) => {
+                    type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
+                }
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        let (semantic_graph, correspondence) = lowering.finish(&lowering::generated_location());
+        let lowered = lowering.finish(&lowering::generated_location());
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        let (semantic_graph, correspondence, identities) =
+            (lowered.graph, lowered.correspondence, lowered.functions);
         // FR-094: `check` is the model correspondence's only writer; it
         // holds exactly the model declaration nodes lowering keyed.
         let mut model_correspondence = identity::ModelCorrespondence::default();
@@ -1199,12 +1178,9 @@ mod tests {
     /// convertible through C-26, not only in `identity`'s own
     /// hand-constructed unit tests.
     ///
-    /// PR #300 review round 2 (HIGH-1): the checked type node's own id is
-    /// asserted equal to the declaration's own pre-existing
-    /// `CompositeDeclaration::key()` -- the same identity `Typer::
-    /// type_named` (`check.rs`) and every field type (`family.rs`) already
-    /// resolve a reference against -- not a second, parallel id this
-    /// module used to mint from the declared name and shape.
+    /// FR-092-AC-12: the checked type node's id is the record's FR-092 node
+    /// key, the key of its semantic-graph node, not the handle the caller
+    /// passed to `CompositeDeclaration::new`.
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
@@ -1227,11 +1203,17 @@ mod tests {
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared composite");
         let node = nodes[0].node();
+        assert_ne!(node, key, "the caller's handle is not a node id");
+        let declared = graph
+            .semantic_graph()
+            .node(node)
+            .expect("the checked type node's id is a graph node's key");
         assert_eq!(
-            node, key,
-            "the checked type node's id must be the declaration's own existing key"
+            declared.declaration().map(|name| name[0].as_str()),
+            Some("Flagged")
         );
-        assert_eq!(graph.checked_type_node(key), Some(nodes[0]));
+        assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
+        assert!(graph.checked_type_node(key).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(node)
@@ -1245,8 +1227,8 @@ mod tests {
     /// itself a single valid `Identifier` (no refusal, no diagnostic,
     /// `check()` still returning `Ok`, review round 2's own probe: "0
     /// checked type nodes, check returns Ok, no refusal or diagnostic").
-    /// Reusing the declaration's own key (HIGH-1) needs no name validation
-    /// at all, so this can no longer happen.
+    /// The node id is the record's FR-092 key (FR-092-AC-12), whose
+    /// `declaration` carries the qualified name's segments.
     #[trace("TC-252", "FR-088-AC-9")]
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
@@ -1271,7 +1253,18 @@ mod tests {
             1,
             "a package-qualified declared name must still get a checked type node"
         );
-        assert_eq!(nodes[0].node(), key);
+        assert_ne!(nodes[0].node(), key);
+        let declared = graph
+            .semantic_graph()
+            .node(nodes[0].node())
+            .expect("the checked type node's id is a graph node's key");
+        let name: Vec<&str> = declared
+            .declaration()
+            .unwrap_or_default()
+            .iter()
+            .map(|segment| segment.as_str())
+            .collect();
+        assert_eq!(name, ["P", "R"]);
     }
 
     /// PR #300 review round 2 (HIGH-1, L10): the enum/Sum companion to

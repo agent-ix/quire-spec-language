@@ -195,7 +195,6 @@ fn node<'a>(body: &'a SemanticTerm) -> ApplicationNode<'a> {
         semantic_form: "binary",
         semantic_type: key(3),
         declaration: None,
-        recursion: None,
         body,
     }
 }
@@ -208,14 +207,12 @@ fn preimage_json(node: &ApplicationNode<'_>) -> Value {
 #[test]
 fn preimage_bytes_are_pinned() {
     let body = add(vec![reference(1), reference(9)]);
-    let group = [key(1), key(2)];
     let declaration = identifiers(&["pkg", "total"]);
     let node = ApplicationNode {
         node_tag: NodeTag::Function,
         semantic_form: "function",
         semantic_type: key(3),
         declaration: Some(&declaration),
-        recursion: Some(RecursionGroup::new(&group, 1).expect("group is valid")),
         body: &body,
     };
     let node_ref = |fill: u8| {
@@ -226,15 +223,16 @@ fn preimage_bytes_are_pinned() {
     };
     let expected = format!(
         concat!(
-            r#"{{"body":{{"arguments":[{{"ordinal":0,"term":"group_reference"}},"#,
+            r#"{{"body":{{"arguments":[{{"target":{one},"term":"reference"}},"#,
             r#"{{"target":{nine},"term":"reference"}}],"#,
             r#""operation":{{"identity":"quire.op.integer.add","laws":[],"leaves":[],"member":null,"mode":null}},"#,
             r#""operator":"binary","result_type":{three},"term":"application"}},"#,
             r#""declaration":{{"qualified_name":["pkg","total"]}},"#,
-            r#""node_tag":"function","recursion":{{"ordinal":1,"size":2}},"#,
+            r#""node_tag":"function","recursion":null,"#,
             r#""semantic_form":"function","semantic_type":{three},"#,
             r#""version":"quire.application-node/v1"}}"#,
         ),
+        one = node_ref(1),
         nine = node_ref(9),
         three = node_ref(3),
     );
@@ -251,9 +249,21 @@ fn preimage_bytes_are_pinned() {
     );
 }
 
+/// The input of an application node inside a group.
+fn in_group<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
+    NodeInput {
+        owner: None,
+        node_tag: NodeTag::Expression,
+        semantic_form: "binary",
+        semantic_type: Some(key(3)),
+        declaration: None,
+        body,
+    }
+}
+
 #[test]
 fn group_references_are_rewritten_in_every_nested_term() {
-    let body = SemanticTerm::Aggregate {
+    let first = SemanticTerm::Aggregate {
         members: vec![
             SemanticTerm::Binding {
                 name: "x".to_owned(),
@@ -262,56 +272,57 @@ fn group_references_are_rewritten_in_every_nested_term() {
             add(vec![reference(1), add(vec![reference(2), reference(9)])]),
         ],
     };
-    let group = [key(1), key(2)];
-    let node = ApplicationNode {
-        recursion: Some(RecursionGroup::new(&group, 0).expect("group is valid")),
-        ..node(&body)
-    };
+    let second = add(vec![reference(1)]);
+    let group = group_keys(&[in_group(&first), in_group(&second)], &[key(1), key(2)])
+        .expect("the group keys");
 
-    let preimage = preimage_json(&node);
+    let preimage: Value = serde_json::from_slice(&group.members[0].preimage).expect("JSON");
 
     let group_reference = |ordinal: usize| json!({"term": "group_reference", "ordinal": ordinal});
+    let (own, other) = (group.ordinals[0], group.ordinals[1]);
     let members = &preimage["body"]["members"];
-    assert_eq!(members[0]["value"], group_reference(1));
-    assert_eq!(members[1]["arguments"][0], group_reference(0));
+    assert_eq!(members[0]["value"], group_reference(other));
+    assert_eq!(members[1]["arguments"][0], group_reference(own));
     assert_eq!(
         members[1]["arguments"][1]["arguments"][0],
-        group_reference(1)
+        group_reference(other)
     );
     assert_eq!(
         members[1]["arguments"][1]["arguments"][1],
         json!({"term": "reference", "target": {"domain": NODE_KEY_DOMAIN, "digest": key(9).to_string()}}),
         "a reference outside the group stays a reference"
     );
-    assert_eq!(preimage["recursion"], json!({"size": 2, "ordinal": 0}));
+    assert_eq!(
+        preimage["recursion"],
+        json!({"size": 2, "ordinal": own}),
+        "an application node's recursion has no group member"
+    );
 }
 
 #[test]
-fn the_key_does_not_depend_on_group_member_keys() {
-    let first_body = add(vec![reference(1), reference(9)]);
-    let second_body = add(vec![reference(7), reference(9)]);
-    let first_group = [key(1), key(2)];
-    let second_group = [key(7), key(8)];
-    let first = ApplicationNode {
-        recursion: Some(RecursionGroup::new(&first_group, 1).expect("group is valid")),
-        ..node(&first_body)
-    };
-    let second = ApplicationNode {
-        recursion: Some(RecursionGroup::new(&second_group, 1).expect("group is valid")),
-        ..node(&second_body)
-    };
-    let outside = ApplicationNode {
-        recursion: None,
-        ..node(&first_body)
-    };
+fn the_key_does_not_depend_on_group_member_handles() {
+    let first_bodies = [
+        add(vec![reference(2), reference(9)]),
+        add(vec![reference(1), reference(1)]),
+    ];
+    let second_bodies = [
+        add(vec![reference(8), reference(9)]),
+        add(vec![reference(7), reference(7)]),
+    ];
+    let first = group_keys(
+        &[in_group(&first_bodies[0]), in_group(&first_bodies[1])],
+        &[key(1), key(2)],
+    )
+    .expect("the group keys");
+    let second = group_keys(
+        &[in_group(&second_bodies[0]), in_group(&second_bodies[1])],
+        &[key(7), key(8)],
+    )
+    .expect("the group keys");
+    let outside = node_key(&in_group(&first_bodies[0])).expect("the node keys");
 
-    let key_of = |node: &ApplicationNode<'_>| {
-        application_node_key(node)
-            .expect("node has an application")
-            .key
-    };
-    assert_eq!(key_of(&first), key_of(&second));
-    assert_ne!(key_of(&first), key_of(&outside));
+    assert_eq!(first, second);
+    assert_ne!(first.members[0].key, outside.key);
 }
 
 #[test]
@@ -319,7 +330,6 @@ fn declaration_and_recursion_each_enter_the_key() {
     let body = add(vec![reference(1), reference(9)]);
     let declaration = identifiers(&["pkg", "total"]);
     let other_declaration = identifiers(&["pkg", "sum"]);
-    let group = [key(1), key(2)];
     let bare = node(&body);
     let declared = ApplicationNode {
         declaration: Some(&declaration),
@@ -329,20 +339,20 @@ fn declaration_and_recursion_each_enter_the_key() {
         declaration: Some(&other_declaration),
         ..bare
     };
-    let first = ApplicationNode {
-        recursion: Some(RecursionGroup::new(&group, 0).expect("group is valid")),
-        ..bare
-    };
-    let second = ApplicationNode {
-        recursion: Some(RecursionGroup::new(&group, 1).expect("group is valid")),
-        ..bare
-    };
 
-    let keys = [bare, declared, renamed, first, second].map(|node| {
-        application_node_key(&node)
-            .expect("node has an application")
-            .key
-    });
+    let mut keys: Vec<NodeKey> = [bare, declared, renamed]
+        .map(|node| {
+            application_node_key(&node)
+                .expect("node has an application")
+                .key
+        })
+        .into();
+    keys.push(
+        group_keys(&[in_group(&body)], &[key(1)])
+            .expect("a one-member group keys")
+            .members[0]
+            .key,
+    );
     let distinct: std::collections::BTreeSet<_> = keys.iter().collect();
     assert_eq!(distinct.len(), keys.len(), "{keys:?}");
     assert_eq!(preimage_json(&bare)["declaration"], Value::Null);
@@ -440,27 +450,57 @@ fn a_member_position_outside_the_exact_range_is_refused() {
 }
 
 #[test]
-fn a_recursion_group_needs_an_in_range_ordinal_and_distinct_members() {
-    let group = [key(1), key(2)];
-    assert!(RecursionGroup::new(&group, 1).is_ok());
+fn a_recursion_group_needs_members_with_distinct_handles() {
+    let body = add(vec![reference(1)]);
+    assert_eq!(group_keys(&[], &[]), Err(NodeKeyRefusal::InvalidGroup));
     assert_eq!(
-        RecursionGroup::new(&group, 2),
-        Err(RecursionGroupRefusal::OrdinalOutOfRange {
-            ordinal: 2,
-            size: 2
-        })
+        group_keys(&[in_group(&body), in_group(&body)], &[key(1), key(1)]),
+        Err(NodeKeyRefusal::InvalidGroup)
     );
     assert_eq!(
-        RecursionGroup::new(&[], 0),
-        Err(RecursionGroupRefusal::OrdinalOutOfRange {
-            ordinal: 0,
-            size: 0
-        })
+        group_keys(&[in_group(&body)], &[key(1), key(2)]),
+        Err(NodeKeyRefusal::InvalidGroup)
+    );
+}
+
+/// FR-092 G1: a one-member `option` group over itself, keyed through the key
+/// function directly, to the vector's preimage bytes, key, signatures and
+/// group digest.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_one_member_group_keys_to_g1() {
+    let handle = key(0x5a);
+    let body = SemanticTerm::Aggregate {
+        members: vec![SemanticTerm::reference(handle)],
+    };
+    let node = NodeInput {
+        owner: None,
+        node_tag: NodeTag::CompositeType,
+        semantic_form: "option",
+        semantic_type: None,
+        declaration: None,
+        body: &body,
+    };
+
+    let group = group_keys(&[node], &[handle]).expect("G1 keys");
+
+    let expected = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
+    assert_eq!(
+        String::from_utf8(group.members[0].preimage.clone()).expect("UTF-8"),
+        expected
     );
     assert_eq!(
-        RecursionGroup::new(&[key(1), key(2), key(1)], 1),
-        Err(RecursionGroupRefusal::DuplicateMember { member: key(1) })
+        group.members[0].key.to_string(),
+        "7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31"
     );
+    assert_eq!(
+        hex(&group.digest),
+        "4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b"
+    );
+    let signature = "3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4";
+    assert_eq!(group.anonymous, [signature]);
+    assert_eq!(group.full, [signature]);
+    assert_eq!((group.ordinals.as_slice(), group.size), (&[0][..], 1));
 }
 
 #[test]
@@ -694,7 +734,6 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
             semantic_form: &decoded.semantic_form,
             semantic_type: decoded.semantic_type.0,
             declaration: declaration.as_deref(),
-            recursion: None,
             body: &decoded.body,
         };
 
@@ -741,7 +780,6 @@ fn structural<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
         semantic_form: "boolean",
         semantic_type: None,
         declaration: None,
-        recursion: None,
         body,
     }
 }

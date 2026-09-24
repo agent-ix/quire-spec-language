@@ -870,6 +870,11 @@ mod checked {
         let types = holder_environment();
         let package = package(PackageDeclarations {
             types: types.clone(),
+            models: vec![crate::support::model::object_model(
+                "collection-algebra",
+                "M::Obj",
+                object_type("M::Obj"),
+            )],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         });
         let holder_type = ValueType::Composite(key("Holder"));
