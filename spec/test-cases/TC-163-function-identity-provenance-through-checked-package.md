@@ -37,9 +37,10 @@ QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
 6. Inspect the `infer_form` function-declaration and function-application
    arms' source: count calls into `Value` family check code and count any
    other conditional, lookup or loop statement present directly in the arm.
-7. Check a fixture function declaration and a fixture node whose body
-   contains a call, both taken from QSpec's `node-identity-vectors.json` and
-   FR-322 application-node vectors, and read each checked identity.
+7. Under source owner (`a`, `u`), check `both` and `nb` as FR-065-AC-8 gives
+   them, and read the identity of `both` and of the call `both(a, true)`.
+   Run the application-node key builder over every `operation_vectors`
+   preimage of QSpec's `node-identity-vectors.json`, read at run time.
 
 ## Expected Results
 
@@ -56,13 +57,14 @@ QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
 - Step 6: each arm contains exactly one call into `Value`'s family check
   code and no other conditional, lookup or loop; a code-shape check against a
   fixed budget fails if either arm regains inline branching.
-- Step 7: each identity equals its QSpec vector's digest in domain
-  `quire.checked-semantic-node/v1`.
+- Step 7: `both`'s identity is FR-092 vector F2 and the call's is E2, in
+  domain `quire.checked-semantic-node/v1`; each QSpec operation vector's
+  recomputed key equals its recorded `sha256`.
 
 ## Status
 
 Step 7 (FR-065-AC-8) is unbacked until QSL-156 slice A4b switches the
-checker's minter to the FR-322 preimages.
+checker's minter to the FR-092 and FR-093 keys.
 
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
 `identity_survives_v2_round_trip` and

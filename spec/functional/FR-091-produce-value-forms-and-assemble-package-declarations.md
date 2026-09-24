@@ -88,8 +88,8 @@ The requirement carries testable criteria for decisions already taken:
   `node-identity-preimage.schema.json`: a nominal enum, dimension or unit
   node's preimage names its owner, and a source owner is
   `SourceOwner{kind: "source", authority, identity}`. The
-  `quire.application-node/v1` preimage of a `composite_type` or `function`
-  node has no owner member. Aliases within one source unit are unique
+  `quire.application-node/v1` preimage has no owner member. Aliases within
+  one source unit are unique
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md` revision
   `1-draft.6`: the catalog codes and causes this requirement names.
@@ -355,10 +355,11 @@ function declarations over the unit's `SourceOwner{authority, identity}`
 and are not part of the preimage, so an unchanged declaration keeps its key
 across revisions of its source. The owner is a required E3 input, and
 `check` has no constant package identity:
-`DEFAULT_PACKAGE_IDENTITY` does not exist. QSpec publishes owner scope for
-nominal enum, dimension and unit nodes only; the owner member on the
-`composite_type` and `function` preimage is a proposed QSpec extension
-(Dependencies).
+`DEFAULT_PACKAGE_IDENTITY` does not exist. The record, tuple and function
+nodes are keyed by the `quire.structural-node/v1` preimage, which carries the
+owner ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
+publishes owner scope for nominal enum, dimension and unit nodes; the
+structural-node preimage is a QSL proposal to QSpec (Dependencies).
 
 Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
 The resolution `match` has one explicit arm per type-form head:
@@ -501,12 +502,12 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
   whichever carrier holds them.
 - The unit's `SourceOwner` needs an `authority` on QSL's source identity,
   which #213 S-4 (QSL-159) owns.
-- Record, tuple and function keys over `SourceOwner` need QSpec to add the
-  owner member to the `quire.application-node/v1` preimage of
-  `composite_type` and `function` nodes. QSpec publishes it for nominal
-  enum, dimension and unit nodes only, and that preimage names a node by
-  `declaration: {qualified_name}` alone. The extension is proposed to
-  `ix://agent-ix/quire-specification` under ADR-013 QC-18.
+- Record, tuple and function keys over `SourceOwner` use QSL's
+  `quire.structural-node/v1` preimage
+  ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
+  publishes an owner-bearing preimage for nominal enum, dimension and unit
+  nodes only; the structural-node preimage is proposed to
+  `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
 - An `enum`, `dimension` or `unit` entry needs `value::enumeration` and
   `value::unit` to leave the FB-13 debt list, which QSL-131 owns.
 - Resolving a selection's definition reference against the library lock is
@@ -550,7 +551,7 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-1, nested constructs | S2 builds the `Deref`, `Pre` and `AllInstances` variants that the `forms` core defines. The check stage refuses each with the owning family's catalogued cause, never `unsupported_construct`. `pre(e)` in a function body is `wrong_snapshot`/`forbidden-pre-read`, a `ProtocolClause` cause. | The catalog forbids a producer from choosing a broader listed code to discard a distinction it knows. FR-090 makes `forbidden-pre-read` a `ProtocolClause` cause. | ADR-012 §3's rule that a family owns its grammar productions is ruled to cover nested sub-expressions. |
 | FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13, QSL-131). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
 | FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence (QSL-6). The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
-| FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; extending it to `composite_type` and `function` nodes is a proposed QSpec extension. | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
+| FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
 | FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` and in QSL, and the evaluator applies it. The assembler's floating-type refusal (FR-091-AC-19) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
