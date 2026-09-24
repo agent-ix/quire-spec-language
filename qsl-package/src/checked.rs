@@ -67,6 +67,20 @@ use qsl_semantics::value::IDENTITY_LIMITS;
 /// private struct literal row 2's doctest already forecloses, so row 6 is
 /// covered by row 2 rather than carrying its own separate doctest.
 ///
+/// Stable rustdoc does not check a `compile_fail` block's error code, so a
+/// renamed or moved import would make each block below fail for the wrong
+/// reason and still pass. Each is paired with a block that must compile,
+/// over the same `use` lines and the same value, so a rename or a move
+/// breaks the build instead.
+///
+/// TC-244 row 2's pair:
+/// ```no_run
+/// use qsl_package::CheckedPackage;
+/// fn holds(package: CheckedPackage) -> CheckedPackage {
+///     package
+/// }
+/// ```
+///
 /// TC-244 row 3 (FR-087-AC-2, R-10): a wire-admitted `VerifiedPackage`
 /// has no conversion into a `CheckedPackage`:
 /// ```compile_fail,E0277
@@ -74,6 +88,15 @@ use qsl_semantics::value::IDENTITY_LIMITS;
 /// use qsl_semantics::library::VerifiedPackage;
 /// fn forge(verified: VerifiedPackage) -> CheckedPackage {
 ///     verified.into()
+/// }
+/// ```
+/// Its pair:
+/// ```no_run
+/// use qsl_package::CheckedPackage;
+/// use qsl_semantics::library::VerifiedPackage;
+/// fn holds(verified: VerifiedPackage, package: CheckedPackage) -> CheckedPackage {
+///     drop(verified);
+///     package
 /// }
 /// ```
 ///
@@ -85,9 +108,19 @@ use qsl_semantics::value::IDENTITY_LIMITS;
 ///     view.into()
 /// }
 /// ```
+/// Its pair:
+/// ```no_run
+/// use qsl_package::CheckedPackage;
+/// use qsl_semantics::library::ImportView;
+/// fn holds(view: ImportView, package: CheckedPackage) -> CheckedPackage {
+///     drop(view);
+///     package
+/// }
+/// ```
 ///
 /// Row 5, a `protocol_artifact`-read value, is at the root crate's
-/// `protocol_artifact::wire::Package`, the only crate that can name both.
+/// `protocol_artifact::AdmittedPackage`: only the root crate can name both
+/// it and `CheckedPackage`.
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: CheckedGraph,

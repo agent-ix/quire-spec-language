@@ -40,4 +40,4 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
 
 ## Status
 
-Planned; no test backs this case. It is blocked on a spec gap: FR-087 Status, AC-13.
+Planned; no test backs this case. It is blocked by ADR-011 §2's interim rule (E3 refuses a unit that declares an `import`, until QSpec fixes its `dependency_selections` schema) and by QSL-6. See FR-087 Status, AC-13.

@@ -455,11 +455,32 @@ impl Candidate {
 ///     read.into()
 /// }
 /// ```
+/// Its pair must compile, over the same names, so a rename or a move breaks
+/// the build rather than making the block above fail for another reason
+/// (stable rustdoc does not check the error code):
+/// ```no_run
+/// use quire_spec_language::protocol_artifact::AdmittedPackage;
+/// fn holds(read: AdmittedPackage, package: qsl_package::CheckedPackage) -> qsl_package::CheckedPackage {
+///     drop(read);
+///     package
+/// }
+/// ```
 /// nor into a `CheckedGraph`:
 /// ```compile_fail,E0277
 /// use quire_spec_language::protocol_artifact::AdmittedPackage;
 /// fn forge(read: AdmittedPackage) -> qsl_semantics::check::CheckedGraph {
 ///     read.into()
+/// }
+/// ```
+/// Its pair:
+/// ```no_run
+/// use quire_spec_language::protocol_artifact::AdmittedPackage;
+/// fn holds(
+///     read: AdmittedPackage,
+///     graph: qsl_semantics::check::CheckedGraph,
+/// ) -> qsl_semantics::check::CheckedGraph {
+///     drop(read);
+///     graph
 /// }
 /// ```
 #[derive(Debug)]
