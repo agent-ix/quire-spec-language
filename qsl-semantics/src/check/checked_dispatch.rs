@@ -100,6 +100,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::check::{DispatchOperation, PackageDeclarations};
+use super::lowering::{AdmittedModel, ForeignView, ModelClause};
 use super::ir::{DispatchCandidate, DispatchTable};
 use crate::model::accounting::Meter;
 use crate::model::dispatch::{
@@ -215,6 +216,11 @@ pub enum DispatchBridgeRefusal {
     /// itself reports every other missing-candidate lookup. Boxed:
     /// `ModelRefusal` is far larger than the other variants.
     UnknownCandidate(Box<ModelRefusal>),
+    /// `view` was normalized under another model selection than
+    /// `domain_package`'s, so the two cannot be admitted together (FR-094's
+    /// `ModelOwner` names the package's own selection). Boxed: it holds two
+    /// selections.
+    ForeignView(Box<ForeignView>),
 }
 
 fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBridgeRefusal {
@@ -811,9 +817,12 @@ fn substitute_names(
 /// FR-151 dispatch-eligible operation, and assembles the checked-layer
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
 /// bridge's exact scope. `owner` is the checked package's
-/// [`PackageDeclarations::owner`] input; FR-092 keys no function synthesized
-/// from a model clause yet, so `check` refuses such a function
-/// (`CheckCause::UnkeyedNode`) whatever owner it names.
+/// [`PackageDeclarations::owner`] input, the source unit's. Each synthesized
+/// clause function is keyed with its own `ModelOwner` instead (FR-094): the
+/// authoring operation member for an authored precondition, the candidate
+/// for an effective precondition and a body. The returned package admits
+/// `domain_package` with `view` ([`AdmittedModel`]), whose selection those
+/// owners name.
 pub fn checked_dispatch_operation(
     domain_package: &DomainPackage,
     view: &EffectiveView,
@@ -823,6 +832,7 @@ pub fn checked_dispatch_operation(
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let family_steps = meter.limits().family_steps;
+    let model = AdmittedModel::new(domain_package, view).map_err(|refusal| DispatchBridgeRefusal::ForeignView(Box::new(refusal)))?;
     let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
     let type_identities = view.type_identities();
     let table = match outcome {
@@ -915,6 +925,8 @@ pub fn checked_dispatch_operation(
     // `opaque_type_form`; this records its resolved signature by index into
     // `functions`.
     let mut resolved_signatures = super::check::ResolvedSignatures::default();
+    // FR-094: each synthesized clause function's owner and clause kind.
+    let mut model_clauses: BTreeMap<usize, ModelClause> = BTreeMap::new();
     let mut authored_index: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for member in &authored {
         let (parameters, _) = require_signature(clauses, member)?;
@@ -926,6 +938,13 @@ pub fn checked_dispatch_operation(
         let index = functions.len();
         let declared_parameters = opaque_parameters(&parameters);
         resolved_signatures.insert(index, (parameters, ValueType::Boolean));
+        model_clauses.insert(
+            index,
+            ModelClause {
+                declaration: member.clone(),
+                kind: DeclaredClauseKind::Precondition,
+            },
+        );
         functions.push(FunctionDeclaration::clause(
             format!("{}.precondition", member.node),
             declared_parameters,
@@ -965,6 +984,13 @@ pub fn checked_dispatch_operation(
                 let index = functions.len();
                 let declared_parameters = opaque_parameters(&parameters);
                 resolved_signatures.insert(index, (parameters.clone(), ValueType::Boolean));
+                model_clauses.insert(
+                    index,
+                    ModelClause {
+                        declaration: candidate.clone(),
+                        kind: DeclaredClauseKind::Precondition,
+                    },
+                );
                 functions.push(FunctionDeclaration::clause(
                     format!("{}.precondition.effective", candidate.node),
                     declared_parameters,
@@ -995,6 +1021,13 @@ pub fn checked_dispatch_operation(
         let index = functions.len();
         let declared_parameters = opaque_parameters(&parameters);
         resolved_signatures.insert(index, (parameters, result));
+        model_clauses.insert(
+            index,
+            ModelClause {
+                declaration: candidate.clone(),
+                kind: DeclaredClauseKind::Body,
+            },
+        );
         functions.push(FunctionDeclaration::clause(
             candidate.node.clone(),
             declared_parameters,
@@ -1103,6 +1136,8 @@ pub fn checked_dispatch_operation(
         dispatch_operations,
         dispatch_tables: vec![checked_table],
         resolved_signatures,
+        models: vec![model],
+        model_clauses,
         ..PackageDeclarations::new(owner)
     })
 }

@@ -1578,8 +1578,11 @@ mod tests {
             ],
         )
         .expect("one object type admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&domain_package, &view)
+            .expect("the view is the domain package's own");
         let graph = PackageDeclarations {
             types,
+            models: vec![model],
             functions: vec![FunctionDeclaration::new(
                 "F",
                 vec![(

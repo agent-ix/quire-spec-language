@@ -22,17 +22,17 @@
 //! evidence ([`LockEvidence`]); a law it does not supply refuses the node
 //! (`missing_declaration`/`missing-selection`), never a constant.
 //!
-//! Three kinds of checked node have no FR-092/FR-093 key yet: the
-//! `StateModel` family's `Reference<T>`/`Population<T>[N]` type nodes and the
-//! model nodes a dispatch, attribute, `allInstances` or `lookup` member names,
-//! the owner of a function synthesized from a model clause, and quantity type
-//! nodes. Each refuses through [`UnkeyedNode`] until its spec lands.
+//! FR-094 keys the rest (`model`): the model declaration nodes a
+//! `Reference<T>` or a model row's member names, the `Reference<T>` and
+//! `Population<T>[N]` type nodes, a clause function's `ModelOwner` and
+//! `clause` binding, and quantity type nodes. `check` records each model
+//! declaration node it keys in the model correspondence.
 
 use std::collections::BTreeMap;
 
 use quire_exact::{
-    ArithmeticOperator, CollectionKind, Identifier, Integer, NodeKey, OrderingOperator, TextProfile,
-    Value, ValueType,
+    ArithmeticOperator, CollectionKind, EffectiveId, Identifier, Integer, NodeKey,
+    OrderingOperator, TextProfile, Value, ValueType,
 };
 
 use super::check::Scope;
@@ -40,14 +40,20 @@ use super::family::OccurrenceMap;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
     node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag, Operation,
-    OperationLaw, OperationLeaf, OperationMode, Operator, SemanticTerm, SourceOwner,
+    OperationLaw, OperationLeaf, OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
 };
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Origin, UnkeyedNode,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
 };
+use crate::model::key::DeclarationKey;
 use crate::value::declaration::{CompositeShape, EqualityOperator};
 use crate::value::definition::DefinitionReference;
 use crate::value::member::Member;
+use crate::value::quantity::UnitTable;
+
+mod model;
+
+pub use model::{AdmittedModel, ForeignView, ModelClause};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` each profile law role selects. QSpec publishes no
@@ -91,7 +97,7 @@ pub struct SemanticNode {
     semantic_form: &'static str,
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
-    owner: Option<SourceOwner>,
+    owner: Option<Owner>,
     body: SemanticTerm,
 }
 
@@ -126,8 +132,9 @@ impl SemanticNode {
         self.declaration.as_deref()
     }
 
-    /// The declared node's owner.
-    pub fn owner(&self) -> Option<&SourceOwner> {
+    /// The node's owner: a declared node's `SourceOwner`, a model-owned
+    /// node's `ModelOwner`.
+    pub fn owner(&self) -> Option<&Owner> {
         self.owner.as_ref()
     }
 
@@ -173,22 +180,40 @@ pub(crate) struct FunctionInput<'a> {
     pub(crate) measure: Option<&'a Node>,
     /// The name each measure slot was bound under, indexed by slot.
     pub(crate) measure_slots: &'a [String],
-    /// Whether the function was synthesized from a model clause.
-    pub(crate) model_clause: bool,
+    /// The object type `T` of each `Population<T>[N]` parameter, by
+    /// parameter position (`None` for every other parameter).
+    pub(crate) population_targets: &'a [Option<EffectiveId>],
+    /// The owner and kind of a clause function synthesized from a model
+    /// clause (FR-094), or `None` for a source-declared function.
+    pub(crate) clause: Option<&'a ModelClause>,
+}
+
+/// One binder in scope: its slot, its parameter node and that node's
+/// semantic type.
+#[derive(Clone, Copy)]
+struct Binder {
+    slot: Slot,
+    parameter: NodeKey,
+    semantic_type: NodeKey,
 }
 
 /// The binders in scope at one point of a function body.
 struct Binders<'s> {
     /// The name each slot was bound under.
     slot_names: &'s [String],
-    /// Each binder in scope, outermost first: its slot and parameter node.
-    scope: Vec<(Slot, NodeKey)>,
+    /// Each binder in scope, outermost first.
+    scope: Vec<Binder>,
 }
 
 /// Builds and keys the nodes of one package.
 pub(crate) struct Lowering<'a> {
     scope: &'a Scope,
-    owner: &'a SourceOwner,
+    owner: Owner,
+    models: &'a [AdmittedModel],
+    /// The package's units and every compound unit the check stage formed.
+    units: UnitTable,
+    /// Each model declaration node keyed, by its `DeclarationKey`.
+    correspondence: BTreeMap<DeclarationKey, NodeKey>,
     lock: &'a LockEvidence,
     depth_limit: u64,
     graph: SemanticGraph,
@@ -208,8 +233,8 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     }
 }
 
-fn unkeyed(location: &Location, kind: UnkeyedNode) -> CheckRefusal {
-    refuse(location, CheckCause::UnkeyedNode(kind))
+fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
+    refuse(location, CheckCause::InternalFault(fault))
 }
 
 fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
@@ -279,9 +304,12 @@ enum LeafSource<'t> {
 }
 
 impl<'a> Lowering<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         scope: &'a Scope,
-        owner: &'a SourceOwner,
+        owner: &SourceOwner,
+        models: &'a [AdmittedModel],
+        units: UnitTable,
         lock: &'a LockEvidence,
         depth_limit: u64,
         function_count: usize,
@@ -289,7 +317,10 @@ impl<'a> Lowering<'a> {
     ) -> Self {
         Self {
             scope,
-            owner,
+            owner: Owner::Source(owner.clone()),
+            models,
+            units,
+            correspondence: BTreeMap::new(),
             lock,
             depth_limit,
             graph: SemanticGraph::default(),
@@ -300,18 +331,20 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// The finished graph. Every node that no region denotes gets its one
+    /// The finished graph and its model correspondence entries, `(node
+    /// key, DeclarationKey)`. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
-    pub(crate) fn finish(self, root: &Location) -> SemanticGraph {
+    pub(crate) fn finish(self, root: &Location) -> (SemanticGraph, Vec<(NodeKey, DeclarationKey)>) {
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(*key) {
                 self.occurrences.record(*key, "generated", root.clone());
             }
         }
-        self.graph
+        (self.graph, model::correspondence_entries(self.correspondence))
     }
 
-    /// Key `input` and add its node to the graph.
+    /// Key an unowned or source-declared node and add it to the graph: a
+    /// node with a `declaration` carries the unit's `SourceOwner`.
     fn insert(
         &mut self,
         location: &Location,
@@ -321,9 +354,37 @@ impl<'a> Lowering<'a> {
         declaration: Option<Vec<Identifier>>,
         body: SemanticTerm,
     ) -> Result<NodeKey, CheckRefusal> {
-        let owner = declaration.as_ref().map(|_| self.owner);
+        let owner = declaration.as_ref().map(|_| self.owner.clone());
+        self.insert_node(location, node_tag, semantic_form, semantic_type, declaration, owner, body)
+    }
+
+    /// Key a model-owned node (FR-094): `owner`, no `declaration`.
+    fn insert_owned(
+        &mut self,
+        location: &Location,
+        node_tag: NodeTag,
+        semantic_form: &'static str,
+        semantic_type: Option<NodeKey>,
+        owner: Owner,
+        body: SemanticTerm,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.insert_node(location, node_tag, semantic_form, semantic_type, None, Some(owner), body)
+    }
+
+    /// Key a node from every preimage member and add it to the graph.
+    #[allow(clippy::too_many_arguments)]
+    fn insert_node(
+        &mut self,
+        location: &Location,
+        node_tag: NodeTag,
+        semantic_form: &'static str,
+        semantic_type: Option<NodeKey>,
+        declaration: Option<Vec<Identifier>>,
+        owner: Option<Owner>,
+        body: SemanticTerm,
+    ) -> Result<NodeKey, CheckRefusal> {
         let keyed = node_key(&NodeInput {
-            owner,
+            owner: owner.as_ref(),
             node_tag,
             semantic_form,
             semantic_type,
@@ -340,7 +401,7 @@ impl<'a> Lowering<'a> {
             semantic_form,
             semantic_type,
             declaration,
-            owner: owner.cloned(),
+            owner,
             body,
         });
         Ok(key)
@@ -557,9 +618,12 @@ impl<'a> Lowering<'a> {
                 self.bounded("collection_bounds", base, vec![("min", min), ("max", max)], location)
             }
             ValueType::Composite(declaration) => self.composite(*declaration, location, depth),
-            ValueType::Quantity(_) => Err(unkeyed(location, UnkeyedNode::QuantityType)),
-            ValueType::Reference(_) => Err(unkeyed(location, UnkeyedNode::ReferenceType)),
-            ValueType::Population(_) => Err(unkeyed(location, UnkeyedNode::PopulationType)),
+            ValueType::Quantity(unit) => self.quantity_type(*unit, location),
+            ValueType::Reference(target) => self.reference_type(*target, location),
+            // FR-094: a `Population<T>[N]` node is built from its binding's
+            // resolved type form ([`Self::binder_type`]); the checked type
+            // alone carries no `T`.
+            ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
         }
     }
 
@@ -759,16 +823,31 @@ impl<'a> Lowering<'a> {
     // FR-092 parameter and function nodes
     // ------------------------------------------------------------------
 
+    /// The type node of a binder of `value_type`: for a `Population<T>[N]`
+    /// binding, the FR-094 node over `target`, its resolved `T`.
+    fn binder_type(
+        &mut self,
+        value_type: &ValueType,
+        target: Option<EffectiveId>,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        match (value_type, target) {
+            (ValueType::Population(maximum), Some(target)) => {
+                self.population_type(target, *maximum, location)
+            }
+            _ => self.type_node(value_type, location),
+        }
+    }
+
     /// A binder's parameter node: `value`/`parameter`, typed at its binder's
-    /// type, its body binding its name and level.
+    /// type node `semantic_type`, its body binding its name and level.
     fn parameter(
         &mut self,
         name: &str,
         level: usize,
-        value_type: &ValueType,
+        semantic_type: NodeKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let semantic_type = self.type_node(value_type, location)?;
         let name_literal = self.text_literal(name, location)?;
         let level_literal = self.integer_literal(Integer::from(level as u64), location)?;
         let key = self.insert(
@@ -794,49 +873,74 @@ impl<'a> Lowering<'a> {
         index: usize,
         function: &FunctionInput<'_>,
     ) -> Result<NodeKey, CheckRefusal> {
-        if function.model_clause {
-            return Err(unkeyed(function.location, UnkeyedNode::ModelClauseFunction));
-        }
-        let declaration = qualified_name(function.name, function.location)?;
         let mut parameters = Vec::with_capacity(function.parameters.len());
         for (level, (name, value_type)) in function.parameters.iter().enumerate() {
-            let key = self.parameter(name, level, value_type, function.location)?;
-            let type_key = self.type_node(value_type, function.location)?;
+            let target = function.population_targets.get(level).copied().flatten();
+            let type_key = self.binder_type(value_type, target, function.location)?;
+            let key = self.parameter(name, level, type_key, function.location)?;
             self.occurrences.record(type_key, "type", function.location.clone());
-            parameters.push(key);
+            parameters.push(Binder {
+                slot: level,
+                parameter: key,
+                semantic_type: type_key,
+            });
         }
         let result = self.type_node(function.result, function.location)?;
         self.occurrences.record(result, "type", function.location.clone());
         let mut members = vec![SemanticTerm::binding(
             "parameters",
             SemanticTerm::Aggregate {
-                members: parameters.iter().copied().map(SemanticTerm::reference).collect(),
+                members: parameters
+                    .iter()
+                    .map(|binder| SemanticTerm::reference(binder.parameter))
+                    .collect(),
             },
         )];
         let mut binders = Binders {
             slot_names: function.body_slots,
-            scope: parameters.iter().copied().enumerate().collect(),
+            scope: parameters.clone(),
         };
         let body = self.expression(function.body, &mut binders, 0)?;
         members.push(SemanticTerm::binding("body", body));
         if let Some(measure) = function.measure {
             let mut binders = Binders {
                 slot_names: function.measure_slots,
-                scope: parameters.iter().copied().enumerate().collect(),
+                scope: parameters.clone(),
             };
             let measure = self.expression(measure, &mut binders, 0)?;
             members.push(SemanticTerm::binding("decreases", measure));
         }
-        let key = self.insert(
-            function.location,
-            NodeTag::Function,
-            "pure_function",
-            Some(result),
-            Some(declaration),
-            SemanticTerm::Aggregate { members },
-        )?;
-        self.occurrences
-            .record(key, "declaration", function.location.clone());
+        let key = match function.clause {
+            // FR-094: a clause function carries its declaration's
+            // `ModelOwner`, no `declaration` and a trailing `clause`
+            // binding; it has no source `declaration` occurrence.
+            Some(clause) => {
+                let (owner, clause) = self.clause_owner(clause, function.location)?;
+                members.push(clause);
+                self.insert_owned(
+                    function.location,
+                    NodeTag::Function,
+                    "pure_function",
+                    Some(result),
+                    owner,
+                    SemanticTerm::Aggregate { members },
+                )?
+            }
+            None => {
+                let declaration = qualified_name(function.name, function.location)?;
+                let key = self.insert(
+                    function.location,
+                    NodeTag::Function,
+                    "pure_function",
+                    Some(result),
+                    Some(declaration),
+                    SemanticTerm::Aggregate { members },
+                )?;
+                self.occurrences
+                    .record(key, "declaration", function.location.clone());
+                key
+            }
+        };
         if let Some(slot) = self.functions.get_mut(index) {
             *slot = Some(key);
         }
@@ -847,15 +951,16 @@ impl<'a> Lowering<'a> {
     // FR-093 expression lowering
     // ------------------------------------------------------------------
 
-    /// Bind `slot` to a new parameter node at the next level, for the
-    /// duration of `lower`.
+    /// Bind `slot` to a new parameter node at the next level, typed at the
+    /// type node `semantic_type`; the caller pops it after lowering its
+    /// scope.
     fn bind(
         &mut self,
         binders: &mut Binders<'_>,
         slot: Slot,
-        value_type: &ValueType,
+        semantic_type: NodeKey,
         location: &Location,
-    ) -> Result<(String, NodeKey), CheckRefusal> {
+    ) -> Result<String, CheckRefusal> {
         let name = binders.slot_names.get(slot).cloned().ok_or_else(|| {
             refuse(
                 location,
@@ -863,9 +968,28 @@ impl<'a> Lowering<'a> {
             )
         })?;
         let level = binders.scope.len();
-        let key = self.parameter(&name, level, value_type, location)?;
-        binders.scope.push((slot, key));
-        Ok((name, key))
+        let parameter = self.parameter(&name, level, semantic_type, location)?;
+        binders.scope.push(Binder {
+            slot,
+            parameter,
+            semantic_type,
+        });
+        Ok(name)
+    }
+
+    /// The type node of checked `node`'s value: a local read's is its
+    /// binder's, so a `Population<T>[N]` binding keeps its `T`.
+    fn value_type_node(
+        &mut self,
+        node: &Node,
+        binders: &Binders<'_>,
+    ) -> Result<NodeKey, CheckRefusal> {
+        if let NodeKind::Local(slot) = &node.kind {
+            if let Some(binder) = binders.scope.iter().rev().find(|binder| binder.slot == *slot) {
+                return Ok(binder.semantic_type);
+            }
+        }
+        self.type_node(&node.value_type, &node.location)
     }
 
     /// Key an application node for checked `node` and return a reference to
@@ -878,8 +1002,21 @@ impl<'a> Lowering<'a> {
         arguments: Vec<SemanticTerm>,
     ) -> Result<SemanticTerm, CheckRefusal> {
         let result_type = self.type_node(&node.value_type, &node.location)?;
+        self.typed_application(&node.location, result_type, operator, operation, arguments)
+    }
+
+    /// Key an application node typed at `result_type`, denoted by the
+    /// region `location`, and return a reference to it.
+    fn typed_application(
+        &mut self,
+        location: &Location,
+        result_type: NodeKey,
+        operator: Operator,
+        operation: Operation,
+        arguments: Vec<SemanticTerm>,
+    ) -> Result<SemanticTerm, CheckRefusal> {
         let key = self.insert(
-            &node.location,
+            location,
             NodeTag::Expression,
             operator.semantic_form(),
             Some(result_type),
@@ -891,8 +1028,7 @@ impl<'a> Lowering<'a> {
                 arguments,
             },
         )?;
-        self.occurrences
-            .record(key, "expression", node.location.clone());
+        self.occurrences.record(key, "expression", location.clone());
         Ok(SemanticTerm::reference(key))
     }
 
@@ -954,7 +1090,8 @@ impl<'a> Lowering<'a> {
     ) -> Result<Vec<SemanticTerm>, CheckRefusal> {
         let source_ref = self.expression(source, binders, depth + 1)?;
         let element = element_type(&source.value_type, &node.location)?;
-        let (name, _) = self.bind(binders, slot, &element, &node.location)?;
+        let element = self.type_node(&element, &node.location)?;
+        let name = self.bind(binders, slot, element, &node.location)?;
         let body = self.expression(body, binders, depth + 1);
         binders.scope.pop();
         Ok(vec![source_ref, SemanticTerm::binding(name, body?)])
@@ -978,8 +1115,8 @@ impl<'a> Lowering<'a> {
                     .scope
                     .iter()
                     .rev()
-                    .find(|(bound, _)| bound == slot)
-                    .map(|(_, key)| *key)
+                    .find(|binder| binder.slot == *slot)
+                    .map(|binder| binder.parameter)
                     .ok_or_else(|| {
                         refuse(
                             &node.location,
@@ -1012,7 +1149,8 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::Let { slot, value, body } => {
                 let value_ref = self.expression(value, binders, depth + 1)?;
-                let (name, _) = self.bind(binders, *slot, &value.value_type, &node.location)?;
+                let value_type = self.value_type_node(value, binders)?;
+                let name = self.bind(binders, *slot, value_type, &node.location)?;
                 let body_ref = self.expression(body, binders, depth + 1);
                 binders.scope.pop();
                 self.application(
@@ -1187,7 +1325,40 @@ impl<'a> Lowering<'a> {
                     arguments,
                 )
             }
-            NodeKind::Attribute { .. } => Err(unkeyed(&node.location, UnkeyedNode::Attribute)),
+            NodeKind::Attribute {
+                reference, name, ..
+            } => {
+                // FR-093/FR-094 (QC-24): `quire.op.model.deref` over the
+                // reference, typed at its object type `T`'s model node, and
+                // over it the `record.project` of field `name` of `T`.
+                let object = self.referenced_object(&reference.value_type, &node.location)?;
+                let arguments = self.operands(&[reference], binders, depth)?;
+                let dereferenced = self.typed_application(
+                    &node.location,
+                    object,
+                    Operator::Deref,
+                    plain("quire.op.model.deref"),
+                    arguments,
+                )?;
+                let name = Identifier::new(name.as_str()).map_err(|_| {
+                    refuse(
+                        &node.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                self.application(
+                    node,
+                    Operator::Query,
+                    Operation {
+                        member: Some(Member::Field {
+                            declaration: object,
+                            name,
+                        }),
+                        ..plain("quire.op.record.project")
+                    },
+                    vec![dereferenced],
+                )
+            }
             NodeKind::Present(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(node, Operator::Present, plain("quire.op.option.present"), arguments)
@@ -1296,10 +1467,23 @@ impl<'a> Lowering<'a> {
                     // no node.
                     return self.expression(operand, binders, depth + 1);
                 }
-                if let ValueType::Quantity(_) = &operand.value_type {
-                    return Err(unkeyed(&node.location, UnkeyedNode::QuantityType));
-                }
                 let member = self.type_argument(&target, &node.location)?;
+                if let ValueType::Quantity(_) = &operand.value_type {
+                    // FR-093 `quire.op.quantity.convert`: a quantity's
+                    // magnitude is an exact rational, and its conversion is
+                    // exact (`value::quantity`'s `QuantityTarget::Exact`).
+                    let arguments = self.operands(&[operand], binders, depth)?;
+                    return self.application(
+                        node,
+                        Operator::Convert,
+                        Operation {
+                            member: Some(member),
+                            mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                            ..plain("quire.op.quantity.convert")
+                        },
+                        arguments,
+                    );
+                }
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(
                     node,
@@ -1407,11 +1591,13 @@ impl<'a> Lowering<'a> {
                     None => None,
                 };
                 let element = element_type(&source.value_type, &node.location)?;
-                let (accumulator_name, _) =
-                    self.bind(binders, *accumulator, &node.value_type, &node.location)?;
-                let bound = self.bind(binders, *binder, &element, &node.location);
+                let element = self.type_node(&element, &node.location)?;
+                let accumulator_type = self.type_node(&node.value_type, &node.location)?;
+                let accumulator_name =
+                    self.bind(binders, *accumulator, accumulator_type, &node.location)?;
+                let bound = self.bind(binders, *binder, element, &node.location);
                 let step_ref = match bound {
-                    Ok((binder_name, _)) => {
+                    Ok(binder_name) => {
                         let step = self.expression(step, binders, depth + 1);
                         binders.scope.pop();
                         step.map(|step| (binder_name, step))
@@ -1475,9 +1661,84 @@ impl<'a> Lowering<'a> {
                     arguments,
                 )
             }
-            NodeKind::AllInstances { .. } => Err(unkeyed(&node.location, UnkeyedNode::AllInstances)),
-            NodeKind::Lookup { .. } => Err(unkeyed(&node.location, UnkeyedNode::Lookup)),
-            NodeKind::Dispatch { .. } => Err(unkeyed(&node.location, UnkeyedNode::Dispatch)),
+            NodeKind::AllInstances { population } => {
+                let object = self.referenced_object(&node.value_type, &node.location)?;
+                let arguments = self.operands(&[population], binders, depth)?;
+                self.application(
+                    node,
+                    Operator::Query,
+                    Operation {
+                        member: Some(Member::TypeArgument {
+                            declaration: object,
+                        }),
+                        ..plain("quire.op.model.all_instances")
+                    },
+                    arguments,
+                )
+            }
+            NodeKind::Lookup {
+                population,
+                reference,
+                absence,
+            } => {
+                let object = self.referenced_object(&node.value_type, &node.location)?;
+                let arguments = self.operands(&[population, reference], binders, depth)?;
+                self.application(
+                    node,
+                    Operator::Query,
+                    Operation {
+                        member: Some(Member::TypeArgument {
+                            declaration: object,
+                        }),
+                        mode: Some(OperationMode::Absence(*absence)),
+                        ..plain("quire.op.model.lookup")
+                    },
+                    arguments,
+                )
+            }
+            NodeKind::Dispatch {
+                receiver,
+                operation,
+                arguments,
+                ..
+            } => {
+                // FR-094: the member names the receiver's static object
+                // type's model node, whichever supertype declares it.
+                let object = self.referenced_object(&receiver.value_type, &node.location)?;
+                let member = self
+                    .scope
+                    .dispatch_operations
+                    .get(*operation)
+                    .map(|operation| operation.member.clone())
+                    .ok_or_else(|| {
+                        refuse(
+                            &node.location,
+                            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                        )
+                    })?;
+                let name = Identifier::new(member).map_err(|_| {
+                    refuse(
+                        &node.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                let mut operands = vec![self.expression(receiver, binders, depth + 1)?];
+                for argument in arguments {
+                    operands.push(self.expression(argument, binders, depth + 1)?);
+                }
+                self.application(
+                    node,
+                    Operator::Call,
+                    Operation {
+                        member: Some(Member::Operation {
+                            declaration: object,
+                            name,
+                        }),
+                        ..plain("quire.op.model.dispatch_call")
+                    },
+                    operands,
+                )
+            }
             NodeKind::Pre(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(node, Operator::Pre, plain("quire.op.state.pre"), arguments)
@@ -1508,9 +1769,7 @@ impl<'a> Lowering<'a> {
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
-            | Value::Population(_) => {
-                return Err(unkeyed(&node.location, UnkeyedNode::LiteralKind))
-            }
+            | Value::Population(_) => return Err(fault(&node.location, KeyFault::UnbuiltLiteral)),
         };
         let semantic_type = self.type_node(&node.value_type, &node.location)?;
         self.value_node(
@@ -1595,8 +1854,13 @@ impl<'a> Lowering<'a> {
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
                 ))
             }
+            // FR-153: a population is never an equality operand; the
+            // checker refuses one before lowering.
             ValueType::Population(_) => {
-                return Err(unkeyed(location, UnkeyedNode::PopulationType))
+                return Err(refuse(
+                    location,
+                    CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),
+                ))
             }
         };
         Ok(Operation::plain(&format!("quire.op.{family}.{suffix}")))

@@ -9,7 +9,9 @@
 //! semantic_type, declaration, recursion, body}`; every other node the
 //! `Value` family builds is keyed by `quire.structural-node/v1`, the same
 //! members with that version, an `owner` member exactly when `declaration`
-//! is not `null`, and a `null` `semantic_type` for a self-typed node.
+//! is not `null` (a `SourceOwner`) or the node is model-owned (a
+//! `ModelOwner` with a `null` `declaration`, FR-094), and a `null`
+//! `semantic_type` for a self-typed node.
 //! [`node_key`] makes that choice from the body alone, so the two preimages
 //! cannot disagree about which applies. The nominal enum, enum member,
 //! dimension and unit preimages (FR-092 rule 1) are QSpec's own, built by
@@ -133,6 +135,94 @@ impl SourceOwner {
     pub fn identity(&self) -> &str {
         &self.identity
     }
+}
+
+/// The owner of a model-owned node (FR-094, ADR-013 O-04, C-02): QSpec's
+/// `ModelOwner{kind: "model", identity, version, node}`. `identity` and
+/// `version` are the declaring domain package's `DomainPackageRef`'s;
+/// `node` is the declaration's IR node identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ModelOwner {
+    identity: String,
+    kind: ModelOwnerKind,
+    node: String,
+    version: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ModelOwnerKind {
+    Model,
+}
+
+/// Why a [`ModelOwner`] cannot be formed: QSpec's `ModelOwner` members are
+/// `Nonempty`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+pub enum InvalidModelOwner {
+    /// `identity` is empty.
+    #[error("the model owner's identity is empty")]
+    EmptyIdentity,
+    /// `version` is empty.
+    #[error("the model owner's version is empty")]
+    EmptyVersion,
+    /// `node` is empty.
+    #[error("the model owner's node is empty")]
+    EmptyNode,
+}
+
+impl ModelOwner {
+    /// The model owner `{kind: "model", identity, version, node}`.
+    pub fn new(
+        identity: impl Into<String>,
+        version: impl Into<String>,
+        node: impl Into<String>,
+    ) -> Result<Self, InvalidModelOwner> {
+        let identity = identity.into();
+        let version = version.into();
+        let node = node.into();
+        if identity.is_empty() {
+            return Err(InvalidModelOwner::EmptyIdentity);
+        }
+        if version.is_empty() {
+            return Err(InvalidModelOwner::EmptyVersion);
+        }
+        if node.is_empty() {
+            return Err(InvalidModelOwner::EmptyNode);
+        }
+        Ok(Self {
+            identity,
+            kind: ModelOwnerKind::Model,
+            node,
+            version,
+        })
+    }
+
+    /// The declaring domain package's identity.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// The declaring domain package's version.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// The declaration's IR node identity.
+    pub fn node(&self) -> &str {
+        &self.node
+    }
+}
+
+/// A structural node's `owner` (FR-092, FR-094): a source-declared node's
+/// [`SourceOwner`] or a model-owned node's [`ModelOwner`]. Serialized as the
+/// owner itself; its `kind` member tells the two apart.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(untagged)]
+pub enum Owner {
+    /// A node declared by a QSL source unit.
+    Source(SourceOwner),
+    /// A node standing for a domain package's declaration or clause.
+    Model(ModelOwner),
 }
 
 /// A `NodeRef` (`{domain, digest}`) naming a checked node by key.
@@ -593,9 +683,11 @@ impl<'a> RecursionGroup<'a> {
 /// The inputs of one node's key: every member of either preimage.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NodeInput<'a> {
-    /// The declared node's owner: for a structural node, `Some` exactly
-    /// when `declaration` is; an application node has none.
-    pub(crate) owner: Option<&'a SourceOwner>,
+    /// The node's owner: for a structural node, a [`SourceOwner`] exactly
+    /// when `declaration` is present, a [`ModelOwner`] for a model-owned node
+    /// (whose `declaration` is absent), else none; an application node has
+    /// none.
+    pub(crate) owner: Option<&'a Owner>,
     /// The node's v2 `node_tag`.
     pub(crate) node_tag: NodeTag,
     /// The node's v2 `semantic_form`, spelled as on the wire (schema
@@ -761,7 +853,13 @@ pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRef
         }
         APPLICATION_NODE_VERSION
     } else {
-        if node.owner.is_some() != node.declaration.is_some() {
+        // FR-092: a `SourceOwner` exactly when `declaration` is present;
+        // FR-094: a model-owned node's `declaration` is `null`.
+        let consistent = match node.owner {
+            Some(Owner::Source(_)) => node.declaration.is_some(),
+            Some(Owner::Model(_)) | None => node.declaration.is_none(),
+        };
+        if !consistent {
             return Err(NodeKeyRefusal::OwnerDeclarationMismatch);
         }
         STRUCTURAL_NODE_VERSION
@@ -797,7 +895,7 @@ pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRef
 struct Preimage<'a> {
     version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    owner: Option<&'a SourceOwner>,
+    owner: Option<&'a Owner>,
     node_tag: NodeTag,
     semantic_form: &'a str,
     semantic_type: Option<NodeRef>,

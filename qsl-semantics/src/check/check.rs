@@ -278,25 +278,17 @@ pub struct PackageDeclarations {
     /// for the evaluator. Built by the same caller, with function indices
     /// already resolved against `functions`.
     pub dispatch_tables: Vec<DispatchTable>,
-    /// ADR-013 O-04 (PR #300 review finding 1): the checked-node-id ->
-    /// domain-declaration correspondence entries this package's declarations
-    /// are already known to require, in the same "built by the caller (the
-    /// `model` bridge); the checker only records/resolves against it"
-    /// division `dispatch_operations`/`dispatch_tables` above already use.
-    /// `check` records every entry here onto `CheckedGraph`'s
-    /// [`super::identity::ModelCorrespondence`] verbatim -- it never derives
-    /// or searches for one itself (R-05) -- so [`super::CheckedGraph::resolve_declaration`]
-    /// reads back exactly what a caller supplied. Always empty from every
-    /// production call site today: no #213 slice before S-3b gives `model`'s
-    /// bridge a domain-package declaration to resolve a
-    /// `crate::model::key::DeclarationKey` from in the first place
-    /// (FR-088-CON-2 leaves FR-340's frame semantics, the first real
-    /// consumer, to #210). The field exists now so that bridge has a real
-    /// place to hand its entries to, and so this crate's own tests can
-    /// exercise the recording step through a genuine `check()` run rather
-    /// than a hand-built `ModelCorrespondence` (`check/mod.rs`'s own test
-    /// module).
-    pub model_correspondence: Vec<(quire_exact::NodeKey, crate::model::key::DeclarationKey)>,
+    /// FR-094: every admitted domain package whose declarations a
+    /// `Reference<T>`, a model row's member or a clause function names.
+    /// `check` keys each such declaration's model node and records it in the
+    /// model correspondence, whose only writer it is.
+    pub models: Vec<super::lowering::AdmittedModel>,
+    /// FR-094: the owner and clause kind of each clause function, keyed by
+    /// index into [`Self::functions`]. A function with an entry is keyed
+    /// with its declaration's `ModelOwner`; every other function is a
+    /// source declaration. `check::checked_dispatch` fills it for the
+    /// clause functions it synthesizes.
+    pub model_clauses: std::collections::BTreeMap<usize, super::lowering::ModelClause>,
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
@@ -317,7 +309,8 @@ impl PackageDeclarations {
             ieee_profile: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
-            model_correspondence: Vec::new(),
+            models: Vec::new(),
+            model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
         }
     }
@@ -581,6 +574,12 @@ impl<'a> Typer<'a> {
     /// The name each slot was bound under, indexed by slot.
     pub(crate) fn slot_names(&self) -> &[String] {
         &self.slot_names
+    }
+
+    /// Every compound unit this pass formed (FR-094: kept until lowering
+    /// keys each one's type node).
+    pub(crate) fn into_formed_units(self) -> crate::value::quantity::UnitTable {
+        self.units.into_formed()
     }
 
     /// The package-level declarations this typing pass resolves names

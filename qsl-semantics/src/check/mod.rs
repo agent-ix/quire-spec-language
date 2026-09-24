@@ -113,11 +113,13 @@ pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
 // Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
-pub use lowering::{LockEvidence, SemanticGraph, SemanticNode};
+pub use lowering::{
+    AdmittedModel, ForeignView, LockEvidence, ModelClause, SemanticGraph, SemanticNode,
+};
 pub use node_key::{
-    InvalidSourceOwner, IntegerSite, LawRole, LeafSegment, LiteralValue, NodeKeyRefusal, NodeRef,
-    NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode, Operator, SemanticTerm,
-    SourceOwner,
+    InvalidModelOwner, InvalidSourceOwner, IntegerSite, LawRole, LeafSegment, LiteralValue,
+    ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
+    OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -169,8 +171,8 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, InvalidModelCorrespondence, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, UnkeyedNode, WrongSnapshotCause,
+    InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
+    ProvedInterval, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -227,17 +229,9 @@ pub struct CheckedGraph {
     occurrences: family::OccurrenceMap<Location>,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
-    /// a node-id-keyed accessor, never a name-keyed one (R-06). PR #300
-    /// review finding 1: populated from `PackageDeclarations::model_correspondence`
-    /// (see that field's own doc for why the entries themselves are still
-    /// caller-supplied -- no #213 slice before S-3b gives the checker a real
-    /// domain-package intake to derive a frame/model declaration's own
-    /// `DeclarationKey` from, FR-088-CON-2 leaves FR-340's frame semantics to
-    /// #210), but the *recording* is real production code, not a test-only
-    /// stub: `check` copies every caller-supplied entry onto this field
-    /// itself, exactly the same "built by the caller, checker only
-    /// records/resolves against it" split this struct's own
-    /// `dispatch_operations`/`dispatch_tables` already use.
+    /// a node-id-keyed accessor, never a name-keyed one (R-06). FR-094:
+    /// `check` is its only writer; it holds exactly one entry per model
+    /// declaration node lowering keyed.
     model_correspondence: identity::ModelCorrespondence,
     /// ADR-013 O-14/C-26 (PR #300 review finding 1): every admitted
     /// composite and enum type declaration this package's `TypeEnvironment`
@@ -572,9 +566,32 @@ impl PackageDeclarations {
         }
         let owner = self.owner;
         let lock_evidence = self.lock_evidence;
-        let model_clauses: Vec<bool> = (0..self.functions.len())
-            .map(|index| self.resolved_signatures.get(index).is_some())
-            .collect();
+        let models = self.models;
+        if let Some((&index, _)) = self.model_clauses.range(self.functions.len()..).next() {
+            return Err(vec![invalid_dispatch(
+                root(Origin::Expression),
+                InvalidDispatchDeclaration::ModelClauseOutOfRange { index },
+            )]);
+        }
+        let model_clauses = self.model_clauses;
+        // FR-094: the object type `T` of each `Population<T>[N]` parameter,
+        // from its resolved type form (the checked type carries only `N`).
+        let mut population_targets: Vec<Vec<Option<quire_exact::EffectiveId>>> =
+            Vec::with_capacity(self.functions.len());
+        for (index, function) in self.functions.iter().enumerate() {
+            let location = body_location(index, &function.name);
+            let mut targets = Vec::with_capacity(function.parameters.len());
+            for (_, form) in &function.parameters {
+                match type_form::population_target(&scope, form, &location) {
+                    Ok(target) => targets.push(target),
+                    Err(refusal) => refusals.push(refusal),
+                }
+            }
+            population_targets.push(targets);
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         let mut drafts: Vec<(Signature, family::CheckedDeclarationBody)> =
             Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
@@ -666,27 +683,6 @@ impl PackageDeclarations {
                  this declaration ever reaches `check`",
             );
             type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
-        }
-        // ADR-013 O-04 (PR #300 review round 2, MEDIUM-3): a second entry
-        // for a node already recorded refuses rather than silently
-        // overwriting the first (R-05) -- see `CheckCause::
-        // InvalidModelCorrespondence`'s own doc for why full node-membership
-        // validation is not implemented here yet.
-        let mut model_correspondence = identity::ModelCorrespondence::default();
-        for (node, declaration) in self.model_correspondence {
-            if model_correspondence.resolve(node).is_some() {
-                refusals.push(CheckRefusal {
-                    location: root(Origin::Expression),
-                    cause: CheckCause::InvalidModelCorrespondence(
-                        InvalidModelCorrespondence::DuplicateNode { node },
-                    ),
-                });
-                continue;
-            }
-            model_correspondence.record(node, declaration);
-        }
-        if !refusals.is_empty() {
-            return Err(refusals);
         }
         // PR #262 review, finding F4: this used to hardcode
         // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
@@ -864,9 +860,17 @@ impl PackageDeclarations {
         let order = lowering::lowering_order(&callees, &locations)?;
         let mut occurrences = family::OccurrenceMap::default();
         let mut identities: Vec<Option<quire_exact::NodeKey>> = vec![None; drafts.len()];
+        // FR-094: the package's units and every compound unit typing formed,
+        // kept until lowering has keyed each one's type node.
+        let mut units = scope.types.units().clone();
+        for (_, body) in &mut drafts {
+            units.extend(std::mem::take(&mut body.formed_units));
+        }
         let mut lowering = lowering::Lowering::new(
             &scope,
             &owner,
+            &models,
+            units,
             &lock_evidence,
             limits.depth(),
             drafts.len(),
@@ -885,16 +889,26 @@ impl PackageDeclarations {
                 body_slots: &body.slot_names,
                 measure: body.measure.as_ref(),
                 measure_slots: &body.measure_slot_names,
-                model_clause: model_clauses.get(index).copied().unwrap_or(false),
+                population_targets: population_targets
+                    .get(index)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                clause: model_clauses.get(&index),
             };
             match lowering.function(index, &input) {
                 Ok(key) => identities[index] = Some(key),
                 Err(refusal) => refusals.push(refusal),
             }
         }
-        let semantic_graph = lowering.finish(&lowering::generated_location());
+        let (semantic_graph, correspondence) = lowering.finish(&lowering::generated_location());
         if !refusals.is_empty() {
             return Err(refusals);
+        }
+        // FR-094: `check` is the model correspondence's only writer; it
+        // holds exactly the model declaration nodes lowering keyed.
+        let mut model_correspondence = identity::ModelCorrespondence::default();
+        for (node, declaration) in correspondence {
+            model_correspondence.record(node, declaration);
         }
         let functions: Vec<CheckedFunction> = drafts
             .into_iter()
@@ -1178,38 +1192,6 @@ mod tests {
             functions,
             ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
-    }
-
-    /// PR #300 review round 2, MEDIUM-3: a second correspondence entry for a
-    /// node an earlier entry already named refuses rather than silently
-    /// overwriting the first.
-    #[trace("TC-248", "FR-088-AC-2")]
-    #[test]
-    fn a_duplicate_correspondence_node_refuses_rather_than_overwriting() {
-        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let first = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
-        };
-        let second = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.total".to_owned(),
-        };
-        let refusals = PackageDeclarations {
-            model_correspondence: vec![(node, first), (node, second)],
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
-        }
-        .check(CheckingLimits::default())
-        .expect_err("a duplicate correspondence node must refuse, not overwrite");
-        assert!(
-            refusals.iter().any(|refusal| matches!(
-                refusal.cause,
-                CheckCause::InvalidModelCorrespondence(
-                    InvalidModelCorrespondence::DuplicateNode { node: refused_node }
-                ) if refused_node == node
-            )),
-            "expected an InvalidModelCorrespondence::DuplicateNode refusal: {refusals:?}"
-        );
     }
 
     /// PR #300 review finding 1: a real composite declaration in

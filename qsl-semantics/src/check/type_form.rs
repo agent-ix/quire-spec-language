@@ -15,7 +15,7 @@ use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal, Location};
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use quire_exact::{
-    CardinalityBound, CollectionType, DecimalType, IeeeWidth, IllTypedCause, Integer,
+    CardinalityBound, CollectionType, DecimalType, EffectiveId, IeeeWidth, IllTypedCause, Integer,
     IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType, ValueType,
 };
 
@@ -217,6 +217,24 @@ fn resolve_builtin(
                 .map(|declaration| ValueType::Reference(declaration.key()))
                 .ok_or_else(|| missing(name, location))
         }
+    }
+}
+
+/// The object type `T` of a `Population<T>[N]` form, by its effective
+/// identity, or `None` for any other form. FR-094 builds the population's
+/// type node from `T`, which `ValueType::Population` does not carry; a `T`
+/// that names no object type refuses `ill_typed`/`type-mismatch`.
+pub(crate) fn population_target(
+    scope: &Scope,
+    form: &TypeForm,
+    location: &Location,
+) -> Result<Option<EffectiveId>, CheckRefusal> {
+    if !matches!(form.head, TypeFormHead::Population) {
+        return Ok(None);
+    }
+    match resolve_type_form(scope, only_argument(form, location)?, location)? {
+        ValueType::Reference(target) => Ok(Some(target)),
+        _ => Err(mismatch(location)),
     }
 }
 

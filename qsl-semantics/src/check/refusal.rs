@@ -257,25 +257,6 @@ pub enum CheckCause {
     /// reads as already valid; reuses the already-catalogued `invalid-value`
     /// tag rather than minting a new one.
     InvalidDispatchDeclaration(InvalidDispatchDeclaration),
-    /// `invalid_package` / `invalid-value`: a supplied `PackageDeclarations::
-    /// model_correspondence` entry repeats a `NodeKey` an earlier entry
-    /// already named (PR #300 review round 2, MEDIUM-3). The same "built by
-    /// the caller (the `model` bridge); the checker only records/resolves
-    /// against it" division as `dispatch_operations`/`dispatch_tables`
-    /// above, validated the same way and reusing the same already-catalogued
-    /// `invalid-value` tag, not a new one.
-    ///
-    /// This crate does not yet validate that a correspondence entry's
-    /// `NodeKey` names a node this package's own checking actually admitted
-    /// (the review's own "refuse or diagnose nodes not in the graph"):
-    /// `model_correspondence`'s keys are checked relation/model node keys
-    /// (`FrameSubjects`'s own doc), a node category with no check-stage
-    /// producer yet (FR-340 frame syntax, FR-088-CON-2, `Remaining work:
-    /// #210`) -- validating against `type_nodes`/function identities, the
-    /// only node categories `check` can enumerate today, would refuse every
-    /// legitimate future frame-subject entry as readily as a genuinely
-    /// malformed one, since neither category is the one a real entry names.
-    InvalidModelCorrespondence(InvalidModelCorrespondence),
     /// `missing_declaration` / `missing-selection` (FR-093): a lowered
     /// operation or leaf needs a profile law whose `DefinitionRef` the
     /// package's lock evidence does not supply. `check` writes no law from a
@@ -293,55 +274,58 @@ pub enum CheckCause {
         /// Every in-group declaration's region.
         loci: Vec<Location>,
     },
-    /// A checked node of a kind FR-092 and FR-093 do not key yet (QSL-156
-    /// A4b: the `StateModel` family's `Reference<T>`/`Population<T>[N]`
-    /// type nodes and model node keys, a model-synthesized clause
-    /// function's owner, and quantity type nodes). Refused as
-    /// `unknown_required_feature` / `unsupported-feature` until their spec
-    /// lands.
-    UnkeyedNode(UnkeyedNode),
+    /// `runtime_invariant` / `established-invariant-broken` (FR-094
+    /// "Refusals", ADR-013 T-4): keying a node needed a fact that type
+    /// admission, intake or the check stage's own unit scope guarantees, and
+    /// it was not there. A fault in `check`, not in the input; the node gets
+    /// no key.
+    InternalFault(KeyFault),
     /// `invalid_package`: a node preimage that cannot be encoded (an empty
     /// or non-identifier name, a number RFC 8785 cannot render exactly, a
     /// body nested past the preimage depth bound).
     NodePreimage(super::node_key::NodeKeyRefusal),
 }
 
-/// What [`CheckCause::UnkeyedNode`] could not key.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum UnkeyedNode {
-    /// A `Reference<T>` type node.
-    ReferenceType,
-    /// A `Population<T>[N]` type node.
-    PopulationType,
-    /// A quantity type node.
-    QuantityType,
-    /// A `deref(r).f` attribute read, which projects a model node's member.
-    Attribute,
-    /// An `allInstances<T>(p)` query, whose member names a model node.
-    AllInstances,
-    /// A `lookup<T>(p, r)` query, whose member names a model node.
-    Lookup,
-    /// A dispatched call, whose member names its declaring model node.
-    Dispatch,
-    /// A function synthesized from a model clause, whose owner is not a
-    /// source unit's.
-    ModelClauseFunction,
+/// The invariant [`CheckCause::InternalFault`] names, with the value that
+/// broke it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum KeyFault {
+    /// A `Reference<T>`'s `EffectiveId` is no `type_identities` value of an
+    /// admitted domain package's effective view.
+    UnknownEffectiveId(EffectiveId),
+    /// A `DeclarationKey`'s `package` is no admitted domain package's
+    /// identity.
+    UnadmittedPackage(crate::model::key::DeclarationKey),
+    /// A `DeclarationKey`'s `node` is empty.
+    EmptyNode(crate::model::key::DeclarationKey),
+    /// A `DeclarationKey` names no record of its admitted domain package.
+    UnknownDeclaration(crate::model::key::DeclarationKey),
+    /// A domain package record of a kind no checked node names.
+    UnnamedRecordKind(crate::model::key::DeclarationKey),
+    /// A compound `UnitId` the check stage's unit scope does not hold.
+    UnheldUnit(quire_exact::UnitId),
+    /// A `Population<T>[N]`-typed node whose object type `T` no population
+    /// binding names.
+    UntargetedPopulation,
     /// A literal of a value kind the `Value` family's checker never builds
     /// as a literal.
-    LiteralKind,
+    UnbuiltLiteral,
 }
 
-/// [`CheckCause::InvalidModelCorrespondence`]'s own typed detail.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum InvalidModelCorrespondence {
-    /// Two entries name the same `NodeKey`. ADR-013 O-04's correspondence is
-    /// one node id to one `DeclarationKey`; a second entry for a node
-    /// already recorded is refused rather than silently overwriting the
-    /// first (R-05: no entry's arrival order is load-bearing).
-    DuplicateNode {
-        /// The repeated node key.
-        node: quire_exact::NodeKey,
-    },
+impl KeyFault {
+    /// The violated invariant's stable identifier (ADR-013 T-4).
+    pub fn invariant(&self) -> &'static str {
+        match self {
+            Self::UnknownEffectiveId(_) => "reference-target-admitted",
+            Self::UnadmittedPackage(_) => "declaration-package-admitted",
+            Self::EmptyNode(_) => "declaration-node-nonempty",
+            Self::UnknownDeclaration(_) => "declaration-record-present",
+            Self::UnnamedRecordKind(_) => "record-kind-named",
+            Self::UnheldUnit(_) => "compound-unit-held",
+            Self::UntargetedPopulation => "population-target-bound",
+            Self::UnbuiltLiteral => "literal-kind-built",
+        }
+    }
 }
 
 /// Which dispatch-table function slot [`InvalidDispatchDeclaration`] names.
@@ -434,6 +418,12 @@ pub enum InvalidDispatchDeclaration {
         /// The out-of-range function index.
         index: usize,
     },
+    /// A `PackageDeclarations::model_clauses` entry is keyed by an index
+    /// past the package's own `functions`, so it owns no clause function.
+    ModelClauseOutOfRange {
+        /// The out-of-range function index.
+        index: usize,
+    },
 }
 
 impl CheckCause {
@@ -449,11 +439,11 @@ impl CheckCause {
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
             | Self::InvalidDispatchDeclaration(_)
-            | Self::InvalidModelCorrespondence(_)
             | Self::NodePreimage(_) => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
             Self::MissingSelection { .. } => Code::MissingDeclaration,
-            Self::UnsupportedFeature { .. } | Self::UnkeyedNode(_) => Code::UnknownRequiredFeature,
+            Self::UnsupportedFeature { .. } => Code::UnknownRequiredFeature,
+            Self::InternalFault(_) => Code::RuntimeInvariant,
         }
     }
 
@@ -474,11 +464,10 @@ impl CheckCause {
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
             Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
-            Self::InvalidDispatchDeclaration(_) | Self::InvalidModelCorrespondence(_) => {
-                Some("invalid-value")
-            }
+            Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
-            Self::UnsupportedFeature { .. } | Self::UnkeyedNode(_) => Some("unsupported-feature"),
+            Self::UnsupportedFeature { .. } => Some("unsupported-feature"),
+            Self::InternalFault(_) => Some("established-invariant-broken"),
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }

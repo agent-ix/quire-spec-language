@@ -848,9 +848,21 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
 }
 
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
+    DefinitionLock::pinned()
+        .admit_ieee_profile(&[ieee_reference()], &[])
+        .unwrap()
+}
+
+/// FR-093-AC-6: the lock evidence selecting [`ieee_reference`] for the
+/// `ieee_profile` law role, which a lowered IEEE operation names.
+fn ieee_lock_evidence() -> qsl_semantics::check::LockEvidence {
+    qsl_semantics::check::LockEvidence::default().with_ieee_profile(ieee_reference())
+}
+
+fn ieee_reference() -> DefinitionReference {
     let lock = DefinitionLock::pinned();
     let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
-    let reference = DefinitionReference {
+    DefinitionReference {
         authority: entry.authority.to_owned(),
         identity: entry.identity.to_owned(),
         revision: DefinitionRevision {
@@ -859,8 +871,7 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
         },
         digest_domain: "quire.definition.bytes/v1".to_owned(),
         digest: "0".repeat(64),
-    };
-    lock.admit_ieee_profile(&[reference], &[]).unwrap()
+    }
 }
 
 fn object() -> ObjectReference {
@@ -868,6 +879,29 @@ fn object() -> ObjectReference {
         UniverseId::from_digest(Sha256::digest(b"u1").into()),
         object_type("M::Obj"),
         ObjectId::new("o1").unwrap(),
+    )
+}
+
+/// FR-094: the domain package declaring `M::Obj`, under [`object_type`]'s
+/// fixed identity, whose declaration `check` keys `Reference<M::Obj>` by.
+fn obj_model() -> qsl_semantics::check::AdmittedModel {
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
+    use qsl_semantics::model::key::DeclarationKey;
+    let declaration = DeclarationKey::fixture("M::Obj");
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("total-functions"),
+        vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: declaration.clone(),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        })],
+    );
+    qsl_semantics::check::AdmittedModel::fixture(
+        &domain_package,
+        [(object_type("M::Obj"), declaration)],
     )
 }
 
@@ -930,6 +964,8 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 ),
             ],
             ieee_profile: Some(ieee_profile()),
+            lock_evidence: ieee_lock_evidence(),
+            models: vec![obj_model()],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
@@ -1389,6 +1425,7 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
             ),
         ],
         ieee_profile: Some(ieee_profile()),
+        lock_evidence: ieee_lock_evidence(),
         ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())

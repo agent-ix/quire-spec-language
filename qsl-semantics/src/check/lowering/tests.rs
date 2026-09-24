@@ -123,6 +123,8 @@ fn type_nodes(
     let mut lowering = Lowering::new(
         scope,
         owner,
+        &[],
+        scope.types.units().clone(),
         &lock,
         crate::check::MAX_CHECKING_DEPTH,
         0,
@@ -132,7 +134,7 @@ fn type_nodes(
         .iter()
         .map(|value_type| lowering.type_node(value_type, &location).expect("the type keys"))
         .collect();
-    (lowering.finish(&location), keys)
+    (lowering.finish(&location).0, keys)
 }
 
 /// TC-413 step 1 (FR-092-AC-1): the builtin, bounded and anonymous type

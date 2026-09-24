@@ -28,9 +28,9 @@ use qsl_semantics::check::{
     OperationClauses,
 };
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits, CheckingStage,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    InvalidDispatchDeclaration, Location, Origin, PackageDeclarations,
+    AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits,
+    CheckingStage, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    InvalidDispatchDeclaration, Location, ModelClause, Origin, PackageDeclarations,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -105,6 +105,46 @@ fn ab_type(label: &str) -> EffectiveId {
 /// regardless of what `receiver_type`'s own digest happens to be.
 fn receiver_type_form() -> TypeForm {
     crate::support::type_form::named_type_form("Receiver")
+}
+
+/// FR-094: the domain package this file's hand-built fixtures dispatch
+/// over, declaring every object type they name (`Receiver`, `Super`, `Sub`,
+/// `Unrelated`) under [`object_type`]'s fixed identities. `check` keys each
+/// `Reference<T>` by `T`'s declaration in this package.
+fn receiver_model() -> AdmittedModel {
+    let labels = [
+        "model.dispatch-calls.Receiver",
+        "model.dispatch-calls.Super",
+        "model.dispatch-calls.Sub",
+        "model.dispatch-calls.Unrelated",
+    ];
+    let records = labels
+        .iter()
+        .map(|label| {
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture(*label),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            })
+        })
+        .collect();
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("dispatch-calls"), records);
+    AdmittedModel::fixture(
+        &domain_package,
+        labels
+            .iter()
+            .map(|label| (object_type(label), DeclarationKey::fixture(*label))),
+    )
+}
+
+/// FR-094: a hand-built clause function's owner, `Receiver.size`'s clause
+/// of `kind`.
+fn size_clause(kind: DeclaredClauseKind) -> ModelClause {
+    ModelClause {
+        declaration: DeclarationKey::fixture("model.dispatch-calls.Receiver.size"),
+        kind,
+    }
 }
 
 fn types(receiver_type: EffectiveId) -> TypeEnvironment {
@@ -210,6 +250,10 @@ fn one_candidate_package(
     // single-candidate fixture has no redefinition ancestry, so the set is
     // just the precondition function itself (D08's self-loop depends on this).
     let precondition_clauses = precondition_index.into_iter().collect();
+    let mut model_clauses = BTreeMap::from([(0, size_clause(DeclaredClauseKind::Body))]);
+    if let Some(index) = precondition_index {
+        model_clauses.insert(index, size_clause(DeclaredClauseKind::Precondition));
+    }
     let table = DispatchTable::new(
         vec![(
             receiver_type,
@@ -232,6 +276,8 @@ fn one_candidate_package(
             table: 0,
         }],
         dispatch_tables: vec![table],
+        models: vec![receiver_model()],
+        model_clauses,
         ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
 }
@@ -1326,6 +1372,11 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             },
         ],
         dispatch_tables: vec![table],
+        models: vec![receiver_model()],
+        model_clauses: BTreeMap::from([
+            (0, size_clause(DeclaredClauseKind::Body)),
+            (1, size_clause(DeclaredClauseKind::Precondition)),
+        ]),
         ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())

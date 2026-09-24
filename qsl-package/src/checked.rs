@@ -190,47 +190,71 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 
-    /// PR #300 review finding 1: `ModelCorrespondence` is recorded by a
-    /// real `PackageDeclarations::check` run, from its own new
-    /// `model_correspondence` field, and read back only through
-    /// `CheckedGraph::resolve_declaration` -- not a hand-built
-    /// `ModelCorrespondence` sitting outside the checker (FR-088-AC-2). The
-    /// frame-subject *resolution mechanics* over that correspondence stay
-    /// covered by `check::identity::tests::frame_subjects_resolve_only_through_the_recorded_correspondence`,
-    /// since FR-340 frame syntax does not exist yet (FR-088-CON-2); this
-    /// test is the "the checker really records it" half.
-    ///
-    /// PR #300 review round 2, MEDIUM-3: reads the correspondence through
-    /// `CheckedPackage::link(graph).graph().resolve_declaration`,
-    /// matching what FR-088-AC-2/ADR-013 O-04 itself names ("Consumers read
-    /// the correspondence from the `CheckedPackage`") -- not `CheckedGraph`
-    /// directly, which the prior version of this test read from.
-    /// It lives here, in layer-4 `qsl-package`, not in `check`'s own
-    /// tests: it reads the layer-4 `CheckedPackage`, which a layer-3 test
-    /// cannot name once `check` is its own crate (QSL-181 X-6a).
-    #[trace("TC-248", "FR-088-AC-2")]
+    /// FR-094 (TC-417), through the layer-4 `CheckedPackage`: `check` is
+    /// the model correspondence's only writer. A function over a
+    /// `Reference<M::A>` parameter keys `model.A`'s model node and records
+    /// it, read back through `CheckedPackage::graph().resolve_declaration`
+    /// (FR-088-AC-2, ADR-013 O-04: "Consumers read the correspondence from
+    /// the `CheckedPackage`"). It lives here, in layer-4 `qsl-package`: a
+    /// layer-3 test cannot name `CheckedPackage` (QSL-181 X-6a).
+    #[trace("TC-248", "FR-088-AC-2", "TC-417", "FR-094-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
-        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let declaration = qsl_semantics::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
+        use qsl_semantics::check::{AdmittedModel, NodeTag};
+        use qsl_semantics::model::accounting::ModelNormalizationLimits;
+        use qsl_semantics::model::domain_package::{
+            DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
         };
+        use qsl_semantics::model::key::DeclarationKey;
+        use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+        use qsl_semantics::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+
+        let declaration = DeclarationKey::fixture("model.A");
+        let domain_package = DomainPackage::new(
+            DomainPackageRef::fixture("bundle.n01"),
+            vec![DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: declaration.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            })],
+        );
+        let NormalizeOutcome::Completed(view) =
+            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the one-type domain package normalizes");
+        };
+        let a = view.type_identities()[&declaration];
+        let span = qsl_foundation::Span { start: 0, end: 0 };
         let graph = PackageDeclarations {
-            model_correspondence: vec![(node, declaration.clone())],
+            types: TypeEnvironment::new([], [ObjectTypeDeclaration::new(a, "M::A", vec![])])
+                .expect("one object type admits"),
+            models: vec![AdmittedModel::new(&domain_package, &view).expect("the view is its own")],
+            functions: vec![qsl_forms::FunctionDeclaration::new(
+                "f",
+                vec![("r".to_owned(), qsl_forms::TypeForm::name("M::A", span))],
+                qsl_forms::TypeForm::builtin(qsl_forms::BuiltinType::Boolean, span),
+                None,
+                qsl_forms::Expression::Boolean(true),
+            )],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
-        .expect("an empty package with a correspondence seed checks cleanly");
+        .expect("a function over a model reference checks");
+        let model_nodes: Vec<quire_exact::NodeKey> = graph
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.node_tag() == NodeTag::Model)
+            .map(|node| node.key())
+            .collect();
+        assert_eq!(model_nodes.len(), 1, "one model node: model.A's");
         let package = CheckedPackage::link(graph);
-
         assert_eq!(
-            package.graph().resolve_declaration(node),
+            package.graph().resolve_declaration(model_nodes[0]),
             Some(&declaration)
         );
 
-        // Adverse (R-05): a node the caller never supplied resolves to
-        // nothing -- `check` never re-derives an entry by search.
+        // Adverse (R-05): a node `check` never keyed resolves to nothing.
         let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
         assert_eq!(package.graph().resolve_declaration(other), None);
     }

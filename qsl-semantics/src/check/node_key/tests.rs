@@ -719,8 +719,8 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
 // FR-092 `quire.structural-node/v1`.
 // ---------------------------------------------------------------------
 
-fn owner() -> SourceOwner {
-    SourceOwner::new("a", "u").expect("nonempty owner")
+fn owner() -> Owner {
+    Owner::Source(SourceOwner::new("a", "u").expect("nonempty owner"))
 }
 
 fn empty_aggregate() -> SemanticTerm {
@@ -765,8 +765,8 @@ fn an_owner_enters_a_declared_structural_key_only() {
     let body = empty_aggregate();
     let name = identifiers(&["Point"]);
     let u = owner();
-    let w = SourceOwner::new("a", "w").expect("nonempty owner");
-    let declared = |owner: &SourceOwner| {
+    let w = Owner::Source(SourceOwner::new("a", "w").expect("nonempty owner"));
+    let declared = |owner: &Owner| {
         node_key(&NodeInput {
             owner: Some(owner),
             node_tag: NodeTag::CompositeType,
@@ -796,6 +796,18 @@ fn an_owner_enters_a_declared_structural_key_only() {
     );
     assert_eq!(
         node_key(&NodeInput {
+            declaration: Some(&name),
+            ..structural(&body)
+        }),
+        Err(NodeKeyRefusal::OwnerDeclarationMismatch)
+    );
+    // FR-094: a model-owned node's `declaration` is `null`.
+    let model = Owner::Model(
+        ModelOwner::new("acme/orders", "1.0.0", "ix://acme/orders/Order").expect("nonempty"),
+    );
+    assert_eq!(
+        node_key(&NodeInput {
+            owner: Some(&model),
             declaration: Some(&name),
             ..structural(&body)
         }),

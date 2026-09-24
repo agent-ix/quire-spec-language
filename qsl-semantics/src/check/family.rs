@@ -805,6 +805,8 @@ pub(crate) struct CheckedDeclarationBody {
     pub(crate) slot_names: Vec<String>,
     /// The name each measure slot was bound under, indexed by slot.
     pub(crate) measure_slot_names: Vec<String>,
+    /// Every compound unit the body's and measure's typing formed (FR-094).
+    pub(crate) formed_units: crate::value::quantity::UnitTable,
     /// Every call reachable from the body (not the measure -- unchanged
     /// from the pre-migration behavior, see the call site's own doc), for
     /// `check::mod`'s whole-package termination pass.
@@ -909,6 +911,7 @@ pub(crate) fn check_declaration_body(
     let body = typer.check_as(&form.body, result, input.location)?;
     let slots = typer.slots();
     let slot_names = typer.slot_names().to_vec();
+    let mut formed_units = typer.into_formed_units();
     let mut measure_slot_names = Vec::new();
     let measure = match &form.measure {
         Some(measure) => {
@@ -928,6 +931,7 @@ pub(crate) fn check_declaration_body(
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
+            formed_units.extend(measure_typer.into_formed_units());
             Some(measure)
         }
         None => None,
@@ -956,6 +960,7 @@ pub(crate) fn check_declaration_body(
         slots,
         slot_names,
         measure_slot_names,
+        formed_units,
         calls: definedness.calls,
         nodes_used: nodes,
     })
