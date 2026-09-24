@@ -247,3 +247,31 @@ integration-current-head-revision-log:
 integration-current-head-incompatible-fixture:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
 		check-incompatible-fixture --manifest integration/current-head/fixtures/incompatible/Cargo.toml
+
+# QSL-196: the committed performance benchmarks (`qsl-bench/`), one
+# criterion bench per axis, each runnable by name. `make bench` runs all
+# five; `make bench-probe` prints the counts, refusal boundaries and one-shot
+# large-input timings (with peak RSS) the criterion benches do not record.
+# The recorded baseline, with its variance, is `qsl-bench/BASELINE.md`.
+# Pass criterion options through BENCH_ARGS, e.g.
+# `make bench-model BENCH_ARGS='--save-baseline before'`. Not part of `ci:`
+# -- timing is not a pass/fail gate.
+BENCH_ARGS ?=
+BENCH_AXES := parser checker cst model evaluator
+
+.PHONY: bench bench-probe $(addprefix bench-,$(BENCH_AXES))
+
+bench: $(addprefix bench-,$(BENCH_AXES))
+
+$(addprefix bench-,$(BENCH_AXES)): bench-%:
+	cargo bench --locked -p qsl-bench --bench $* -- $(BENCH_ARGS)
+
+# One process per `check`/`eval` size: peak RSS is process-wide.
+BENCH_PROBE := cargo run --locked --release -q -p qsl-bench --bin qsl-bench-probe --
+bench-probe:
+	$(BENCH_PROBE) parse
+	$(BENCH_PROBE) cst
+	for n in 250 1000 2000 4000 8000; do $(BENCH_PROBE) check chain $$n || exit 1; done
+	for n in 1000 5000; do $(BENCH_PROBE) check independent $$n || exit 1; done
+	for n in 1 1000; do $(BENCH_PROBE) eval $$n || exit 1; done
+	$(BENCH_PROBE) model 4000 4 100
