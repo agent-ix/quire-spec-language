@@ -79,7 +79,7 @@ pub struct AdmittedPackage {
     package: DomainPackage,
     systems: SystemsClassification,
     /// Artifact id of each type-definition or population node -> record index.
-    types: BTreeMap<String, usize>,
+    nodes: BTreeMap<String, usize>,
     /// (owner node identity, member name) -> record index.
     members: BTreeMap<(String, String), usize>,
 }
@@ -106,7 +106,7 @@ impl AdmittedPackage {
     pub fn admit(package: DomainPackage, meter: &mut Meter) -> Result<Self, AdmitFailure> {
         let identity = package.model_selection.identity.clone();
         let mut refusals = Vec::new();
-        let mut types = BTreeMap::new();
+        let mut nodes = BTreeMap::new();
         let mut members = BTreeMap::new();
         let mut seen = BTreeSet::new();
         for (index, record) in package.records.iter().enumerate() {
@@ -130,7 +130,7 @@ impl AdmittedPackage {
                 continue;
             }
             if let Some(artifact) = type_identity_segment(&identity, &key.node) {
-                types.insert(artifact.to_owned(), index);
+                nodes.insert(artifact.to_owned(), index);
                 continue;
             }
             let member = key.node.rsplit_once('/').and_then(|(owner, _)| {
@@ -157,7 +157,7 @@ impl AdmittedPackage {
         Ok(Self {
             package,
             systems,
-            types,
+            nodes,
             members,
         })
     }
@@ -185,7 +185,7 @@ impl AdmittedPackage {
     /// The type-definition or population node named by `artifact_id`
     /// (`ix://<package>/<artifact_id>`), if the package declares one.
     pub fn declaration(&self, artifact_id: &str) -> Option<Declaration<'_>> {
-        self.types.get(artifact_id).map(|index| self.at(*index))
+        self.nodes.get(artifact_id).map(|index| self.at(*index))
     }
 
     /// The member `name` of the declaration keyed `owner`, if the package
