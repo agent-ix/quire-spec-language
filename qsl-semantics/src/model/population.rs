@@ -135,7 +135,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::model::conformance::{generals_by_specific, type_conforms};
+use crate::model::conformance::{generals_by_specific, type_conforms, DEFAULT_ANCESTOR_STEPS};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
@@ -965,7 +965,12 @@ fn admit_binding_as(
         // type conforming to a declared member type.
         let mut covered = false;
         for declared in &population.member_types {
-            match type_conforms(&generals, &member.type_identity, declared) {
+            match type_conforms(
+                &generals,
+                &member.type_identity,
+                declared,
+                DEFAULT_ANCESTOR_STEPS,
+            ) {
                 Ok(true) => {
                     covered = true;
                     break;
@@ -1108,7 +1113,7 @@ fn admit_binding_as(
             }
             let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
             for edge in &subsetting_edges {
-                match type_conforms(&generals, original_type, edge.owner) {
+                match type_conforms(&generals, original_type, edge.owner, DEFAULT_ANCESTOR_STEPS) {
                     Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
@@ -1485,7 +1490,7 @@ fn enforce_frame(
             // conform to a declared `creates` grant.
             let mut allowed = false;
             for grant in &declared.effect.creates {
-                if type_conforms(&post.generals, post_type, grant)? {
+                if type_conforms(&post.generals, post_type, grant, DEFAULT_ANCESTOR_STEPS)? {
                     allowed = true;
                     break;
                 }
@@ -1531,7 +1536,7 @@ fn enforce_frame(
         // conform to a declared `deletes` grant.
         let mut allowed = false;
         for grant in &declared.effect.deletes {
-            if type_conforms(&pre.generals, pre_type, grant)? {
+            if type_conforms(&pre.generals, pre_type, grant, DEFAULT_ANCESTOR_STEPS)? {
                 allowed = true;
                 break;
             }
@@ -1743,7 +1748,7 @@ pub fn all_instances(
         {
             return AllInstancesOutcome::Incomplete(incomplete);
         }
-        match type_conforms(&binding.generals, original_type, t) {
+        match type_conforms(&binding.generals, original_type, t, DEFAULT_ANCESTOR_STEPS) {
             Ok(true) => {
                 selected.insert(key.clone());
             }
@@ -1896,7 +1901,7 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    match type_conforms(&binding.generals, &r.static_type, t) {
+    match type_conforms(&binding.generals, &r.static_type, t, DEFAULT_ANCESTOR_STEPS) {
         Ok(true) => {}
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {

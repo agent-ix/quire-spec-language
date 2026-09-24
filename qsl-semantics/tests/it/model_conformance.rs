@@ -616,7 +616,7 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
             ),
         ],
     );
-    match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z")) {
+    match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z"), 4096) {
         Ok(RedefinitionTargetOutcome::Refused { cause, candidate }) => {
             assert_eq!(
                 cause,

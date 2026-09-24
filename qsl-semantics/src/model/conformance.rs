@@ -94,11 +94,16 @@ use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::redefinition_reaches;
 use qsl_foundation::diagnostic::Code;
 
-/// Bounds the proper-descendant walk `type_conforms` performs: an explicit
-/// task stack over caller-supplied generalization records, never native
-/// recursion, with a visited set for cycle safety and this depth ceiling as
-/// a typed `resource_exhausted` refusal rather than an unbounded walk.
-const MAX_CONFORMANCE_DEPTH: usize = 128;
+/// [`walk_ancestors`]'s own default ancestor-step ceiling for callers with no
+/// natural per-call caller-supplied bound of their own (`population` and
+/// `systems`' own conformance queries, and `dispatch`'s subtype-applicability
+/// and dominance walks): well above the old hard-coded `MAX_CONFORMANCE_DEPTH`
+/// (128, ADR-011 §7.3, QSL-199), which refused regardless of any caller's own
+/// configured limits. The real conformance/dispatch checking entry points
+/// (`check_field_redefinition`, `check_subsetting`, `check_operation_redefinition`,
+/// `crate::model::dispatch::link_dispatch`) instead read their own caller's
+/// `Meter`-configured [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
+pub(super) const DEFAULT_ANCESTOR_STEPS: usize = 4096;
 
 /// One failing conformance axis: `{axis, code, cause, detail}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -131,7 +136,8 @@ pub enum ConformanceCheckOutcome {
     /// Every axis charge was admitted; see the substantive [`ConformanceOutcome`].
     Completed(ConformanceOutcome),
     /// A real defect (a dangling member reference, or a conformance walk
-    /// deeper than `MAX_CONFORMANCE_DEPTH`) refused the check outright.
+    /// reaching the caller's own configured `ancestor_steps` ceiling,
+    /// ADR-011 §7.3 QSL-199) refused the check outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
     Incomplete(Incomplete),
@@ -246,11 +252,11 @@ impl ConformanceIndex {
     }
 }
 
-/// The one bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
-/// ceiling) proper-descendant DFS [`type_conforms`] needs. Previously also
-/// shared with a phase-4 dominance helper (`ancestor_closure`, QSL #145)
-/// that collected a full ancestor set rather than breaking on a target
-/// match; that helper is gone (QSL #145 — phase 4
+/// The one bounded (explicit stack, visited set, caller-supplied
+/// `max_steps` ceiling) proper-descendant DFS [`type_conforms`] needs.
+/// Previously also shared with a phase-4 dominance helper
+/// (`ancestor_closure`, QSL #145) that collected a full ancestor set rather
+/// than breaking on a target match; that helper is gone (QSL #145 — phase 4
 /// now derives each owner's ancestor set from `crate::model::normalize`'s
 /// own phase-3 paths instead of a second, separately bounded walk here),
 /// so `visit` only ever breaks or continues
@@ -267,12 +273,15 @@ impl ConformanceIndex {
 /// `Ok` payload; a `Break` short-circuits before any further nodes are
 /// popped.
 ///
-/// `label` is the refusal detail's own subject phrase (`"conformance check
-/// from"`).
+/// `max_steps` is a caller-supplied ceiling on distinct nodes visited (ADR-011
+/// §7.3, QSL-199 -- replaces the old hard-coded `MAX_CONFORMANCE_DEPTH`,
+/// which refused any type past 128 ancestors regardless of what the caller
+/// asked for): reaching it refuses with [`ModelRefusalCause::ConformanceDepth`]
+/// naming `s` and `max_steps`, never a silent truncation of the walk.
 fn walk_ancestors<B>(
     generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     s: &DeclarationKey,
-    label: &str,
+    max_steps: usize,
     mut visit: impl FnMut(&DeclarationKey, &DeclarationKey) -> ControlFlow<B>,
 ) -> Result<ControlFlow<B>, ModelRefusal> {
     let mut stack: Vec<DeclarationKey> = vec![s.clone()];
@@ -283,12 +292,12 @@ fn walk_ancestors<B>(
             continue;
         }
         steps += 1;
-        if steps > MAX_CONFORMANCE_DEPTH {
+        if steps > max_steps {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::ConformanceDepth { from: s.clone() },
                 detail: format!(
-                    "{label} {} exceeded {MAX_CONFORMANCE_DEPTH} generalization steps",
+                    "conformance check from {} exceeded {max_steps} generalization steps",
                     s.node
                 ),
             });
@@ -305,10 +314,9 @@ fn walk_ancestors<B>(
 
 /// Whether `s` conforms to `t`: the same identity, or a chain of supplied
 /// generalization records from `s` to `t`. Delegates to [`walk_ancestors`]
-/// for the bounded (explicit stack, visited set, [`MAX_CONFORMANCE_DEPTH`]
-/// ceiling) DFS itself, breaking as soon as `t` is found so a cycle or an
-/// adversarial chain refuses instead of looping or overflowing a native
-/// call stack.
+/// for the bounded (explicit stack, visited set, `max_steps` ceiling) DFS
+/// itself, breaking as soon as `t` is found so a cycle or an adversarial
+/// chain refuses instead of looping or overflowing a native call stack.
 ///
 /// `pub(super)` so [`crate::model::dispatch`]'s own bounded walks (subtype
 /// applicability and dominance) reuse this one implementation rather than a
@@ -317,22 +325,18 @@ pub(super) fn type_conforms(
     generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     s: &DeclarationKey,
     t: &DeclarationKey,
+    max_steps: usize,
 ) -> Result<bool, ModelRefusal> {
     if s == t {
         return Ok(true);
     }
-    let found = walk_ancestors(
-        generals_by_specific,
-        s,
-        "conformance check from",
-        |_current, general| {
-            if general == t {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        },
-    )?;
+    let found = walk_ancestors(generals_by_specific, s, max_steps, |_current, general| {
+        if general == t {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })?;
     Ok(matches!(found, ControlFlow::Break(())))
 }
 
@@ -345,14 +349,24 @@ pub(super) fn value_type_conforms(
     generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     s: &ValueTypeRef,
     t: &ValueTypeRef,
+    max_steps: usize,
 ) -> Result<bool, ModelRefusal> {
     match (s, t) {
         (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
         (ValueTypeRef::Package(s_key), ValueTypeRef::Package(t_key)) => {
-            type_conforms(generals_by_specific, s_key, t_key)
+            type_conforms(generals_by_specific, s_key, t_key, max_steps)
         }
         _ => Ok(false),
     }
+}
+
+/// The configured `ancestor_steps` ceiling to pass to [`type_conforms`]/
+/// [`value_type_conforms`] for a checking entry point that owns `meter`:
+/// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`],
+/// saturating to [`usize::MAX`] on a 32-bit target rather than panicking or
+/// silently truncating (ADR-011 §7.3, QSL-199).
+pub(super) fn ancestor_steps_limit(meter: &Meter) -> usize {
+    usize::try_from(meter.limits().ancestor_steps).unwrap_or(usize::MAX)
 }
 
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
@@ -423,6 +437,7 @@ pub fn check_field_redefinition(
         &index.generals_by_specific,
         &redefining.value_type,
         &redefined.value_type,
+        ancestor_steps_limit(meter),
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -502,6 +517,7 @@ pub fn check_subsetting(
         &index.generals_by_specific,
         &subsetting.value_type,
         &subsetted.value_type,
+        ancestor_steps_limit(meter),
     ) {
         Ok(true) => {}
         Ok(false) => failures.push(AxisFailure {
@@ -603,7 +619,12 @@ pub fn check_operation_redefinition(
             if let Err(incomplete) = charge_axis(meter) {
                 return ConformanceCheckOutcome::Incomplete(incomplete);
             }
-            match value_type_conforms(&index.generals_by_specific, &dp.value_type, &rp.value_type) {
+            match value_type_conforms(
+                &index.generals_by_specific,
+                &dp.value_type,
+                &rp.value_type,
+                ancestor_steps_limit(meter),
+            ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "parameter-type",
@@ -647,7 +668,12 @@ pub fn check_operation_redefinition(
     }
     match (&redefining.result, &redefined.result) {
         (Some(rr), Some(dr)) => {
-            match value_type_conforms(&index.generals_by_specific, &rr.value_type, &dr.value_type) {
+            match value_type_conforms(
+                &index.generals_by_specific,
+                &rr.value_type,
+                &dr.value_type,
+                ancestor_steps_limit(meter),
+            ) {
                 Ok(true) => {}
                 Ok(false) => failures.push(AxisFailure {
                     axis: "result-type",
@@ -721,7 +747,12 @@ pub fn check_operation_redefinition(
         for entry in create {
             let mut covered = false;
             for grant in grants {
-                match type_conforms(&index.generals_by_specific, entry, grant) {
+                match type_conforms(
+                    &index.generals_by_specific,
+                    entry,
+                    grant,
+                    ancestor_steps_limit(meter),
+                ) {
                     Ok(true) => {
                         covered = true;
                         break;
@@ -776,6 +807,7 @@ pub fn check_operation_redefinition(
 pub fn resolve_redefinition_target(
     domain_package: &DomainPackage,
     redefining: &DeclarationKey,
+    max_ancestor_steps: usize,
 ) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
     let index = ConformanceIndex::build(domain_package);
 
@@ -809,7 +841,13 @@ pub fn resolve_redefinition_target(
         "redefining names a declared field or operation member, indexed by ConformanceIndex::build under its own owner",
     );
     if let Some(target_owner) = index.member_owner.get(&target) {
-        if target_owner != owner && type_conforms(&index.generals_by_specific, owner, target_owner)?
+        if target_owner != owner
+            && type_conforms(
+                &index.generals_by_specific,
+                owner,
+                target_owner,
+                max_ancestor_steps,
+            )?
         {
             return Ok(RedefinitionTargetOutcome::Resolved(target));
         }

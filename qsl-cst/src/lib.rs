@@ -45,12 +45,22 @@ pub struct ParsedSource {
     diagnostics: Vec<CompleteDiagnostic>,
     selections: SourceSelections,
     incremental: bool,
+    effective_limits: Limits,
 }
 
 impl ParsedSource {
     /// Exact immutable input source.
     pub fn source(&self) -> &Source {
         &self.source
+    }
+
+    /// The exact [`Limits`] this parse actually ran under -- a caller's own
+    /// ceiling when one was supplied, [`Limits::default`] otherwise. Recorded
+    /// so a caller-raised ceiling is visible with the result it produced
+    /// (ADR-011 §7.3, QSL-199), not just implied by the absence of a
+    /// resource_exhausted diagnostic.
+    pub fn effective_limits(&self) -> Limits {
+        self.effective_limits
     }
 
     /// Lossless CST, including trivia and any proposed recovery edits.
@@ -94,6 +104,7 @@ impl ParsedSource {
         diagnostics: Vec<CompleteDiagnostic>,
         selections: SourceSelections,
         incremental: bool,
+        effective_limits: Limits,
     ) -> Self {
         Self {
             source,
@@ -101,6 +112,7 @@ impl ParsedSource {
             diagnostics,
             selections,
             incremental,
+            effective_limits,
         }
     }
 
@@ -149,6 +161,7 @@ impl ParsedSource {
             Vec::new(),
             shifted_selections(&self.selections, at, inserted.len()),
             true,
+            limits,
         )))
     }
 }

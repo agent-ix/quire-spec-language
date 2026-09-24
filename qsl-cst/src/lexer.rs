@@ -10,18 +10,30 @@ use qsl_foundation::diagnostic::{error, resource_exhausted};
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span, SyntaxLimit};
 
 /// Layer-1 parse limits: the lexer's own recognizer bounds and the
-/// complete-V1 CST bounds built on it. Caller limits may lower these
-/// ceilings, never disable them. Equality compares the requested capacities,
-/// so a resource-only configuration change remains visible in retained build
-/// provenance.
+/// complete-V1 CST bounds built on it. A caller-supplied ceiling is used as
+/// given (an implementation ceiling is not a domain bound, NFR-001) --
+/// [`Self::default`] is the fail-closed starting point a caller who supplies
+/// none gets, never an upper clamp on what a caller may ask for (ADR-011
+/// §7.3, QSL-199). The effective ceiling actually used for one parse is
+/// recorded on its [`crate::ParsedSource::effective_limits`]. Equality
+/// compares the requested capacities, so a resource-only configuration
+/// change remains visible in retained build provenance.
+///
+/// `source_bytes` is the one exception: `qsl_foundation::source::MAX_SOURCE_BYTES`
+/// is foundation layer's own hard ceiling on the byte read itself
+/// (`Source::read_typed`), independent of this type and out of QSL-199's
+/// scope, so a `source_bytes` raised past it has no effect on what the
+/// actual read admits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Inclusive input-content ceiling, clamped to 1 MiB.
+    /// Inclusive input-content ceiling. Defaults to 1 MiB; see this type's
+    /// own doc for why raising it past `qsl_foundation::source::MAX_SOURCE_BYTES`
+    /// has no effect on the underlying read.
     pub source_bytes: usize,
     /// Maximum tokens the lexer's recognizer admits, and the retained CST
-    /// leaf ceiling for complete-V1 parsing. Clamped to 100,000.
+    /// leaf ceiling for complete-V1 parsing. Defaults to 100,000.
     pub tokens: usize,
-    /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
+    /// Maximum CST nodes. Defaults to 50,000: complete-V1 parsing counts one
     /// node per matched grammar production.
     pub nodes: usize,
     /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
@@ -44,17 +56,14 @@ impl Default for Limits {
 }
 
 impl Limits {
-    /// Clamp every field to its hard ceiling, never raising it.
-    // Widened to `pub`: the root crate's `complete::parse_with_catalog` calls
-    // it across the crate boundary (ADR-011 §7.3 X-3).
+    /// The effective limits: exactly what the caller supplied. Kept as a
+    /// named step (rather than removed outright) so every existing call site
+    /// stays a one-line, self-describing "this is the ceiling actually in
+    /// force" marker; it no longer clamps a caller-supplied ceiling down to
+    /// [`Self::default`] (ADR-011 §7.3, QSL-199 -- an implementation ceiling
+    /// is not a domain bound, NFR-001).
     pub fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            source_bytes: self.source_bytes.min(hard.source_bytes),
-            tokens: self.tokens.min(hard.tokens),
-            nodes: self.nodes.min(hard.nodes),
-            nesting: self.nesting.min(hard.nesting),
-        }
+        self
     }
 }
 

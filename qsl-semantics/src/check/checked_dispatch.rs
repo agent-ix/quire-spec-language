@@ -115,9 +115,11 @@ use qsl_foundation::diagnostic::Code;
 use quire_exact::EffectiveId;
 use quire_exact::ValueType;
 
-/// Bounds the effective-precondition ancestor walk. Mirrors
-/// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared
-/// separately here since that constant is private to its module.
+/// Bounds the effective-precondition ancestor walk. Declared separately here
+/// since this is this bridge's own walk, independent of
+/// `crate::model::dispatch`'s (ADR-011 §7.3, QSL-199 replaced that module's
+/// own former `MAX_DISPATCH_DEPTH` with a caller-configured `Meter` ceiling;
+/// out of this ticket's scope).
 const MAX_ANCESTOR_DEPTH: usize = 128;
 
 /// One dispatch candidate's own clause `Expression`s and signature, supplied

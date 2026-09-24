@@ -42,17 +42,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
-use crate::model::conformance::{generals_by_specific, type_conforms};
+use crate::model::conformance::{ancestor_steps_limit, generals_by_specific, type_conforms};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
-
-/// Bounds the family-closure walk `link_dispatch` performs over operation
-/// members' own inline `redefines` edges: an explicit task stack, never
-/// native recursion, with a visited set and this depth ceiling as a typed
-/// `resource_exhausted` refusal.
-const MAX_DISPATCH_DEPTH: usize = 128;
 
 /// Whether a [`crate::model::domain_package::DomainPackageRef`]'s generalization graph
 /// is closed. See the module docs: this is not a `DomainPackage` field.
@@ -152,7 +146,9 @@ pub enum LinkCheckOutcome {
     /// [`DispatchLinkOutcome`].
     Completed(DispatchLinkOutcome),
     /// A real defect (a dangling operation reference, or a family/dominance
-    /// walk deeper than `MAX_DISPATCH_DEPTH`) refused the check outright.
+    /// walk reaching the caller's own configured `family_steps`/
+    /// `ancestor_steps` ceiling, ADR-011 §7.3 QSL-199) refused the check
+    /// outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
     Incomplete(Incomplete),
@@ -206,9 +202,16 @@ impl DispatchIndex {
 /// `redefines` property (`model-complete.md`:162), sorted ascending by
 /// [`DeclarationKey`] for deterministic reporting. Bounded task stack, never
 /// native recursion, over the domain package's own operation members.
+/// `max_steps` is a caller-supplied ceiling on distinct redefinition steps
+/// visited (ADR-011 §7.3, QSL-199 -- replaces the old hard-coded
+/// `MAX_DISPATCH_DEPTH`, which refused regardless of what the caller asked
+/// for): reaching it refuses with [`ModelRefusalCause::DispatchFamilyDepth`]
+/// naming `original` and `max_steps`, never a silent truncation of the
+/// family.
 fn build_family(
     index: &DispatchIndex,
     original: &DeclarationKey,
+    max_steps: usize,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut family = vec![original.clone()];
     let mut frontier: Vec<DeclarationKey> = vec![original.clone()];
@@ -217,14 +220,14 @@ fn build_family(
     let mut steps: usize = 0;
     while let Some(target) = frontier.pop() {
         steps += 1;
-        if steps > MAX_DISPATCH_DEPTH {
+        if steps > max_steps {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::DispatchFamilyDepth {
                     original: original.clone(),
                 },
                 detail: format!(
-                    "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
+                    "dispatch family for {} exceeded {max_steps} redefinition steps",
                     original.node
                 ),
             });
@@ -248,11 +251,20 @@ fn dominates(
     generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     p_owner: &DeclarationKey,
     q_owner: &DeclarationKey,
+    max_steps: usize,
 ) -> Result<bool, ModelRefusal> {
     if p_owner == q_owner {
         return Ok(false);
     }
-    type_conforms(generals_by_specific, p_owner, q_owner)
+    type_conforms(generals_by_specific, p_owner, q_owner, max_steps)
+}
+
+/// The configured `family_steps` ceiling to pass to [`build_family`]:
+/// [`crate::model::accounting::ModelNormalizationLimits::family_steps`],
+/// saturating to [`usize::MAX`] on a 32-bit target rather than panicking or
+/// silently truncating (ADR-011 §7.3, QSL-199).
+fn family_steps_limit(meter: &Meter) -> usize {
+    usize::try_from(meter.limits().family_steps).unwrap_or(usize::MAX)
 }
 
 /// Links `original`'s dispatch family across every effective type `view`
@@ -286,7 +298,7 @@ pub fn link_dispatch(
     };
     let receiver_type = receiver_operation.owner.clone();
 
-    let family = match build_family(&index, original) {
+    let family = match build_family(&index, original, family_steps_limit(meter)) {
         Ok(family) => family,
         Err(refusal) => return LinkCheckOutcome::Refused(refusal),
     };
@@ -312,6 +324,7 @@ pub fn link_dispatch(
             &index.generals_by_specific,
             candidate_subtype,
             &receiver_type,
+            ancestor_steps_limit(meter),
         ) {
             Ok(true) => subtypes.push(candidate_subtype.clone()),
             Ok(false) => {}
@@ -347,7 +360,12 @@ pub fn link_dispatch(
                 });
             };
             let candidate_owner = &candidate_record.owner;
-            match type_conforms(&index.generals_by_specific, subtype, candidate_owner) {
+            match type_conforms(
+                &index.generals_by_specific,
+                subtype,
+                candidate_owner,
+                ancestor_steps_limit(meter),
+            ) {
                 Ok(true) => applicable.push(candidate.clone()),
                 Ok(false) => {}
                 Err(refusal) => return LinkCheckOutcome::Refused(refusal),
@@ -400,7 +418,12 @@ pub fn link_dispatch(
                     });
                 };
                 let q_owner = &q_record.owner;
-                match dominates(&index.generals_by_specific, p_owner, q_owner) {
+                match dominates(
+                    &index.generals_by_specific,
+                    p_owner,
+                    q_owner,
+                    ancestor_steps_limit(meter),
+                ) {
                     Ok(true) => {
                         dominance_pairs.push(DominancePair {
                             dominant: p.clone(),
