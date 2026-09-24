@@ -489,8 +489,8 @@ impl Scope {
     /// index `TypeEnvironment::check_equality_in`'s `Enum` schedule needs to
     /// evaluate a comparison later, and `value::expression::evaluate::Machine`
     /// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no
-    /// enum declarations (those are [`Self::enums`], ADR-011 §6.1's own
-    /// module split). Built once with the scope (QSL-205).
+    /// enum declarations (those are the scope's own enum bindings, ADR-011
+    /// §6.1's own module split). Built once with the scope (QSL-205).
     pub fn enum_member_index(&self) -> &EnumMemberIndex {
         &self.index.enum_member_index
     }
