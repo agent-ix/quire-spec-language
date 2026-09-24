@@ -51,7 +51,7 @@ use quire_exact::{
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
 };
 
-use super::check::Scope;
+use super::check::{EnumBinding, Scope};
 use super::family::OccurrenceMap;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
@@ -68,6 +68,7 @@ use crate::value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
 use crate::value::definition::DefinitionReference;
+use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::quantity::UnitTable;
 
@@ -142,8 +143,27 @@ pub struct SemanticNode {
     preimage: Vec<u8>,
     recursion: Option<NodeRecursion>,
     /// Outside every recursion group, the content [`Self::key`] keys; a
-    /// group member's names its group's members by their keys.
+    /// group member's names its group's members by their keys. A nominal
+    /// node's key is its [`Self::nominal`] preimage's instead.
     content: NodeContent,
+    /// The QSpec nominal preimage an enum declaration or enum member node
+    /// is keyed by (FR-092 rule 1); `None` for every other node.
+    nominal: Option<NominalNode>,
+}
+
+/// The QSpec nominal preimage of a nominal node (FR-092 rule 1), as the v2
+/// wire's `nominal_identity_preimage` carries it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NominalNode {
+    /// `quire.enum-declaration-node/v1`.
+    EnumDeclaration(EnumDeclarationPreimage),
+    /// `quire.enum-member-node/v1`.
+    EnumMember {
+        /// The declaring enum's node key.
+        declaration: NodeKey,
+        /// The member's case identifier.
+        case: String,
+    },
 }
 
 impl SemanticNode {
@@ -178,7 +198,8 @@ impl SemanticNode {
     }
 
     /// The node's owner: a declared node's `SourceOwner`, a model-owned
-    /// node's `ModelOwner`.
+    /// node's `ModelOwner`. A nominal node's owner is in its
+    /// [`Self::nominal`] preimage, so this is `None` for it.
     pub fn owner(&self) -> Option<&Owner> {
         self.content.owner.as_ref()
     }
@@ -192,6 +213,12 @@ impl SemanticNode {
     /// recursion group names that member's key.
     pub fn body(&self) -> &SemanticTerm {
         &self.content.body
+    }
+
+    /// The QSpec nominal preimage the node is keyed by, when it is an enum
+    /// declaration or enum member node (FR-092 rule 1).
+    pub fn nominal(&self) -> Option<&NominalNode> {
+        self.nominal.as_ref()
     }
 }
 
@@ -460,6 +487,8 @@ struct CompositeFrame<'v> {
     declaration: NodeKey,
     /// The declaration's qualified name.
     name: Vec<Identifier>,
+    /// Where its `declaration` occurrence is located.
+    site: Location,
     shape: &'v CompositeShape,
     /// The nesting depth the composite was reached at.
     depth: u64,
@@ -1288,6 +1317,7 @@ impl<'a> Lowering<'a> {
                 preimage,
                 recursion: None,
                 content,
+                nominal: None,
             });
         }
         Ok(key)
@@ -1667,6 +1697,7 @@ impl<'a> Lowering<'a> {
         Ok(OpenComposite::Open(CompositeFrame {
             declaration,
             name,
+            site: type_declaration(composite.name()),
             shape,
             depth,
             members: Vec::with_capacity(members),
@@ -1719,6 +1750,7 @@ impl<'a> Lowering<'a> {
         let CompositeFrame {
             declaration,
             name,
+            site,
             shape,
             members,
             ..
@@ -1736,6 +1768,9 @@ impl<'a> Lowering<'a> {
             Some(name),
             SemanticTerm::Aggregate { members },
         )?;
+        // FR-322: a node carrying `declaration` has a `declaration`
+        // occurrence.
+        self.record(key, "declaration", site);
         if let Some(placeholder) = self.composite_placeholders.remove(&declaration) {
             self.placeholders.insert(placeholder, Some(key));
         }
@@ -1762,6 +1797,97 @@ impl<'a> Lowering<'a> {
     /// checked type node's id.
     pub(crate) fn composite_node(&mut self, declaration: NodeKey) -> Result<NodeKey, CheckRefusal> {
         self.composite(declaration, &generated_location())
+    }
+
+    /// Build the admitted enum `binding`'s declaration node and one node
+    /// per member (FR-092 rule 1), each keyed by its QSpec nominal preimage:
+    /// the keys admission retained, which every enum type and enum literal
+    /// already names. The declaration carries its qualified name and a
+    /// `declaration` occurrence at the declared name (FR-322).
+    pub(crate) fn enum_nodes(&mut self, binding: &EnumBinding) -> Result<(), CheckRefusal> {
+        let site = type_declaration(&binding.name);
+        let declaration = binding.declaration.key();
+        let preimage = binding.declaration.preimage();
+        let name = preimage
+            .qualified_declaration()
+            .iter()
+            .map(|segment| {
+                Identifier::new(segment.as_str()).map_err(|_| {
+                    refuse(
+                        &site,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyQualifiedName),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let bytes = preimage
+            .preimage_bytes()
+            .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(declaration)))?;
+        self.insert_nominal(
+            &site,
+            declaration,
+            bytes,
+            NodeContent {
+                node_tag: NodeTag::ScalarType,
+                semantic_form: "enum",
+                semantic_type: None,
+                declaration: Some(name),
+                owner: None,
+                body: SemanticTerm::Aggregate {
+                    members: Vec::new(),
+                },
+            },
+            NominalNode::EnumDeclaration(preimage.clone()),
+        )?;
+        self.record(declaration, "declaration", site.clone());
+        for member in &binding.members {
+            let key = member.member();
+            let bytes = member_preimage_bytes(declaration, member.case())
+                .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(key)))?;
+            self.insert_nominal(
+                &site,
+                key,
+                bytes,
+                NodeContent {
+                    node_tag: NodeTag::Value,
+                    semantic_form: "enum_value",
+                    semantic_type: Some(declaration),
+                    declaration: None,
+                    owner: None,
+                    body: SemanticTerm::literal(
+                        declaration,
+                        LiteralValue::Enum(member.case().to_owned()),
+                    ),
+                },
+                NominalNode::EnumMember {
+                    declaration,
+                    case: member.case().to_owned(),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Add the nominal node `key`, whose preimage is `preimage` and whose
+    /// content is `content`, to the graph. A key already in the graph is
+    /// left as it is: admission ties each key to one preimage.
+    fn insert_nominal(
+        &mut self,
+        location: &Location,
+        key: NodeKey,
+        preimage: Vec<u8>,
+        content: NodeContent,
+        nominal: NominalNode,
+    ) -> Result<(), CheckRefusal> {
+        self.charge(1, location)?;
+        self.graph.nodes.entry(key).or_insert_with(|| SemanticNode {
+            key,
+            preimage,
+            recursion: None,
+            content,
+            nominal: Some(nominal),
+        });
+        Ok(())
     }
 
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.
@@ -2175,6 +2301,7 @@ impl<'a> Lowering<'a> {
                         owner: draft.content.owner.clone(),
                         body,
                     },
+                    nominal: None,
                 });
             self.group_of.insert(keyed.key, keys.digest);
             resolved.insert(handles[at], keyed.key);
@@ -3556,6 +3683,17 @@ fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
         }
     }
     components
+}
+
+/// The location of the `declaration` occurrence of the type declared as
+/// `name`.
+pub(crate) fn type_declaration(name: &str) -> Location {
+    Location {
+        origin: Origin::TypeDeclaration {
+            name: name.to_owned(),
+        },
+        path: Vec::new(),
+    }
 }
 
 /// The package root location a `generated` occurrence names.

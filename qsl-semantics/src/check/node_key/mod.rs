@@ -388,6 +388,9 @@ pub enum LiteralValue {
     Text(String),
     /// `none`: `null`.
     None,
+    /// `enum`: the member's case identifier, the body of an enum member's
+    /// QSpec `value`/`enum_value` node.
+    Enum(String),
 }
 
 impl Serialize for LiteralValue {
@@ -417,6 +420,10 @@ impl Serialize for LiteralValue {
             Self::None => {
                 map.serialize_entry("value_kind", "none")?;
                 map.serialize_entry("value", &())?;
+            }
+            Self::Enum(case) => {
+                map.serialize_entry("value_kind", "enum")?;
+                map.serialize_entry("value", case)?;
             }
         }
         map.end()

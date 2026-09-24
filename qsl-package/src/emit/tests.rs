@@ -19,7 +19,9 @@ use qsl_semantics::value::declaration::{
 };
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_contract_ir::{CheckedArtifactLocator, CheckedPackageEvidence};
-use quire_exact::{CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, ValueType};
+use quire_exact::{
+    CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, ValueType, NODE_KEY_DOMAIN,
+};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
@@ -709,48 +711,243 @@ fn a_form_ir_lacks_is_omitted_and_everything_else_is_written() {
     assert!(!exports.contains_key("both"));
 }
 
-/// FR-322: a node carries `declaration` exactly when it has a
-/// `declaration` occurrence. `check` records none for a declared record, so
-/// `Tree` is omitted, and its sequence and bound, which name it, after it.
-#[trace("FR-093-AC-9", "TC-416")]
+/// `Int[0, 9]`.
+fn int_0_9() -> ValueType {
+    ValueType::Int(quire_exact::IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap())
+}
+
+/// `record Point { x: Int[0, 9]; y: Int[0, 9]; }` and
+/// `tuple Pair(Int[0, 9], Int[0, 9]);`, FR-092's D1 and D5.
+fn point_and_pair_types() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [
+            CompositeDeclaration::new(
+                NodeKey::from_digest([1; 32]),
+                "Point",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("x", int_0_9(), Presence::Required),
+                    FieldDeclaration::new("y", int_0_9(), Presence::Required),
+                ]),
+            ),
+            CompositeDeclaration::new(
+                NodeKey::from_digest([2; 32]),
+                "Pair",
+                CompositeShape::Tuple(vec![int_0_9(), int_0_9()]),
+            ),
+        ],
+        [],
+    )
+    .expect("FR-143 admits Point and Pair")
+}
+
+/// A package declaring [`point_and_pair_types`] and `enums`.
+fn declared_types(enums: Vec<qsl_semantics::check::EnumBinding>) -> CheckedPackage {
+    CheckedPackage::link(
+        PackageDeclarations {
+            types: point_and_pair_types(),
+            enums,
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("the declared types check"),
+    )
+}
+
+/// The written node declaring `name`.
+fn declared<'w>(wire: &'w Value, name: &str) -> &'w Value {
+    nodes(wire)
+        .iter()
+        .find(|node| node["declaration"]["qualified_name"] == json!([name]))
+        .unwrap_or_else(|| panic!("{name} is written"))
+}
+
+/// QSL-237 (FR-322, FR-093-AC-9): `check` records a `declaration`
+/// occurrence for a declared record and tuple, located at the declared
+/// name, so both are written with their `declaration` and read back
+/// Verified: D1 and D5, exported under their declared names.
+#[trace("FR-093-AC-9", "FR-092-AC-9", "TC-416")]
 #[test]
-fn a_declaration_without_its_occurrence_is_omitted() {
-    let package = tree();
-    let record = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .find(|node| node.declaration().is_some())
-        .expect("Tree's record node")
-        .key();
+fn a_record_and_a_tuple_are_written_with_their_declarations() {
+    let package = declared_types(Vec::new());
+    for name in ["Point", "Pair"] {
+        let site = Location {
+            origin: qsl_semantics::check::Origin::TypeDeclaration {
+                name: name.to_owned(),
+            },
+            path: Vec::new(),
+        };
+        assert!(
+            package
+                .graph()
+                .occurrences()
+                .any(
+                    |(_, origin, location)| origin.role().as_str() == "declaration"
+                        && *location == site
+                ),
+            "{name} has a declaration occurrence at its name"
+        );
+    }
     let emission = emit(&package);
-    assert!(matches!(
-        read_back(&emission),
-        V2ReadOutcome::Verified { .. }
-    ));
-    let omitted = emission.omitted;
-    let causes: BTreeMap<String, &OmissionCause> = omitted
+    assert_eq!(emission.omitted, []);
+    let exports = verified_exports(&emission);
+    let wire = wire(&emission);
+    for (name, form, digest) in [
+        (
+            "Point",
+            "record",
+            "45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4",
+        ),
+        (
+            "Pair",
+            "tuple",
+            "e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560",
+        ),
+    ] {
+        let node = declared(&wire, name);
+        assert_eq!(node["semantic_form"], form);
+        assert_eq!(node["node_id"]["digest"], digest);
+        assert_eq!(
+            node["occurrences"],
+            json!([{"role": "declaration", "ordinal": 0}]),
+            "{name}"
+        );
+        assert_eq!(exports.get(name).map(String::as_str), Some(digest));
+    }
+}
+
+/// QSL-237: `record Tree { kids: Sequence<Tree>[0, 3]; }`'s recursion group
+/// is written whole: the record with its `declaration` and occurrence, its
+/// sequence and its bound, and the package reads back Verified.
+#[trace("FR-093-AC-9", "FR-093-AC-12", "TC-416")]
+#[test]
+fn a_recursive_record_is_written_with_its_declaration() {
+    let package = tree();
+    let emission = emit(&package);
+    assert_eq!(emission.omitted, []);
+    assert!(verified_exports(&emission).contains_key("Tree"));
+    let wire = wire(&emission);
+    let record = declared(&wire, "Tree");
+    assert_eq!(
+        record["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    let members = nodes(&wire)
+        .iter()
+        .filter(|node| node.get("recursion_group").is_some())
+        .count();
+    assert_eq!(members, 3);
+}
+
+/// An enum declaration preimage under `owner`, and its admitted
+/// declaration and members, bound as `name`.
+fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
+    use qsl_semantics::value::enumeration::{
+        EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    };
+    use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection};
+
+    let preimage = EnumDeclarationPreimage::from_json(json!({
+        "version": "quire.enum-declaration-node/v1",
+        "owner": owner,
+        "qualified_declaration": [name],
+        "ordered": true,
+        "members": ["Ready", "Done"],
+    }))
+    .expect("a schema-valid preimage");
+    let owners = OwnerSelection::new([NodeOwner::clone(preimage.owner())]);
+    let key = NodeKey::from_digest(preimage.digest().unwrap());
+    let declaration = EnumDeclaration::admit(preimage, key, &owners).expect("admitted");
+    let members = ["Ready", "Done"]
+        .into_iter()
+        .map(|case| {
+            let member = EnumMemberPreimage::from_json(json!({
+                "version": "quire.enum-member-node/v1",
+                "declaration_node_id": {"domain": NODE_KEY_DOMAIN, "digest": key.to_string()},
+                "case": case,
+            }))
+            .unwrap();
+            let member_key = NodeKey::from_digest(member.digest().unwrap());
+            declaration.admit_member(&member, member_key).unwrap()
+        })
+        .collect();
+    qsl_semantics::check::EnumBinding {
+        name: name.to_owned(),
+        declaration,
+        members,
+    }
+}
+
+/// QSL-238 (FR-092 rule 1, FR-092-AC-8): lowering builds the enum
+/// declaration and member nodes it names by key. A package with a record,
+/// a tuple and an enum `Status` owned by the checked unit writes all of
+/// them and reads back Verified: IR re-derives each nominal node's key
+/// from its `nominal_identity_preimage`. Each member depends on the
+/// declaration. An enum owned by a definition the lock does not select is
+/// omitted, and the rest is still written.
+#[trace("FR-092-AC-8", "FR-093-AC-7", "TC-413", "TC-416")]
+#[test]
+fn enum_declaration_and_member_nodes_are_written() {
+    let local = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u"}),
+        "Status",
+    );
+    let foreign = status_enum(
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"}),
+        "Foreign",
+    );
+    let status = local.declaration.key();
+    let foreign_key = foreign.declaration.key();
+    let package = declared_types(vec![local, foreign]);
+    let emission = emit(&package);
+    let omitted: BTreeMap<String, &OmissionCause> = emission
+        .omitted
         .iter()
         .map(|omission| (omission.node.digest.to_string(), &omission.cause))
         .collect();
     assert_eq!(
-        causes.get(&record.to_string()),
-        Some(&&OmissionCause::DeclarationOccurrenceMismatch)
+        omitted.get(&foreign_key.to_string()),
+        Some(&&OmissionCause::UnlockedOwner)
     );
-    let members = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .filter(|node| node.recursion().is_some() && node.key() != record);
+    // The foreign enum's two members name its declaration.
+    assert_eq!(omitted.len(), 3, "{omitted:?}");
+    let exports = verified_exports(&emission);
+    for name in ["Point", "Pair", "Status"] {
+        assert!(exports.contains_key(name), "{name}: {exports:?}");
+    }
+    let wire = wire(&emission);
+    let declaration = declared(&wire, "Status");
+    assert_eq!(declaration["node_id"]["digest"], json!(status.to_string()));
+    assert_eq!(declaration["node_tag"], "scalar_type");
+    assert_eq!(declaration["semantic_form"], "enum");
+    assert_eq!(declaration["semantic_type"], declaration["node_id"]);
+    assert_eq!(declaration["dependencies"], json!([]));
+    assert_eq!(
+        declaration["nominal_identity_preimage"],
+        json!({
+            "version": "quire.enum-declaration-node/v1",
+            "owner": {"kind": "source", "authority": "a", "identity": "u"},
+            "qualified_declaration": ["Status"],
+            "ordered": true,
+            "members": ["Ready", "Done"],
+        })
+    );
+    let members: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "enum_value")
+        .collect();
+    let cases: BTreeSet<&str> = members
+        .iter()
+        .map(|node| node["body"]["value"].as_str().unwrap())
+        .collect();
+    assert_eq!(cases, BTreeSet::from(["Ready", "Done"]));
     for member in members {
-        assert!(
-            matches!(
-                causes[&member.key().to_string()],
-                OmissionCause::NamesOmittedNode(_)
-            ),
-            "{}",
-            member.key()
+        assert_eq!(member["semantic_type"], declaration["node_id"]);
+        assert_eq!(member["dependencies"], json!([declaration["node_id"]]));
+        assert_eq!(
+            member["nominal_identity_preimage"]["declaration_node_id"],
+            declaration["node_id"]
         );
+        assert!(member.get("declaration").is_none());
     }
 }
 

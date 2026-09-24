@@ -25,6 +25,14 @@ pub enum Origin {
     },
     /// A standalone checked expression.
     Expression,
+    /// A declared record, tuple or enum type, by its declared name. Its
+    /// `declaration` occurrence is located here (FR-322). A type
+    /// declaration carries no form spans, so this origin names no region
+    /// (FR-096).
+    TypeDeclaration {
+        /// The declared name.
+        name: String,
+    },
 }
 
 /// A located expression: its declaration and the child-index path from that
@@ -380,6 +388,9 @@ pub enum KeyFault {
     /// Two admitted domain packages share this identity: a check selects
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
+    /// An admitted enum declaration or member whose nominal preimage has no
+    /// RFC 8785 encoding.
+    NonCanonicalNominal(quire_exact::NodeKey),
 }
 
 impl KeyFault {
@@ -400,6 +411,7 @@ impl KeyFault {
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
+            Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
         }
     }
 }

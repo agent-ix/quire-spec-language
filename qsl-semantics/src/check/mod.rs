@@ -116,7 +116,7 @@ pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    AdmittedModel, ForeignView, LockEvidence, ModelClause, SemanticGraph, SemanticNode,
+    AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
     IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
@@ -986,6 +986,13 @@ impl PackageDeclarations {
                     type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
                 }
                 Err(refusal) => refusals.push(refusal),
+            }
+        }
+        // FR-092 rule 1: every admitted enum's declaration and member nodes,
+        // which enum types and enum literals name by key.
+        for enum_binding in scope.enums() {
+            if let Err(refusal) = lowering.enum_nodes(enum_binding) {
+                refusals.push(refusal);
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());

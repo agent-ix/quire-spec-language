@@ -7,9 +7,10 @@
 //! moves to child `i`, numbered as `Expression::children` numbers them, and
 //! the region is the span the node reached carries (FR-091-AC-10) under the
 //! unit's `RawSourceRef`. A declaration with no form spans (one built by
-//! hand, or synthesized for FR-151 dispatch) and `Origin::Expression` have
-//! no region: no region of the unit names a position in a tree not read
-//! from it.
+//! hand, or synthesized for FR-151 dispatch), `Origin::Expression` and
+//! `Origin::TypeDeclaration` (a declared type carries no form spans) have no
+//! region: no region of the unit names a position in a tree not read from
+//! it.
 
 use qsl_forms::DeclarationSpans;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -27,7 +28,7 @@ fn resolve<'s>(
     let span = match &location.origin {
         Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
         Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
-        Origin::Expression => return None,
+        Origin::Expression | Origin::TypeDeclaration { .. } => return None,
     };
     region(source, span)
 }

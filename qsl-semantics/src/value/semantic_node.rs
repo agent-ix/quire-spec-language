@@ -327,6 +327,13 @@ pub(crate) fn preimage_digest(value: &impl Serialize) -> Result<[u8; 32], Invali
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
 }
 
+/// `value`'s RFC 8785 bytes, the preimage [`preimage_digest`] hashes. A
+/// value with no RFC 8785 encoding refuses as non-canonical.
+pub(crate) fn preimage_bytes(value: &impl Serialize) -> Result<Vec<u8>, InvalidSemanticGraph> {
+    quire_canonical::to_vec(value, IDENTITY_LIMITS)
+        .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
+}
+
 /// Whether `retained` is the node key `preimage` determines.
 pub(crate) fn retains(
     retained: NodeKey,
