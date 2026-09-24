@@ -257,6 +257,24 @@ fn preimage_bytes_are_pinned() {
     );
 }
 
+/// QSL-221: a `NodeRef` spells its digest as `NodeKey`'s wire spelling,
+/// lowercase hex, for every byte value in every position.
+#[test]
+fn a_node_ref_spells_its_digest_as_the_node_key_does() {
+    for offset in 0..=255_u8 {
+        let mut digest = [0_u8; 32];
+        for (at, byte) in digest.iter_mut().enumerate() {
+            *byte = offset.wrapping_add(u8::try_from(at).expect("32 positions") * 8);
+        }
+        let key = NodeKey::from_digest(digest);
+        let bytes = canonical_bytes(&NodeRef(key)).expect("a node ref encodes");
+        assert_eq!(
+            String::from_utf8(bytes).expect("UTF-8"),
+            format!(r#"{{"digest":"{key}","domain":"quire.checked-semantic-node/v1"}}"#)
+        );
+    }
+}
+
 /// [`group_keys`] with unbounded work.
 fn keys_of(members: &[NodeInput<'_>], handles: &[NodeKey]) -> Result<GroupKeys, NodeKeyRefusal> {
     group_keys(members, handles, &mut |_| Ok(()))

@@ -22,9 +22,11 @@
 //! nodes are keyed together, in dependency order, by the group order
 //! ([`super::node_key::group_keys`]), and two groups whose members' keys
 //! coincide refuse. Every key comes from
-//! [`super::node_key::node_key`]. Laws come only from the package's lock
-//! evidence ([`LockEvidence`]); a law it does not supply refuses the node
-//! (`missing_declaration`/`missing-selection`), never a constant.
+//! [`super::node_key::node_key`], which runs once per distinct content: a
+//! node built again takes the key its content was given. Laws come only
+//! from the package's lock evidence ([`LockEvidence`]); a law it does not
+//! supply refuses the node (`missing_declaration`/`missing-selection`),
+//! never a constant.
 //!
 //! FR-094 keys the rest (`model`): the model declaration nodes a
 //! `Reference<T>` or a model row's member names, the `Reference<T>` and
@@ -32,7 +34,8 @@
 //! `clause` binding, and quantity type nodes. `check` records each model
 //! declaration node it keys in the model correspondence.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
+use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
@@ -120,13 +123,10 @@ impl NodeRecursion {
 pub struct SemanticNode {
     key: NodeKey,
     preimage: Vec<u8>,
-    node_tag: NodeTag,
-    semantic_form: &'static str,
-    semantic_type: Option<NodeKey>,
-    declaration: Option<Vec<Identifier>>,
-    owner: Option<Owner>,
     recursion: Option<NodeRecursion>,
-    body: SemanticTerm,
+    /// Outside every recursion group, the content [`Self::key`] keys; a
+    /// group member's names its group's members by their keys.
+    content: NodeContent,
 }
 
 impl SemanticNode {
@@ -142,28 +142,28 @@ impl SemanticNode {
 
     /// The node's FR-322 `node_tag`.
     pub fn node_tag(&self) -> NodeTag {
-        self.node_tag
+        self.content.node_tag
     }
 
     /// The node's FR-322 `semantic_form`.
     pub fn semantic_form(&self) -> &'static str {
-        self.semantic_form
+        self.content.semantic_form
     }
 
     /// The node's semantic type, or `None` for a self-typed node.
     pub fn semantic_type(&self) -> Option<NodeKey> {
-        self.semantic_type
+        self.content.semantic_type
     }
 
     /// The node's `declaration.qualified_name`, when it declares.
     pub fn declaration(&self) -> Option<&[Identifier]> {
-        self.declaration.as_deref()
+        self.content.declaration.as_deref()
     }
 
     /// The node's owner: a declared node's `SourceOwner`, a model-owned
     /// node's `ModelOwner`.
     pub fn owner(&self) -> Option<&Owner> {
-        self.owner.as_ref()
+        self.content.owner.as_ref()
     }
 
     /// The node's recursion group, when it is in one.
@@ -174,7 +174,7 @@ impl SemanticNode {
     /// The node's FR-322 body. A reference to a member of the node's own
     /// recursion group names that member's key.
     pub fn body(&self) -> &SemanticTerm {
-        &self.body
+        &self.content.body
     }
 }
 
@@ -239,16 +239,39 @@ struct Binders<'s> {
     scope: Vec<Binder>,
 }
 
-/// A node whose key waits on its recursion group (FR-092 "Recursion
-/// groups"): its content names a placeholder or another draft.
-struct Draft {
-    location: Location,
+/// Every member of a node's preimage outside every recursion group: what
+/// [`node_key`] keys. [`node_key`] is a function of these members alone, so
+/// equal content has one key, which [`Lowering::insert_node`] computes once
+/// (QSL-221).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct NodeContent {
     node_tag: NodeTag,
     semantic_form: &'static str,
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
     body: SemanticTerm,
+}
+
+impl NodeContent {
+    /// The content as [`node_key`]'s input.
+    fn input(&self) -> NodeInput<'_> {
+        NodeInput {
+            owner: self.owner.as_ref(),
+            node_tag: self.node_tag,
+            semantic_form: self.semantic_form,
+            semantic_type: self.semantic_type,
+            declaration: self.declaration.as_deref(),
+            body: &self.body,
+        }
+    }
+}
+
+/// A node whose key waits on its recursion group (FR-092 "Recursion
+/// groups"): its content names a placeholder or another draft.
+struct Draft {
+    location: Location,
+    content: NodeContent,
 }
 
 /// A package's functions that call each other, lowered together: callees
@@ -311,6 +334,16 @@ pub(crate) struct Lowering<'a> {
     placeholder_count: u64,
     /// The drafts, by the digest of their content.
     drafts: BTreeMap<NodeKey, Draft>,
+    /// A key [`Self::insert_node`] computed, by a hash of the content it
+    /// keyed (QSL-221). Lowering builds the same node many times (each
+    /// function's parameter and result types, each builtin scalar); a
+    /// content whose hash names a key whose node or draft holds that same
+    /// content ([`Self::holds`]) takes the key without its canonical
+    /// encoding and SHA-256. A hash names at most one key: a colliding
+    /// content is keyed in full and replaces the entry.
+    keys: HashMap<u64, NodeKey>,
+    /// The hasher of [`Self::keys`].
+    content_hashes: BuildHasherDefault<DefaultHasher>,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
     /// Each keyed recursion-group member by the key its content would have
@@ -1045,6 +1078,8 @@ impl<'a> Lowering<'a> {
             placeholders: BTreeMap::new(),
             placeholder_count: 0,
             drafts: BTreeMap::new(),
+            keys: HashMap::new(),
+            content_hashes: BuildHasherDefault::default(),
             draft_occurrences: Vec::new(),
             rebuilt_members: BTreeMap::new(),
             group_of: BTreeMap::new(),
@@ -1125,12 +1160,14 @@ impl<'a> Lowering<'a> {
         let owner = declaration.as_ref().map(|_| self.owner.clone());
         self.insert_node(
             location,
-            node_tag,
-            semantic_form,
-            semantic_type,
-            declaration,
-            owner,
-            body,
+            NodeContent {
+                node_tag,
+                semantic_form,
+                semantic_type,
+                declaration,
+                owner,
+                body,
+            },
         )
     }
 
@@ -1146,69 +1183,89 @@ impl<'a> Lowering<'a> {
     ) -> Result<NodeKey, CheckRefusal> {
         self.insert_node(
             location,
-            node_tag,
-            semantic_form,
-            semantic_type,
-            None,
-            Some(owner),
-            body,
+            NodeContent {
+                node_tag,
+                semantic_form,
+                semantic_type,
+                declaration: None,
+                owner: Some(owner),
+                body,
+            },
         )
     }
 
     /// Key a node from every preimage member and add it to the graph.
-    #[allow(clippy::too_many_arguments)]
     fn insert_node(
         &mut self,
         location: &Location,
-        node_tag: NodeTag,
-        semantic_form: &'static str,
-        semantic_type: Option<NodeKey>,
-        declaration: Option<Vec<Identifier>>,
-        owner: Option<Owner>,
-        body: SemanticTerm,
+        content: NodeContent,
     ) -> Result<NodeKey, CheckRefusal> {
         self.charge(1, location)?;
-        let keyed = node_key(&NodeInput {
-            owner: owner.as_ref(),
-            node_tag,
-            semantic_form,
-            semantic_type,
-            declaration: declaration.as_deref(),
-            body: &body,
-        })
-        .map_err(|refusal| preimage_refusal(location, refusal))?;
-        let key = keyed.key;
+        let hash = self.content_hashes.hash_one(&content);
+        let known = self
+            .keys
+            .get(&hash)
+            .copied()
+            .filter(|key| self.holds(*key, &content));
+        // The preimage bytes, when this call encoded them: a content keyed
+        // before is encoded again only if its node is not in the graph yet.
+        let (key, preimage) = match known {
+            Some(key) => (key, None),
+            None => {
+                let keyed = node_key(&content.input())
+                    .map_err(|refusal| preimage_refusal(location, refusal))?;
+                self.keys.insert(hash, keyed.key);
+                (keyed.key, Some(keyed.preimage))
+            }
+        };
         if let Some(member) = self.rebuilt_members.get(&key) {
             return Ok(*member);
         }
-        let mut names_pending = semantic_type.is_some_and(|named| self.pending(named));
-        body.for_each_key(&mut |named| names_pending |= self.pending(named));
+        let mut names_pending = content
+            .semantic_type
+            .is_some_and(|named| self.pending(named));
+        content
+            .body
+            .for_each_key(&mut |named| names_pending |= self.pending(named));
         if names_pending {
             // Keyed by `settle`; until then `key` digests the content with
             // its placeholders, so equal drafts are one draft.
             self.drafts.entry(key).or_insert_with(|| Draft {
                 location: location.clone(),
-                node_tag,
-                semantic_form,
-                semantic_type,
-                declaration,
-                owner,
-                body,
+                content,
             });
             return Ok(key);
         }
-        self.graph.nodes.entry(key).or_insert_with(|| SemanticNode {
-            key,
-            preimage: keyed.preimage,
-            node_tag,
-            semantic_form,
-            semantic_type,
-            declaration,
-            owner,
-            recursion: None,
-            body,
-        });
+        if let btree_map::Entry::Vacant(slot) = self.graph.nodes.entry(key) {
+            let preimage = match preimage {
+                Some(preimage) => preimage,
+                None => {
+                    node_key(&content.input())
+                        .map_err(|refusal| preimage_refusal(location, refusal))?
+                        .preimage
+                }
+            };
+            slot.insert(SemanticNode {
+                key,
+                preimage,
+                recursion: None,
+                content,
+            });
+        }
         Ok(key)
+    }
+
+    /// Whether `key` is [`node_key`]'s key of `content`: a graph node
+    /// outside every recursion group or a draft holds exactly the content
+    /// its key keys, so an equal content has that key.
+    fn holds(&self, key: NodeKey, content: &NodeContent) -> bool {
+        match self.graph.nodes.get(&key) {
+            Some(node) => node.recursion.is_none() && node.content == *content,
+            None => self
+                .drafts
+                .get(&key)
+                .is_some_and(|draft| draft.content == *content),
+        }
     }
 
     fn check_depth(&self, depth: u64, location: &Location) -> Result<(), CheckRefusal> {
@@ -1879,10 +1936,10 @@ impl<'a> Lowering<'a> {
                         named.push(*target);
                     }
                 };
-                if let Some(semantic_type) = draft.semantic_type {
+                if let Some(semantic_type) = draft.content.semantic_type {
                     visit(semantic_type);
                 }
-                draft.body.for_each_key(&mut visit);
+                draft.content.body.for_each_key(&mut visit);
                 named
             })
             .collect();
@@ -1909,11 +1966,11 @@ impl<'a> Lowering<'a> {
             };
             let bodies: Vec<SemanticTerm> = component
                 .iter()
-                .map(|at| drafts[*at].body.map_keys(&mut substitute))
+                .map(|at| drafts[*at].content.body.map_keys(&mut substitute))
                 .collect();
             let types: Vec<Option<NodeKey>> = component
                 .iter()
-                .map(|at| drafts[*at].semantic_type.map(&mut substitute))
+                .map(|at| drafts[*at].content.semantic_type.map(&mut substitute))
                 .collect();
             if stranded {
                 return Err(unresolved(&drafts[component[0]].location));
@@ -1935,12 +1992,14 @@ impl<'a> Lowering<'a> {
                 let draft = &drafts[*at];
                 let key = self.insert_node(
                     &draft.location,
-                    draft.node_tag,
-                    draft.semantic_form,
-                    *semantic_type,
-                    draft.declaration.clone(),
-                    draft.owner.clone(),
-                    body,
+                    NodeContent {
+                        node_tag: draft.content.node_tag,
+                        semantic_form: draft.content.semantic_form,
+                        semantic_type: *semantic_type,
+                        declaration: draft.content.declaration.clone(),
+                        owner: draft.content.owner.clone(),
+                        body,
+                    },
                 )?;
                 resolved.insert(handles[*at], key);
             }
@@ -1995,10 +2054,10 @@ impl<'a> Lowering<'a> {
         let forms: Vec<&'static str> = members
             .iter()
             .map(|draft| {
-                if draft.node_tag == NodeTag::Function {
+                if draft.content.node_tag == NodeTag::Function {
                     "recursive_function"
                 } else {
-                    draft.semantic_form
+                    draft.content.semantic_form
                 }
             })
             .collect();
@@ -2006,11 +2065,11 @@ impl<'a> Lowering<'a> {
             .iter()
             .enumerate()
             .map(|(at, draft)| NodeInput {
-                owner: draft.owner.as_ref(),
-                node_tag: draft.node_tag,
+                owner: draft.content.owner.as_ref(),
+                node_tag: draft.content.node_tag,
                 semantic_form: forms[at],
                 semantic_type: types[at],
-                declaration: draft.declaration.as_deref(),
+                declaration: draft.content.declaration.as_deref(),
                 body: &bodies[at],
             })
             .collect();
@@ -2019,7 +2078,7 @@ impl<'a> Lowering<'a> {
             .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
         let regions: Vec<Location> = members
             .iter()
-            .filter(|draft| draft.declaration.is_some())
+            .filter(|draft| draft.content.declaration.is_some())
             .map(|draft| draft.location.clone())
             .collect();
         let collision = keys.members.iter().find_map(|keyed| {
@@ -2049,11 +2108,11 @@ impl<'a> Lowering<'a> {
             let body = bodies[at].map_keys(&mut to_key);
             let semantic_type = types[at].map(&mut to_key);
             let rebuilt = node_key(&NodeInput {
-                owner: draft.owner.as_ref(),
-                node_tag: draft.node_tag,
-                semantic_form: draft.semantic_form,
+                owner: draft.content.owner.as_ref(),
+                node_tag: draft.content.node_tag,
+                semantic_form: draft.content.semantic_form,
                 semantic_type,
-                declaration: draft.declaration.as_deref(),
+                declaration: draft.content.declaration.as_deref(),
                 body: &body,
             })
             .map_err(|refusal| preimage_refusal(&draft.location, refusal))?;
@@ -2064,17 +2123,19 @@ impl<'a> Lowering<'a> {
                 .or_insert_with(|| SemanticNode {
                     key: keyed.key,
                     preimage: keyed.preimage.clone(),
-                    node_tag: draft.node_tag,
-                    semantic_form: forms[at],
-                    semantic_type,
-                    declaration: draft.declaration.clone(),
-                    owner: draft.owner.clone(),
                     recursion: Some(NodeRecursion {
                         group: keys.digest,
                         ordinal: keys.ordinals[at],
                         size: keys.size,
                     }),
-                    body,
+                    content: NodeContent {
+                        node_tag: draft.content.node_tag,
+                        semantic_form: forms[at],
+                        semantic_type,
+                        declaration: draft.content.declaration.clone(),
+                        owner: draft.content.owner.clone(),
+                        body,
+                    },
                 });
             self.group_of.insert(keyed.key, keys.digest);
             resolved.insert(handles[at], keyed.key);
