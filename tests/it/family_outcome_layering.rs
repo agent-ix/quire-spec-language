@@ -387,10 +387,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         if crate_name == "qsl-package" {
             // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for v2 wire
             // constants and round-trip tests only". The whole shipped table
-            // is fixed: layer 3, F, the v2 wire contract, `quire-canonical`
-            // (ADR-013 §2's one RFC 8785 encoder, for the `package_id`
-            // preimage, QSL-194) and `thiserror`. K, `serde_json` and `sha2`
-            // are used by its tests only.
+            // is fixed: layer 3, F, K (the kernel occurrence `Origin` the
+            // I2 reader keys the v2 source map by, ADR-013 O-07, QSL-159),
+            // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
+            // RFC 8785 encoder, for the `package_id` preimage, QSL-194) and
+            // `thiserror`. `serde_json` and `sha2` are used by its tests only.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
@@ -400,6 +401,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-semantics",
                     "quire-canonical",
                     "quire-contract-model",
+                    "quire-exact",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
