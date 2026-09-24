@@ -7,7 +7,7 @@ impl Parser {
         self.expect(K::Over)?;
         let input = self.bound_parameter()?;
         let activation = self.activation()?;
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let captures = self.captures()?;
         let mut roles = vec![self.role()?];
         while self.is(K::Role) {
@@ -64,7 +64,7 @@ impl Parser {
             constraint,
             span: self.range_from(start),
         };
-        self.expect(K::CloseBrace)?;
+        self.close(K::CloseBrace)?;
         Ok(Protocol {
             input,
             activation,
@@ -159,16 +159,16 @@ impl Parser {
         let profile = self.identifier()?;
         self.expect(K::Clock)?;
         let clock = self.string()?;
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let registration_captures = self.captures()?;
         self.expect(K::Activate)?;
         self.expect(K::First)?;
         let trigger = self.bound_parameter()?;
         self.expect(K::When)?;
         let guard = self.value_block()?;
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let activation_captures = self.captures()?;
-        self.expect(K::CloseBrace)?;
+        self.close(K::CloseBrace)?;
         self.expect(K::Within)?;
         let within = self.interval()?;
         self.expect(K::Semicolon)?;
@@ -178,11 +178,11 @@ impl Parser {
         let attempt_type = self.qualified()?;
         self.expect(K::Semicolon)?;
         self.expect(K::Retry)?;
-        self.expect(K::OpenParen)?;
+        self.open(K::OpenParen)?;
         let earlier = self.parameter()?;
         self.expect(K::Comma)?;
         let later = self.parameter()?;
-        self.expect(K::CloseParen)?;
+        self.close(K::CloseParen)?;
         let retry = self.value_block()?;
         self.expect(K::Semicolon)?;
         self.expect(K::Commit)?;
@@ -196,7 +196,7 @@ impl Parser {
         let recovery = self.bound_parameter()?;
         let recover = self.value_block()?;
         self.expect(K::Semicolon)?;
-        self.expect(K::CloseBrace)?;
+        self.close(K::CloseBrace)?;
         Ok(Compensation {
             name,
             effect,
@@ -224,9 +224,9 @@ impl Parser {
 
     fn visibility(&mut self) -> Result<Vec<ExprId>, Box<Diagnostic>> {
         self.expect(K::Visible)?;
-        self.expect(K::OpenParen)?;
+        self.open(K::OpenParen)?;
         let values = self.value_list(K::CloseParen)?;
-        self.expect(K::CloseParen)?;
+        self.close(K::CloseParen)?;
         Ok(values)
     }
 
@@ -242,13 +242,6 @@ impl Parser {
     }
 
     fn control_node(&mut self) -> Result<ControlId, Box<Diagnostic>> {
-        self.enter()?;
-        let result = self.control_inner();
-        self.depth -= 1;
-        result
-    }
-
-    fn control_inner(&mut self) -> Result<ControlId, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
         let token = self.take();
         if !matches!(
@@ -276,24 +269,24 @@ impl Parser {
         let name = self.identifier()?;
         let kind = match token.kind {
             K::Sequence => {
-                self.expect(K::OpenBrace)?;
+                self.open(K::OpenBrace)?;
                 let mut children = Vec::new();
                 while !self.is(K::CloseBrace) {
                     children.push(self.control_node()?);
                 }
-                self.expect(K::CloseBrace)?;
+                self.close(K::CloseBrace)?;
                 ControlKind::Sequence(children)
             }
             K::Choice => {
                 self.expect(K::By)?;
                 let role = self.identifier()?;
                 let visible = self.visibility()?;
-                self.expect(K::OpenBrace)?;
+                self.open(K::OpenBrace)?;
                 let mut cases = vec![self.case()?, self.case()?];
                 while self.is(K::Case) {
                     cases.push(self.case()?);
                 }
-                self.expect(K::CloseBrace)?;
+                self.close(K::CloseBrace)?;
                 ControlKind::Choice {
                     role,
                     visible,
@@ -301,20 +294,20 @@ impl Parser {
                 }
             }
             K::Parallel => {
-                self.expect(K::OpenBrace)?;
+                self.open(K::OpenBrace)?;
                 let mut branches = vec![self.branch()?, self.branch()?];
                 while self.is(K::Branch) {
                     branches.push(self.branch()?);
                 }
-                self.expect(K::CloseBrace)?;
+                self.close(K::CloseBrace)?;
                 self.expect(K::Join)?;
                 self.expect(K::All)?;
-                self.expect(K::OpenBracket)?;
+                self.open(K::OpenBracket)?;
                 let mut join = vec![self.identifier()?];
                 while self.eat(K::Comma) {
                     join.push(self.identifier()?);
                 }
-                self.expect(K::CloseBracket)?;
+                self.close(K::CloseBracket)?;
                 self.expect(K::Semicolon)?;
                 ControlKind::Parallel { branches, join }
             }
@@ -448,9 +441,9 @@ impl Parser {
                 self.expect(K::On)?;
                 let operation = self.operation()?;
                 self.expect(K::Contracts)?;
-                self.expect(K::OpenBracket)?;
+                self.open(K::OpenBracket)?;
                 let contracts = self.name_list(K::CloseBracket)?;
-                self.expect(K::CloseBracket)?;
+                self.close(K::CloseBracket)?;
                 EventKind::Attempt {
                     role,
                     operation,
@@ -483,11 +476,11 @@ impl Parser {
             let start = self.take().span.start;
             self.expect(K::By)?;
             let relationship = self.identifier()?;
-            self.expect(K::OpenParen)?;
+            self.open(K::OpenParen)?;
             let from = self.expression()?;
             self.expect(K::Comma)?;
             let to = self.expression()?;
-            self.expect(K::CloseParen)?;
+            self.close(K::CloseParen)?;
             related.push(Related {
                 relationship,
                 from,

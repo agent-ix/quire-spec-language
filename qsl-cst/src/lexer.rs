@@ -24,7 +24,10 @@ pub struct Limits {
     /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
     /// node per matched grammar production.
     pub nodes: usize,
-    /// Maximum delimiter or recursive parser nesting, clamped to 64.
+    /// Maximum bracket-pair nesting depth -- `(…)`, `[…]`, `{…}`, or a
+    /// type-argument `<…>` -- clamped to 64 (NFR-001 "Nesting level").
+    /// Operator, prefix, `let … in` and `if … else` chains add no depth
+    /// regardless of length.
     pub nesting: usize,
 }
 

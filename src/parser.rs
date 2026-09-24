@@ -203,6 +203,41 @@ impl Parser {
             Err(self.unexpected(expected.description()))
         }
     }
+    /// Match a nesting-level-opening bracket -- `(`, `[`, `{`, or a
+    /// type-argument `<` (composed.rs) -- charging nesting depth exactly
+    /// once per bracket pair (NFR-001 "Nesting level"), never per
+    /// `expression()`/`binary()` call. This parser is fully predictive (no
+    /// PEG backtracking that could try, fail, and retry a bracket from the
+    /// same position), so a plain mutable `self.depth` counter is sound.
+    fn open(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
+        let token = self.expect(expected)?;
+        self.open_taken(token.span)?;
+        Ok(token)
+    }
+    /// Charge nesting depth for an opening bracket already consumed via
+    /// `self.take()` before its kind was known (e.g. a lookahead `match` on
+    /// a token fetched up front). `span` is that bracket's own span.
+    fn open_taken(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
+        if self.depth >= self.limits.nesting {
+            return Err(self.failure(
+                Code::ResourceExhausted,
+                Phase::Parse,
+                span,
+                format!(
+                    "nesting depth exceeds the ceiling of {} levels",
+                    self.limits.nesting
+                ),
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+    /// The `close` counterpart of [`Self::open`].
+    fn close(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
+        let token = self.expect(expected)?;
+        self.depth = self.depth.saturating_sub(1);
+        Ok(token)
+    }
     fn identifier(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         match &self.peek().kind {
             Kind::Identifier(word) => {
@@ -315,9 +350,9 @@ impl Parser {
             self.expect(K::Qualify)?;
             Some(self.identifier()?)
         };
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let expression = self.expression()?;
-        let end = self.expect(K::CloseBrace)?.span.end;
+        let end = self.close(K::CloseBrace)?.span.end;
         Ok(Clause {
             kind,
             name,
@@ -327,18 +362,6 @@ impl Parser {
             expression,
             span: Span { start, end },
         })
-    }
-    fn enter(&mut self) -> Result<(), Box<Diagnostic>> {
-        if self.depth >= self.limits.nesting {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
-                self.peek().span,
-                "expression nesting budget exhausted",
-            ));
-        }
-        self.depth += 1;
-        Ok(())
     }
     fn add(&mut self, kind: ExprKind, start: usize, end: usize) -> Result<ExprId, Box<Diagnostic>> {
         if self.composed {
@@ -359,51 +382,83 @@ impl Parser {
         });
         Ok(id)
     }
+    /// Parse `let … in`/`if … else` continuation chains with an explicit
+    /// loop instead of Rust recursion. These chains add no nesting depth
+    /// (NFR-001) and are bounded only by the token/node ceilings, so a
+    /// chain long enough to approach those ceilings must not grow the
+    /// native call stack per element. Unlike qsl-cst's CST parser, `Expr`
+    /// nodes here are already a flat arena (`ExprId` is just an index into
+    /// `self.nodes`/`self.values`), so folding the collected `let`/`if`
+    /// wrappers back onto the tail expression is a plain loop over
+    /// `self.add(...)` calls -- no deep owned tree to build or drop.
     fn expression(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        self.enter()?;
-        let result = self.expression_inner();
-        self.depth -= 1;
-        result
-    }
-    fn expression_inner(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        let start = self.peek().span.start;
-        if self.eat(K::Let) {
-            let name = self.identifier()?;
-            self.expect(K::Equal)?;
-            let value = self.expression()?;
-            self.expect(K::In)?;
-            let body = self.expression()?;
-            return self.add(
-                ExprKind::Let { name, value, body },
-                start,
-                self.expression_span(body).end,
-            );
+        enum Pending {
+            Let {
+                start: usize,
+                name: Spanned<String>,
+                value: ExprId,
+            },
+            If {
+                start: usize,
+                condition: ExprId,
+                then_value: ExprId,
+            },
         }
-        if self.eat(K::If) {
-            let condition = self.expression()?;
-            self.expect(K::Then)?;
-            let then_value = self.expression()?;
-            self.expect(K::Else)?;
-            let else_value = self.expression()?;
-            return self.add(
-                ExprKind::If {
+        let mut stack: Vec<Pending> = Vec::new();
+        loop {
+            let start = self.peek().span.start;
+            if self.eat(K::Let) {
+                let name = self.identifier()?;
+                self.expect(K::Equal)?;
+                let value = self.expression()?;
+                self.expect(K::In)?;
+                stack.push(Pending::Let { start, name, value });
+                continue;
+            }
+            if self.eat(K::If) {
+                let condition = self.expression()?;
+                self.expect(K::Then)?;
+                let then_value = self.expression()?;
+                self.expect(K::Else)?;
+                stack.push(Pending::If {
+                    start,
                     condition,
                     then_value,
-                    else_value,
-                },
-                start,
-                self.expression_span(else_value).end,
-            );
+                });
+                continue;
+            }
+            break;
         }
-        self.binary(0)
+        let mut acc = self.binary(0)?;
+        for pending in stack.into_iter().rev() {
+            acc = match pending {
+                Pending::Let { start, name, value } => self.add(
+                    ExprKind::Let {
+                        name,
+                        value,
+                        body: acc,
+                    },
+                    start,
+                    self.expression_span(acc).end,
+                )?,
+                Pending::If {
+                    start,
+                    condition,
+                    then_value,
+                } => self.add(
+                    ExprKind::If {
+                        condition,
+                        then_value,
+                        else_value: acc,
+                    },
+                    start,
+                    self.expression_span(acc).end,
+                )?,
+            };
+        }
+        Ok(acc)
     }
     fn binary(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
-        self.enter()?;
-        let result = self.binary_inner(minimum);
-        self.depth -= 1;
-        result
-    }
-    fn binary_inner(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
         let mut left = self.unary()?;
         let mut comparison_seen = false;
         while let Some(op) = binary_op(&self.peek().kind).or_else(|| {
@@ -419,8 +474,15 @@ impl Parser {
             // A conjunction starts a new comparison operand; a second relation
             // without it is deliberately invalid rather than a guessed chain.
             comparison_seen = op.comparison();
+            if op == BinaryOp::Implies {
+                // Right-associative and unbounded in length: fold
+                // iteratively (see `Self::expression`'s doc comment)
+                // instead of recursing once per `implies`.
+                left = self.implies_chain(left)?;
+                continue;
+            }
             let operator = self.take();
-            let right_min = op.power() + u8::from(op != BinaryOp::Implies);
+            let right_min = op.power() + 1;
             let right = self.binary(right_min)?;
             let span = Span {
                 start: self.expression_span(left).start,
@@ -452,6 +514,43 @@ impl Parser {
             };
         }
         Ok(left)
+    }
+    /// Collect a right-associative `implies` chain iteratively -- the
+    /// caller has already parsed `first` and confirmed the next token is
+    /// `implies` -- then fold the collected operands from the right so
+    /// `a implies b implies c` builds `a implies (b implies c)`, matching
+    /// the original recursive shape exactly.
+    fn implies_chain(&mut self, first: ExprId) -> Result<ExprId, Box<Diagnostic>> {
+        let mut operands = vec![first];
+        let mut operators = Vec::new();
+        loop {
+            operators.push(self.take());
+            operands.push(self.binary(BinaryOp::Implies.power() + 1)?);
+            if !matches!(binary_op(&self.peek().kind), Some(BinaryOp::Implies)) {
+                break;
+            }
+        }
+        let mut acc = operands.pop().expect("at least one implies operand");
+        while let Some(left) = operands.pop() {
+            let operator = operators
+                .pop()
+                .expect("one operator per additional operand");
+            let span = Span {
+                start: self.expression_span(left).start,
+                end: self.expression_span(acc).end,
+            };
+            acc = self.add_operator(
+                ExprKind::Binary {
+                    op: BinaryOp::Implies,
+                    left,
+                    right: acc,
+                },
+                span.start,
+                span.end,
+                operator.span,
+            )?;
+        }
+        Ok(acc)
     }
     fn unary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
         let mut operators = Vec::new();
@@ -529,9 +628,9 @@ impl Parser {
                 ExprKind::ResultValue
             }
             K::OpenParen => {
-                self.take();
+                self.open(K::OpenParen)?;
                 let inner = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ExprKind::Group { inner }
             }
             keyword @ (K::Present | K::Value | K::Deref | K::Size | K::Pre) => {
@@ -543,20 +642,20 @@ impl Parser {
                     _ => Builtin::Pre,
                 };
                 self.take();
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let argument = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ExprKind::Call { builtin, argument }
             }
             keyword @ (K::Forall | K::Exists) => {
                 self.take();
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let name = self.identifier()?;
                 self.expect(K::In)?;
                 let domain = self.expression()?;
                 self.expect(K::Colon)?;
                 let predicate = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ExprKind::Quantifier {
                     universal: keyword == K::Forall,
                     name,
@@ -566,13 +665,13 @@ impl Parser {
             }
             K::Reaches => {
                 self.take();
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let first = self.expression()?;
                 self.expect(K::Comma)?;
                 let target = self.expression()?;
                 self.expect(K::Comma)?;
                 let field = self.member()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ExprKind::Reaches {
                     start: first,
                     target,

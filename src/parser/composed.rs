@@ -192,16 +192,16 @@ impl Parser {
     }
 
     fn bound_parameter(&mut self) -> Result<Parameter, Box<Diagnostic>> {
-        self.expect(K::OpenParen)?;
+        self.open(K::OpenParen)?;
         let parameter = self.parameter()?;
-        self.expect(K::CloseParen)?;
+        self.close(K::CloseParen)?;
         Ok(parameter)
     }
 
     fn value_block(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let expression = self.expression()?;
-        self.expect(K::CloseBrace)?;
+        self.close(K::CloseBrace)?;
         Ok(expression)
     }
 
@@ -216,9 +216,9 @@ impl Parser {
         self.expect(K::Each)?;
         let trigger = self.bound_parameter()?;
         let guard = if self.eat(K::When) {
-            self.expect(K::OpenParen)?;
+            self.open(K::OpenParen)?;
             let expression = self.expression()?;
-            self.expect(K::CloseParen)?;
+            self.close(K::CloseParen)?;
             Some(expression)
         } else {
             None
@@ -250,11 +250,11 @@ impl Parser {
 
     fn interval(&mut self) -> Result<Interval, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
-        let start = self.expect(K::OpenBracket)?.span.start;
+        let start = self.open(K::OpenBracket)?.span.start;
         let lower = self.unsigned()?;
         self.expect(K::Comma)?;
         let upper = self.unsigned()?;
-        self.expect(K::CloseBracket)?;
+        self.close(K::CloseBracket)?;
         Ok(Interval {
             lower,
             upper,
@@ -281,7 +281,7 @@ impl Parser {
         let profile = self.identifier()?;
         let kind = match token.kind {
             K::Predicate => {
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let mut parameters = Vec::new();
                 if !self.is(K::CloseParen) {
                     parameters.push(self.parameter()?);
@@ -289,7 +289,7 @@ impl Parser {
                         parameters.push(self.parameter()?);
                     }
                 }
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 self.expect(K::Colon)?;
                 let result = self.expect(K::BooleanType)?.span;
                 let body = self.value_block()?;
@@ -329,10 +329,10 @@ impl Parser {
                 self.expect(K::Clock)?;
                 let clock = self.string()?;
                 let activation = Box::new(self.activation()?);
-                self.expect(K::OpenBrace)?;
+                self.open(K::OpenBrace)?;
                 let captures = self.captures()?;
                 let formula = self.temporal_expression(0)?;
-                self.expect(K::CloseBrace)?;
+                self.close(K::CloseBrace)?;
                 DeclarationKind::Temporal {
                     input,
                     clock,
@@ -362,18 +362,18 @@ impl Parser {
                     .is_some_and(|t| t.kind == K::OpenParen) =>
             {
                 let name = self.identifier()?;
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let arguments = self.value_list(K::CloseParen)?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ValueKind::Invoke { name, arguments }
             }
             K::Rational => {
                 self.take();
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let numerator = self.signed()?;
                 self.expect(K::Comma)?;
                 let denominator = self.signed()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ValueKind::Rational {
                     numerator,
                     denominator,
@@ -386,21 +386,21 @@ impl Parser {
                     .is_some_and(|t| t.kind == K::Less) =>
             {
                 self.take();
-                self.expect(K::Less)?;
+                self.open(K::Less)?;
                 let domain = self.qualified()?;
-                self.expect(K::Greater)?;
-                self.expect(K::OpenParen)?;
+                self.close(K::Greater)?;
+                self.open(K::OpenParen)?;
                 let argument = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ValueKind::Size { domain, argument }
             }
             K::Contains => {
                 self.take();
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let collection = self.expression()?;
                 self.expect(K::Comma)?;
                 let member = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ValueKind::Contains { collection, member }
             }
             K::Filter | K::Map | K::Count | K::Sum => {
@@ -412,20 +412,20 @@ impl Parser {
                     _ => QueryOp::Sum,
                 };
                 let result = if matches!(op, QueryOp::Count | QueryOp::Sum) {
-                    self.expect(K::Less)?;
+                    self.open(K::Less)?;
                     let ty = self.qualified()?;
-                    self.expect(K::Greater)?;
+                    self.close(K::Greater)?;
                     Some(ty)
                 } else {
                     None
                 };
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let binder = self.identifier()?;
                 self.expect(K::In)?;
                 let domain = self.expression()?;
                 self.expect(K::Colon)?;
                 let body = self.expression()?;
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 ValueKind::Query {
                     op: Spanned {
                         value: op,
