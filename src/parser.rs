@@ -3,9 +3,10 @@
 use crate::syntax::*;
 use qsl_cst::lexer::{self, Token};
 use qsl_cst::token::{Kind, Kind as K};
-use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned, SyntaxLimit};
 
 mod composed;
+mod expression;
 use crate::syntax::composed as c;
 
 /// Parse the historical `0-draft` grammar. Model imports stay unresolved here.
@@ -174,6 +175,10 @@ impl Parser {
             limit: None,
         })
     }
+    /// Refuse at `span` because the next operation would exceed `limit`.
+    fn exhausted(&self, span: Span, limit: SyntaxLimit) -> Box<Diagnostic> {
+        qsl_foundation::diagnostic::resource_exhausted(&self.source, Phase::Parse, span, limit)
+    }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {
         if !self.composed
             && matches!(
@@ -220,14 +225,11 @@ impl Parser {
     /// a token fetched up front). `span` is that bracket's own span.
     fn open_taken(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
         if self.depth >= self.limits.nesting {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
+            return Err(self.exhausted(
                 span,
-                format!(
-                    "nesting depth exceeds the ceiling of {} levels",
-                    self.limits.nesting
-                ),
+                SyntaxLimit::NestingDepth {
+                    bound: self.limits.nesting,
+                },
             ));
         }
         self.depth += 1;
@@ -369,11 +371,11 @@ impl Parser {
             return self.add_value(c::ValueKind::Shared(kind), Span { start, end });
         }
         if self.nodes.len() >= self.limits.nodes {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
+            return Err(self.exhausted(
                 Span { start, end },
-                "syntax node budget exhausted",
+                SyntaxLimit::Nodes {
+                    bound: self.limits.nodes,
+                },
             ));
         }
         let id = ExprId(self.nodes.len());
@@ -381,345 +383,6 @@ impl Parser {
             kind,
             span: Span { start, end },
         });
-        Ok(id)
-    }
-    /// Parse `let … in`/`if … else` continuation chains with an explicit
-    /// loop instead of Rust recursion. These chains add no nesting depth
-    /// (NFR-001) and are bounded only by the token/node ceilings, so a
-    /// chain long enough to approach those ceilings must not grow the
-    /// native call stack per element. Unlike qsl-cst's CST parser, `Expr`
-    /// nodes here are already a flat arena (`ExprId` is just an index into
-    /// `self.nodes`/`self.values`), so folding the collected `let`/`if`
-    /// wrappers back onto the tail expression is a plain loop over
-    /// `self.add(...)` calls -- no deep owned tree to build or drop.
-    fn expression(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        enum Pending {
-            Let {
-                start: usize,
-                name: Spanned<String>,
-                value: ExprId,
-            },
-            If {
-                start: usize,
-                condition: ExprId,
-                then_value: ExprId,
-            },
-        }
-        let mut stack: Vec<Pending> = Vec::new();
-        loop {
-            let start = self.peek().span.start;
-            if self.eat(K::Let) {
-                let name = self.identifier()?;
-                self.expect(K::Equal)?;
-                let value = self.expression()?;
-                self.expect(K::In)?;
-                stack.push(Pending::Let { start, name, value });
-                continue;
-            }
-            if self.eat(K::If) {
-                let condition = self.expression()?;
-                self.expect(K::Then)?;
-                let then_value = self.expression()?;
-                self.expect(K::Else)?;
-                stack.push(Pending::If {
-                    start,
-                    condition,
-                    then_value,
-                });
-                continue;
-            }
-            break;
-        }
-        let mut acc = self.binary(0)?;
-        for pending in stack.into_iter().rev() {
-            acc = match pending {
-                Pending::Let { start, name, value } => self.add(
-                    ExprKind::Let {
-                        name,
-                        value,
-                        body: acc,
-                    },
-                    start,
-                    self.expression_span(acc).end,
-                )?,
-                Pending::If {
-                    start,
-                    condition,
-                    then_value,
-                } => self.add(
-                    ExprKind::If {
-                        condition,
-                        then_value,
-                        else_value: acc,
-                    },
-                    start,
-                    self.expression_span(acc).end,
-                )?,
-            };
-        }
-        Ok(acc)
-    }
-    fn binary(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
-        let mut left = self.unary()?;
-        let mut comparison_seen = false;
-        while let Some(op) = binary_op(&self.peek().kind).or_else(|| {
-            (self.composed && matches!(self.peek().kind, K::Slash | K::Mod))
-                .then_some(BinaryOp::Multiply)
-        }) {
-            if op.power() < minimum {
-                break;
-            }
-            if op.comparison() && comparison_seen {
-                return Err(self.unexpected("a non-chained comparison (use explicit parentheses)"));
-            }
-            // A conjunction starts a new comparison operand; a second relation
-            // without it is deliberately invalid rather than a guessed chain.
-            comparison_seen = op.comparison();
-            if op == BinaryOp::Implies {
-                // Right-associative and unbounded in length: fold
-                // iteratively (see `Self::expression`'s doc comment)
-                // instead of recursing once per `implies`.
-                left = self.implies_chain(left)?;
-                continue;
-            }
-            let operator = self.take();
-            let right_min = op.power() + 1;
-            let right = self.binary(right_min)?;
-            let span = Span {
-                start: self.expression_span(left).start,
-                end: self.expression_span(right).end,
-            };
-            left = if self.composed && matches!(operator.kind, K::Slash | K::Mod) {
-                self.add_value(
-                    c::ValueKind::Product {
-                        op: Spanned {
-                            value: if operator.kind == K::Slash {
-                                c::ProductOp::Slash
-                            } else {
-                                c::ProductOp::Mod
-                            },
-                            span: operator.span,
-                        },
-                        left,
-                        right,
-                    },
-                    span,
-                )?
-            } else {
-                self.add_operator(
-                    ExprKind::Binary { op, left, right },
-                    span.start,
-                    span.end,
-                    operator.span,
-                )?
-            };
-        }
-        Ok(left)
-    }
-    /// Collect a right-associative `implies` chain iteratively -- the
-    /// caller has already parsed `first` and confirmed the next token is
-    /// `implies` -- then fold the collected operands from the right so
-    /// `a implies b implies c` builds `a implies (b implies c)`, matching
-    /// the original recursive shape exactly.
-    fn implies_chain(&mut self, first: ExprId) -> Result<ExprId, Box<Diagnostic>> {
-        let mut operands = vec![first];
-        let mut operators = Vec::new();
-        loop {
-            operators.push(self.take());
-            operands.push(self.binary(BinaryOp::Implies.power() + 1)?);
-            if !matches!(binary_op(&self.peek().kind), Some(BinaryOp::Implies)) {
-                break;
-            }
-        }
-        let mut acc = operands.pop().expect("at least one implies operand");
-        while let Some(left) = operands.pop() {
-            let operator = operators
-                .pop()
-                .expect("one operator per additional operand");
-            let span = Span {
-                start: self.expression_span(left).start,
-                end: self.expression_span(acc).end,
-            };
-            acc = self.add_operator(
-                ExprKind::Binary {
-                    op: BinaryOp::Implies,
-                    left,
-                    right: acc,
-                },
-                span.start,
-                span.end,
-                operator.span,
-            )?;
-        }
-        Ok(acc)
-    }
-    fn unary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        let mut operators = Vec::new();
-        while self.is(K::Not) || self.is(K::Minus) {
-            let token = self.take();
-            let op = if matches!(token.kind, K::Minus) {
-                UnaryOp::Negate
-            } else {
-                UnaryOp::Not
-            };
-            operators.push((op, token.span));
-        }
-        let mut argument = self.primary()?;
-        while self.eat(K::Dot) {
-            let name = self.member()?;
-            let end = self.tokens[self.at - 1].span.end;
-            argument = self.add(
-                ExprKind::Field {
-                    base: argument,
-                    name,
-                },
-                self.expression_span(argument).start,
-                end,
-            )?;
-        }
-        for (op, operator_span) in operators.into_iter().rev() {
-            argument = self.add_operator(
-                ExprKind::Unary { op, argument },
-                operator_span.start,
-                self.expression_span(argument).end,
-                operator_span,
-            )?;
-        }
-        Ok(argument)
-    }
-    fn primary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        if self.composed {
-            if let Some(value) = self.extended_primary()? {
-                return Ok(value);
-            }
-        }
-        let token = self.peek().clone();
-        let start = token.span.start;
-        let operator_span = matches!(
-            token.kind,
-            K::Present
-                | K::Value
-                | K::Deref
-                | K::Size
-                | K::Pre
-                | K::Forall
-                | K::Exists
-                | K::Reaches
-        )
-        .then_some(token.span);
-        let kind = match token.kind {
-            Kind::Text(value) => {
-                self.take();
-                ExprKind::Text(value)
-            }
-            Kind::Integer(value) => {
-                self.take();
-                ExprKind::Integer(value)
-            }
-            K::True | K::False => {
-                self.take();
-                ExprKind::Boolean(token.kind == K::True)
-            }
-            K::SelfValue => {
-                self.take();
-                ExprKind::SelfValue
-            }
-            K::ResultValue => {
-                self.take();
-                ExprKind::ResultValue
-            }
-            K::OpenParen => {
-                self.open(K::OpenParen)?;
-                let inner = self.expression()?;
-                self.close(K::CloseParen)?;
-                ExprKind::Group { inner }
-            }
-            keyword @ (K::Present | K::Value | K::Deref | K::Size | K::Pre) => {
-                let builtin = match keyword {
-                    K::Present => Builtin::Present,
-                    K::Value => Builtin::Value,
-                    K::Deref => Builtin::Deref,
-                    K::Size => Builtin::Size,
-                    _ => Builtin::Pre,
-                };
-                self.take();
-                self.open(K::OpenParen)?;
-                let argument = self.expression()?;
-                self.close(K::CloseParen)?;
-                ExprKind::Call { builtin, argument }
-            }
-            keyword @ (K::Forall | K::Exists) => {
-                self.take();
-                self.open(K::OpenParen)?;
-                let name = self.identifier()?;
-                self.expect(K::In)?;
-                let domain = self.expression()?;
-                self.expect(K::Colon)?;
-                let predicate = self.expression()?;
-                self.close(K::CloseParen)?;
-                ExprKind::Quantifier {
-                    universal: keyword == K::Forall,
-                    name,
-                    domain,
-                    predicate,
-                }
-            }
-            K::Reaches => {
-                self.take();
-                self.open(K::OpenParen)?;
-                let first = self.expression()?;
-                self.expect(K::Comma)?;
-                let target = self.expression()?;
-                self.expect(K::Comma)?;
-                let field = self.member()?;
-                self.close(K::CloseParen)?;
-                ExprKind::Reaches {
-                    start: first,
-                    target,
-                    field,
-                }
-            }
-            Kind::Identifier(model) => {
-                let model = Spanned {
-                    value: model,
-                    span: token.span,
-                };
-                self.take();
-                if self.is(K::OpenParen) {
-                    // Same concept as native_model/admission.rs's pure-function
-                    // check, met here at parse time instead of model admission:
-                    // the native profile does not admit user-defined functions
-                    // at all, as a call form or as a declaration. That is a
-                    // form this profile's package structure excludes outright,
-                    // not a real, catalogued capability this build lacks, so
-                    // both land on InvalidPackage rather than UnsupportedConstruct.
-                    return Err(self.failure(
-                        Code::InvalidPackage,
-                        Phase::Profile,
-                        token.span,
-                        "user function calls are outside the native model profile",
-                    ));
-                }
-                if self.eat(K::Qualify) {
-                    let name = self.member()?;
-                    self.expect(K::Qualify)?;
-                    let variant = self.member()?;
-                    ExprKind::EnumValue {
-                        model,
-                        name,
-                        variant,
-                    }
-                } else {
-                    ExprKind::Name(model)
-                }
-            }
-            _ => return Err(self.unexpected("expression")),
-        };
-        let end = self.tokens[self.at - 1].span.end;
-        let id = self.add(kind, start, end)?;
-        if self.composed {
-            self.values[id.0].operator_span = operator_span;
-        }
         Ok(id)
     }
 }

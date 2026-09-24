@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-197: NFR-001 "Nesting level" for the native (historical `0-draft`)
-//! S1 parser -- bracket-pair nesting depth (never `expression()`/`binary()`
-//! recursion depth), work-vs-nesting resource_exhausted classification, and
-//! long-chain stack safety (TC-012). See `qsl-cst/tests/it/nesting_levels.rs`
-//! for the complete-V1 (lossless CST) S1 parser's equivalent coverage.
+//! Nesting levels, chain lengths and stack safety for the native S1 parser,
+//! historical and composed editions. Every test runs on a 512 KiB thread at
+//! the default ceilings; see `qsl-cst/tests/it/nesting_levels.rs` for the
+//! complete-V1 parser.
 use ix_trace_rs::trace;
-use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity};
-use quire_spec_language::{parse, Limits, ParsedUnit};
+use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity, SyntaxLimit};
+use quire_spec_language::syntax::composed::NativeUnit;
+use quire_spec_language::{parse, parse_native, Limits, ParsedUnit};
 
 fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
@@ -17,10 +17,15 @@ fn identity(id: &str) -> SourceIdentity {
 
 const HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\n";
 
-/// The fixed text preceding an invariant's expression body: `HEADER` plus
-/// `invariant Test on M::Thing at current { `. That opening brace is itself
-/// one bracket pair, so a caller building an exact nesting boundary uses
-/// `bound - 1` further brackets in `expression`.
+const COMPOSED_HEADER: &str = r#"language "ix:native" edition "1-draft";
+profile S = "quire.state.graph/v1" version "test:state" digest "unresolved-state";
+profile T = "quire.temporal.timestamped-event.finite-window/v1" version "test:temporal" digest "unresolved-temporal";
+profile P = "quire.protocol.finite-global/v1" version "test:protocol" digest "unresolved-protocol";
+model M = "test:orders-and-refunds" version "test:model" digest "unresolved-model";
+"#;
+
+/// Everything before a historical invariant's expression. Its `{` is one
+/// bracket pair.
 fn body_prefix() -> String {
     format!("{HEADER}invariant Test on M::Thing at current {{ ")
 }
@@ -29,239 +34,341 @@ fn document(expression: &str) -> String {
     format!("{}{expression} }}\n", body_prefix())
 }
 
-fn read(id: &str, text: &str, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
-    parse(identity(id), "test.native", text.as_bytes(), limits)
+fn read_expr(expression: &str) -> Result<ParsedUnit, Box<Diagnostic>> {
+    parse(
+        identity("nesting"),
+        "test.native",
+        document(expression).as_bytes(),
+        Limits::default(),
+    )
 }
 
-fn read_expr(id: &str, expression: &str, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
-    read(id, &document(expression), limits)
+fn temporal_document(formula: &str) -> String {
+    format!(
+        "{COMPOSED_HEADER}temporal Test using T over (view: M::OrderView) clock \"c\" on origin {{ {formula} }}"
+    )
 }
 
-/// Run `run` on a thread with the 512 KiB stack NFR-001 "Verification"
-/// specifies for the named chains, so a stack-depth regression in
-/// `Parser::implies_chain`/`Parser::expression` actually crashes this test.
+fn read_composed(text: &str) -> Result<NativeUnit, Box<Diagnostic>> {
+    parse_native(
+        identity("composed"),
+        "composed.native",
+        text.as_bytes(),
+        Limits::default(),
+    )
+}
+
+/// Run `run` on a 512 KiB thread, the stack the verification procedure
+/// names. A parser that recursed per chain element or per bracket frame
+/// beyond that budget aborts the test process here.
 fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
     std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(run)
-        .expect("spawn bounded-stack thread")
+        .expect("spawn a 512 KiB thread")
         .join()
-        .expect("parser must not overflow a 512 KiB stack (NFR-001 Verification)");
+        .expect("the parser must not overflow a 512 KiB stack");
 }
 
-// --- AC-1: one paren pair costs one nesting level, not one per
-// `expression()`/`binary()` call. ------------------------------------------
-
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn deeply_parenthesized_flat_sum_parses_at_default_limits() {
-    read_expr("ac1", "(((((1 + 1) + 1) + 1) + 1) + 1)", Limits::default())
-        .expect("bracket nesting of 5 is far under the default ceiling of 64");
+/// The limit a refusal names, asserting it is a resource refusal whose
+/// message renders that same limit.
+fn refused_limit(error: &Diagnostic) -> SyntaxLimit {
+    assert_eq!(error.code, Code::ResourceExhausted, "{error}");
+    let limit = error
+        .limit
+        .expect("a syntax refusal carries its typed limit");
+    assert_eq!(error.message, limit.to_string());
+    limit
 }
 
-// --- AC-2: nesting to exactly the configured bound parses; one level past
-// is refused naming nesting depth, the bound, and the opening bracket's
-// span. Plain parens are also bounded by the shared `qsl_cst::lexer`
-// delimiter check, which runs (and refuses) before the parser -- so this
-// exercises that lexer-level enforcement, not `Parser::open` specifically. --
+fn is_token_or_node_ceiling(limit: SyntaxLimit) -> bool {
+    let defaults = Limits::default();
+    limit
+        == SyntaxLimit::Tokens {
+            bound: defaults.tokens,
+        }
+        || limit
+            == SyntaxLimit::Nodes {
+                bound: defaults.nodes,
+            }
+}
 
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn paren_nesting_to_exactly_the_ceiling_parses_one_deeper_refuses() {
-    let limits = Limits::default();
-    let bound = limits.nesting;
-    let body_bound = bound - 1;
+fn repeat_join(item: &str, separator: &str, count: usize) -> String {
+    std::iter::repeat_n(item, count)
+        .collect::<Vec<_>>()
+        .join(separator)
+}
 
-    let at_bound = format!("{}1{}", "(".repeat(body_bound), ")".repeat(body_bound));
-    read_expr("ac2-at-bound", &at_bound, limits).expect("exactly the ceiling must parse");
+// One chain per shape. `elements` is the number of operators, prefixes,
+// `let`s or `if`s.
+fn sum_chain(elements: usize) -> String {
+    repeat_join("1", " + ", elements + 1)
+}
+fn implies_chain(elements: usize) -> String {
+    repeat_join("true", " implies ", elements + 1)
+}
+fn not_chain(elements: usize) -> String {
+    format!("{}true", "not ".repeat(elements))
+}
+fn let_tail_chain(elements: usize) -> String {
+    format!("{}0", "let v = 0 in ".repeat(elements))
+}
+fn if_tail_chain(elements: usize) -> String {
+    format!("{}0", "if true then 1 else ".repeat(elements))
+}
+fn let_value_chain(elements: usize) -> String {
+    format!(
+        "{}0{}",
+        "let v = ".repeat(elements),
+        " in 0".repeat(elements)
+    )
+}
+fn if_condition_chain(elements: usize) -> String {
+    format!(
+        "{}true{}",
+        "if ".repeat(elements),
+        " then true else true".repeat(elements)
+    )
+}
+fn if_then_chain(elements: usize) -> String {
+    format!(
+        "{}0{}",
+        "if true then ".repeat(elements),
+        " else 0".repeat(elements)
+    )
+}
+fn always_chain(elements: usize) -> String {
+    temporal_document(&format!("{}true", "always [0,1] ".repeat(elements)))
+}
+fn temporal_implies_chain(elements: usize) -> String {
+    temporal_document(&repeat_join("true", " implies ", elements + 1))
+}
+fn temporal_not_chain(elements: usize) -> String {
+    temporal_document(&format!("{}true", "not ".repeat(elements)))
+}
 
-    let prefix = body_prefix();
-    let opens = "(".repeat(body_bound + 1);
-    let closes = ")".repeat(body_bound + 1);
-    let text = format!("{prefix}{opens}1{closes} }}\n");
-    let last_open_offset = prefix.len() + opens.len() - 1;
-
-    let error = read("ac2-over-bound", &text, limits).expect_err("one level past must refuse");
-    assert_eq!(error.code, Code::ResourceExhausted);
-    assert_eq!(error.phase, Phase::Lex);
+/// `elements` parses with nesting depth 0 and `elements + 1` is refused
+/// naming the token or syntax-node ceiling.
+fn assert_longest_chain(
+    name: &str,
+    elements: usize,
+    read: impl Fn(usize) -> Result<(), Box<Diagnostic>>,
+) {
+    if let Err(error) = read(elements) {
+        panic!("{name}: the {elements}-element chain must parse: {error}");
+    }
+    let error = read(elements + 1).expect_err("one element longer exceeds a ceiling");
+    let limit = refused_limit(&error);
     assert!(
-        error.message.contains("nesting depth") && error.message.contains(&bound.to_string()),
-        "expected a nesting-depth refusal naming the bound {bound}, got: {}",
-        error.message
+        is_token_or_node_ceiling(limit),
+        "{name}: one element longer must name the token or node ceiling, got {limit:?}"
     );
-    assert_eq!(error.span.start.byte, last_open_offset);
-    assert_eq!(error.span.end.byte, last_open_offset + 1);
 }
 
-// --- AC-3: exhausting the syntax-node budget names the work limit, never
-// nesting. ------------------------------------------------------------------
+fn historical(build: fn(usize) -> String) -> impl Fn(usize) -> Result<(), Box<Diagnostic>> {
+    move |elements| read_expr(&build(elements)).map(drop)
+}
+
+fn composed(build: fn(usize) -> String) -> impl Fn(usize) -> Result<(), Box<Diagnostic>> {
+    move |elements| read_composed(&build(elements)).map(drop)
+}
+
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn parenthesized_sum_five_deep_parses() {
+    on_bounded_stack(|| {
+        read_expr("(((((1 + 1) + 1) + 1) + 1) + 1)")
+            .expect("five bracket pairs are far under the default ceiling");
+    });
+}
+
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn paren_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused_by_the_lexer() {
+    on_bounded_stack(|| {
+        let bound = Limits::default().nesting;
+        // The invariant's own `{` is the first pair.
+        let inner = bound - 1;
+        read_expr(&format!("{}1{}", "(".repeat(inner), ")".repeat(inner)))
+            .expect("exactly the ceiling parses");
+
+        let opens = "(".repeat(inner + 1);
+        let text = document(&format!("{opens}1{}", ")".repeat(inner + 1)));
+        let offending = body_prefix().len() + opens.len() - 1;
+        let error = parse(
+            identity("over"),
+            "test.native",
+            text.as_bytes(),
+            Limits::default(),
+        )
+        .expect_err("one pair deeper is refused");
+        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
+        assert_eq!(error.phase, Phase::Lex);
+        assert_eq!(
+            (error.span.start.byte, error.span.end.byte),
+            (offending, offending + 1)
+        );
+    });
+}
+
+// A type-argument `<` is a bracket pair the lexer does not count, so only
+// the parser's own charge can refuse it. Past the ceiling the `<` is refused
+// before anything after it is read; the unit is cut short after the `>` so
+// no later `(` reaches the lexer's own check first.
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn type_argument_bracket_past_the_ceiling_is_refused_by_the_parser() {
+    on_bounded_stack(|| {
+        let bound = Limits::default().nesting;
+        let prefix = |inner: usize| {
+            format!(
+                "{COMPOSED_HEADER}invariant Deep using S on M::OrderView at current {{ {}",
+                "(".repeat(inner)
+            )
+        };
+        // The clause's `{` is pair 1, so after `inner` parens the `<` and
+        // the call's `(` are pair `inner + 2`.
+        let inner = bound - 2;
+        let at_bound = format!("{}size<M::T>(1){} }}", prefix(inner), ")".repeat(inner));
+        read_composed(&at_bound).expect("size<…>(…) exactly at the ceiling parses");
+
+        let inner = bound - 1;
+        let over = format!("{}size<M::T>{} }}", prefix(inner), ")".repeat(inner));
+        let error = read_composed(&over).expect_err("the `<` opens pair 65");
+        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
+        assert_eq!(error.phase, Phase::Parse);
+        let angle = prefix(inner).len() + "size".len();
+        assert_eq!(
+            (error.span.start.byte, error.span.end.byte),
+            (angle, angle + 1)
+        );
+    });
+}
 
 #[trace("TC-012", "NFR-001-M-3")]
 #[test]
-fn exhausting_the_node_budget_names_the_work_limit_not_nesting() {
+fn exhausting_the_node_ceiling_names_the_node_ceiling() {
     let limits = Limits {
         nodes: 3,
         ..Limits::default()
     };
-    let error = read_expr("ac3", "1 + 1 + 1 + 1 + 1 + 1 + 1 + 1", limits)
-        .expect_err("3 retained syntax nodes cannot hold this unit");
-    assert_eq!(error.code, Code::ResourceExhausted);
+    let error = parse(
+        identity("nodes"),
+        "test.native",
+        document("1 + 1 + 1 + 1").as_bytes(),
+        limits,
+    )
+    .expect_err("three syntax nodes cannot hold seven");
+    assert_eq!(refused_limit(&error), SyntaxLimit::Nodes { bound: 3 });
     assert_eq!(error.phase, Phase::Parse);
-    assert!(
-        error.message.contains("syntax node budget exhausted"),
-        "{}",
-        error.message
-    );
-    assert!(!error.message.contains("nesting"), "{}", error.message);
 }
-
-// --- AC-5: a flat 3,000-term sum parses at default limits. ------------------
 
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
-fn flat_3000_term_sum_parses_at_default_limits() {
-    let body = std::iter::repeat_n("1", 3000)
-        .collect::<Vec<_>>()
-        .join(" + ");
-    read_expr("ac5", &body, Limits::default())
-        .expect("a flat 3,000-term chain has nesting depth 0 and fits the default ceilings");
-}
-
-// --- AC-6: NFR-001 "Verification" chains -- right-associative `implies`,
-// prefix `not`, `let … in` and `if … else` -- have nesting depth 0 and parse
-// at whatever length the token/node ceilings admit; one element longer
-// names the token or node ceiling, never nesting. A smaller custom ceiling
-// keeps these fixtures fast while exercising the identical mechanism
-// (NFR-001: "an implementation ceiling is not a domain bound"). -------------
-
-fn assert_chain_boundary_never_cites_nesting(
-    id: &str,
-    limits: Limits,
-    minimum_admitted: usize,
-    build: impl Fn(usize) -> String,
-) {
-    let mut admitted = 0;
-    loop {
-        let next = admitted + 1;
-        let text = document(&build(next));
-        match read(&format!("{id}-{next}"), &text, limits) {
-            Ok(_) => admitted = next,
-            Err(error) => {
-                assert_eq!(
-                    error.code,
-                    Code::ResourceExhausted,
-                    "{id}: refusal at length {next} was not resource_exhausted: {error}"
-                );
-                assert!(
-                    !error.message.contains("nesting"),
-                    "{id}: a chain of depth 0 must never be refused for nesting: {}",
-                    error.message
-                );
-                break;
-            }
-        }
-        assert!(next < 100_000, "{id}: chain never hit a ceiling");
-    }
-    assert!(
-        admitted >= minimum_admitted,
-        "{id}: only {admitted} elements admitted, expected at least {minimum_admitted}"
-    );
-}
-
-#[trace("TC-012")]
-#[test]
-fn implies_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 300,
-        nodes: 300,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("implies", limits, 10, |n| {
-        std::iter::repeat_n("true", n + 1)
-            .collect::<Vec<_>>()
-            .join(" implies ")
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn prefix_not_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 300,
-        nodes: 300,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("not", limits, 10, |n| {
-        format!("{}true", "not ".repeat(n))
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn let_in_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 600,
-        nodes: 600,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("let-in", limits, 10, |n| {
-        let mut body = String::new();
-        for index in 0..n {
-            body.push_str(&format!("let v{index} = {index} in "));
-        }
-        body.push('0');
-        body
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn if_else_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 900,
-        nodes: 900,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("if-else", limits, 10, |n| {
-        let mut body = String::new();
-        for _ in 0..n {
-            body.push_str("if true then 1 else ");
-        }
-        body.push('0');
-        body
-    });
-}
-
-/// No source within the token/node ceilings may overflow a 512 KiB stack
-/// (NFR-001). `long_flat_chains_parse_and_drop_on_a_bounded_stack` in
-/// `tests/it/parser.rs` already covers the flat `+` and prefix `not` chains
-/// at 20,000 elements; this covers `implies`, `let … in` and `if … else` --
-/// the three chains `Parser::binary`/`Parser::expression` used to build by
-/// Rust recursion per element before QSL-197.
-#[trace("TC-012")]
-#[test]
-fn implies_let_and_if_chains_parse_without_overflowing_a_bounded_stack() {
+fn flat_twenty_thousand_operator_chain_completes() {
     on_bounded_stack(|| {
-        let implies = std::iter::repeat_n("true", 3000)
-            .collect::<Vec<_>>()
-            .join(" implies ");
-        read_expr("implies-bounded-stack", &implies, Limits::default())
-            .expect("a 3,000-element implies chain fits the default ceilings");
+        read_expr(&sum_chain(20_000)).expect("20000 operators fit the default ceilings");
+    });
+}
 
-        let mut let_in = String::new();
-        for index in 0..3000 {
-            let_in.push_str(&format!("let v{index} = {index} in "));
-        }
-        let_in.push('0');
-        read_expr("let-in-bounded-stack", &let_in, Limits::default())
-            .expect("a 3,000-element let-in chain fits the default ceilings");
+// The longest chain of each shape the default ceilings admit parses, and
+// one element more names the ceiling it hits. Every shape has nesting
+// depth 0.
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+#[test]
+fn longest_historical_chains_parse_and_one_longer_names_a_ceiling() {
+    on_bounded_stack(|| {
+        assert_longest_chain("+", 24_999, historical(sum_chain));
+        assert_longest_chain("implies", 24_999, historical(implies_chain));
+        assert_longest_chain("not", 49_999, historical(not_chain));
+        assert_longest_chain("let tail", 19_994, historical(let_tail_chain));
+        assert_longest_chain("if tail", 16_666, historical(if_tail_chain));
+    });
+}
 
-        let mut if_else = String::new();
-        for _ in 0..3000 {
-            if_else.push_str("if true then 1 else ");
+// A `let` value, an `if` condition and an `if` then-branch nest without a
+// bracket just like the tail does.
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+#[test]
+fn let_and_if_chains_in_every_position_parse_on_a_bounded_stack() {
+    on_bounded_stack(|| {
+        assert_longest_chain("let value", 19_994, historical(let_value_chain));
+        assert_longest_chain("if condition", 16_666, historical(if_condition_chain));
+        assert_longest_chain("if then", 16_666, historical(if_then_chain));
+    });
+}
+
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+#[test]
+fn longest_composed_temporal_chains_parse_and_one_longer_names_a_ceiling() {
+    on_bounded_stack(|| {
+        assert_longest_chain("always", 16_656, composed(always_chain));
+        assert_longest_chain("temporal implies", 24_996, composed(temporal_implies_chain));
+        assert_longest_chain("temporal not", 49_992, composed(temporal_not_chain));
+    });
+}
+
+// `repeat` bodies and `await` branches nest control nodes without a bracket.
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+#[test]
+fn long_repeat_control_chain_parses_on_a_bounded_stack() {
+    on_bounded_stack(|| {
+        let depth = 3_000;
+        let text = format!(
+            "{COMPOSED_HEADER}protocol Loops using P over (view: M::OrderView) on origin {{
+                role Service on M::OrderView;
+                run {}check Body using S {{ true }};{}
+                finish Closed as (closed: M::OrderView) {{ true }};
+            }}",
+            "repeat Loop by Service visible (true) max 1 while { true } ".repeat(depth),
+            " exhausted check Exhausted using S { true };".repeat(depth),
+        );
+        let NativeUnit::Composed(unit) = read_composed(&text).expect("a repeat chain parses")
+        else {
+            panic!("composed edition");
+        };
+        // One `check` body, `depth` repeats and `depth` exhausted checks.
+        assert_eq!(unit.controls().len(), 2 * depth + 1);
+    });
+}
+
+fn longest_admitted(read: impl Fn(usize) -> Result<(), Box<Diagnostic>>) -> usize {
+    let (mut low, mut high) = (0_usize, 120_000_usize);
+    while low + 1 < high {
+        let middle = (low + high) / 2;
+        if read(middle).is_ok() {
+            low = middle;
+        } else {
+            high = middle;
         }
-        if_else.push('0');
-        read_expr("if-else-bounded-stack", &if_else, Limits::default())
-            .expect("a 3,000-element if-else chain fits the default ceilings");
+    }
+    low
+}
+
+// Re-derives the lengths `assert_longest_chain` uses:
+// `cargo test --test it nesting_levels::probe -- --ignored --nocapture`.
+#[test]
+#[ignore = "probe: prints the longest chain of each shape the default ceilings admit"]
+fn probe_longest_chains_at_default_ceilings() {
+    on_bounded_stack(|| {
+        for (name, build) in [
+            ("+", sum_chain as fn(usize) -> String),
+            ("implies", implies_chain),
+            ("not", not_chain),
+            ("let tail", let_tail_chain),
+            ("if tail", if_tail_chain),
+            ("let value", let_value_chain),
+            ("if condition", if_condition_chain),
+            ("if then", if_then_chain),
+        ] {
+            println!("historical {name}: {}", longest_admitted(historical(build)));
+        }
+        for (name, build) in [
+            ("always", always_chain as fn(usize) -> String),
+            ("temporal implies", temporal_implies_chain),
+            ("temporal not", temporal_not_chain),
+        ] {
+            println!("composed {name}: {}", longest_admitted(composed(build)));
+        }
     });
 }

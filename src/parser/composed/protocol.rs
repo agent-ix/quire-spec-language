@@ -241,183 +241,415 @@ impl Parser {
         Ok(names)
     }
 
+    /// Parse one protocol control node with an explicit stack of partially
+    /// built parents instead of Rust recursion. `repeat` bodies and `await`
+    /// event/then/timeout nodes nest another control node without a bracket,
+    /// so such a chain has nesting depth 0 (NFR-001) and is bounded only by
+    /// the token and node ceilings. Controls enter the arena in the order the
+    /// recursive formulation pushed them: every child before its parent.
     fn control_node(&mut self) -> Result<ControlId, Box<Diagnostic>> {
-        self.charge(self.peek().span)?;
-        let token = self.take();
-        if !matches!(
-            token.kind,
-            K::Sequence
-                | K::Choice
-                | K::Parallel
-                | K::Repeat
-                | K::Await
-                | K::Send
-                | K::Receive
-                | K::Attempt
-                | K::Effect
-                | K::Event
-                | K::Check
-                | K::Commit
-        ) {
-            return Err(self.failure(
-                Code::InvalidSyntax,
-                Phase::Parse,
-                token.span,
-                "expected protocol control node",
-            ));
+        /// A control node waiting for the child control being parsed.
+        enum Pending {
+            Sequence {
+                start: usize,
+                name: Spanned<String>,
+                children: Vec<ControlId>,
+            },
+            Choice {
+                start: usize,
+                name: Spanned<String>,
+                role: Spanned<String>,
+                visible: Vec<ExprId>,
+                cases: Vec<Case>,
+                case: CaseHeader,
+            },
+            Parallel {
+                start: usize,
+                name: Spanned<String>,
+                branches: Vec<Branch>,
+                branch: BranchHeader,
+            },
+            RepeatBody {
+                start: usize,
+                name: Spanned<String>,
+                header: RepeatHeader,
+            },
+            RepeatExhausted {
+                start: usize,
+                name: Spanned<String>,
+                header: RepeatHeader,
+                body: ControlId,
+            },
+            AwaitEvent {
+                start: usize,
+                name: Spanned<String>,
+                header: AwaitHeader,
+            },
+            AwaitThen {
+                start: usize,
+                name: Spanned<String>,
+                header: AwaitHeader,
+                event: ControlId,
+            },
+            AwaitTimeout {
+                start: usize,
+                name: Spanned<String>,
+                header: AwaitHeader,
+                event: ControlId,
+                then: ControlId,
+            },
         }
-        let name = self.identifier()?;
-        let kind = match token.kind {
-            K::Sequence => {
-                self.open(K::OpenBrace)?;
-                let mut children = Vec::new();
-                while !self.is(K::CloseBrace) {
-                    children.push(self.control_node()?);
-                }
-                self.close(K::CloseBrace)?;
-                ControlKind::Sequence(children)
+        let mut stack: Vec<Pending> = Vec::new();
+        'control: loop {
+            self.charge(self.peek().span)?;
+            let token = self.take();
+            if !matches!(
+                token.kind,
+                K::Sequence
+                    | K::Choice
+                    | K::Parallel
+                    | K::Repeat
+                    | K::Await
+                    | K::Send
+                    | K::Receive
+                    | K::Attempt
+                    | K::Effect
+                    | K::Event
+                    | K::Check
+                    | K::Commit
+            ) {
+                return Err(self.failure(
+                    Code::InvalidSyntax,
+                    Phase::Parse,
+                    token.span,
+                    "expected protocol control node",
+                ));
             }
-            K::Choice => {
-                self.expect(K::By)?;
-                let role = self.identifier()?;
-                let visible = self.visibility()?;
-                self.open(K::OpenBrace)?;
-                let mut cases = vec![self.case()?, self.case()?];
-                while self.is(K::Case) {
-                    cases.push(self.case()?);
+            let start = token.span.start;
+            let name = self.identifier()?;
+            let kind = match token.kind {
+                K::Sequence => {
+                    self.open(K::OpenBrace)?;
+                    if !self.is(K::CloseBrace) {
+                        stack.push(Pending::Sequence {
+                            start,
+                            name,
+                            children: Vec::new(),
+                        });
+                        continue 'control;
+                    }
+                    self.close(K::CloseBrace)?;
+                    ControlKind::Sequence(Vec::new())
                 }
-                self.close(K::CloseBrace)?;
-                ControlKind::Choice {
-                    role,
-                    visible,
-                    cases,
+                K::Choice => {
+                    self.expect(K::By)?;
+                    let role = self.identifier()?;
+                    let visible = self.visibility()?;
+                    self.open(K::OpenBrace)?;
+                    let case = self.case_header()?;
+                    stack.push(Pending::Choice {
+                        start,
+                        name,
+                        role,
+                        visible,
+                        cases: Vec::new(),
+                        case,
+                    });
+                    continue 'control;
                 }
+                K::Parallel => {
+                    self.open(K::OpenBrace)?;
+                    let branch = self.branch_header()?;
+                    stack.push(Pending::Parallel {
+                        start,
+                        name,
+                        branches: Vec::new(),
+                        branch,
+                    });
+                    continue 'control;
+                }
+                K::Repeat => {
+                    self.expect(K::By)?;
+                    let role = self.identifier()?;
+                    let visible = self.visibility()?;
+                    self.expect(K::Max)?;
+                    let maximum = self.unsigned()?;
+                    self.expect(K::While)?;
+                    let guard = self.value_block()?;
+                    stack.push(Pending::RepeatBody {
+                        start,
+                        name,
+                        header: RepeatHeader {
+                            role,
+                            visible,
+                            maximum,
+                            guard,
+                        },
+                    });
+                    continue 'control;
+                }
+                K::Await => {
+                    self.expect(K::After)?;
+                    let after = self.node_ref()?;
+                    self.expect(K::Using)?;
+                    let profile = self.identifier()?;
+                    self.expect(K::Clock)?;
+                    let clock = self.string()?;
+                    self.expect(K::Within)?;
+                    let within = self.interval()?;
+                    self.expect(K::Match)?;
+                    if !matches!(
+                        self.peek().kind,
+                        K::Send | K::Receive | K::Attempt | K::Effect | K::Event
+                    ) {
+                        return Err(self.unexpected("event node after match"));
+                    }
+                    stack.push(Pending::AwaitEvent {
+                        start,
+                        name,
+                        header: AwaitHeader {
+                            after,
+                            profile,
+                            clock,
+                            within,
+                        },
+                    });
+                    continue 'control;
+                }
+                K::Check => {
+                    self.expect(K::Using)?;
+                    let profile = self.identifier()?;
+                    let expression = self.value_block()?;
+                    self.expect(K::Semicolon)?;
+                    ControlKind::Check {
+                        profile,
+                        expression,
+                    }
+                }
+                K::Commit => {
+                    self.expect(K::By)?;
+                    let role = self.identifier()?;
+                    self.expect(K::As)?;
+                    let parameter = self.bound_parameter()?;
+                    let constraint = self.value_block()?;
+                    self.expect(K::Semicolon)?;
+                    ControlKind::Commit {
+                        role,
+                        parameter,
+                        constraint,
+                    }
+                }
+                _ => ControlKind::Event(self.event(token.kind)?),
+            };
+            let mut completed = self.push_control(start, name, kind);
+            loop {
+                let Some(pending) = stack.pop() else {
+                    return Ok(completed);
+                };
+                let (start, name, kind) = match pending {
+                    Pending::Sequence {
+                        start,
+                        name,
+                        mut children,
+                    } => {
+                        children.push(completed);
+                        if !self.is(K::CloseBrace) {
+                            stack.push(Pending::Sequence {
+                                start,
+                                name,
+                                children,
+                            });
+                            continue 'control;
+                        }
+                        self.close(K::CloseBrace)?;
+                        (start, name, ControlKind::Sequence(children))
+                    }
+                    Pending::Choice {
+                        start,
+                        name,
+                        role,
+                        visible,
+                        mut cases,
+                        case,
+                    } => {
+                        cases.push(Case {
+                            name: case.name,
+                            guard: case.guard,
+                            control: completed,
+                            span: self.range_from(case.start),
+                        });
+                        if cases.len() < 2 || self.is(K::Case) {
+                            let case = self.case_header()?;
+                            stack.push(Pending::Choice {
+                                start,
+                                name,
+                                role,
+                                visible,
+                                cases,
+                                case,
+                            });
+                            continue 'control;
+                        }
+                        self.close(K::CloseBrace)?;
+                        (
+                            start,
+                            name,
+                            ControlKind::Choice {
+                                role,
+                                visible,
+                                cases,
+                            },
+                        )
+                    }
+                    Pending::Parallel {
+                        start,
+                        name,
+                        mut branches,
+                        branch,
+                    } => {
+                        branches.push(Branch {
+                            name: branch.name,
+                            control: completed,
+                            span: self.range_from(branch.start),
+                        });
+                        if branches.len() < 2 || self.is(K::Branch) {
+                            let branch = self.branch_header()?;
+                            stack.push(Pending::Parallel {
+                                start,
+                                name,
+                                branches,
+                                branch,
+                            });
+                            continue 'control;
+                        }
+                        self.close(K::CloseBrace)?;
+                        self.expect(K::Join)?;
+                        self.expect(K::All)?;
+                        self.open(K::OpenBracket)?;
+                        let mut join = vec![self.identifier()?];
+                        while self.eat(K::Comma) {
+                            join.push(self.identifier()?);
+                        }
+                        self.close(K::CloseBracket)?;
+                        self.expect(K::Semicolon)?;
+                        (start, name, ControlKind::Parallel { branches, join })
+                    }
+                    Pending::RepeatBody {
+                        start,
+                        name,
+                        header,
+                    } => {
+                        self.expect(K::Exhausted)?;
+                        stack.push(Pending::RepeatExhausted {
+                            start,
+                            name,
+                            header,
+                            body: completed,
+                        });
+                        continue 'control;
+                    }
+                    Pending::RepeatExhausted {
+                        start,
+                        name,
+                        header,
+                        body,
+                    } => (
+                        start,
+                        name,
+                        ControlKind::Repeat {
+                            role: header.role,
+                            visible: header.visible,
+                            maximum: header.maximum,
+                            guard: header.guard,
+                            body,
+                            exhausted: completed,
+                        },
+                    ),
+                    Pending::AwaitEvent {
+                        start,
+                        name,
+                        header,
+                    } => {
+                        self.expect(K::Then)?;
+                        stack.push(Pending::AwaitThen {
+                            start,
+                            name,
+                            header,
+                            event: completed,
+                        });
+                        continue 'control;
+                    }
+                    Pending::AwaitThen {
+                        start,
+                        name,
+                        header,
+                        event,
+                    } => {
+                        self.expect(K::Timeout)?;
+                        stack.push(Pending::AwaitTimeout {
+                            start,
+                            name,
+                            header,
+                            event,
+                            then: completed,
+                        });
+                        continue 'control;
+                    }
+                    Pending::AwaitTimeout {
+                        start,
+                        name,
+                        header,
+                        event,
+                        then,
+                    } => (
+                        start,
+                        name,
+                        ControlKind::Await {
+                            after: header.after,
+                            profile: header.profile,
+                            clock: header.clock,
+                            within: header.within,
+                            event,
+                            then,
+                            timeout: completed,
+                        },
+                    ),
+                };
+                completed = self.push_control(start, name, kind);
             }
-            K::Parallel => {
-                self.open(K::OpenBrace)?;
-                let mut branches = vec![self.branch()?, self.branch()?];
-                while self.is(K::Branch) {
-                    branches.push(self.branch()?);
-                }
-                self.close(K::CloseBrace)?;
-                self.expect(K::Join)?;
-                self.expect(K::All)?;
-                self.open(K::OpenBracket)?;
-                let mut join = vec![self.identifier()?];
-                while self.eat(K::Comma) {
-                    join.push(self.identifier()?);
-                }
-                self.close(K::CloseBracket)?;
-                self.expect(K::Semicolon)?;
-                ControlKind::Parallel { branches, join }
-            }
-            K::Repeat => {
-                self.expect(K::By)?;
-                let role = self.identifier()?;
-                let visible = self.visibility()?;
-                self.expect(K::Max)?;
-                let maximum = self.unsigned()?;
-                self.expect(K::While)?;
-                let guard = self.value_block()?;
-                let body = self.control_node()?;
-                self.expect(K::Exhausted)?;
-                let exhausted = self.control_node()?;
-                ControlKind::Repeat {
-                    role,
-                    visible,
-                    maximum,
-                    guard,
-                    body,
-                    exhausted,
-                }
-            }
-            K::Await => {
-                self.expect(K::After)?;
-                let after = self.node_ref()?;
-                self.expect(K::Using)?;
-                let profile = self.identifier()?;
-                self.expect(K::Clock)?;
-                let clock = self.string()?;
-                self.expect(K::Within)?;
-                let within = self.interval()?;
-                self.expect(K::Match)?;
-                if !matches!(
-                    self.peek().kind,
-                    K::Send | K::Receive | K::Attempt | K::Effect | K::Event
-                ) {
-                    return Err(self.unexpected("event node after match"));
-                }
-                let event = self.control_node()?;
-                self.expect(K::Then)?;
-                let then = self.control_node()?;
-                self.expect(K::Timeout)?;
-                let timeout = self.control_node()?;
-                ControlKind::Await {
-                    after,
-                    profile,
-                    clock,
-                    within,
-                    event,
-                    then,
-                    timeout,
-                }
-            }
-            K::Check => {
-                self.expect(K::Using)?;
-                let profile = self.identifier()?;
-                let expression = self.value_block()?;
-                self.expect(K::Semicolon)?;
-                ControlKind::Check {
-                    profile,
-                    expression,
-                }
-            }
-            K::Commit => {
-                self.expect(K::By)?;
-                let role = self.identifier()?;
-                self.expect(K::As)?;
-                let parameter = self.bound_parameter()?;
-                let constraint = self.value_block()?;
-                self.expect(K::Semicolon)?;
-                ControlKind::Commit {
-                    role,
-                    parameter,
-                    constraint,
-                }
-            }
-            _ => ControlKind::Event(self.event(token.kind)?),
-        };
-        let span = self.range_from(token.span.start);
-        let id = ControlId(self.controls.len());
-        self.controls.push(Control { name, kind, span });
-        Ok(id)
+        }
     }
 
-    fn case(&mut self) -> Result<Case, Box<Diagnostic>> {
+    /// Append one completed control node spanning from `start` to the last
+    /// consumed token.
+    fn push_control(
+        &mut self,
+        start: usize,
+        name: Spanned<String>,
+        kind: ControlKind,
+    ) -> ControlId {
+        let span = self.range_from(start);
+        let id = ControlId(self.controls.len());
+        self.controls.push(Control { name, kind, span });
+        id
+    }
+
+    /// `case <name> when { <guard> }`, up to the case's control node.
+    fn case_header(&mut self) -> Result<CaseHeader, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
         let start = self.expect(K::Case)?.span.start;
         let name = self.identifier()?;
         self.expect(K::When)?;
         let guard = self.value_block()?;
-        let control = self.control_node()?;
-        Ok(Case {
-            name,
-            guard,
-            control,
-            span: self.range_from(start),
-        })
+        Ok(CaseHeader { start, name, guard })
     }
 
-    fn branch(&mut self) -> Result<Branch, Box<Diagnostic>> {
+    /// `branch <name>`, up to the branch's control node.
+    fn branch_header(&mut self) -> Result<BranchHeader, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
         let start = self.expect(K::Branch)?.span.start;
         let name = self.identifier()?;
-        let control = self.control_node()?;
-        Ok(Branch {
-            name,
-            control,
-            span: self.range_from(start),
-        })
+        Ok(BranchHeader { start, name })
     }
 
     fn event(&mut self, keyword: K) -> Result<Event, Box<Diagnostic>> {
@@ -497,4 +729,33 @@ impl Parser {
             constraint,
         })
     }
+}
+
+/// A parsed `case` header waiting for its control node.
+struct CaseHeader {
+    start: usize,
+    name: Spanned<String>,
+    guard: ExprId,
+}
+
+/// A parsed `branch` header waiting for its control node.
+struct BranchHeader {
+    start: usize,
+    name: Spanned<String>,
+}
+
+/// The fields of a `repeat` control node that precede its body.
+struct RepeatHeader {
+    role: Spanned<String>,
+    visible: Vec<ExprId>,
+    maximum: Spanned<String>,
+    guard: ExprId,
+}
+
+/// The fields of an `await` control node that precede its event node.
+struct AwaitHeader {
+    after: NodeRef,
+    profile: Spanned<String>,
+    clock: Spanned<String>,
+    within: Interval,
 }
