@@ -13,8 +13,9 @@ pub mod provenance;
 
 /// FR-001: the four labels a caller names a source by, separate from the
 /// path and from any digest. QSL defaults none of them and derives none
-/// from the path, the bytes or another label.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+/// from the path, the bytes or another label. Ordering is lexical over the
+/// four labels in declaration order.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub struct SourceIdentity {
     /// The authority that issues the source's identity.
     pub authority: String,

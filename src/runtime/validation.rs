@@ -10,7 +10,6 @@ mod values;
 use super::{ObjectIdentity, QualifiedName, Snapshot};
 use crate::checking::{Catalog, CheckedPackage};
 use budget::{Budget, Result, Stage};
-use inventory::Labels;
 use qsl_foundation::Code;
 use quire_contract_ir as ir;
 use std::collections::{BTreeMap, BTreeSet};
@@ -100,7 +99,7 @@ struct Validator<'input, 'model, F> {
     budget: Budget<'input, F>,
     catalogs: &'input [Catalog<'model>],
     /// Inventory entries keyed by their four source labels (FR-018).
-    inventory: BTreeMap<Labels, Vec<Address>>,
+    inventory: BTreeMap<qsl_foundation::SourceIdentity, Vec<Address>>,
     selected: Selected,
     clause: Option<usize>,
     indexes: PopulationIndexes,

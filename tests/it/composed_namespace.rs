@@ -17,12 +17,16 @@ const EDITION: &str = "1-draft";
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 profile S = \"test:unresolved-profile\" version \"selected\" digest \"unresolved\";\n";
 
+/// The source authority and revision namespace every source here is read
+/// under; each is charged as its own metadata string.
+const LABEL: &str = "test";
+
 fn source(identity: &str, revision: &str, path: &str, text: &str) -> Source {
     Source::read(
         SourceIdentity {
-            authority: "test".into(),
+            authority: LABEL.into(),
             identity: identity.into(),
-            revision_namespace: "test".into(),
+            revision_namespace: LABEL.into(),
             revision: revision.into(),
         },
         path,
@@ -82,7 +86,8 @@ fn exact_input_accounting_admits_without_discovering_external_sources() {
     // Each literal occurrence below is a distinct charged metadata component;
     // lengths count UTF-8 bytes, including non-ASCII identity and path text.
     let bytes = [
-        LANGUAGE, EDITION, AUTHORITY, ID, REVISION, ID, REVISION, PATH, &text,
+        LANGUAGE, EDITION, AUTHORITY, LABEL, ID, LABEL, REVISION, LABEL, ID, LABEL, REVISION, PATH,
+        &text,
     ]
     .iter()
     .map(|part| part.len())
@@ -502,8 +507,9 @@ fn byte_unit_and_declaration_boundaries_refuse_before_work_and_retry_immutably()
     let original_digest = ByteDigest::of(text.as_bytes());
     let supplied = [unit];
     let header_bytes = LANGUAGE.len() + EDITION.len();
-    let expected_bytes = header_bytes + AUTHORITY.len() + ID.len() + REVISION.len();
-    let metadata_bytes = expected_bytes + ID.len() + REVISION.len() + PATH.len();
+    let labels = LABEL.len() * 2 + ID.len() + REVISION.len();
+    let expected_bytes = header_bytes + AUTHORITY.len() + labels;
+    let metadata_bytes = expected_bytes + labels + PATH.len();
     let all_bytes = metadata_bytes + text.len();
     let exact = WorkLimits {
         source_bytes: all_bytes,
