@@ -639,7 +639,9 @@ impl<'r> Scope<'r> {
     /// Leave the innermost binder's scope. A name it frees that is some
     /// binder's alpha-name lowers that binder's [`Scope::first_free`].
     fn unbind(&mut self) {
-        let Some((name, used)) = self.binders.pop() else {
+        let popped = self.binders.pop();
+        debug_assert!(popped.is_some(), "every Unbind follows its own Bind");
+        let Some((name, used)) = popped else {
             return;
         };
         if let Some(uses) = self.shadows.get_mut(&name) {
@@ -686,128 +688,6 @@ fn holes(count: usize) -> Vec<Expression> {
     vec![Expression::Boolean(false); count]
 }
 
-/// `source`'s rewritten node: a literal is copied and a name resolved in
-/// `scope`; any other form is built over placeholder operands and binder
-/// names, which [`schedule`] fills.
-#[deny(clippy::wildcard_enum_match_arm)]
-fn shell(source: &Expression, rename: &BTreeMap<String, String>, scope: &Scope<'_>) -> Expression {
-    match source {
-        Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
-            source.clone()
-        }
-        Expression::Name(name) => Expression::Name(scope.resolve(name, rename)),
-        Expression::Let { .. } => Expression::Let {
-            name: String::new(),
-            value: hole(),
-            body: hole(),
-        },
-        Expression::If { .. } => Expression::If {
-            condition: hole(),
-            then: hole(),
-            otherwise: hole(),
-        },
-        Expression::Binary { operator, .. } => Expression::Binary {
-            operator: *operator,
-            left: hole(),
-            right: hole(),
-        },
-        Expression::Negate(_) => Expression::Negate(hole()),
-        Expression::Not(_) => Expression::Not(hole()),
-        Expression::Field { field, .. } => Expression::Field {
-            operand: hole(),
-            field: field.clone(),
-        },
-        Expression::Present(_) => Expression::Present(hole()),
-        Expression::Value(_) => Expression::Value(hole()),
-        Expression::Deref(_) => Expression::Deref(hole()),
-        Expression::Call { name, arguments } => Expression::Call {
-            name: name.clone(),
-            arguments: holes(arguments.len()),
-        },
-        Expression::Record { name, fields } => Expression::Record {
-            name: name.clone(),
-            fields: fields
-                .iter()
-                .map(|(field, initializer)| {
-                    let initializer = match initializer {
-                        FieldInitializer::Value(_) => {
-                            FieldInitializer::Value(Expression::Boolean(false))
-                        }
-                        FieldInitializer::Null => FieldInitializer::Null,
-                    };
-                    (field.clone(), initializer)
-                })
-                .collect(),
-        },
-        Expression::Collection { kind, elements } => Expression::Collection {
-            kind: *kind,
-            elements: holes(elements.len()),
-        },
-        Expression::Convert { target, .. } => Expression::Convert {
-            target: target.clone(),
-            operand: hole(),
-        },
-        Expression::Query { query, .. } => Expression::Query {
-            query: *query,
-            binder: String::new(),
-            source: hole(),
-            body: hole(),
-        },
-        Expression::Flatten(_) => Expression::Flatten(hole()),
-        Expression::Accumulate {
-            form,
-            accumulator_type,
-            identity,
-            ..
-        } => Expression::Accumulate {
-            form: *form,
-            accumulator_type: accumulator_type.clone(),
-            accumulator: String::new(),
-            binder: String::new(),
-            source: hole(),
-            step: hole(),
-            identity: identity.as_ref().map(|_| hole()),
-        },
-        Expression::Count { result_type, .. } => Expression::Count {
-            result_type: result_type.clone(),
-            binder: String::new(),
-            source: hole(),
-            predicate: hole(),
-        },
-        Expression::Sum { result_type, .. } => Expression::Sum {
-            result_type: result_type.clone(),
-            binder: String::new(),
-            source: hole(),
-            summand: hole(),
-        },
-        Expression::Size(_) => Expression::Size(hole()),
-        Expression::Contains { .. } => Expression::Contains {
-            collection: hole(),
-            item: hole(),
-        },
-        Expression::AllInstances { target, .. } => Expression::AllInstances {
-            target: target.clone(),
-            population: hole(),
-        },
-        Expression::Lookup {
-            target, absence, ..
-        } => Expression::Lookup {
-            target: target.clone(),
-            population: hole(),
-            reference: hole(),
-            absence: *absence,
-        },
-        Expression::Dispatch {
-            member, arguments, ..
-        } => Expression::Dispatch {
-            receiver: hole(),
-            member: member.clone(),
-            arguments: holes(arguments.len()),
-        },
-        Expression::Pre(_) => Expression::Pre(hole()),
-    }
-}
-
 /// A source operand and the placeholder its rewrite fills.
 type Operand<'s, 't> = (&'s Expression, &'t mut Box<Expression>);
 
@@ -848,101 +728,180 @@ fn scoped<'s, 't>(
     );
 }
 
-/// Push the rewrite of `source`'s operands into the placeholders of
-/// `target`, the [`shell`] of `source`, pairing each operand with its own
-/// placeholder field by field. A literal or name has none.
-fn schedule<'s, 't>(
+/// Write `shell` into `target`, then bind `pattern` over the fields just
+/// written. `pattern` is the shell's own variant, so it always matches.
+macro_rules! write_shell {
+    ($target:ident, $shell:expr, $pattern:pat) => {
+        *$target = $shell;
+        let $pattern = $target else {
+            unreachable!("the pattern names the shell just written")
+        };
+    };
+}
+
+/// Rewrite `source` into `target`: a literal is copied and a name resolved
+/// in `scope`; any other form is written as its shell over placeholder
+/// operands and binder names, and the rewrite of each operand into its own
+/// placeholder is pushed onto `pending`. One exhaustive match pairs every
+/// form's operands with its placeholders, so a new form does not compile
+/// until it is rewritten here.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn open<'s, 't>(
     source: &'s Expression,
     target: &'t mut Expression,
+    rename: &BTreeMap<String, String>,
+    scope: &Scope<'_>,
     pending: &mut Vec<Rewrite<'s, 't>>,
 ) {
-    match (source, target) {
-        (
-            Expression::Boolean(_)
-            | Expression::Integer(_)
-            | Expression::Rational(..)
-            | Expression::Name(_),
-            _,
-        ) => {}
-        (
-            Expression::Let { name, value, body },
-            Expression::Let {
-                name: bound,
-                value: value_hole,
-                body: body_hole,
-            },
-        ) => scoped(
-            pending,
-            vec![(value, value_hole)],
-            vec![(name, bound)],
-            (body, body_hole),
-        ),
-        (
-            Expression::If {
-                condition,
-                then,
-                otherwise,
-            },
-            Expression::If {
-                condition: condition_hole,
-                then: then_hole,
-                otherwise: otherwise_hole,
-            },
-        ) => operands(
-            pending,
-            [
-                (&**condition, &mut **condition_hole),
-                (then, then_hole),
-                (otherwise, otherwise_hole),
-            ]
-            .into_iter(),
-        ),
-        (
-            Expression::Binary { left, right, .. },
-            Expression::Binary {
-                left: left_hole,
-                right: right_hole,
-                ..
-            },
-        ) => operands(
-            pending,
-            [(&**left, &mut **left_hole), (right, right_hole)].into_iter(),
-        ),
-        (Expression::Negate(operand), Expression::Negate(hole))
-        | (Expression::Not(operand), Expression::Not(hole))
-        | (Expression::Field { operand, .. }, Expression::Field { operand: hole, .. })
-        | (Expression::Present(operand), Expression::Present(hole))
-        | (Expression::Value(operand), Expression::Value(hole))
-        | (Expression::Deref(operand), Expression::Deref(hole))
-        | (Expression::Convert { operand, .. }, Expression::Convert { operand: hole, .. })
-        | (Expression::Flatten(operand), Expression::Flatten(hole))
-        | (Expression::Size(operand), Expression::Size(hole))
-        | (
-            Expression::AllInstances {
-                population: operand,
-                ..
-            },
-            Expression::AllInstances {
-                population: hole, ..
-            },
-        )
-        | (Expression::Pre(operand), Expression::Pre(hole)) => {
+    match source {
+        Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
+            *target = source.clone();
+        }
+        Expression::Name(name) => *target = Expression::Name(scope.resolve(name, rename)),
+        Expression::Let { name, value, body } => {
+            write_shell!(
+                target,
+                Expression::Let {
+                    name: String::new(),
+                    value: hole(),
+                    body: hole(),
+                },
+                Expression::Let {
+                    name: bound,
+                    value: value_hole,
+                    body: body_hole,
+                }
+            );
+            scoped(
+                pending,
+                vec![(value, value_hole)],
+                vec![(name, bound)],
+                (body, body_hole),
+            );
+        }
+        Expression::If {
+            condition,
+            then,
+            otherwise,
+        } => {
+            write_shell!(
+                target,
+                Expression::If {
+                    condition: hole(),
+                    then: hole(),
+                    otherwise: hole(),
+                },
+                Expression::If {
+                    condition: condition_hole,
+                    then: then_hole,
+                    otherwise: otherwise_hole,
+                }
+            );
+            operands(
+                pending,
+                [
+                    (&**condition, &mut **condition_hole),
+                    (then, then_hole),
+                    (otherwise, otherwise_hole),
+                ]
+                .into_iter(),
+            );
+        }
+        Expression::Binary {
+            operator,
+            left,
+            right,
+        } => {
+            write_shell!(
+                target,
+                Expression::Binary {
+                    operator: *operator,
+                    left: hole(),
+                    right: hole(),
+                },
+                Expression::Binary {
+                    left: left_hole,
+                    right: right_hole,
+                    ..
+                }
+            );
+            operands(
+                pending,
+                [(&**left, &mut **left_hole), (right, right_hole)].into_iter(),
+            );
+        }
+        Expression::Negate(operand) => {
+            write_shell!(target, Expression::Negate(hole()), Expression::Negate(hole));
             pending.push(Rewrite::Node(operand, hole));
         }
-        (
-            Expression::Call { arguments, .. },
-            Expression::Call {
-                arguments: argument_holes,
-                ..
-            },
-        ) => operands(pending, arguments.iter().zip(argument_holes.iter_mut())),
-        (
-            Expression::Record { fields, .. },
-            Expression::Record {
-                fields: field_holes,
-                ..
-            },
-        ) => {
+        Expression::Not(operand) => {
+            write_shell!(target, Expression::Not(hole()), Expression::Not(hole));
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Field { operand, field } => {
+            write_shell!(
+                target,
+                Expression::Field {
+                    operand: hole(),
+                    field: field.clone(),
+                },
+                Expression::Field { operand: hole, .. }
+            );
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Present(operand) => {
+            write_shell!(
+                target,
+                Expression::Present(hole()),
+                Expression::Present(hole)
+            );
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Value(operand) => {
+            write_shell!(target, Expression::Value(hole()), Expression::Value(hole));
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Deref(operand) => {
+            write_shell!(target, Expression::Deref(hole()), Expression::Deref(hole));
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Call { name, arguments } => {
+            write_shell!(
+                target,
+                Expression::Call {
+                    name: name.clone(),
+                    arguments: holes(arguments.len()),
+                },
+                Expression::Call {
+                    arguments: argument_holes,
+                    ..
+                }
+            );
+            operands(pending, arguments.iter().zip(argument_holes.iter_mut()));
+        }
+        Expression::Record { name, fields } => {
+            write_shell!(
+                target,
+                Expression::Record {
+                    name: name.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|(field, initializer)| {
+                            let initializer = match initializer {
+                                FieldInitializer::Value(_) => {
+                                    FieldInitializer::Value(Expression::Boolean(false))
+                                }
+                                FieldInitializer::Null => FieldInitializer::Null,
+                            };
+                            (field.clone(), initializer)
+                        })
+                        .collect(),
+                },
+                Expression::Record {
+                    fields: field_holes,
+                    ..
+                }
+            );
             let pairs: Vec<_> = fields
                 .iter()
                 .zip(field_holes.iter_mut())
@@ -955,78 +914,99 @@ fn schedule<'s, 't>(
                 .collect();
             operands(pending, pairs.into_iter());
         }
-        (
-            Expression::Collection { elements, .. },
-            Expression::Collection {
-                elements: element_holes,
-                ..
-            },
-        ) => operands(pending, elements.iter().zip(element_holes.iter_mut())),
-        (
-            Expression::Query {
-                binder,
-                source,
-                body,
-                ..
-            },
-            Expression::Query {
-                binder: bound,
-                source: source_hole,
-                body: body_hole,
-                ..
-            },
-        )
-        | (
-            Expression::Count {
-                binder,
-                source,
-                predicate: body,
-                ..
-            },
-            Expression::Count {
-                binder: bound,
-                source: source_hole,
-                predicate: body_hole,
-                ..
-            },
-        )
-        | (
-            Expression::Sum {
-                binder,
-                source,
-                summand: body,
-                ..
-            },
-            Expression::Sum {
-                binder: bound,
-                source: source_hole,
-                summand: body_hole,
-                ..
-            },
-        ) => scoped(
-            pending,
-            vec![(source, source_hole)],
-            vec![(binder, bound)],
-            (body, body_hole),
-        ),
-        (
-            Expression::Accumulate {
-                accumulator,
-                binder,
-                source,
-                step,
-                identity,
-                ..
-            },
-            Expression::Accumulate {
-                accumulator: accumulator_bound,
-                binder: binder_bound,
-                source: source_hole,
-                step: step_hole,
-                identity: identity_hole,
-                ..
-            },
-        ) => {
+        Expression::Collection { kind, elements } => {
+            write_shell!(
+                target,
+                Expression::Collection {
+                    kind: *kind,
+                    elements: holes(elements.len()),
+                },
+                Expression::Collection {
+                    elements: element_holes,
+                    ..
+                }
+            );
+            operands(pending, elements.iter().zip(element_holes.iter_mut()));
+        }
+        Expression::Convert {
+            target: converted,
+            operand,
+        } => {
+            write_shell!(
+                target,
+                Expression::Convert {
+                    target: converted.clone(),
+                    operand: hole(),
+                },
+                Expression::Convert { operand: hole, .. }
+            );
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Query {
+            query,
+            binder,
+            source,
+            body,
+        } => {
+            write_shell!(
+                target,
+                Expression::Query {
+                    query: *query,
+                    binder: String::new(),
+                    source: hole(),
+                    body: hole(),
+                },
+                Expression::Query {
+                    binder: bound,
+                    source: source_hole,
+                    body: body_hole,
+                    ..
+                }
+            );
+            scoped(
+                pending,
+                vec![(source, source_hole)],
+                vec![(binder, bound)],
+                (body, body_hole),
+            );
+        }
+        Expression::Flatten(operand) => {
+            write_shell!(
+                target,
+                Expression::Flatten(hole()),
+                Expression::Flatten(hole)
+            );
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Accumulate {
+            form,
+            accumulator_type,
+            accumulator,
+            binder,
+            source,
+            step,
+            identity,
+        } => {
+            write_shell!(
+                target,
+                Expression::Accumulate {
+                    form: *form,
+                    accumulator_type: accumulator_type.clone(),
+                    accumulator: String::new(),
+                    binder: String::new(),
+                    source: hole(),
+                    step: hole(),
+                    identity: identity.as_ref().map(|_| hole()),
+                },
+                Expression::Accumulate {
+                    accumulator: accumulator_bound,
+                    binder: binder_bound,
+                    source: source_hole,
+                    step: step_hole,
+                    identity: identity_hole,
+                    ..
+                }
+            );
             let mut outer = vec![(&**source, source_hole)];
             if let (Some(identity), Some(identity_hole)) = (identity, identity_hole) {
                 outer.push((identity, identity_hole));
@@ -1038,53 +1018,156 @@ fn schedule<'s, 't>(
                 (step, step_hole),
             );
         }
-        (
-            Expression::Contains { collection, item },
-            Expression::Contains {
-                collection: collection_hole,
-                item: item_hole,
-            },
-        ) => operands(
-            pending,
-            [(&**collection, &mut **collection_hole), (item, item_hole)].into_iter(),
-        ),
-        (
-            Expression::Lookup {
-                population,
-                reference,
-                ..
-            },
-            Expression::Lookup {
-                population: population_hole,
-                reference: reference_hole,
-                ..
-            },
-        ) => operands(
-            pending,
-            [
-                (&**population, &mut **population_hole),
-                (reference, reference_hole),
-            ]
-            .into_iter(),
-        ),
-        (
-            Expression::Dispatch {
-                receiver,
-                arguments,
-                ..
-            },
-            Expression::Dispatch {
-                receiver: receiver_hole,
-                arguments: argument_holes,
-                ..
-            },
-        ) => operands(
-            pending,
-            std::iter::once((&**receiver, &mut **receiver_hole))
-                .chain(arguments.iter().zip(argument_holes.iter_mut())),
-        ),
-        (_, target) => {
-            unreachable!("shell builds the source's own variant, so it pairs with {target:?}")
+        Expression::Count {
+            result_type,
+            binder,
+            source,
+            predicate,
+        } => {
+            write_shell!(
+                target,
+                Expression::Count {
+                    result_type: result_type.clone(),
+                    binder: String::new(),
+                    source: hole(),
+                    predicate: hole(),
+                },
+                Expression::Count {
+                    binder: bound,
+                    source: source_hole,
+                    predicate: predicate_hole,
+                    ..
+                }
+            );
+            scoped(
+                pending,
+                vec![(source, source_hole)],
+                vec![(binder, bound)],
+                (predicate, predicate_hole),
+            );
+        }
+        Expression::Sum {
+            result_type,
+            binder,
+            source,
+            summand,
+        } => {
+            write_shell!(
+                target,
+                Expression::Sum {
+                    result_type: result_type.clone(),
+                    binder: String::new(),
+                    source: hole(),
+                    summand: hole(),
+                },
+                Expression::Sum {
+                    binder: bound,
+                    source: source_hole,
+                    summand: summand_hole,
+                    ..
+                }
+            );
+            scoped(
+                pending,
+                vec![(source, source_hole)],
+                vec![(binder, bound)],
+                (summand, summand_hole),
+            );
+        }
+        Expression::Size(operand) => {
+            write_shell!(target, Expression::Size(hole()), Expression::Size(hole));
+            pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Contains { collection, item } => {
+            write_shell!(
+                target,
+                Expression::Contains {
+                    collection: hole(),
+                    item: hole(),
+                },
+                Expression::Contains {
+                    collection: collection_hole,
+                    item: item_hole,
+                }
+            );
+            operands(
+                pending,
+                [(&**collection, &mut **collection_hole), (item, item_hole)].into_iter(),
+            );
+        }
+        Expression::AllInstances {
+            target: queried,
+            population,
+        } => {
+            write_shell!(
+                target,
+                Expression::AllInstances {
+                    target: queried.clone(),
+                    population: hole(),
+                },
+                Expression::AllInstances {
+                    population: hole,
+                    ..
+                }
+            );
+            pending.push(Rewrite::Node(population, hole));
+        }
+        Expression::Lookup {
+            target: queried,
+            population,
+            reference,
+            absence,
+        } => {
+            write_shell!(
+                target,
+                Expression::Lookup {
+                    target: queried.clone(),
+                    population: hole(),
+                    reference: hole(),
+                    absence: *absence,
+                },
+                Expression::Lookup {
+                    population: population_hole,
+                    reference: reference_hole,
+                    ..
+                }
+            );
+            operands(
+                pending,
+                [
+                    (&**population, &mut **population_hole),
+                    (reference, reference_hole),
+                ]
+                .into_iter(),
+            );
+        }
+        Expression::Dispatch {
+            receiver,
+            member,
+            arguments,
+        } => {
+            write_shell!(
+                target,
+                Expression::Dispatch {
+                    receiver: hole(),
+                    member: member.clone(),
+                    arguments: holes(arguments.len()),
+                },
+                Expression::Dispatch {
+                    receiver: receiver_hole,
+                    arguments: argument_holes,
+                    ..
+                }
+            );
+            operands(
+                pending,
+                std::iter::once((&**receiver, &mut **receiver_hole))
+                    .chain(arguments.iter().zip(argument_holes.iter_mut())),
+            );
+        }
+        Expression::Pre(operand) => {
+            write_shell!(target, Expression::Pre(hole()), Expression::Pre(hole));
+            pending.push(Rewrite::Node(operand, hole));
         }
     }
 }
@@ -1107,8 +1190,7 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
     while let Some(step) = pending.pop() {
         match step {
             Rewrite::Node(source, target) => {
-                *target = shell(source, rename, &scope);
-                schedule(source, target, &mut pending);
+                open(source, target, rename, &scope, &mut pending);
             }
             Rewrite::Bind(name, target) => *target = scope.bind(name),
             Rewrite::Unbind => scope.unbind(),
@@ -1893,8 +1975,41 @@ mod tests {
         forms
     }
 
-    /// `expression`'s form. Exhaustive, so a new form fails to compile here
-    /// until [`one_of_each_form`] and the count below cover it.
+    /// Every name [`form_name`] gives, one per `Expression` form.
+    const FORM_NAMES: [&str; 28] = [
+        "Boolean",
+        "Integer",
+        "Rational",
+        "Name",
+        "Let",
+        "If",
+        "Binary",
+        "Negate",
+        "Not",
+        "Field",
+        "Present",
+        "Value",
+        "Deref",
+        "Call",
+        "Record",
+        "Collection",
+        "Convert",
+        "Query",
+        "Flatten",
+        "Accumulate",
+        "Count",
+        "Sum",
+        "Size",
+        "Contains",
+        "AllInstances",
+        "Lookup",
+        "Dispatch",
+        "Pre",
+    ];
+
+    /// `expression`'s form, as named in [`FORM_NAMES`]. The match is
+    /// exhaustive, so a new form does not compile until it is named here;
+    /// its name then belongs in [`FORM_NAMES`] beside this match.
     #[deny(clippy::wildcard_enum_match_arm)]
     fn form_name(expression: &Expression) -> &'static str {
         match expression {
@@ -1931,12 +2046,15 @@ mod tests {
 
     /// `copy_expression` rewrites every form into exactly what the derived
     /// `Clone` gives: each operand, binder and attribute in its own place.
+    /// The forms [`one_of_each_form`] builds are exactly [`FORM_NAMES`], so
+    /// a name added there without an expression here fails the test.
     #[trace("FR-151-AC-7")]
     #[test]
     fn copy_expression_matches_clone_on_every_form() {
         let forms = one_of_each_form();
         let covered: std::collections::BTreeSet<&str> = forms.iter().map(form_name).collect();
-        assert_eq!(covered.len(), 28, "every Expression form: {covered:?}");
+        let named: std::collections::BTreeSet<&str> = FORM_NAMES.into_iter().collect();
+        assert_eq!(covered, named, "one expression per Expression form");
         for expression in &forms {
             assert_eq!(
                 format!("{:?}", copy_expression(expression)),
