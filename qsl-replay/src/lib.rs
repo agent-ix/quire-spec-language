@@ -38,13 +38,16 @@ pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
 };
-// The O-07 occurrence key and O-12 source region these envelopes carry
-// (#213 S-4): CG reaches QSL only through this crate (ADR-011 FB-05).
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
+// The O-07 occurrence key and O-12 source region these envelopes carry
+// (#213 S-4), re-exported so CG, which reaches QSL only through this crate
+// (ADR-011 FB-05), can name and read them. The re-export is read-only:
+// their constructors' inputs (`qsl_foundation`'s `RawSourceRef`, `Revision`
+// and `InvalidProvenance`) are not re-exported, and CG builds neither type.
 pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use request::{
     ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,

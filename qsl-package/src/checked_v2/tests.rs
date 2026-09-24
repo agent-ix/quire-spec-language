@@ -286,7 +286,8 @@ fn accepts_valid_bytes() {
 /// A wire whose projection declares `exports` (label, qualified name), each
 /// a self-typed boolean scalar with a `declaration`-role occurrence.
 fn envelope_declaring(exports: &[(&str, &str)]) -> (Value, Value) {
-    // IR requires the projection in ascending node-id order.
+    // `library`'s identity-preimage check requires ascending node-id order;
+    // IR does not (QSL-232).
     let mut sorted = exports.to_vec();
     sorted.sort_by_key(|(label, _)| hex(label));
     let mut preimage = identity_preimage(vec![]);
@@ -1207,6 +1208,26 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
     assert_eq!(node, super::SourceMapDefect::NodeId(upper.into()));
     for defect in [reversed, node] {
         assert_eq!(V2ReadRefusal::from(defect).code(), Code::InvalidSourceMap);
+    }
+}
+
+/// ADR-013 O-07: every IR occurrence role maps to its FR-322 spelling, the
+/// same string IR itself serializes the role as. The list names all six
+/// FR-322 roles, so a swapped pair fails.
+#[trace("TC-421", "FR-095-AC-3")]
+#[test]
+fn every_occurrence_role_is_spelled_as_ir_serializes_it() {
+    use quire_contract_ir::CheckedOccurrenceRole as R;
+    for (role, spelling) in [
+        (R::Declaration, "declaration"),
+        (R::Type, "type"),
+        (R::Expression, "expression"),
+        (R::Anchor, "anchor"),
+        (R::Claim, "claim"),
+        (R::Generated, "generated"),
+    ] {
+        assert_eq!(super::role_spelling(&role), spelling);
+        assert_eq!(serde_json::to_value(&role).unwrap(), json!(spelling));
     }
 }
 

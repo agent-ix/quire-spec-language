@@ -397,6 +397,18 @@ mod tests {
     /// `Input`-arm result's record field does not exist at all, so a call
     /// site expecting `WitnessArmResult::record()` cannot be satisfied by
     /// `InputArmResult`, which has no such method).
+    /// A resolved region's measured bytes are its source's authority,
+    /// identity, revision namespace and revision value lengths, plus the
+    /// toolchain pin's: `registry` 8 + `pkg-a` 5 + `git` 3 + `rev-1` 5 +
+    /// `kani-0.67.0` 11 = 32.
+    #[test]
+    fn common_measured_bytes_counts_each_source_member() {
+        assert_eq!(
+            common_measured_bytes(&regions(), &ToolPin::new("kani-0.67.0")),
+            32
+        );
+    }
+
     #[trace("TC-189", "FR-072-AC-1")]
     #[test]
     fn tc_189_witness_and_input_arms_stay_distinct() {

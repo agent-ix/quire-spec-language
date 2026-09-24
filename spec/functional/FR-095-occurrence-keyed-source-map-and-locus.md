@@ -123,5 +123,5 @@ QSL-read source's authority or revision namespace comes from. The three
 parts are: replacing `LocatedSpan` in diagnostics with `SourceRegion`;
 C-21's embedded-body span to document region; and recording regions at the
 check stage, whose parsed forms also carry no expression spans before
-FR-091-AC-10 (QSL-141). FR-091 and FR-092 assign the source identity's
-`authority` to this slice; it waits on that definition.
+FR-091-AC-10 (QSL-141). FR-091 and FR-092 need the same source identity
+`authority`. Remaining work: QSL-233.

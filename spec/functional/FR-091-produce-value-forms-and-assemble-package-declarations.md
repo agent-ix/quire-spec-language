@@ -503,7 +503,7 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
   criteria above observe a refusal's cause, limit kind, bound and byte span,
   whichever carrier holds them.
 - The unit's `SourceOwner` needs an `authority` on QSL's source identity,
-  which #213 S-4 (QSL-159) owns.
+  which no requirement defines yet. Remaining work: QSL-233.
 - Record, tuple and function keys over `SourceOwner` use QSL's
   `quire.structural-node/v1` preimage
   ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec

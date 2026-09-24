@@ -25,7 +25,9 @@ Scope: FR-095-AC-3, FR-095-AC-4.
    regions. Look up each entry's key and each node's occurrences.
 2. Build a map with an empty entry, and one with a key mapped twice.
 3. Convert a hand-built entry with region start 9, end 3, and one whose node
-   id digest is uppercase hex; read each defect's refusal code.
+   id digest is uppercase hex; read each defect's refusal code. Map each of
+   IR's six occurrence roles to its spelling and compare it with IR's own
+   serialized spelling.
 4. Read QSpec's published positive fixtures from
    `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json` through
    IR's v2 reader, with each fixture's own locked artifacts as current and
@@ -43,7 +45,9 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
   wire's authority, identity, revision and digest; each node has exactly its
   one entry.
 - Step 2: `NoRegion` and `DuplicateOccurrence`.
-- Step 3: `ReversedRegion` and a node-id defect, each `invalid_source_map`.
+- Step 3: `ReversedRegion` and a node-id defect, each `invalid_source_map`;
+  each role's spelling equals IR's (`declaration`, `type`, `expression`,
+  `anchor`, `claim`, `generated`).
 - Step 4: every entry looks up to exactly its regions, and each node's
   occurrence count equals its entry count.
 - Step 5: the regions, `UnknownNode` and `UnknownOccurrence`.
