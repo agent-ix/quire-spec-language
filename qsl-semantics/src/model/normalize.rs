@@ -209,11 +209,11 @@ use std::sync::Arc;
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
-use crate::model::conformance::generals_by_specific;
 use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, PopulationRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
+use crate::model::index::{DeclIdx, ModelIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
     EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRefWire, RULE_INHERIT,
@@ -459,10 +459,12 @@ struct ViewBody {
     /// Every admitted declaration, ascending by [`EffectiveId`].
     declarations: Vec<ViewEntry>,
     /// Every top-level declaration's effective identity, keyed by its
-    /// original producer [`DeclarationKey`]: exactly the `declarations`
-    /// entries with no owner effective type. Derived from `declarations` at
-    /// construction, so it adds no identity of its own.
-    type_identities: BTreeMap<DeclarationKey, EffectiveId>,
+    /// original producer [`DeclarationKey`], and the reverse: exactly the
+    /// `declarations` entries with no owner effective type. Derived from
+    /// `declarations` at construction, so it adds no identity of its own.
+    /// Shared, never copied, by every population binding admitted against
+    /// the view.
+    types: Arc<TypeCatalog>,
     /// The object universes this normalization produced, one per connected
     /// component of the object-type supertype graph (ADR-013 §8 OQ-E),
     /// ascending by each universe's own first root type identity -- the
@@ -477,6 +479,44 @@ struct ViewBody {
     /// Every `Population` record of the package, keyed by its own
     /// declaration key.
     populations: BTreeMap<DeclarationKey, PopulationEntry>,
+    /// The package's shared [`ModelIndex`], built once by this
+    /// normalization (QSL-202) and read by dispatch linking and by every
+    /// population binding admitted against the view.
+    model_index: Arc<ModelIndex>,
+}
+
+/// Every declared type's effective identity, keyed both ways: by its
+/// original producer [`DeclarationKey`], and by the [`EffectiveId`] a checked
+/// `Reference<T>` carries for `T` (ADR-013 O-05). Built once per
+/// normalization.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct TypeCatalog {
+    by_key: BTreeMap<DeclarationKey, EffectiveId>,
+    by_identity: BTreeMap<EffectiveId, DeclarationKey>,
+}
+
+impl TypeCatalog {
+    fn new(by_key: BTreeMap<DeclarationKey, EffectiveId>) -> Self {
+        let by_identity = by_key
+            .iter()
+            .map(|(key, identity)| (*identity, key.clone()))
+            .collect();
+        Self {
+            by_key,
+            by_identity,
+        }
+    }
+
+    /// Every declared type's effective identity, by producer key.
+    pub(crate) fn by_key(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
+        &self.by_key
+    }
+
+    /// The producer key of the declared type whose effective identity is
+    /// `identity`.
+    pub(crate) fn key_of(&self, identity: &EffectiveId) -> Option<&DeclarationKey> {
+        self.by_identity.get(identity)
+    }
 }
 
 impl ViewBody {
@@ -559,6 +599,24 @@ impl EffectiveView {
         &self.domain_package
     }
 
+    /// The shared [`ModelIndex`] over [`EffectiveView::domain_package`],
+    /// built once by the normalization that produced this view.
+    pub fn model_index(&self) -> &ModelIndex {
+        &self.body.model_index
+    }
+
+    /// The shared handle to [`EffectiveView::model_index`], for a binding
+    /// that keeps the index alive beyond this view.
+    pub(crate) fn shared_model_index(&self) -> &Arc<ModelIndex> {
+        &self.body.model_index
+    }
+
+    /// The shared handle to this view's type catalog, for a binding that
+    /// reads it beyond this view.
+    pub(crate) fn shared_type_catalog(&self) -> &Arc<TypeCatalog> {
+        &self.body.types
+    }
+
     /// The model selection this view was normalized under.
     pub fn model_selection(&self) -> &DomainPackageRef {
         &self.domain_package.model_selection
@@ -576,7 +634,7 @@ impl EffectiveView {
     /// FR-143's reference type component (ADR-013 O-05) and FR-153's
     /// population type catalog both read it. Normalization computes it once.
     pub fn type_identities(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
-        &self.body.type_identities
+        self.body.types.by_key()
     }
 
     /// Every object universe this view's normalization produced, one per
@@ -721,127 +779,16 @@ struct ObjectUniverseWire<'a> {
     root_types: Vec<EffectiveIdWire>,
 }
 
-struct Index {
-    /// Every declared object type, keyed by its own [`DeclarationKey`]
-    /// (`package`/`node`). Under #131's flat key shape, two `ObjectType`
-    /// records that share one key are no longer distinct declarations: this
-    /// set's own `.insert()` would silently keep only the first, but
-    /// `build`'s caller never trusts that -- `validate_references`'s
-    /// collision check re-walks `domain_package.records` right after
-    /// `Index::build` returns and refuses
-    /// `invalid_model_binding`/`conflicting-binding` before this `Index` is
-    /// put to any real use, so a caller that observes a completed
-    /// normalization never sees a collapsed pair here. Also serves phase 4's
-    /// and this module's other passes' "is this a declared type"
-    /// dangling-reference checks — a second, redundant `known_types` set
-    /// would only ever duplicate this one.
-    types: std::collections::BTreeSet<DeclarationKey>,
-    fields_by_owner: HashMap<DeclarationKey, Vec<FieldMemberRecord>>,
-    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    /// Every type whose own `supertypes[]` (`model-complete.md`:155) is
-    /// non-empty, i.e. not a root.
-    non_root: std::collections::HashSet<DeclarationKey>,
-    /// Every declared scalar type's own full key.
-    known_scalars: std::collections::HashSet<DeclarationKey>,
-    /// Every field member's own key.
-    field_member_keys: std::collections::HashSet<DeclarationKey>,
-    /// Every operation member's own key.
-    operation_member_keys: std::collections::HashSet<DeclarationKey>,
-}
-
-impl Index {
-    fn build(domain_package: &DomainPackage) -> Self {
-        let mut types = std::collections::BTreeSet::new();
-        let mut fields_by_owner: HashMap<DeclarationKey, Vec<_>> = HashMap::new();
-        // Built once by the one shared function every bounded proper-descendant
-        // walk in `crate::model` uses (`crate::model::conformance`'s own doc),
-        // rather than a second, independent accumulation of the identical
-        // `specific -> generalization records` map.
-        let generals_by_specific = generals_by_specific(domain_package);
-        let mut non_root = std::collections::HashSet::new();
-        let mut known_scalars = std::collections::HashSet::new();
-        let mut field_member_keys = std::collections::HashSet::new();
-        let mut operation_member_keys = std::collections::HashSet::new();
-        for record in &domain_package.records {
-            match record {
-                DomainPackageRecord::ObjectType(t) => {
-                    types.insert(t.key.clone());
-                    // A type is `non_root` when its own `supertypes[]`
-                    // (`model-complete.md`:155) is non-empty, i.e. it is the
-                    // `specific` end of at least one generalization edge.
-                    if !t.supertypes.is_empty() {
-                        non_root.insert(t.key.clone());
-                    }
-                }
-                DomainPackageRecord::FieldMember(m) => {
-                    field_member_keys.insert(m.key.clone());
-                    fields_by_owner
-                        .entry(m.owner.clone())
-                        .or_default()
-                        .push(m.clone());
-                }
-                DomainPackageRecord::ScalarType(s) => {
-                    known_scalars.insert(s.key.clone());
-                }
-                DomainPackageRecord::OperationMember(o) => {
-                    operation_member_keys.insert(o.key.clone());
-                }
-                // FR-152 systems-model records (crate::model::systems) and
-                // FR-153 population declarations (crate::model::population)
-                // are not FR-150 normalization inputs: they neither declare
-                // a type nor derive an effective declaration here.
-                DomainPackageRecord::Component(_)
-                | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
-                | DomainPackageRecord::Allocation(_)
-                | DomainPackageRecord::Population(_) => {}
-            }
-        }
-        Self {
-            types,
-            fields_by_owner,
-            generals_by_specific,
-            non_root,
-            known_scalars,
-            field_member_keys,
-            operation_member_keys,
-        }
-    }
-
-    fn sorted_type_keys(&self) -> Vec<DeclarationKey> {
-        self.types.iter().cloned().collect()
-    }
-
-    fn sorted_direct_members(&self, owner: &DeclarationKey) -> Vec<FieldMemberRecord> {
-        let mut members = self.fields_by_owner.get(owner).cloned().unwrap_or_default();
-        members.sort_by(|a, b| a.key.cmp(&b.key));
-        members
-    }
-
-    /// `specific`'s own declared `supertypes[]`, ascending by the general
-    /// type's own key (there is no separate generalization-record key to
-    /// sort by under QSpec's inline shape).
-    fn sorted_generals(&self, specific: &DeclarationKey) -> Vec<DeclarationKey> {
-        let mut generals = self
-            .generals_by_specific
-            .get(specific)
-            .cloned()
-            .unwrap_or_default();
-        generals.sort();
-        generals
-    }
-}
-
 /// Every declared object type's connected-component id in the undirected
 /// supertype graph restricted to object types (ADR-013 §8 OQ-E:
 /// `model-complete.md`'s "Object universe" -- "the connected component of
 /// `T` in the supertype graph restricted to object types"). `supertypes[]`
-/// edges are read in both directions: `type_keys` and every key
-/// `generals_by_specific` names are already guaranteed declared object types
-/// by the time this runs (a dangling supertype reference is an intake
-/// refusal reported before `build` ever reaches this call, and
-/// `generals_by_specific` (`crate::model::conformance`) only ever collects
-/// `ObjectTypeRecord.supertypes[]` entries). A type with no supertype and no
+/// edges are read in both directions: `type_keys` and every key a
+/// [`ModelIndex::generalization_edges`] edge names are already guaranteed
+/// declared object types by the time this runs (a dangling supertype
+/// reference is an intake refusal reported before `build` ever reaches this
+/// call, and the index only ever collects `ObjectTypeRecord.supertypes[]`
+/// entries). A type with no supertype and no
 /// subtype is its own singleton component. Component ids are assigned in
 /// `type_keys`' own ascending order and carry no meaning beyond grouping --
 /// callers needing a stable, spec-meaningful order sort the resulting
@@ -849,17 +796,15 @@ impl Index {
 /// call site does exactly that).
 fn connected_components(
     type_keys: &[DeclarationKey],
-    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    index: &ModelIndex,
 ) -> HashMap<DeclarationKey, usize> {
     let mut adjacency: HashMap<&DeclarationKey, Vec<&DeclarationKey>> = HashMap::new();
     for key in type_keys {
         adjacency.entry(key).or_default();
     }
-    for (specific, generals) in generals_by_specific {
-        for general in generals {
-            adjacency.entry(specific).or_default().push(general);
-            adjacency.entry(general).or_default().push(specific);
-        }
+    for (specific, general) in index.generalization_edges() {
+        adjacency.entry(specific).or_default().push(general);
+        adjacency.entry(general).or_default().push(specific);
     }
     let mut component_of: HashMap<DeclarationKey, usize> = HashMap::new();
     let mut next_component = 0usize;
@@ -1014,7 +959,7 @@ struct AncestorWalk {
 /// [`ModelRefusalCause::AncestorSteps`] naming `root_key` and the bound.
 fn ancestor_paths(
     root_key: &DeclarationKey,
-    index: &Index,
+    index: &ModelIndex,
     fact_budget: usize,
     cycle_budget: usize,
     max_steps: u64,
@@ -1318,7 +1263,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 /// also being reported as a duplicate key.
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
-    index: &Index,
+    index: &ModelIndex,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
 ) -> Vec<ModelRefusal> {
     let key = record.key();
@@ -1341,13 +1286,13 @@ fn check_node<'a>(
     match record {
         DomainPackageRecord::ObjectType(t) => {
             // `specific` is always this same record's own `t.key`,
-            // already inserted into `index.types` from this identical
+            // already an object type of `index` from this identical
             // record under QSpec's inline `supertypes[]` shape
             // (`model-complete.md`:155) -- so an "unknown specific" is
             // structurally unreachable and there is no matching
             // `ModelRefusalCause` variant for it.
             for general in &t.supertypes {
-                if !index.types.contains(general) {
+                if !index.is_object_type(general) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownGeneral {
@@ -1363,7 +1308,7 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::FieldMember(member) => {
-            if !index.types.contains(&member.owner) {
+            if !index.is_object_type(&member.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1377,9 +1322,7 @@ fn check_node<'a>(
                 });
             }
             if let Some(redefines) = &member.redefines {
-                if !index.field_member_keys.contains(redefines)
-                    && !index.operation_member_keys.contains(redefines)
-                {
+                if !index.is_field_member(redefines) && !index.is_operation_member(redefines) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
@@ -1394,9 +1337,7 @@ fn check_node<'a>(
                 }
             }
             for subsetted in &member.subsets {
-                if !index.field_member_keys.contains(subsetted)
-                    && !index.operation_member_keys.contains(subsetted)
-                {
+                if !index.is_field_member(subsetted) && !index.is_operation_member(subsetted) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
@@ -1413,7 +1354,7 @@ fn check_node<'a>(
         }
         DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
-            if !index.types.contains(&op.owner) {
+            if !index.is_object_type(&op.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1431,9 +1372,7 @@ fn check_node<'a>(
             // here; only a package value type is checked.
             for parameter in &op.parameters {
                 if let Some(value_type) = parameter.value_type.as_package() {
-                    if !index.types.contains(value_type)
-                        && !index.known_scalars.contains(value_type)
-                    {
+                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
                         refusals.push(ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::UnknownValueType {
@@ -1451,9 +1390,7 @@ fn check_node<'a>(
             }
             if let Some(result) = &op.result {
                 if let Some(value_type) = result.value_type.as_package() {
-                    if !index.types.contains(value_type)
-                        && !index.known_scalars.contains(value_type)
-                    {
+                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
                         refusals.push(ModelRefusal {
                             code: Code::DanglingReference,
                             cause: ModelRefusalCause::UnknownValueType {
@@ -1470,7 +1407,7 @@ fn check_node<'a>(
                 }
             }
             for field in &op.effect.modifies {
-                if !index.field_member_keys.contains(field) {
+                if !index.is_field_member(field) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownFieldWrite {
@@ -1485,7 +1422,7 @@ fn check_node<'a>(
                 }
             }
             for target in op.effect.creates.iter().chain(&op.effect.deletes) {
-                if !index.types.contains(target) {
+                if !index.is_object_type(target) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownEffectType {
@@ -1500,9 +1437,7 @@ fn check_node<'a>(
                 }
             }
             if let Some(redefines) = &op.redefines {
-                if !index.field_member_keys.contains(redefines)
-                    && !index.operation_member_keys.contains(redefines)
-                {
+                if !index.is_field_member(redefines) && !index.is_operation_member(redefines) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownMember {
@@ -1529,7 +1464,7 @@ fn check_node<'a>(
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
             for type_name in &population.member_types {
-                if !index.types.contains(type_name) {
+                if !index.is_object_type(type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::MissingDeclaration,
                         cause: ModelRefusalCause::UnknownPopulationMemberType {
@@ -1576,7 +1511,7 @@ fn check_node<'a>(
 /// checked by the record's whole [`DeclarationKey`] (`package`/`node`,
 /// #131): a reference matching some declared type's `node` but naming a
 /// different `package` is exactly as dangling as one matching nothing.
-fn validate_references(domain_package: &DomainPackage, index: &Index) -> Vec<ModelRefusal> {
+fn validate_references(domain_package: &DomainPackage, index: &ModelIndex) -> Vec<ModelRefusal> {
     // `model-complete.md`:73: "Nodes are read ascending by declaration key."
     // Every following check -- the per-node malformed-key check, the
     // dangling-reference checks, and the collision check -- runs over this
@@ -1629,7 +1564,7 @@ fn build(
     #[cfg(test)]
     BUILD_CALLS.with(|calls| calls.set(calls.get() + 1));
     validate_selection(domain_package)?;
-    let index = Index::build(domain_package);
+    let index = Arc::new(ModelIndex::build(domain_package));
     // QSL #199: every `normalize.record` charge (one per IR node, in node
     // order) runs before any intake refusal is reported -- `validate_references`
     // itself never charges anything; it is `charge_all` that charges the
@@ -1648,7 +1583,7 @@ fn build(
             declarations: Vec::new(),
             view: ViewBody {
                 declarations: Vec::new(),
-                type_identities: BTreeMap::new(),
+                types: Arc::default(),
                 universes: ObjectUniverses {
                     first: ObjectUniverse {
                         model_selection: domain_package.model_selection.clone(),
@@ -1658,6 +1593,7 @@ fn build(
                 },
                 universe_index_by_type: BTreeMap::new(),
                 populations: BTreeMap::new(),
+                model_index: index,
             },
             redefinition_check_work: Vec::new(),
             phase4_fact_count: 0,
@@ -1665,7 +1601,7 @@ fn build(
             phase4_refusals: Vec::new(),
         });
     }
-    let type_keys = index.sorted_type_keys();
+    let type_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
 
     let mut phase2_facts = Vec::new();
     let mut phase3_facts = Vec::new();
@@ -1775,7 +1711,7 @@ fn build(
         type_preimages.insert(type_key.clone(), preimage);
 
         // Phase 2: members declared directly on this type.
-        for member in index.sorted_direct_members(type_key) {
+        for member in index.sorted_direct_fields(type_key) {
             phase2_facts.push(PendingFact {
                 owner_key: Some(type_key.clone()),
                 declared_key: member.key.clone(),
@@ -1803,7 +1739,7 @@ fn build(
         // ancestor with many members multiplies path count, so this loop
         // stops the moment continuing cannot change the outcome.
         'inherited_members: for ancestor in &paths {
-            for member in index.sorted_direct_members(&ancestor.ancestor_key) {
+            for member in index.sorted_direct_fields(&ancestor.ancestor_key) {
                 let mut inputs = ancestor.path.clone();
                 inputs.push(member.key.clone());
                 phase3_facts.push(PendingFact {
@@ -1875,25 +1811,12 @@ fn build(
     // reaches" shape `member_preimages` above builds for fields, just
     // counted rather than given a full preimage (no phase 5 view entry, no
     // redefinition resolution, exists here for `m` alone).
-    let mut operations_by_owner: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
-    for record in &domain_package.records {
-        if let DomainPackageRecord::OperationMember(operation) = record {
-            operations_by_owner
-                .entry(operation.owner.clone())
-                .or_default()
-                .push(operation.key.clone());
-        }
-    }
     for type_key in &type_keys {
-        let mut effective_operations: HashSet<DeclarationKey> = HashSet::new();
-        if let Some(direct) = operations_by_owner.get(type_key) {
-            effective_operations.extend(direct.iter().cloned());
-        }
+        let mut effective_operations: HashSet<DeclIdx> = HashSet::new();
+        effective_operations.extend(index.direct_operations(type_key));
         if let Some(paths) = type_paths.get(type_key) {
             for ancestor in paths {
-                if let Some(inherited) = operations_by_owner.get(&ancestor.ancestor_key) {
-                    effective_operations.extend(inherited.iter().cloned());
-                }
+                effective_operations.extend(index.direct_operations(&ancestor.ancestor_key));
             }
         }
         if !effective_operations.is_empty() {
@@ -1986,7 +1909,6 @@ fn build(
                 .get(type_key)
                 .expect("populated in the loop above");
             apply_redefinitions(
-                domain_package,
                 &index,
                 type_key,
                 paths,
@@ -2062,7 +1984,7 @@ fn build(
     // ADR-013 §8 OQ-E: one universe per connected component of the
     // object-type supertype graph, never one universe over every root type
     // in the domain package (`model-complete.md`'s "Object universe").
-    let component_of = connected_components(&type_keys, &index.generals_by_specific);
+    let component_of = connected_components(&type_keys, &index);
     let mut members_by_component: HashMap<usize, Vec<DeclarationKey>> = HashMap::new();
     for key in &type_keys {
         members_by_component
@@ -2075,7 +1997,7 @@ fn build(
         .map(|members| {
             let mut root_types: Vec<EffectiveId> = members
                 .iter()
-                .filter(|key| !index.non_root.contains(*key))
+                .filter(|key| !index.is_non_root(key))
                 .map(|key| type_effective_ids[key])
                 .collect();
             root_types.sort();
@@ -2147,10 +2069,11 @@ fn build(
         .collect();
     let view = ViewBody {
         declarations: entries,
-        type_identities,
+        types: Arc::new(TypeCatalog::new(type_identities)),
         universes,
         universe_index_by_type,
         populations,
+        model_index: index,
     };
 
     Ok(Built {
@@ -2294,8 +2217,7 @@ fn record_phase4_refusal(
 /// separately bounded walk, and likewise computed once, build-wide, not
 /// once per (type, target) group.
 fn apply_redefinitions(
-    domain_package: &DomainPackage,
-    index: &Index,
+    index: &ModelIndex,
     type_key: &DeclarationKey,
     paths: &[AncestorPath],
     member_preimages: &mut HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
@@ -2338,33 +2260,35 @@ fn apply_redefinitions(
     // (`c >= 2`) still owes `normalize.conflict-check`'s own
     // `value-accounting.md:456` price, exactly as a contested field target
     // does.
+    //
+    // Read from the index's redefiners grouped by owner (QSL-202), for the
+    // owners that reach `type_key` only, in the records' own order: the
+    // same edges, in the same order, as a scan of every record keeping those
+    // whose owner reaches `type_key`.
+    let mut reaching: Vec<(&DeclarationKey, &Vec<DeclarationKey>, Redefiner)> = owner_paths
+        .iter()
+        .flat_map(|(owner, path)| {
+            index
+                .redefiners_of_owner(owner)
+                .iter()
+                .map(move |redefiner| (owner, path, *redefiner))
+        })
+        .collect();
+    reaching.sort_unstable_by_key(|(_, _, redefiner)| redefiner.record);
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
     let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
-    for record in &domain_package.records {
-        let (owner, redefining, redefines, is_field, is_operation) = match record {
-            DomainPackageRecord::FieldMember(member) => match &member.redefines {
-                Some(redefines) => (&member.owner, &member.key, redefines, true, false),
-                None => continue,
-            },
-            DomainPackageRecord::OperationMember(operation) => match &operation.redefines {
-                Some(redefines) => (&operation.owner, &operation.key, redefines, false, true),
-                None => continue,
-            },
-            _ => continue,
-        };
-        let is_field = is_field
-            && index.field_member_keys.contains(redefining)
-            && index.field_member_keys.contains(redefines);
-        let is_operation = is_operation
-            && index.operation_member_keys.contains(redefining)
-            && index.operation_member_keys.contains(redefines);
+    for (owner, path, redefiner) in reaching {
+        let redefining = index.key(redefiner.member);
+        let redefines = index.key(redefiner.target);
+        let is_field = redefiner.is_field
+            && index.is_field_member(redefining)
+            && index.is_field_member(redefines);
+        let is_operation = !redefiner.is_field
+            && index.is_operation_member(redefining)
+            && index.is_operation_member(redefines);
         if !is_field && !is_operation {
             continue;
         }
-        let Some(path) = owner_paths.get(owner) else {
-            // This redefining member's owner does not reach `type_key`.
-            continue;
-        };
         let edge = RedefinitionEdge {
             owner: owner.clone(),
             redefining: redefining.clone(),
@@ -3190,7 +3114,7 @@ mod tests {
             )),
             body: ViewBody {
                 declarations: vec![entry(2), entry(1)],
-                type_identities: BTreeMap::new(),
+                types: Arc::default(),
                 universes: ObjectUniverses {
                     first: ObjectUniverse {
                         model_selection: DomainPackageRef::fixture("test/orders"),
@@ -3200,6 +3124,10 @@ mod tests {
                 },
                 universe_index_by_type: BTreeMap::new(),
                 populations: BTreeMap::new(),
+                model_index: Arc::new(ModelIndex::build(&DomainPackage::new(
+                    DomainPackageRef::fixture("test/orders"),
+                    Vec::new(),
+                ))),
             },
         };
         let refusal = view

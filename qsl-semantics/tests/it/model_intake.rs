@@ -47,6 +47,7 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
+use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records, PackageDocument};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
@@ -777,8 +778,12 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let pump_alloc_key = key(package_identity, &pump_alloc);
 
     let mut meter = unlimited_meter();
-    let connection_outcome =
-        check_connection(&domain_package, &classification, &pipe_key, &mut meter);
+    let connection_outcome = check_connection(
+        &ModelIndex::build(&domain_package),
+        &classification,
+        &pipe_key,
+        &mut meter,
+    );
     assert_eq!(
         connection_outcome,
         ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted),

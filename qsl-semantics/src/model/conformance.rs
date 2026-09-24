@@ -5,9 +5,12 @@
 //! `quire.model.conformance.effect/v1` and
 //! `quire.model.conformance.refinement/v1`).
 //!
-//! This module works directly against a caller-constructed
-//! [`crate::model::domain_package::DomainPackage`], not [`crate::model::normalize`]'s
-//! [`crate::model::normalize::EffectiveView`]: it builds its own
+//! This module works directly against the [`ModelIndex`] of a
+//! caller-constructed [`crate::model::domain_package::DomainPackage`], not
+//! [`crate::model::normalize`]'s [`crate::model::normalize::EffectiveView`]:
+//! the caller builds that index once per package and passes it to every
+//! check (QSL-202), so a package that normalization would refuse can still be
+//! checked. It builds its own
 //! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
 //! the domain package's field/operation members' own inline `redefines`/
 //! `subsets` properties (`model-complete.md`:161/162), so field
@@ -35,9 +38,10 @@
 //!   FR-146 fact-derivation primitive (`established_field_fact`), the
 //!   identical guard-fact propagation a real checked postcondition's
 //!   `Definedness::walk` already uses, then decides discharge from what
-//!   that derivation actually proves. It reaches back into this module's
-//!   `ConformanceIndex`, [`AxisFailure`], [`ConformanceOutcome`] and
-//!   `missing_member`, each widened to `pub(crate)` for exactly that call
+//!   that derivation actually proves. It reads the shared
+//!   [`ModelIndex`] and reaches back into this module's [`AxisFailure`],
+//!   [`ConformanceOutcome`] and `missing_member`, the last widened to
+//!   `pub(crate)` for exactly that call
 //!   (`check` sits above `model` in ADR-011 §6.1's layer-3 order, so `check`
 //!   depending back on `model` is legal; the reverse was not).
 //! - Exact per-axis work-unit costs (FR-151's `f(T)` formula, the length of
@@ -81,17 +85,11 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::ops::ControlFlow;
-
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, OperationMemberRecord,
-    ValueTypeRef,
-};
+use crate::model::domain_package::Multiplicity;
+use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::population::redefinition_reaches;
 use qsl_foundation::diagnostic::Code;
 
 /// One failing conformance axis: `{axis, code, cause, detail}`.
@@ -154,206 +152,6 @@ pub enum RedefinitionTargetOutcome {
     },
 }
 
-/// `fields`, `operations` and `scalars` are `pub(crate)` (ADR-011 §7.3 M-2,
-/// QSL-7): `crate::check::check_field_refinement_obligation` reaches back
-/// into this model-layer index from `check`, which sits above `model` in
-/// ADR-011 §6.1's layer-3 order, so that direction is legal. `generals_by_specific`
-/// and `member_owner` stay private -- nothing outside `model` reads them.
-pub(crate) struct ConformanceIndex {
-    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    pub(crate) fields: HashMap<DeclarationKey, FieldMemberRecord>,
-    /// A `BTreeMap`, not a `HashMap`: `crate::check::check_field_refinement_obligation`
-    /// scans `.values()` for the (assumed unique) writer of a field, and a
-    /// `HashMap`'s `RandomState` iteration order made that scan
-    /// nondeterministic across runs of the same domain package (finding #3).
-    pub(crate) operations: BTreeMap<DeclarationKey, OperationMemberRecord>,
-    pub(crate) scalars: HashMap<DeclarationKey, (i64, i64)>,
-    /// Original member key -> its declaring type's key, for fields and
-    /// operations alike.
-    member_owner: HashMap<DeclarationKey, DeclarationKey>,
-}
-
-/// Builds the `specific key -> its declared supertypes[]` map every bounded
-/// conformance walk in `crate::model` (this module and
-/// [`crate::model::dispatch`]) needs. One builder, so the map's shape is a
-/// single fact rather than a duplicated field-by-field copy. Keyed on the
-/// full [`DeclarationKey`], not the display identity alone (PR #140 F2): two
-/// object types whose key shares a display identity but differs in revision
-/// must both index their own distinct ancestor set, never silently overwrite
-/// one another. `supertypes` is an inline property of the object type itself
-/// (`model-complete.md`:155).
-pub(super) fn generals_by_specific(
-    domain_package: &DomainPackage,
-) -> HashMap<DeclarationKey, Vec<DeclarationKey>> {
-    let mut generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
-    for record in &domain_package.records {
-        if let DomainPackageRecord::ObjectType(object_type) = record {
-            if !object_type.supertypes.is_empty() {
-                generals_by_specific
-                    .entry(object_type.key.clone())
-                    .or_default()
-                    .extend(object_type.supertypes.iter().cloned());
-            }
-        }
-    }
-    generals_by_specific
-}
-
-impl ConformanceIndex {
-    pub(crate) fn build(domain_package: &DomainPackage) -> Self {
-        let generals_by_specific = generals_by_specific(domain_package);
-        let mut fields = HashMap::new();
-        let mut operations = BTreeMap::new();
-        let mut scalars = HashMap::new();
-        let mut member_owner = HashMap::new();
-        for record in &domain_package.records {
-            match record {
-                DomainPackageRecord::ObjectType(_) => {}
-                DomainPackageRecord::FieldMember(field) => {
-                    member_owner.insert(field.key.clone(), field.owner.clone());
-                    fields.insert(field.key.clone(), field.clone());
-                }
-                DomainPackageRecord::ScalarType(scalar) => {
-                    scalars.insert(scalar.key.clone(), (scalar.lower, scalar.upper));
-                }
-                DomainPackageRecord::OperationMember(operation) => {
-                    member_owner.insert(operation.key.clone(), operation.owner.clone());
-                    operations.insert(operation.key.clone(), operation.clone());
-                }
-                // FR-152 systems-model records are not conformance-checked
-                // by this module (crate::model::systems owns them); FR-153
-                // population declarations are not conformance-checked here
-                // either (crate::model::population owns them).
-                DomainPackageRecord::Component(_)
-                | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
-                | DomainPackageRecord::Allocation(_)
-                | DomainPackageRecord::Population(_) => {}
-            }
-        }
-        Self {
-            generals_by_specific,
-            fields,
-            operations,
-            scalars,
-            member_owner,
-        }
-    }
-}
-
-/// The one bounded (explicit stack, visited set, caller-supplied
-/// `max_steps` ceiling) proper-descendant DFS [`type_conforms`] needs.
-/// Previously also shared with a phase-4 dominance helper
-/// (`ancestor_closure`, QSL #145) that collected a full ancestor set rather
-/// than breaking on a target match; that helper is gone (QSL #145 — phase 4
-/// now derives each owner's ancestor set from `crate::model::normalize`'s
-/// own phase-3 paths instead of a second, separately bounded walk here),
-/// so `visit` only ever breaks or continues
-/// with `()` now, but the shape is kept generic in case a future caller
-/// needs a different break payload.
-///
-/// Calls `visit(current, general)` once per direct-generalization edge
-/// discovered, in DFS pre-order: `current` is the node being expanded,
-/// `general` its direct generalization. `visit` returns
-/// [`ControlFlow::Break`] to stop the walk immediately —
-/// [`type_conforms`]'s early exit on a target match — or
-/// [`ControlFlow::Continue`] to keep walking and push `general` onto the
-/// stack. The walk's own early termination is returned as this function's
-/// `Ok` payload; a `Break` short-circuits before any further nodes are
-/// popped.
-///
-/// `max_steps` is the caller's `ancestor_steps` ceiling
-/// ([`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`]),
-/// used as given: it bounds how many distinct types the walk expands, `s`
-/// included, so a linear chain whose target is `n` generalization steps
-/// above `s` expands exactly `n` types and is admitted at `max_steps == n`.
-/// Expanding one more refuses with [`ModelRefusalCause::AncestorSteps`]
-/// naming `s` and `max_steps`; the walk is never truncated into a verdict.
-fn walk_ancestors<B>(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    s: &DeclarationKey,
-    max_steps: u64,
-    mut visit: impl FnMut(&DeclarationKey, &DeclarationKey) -> ControlFlow<B>,
-) -> Result<ControlFlow<B>, ModelRefusal> {
-    let mut stack: Vec<DeclarationKey> = vec![s.clone()];
-    let mut visited: HashSet<DeclarationKey> = HashSet::new();
-    let mut steps: u64 = 0;
-    while let Some(current) = stack.pop() {
-        if !visited.insert(current.clone()) {
-            continue;
-        }
-        if steps >= max_steps {
-            return Err(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::AncestorSteps {
-                    from: s.clone(),
-                    limit: max_steps,
-                },
-                detail: format!(
-                    "conformance check from {} exceeded the ancestor_steps limit of {max_steps}",
-                    s.node
-                ),
-            });
-        }
-        steps += 1;
-        for general in generals_by_specific.get(&current).into_iter().flatten() {
-            match visit(&current, general) {
-                ControlFlow::Break(value) => return Ok(ControlFlow::Break(value)),
-                ControlFlow::Continue(()) => stack.push(general.clone()),
-            }
-        }
-    }
-    Ok(ControlFlow::Continue(()))
-}
-
-/// Whether `s` conforms to `t`: the same identity, or a chain of supplied
-/// generalization records from `s` to `t`. Delegates to [`walk_ancestors`]
-/// for the bounded (explicit stack, visited set, `max_steps` ceiling) DFS
-/// itself, breaking as soon as `t` is found so a cycle or an adversarial
-/// chain refuses instead of looping or overflowing a native call stack.
-///
-/// `pub(super)` so [`crate::model::dispatch`]'s own bounded walks (subtype
-/// applicability and dominance) reuse this one implementation rather than a
-/// second copy.
-pub(super) fn type_conforms(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    s: &DeclarationKey,
-    t: &DeclarationKey,
-    max_steps: u64,
-) -> Result<bool, ModelRefusal> {
-    if s == t {
-        return Ok(true);
-    }
-    let found = walk_ancestors(generals_by_specific, s, max_steps, |_current, general| {
-        if general == t {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    })?;
-    Ok(matches!(found, ControlFlow::Break(())))
-}
-
-/// [`type_conforms`], lifted to [`ValueTypeRef`]: a native value type
-/// conforms only to itself (QSL declares no generalization among native
-/// value types), and a package value type conforms exactly as
-/// [`type_conforms`] already decides. A native and a package value type
-/// never conform to one another.
-pub(super) fn value_type_conforms(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    s: &ValueTypeRef,
-    t: &ValueTypeRef,
-    max_steps: u64,
-) -> Result<bool, ModelRefusal> {
-    match (s, t) {
-        (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
-        (ValueTypeRef::Package(s_key), ValueTypeRef::Package(t_key)) => {
-            type_conforms(generals_by_specific, s_key, t_key, max_steps)
-        }
-        _ => Ok(false),
-    }
-}
-
 /// `quire.model.conformance.multiplicity/v1`: does `from` conform to `to`?
 /// `[l1,u1] = to`, `[l2,u2] = from`: conforms exactly when `l1 <= l2` and
 /// `u2 <= u1` (`None` is unbounded, greater than every finite value), and
@@ -388,13 +186,12 @@ pub(crate) fn missing_member(cause: ModelRefusalCause, identity: &str, role: &st
 /// Checks a field redefinition's `value-type` and `multiplicity` axes
 /// (`quire.model.conformance.variance/v1`, `.../multiplicity/v1`).
 pub fn check_field_redefinition(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     redefining_key: &DeclarationKey,
     redefined_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.fields.get(redefining_key) else {
+    let Some(redefining) = index.field(redefining_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
                 member: redefining_key.clone(),
@@ -403,7 +200,7 @@ pub fn check_field_redefinition(
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(redefined_key) else {
+    let Some(redefined) = index.field(redefined_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
                 member: redefined_key.clone(),
@@ -418,8 +215,7 @@ pub fn check_field_redefinition(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match value_type_conforms(
-        &index.generals_by_specific,
+    match index.value_type_conforms(
         &redefining.value_type,
         &redefined.value_type,
         meter.limits().ancestor_steps,
@@ -468,13 +264,12 @@ pub fn check_field_redefinition(
 /// (`binding.subset-value`/`subsetting-violation`) is FR-153 territory, not
 /// this static check.
 pub fn check_subsetting(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     subsetting_key: &DeclarationKey,
     subsetted_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(domain_package);
-    let Some(subsetting) = index.fields.get(subsetting_key) else {
+    let Some(subsetting) = index.field(subsetting_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetting {
                 member: subsetting_key.clone(),
@@ -483,7 +278,7 @@ pub fn check_subsetting(
             "subsetting field",
         ));
     };
-    let Some(subsetted) = index.fields.get(subsetted_key) else {
+    let Some(subsetted) = index.field(subsetted_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownSubsetted {
                 member: subsetted_key.clone(),
@@ -498,8 +293,7 @@ pub fn check_subsetting(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    match value_type_conforms(
-        &index.generals_by_specific,
+    match index.value_type_conforms(
         &subsetting.value_type,
         &subsetted.value_type,
         meter.limits().ancestor_steps,
@@ -549,13 +343,12 @@ pub fn check_subsetting(
 /// axes. The precondition/postcondition axes never refuse (checked by
 /// construction, per the module docs) but are still charged.
 pub fn check_operation_redefinition(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     redefining_key: &DeclarationKey,
     redefined_key: &DeclarationKey,
     meter: &mut Meter,
 ) -> ConformanceCheckOutcome {
-    let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.operations.get(redefining_key) else {
+    let Some(redefining) = index.operation(redefining_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefining {
                 member: redefining_key.clone(),
@@ -564,7 +357,7 @@ pub fn check_operation_redefinition(
             "redefining operation",
         ));
     };
-    let Some(redefined) = index.operations.get(redefined_key) else {
+    let Some(redefined) = index.operation(redefined_key) else {
         return ConformanceCheckOutcome::Refused(missing_member(
             ModelRefusalCause::UnknownRedefined {
                 member: redefined_key.clone(),
@@ -604,8 +397,7 @@ pub fn check_operation_redefinition(
             if let Err(incomplete) = charge_axis(meter) {
                 return ConformanceCheckOutcome::Incomplete(incomplete);
             }
-            match value_type_conforms(
-                &index.generals_by_specific,
+            match index.value_type_conforms(
                 &dp.value_type,
                 &rp.value_type,
                 meter.limits().ancestor_steps,
@@ -653,8 +445,7 @@ pub fn check_operation_redefinition(
     }
     match (&redefining.result, &redefined.result) {
         (Some(rr), Some(dr)) => {
-            match value_type_conforms(
-                &index.generals_by_specific,
+            match index.value_type_conforms(
                 &rr.value_type,
                 &dr.value_type,
                 meter.limits().ancestor_steps,
@@ -701,14 +492,14 @@ pub fn check_operation_redefinition(
 
     // Effect. A write is covered when it is granted directly or reaches a
     // granted field through the redefinition chain
-    // ([`redefinition_reaches`]; QSL #171) -- not just one hop, since
+    // ([`ModelIndex::redefinition_reaches`]; QSL #171) -- not just one hop, since
     // model-complete.md:56/:64 make a multi-hop chain like `C.x -> B.x ->
     // A.x` legal with no direct `C.x -> A.x` record.
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
     for write in &redefining.effect.modifies {
-        let covered = redefinition_reaches(&domain_package.records, write, |candidate| {
+        let covered = index.redefinition_reaches(write, |candidate| {
             redefined.effect.modifies.contains(candidate)
         });
         if !covered {
@@ -732,12 +523,7 @@ pub fn check_operation_redefinition(
         for entry in create {
             let mut covered = false;
             for grant in grants {
-                match type_conforms(
-                    &index.generals_by_specific,
-                    entry,
-                    grant,
-                    meter.limits().ancestor_steps,
-                ) {
+                match index.conforms(entry, grant, meter.limits().ancestor_steps) {
                     Ok(true) => {
                         covered = true;
                         break;
@@ -795,20 +581,16 @@ pub fn check_operation_redefinition(
 /// target owner `n` generalization steps up is reached at a ceiling of `n`,
 /// and one step more refuses `ModelRefusalCause::AncestorSteps`.
 pub fn resolve_redefinition_target(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     redefining: &DeclarationKey,
     max_ancestor_steps: u64,
 ) -> Result<RedefinitionTargetOutcome, ModelRefusal> {
-    let index = ConformanceIndex::build(domain_package);
-
     let own_redefines = index
-        .fields
-        .get(redefining)
+        .field(redefining)
         .and_then(|field| field.redefines.clone())
         .or_else(|| {
             index
-                .operations
-                .get(redefining)
+                .operation(redefining)
                 .and_then(|operation| operation.redefines.clone())
         });
     let Some(target) = own_redefines else {
@@ -827,18 +609,11 @@ pub fn resolve_redefinition_target(
         });
     };
 
-    let owner = index.member_owner.get(redefining).expect(
-        "redefining names a declared field or operation member, indexed by ConformanceIndex::build under its own owner",
+    let owner = index.member_owner(redefining).expect(
+        "redefining names a declared field or operation member, indexed by ModelIndex::build under its own owner",
     );
-    if let Some(target_owner) = index.member_owner.get(&target) {
-        if target_owner != owner
-            && type_conforms(
-                &index.generals_by_specific,
-                owner,
-                target_owner,
-                max_ancestor_steps,
-            )?
-        {
+    if let Some(target_owner) = index.member_owner(&target) {
+        if target_owner != owner && index.conforms(owner, target_owner, max_ancestor_steps)? {
             return Ok(RedefinitionTargetOutcome::Resolved(target));
         }
     }

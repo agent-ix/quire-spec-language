@@ -88,7 +88,6 @@ fn operation_member_redefining(
             creates: Vec::new(),
             deletes: Vec::new(),
         },
-        has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),

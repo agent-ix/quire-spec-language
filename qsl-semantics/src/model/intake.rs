@@ -1207,7 +1207,10 @@ fn read_operation_member(
             })
         }
     };
-    let has_own_precondition = !ctx.array_field("pre")?.is_empty();
+    // `pre` is shape-checked as an array here; its clauses are FR-146
+    // expressions, which `crate::model` does not parse (see
+    // `domain_package::PostconditionClause`), so nothing is kept from it.
+    ctx.array_field("pre")?;
     // `frame` is a real QSpec capability
     // (model-complete.md's Frames row) this reader does not yet turn into
     // an `OperationEffect`. An absent frame, or one whose `modifies`,
@@ -1240,7 +1243,6 @@ fn read_operation_member(
         parameters,
         result,
         effect,
-        has_own_precondition,
         // FR-146's expression parser is out of scope for `crate::model`
         // (`domain_package::PostconditionClause`'s own module docs); this
         // reader states none rather than inventing one.

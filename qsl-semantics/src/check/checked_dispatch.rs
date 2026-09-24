@@ -16,7 +16,8 @@
 //! [`PackageDeclarations::check`](crate::check::PackageDeclarations)
 //! and the evaluator.
 //!
-//! Pure: no intake, no I/O. It takes a caller-supplied [`DomainPackage`] and an
+//! Pure: no intake, no I/O. It takes a caller-supplied [`EffectiveView`],
+//! which carries the [`DomainPackage`] it was normalized from, and an
 //! [`OperationClauses`] side table naming each candidate's own clause
 //! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
 //! adding one would perturb the
@@ -51,7 +52,7 @@
 //!   parameter/result records: turning a model-layer type reference into a
 //!   checker [`ValueType`] is its own, separately-scoped piece of work
 //!   (needed well beyond dispatch), so this bridge accepts it pre-translated
-//!   exactly as `link_dispatch` accepts `domain_package`/`view` pre-normalized.
+//!   exactly as `link_dispatch` accepts `view` pre-normalized.
 //! - Every distinct linked candidate must itself be a query -- a declared
 //!   result and an empty effect set (#174, FR-151's own restriction on what
 //!   may be a dispatch target) -- checked directly against each candidate's
@@ -101,7 +102,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::check::{DispatchOperation, PackageDeclarations};
 use super::ir::{DispatchCandidate, DispatchTable};
-use super::lowering::{AdmittedModel, ForeignView, ModelClause};
+use super::lowering::{AdmittedModel, ModelClause};
 use crate::model::accounting::Meter;
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
@@ -207,20 +208,15 @@ pub enum DispatchBridgeRefusal {
     /// cause. Boxed: `ModelRefusal` is far larger than the other variants.
     NotAQuery(Box<ModelRefusal>),
     /// A candidate reached from `root.key` or `table.entries()` names no
-    /// declared operation member in `domain_package.records`. `link_dispatch`
-    /// builds its own `DispatchIndex` from the same records, so this should
-    /// not arise from a table it linked; kept as a typed refusal rather than
-    /// an `.expect()` so a malformed `domain_package`/`root` pairing supplied
-    /// directly to this bridge (bypassing `link_dispatch`'s own index) is
+    /// declared operation member in the view's `domain_package.records`.
+    /// `link_dispatch` reads the view's own index over the same records, so
+    /// this should not arise from a table it linked; kept as a typed refusal
+    /// rather than an `.expect()` so a malformed `root` supplied directly to
+    /// this bridge (bypassing `link_dispatch`'s own lookups) is
     /// reported, not panicked, exactly as `crate::model::dispatch::link_dispatch`
     /// itself reports every other missing-candidate lookup. Boxed:
     /// `ModelRefusal` is far larger than the other variants.
     UnknownCandidate(Box<ModelRefusal>),
-    /// `view` was normalized under another model selection than
-    /// `domain_package`'s, so the two cannot be admitted together (FR-094's
-    /// `ModelOwner` names the package's own selection). Boxed: it holds two
-    /// selections.
-    ForeignView(Box<ForeignView>),
 }
 
 fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBridgeRefusal {
@@ -337,17 +333,18 @@ pub struct DispatchRoot {
 }
 
 /// Every declared object type's own `supertypes` (H1, #204 round 1),
-/// translated from `domain_package.records`' [`DeclarationKey`]s into their
-/// [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
+/// translated from the records of `view`'s own domain package
+/// ([`EffectiveView::domain_package`], QSL-217) from [`DeclarationKey`]s into
+/// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
 /// the exact shape [`crate::value::declaration::ObjectTypeDeclaration::with_supertypes`]
 /// needs (ADR-013 O-05). No production code builds a
 /// [`crate::value::declaration::TypeEnvironment`] yet (only test scaffolding does), so
 /// this is test-support infrastructure today; #131's own real intake can
 /// call it exactly as tests do.
 pub fn object_type_supertypes(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
 ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveId>>, DispatchBridgeRefusal> {
+    let domain_package = view.domain_package();
     let type_identities = view.type_identities();
     let mut supertypes: BTreeMap<EffectiveId, Vec<EffectiveId>> = BTreeMap::new();
     for record in &domain_package.records {
@@ -821,10 +818,10 @@ fn substitute_names(
 /// clause function is keyed with its own `ModelOwner` instead (FR-094): the
 /// authoring operation member for an authored precondition, the candidate
 /// for an effective precondition and a body. The returned package admits
-/// `domain_package` with `view` ([`AdmittedModel`]), whose selection those
-/// owners name.
+/// `view`'s own domain package with `view` ([`AdmittedModel::from_view`]),
+/// whose selection those owners name. The package is read from the view
+/// (QSL-217), so it always corresponds to the view.
 pub fn checked_dispatch_operation(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
     root: &DispatchRoot,
     clauses: &OperationClauses,
@@ -832,9 +829,9 @@ pub fn checked_dispatch_operation(
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let family_steps = meter.limits().family_steps;
-    let model = AdmittedModel::new(domain_package, view)
-        .map_err(|refusal| DispatchBridgeRefusal::ForeignView(Box::new(refusal)))?;
-    let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
+    let domain_package = view.domain_package();
+    let model = AdmittedModel::from_view(view);
+    let outcome = link_dispatch(view, &root.key, root.closure, meter);
     let type_identities = view.type_identities();
     let table = match outcome {
         LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) => table,

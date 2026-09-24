@@ -58,7 +58,6 @@ fn operation(
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect::default(),
-        has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body,
         redefines: redefines.map(DeclarationKey::fixture),
@@ -114,7 +113,6 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -188,7 +186,6 @@ fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -251,7 +248,6 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
         ..ModelNormalizationLimits::UNLIMITED
     });
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -289,7 +285,6 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
         ..ModelNormalizationLimits::UNLIMITED
     });
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -337,7 +332,6 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -382,7 +376,6 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
     let resolved_view = effective_view(&resolved_bundle);
     let mut resolved_meter = unlimited_meter();
     let resolved_outcome = link_dispatch(
-        &resolved_bundle,
         &resolved_view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -419,7 +412,6 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -473,7 +465,6 @@ fn d04_registration_order_does_not_change_the_linked_table() {
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Closed,
@@ -512,7 +503,6 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
 
     let mut meter = unlimited_meter();
     let outcome = link_dispatch(
-        &domain_package,
         &view,
         &DeclarationKey::fixture("model.A.size"),
         GeneralizationClosure::Open,
@@ -619,7 +609,6 @@ fn link_chain(
     limits: ModelNormalizationLimits,
 ) -> LinkCheckOutcome {
     link_dispatch(
-        domain_package,
         &effective_view(domain_package),
         &DeclarationKey::fixture("model.A.op0"),
         GeneralizationClosure::Closed,
@@ -687,7 +676,6 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
         }
     }
     let declarations = checked_dispatch_operation(
-        &domain_package,
         &view,
         &DispatchRoot {
             key: root,

@@ -31,19 +31,19 @@
 //! - Subtypes are enumerated in the order [`crate::model::normalize`]'s
 //!   [`crate::model::normalize::EffectiveView`] already ships them:
 //!   ascending by effective type identity. This module depends on that view
-//!   only for ordering (never for redefinition/effect data, which it reads
-//!   from the [`crate::model::domain_package::DomainPackage`] directly, mirroring
-//!   `conformance`'s independence from phase 4's exposure machinery).
+//!   for ordering and for the [`crate::model::index::ModelIndex`] it carries
+//!   beside its package (redefinition/effect data and conformance come from
+//!   that index, never from phase 4's exposure machinery, mirroring
+//!   `conformance`'s independence from it).
 #![allow(
     clippy::result_large_err,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, LimitKind, Meter};
-use crate::model::conformance::{generals_by_specific, type_conforms};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
+use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
@@ -156,47 +156,6 @@ pub enum LinkCheckOutcome {
     OpenClosure(UnclosedMethodSet),
 }
 
-struct DispatchIndex {
-    operations: HashMap<DeclarationKey, OperationMemberRecord>,
-    generals_by_specific: HashMap<DeclarationKey, Vec<DeclarationKey>>,
-    /// D05 (`model-complete.md:156`, FR-151 "Dispatch rules": "For every
-    /// effective type `S` conforming to `T`... that is not abstract"):
-    /// object-type keys declared `abstract`, so [`link_dispatch`]'s subtype
-    /// enumeration excludes them from ever becoming a dispatch target.
-    abstract_types: HashSet<DeclarationKey>,
-}
-
-impl DispatchIndex {
-    fn build(domain_package: &DomainPackage) -> Self {
-        let mut operations = HashMap::new();
-        let mut abstract_types = HashSet::new();
-        for record in &domain_package.records {
-            match record {
-                DomainPackageRecord::OperationMember(operation) => {
-                    operations.insert(operation.key.clone(), operation.clone());
-                }
-                DomainPackageRecord::ObjectType(object) => {
-                    if object.abstract_type {
-                        abstract_types.insert(object.key.clone());
-                    }
-                }
-                DomainPackageRecord::FieldMember(_)
-                | DomainPackageRecord::ScalarType(_)
-                | DomainPackageRecord::Component(_)
-                | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
-                | DomainPackageRecord::Allocation(_)
-                | DomainPackageRecord::Population(_) => {}
-            }
-        }
-        Self {
-            operations,
-            generals_by_specific: generals_by_specific(domain_package),
-            abstract_types,
-        }
-    }
-}
-
 /// The family of `original`: `original` itself together with every
 /// redefining operation reaching it, by any chain of members' own inline
 /// `redefines` property (`model-complete.md`:162), sorted ascending by
@@ -210,7 +169,7 @@ impl DispatchIndex {
 /// one more refuses with [`ModelRefusalCause::FamilySteps`] naming
 /// `original` and `max_steps`; the family is never truncated.
 fn build_family(
-    index: &DispatchIndex,
+    index: &ModelIndex,
     original: &DeclarationKey,
     max_steps: u64,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
@@ -220,7 +179,7 @@ fn build_family(
     visited.insert(original.clone());
     let mut steps: u64 = 0;
     while let Some(target) = frontier.pop() {
-        for operation in index.operations.values() {
+        for operation in index.operations() {
             if operation.redefines.as_ref() == Some(&target)
                 && visited.insert(operation.key.clone())
             {
@@ -250,7 +209,7 @@ fn build_family(
 /// Whether `p` (by its owner) strictly dominates `q`: `p`'s owner is a
 /// proper descendant of `q`'s owner.
 fn dominates(
-    generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    index: &ModelIndex,
     p_owner: &DeclarationKey,
     q_owner: &DeclarationKey,
     max_steps: u64,
@@ -258,15 +217,16 @@ fn dominates(
     if p_owner == q_owner {
         return Ok(false);
     }
-    type_conforms(generals_by_specific, p_owner, q_owner, max_steps)
+    index.conforms(p_owner, q_owner, max_steps)
 }
 
 /// Links `original`'s dispatch family across every effective type `view`
 /// admits, per `quire.model.dispatch.single/v1`. See the module docs for
 /// this pass's exact scope (link-time only; no runtime selection, no
-/// call-graph cycle detection).
+/// call-graph cycle detection). Reads the operations and the conformance
+/// ancestry from `view`'s own [`EffectiveView::model_index`], so there is no
+/// second package to pair with the view (QSL-217).
 pub fn link_dispatch(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
     original: &DeclarationKey,
     closure: GeneralizationClosure,
@@ -280,8 +240,8 @@ pub fn link_dispatch(
         });
     }
 
-    let index = DispatchIndex::build(domain_package);
-    let Some(receiver_operation) = index.operations.get(original) else {
+    let index = view.model_index();
+    let Some(receiver_operation) = index.operation(original) else {
         return LinkCheckOutcome::Refused(ModelRefusal {
             code: Code::DanglingReference,
             cause: ModelRefusalCause::UnknownOriginal {
@@ -292,13 +252,13 @@ pub fn link_dispatch(
     };
     let receiver_type = receiver_operation.owner.clone();
 
-    let family = match build_family(&index, original, meter.limits().family_steps) {
+    let family = match build_family(index, original, meter.limits().family_steps) {
         Ok(family) => family,
         Err(refusal) => return LinkCheckOutcome::Refused(refusal),
     };
     let mut candidates: Vec<DeclarationKey> = family
         .into_iter()
-        .filter(|member| index.operations.get(member).is_some_and(|op| op.has_body))
+        .filter(|member| index.operation(member).is_some_and(|op| op.has_body))
         .collect();
     candidates.sort();
 
@@ -311,11 +271,10 @@ pub fn link_dispatch(
             continue; // a member entry, not a type entry.
         }
         let candidate_subtype = &entry.preimage.original;
-        if index.abstract_types.contains(candidate_subtype) {
+        if index.is_abstract(candidate_subtype) {
             continue; // D05: an abstract subtype is never a dispatch target.
         }
-        match type_conforms(
-            &index.generals_by_specific,
+        match index.conforms(
             candidate_subtype,
             &receiver_type,
             meter.limits().ancestor_steps,
@@ -344,7 +303,7 @@ pub fn link_dispatch(
             ) {
                 return LinkCheckOutcome::Incomplete(incomplete);
             }
-            let Some(candidate_record) = index.operations.get(candidate) else {
+            let Some(candidate_record) = index.operation(candidate) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownCandidate {
@@ -354,12 +313,7 @@ pub fn link_dispatch(
                 });
             };
             let candidate_owner = &candidate_record.owner;
-            match type_conforms(
-                &index.generals_by_specific,
-                subtype,
-                candidate_owner,
-                meter.limits().ancestor_steps,
-            ) {
+            match index.conforms(subtype, candidate_owner, meter.limits().ancestor_steps) {
                 Ok(true) => applicable.push(candidate.clone()),
                 Ok(false) => {}
                 Err(refusal) => return LinkCheckOutcome::Refused(refusal),
@@ -388,7 +342,7 @@ pub fn link_dispatch(
         let mut dominance_pairs: Vec<DominancePair> = Vec::new();
         let mut dominated: HashSet<DeclarationKey> = HashSet::new();
         for p in &applicable {
-            let Some(p_record) = index.operations.get(p) else {
+            let Some(p_record) = index.operation(p) else {
                 return LinkCheckOutcome::Refused(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownCandidate {
@@ -402,7 +356,7 @@ pub fn link_dispatch(
                 if p == q {
                     continue;
                 }
-                let Some(q_record) = index.operations.get(q) else {
+                let Some(q_record) = index.operation(q) else {
                     return LinkCheckOutcome::Refused(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownCandidate {
@@ -412,12 +366,7 @@ pub fn link_dispatch(
                     });
                 };
                 let q_owner = &q_record.owner;
-                match dominates(
-                    &index.generals_by_specific,
-                    p_owner,
-                    q_owner,
-                    meter.limits().ancestor_steps,
-                ) {
+                match dominates(index, p_owner, q_owner, meter.limits().ancestor_steps) {
                     Ok(true) => {
                         dominance_pairs.push(DominancePair {
                             dominant: p.clone(),

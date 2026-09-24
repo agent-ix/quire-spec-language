@@ -136,16 +136,16 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
+use crate::model::index::ModelIndex;
 use crate::model::key::{hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId};
 use crate::model::normalize::{
-    EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, ViewPopulation,
+    EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
@@ -520,32 +520,27 @@ pub struct PopulationBinding {
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
-    /// `domain_package`'s declared `supertypes[]` generals, indexed by
-    /// specific, computed once here rather than by [`all_instances`]/[`lookup`]
-    /// on every call.
-    /// `value-accounting.md`'s "Model and graph evaluation" paragraph
-    /// already places the type-conformance decision this index serves
-    /// outside any charge ("...selects the member, without a charge, exactly
-    /// when that type conforms to `T`"), so this is a one-time efficiency
-    /// fix, not a new charge: the same "compute an index once at admission
-    /// instead of once per lookup" move [`admit_binding`] already makes for
-    /// `type_lookup`/`by_object` below.
-    generals: HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    /// The shared [`ModelIndex`] the admitting view's normalization built
+    /// over `domain_package` (QSL-202): every conformance decision
+    /// ([`all_instances`], [`lookup`] and the invocation frame check) reads
+    /// its ancestry, which is computed once per type and kept, never walked
+    /// again per call. `value-accounting.md`'s "Model and graph evaluation"
+    /// paragraph places that decision outside any charge ("...selects the
+    /// member, without a charge, exactly when that type conforms to `T`").
+    index: Arc<ModelIndex>,
     /// The caller's [`PopulationAdmissionLimits::ancestor_steps`] this
-    /// binding was admitted under: every conformance walk over
-    /// [`Self::generals`] ([`all_instances`], [`lookup`] and the invocation
-    /// frame check) uses it as given.
+    /// binding was admitted under: every conformance decision over
+    /// [`Self::index`] uses it as given.
     ancestor_steps: u64,
-    /// Every declared object type of `domain_package`'s effective view, `DeclarationKey`
-    /// to its FR-150-derived [`EffectiveId`]. Computed once here from
-    /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
-    /// rather than discarded): the FR-143 reference-identity bridge
-    /// (`crate::value::model_query`) needs this exact
-    /// correspondence to translate a checked `Reference<T>`'s `T` (its
-    /// `EffectiveId`, ADR-013 O-05) back into the `DeclarationKey`
-    /// [`all_instances`]/[`lookup`] take, for every declared type, not only
-    /// ones a current member happens to name.
-    type_catalog: BTreeMap<DeclarationKey, EffectiveId>,
+    /// Every declared object type of `domain_package`'s effective view,
+    /// `DeclarationKey` to its FR-150-derived [`EffectiveId`] and back,
+    /// shared with the admitting view. The FR-143 reference-identity bridge
+    /// (`crate::value::model_query`) reads the reverse direction to
+    /// translate a checked `Reference<T>`'s `T` (its `EffectiveId`, ADR-013
+    /// O-05) back into the `DeclarationKey` [`all_instances`]/[`lookup`]
+    /// take, for every declared type, not only ones a current member happens
+    /// to name, with no per-query rebuild (QSL-202).
+    type_catalog: Arc<TypeCatalog>,
     /// FR-153's invocation pre population, attached only by
     /// [`admit_invocation`]: `pre(allInstances(p))`/`pre(lookup(p, r) absent
     /// m)` read this binding instead of `self` underneath a `pre(..)`
@@ -616,7 +611,14 @@ impl PopulationBinding {
     /// `DeclarationKey` to its FR-150-derived [`EffectiveId`]; see the field's
     /// own doc comment.
     pub fn type_catalog(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
-        &self.type_catalog
+        self.type_catalog.by_key()
+    }
+
+    /// The declared type whose FR-150-derived [`EffectiveId`] is
+    /// `effective_type`: [`Self::type_catalog`] read the other way, from the
+    /// reverse index built once with it.
+    pub fn type_key_of(&self, effective_type: &EffectiveId) -> Option<&DeclarationKey> {
+        self.type_catalog.key_of(effective_type)
     }
 }
 
@@ -879,32 +881,11 @@ fn admit_binding_as(
     // `admitted` would otherwise each be linearly searched per member,
     // making admission O(n^2) against the O(n) `binding.member` charges it
     // records.
-    let type_lookup: BTreeMap<DeclarationKey, EffectiveId> = view.type_identities().clone();
+    let type_lookup = view.type_identities();
 
-    // Computed once here rather than once per `all_instances`/`lookup` call;
-    // see the `generals` field's own doc comment.
-    let generals = generals_by_specific(domain_package);
-
-    // D05 (`model-complete.md:156`): indexed once, alongside `type_lookup`
-    // above, so the abstract-instance check below is a lookup rather than a
-    // rescan of `domain_package.records` per member.
-    let abstract_types: BTreeMap<DeclarationKey, bool> = domain_package
-        .records
-        .iter()
-        .filter_map(|record| match record {
-            DomainPackageRecord::ObjectType(object) => {
-                Some((object.key.clone(), object.abstract_type))
-            }
-            DomainPackageRecord::FieldMember(_)
-            | DomainPackageRecord::ScalarType(_)
-            | DomainPackageRecord::OperationMember(_)
-            | DomainPackageRecord::Component(_)
-            | DomainPackageRecord::Endpoint(_)
-            | DomainPackageRecord::Relationship(_)
-            | DomainPackageRecord::Allocation(_)
-            | DomainPackageRecord::Population(_) => None,
-        })
-        .collect();
+    // The view's shared index: conformance and the D05 abstract-instance
+    // check below are lookups, never a rescan of `domain_package.records`.
+    let index = view.model_index();
 
     let mut admitted: BTreeMap<ReferenceKey, DeclarationKey> = BTreeMap::new();
     let mut by_object: BTreeMap<String, ReferenceKey> = BTreeMap::new();
@@ -936,7 +917,7 @@ fn admit_binding_as(
         // type conforming to a declared member type.
         let mut covered = false;
         for declared in &population.member_types {
-            match type_conforms(&generals, &member.type_identity, declared, ancestor_steps) {
+            match index.conforms(&member.type_identity, declared, ancestor_steps) {
                 Ok(true) => {
                     covered = true;
                     break;
@@ -961,11 +942,7 @@ fn admit_binding_as(
 
         // D05 (`model-complete.md:156`): a member whose most-specific type
         // is abstract has no direct instances.
-        if abstract_types
-            .get(&member.type_identity)
-            .copied()
-            .unwrap_or(false)
-        {
+        if index.is_abstract(&member.type_identity) {
             return AdmissionOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::AbstractInstance {
@@ -1079,7 +1056,7 @@ fn admit_binding_as(
             }
             let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
             for edge in &subsetting_edges {
-                match type_conforms(&generals, original_type, edge.owner, ancestor_steps) {
+                match index.conforms(original_type, edge.owner, ancestor_steps) {
                     Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
@@ -1126,9 +1103,9 @@ fn admit_binding_as(
         universe,
         members: admitted,
         declared_maximum,
-        generals,
+        index: Arc::clone(view.shared_model_index()),
         ancestor_steps,
-        type_catalog: type_lookup,
+        type_catalog: Arc::clone(view.shared_type_catalog()),
         pre_anchor: None,
         population_id: mint_population_id(domain_package, population_key, role),
     })
@@ -1291,19 +1268,12 @@ fn delta_mismatch(cause: ModelRefusalCause, detail: String) -> ModelRefusal {
 /// declared order, so a producer that re-serializes an unordered field in a
 /// different order between pre and post is not a frame violation. Defaults
 /// to `true` (order-sensitive) when `field` has no `FieldMemberRecord` in
-/// `domain_package` -- the strict, pre-existing comparison -- since an absent record
+/// the binding's package -- the strict, pre-existing comparison -- since an absent record
 /// gives this function no positive basis to relax it.
-fn field_ordered(domain_package: &DomainPackage, field: &DeclarationKey) -> bool {
-    domain_package
-        .records
-        .iter()
-        .find_map(|record| match record {
-            DomainPackageRecord::FieldMember(member) if member.key == *field => {
-                Some(member.multiplicity.ordered)
-            }
-            _ => None,
-        })
-        .unwrap_or(true)
+fn field_ordered(index: &ModelIndex, field: &DeclarationKey) -> bool {
+    index
+        .field(field)
+        .is_none_or(|member| member.multiplicity.ordered)
 }
 
 /// Whether `pre_values`/`post_values` (`field`'s declared values on the same
@@ -1313,12 +1283,12 @@ fn field_ordered(domain_package: &DomainPackage, field: &DeclarationKey) -> bool
 /// values are already unique by construction, so multiset equality reduces
 /// to set equality for it without a separate case.
 fn field_values_equal(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     field: &DeclarationKey,
     pre: &[String],
     post: &[String],
 ) -> bool {
-    if field_ordered(domain_package, field) {
+    if field_ordered(index, field) {
         return pre == post;
     }
     let mut pre = pre.to_vec();
@@ -1328,79 +1298,21 @@ fn field_values_equal(
     pre == post
 }
 
-/// Walks `field`'s redefinition chain (one member's own inline `redefines`
-/// hop at a time — `model-complete.md`:162), returning `true` as soon as
-/// `admits` accepts `field` itself or some ancestor it reaches, `false` once
-/// the chain ends with no accepted link. model-complete.md:56: the
-/// redefining feature replaces "the *one* inherited redefined feature", so a
-/// chain -- `C.x` redefines `B.x`, `B.x` redefines `A.x`, with no direct
-/// `C.x -> A.x` edge -- is legal and normal, not an edge case; a single
-/// hop only ever reaches an immediate redefinition target, never a
-/// grandparent one. `redefinitionClosure: closed` (model-complete.md:64)
-/// means every redefinition edge in the model is *listed* here, not that
-/// the chain is pre-flattened into direct edges to every ancestor -- this
-/// walk is what actually flattens it, at each call site that needs to know.
-///
-/// Bounded by `records.len()` hops (an acyclic chain can never visit more
-/// distinct fields than there are records at all) and refuses -- stops and
-/// returns `false`, never loops -- past that bound, so a malformed domain package
-/// with a redefinition cycle cannot hang this walk.
-///
-/// Shared by [`field_write_covered`] here and by
-/// `crate::model::conformance`'s effect-escape check
-/// (`check_operation_redefinition`'s "Effect" axis). Taking a
-/// [`DomainPackageRecord`] slice rather than a whole [`DomainPackage`] lets either call
-/// site pass its own already-available `&domain_package.records`. Equality is
-/// `DeclarationKey`'s derived `PartialEq` (`package`, `node`, both) at both
-/// call sites -- a write naming a field in one package does not reach a
-/// grant for the same node in a different package. Pinned by
-/// `enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name`
-/// here (`tests/model_population.rs`) and by
-/// `r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant_does_not_name`
-/// at the `conformance` call site (`tests/model_conformance.rs`).
-pub(super) fn redefinition_reaches(
-    records: &[DomainPackageRecord],
-    field: &DeclarationKey,
-    admits: impl Fn(&DeclarationKey) -> bool,
-) -> bool {
-    let mut current = field.clone();
-    let bound = records.len();
-    for _ in 0..=bound {
-        if admits(&current) {
-            return true;
-        }
-        let Some(redefined) = records.iter().find_map(|record| match record {
-            DomainPackageRecord::FieldMember(member) if member.key == current => {
-                member.redefines.clone()
-            }
-            DomainPackageRecord::OperationMember(member) if member.key == current => {
-                member.redefines.clone()
-            }
-            _ => None,
-        }) else {
-            return false;
-        };
-        current = redefined;
-    }
-    false // Cycle: exceeded the maximum possible acyclic chain length.
-}
-
 /// Whether `field` (the field a runtime population document names on some
 /// member) is covered by `effect.modifies`, directly or because it reaches
 /// one through a chain of members' own `redefines` properties -- FR-151's
 /// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
 /// operation's own declared writes rather than to a redefining operation's
 /// writes against its redefined ancestor's. Walks the full chain
-/// ([`redefinition_reaches`]), not just one hop: `modifies: [model.A.x]`
-/// covers a write to `model.C.x` through `model.C.x -> model.B.x -> model.A.x`.
+/// ([`ModelIndex::redefinition_reaches`]), not just one hop:
+/// `modifies: [model.A.x]` covers a write to `model.C.x` through
+/// `model.C.x -> model.B.x -> model.A.x`.
 fn field_write_covered(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     effect: &OperationEffect,
     field: &DeclarationKey,
 ) -> bool {
-    redefinition_reaches(&domain_package.records, field, |candidate| {
-        effect.modifies.contains(candidate)
-    })
+    index.redefinition_reaches(field, |candidate| effect.modifies.contains(candidate))
 }
 
 /// Enforces `declared.effect`'s frame against `pre`/`post`'s created and
@@ -1435,7 +1347,7 @@ fn enforce_frame(
     post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
 ) -> Result<(), ModelRefusal> {
-    let domain_package = &pre.domain_package;
+    let index = &*pre.index;
     let pre_by_object: BTreeMap<&str, (&ReferenceKey, &DeclarationKey)> = pre
         .members()
         .iter()
@@ -1456,7 +1368,7 @@ fn enforce_frame(
             // conform to a declared `creates` grant.
             let mut allowed = false;
             for grant in &declared.effect.creates {
-                if type_conforms(&post.generals, post_type, grant, post.ancestor_steps)? {
+                if post.index.conforms(post_type, grant, post.ancestor_steps)? {
                     allowed = true;
                     break;
                 }
@@ -1502,7 +1414,7 @@ fn enforce_frame(
         // conform to a declared `deletes` grant.
         let mut allowed = false;
         for grant in &declared.effect.deletes {
-            if type_conforms(&pre.generals, pre_type, grant, pre.ancestor_steps)? {
+            if pre.index.conforms(pre_type, grant, pre.ancestor_steps)? {
                 allowed = true;
                 break;
             }
@@ -1541,10 +1453,10 @@ fn enforce_frame(
         for field in fields {
             let pre_values = values_of(pre_member, field);
             let post_values = values_of(post_member, field);
-            if field_values_equal(domain_package, field, pre_values, post_values) {
+            if field_values_equal(index, field, pre_values, post_values) {
                 continue;
             }
-            if field_write_covered(domain_package, declared.effect, field) {
+            if field_write_covered(index, declared.effect, field) {
                 continue;
             }
             return Err(frame_violation(
@@ -1676,12 +1588,6 @@ pub enum AllInstancesOutcome {
     Incomplete(ScalarIncomplete),
 }
 
-fn is_object_type(domain_package: &DomainPackage, key: &DeclarationKey) -> bool {
-    domain_package.records.iter().any(
-        |record| matches!(record, DomainPackageRecord::ObjectType(object) if &object.key == key),
-    )
-}
-
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
 /// conforms to `t`, once by reference key, in canonical reference-key order.
 /// `binding.members()` already iterates in that order. Evaluated entirely
@@ -1692,7 +1598,6 @@ pub fn all_instances(
     t: &DeclarationKey,
     meter: &mut ScalarMeter,
 ) -> AllInstancesOutcome {
-    let domain_package = &*binding.domain_package;
     let Some(declared_maximum) = binding.declared_maximum() else {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
@@ -1700,7 +1605,7 @@ pub fn all_instances(
             detail: "population binding has no declared maximum".to_owned(),
         });
     };
-    if !is_object_type(domain_package, t) {
+    if !binding.index.is_object_type(t) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
@@ -1714,7 +1619,10 @@ pub fn all_instances(
         {
             return AllInstancesOutcome::Incomplete(incomplete);
         }
-        match type_conforms(&binding.generals, original_type, t, binding.ancestor_steps) {
+        match binding
+            .index
+            .conforms(original_type, t, binding.ancestor_steps)
+        {
             Ok(true) => {
                 selected.insert(key.clone());
             }
@@ -1867,7 +1775,10 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    match type_conforms(&binding.generals, &r.static_type, t, binding.ancestor_steps) {
+    match binding
+        .index
+        .conforms(&r.static_type, t, binding.ancestor_steps)
+    {
         Ok(true) => {}
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {

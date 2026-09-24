@@ -17,6 +17,7 @@ use qsl_semantics::model::domain_package::{
     EndpointRecord, Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
     PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
 };
+use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{
     normalize, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
@@ -152,7 +153,6 @@ fn operation_run() -> DomainPackageRecord {
         parameters: vec![],
         result: None,
         effect: OperationEffect::default(),
-        has_own_precondition: false,
         own_postcondition_clauses: vec![],
         has_body: true,
         redefines: None,
@@ -316,7 +316,7 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
 
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -398,7 +398,7 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -428,7 +428,7 @@ fn y03b_target_to_source_against_the_declared_ports_refuses() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -450,7 +450,7 @@ fn y03c_bidirectional_against_non_inout_ports_refuses() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -474,7 +474,7 @@ fn y03d_bidirectional_with_both_ports_inout_admits() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -493,7 +493,7 @@ fn y03e_undirected_is_never_a_connection_direction() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -525,7 +525,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     let before = meter.consumed(qsl_semantics::model::accounting::LimitKind::WorkUnits);
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -557,7 +557,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -585,7 +585,7 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
@@ -701,7 +701,7 @@ fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
     match check_connection(
-        &domain_package,
+        &ModelIndex::build(&domain_package),
         &classification,
         &DeclarationKey::fixture("model.Sys.pipe"),
         &mut meter,
