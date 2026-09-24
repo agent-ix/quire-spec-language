@@ -12,8 +12,9 @@
 use quire_exact::ScalarLimits;
 
 use crate::bounds::BoundExceeded;
-use crate::identity::{RawSourceRef, TracePosition};
+use crate::identity::TracePosition;
 use crate::proof_result::{ProofCategory, ToolPin};
+use qsl_foundation::source::provenance::SourceRegion;
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -76,18 +77,6 @@ pub enum InputSettlement {
     Inconclusive,
 }
 
-/// One resolved region (ADR-013 O-12): a source document and a half-open
-/// byte range within it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResolvedRegion {
-    /// The source document this region resolves into.
-    pub source: RawSourceRef,
-    /// The region's start offset, in bytes, inclusive.
-    pub byte_start: u32,
-    /// The region's end offset, in bytes, exclusive.
-    pub byte_end: u32,
-}
-
 /// The evaluated value a replay produced. A minimal stand-in for the
 /// kernel `Value` (ADR-013 O-13): none of FR-072's acceptance criteria turn
 /// on this value's own shape, only on arm distinctness, settlement and the
@@ -124,7 +113,7 @@ pub struct WitnessArmResult {
     category: ProofCategory,
     value: EvaluatedValue,
     record: Option<SeparatingWitnessRecord>,
-    resolved_regions: Vec<ResolvedRegion>,
+    resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     toolchain_pin: ToolPin,
 }
@@ -148,7 +137,7 @@ impl WitnessArmResult {
         category: ProofCategory,
         value: EvaluatedValue,
         record: SeparatingWitnessRecord,
-        resolved_regions: Vec<ResolvedRegion>,
+        resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
     ) -> Self {
@@ -201,7 +190,7 @@ impl WitnessArmResult {
         self.record.as_ref()
     }
     /// The resolved source regions this arm's result cites.
-    pub fn resolved_regions(&self) -> &[ResolvedRegion] {
+    pub fn resolved_regions(&self) -> &[SourceRegion] {
         &self.resolved_regions
     }
     /// The accounting charges this arm's replay run incurred.
@@ -225,7 +214,7 @@ pub struct InputArmResult {
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
     value: EvaluatedValue,
-    resolved_regions: Vec<ResolvedRegion>,
+    resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     toolchain_pin: ToolPin,
 }
@@ -239,7 +228,7 @@ impl InputArmResult {
         replayed: Verdict,
         category: ProofCategory,
         value: EvaluatedValue,
-        resolved_regions: Vec<ResolvedRegion>,
+        resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
     ) -> Self {
@@ -284,7 +273,7 @@ impl InputArmResult {
         self.value
     }
     /// The resolved source regions this arm's result cites.
-    pub fn resolved_regions(&self) -> &[ResolvedRegion] {
+    pub fn resolved_regions(&self) -> &[SourceRegion] {
         &self.resolved_regions
     }
     /// The accounting charges this arm's replay run incurred.
@@ -311,14 +300,16 @@ pub enum ReplayResult {
 
 /// `resolved_regions`'/`toolchain_pin`'s combined byte length -- shared by
 /// both arms of [`measured_encoded_bytes`].
-fn common_measured_bytes(resolved_regions: &[ResolvedRegion], toolchain_pin: &ToolPin) -> usize {
+fn common_measured_bytes(resolved_regions: &[SourceRegion], toolchain_pin: &ToolPin) -> usize {
     toolchain_pin.as_str().len()
         + resolved_regions
             .iter()
             .map(|region| {
-                region.source.authority().len()
-                    + region.source.identity().len()
-                    + region.source.revision().len()
+                let source = region.source();
+                source.authority().len()
+                    + source.identity().len()
+                    + source.revision().namespace().len()
+                    + source.revision().value().len()
             })
             .sum::<usize>()
 }
@@ -362,20 +353,17 @@ mod tests {
     use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
 
-    fn regions() -> Vec<ResolvedRegion> {
-        vec![ResolvedRegion {
-            source: RawSourceRef::new(
-                "registry".to_owned(),
-                "pkg-a".to_owned(),
-                "rev-1".to_owned(),
-                qsl_foundation::digest::DigestRecord::mint(
-                    qsl_foundation::digest::DigestDomain::SourceBytesV1,
-                    [3; 32],
-                ),
-            ),
-            byte_start: 10,
-            byte_end: 20,
-        }]
+    fn regions() -> Vec<SourceRegion> {
+        use qsl_foundation::digest::{DigestDomain, DigestRecord};
+        use qsl_foundation::source::provenance::{RawSourceRef, Revision};
+        let source = RawSourceRef::new(
+            "registry",
+            "pkg-a",
+            Revision::new("git", "rev-1").unwrap(),
+            DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
+        )
+        .unwrap();
+        vec![SourceRegion::new(source, 10, 20).unwrap()]
     }
 
     fn charges() -> ScalarLimits {
@@ -598,7 +586,7 @@ mod tests {
     /// `spec/tests.md` attributes that row to #217, not to #231's debt.
     #[test]
     fn tc_192_function_exemplar_reuses_the_four_types_with_none_new() {
-        use crate::identity::{OccurrenceKey, QualifiedName};
+        use crate::identity::QualifiedName;
         use crate::proof_result::{
             read_backend_provider_envelope, BackendProviderSource, TerminalRecord, TerminalValue,
         };
@@ -606,6 +594,7 @@ mod tests {
             origin, NoPayload, ReplaySource, Witness, WitnessEnvelope, WitnessPacket,
         };
         use qsl_foundation::digest::WireNodeId;
+        use qsl_foundation::source::provenance::OccurrenceKey;
         use quire_exact::Identifier;
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.

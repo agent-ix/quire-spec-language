@@ -25,12 +25,13 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::BoundExceeded;
 use crate::identity::{
-    Backend, DeclaredDomain, ObligationIdentity, OccurrenceKey, ProfileSelection, QualifiedName,
-    RawSourceRef, SourceDigestWire, TracePosition,
+    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    SourceDigestWire, TracePosition,
 };
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
 };
+use qsl_foundation::source::provenance::OccurrenceKey;
 
 // ---------------------------------------------------------------------------
 // `Witness`: the one-stored-field transcript carrier (ADR-013 O-25, QC-13).

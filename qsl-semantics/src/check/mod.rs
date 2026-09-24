@@ -1549,6 +1549,57 @@ mod tests {
         );
     }
 
+    /// ADR-013 O-07 (FR-322): every node of a checked package's semantic
+    /// graph has at least one source occurrence. A function with a
+    /// parameter, a call and a conditional lowers type, parameter,
+    /// expression and function nodes, and each is recorded.
+    #[trace("TC-420", "FR-095-AC-1")]
+    #[test]
+    fn every_lowered_node_has_a_source_occurrence() {
+        let boolean = || {
+            qsl_forms::TypeForm::builtin(
+                qsl_forms::BuiltinType::Boolean,
+                qsl_foundation::Span { start: 0, end: 0 },
+            )
+        };
+        let graph = declarations(vec![
+            FunctionDeclaration::new(
+                "helper",
+                vec![("flag".to_owned(), boolean())],
+                boolean(),
+                None,
+                Expression::Name("flag".to_owned()),
+            ),
+            FunctionDeclaration::new(
+                "caller",
+                Vec::new(),
+                boolean(),
+                None,
+                Expression::If {
+                    condition: Box::new(Expression::Boolean(true)),
+                    then: Box::new(Expression::Call {
+                        name: "helper".to_owned(),
+                        arguments: vec![Expression::Boolean(false)],
+                    }),
+                    otherwise: Box::new(Expression::Boolean(false)),
+                },
+            ),
+        ])
+        .check(CheckingLimits::default())
+        .expect("a caller of a one-parameter function checks");
+        let mut nodes = 0;
+        for node in graph.semantic_graph().nodes() {
+            nodes += 1;
+            assert!(
+                graph.occurrences.has(node.key()),
+                "node {} ({}) has no source occurrence",
+                node.key(),
+                node.semantic_form()
+            );
+        }
+        assert!(nodes >= 5, "only {nodes} nodes lowered");
+    }
+
     /// A resolved-signature entry keyed past `functions` stands in for no
     /// declaration, and is refused rather than ignored.
     #[test]

@@ -84,17 +84,22 @@
 //!   for scalar-terminated documents must widen its own configured limit
 //!   by one; this reader does not guess which kind of path is deepest.
 use quire_contract_ir::{
-    read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal,
-    CheckedPackageRefusalCode,
+    read_checked_package, CheckedArtifactRef, CheckedOccurrenceRole, CheckedPackageDispatchResult,
+    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageReadLimits,
+    CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedSourceMapEntry, CheckedSourceRegion,
 };
 
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::{
+    InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, Revision, SourceRegion,
+};
 use qsl_semantics::library::{
     declared_exports, verify_binding, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
     PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_semantics::value::IDENTITY_LIMITS;
+use quire_exact::{Origin, Role};
 
 #[cfg(test)]
 mod tests;
@@ -216,6 +221,85 @@ pub(crate) enum V2ReadRefusal {
     /// fault to the wrong layer (QSL-6 L3).
     #[error("identity preimage re-serialization failed: {0}")]
     Preimage(String),
+    /// An admitted wire's `source_map` did not convert into the package
+    /// source map (ADR-013 O-12). IR's reader has already validated the
+    /// map, so this names a disagreement between IR's admission and this
+    /// crate's own provenance types, not a second admission decision.
+    #[error("source map conversion failed: {0}")]
+    SourceMap(#[from] SourceMapDefect),
+}
+
+/// Why an admitted wire's `source_map` did not convert into a
+/// [`PackageSourceMap`].
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum SourceMapDefect {
+    /// An entry's `node_id` digest is not 64 lowercase hexadecimal digits.
+    #[error("source-map node id {0:?} is not a wire node id")]
+    NodeId(Box<str>),
+    /// A region's source digest did not read as a digest record.
+    #[error(transparent)]
+    Digest(#[from] InvalidDigestRecord),
+    /// A region, its source reference or the map itself refused.
+    #[error(transparent)]
+    Provenance(#[from] InvalidProvenance),
+}
+
+/// ADR-013 O-07: an occurrence role's FR-322 wire spelling, which the
+/// kernel `Role` carries.
+fn role_spelling(role: &CheckedOccurrenceRole) -> &'static str {
+    match role {
+        CheckedOccurrenceRole::Declaration => "declaration",
+        CheckedOccurrenceRole::Type => "type",
+        CheckedOccurrenceRole::Expression => "expression",
+        CheckedOccurrenceRole::Anchor => "anchor",
+        CheckedOccurrenceRole::Claim => "claim",
+        CheckedOccurrenceRole::Generated => "generated",
+    }
+}
+
+fn raw_source_ref(source: &CheckedArtifactRef) -> Result<RawSourceRef, SourceMapDefect> {
+    let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
+    let revision = Revision::new(&*source.revision.namespace, &*source.revision.value)?;
+    Ok(RawSourceRef::new(
+        &*source.authority,
+        &*source.identity,
+        revision,
+        digest,
+    )?)
+}
+
+fn source_region(region: &CheckedSourceRegion) -> Result<SourceRegion, SourceMapDefect> {
+    Ok(SourceRegion::new(
+        raw_source_ref(&region.source)?,
+        region.start,
+        region.end,
+    )?)
+}
+
+fn occurrence(
+    entry: &CheckedSourceMapEntry,
+) -> Result<(OccurrenceKey, Vec<SourceRegion>), SourceMapDefect> {
+    let node = WireNodeId::from_hex(&entry.node_id.digest)
+        .ok_or_else(|| SourceMapDefect::NodeId(entry.node_id.digest.clone()))?;
+    let origin = Origin::new(Role::new(role_spelling(&entry.role)), entry.ordinal);
+    let regions = entry
+        .regions
+        .iter()
+        .map(source_region)
+        .collect::<Result<_, _>>()?;
+    Ok((OccurrenceKey::new(node, origin), regions))
+}
+
+/// ADR-013 O-12, C-14: the package source map of an admitted wire's
+/// `source_map`, keyed by the O-07 occurrence key.
+fn package_source_map(
+    entries: &[CheckedSourceMapEntry],
+) -> Result<PackageSourceMap, SourceMapDefect> {
+    let entries = entries
+        .iter()
+        .map(occurrence)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(PackageSourceMap::from_entries(entries)?)
 }
 
 impl V2ReadRefusal {
@@ -230,6 +314,7 @@ impl V2ReadRefusal {
             Self::UnsupportedDependencySelections => Code::UnsupportedDependencySelections,
             Self::Structural(refusal) => refusal.code(),
             Self::Preimage(_) => Code::InvalidPackage,
+            Self::SourceMap(_) => Code::InvalidSourceMap,
         }
     }
 }
@@ -316,6 +401,9 @@ pub(crate) enum V2ReadOutcome {
     Verified {
         /// The verified package.
         package: VerifiedPackage,
+        /// The package source map (ADR-013 O-12), read from the wire's
+        /// `source_map`.
+        source_map: PackageSourceMap,
         /// The ceilings this read actually enforced: the caller's
         /// [`V2ReadLimits`] as given, with `depth` reported as at most
         /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
@@ -415,6 +503,10 @@ pub(crate) fn read_checked_package_v2(
                     ))
                 }
             };
+            let source_map = match package_source_map(package.source_map()) {
+                Ok(source_map) => source_map,
+                Err(defect) => return V2ReadOutcome::Refused(defect.into()),
+            };
             let candidate = LibraryPackage {
                 library: identity,
                 version,
@@ -430,6 +522,7 @@ pub(crate) fn read_checked_package_v2(
             match verify_binding(admitted, candidate, pinned) {
                 Ok(verified) => V2ReadOutcome::Verified {
                     package: verified,
+                    source_map,
                     effective_limits: limits.enforced(),
                 },
                 Err(refusal) => V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)),

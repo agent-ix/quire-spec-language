@@ -21,12 +21,14 @@ use super::{
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     PreimageDefect, RefusalClass, Selection, StaleCause, StalePin,
 };
+use quire_exact::{Origin, Role};
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";
@@ -1087,5 +1089,243 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
     assert!(
         is_depth_incomplete(&empty_terminated_past_limit),
         "an empty-container-terminated path one past the depth boundary must be Incomplete(Limit(Depth))"
+    );
+}
+
+/// The occurrence key of `label`'s `declaration` occurrence.
+fn declaration_key(label: &str) -> OccurrenceKey {
+    OccurrenceKey::new(
+        WireNodeId::from_hex(&hex(label)).unwrap(),
+        Origin::new(Role::new("declaration"), 0),
+    )
+}
+
+/// ADR-013 O-12, C-14: the verified read carries the wire's `source_map` as
+/// the package source map. Each occurrence key maps to exactly its wire
+/// regions, in wire order, under the wire's `RawSourceRef`; each node's
+/// occurrences are exactly its own entries.
+#[trace("TC-421", "FR-095-AC-3")]
+#[test]
+fn a_verified_read_carries_the_wire_source_map() {
+    let (preimage, mut envelope) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);
+    let second = envelope["source_map"][1]["regions"][0].clone();
+    envelope["source_map"][1]["regions"] = json!([
+        {"source": source_ref("src"), "start": 7, "end": 9},
+        second,
+    ]);
+    let source_map = match read(&jcs(&envelope), &pinned_for(&preimage)) {
+        V2ReadOutcome::Verified { source_map, .. } => source_map,
+        other => panic!("expected Verified, got {other:?}"),
+    };
+    let entries = envelope["source_map"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    for entry in entries {
+        let node = WireNodeId::from_hex(entry["node_id"]["digest"].as_str().unwrap()).unwrap();
+        let key = OccurrenceKey::new(node, Origin::new(Role::new("declaration"), 0));
+        let regions = source_map
+            .regions(&key)
+            .unwrap_or_else(|| panic!("no regions for {key}"));
+        let spans: Vec<(u64, u64)> = regions.iter().map(|r| (r.start(), r.end())).collect();
+        let expected: Vec<(u64, u64)> = entry["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["start"].as_u64().unwrap(), r["end"].as_u64().unwrap()))
+            .collect();
+        assert_eq!(spans, expected);
+        for region in regions {
+            let source = region.source();
+            assert_eq!((source.authority(), source.identity()), ("pkg", "src"));
+            assert_eq!(
+                (source.revision().namespace(), source.revision().value()),
+                ("semver", "1")
+            );
+            assert_eq!(source.digest().hex(), hex("src"));
+        }
+        assert_eq!(
+            source_map
+                .occurrences(node)
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>(),
+            [key]
+        );
+    }
+    assert_eq!(source_map.regions(&declaration_key("pkg::C")), None);
+}
+
+/// ADR-013 O-07: a source-map entry naming a node the graph does not hold
+/// refuses at the read, as `invalid_source_map`.
+#[trace("TC-421", "FR-095-AC-4")]
+#[test]
+fn a_source_map_entry_naming_an_unknown_node_refuses() {
+    let (preimage, mut envelope) = envelope_declaring(&[("pkg::A", "A")]);
+    envelope["source_map"][0]["node_id"] = node_ref("pkg::unknown");
+    match read(&jcs(&envelope), &pinned_for(&preimage)) {
+        V2ReadOutcome::Refused(refusal) => {
+            assert!(
+                matches!(
+                    &refusal,
+                    V2ReadRefusal::Envelope(ir)
+                        if ir.code == CheckedPackageRefusalCode::InvalidSourceMap
+                ),
+                "{refusal:?}"
+            );
+            assert_eq!(refusal.code(), Code::InvalidSourceMap);
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+/// Every JSON object in `value` that has a `RawSourceRef`/artifact-ref
+/// shape, as the evidence locator IR checks currency against.
+fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
+    match value {
+        Value::Object(members) => {
+            if let (
+                Some(Value::String(authority)),
+                Some(Value::String(identity)),
+                Some(revision),
+                Some(Value::String(domain)),
+                Some(Value::String(digest)),
+            ) = (
+                members.get("authority"),
+                members.get("identity"),
+                members.get("revision"),
+                members.get("digest_domain"),
+                members.get("digest"),
+            ) {
+                evidence.insert_artifact_digest(
+                    CheckedArtifactLocator {
+                        authority: authority.as_str().into(),
+                        identity: identity.as_str().into(),
+                        revision_namespace: revision["namespace"].as_str().unwrap().into(),
+                        revision_value: revision["value"].as_str().unwrap().into(),
+                        domain: domain.as_str().into(),
+                    },
+                    digest.clone(),
+                );
+            }
+            members
+                .values()
+                .for_each(|member| locked_artifacts(member, evidence));
+        }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| locked_artifacts(item, evidence)),
+        _ => {}
+    }
+}
+
+/// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
+/// fixtures, read at run time from
+/// `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`: IR's
+/// v2 reader admits each fixture, and every one of its `source_map` entries
+/// looks up in [`package_source_map`]'s map, by its occurrence key, to
+/// exactly its wire regions, while each node's occurrences number exactly
+/// its entries. Evidence treats each fixture's own locked artifacts as
+/// current and its required features as supported.
+///
+/// The fixtures go through IR's reader and this module's conversion, not
+/// the whole I2 read: `library`'s identity-preimage check refuses three of
+/// the five for `identity_projection` order (`PreimageDefect::NodeOrder`),
+/// which IR admits. That disagreement is `library`'s, not the source map's;
+/// the whole read is covered by `a_verified_read_carries_the_wire_source_map`.
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it. Nothing of QSpec is copied into this repository.
+#[trace("TC-421", "FR-095-AC-3")]
+#[test]
+fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
+    let mut paths: Vec<_> = std::fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("positive-") && name.ends_with(".json"))
+        })
+        .collect();
+    paths.sort();
+    assert!(
+        !paths.is_empty(),
+        "{} holds no positive fixture",
+        directory.display()
+    );
+    let mut looked_up = 0_usize;
+    for path in &paths {
+        let bytes = std::fs::read(path)
+            .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+        let envelope: Value = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+        let mut evidence = CheckedPackageEvidence::new();
+        locked_artifacts(&envelope["lock"], &mut evidence);
+        locked_artifacts(&envelope["diagnostics"], &mut evidence);
+        for feature in envelope["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        // The published fixture is pretty-printed; the wire is its
+        // canonical form.
+        let admitted = match quire_contract_ir::read_checked_package(
+            &jcs(&envelope),
+            V2ReadLimits::default().for_ir(),
+            &evidence,
+        ) {
+            quire_contract_ir::CheckedPackageDispatchResult::AdmittedV2(package) => package,
+            other => panic!("{}: expected AdmittedV2, got {other:?}", path.display()),
+        };
+        let source_map = super::package_source_map(admitted.source_map())
+            .unwrap_or_else(|defect| panic!("{}: {defect}", path.display()));
+        let entries = envelope["source_map"].as_array().unwrap();
+        let mut per_node = std::collections::BTreeMap::<WireNodeId, usize>::new();
+        for entry in entries {
+            let node = WireNodeId::from_hex(entry["node_id"]["digest"].as_str().unwrap()).unwrap();
+            let key = OccurrenceKey::new(
+                node,
+                Origin::new(
+                    Role::new(entry["role"].as_str().unwrap()),
+                    entry["ordinal"].as_u64().unwrap(),
+                ),
+            );
+            let regions = source_map
+                .regions(&key)
+                .unwrap_or_else(|| panic!("{}: no regions for {key}", path.display()));
+            let wire = entry["regions"].as_array().unwrap();
+            assert_eq!(regions.len(), wire.len(), "{}: {key}", path.display());
+            for (region, wire) in regions.iter().zip(wire) {
+                assert_eq!(region.start(), wire["start"].as_u64().unwrap());
+                assert_eq!(region.end(), wire["end"].as_u64().unwrap());
+                let source = region.source();
+                assert_eq!(source.authority(), wire["source"]["authority"]);
+                assert_eq!(source.identity(), wire["source"]["identity"]);
+                assert_eq!(
+                    source.revision().namespace(),
+                    wire["source"]["revision"]["namespace"]
+                );
+                assert_eq!(
+                    source.revision().value(),
+                    wire["source"]["revision"]["value"]
+                );
+                assert_eq!(source.digest().hex(), wire["source"]["digest"]);
+            }
+            *per_node.entry(node).or_default() += 1;
+            looked_up += 1;
+        }
+        for (node, count) in per_node {
+            assert_eq!(
+                source_map.occurrences(node).count(),
+                count,
+                "{}",
+                path.display()
+            );
+        }
+    }
+    println!(
+        "conformance: {looked_up} source-map entries over {} positive fixtures",
+        paths.len()
     );
 }

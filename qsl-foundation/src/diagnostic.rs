@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-010: stable source-bound native diagnostics and standard error propagation.
+//!
+//! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
+
+mod locus;
+pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
