@@ -135,7 +135,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::model::conformance::{generals_by_specific, type_conforms, DEFAULT_ANCESTOR_STEPS};
+use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
@@ -180,6 +180,15 @@ pub struct PopulationAdmissionLimits {
     pub population_members: u64,
     /// Cumulative admission work units.
     pub work_units: u64,
+    /// Ceiling on the types one member-type conformance walk expands, with
+    /// the same meaning as
+    /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
+    /// Read, not charged, by admission itself and recorded on the admitted
+    /// [`PopulationBinding`], so the frame check and the
+    /// [`all_instances`]/[`lookup`] queries over that binding walk under the
+    /// same caller-configured bound. Reaching it refuses
+    /// `ModelRefusalCause::AncestorSteps` naming this bound.
+    pub ancestor_steps: u64,
 }
 
 impl PopulationAdmissionLimits {
@@ -187,6 +196,7 @@ impl PopulationAdmissionLimits {
     pub const UNLIMITED: Self = Self {
         population_members: u64::MAX,
         work_units: u64::MAX,
+        ancestor_steps: u64::MAX,
     };
 }
 
@@ -521,6 +531,11 @@ pub struct PopulationBinding {
     /// instead of once per lookup" move [`admit_binding`] already makes for
     /// `type_lookup`/`by_object` below.
     generals: HashMap<DeclarationKey, Vec<DeclarationKey>>,
+    /// The caller's [`PopulationAdmissionLimits::ancestor_steps`] this
+    /// binding was admitted under: every conformance walk over
+    /// [`Self::generals`] ([`all_instances`], [`lookup`] and the invocation
+    /// frame check) uses it as given.
+    ancestor_steps: u64,
     /// Every declared object type of `domain_package`'s effective view, `DeclarationKey`
     /// to its FR-150-derived [`EffectiveId`]. Computed once here from
     /// [`admit_binding`]'s own `type_lookup` (identical to it, retained
@@ -800,6 +815,7 @@ fn admit_binding_as(
         subtype_closure,
         declared_maximum,
     } = context;
+    let ancestor_steps = meter.limits().ancestor_steps;
     if *view.model_selection() != domain_package.model_selection {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
@@ -969,7 +985,7 @@ fn admit_binding_as(
                 &generals,
                 &member.type_identity,
                 declared,
-                DEFAULT_ANCESTOR_STEPS,
+                ancestor_steps,
             ) {
                 Ok(true) => {
                     covered = true;
@@ -1113,7 +1129,7 @@ fn admit_binding_as(
             }
             let mut applicable: Vec<&SubsettingEdge<'_>> = Vec::new();
             for edge in &subsetting_edges {
-                match type_conforms(&generals, original_type, edge.owner, DEFAULT_ANCESTOR_STEPS) {
+                match type_conforms(&generals, original_type, edge.owner, ancestor_steps) {
                     Ok(true) => applicable.push(edge),
                     Ok(false) => {}
                     Err(refusal) => return AdmissionOutcome::Refused(refusal),
@@ -1161,6 +1177,7 @@ fn admit_binding_as(
         members: admitted,
         declared_maximum,
         generals,
+        ancestor_steps,
         type_catalog: type_lookup,
         pre_anchor: None,
         population_id: mint_population_id(domain_package, population_key, role),
@@ -1490,7 +1507,7 @@ fn enforce_frame(
             // conform to a declared `creates` grant.
             let mut allowed = false;
             for grant in &declared.effect.creates {
-                if type_conforms(&post.generals, post_type, grant, DEFAULT_ANCESTOR_STEPS)? {
+                if type_conforms(&post.generals, post_type, grant, post.ancestor_steps)? {
                     allowed = true;
                     break;
                 }
@@ -1536,7 +1553,7 @@ fn enforce_frame(
         // conform to a declared `deletes` grant.
         let mut allowed = false;
         for grant in &declared.effect.deletes {
-            if type_conforms(&pre.generals, pre_type, grant, DEFAULT_ANCESTOR_STEPS)? {
+            if type_conforms(&pre.generals, pre_type, grant, pre.ancestor_steps)? {
                 allowed = true;
                 break;
             }
@@ -1748,7 +1765,7 @@ pub fn all_instances(
         {
             return AllInstancesOutcome::Incomplete(incomplete);
         }
-        match type_conforms(&binding.generals, original_type, t, DEFAULT_ANCESTOR_STEPS) {
+        match type_conforms(&binding.generals, original_type, t, binding.ancestor_steps) {
             Ok(true) => {
                 selected.insert(key.clone());
             }
@@ -1901,7 +1918,7 @@ pub fn lookup(
     mode: AbsenceMode,
     meter: &mut ScalarMeter,
 ) -> LookupOutcome {
-    match type_conforms(&binding.generals, &r.static_type, t, DEFAULT_ANCESTOR_STEPS) {
+    match type_conforms(&binding.generals, &r.static_type, t, binding.ancestor_steps) {
         Ok(true) => {}
         Ok(false) => {
             return LookupOutcome::Refused(ModelRefusal {

@@ -24,18 +24,19 @@ pub struct ModelNormalizationLimits {
     pub hashed_bytes: u64,
     /// Cumulative work units.
     pub work_units: u64,
-    /// [`crate::model::conformance`]'s own ancestor-walk step ceiling
-    /// (`walk_ancestors`, shared by `conformance`'s own axis checks and
-    /// `dispatch`'s subtype-applicability/dominance walks): read, not
-    /// charged, by every checking entry point that owns a `Meter` --
-    /// replaces the old hard-coded `MAX_CONFORMANCE_DEPTH` (ADR-011 §7.3,
-    /// QSL-199), which refused any type with more than 128 ancestors
-    /// regardless of this meter's own configured limits.
+    /// Ceiling on the types one conformance walk expands (the specific it
+    /// starts from included): a target `n` generalization steps up a chain
+    /// is reached at `ancestor_steps == n`. Read, not charged, by every
+    /// conformance, dispatch-applicability, dominance and systems-flow
+    /// check that owns a `Meter`. Reaching it refuses
+    /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
-    /// [`crate::model::dispatch`]'s own family-closure walk step ceiling
-    /// (`build_family`'s own redefinition-edge traversal): read, not
-    /// charged -- replaces the old hard-coded `MAX_DISPATCH_DEPTH` (ADR-011
-    /// §7.3, QSL-199).
+    /// Ceiling on the `redefines` edges one dispatch-family walk follows,
+    /// one per redefiner admitted to the family: a linear chain of `n`
+    /// redefinitions is admitted at `family_steps == n`. Read, not charged,
+    /// by `dispatch::link_dispatch` and by the effective-precondition walk
+    /// of `check::checked_dispatch_operation`. Reaching it refuses
+    /// `ModelRefusalCause::FamilySteps` naming this bound.
     pub family_steps: u64,
 }
 

@@ -44,9 +44,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::conformance::{
-    generals_by_specific, multiplicity_conforms, type_conforms, DEFAULT_ANCESTOR_STEPS,
-};
+use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
     PortDirection, RelationshipRecord,
@@ -571,7 +569,7 @@ pub fn check_connection(
             &generals,
             &flow_source.value_type,
             &flow_target.value_type,
-            DEFAULT_ANCESTOR_STEPS,
+            meter.limits().ancestor_steps,
         ) {
             Ok(conforms) => conforms,
             Err(refusal) => return ConnectionCheckOutcome::Refused(refusal),

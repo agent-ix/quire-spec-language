@@ -69,10 +69,14 @@ pub enum OfferedSelection {
 /// structural change only.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelRefusalCause {
-    /// A dispatch family's redefinition chain exceeded `MAX_DISPATCH_DEPTH`.
-    DispatchFamilyDepth {
+    /// A dispatch family walk followed more `redefines` edges than the
+    /// caller-configured `family_steps` ceiling
+    /// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]).
+    FamilySteps {
         /// The dispatch original the family was built from.
         original: DeclarationKey,
+        /// The configured `family_steps` bound the walk reached.
+        limit: u64,
     },
     /// An operation family closes over an unresolved or unproved method set.
     UnclosedMethodSet,
@@ -170,11 +174,14 @@ pub enum ModelRefusalCause {
     /// A required item does not supply the producer capability its
     /// interface revision requires.
     UnsuppliedProducerRecord,
-    /// A conformance check's generalization walk exceeded
-    /// `MAX_CONFORMANCE_DEPTH`.
-    ConformanceDepth {
+    /// A conformance walk expanded more ancestor types than the
+    /// caller-configured `ancestor_steps` ceiling
+    /// ([`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`]).
+    AncestorSteps {
         /// The conformance check's starting specific.
         from: DeclarationKey,
+        /// The configured `ancestor_steps` bound the walk reached.
+        limit: u64,
     },
     /// A redefining or subsetting result/effect does not conform to the
     /// redefined/subsetted one under FR-151 variance.
@@ -668,7 +675,7 @@ impl ModelRefusalCause {
     /// tracing and every prior wire-visible string used before #141).
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::DispatchFamilyDepth { .. } => "dispatch-family-depth",
+            Self::FamilySteps { .. } => "family-steps",
             Self::UnclosedMethodSet => "unclosed-method-set",
             Self::UnknownOriginal { .. } => "unknown-original",
             Self::UnknownCandidate { .. } => "unknown-candidate",
@@ -685,7 +692,7 @@ impl ModelRefusalCause {
             Self::UnknownMember { .. } => "unknown-member",
             Self::DerivationConflict { .. } => "derivation-conflict",
             Self::UnsuppliedProducerRecord => "unsupplied-producer-record",
-            Self::ConformanceDepth { .. } => "conformance-depth",
+            Self::AncestorSteps { .. } => "ancestor-steps",
             Self::VarianceResult => "variance-result",
             Self::MultiplicityNarrowing { .. } => "multiplicity-narrowing",
             Self::SubsettingType { .. } => "subsetting-type",
@@ -782,9 +789,9 @@ impl ModelRefusalCause {
             | Self::IntakeMalformedDeclaration { .. }
             | Self::ReservedPackageIdentity { .. }
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
-            Self::DispatchFamilyDepth { .. }
+            Self::FamilySteps { .. }
             | Self::GeneralizationDepthExceeded { .. }
-            | Self::ConformanceDepth { .. }
+            | Self::AncestorSteps { .. }
             | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
             Self::UnclosedMethodSet
             | Self::IncompleteScope { .. }
@@ -892,7 +899,10 @@ pub mod fixtures {
             }};
         }
         samples![
-        DispatchFamilyDepth => ModelRefusalCause::DispatchFamilyDepth { original: key("p") },
+        FamilySteps => ModelRefusalCause::FamilySteps {
+            original: key("p"),
+            limit: 1,
+        },
         UnclosedMethodSet => ModelRefusalCause::UnclosedMethodSet,
         UnknownOriginal => ModelRefusalCause::UnknownOriginal { original: key("p") },
         UnknownCandidate => ModelRefusalCause::UnknownCandidate {
@@ -937,7 +947,10 @@ pub mod fixtures {
             redefiners: vec![key("p")],
         },
         UnsuppliedProducerRecord => ModelRefusalCause::UnsuppliedProducerRecord,
-        ConformanceDepth => ModelRefusalCause::ConformanceDepth { from: key("p") },
+        AncestorSteps => ModelRefusalCause::AncestorSteps {
+            from: key("p"),
+            limit: 1,
+        },
         VarianceResult => ModelRefusalCause::VarianceResult,
         MultiplicityNarrowing => ModelRefusalCause::MultiplicityNarrowing {
             from: multiplicity(),
@@ -1142,7 +1155,7 @@ pub(crate) mod tests {
     /// `as_str` before this PR).
     fn expected_tag(cause: &ModelRefusalCause) -> &'static str {
         match cause {
-            ModelRefusalCause::DispatchFamilyDepth { .. } => "dispatch-family-depth",
+            ModelRefusalCause::FamilySteps { .. } => "family-steps",
             ModelRefusalCause::UnclosedMethodSet => "unclosed-method-set",
             ModelRefusalCause::UnknownOriginal { .. } => "unknown-original",
             ModelRefusalCause::UnknownCandidate { .. } => "unknown-candidate",
@@ -1161,7 +1174,7 @@ pub(crate) mod tests {
             ModelRefusalCause::UnknownMember { .. } => "unknown-member",
             ModelRefusalCause::DerivationConflict { .. } => "derivation-conflict",
             ModelRefusalCause::UnsuppliedProducerRecord => "unsupplied-producer-record",
-            ModelRefusalCause::ConformanceDepth { .. } => "conformance-depth",
+            ModelRefusalCause::AncestorSteps { .. } => "ancestor-steps",
             ModelRefusalCause::VarianceResult => "variance-result",
             ModelRefusalCause::MultiplicityNarrowing { .. } => "multiplicity-narrowing",
             ModelRefusalCause::SubsettingType { .. } => "subsetting-type",
@@ -1256,9 +1269,9 @@ pub(crate) mod tests {
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
-            ModelRefusalCause::DispatchFamilyDepth { .. } => "resource_exhausted",
+            ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",
             ModelRefusalCause::GeneralizationDepthExceeded { .. } => "resource_exhausted",
-            ModelRefusalCause::ConformanceDepth { .. } => "resource_exhausted",
+            ModelRefusalCause::AncestorSteps { .. } => "resource_exhausted",
             ModelRefusalCause::UnclosedMethodSet => "incomplete_population",
             ModelRefusalCause::IncompleteScope { .. } => "incomplete_population",
             ModelRefusalCause::UnclosedSubtypes { .. } => "incomplete_population",

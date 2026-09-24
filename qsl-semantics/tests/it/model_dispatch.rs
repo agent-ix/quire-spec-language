@@ -13,16 +13,19 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::model::accounting::{ChargePoint, LimitKind, ModelNormalizationLimits};
+use qsl_forms::Expression;
+use qsl_semantics::check::{checked_dispatch_operation, DispatchRoot, OperationClauses};
+use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
 };
 use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
+    OperationEffect, OperationMemberRecord, OperationResult, ValueTypeRef,
 };
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize, ModelRefusalCause, NormalizeOutcome};
+use quire_exact::ValueType;
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
@@ -563,105 +566,188 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
 }
 
 /// QSL-199: a linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
-/// model.A.op{depth}` (`op{i}` redefines `op{i-1}`), all owned by the single
-/// object type `model.A` so every dispatch/dominance `type_conforms` check
-/// this exercises is the trivial `s == t` case -- isolating the family-step
-/// count `build_family` itself charges from the unrelated ancestor-step
-/// count `walk_ancestors` charges. Only the last operation has a body, so
-/// linking has exactly one applicable candidate per subtype (no dominance
-/// walk needed either). `original`'s own family has `depth + 1` members.
-fn redefinition_chain(depth: usize) -> Vec<DomainPackageRecord> {
-    (0..=depth)
+/// model.A.op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
+/// `redefines` edges. Every operation is owned by `model.A`, so every
+/// dispatch/dominance conformance check is the trivial `s == t` case and
+/// only `family_steps` is exercised. Only the last operation has a body, so
+/// `model.A` has exactly one applicable candidate. Each operation is a
+/// query (a declared result, an empty effect), so the chain also passes the
+/// checked-dispatch bridge.
+fn redefinition_chain(edges: u64) -> Vec<DomainPackageRecord> {
+    (0..=edges)
         .map(|i| {
-            let redefines = if i == 0 {
-                None
-            } else {
-                Some(format!("model.A.op{}", i - 1))
-            };
-            operation(
+            let redefines = i.checked_sub(1).map(|parent| format!("model.A.op{parent}"));
+            query_operation(
                 &format!("model.A.op{i}"),
                 "model.A",
-                i == depth,
+                i == edges,
                 redefines.as_deref(),
             )
         })
         .collect()
 }
 
-/// QSL-199 AC-5: a valid dispatch family with more than 128 redefinition
-/// steps passes at default (unlimited) limits -- the old hard-coded
-/// `MAX_DISPATCH_DEPTH` (128) refused this regardless of the caller's own
-/// configured limits (ADR-011 §7.3; NFR-001 "an implementation ceiling is
-/// not a domain bound").
-#[trace("TC-196", "FR-151-AC-5")]
-#[test]
-fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits() {
-    const DEPTH: usize = 129; // original's family has 130 members: op0..op129.
-    let mut records = vec![object_type("model.A", vec![])];
-    records.extend(redefinition_chain(DEPTH));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
-    let view = effective_view(&domain_package);
+/// [`operation`], with a declared `model.A` result so the checked-dispatch
+/// bridge admits it as a query.
+fn query_operation(
+    identity: &str,
+    owner: &str,
+    has_body: bool,
+    redefines: Option<&str>,
+) -> DomainPackageRecord {
+    let DomainPackageRecord::OperationMember(mut record) =
+        operation(identity, owner, has_body, redefines)
+    else {
+        unreachable!("operation() always builds an operation member");
+    };
+    record.result = Some(OperationResult {
+        value_type: ValueTypeRef::Package(DeclarationKey::fixture(owner)),
+        multiplicity: Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        },
+    });
+    DomainPackageRecord::OperationMember(record)
+}
 
-    let mut meter = unlimited_meter();
-    let outcome = link_dispatch(
-        &domain_package,
-        &view,
+fn link_chain(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+) -> LinkCheckOutcome {
+    link_dispatch(
+        domain_package,
+        &effective_view(domain_package),
         &DeclarationKey::fixture("model.A.op0"),
         GeneralizationClosure::Closed,
-        &mut meter,
-    );
+        &mut Meter::new(limits),
+    )
+}
+
+fn chain_package(edges: u64) -> DomainPackage {
+    let mut records = vec![object_type("model.A", vec![])];
+    records.extend(redefinition_chain(edges));
+    DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records)
+}
+
+fn assert_links_model_a_to(outcome: LinkCheckOutcome, winner: &str) {
     let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
-        panic!("expected a linked dispatch table under unlimited limits, got {outcome:?}");
+        panic!("expected a linked dispatch table, got {outcome:?}");
     };
     assert_eq!(
         table
             .linked_for(&DeclarationKey::fixture("model.A"))
             .map(|c| c.node.clone()),
-        Some(format!("model.A.op{DEPTH}")),
-        "must link to the one operation with a body, at the far end of the 130-member family"
+        Some(winner.to_owned()),
     );
 }
 
-/// QSL-199 AC-6: exceeding a caller-configured `family_steps` ceiling
-/// refuses, naming the limit (`ModelRefusalCause::DispatchFamilyDepth`, tag
-/// `resource_exhausted`) and the configured bound (embedded in the
-/// refusal's own detail, matching this repo's convention for these two
-/// caps -- see `build_family`'s own doc).
-#[trace("TC-196", "FR-151-AC-5")]
+/// QSL-199 AC-5: a dispatch family of more than 128 redefinition steps
+/// links at default (unlimited) limits. The removed fixed ceiling of 128
+/// refused this whatever the caller configured (ADR-011 §7.3; NFR-001 "an
+/// implementation ceiling is not a domain bound").
+#[trace("TC-225", "FR-083-AC-4")]
 #[test]
-fn exceeding_a_caller_configured_family_steps_ceiling_refuses_naming_the_kind_and_bound() {
-    const DEPTH: usize = 129;
-    let mut records = vec![object_type("model.A", vec![])];
-    records.extend(redefinition_chain(DEPTH));
-    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
-    let view = effective_view(&domain_package);
+fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits() {
+    const EDGES: u64 = 130;
+    assert_links_model_a_to(
+        link_chain(&chain_package(EDGES), ModelNormalizationLimits::UNLIMITED),
+        &format!("model.A.op{EDGES}"),
+    );
+}
 
-    let tight_ceiling = 50;
-    let mut meter = qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits {
-        family_steps: tight_ceiling,
-        ..ModelNormalizationLimits::UNLIMITED
-    });
-    let outcome = link_dispatch(
+/// QSL-199 AC-5, end to end: the same family of more than 128 redefinition
+/// steps also passes the checked-dispatch bridge, whose
+/// effective-precondition walk follows the winner's whole `redefines`
+/// chain (every operation declares its own precondition, so no link of the
+/// chain is skipped).
+#[trace("TC-225", "FR-083-AC-4")]
+#[test]
+fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_bridge() {
+    const EDGES: u64 = 130;
+    let domain_package = chain_package(EDGES);
+    let view = effective_view(&domain_package);
+    let mut clauses = OperationClauses::default();
+    let root = DeclarationKey::fixture("model.A.op0");
+    clauses.member.insert(root.clone(), "op".to_owned());
+    for i in 0..=EDGES {
+        let key = DeclarationKey::fixture(format!("model.A.op{i}"));
+        clauses
+            .parameters
+            .insert(key.clone(), vec![("self".to_owned(), ValueType::Boolean)]);
+        clauses.result.insert(key.clone(), ValueType::Boolean);
+        clauses
+            .own_precondition
+            .insert(key.clone(), Expression::Boolean(true));
+        if i == EDGES {
+            clauses.own_body.insert(key, Expression::Boolean(true));
+        }
+    }
+    let declarations = checked_dispatch_operation(
         &domain_package,
         &view,
-        &DeclarationKey::fixture("model.A.op0"),
-        GeneralizationClosure::Closed,
-        &mut meter,
+        &DispatchRoot {
+            key: root,
+            closure: GeneralizationClosure::Closed,
+        },
+        &clauses,
+        &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+    )
+    .unwrap_or_else(|refusal| panic!("expected a checked dispatch family, got {refusal:?}"));
+    assert_eq!(declarations.dispatch_tables.len(), 1);
+}
+
+/// TC-225: a family of exactly `family_steps` redefinition steps links with
+/// its unique winner. One step more -- a redefiner that, if the walk went on
+/// to find it, would make `model.A` ambiguous -- refuses with the distinct
+/// `resource_exhausted` outcome naming the configured bound: not a linked
+/// table naming a "unique" winner the truncated walk happened to reach, and
+/// not an ambiguity result.
+#[trace("TC-225", "FR-083-AC-4")]
+#[test]
+fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
+    const BOUND: u64 = 50;
+    let limits = ModelNormalizationLimits {
+        family_steps: BOUND,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+
+    assert_links_model_a_to(
+        link_chain(&chain_package(BOUND), limits),
+        &format!("model.A.op{BOUND}"),
     );
-    match outcome {
+
+    let mut over = chain_package(BOUND);
+    over.records.push(query_operation(
+        &format!("model.A.op{}", BOUND + 1),
+        "model.A",
+        true,
+        Some(&format!("model.A.op{BOUND}")),
+    ));
+    assert!(
+        matches!(
+            link_chain(&over, ModelNormalizationLimits::UNLIMITED),
+            LinkCheckOutcome::Completed(DispatchLinkOutcome::Ambiguous(_))
+        ),
+        "the fixture must be genuinely ambiguous once the whole family is walked"
+    );
+    match link_chain(&over, limits) {
         LinkCheckOutcome::Refused(refusal) => {
             assert_eq!(refusal.code, Code::ResourceExhausted);
             assert_eq!(
                 refusal.cause,
-                ModelRefusalCause::DispatchFamilyDepth {
+                ModelRefusalCause::FamilySteps {
                     original: DeclarationKey::fixture("model.A.op0"),
+                    limit: BOUND,
                 }
             );
+            assert_eq!(refusal.cause.as_str(), "family-steps");
             assert!(
-                refusal.detail.contains(&tight_ceiling.to_string()),
+                refusal.detail.contains(&BOUND.to_string()),
                 "refusal detail must name the configured bound, got {refusal:?}"
             );
         }
-        other => panic!("expected Refused(DispatchFamilyDepth), got {other:?}"),
+        other => panic!("expected Refused(FamilySteps), got {other:?}"),
     }
 }
