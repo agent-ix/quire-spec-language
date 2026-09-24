@@ -929,7 +929,6 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or(Stop::Undefined(Undefined::NoneValue))?
             }
             NodeKind::Call {
-                identity: _,
                 function,
                 arguments,
             } => {
@@ -1596,7 +1595,7 @@ mod tests {
                     population: Box::new(Expression::Name("p".to_owned())),
                 })),
             )],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");

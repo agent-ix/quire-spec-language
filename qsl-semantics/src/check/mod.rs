@@ -58,11 +58,10 @@
 //! **Amended, PR #282 review F4:** FR-068's move surface now names
 //! `family.rs` explicitly, alongside `check`, `evaluate`, `facts`, `ir`,
 //! `mod` itself, `refusal` and `termination` -- an omission in the
-//! requirement's original text, not a deliberate exclusion: `check.rs`'s
-//! own `Typer::call` already called `family::mint_call_identity`/
-//! `family::DEFAULT_PACKAGE_IDENTITY` directly before this move, so this
-//! module carries a `family` submodule with exactly the identity-minting
-//! content those existing calls need (see `family`'s own module doc).
+//! requirement's original text, not a deliberate exclusion: this module
+//! carries a `family` submodule with the function family's checking code
+//! (see `family`'s own module doc). Node identity is `lowering`'s and
+//! `node_key`'s (FR-092/FR-093, QSL-156 A4b).
 //! Without it, `check`'s real import graph would reach back into
 //! `value::expression::family`, which FR-068-AC-3 forbids.
 
@@ -86,6 +85,8 @@ pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
 mod ir;
+mod lowering;
+mod node_key;
 mod refusal;
 mod termination;
 mod type_form;
@@ -100,7 +101,7 @@ use check::{bind_parameters, Typer};
 pub use check::Signature;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use check::Signature;
-use facts::{CallSite, Definedness};
+use facts::Definedness;
 use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
@@ -109,9 +110,15 @@ use quire_exact::ValueType;
 
 pub use check::Scope;
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
-// Named only by `fixtures::mint_resolved`'s return type.
+// Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]
-pub use family::IdentityPreimageMetrics;
+pub use family::DeclarationMetrics;
+pub use lowering::{LockEvidence, SemanticGraph, SemanticNode};
+pub use node_key::{
+    InvalidSourceOwner, IntegerSite, LawRole, LeafSegment, LiteralValue, NodeKeyRefusal, NodeRef,
+    NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode, Operator, SemanticTerm,
+    SourceOwner,
+};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -123,15 +130,13 @@ pub use family::IdentityPreimageMetrics;
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
 //
-// QSL-181: `check_context`, `staged_identity` and the two constants are
-// test-support views of `pub(crate)` items (`CheckContext::new`,
-// `Staged::value`, `DEFAULT_PACKAGE_IDENTITY`, `SCALAR_LIMITS_UNLIMITED`),
-// so the layer-5 evaluator's tests reach them without widening the items.
+// QSL-181: `check_context` and the constant are test-support views of
+// `pub(crate)` items (`CheckContext::new`, `SCALAR_LIMITS_UNLIMITED`), so
+// the layer-5 evaluator's tests reach them without widening the items.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
-    check_context, declaration, declaration_signature, declarations_for, empty_scope, limits,
-    mint_resolved, root_location, staged_identity, DEFAULT_PACKAGE_IDENTITY,
-    SCALAR_LIMITS_UNLIMITED,
+    check_context, declaration, declaration_signature, declarations_for, empty_scope,
+    fixture_owner, limits, measure_resolved, root_location, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
@@ -165,7 +170,7 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, InvalidModelCorrespondence, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
+    Obligation, Origin, ProvedInterval, UnkeyedNode, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -181,14 +186,12 @@ pub enum CheckMode {
 /// A checked function.
 #[derive(Debug)]
 struct CheckedFunction {
-    /// FR-062/FR-065: content-addressed identity, minted once at check from
-    /// the declaration's own parsed structure (`family::
-    /// mint_declaration_identity`), independent of this function's position
-    /// in the package's function list.
+    /// FR-062/FR-065: the function node's FR-092 key, minted once at check
+    /// (`lowering`), independent of this function's position in the
+    /// package's function list.
     identity: quire_exact::NodeKey,
     signature: Signature,
     body: Node,
-    measure: Option<Node>,
     slots: usize,
 }
 
@@ -243,6 +246,9 @@ pub struct CheckedGraph {
     /// read only through [`Self::checked_type_node`], node-id-keyed like
     /// every other accessor here (R-06).
     type_nodes: BTreeMap<quire_exact::NodeKey, identity::CheckedTypeNode>,
+    /// FR-092/FR-093 (QSL-156 A4b): every lowered, keyed node of this
+    /// package's functions.
+    semantic_graph: lowering::SemanticGraph,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -564,8 +570,13 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let mut functions = Vec::with_capacity(self.functions.len());
-        let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(self.functions.len());
+        let owner = self.owner;
+        let lock_evidence = self.lock_evidence;
+        let model_clauses: Vec<bool> = (0..self.functions.len())
+            .map(|index| self.resolved_signatures.get(index).is_some())
+            .collect();
+        let mut drafts: Vec<(Signature, family::CheckedDeclarationBody)> =
+            Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
         // success diagnostic are all produced through one call into the
         // checked-family contract's own `check` hook
@@ -578,7 +589,6 @@ impl PackageDeclarations {
         // only through it. Termination stays below, over every declaration's
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
-        let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
         // ADR-013 O-14/C-26 (PR #300 review round 2, HIGH-1): every admitted
         // composite and enum type declaration this package's own
         // `TypeEnvironment`/`enums` already carry becomes a real
@@ -739,7 +749,6 @@ impl PackageDeclarations {
                 index,
             });
             let declarations = family::ValueDeclarations {
-                package_identity: &package_identity,
                 scope: &scope,
                 signatures: &signatures,
                 own_signature: &signatures[index],
@@ -771,15 +780,7 @@ impl PackageDeclarations {
                     // declaration's `Typer` picks up where this one left
                     // off instead of restarting at zero.
                     nodes_used = checked.body.nodes_used;
-                    functions.push(CheckedFunction {
-                        identity: checked.identity,
-                        // This declaration's resolved signature.
-                        signature: signatures[index].clone(),
-                        body: checked.body.body,
-                        measure: checked.body.measure,
-                        slots: checked.body.slots,
-                    });
-                    calls.push(checked.body.calls);
+                    drafts.push((signatures[index].clone(), checked.body));
                 }
                 Err(crate::family::StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
@@ -827,41 +828,86 @@ impl PackageDeclarations {
         // is still a whole-package call-graph analysis over every
         // declaration's own `calls` at once (see `check_declaration_body`'s
         // own doc for why it cannot move alongside typing/definedness).
-        let members: Vec<termination::Member<'_>> = functions
+        let members: Vec<termination::Member<'_>> = drafts
             .iter()
-            .zip(&calls)
-            .map(|(function, calls)| termination::Member {
-                name: &function.signature.name,
-                parameters: &function.signature.parameters,
-                measure: function.measure.as_ref(),
-                calls,
+            .map(|(signature, body)| termination::Member {
+                name: &signature.name,
+                parameters: &signature.parameters,
+                measure: body.measure.as_ref(),
+                calls: &body.calls,
             })
             .collect();
-        let refusals = termination::check(&members);
+        let mut refusals = termination::check(&members);
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        // FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map, built
-        // from each function's own minted declaration identity and every
-        // `NodeKind::Call` identity its checked body (and measure, if any)
-        // already carries -- reads locations `Typer` already recorded, mints
-        // no new identity or span here.
-        let mut occurrences = family::OccurrenceMap::default();
-        for (index, function) in functions.iter().enumerate() {
-            occurrences.record(
-                function.identity,
-                "declaration",
-                body_location(index, &function.signature.name),
-            );
-            for (identity, location) in function.body.call_occurrences() {
-                occurrences.record(identity, "reference", location);
-            }
-            if let Some(measure) = &function.measure {
-                for (identity, location) in measure.call_occurrences() {
-                    occurrences.record(identity, "reference", location);
+        // FR-092/FR-093 (QSL-156 A4b): lower every function to FR-322 nodes
+        // and key them, each callee before its callers, and record every
+        // node's source occurrences (FR-062-AC-2/FR-065-AC-3's
+        // occurrence-keyed source map). A function's identity is its
+        // function node's key; a call's is its `expression` node's key.
+        let locations: Vec<Location> = drafts
+            .iter()
+            .enumerate()
+            .map(|(index, (signature, _))| body_location(index, &signature.name))
+            .collect();
+        let callees: Vec<Vec<usize>> = drafts
+            .iter()
+            .map(|(_, body)| {
+                let mut callees = body.body.callees();
+                if let Some(measure) = &body.measure {
+                    callees.extend(measure.callees());
                 }
+                callees
+            })
+            .collect();
+        let order = lowering::lowering_order(&callees, &locations)?;
+        let mut occurrences = family::OccurrenceMap::default();
+        let mut identities: Vec<Option<quire_exact::NodeKey>> = vec![None; drafts.len()];
+        let mut lowering = lowering::Lowering::new(
+            &scope,
+            &owner,
+            &lock_evidence,
+            limits.depth(),
+            drafts.len(),
+            &mut occurrences,
+        );
+        for index in order {
+            let Some((signature, body)) = drafts.get(index) else {
+                continue;
+            };
+            let input = lowering::FunctionInput {
+                name: &signature.name,
+                location: &locations[index],
+                parameters: &signature.parameters,
+                result: &signature.result,
+                body: &body.body,
+                body_slots: &body.slot_names,
+                measure: body.measure.as_ref(),
+                measure_slots: &body.measure_slot_names,
+                model_clause: model_clauses.get(index).copied().unwrap_or(false),
+            };
+            match lowering.function(index, &input) {
+                Ok(key) => identities[index] = Some(key),
+                Err(refusal) => refusals.push(refusal),
             }
         }
+        let semantic_graph = lowering.finish(&lowering::generated_location());
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
+        let functions: Vec<CheckedFunction> = drafts
+            .into_iter()
+            .zip(identities)
+            .filter_map(|((signature, body), identity)| {
+                Some(CheckedFunction {
+                    identity: identity?,
+                    signature,
+                    body: body.body,
+                    slots: body.slots,
+                })
+            })
+            .collect();
         Ok(CheckedGraph {
             scope,
             functions,
@@ -869,11 +915,17 @@ impl PackageDeclarations {
             occurrences,
             model_correspondence,
             type_nodes,
+            semantic_graph,
         })
     }
 }
 
 impl CheckedGraph {
+    /// FR-092/FR-093: every lowered, keyed node of this package's functions.
+    pub fn semantic_graph(&self) -> &SemanticGraph {
+        &self.semantic_graph
+    }
+
     /// ADR-013 O-04: `node`'s `DeclarationKey`, read only from the model
     /// correspondence this package's own checking recorded (FR-088-AC-2).
     /// Node-id-keyed, never name-keyed (R-06/FR-088-AC-5): `CheckedGraph`
@@ -1124,7 +1176,7 @@ mod tests {
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
     }
 
@@ -1145,7 +1197,7 @@ mod tests {
         };
         let refusals = PackageDeclarations {
             model_correspondence: vec![(node, first), (node, second)],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect_err("a duplicate correspondence node must refuse, not overwrite");
@@ -1185,7 +1237,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one record declaration checks cleanly");
@@ -1226,7 +1278,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("a package-qualified declared name checks cleanly");
@@ -1304,7 +1356,7 @@ mod tests {
         }];
         let graph = PackageDeclarations {
             enums,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
@@ -1338,10 +1390,10 @@ mod tests {
     /// identity to the identity/occurrence-key mechanism only, not the
     /// syntax that would produce one), so the closest real,
     /// checker-produced case of "one identity, two distinct occurrences"
-    /// is two calls to the same function with the same arguments:
-    /// `family::mint_call_identity` mints one identity from the callee
-    /// name and arguments alone, never from a resolved index or the
-    /// caller's own identity, so both call sites share it -- the same
+    /// is two calls to the same function with the same arguments: the
+    /// FR-093 call node's key hashes the callee's key and the arguments
+    /// alone, never a resolved index or the caller's own identity, so both
+    /// call sites share one node -- the same
     /// "structurally identical content shares one id" premise ADR-013 O-04
     /// states for clause identity -- while `check`'s own `OccurrenceMap`
     /// still gives each call site its own (role, ordinal), exactly O-07's
@@ -1375,17 +1427,23 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let scope = family::fixtures::empty_scope();
-        let location = family::fixtures::root_location();
-        let call_identity = family::mint_call_identity(
-            family::DEFAULT_PACKAGE_IDENTITY,
-            "helper",
-            &[],
-            &family::TargetTypes::new(&scope, &location),
-        )
-        .expect("a call with no arguments has no target to resolve");
-        let first = Origin::new(Role::new("reference"), 0);
-        let second = Origin::new(Role::new("reference"), 1);
+        let call_identity = graph
+            .semantic_graph()
+            .nodes()
+            .find(|node| node.semantic_form() == "call")
+            .map(SemanticNode::key)
+            .expect("the call node was lowered");
+        assert_eq!(
+            graph
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == "call")
+                .count(),
+            1,
+            "both call sites lower to one node"
+        );
+        let first = Origin::new(Role::new("expression"), 0);
+        let second = Origin::new(Role::new("expression"), 1);
         let first_location = graph
             .occurrence(call_identity, &first)
             .expect("the first call site was recorded")
@@ -1402,7 +1460,7 @@ mod tests {
             first_location, second_location,
             "two distinct source occurrences must not collapse to one location"
         );
-        let third = Origin::new(Role::new("reference"), 2);
+        let third = Origin::new(Role::new("expression"), 2);
         assert_eq!(graph.occurrence(call_identity, &third), None);
 
         // Step 5 (adverse, R-05): renaming both callers changes their
@@ -1442,7 +1500,7 @@ mod tests {
         resolved_signatures.insert(0, (Vec::new(), ValueType::Boolean));
         let refusals = PackageDeclarations {
             resolved_signatures,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect_err("index 0 names no function");

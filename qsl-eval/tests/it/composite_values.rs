@@ -827,7 +827,7 @@ mod checked {
             types,
             aliases,
             functions,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an

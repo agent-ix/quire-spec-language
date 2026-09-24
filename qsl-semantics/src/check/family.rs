@@ -46,8 +46,6 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
-use sha2::{Digest, Sha256};
-
 use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
 
 use qsl_forms::{
@@ -76,14 +74,6 @@ use quire_exact::TextProfile;
 use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
 
-/// The declaring package's `name@version` a checked node's identity
-/// preimage includes (ADR-013 O-04). Complete-V1's `PackageDeclarations` has
-/// no package name/version of its own (unlike the outer domain-package
-/// layer); every caller of `PackageDeclarations::check` (including its
-/// ~40 existing test call sites) keeps using the unchanged `check` entry
-/// point and gets this default.
-pub(crate) const DEFAULT_PACKAGE_IDENTITY: &str = "value.function-package@0.0.0-unversioned";
-
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
 /// [`crate::family::CheckContext::new`]'s signature without itself wanting
@@ -106,146 +96,60 @@ pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exac
     result_units: u64::MAX,
 };
 
-fn sha256(bytes: &[u8]) -> [u8; 32] {
-    Sha256::digest(bytes).into()
-}
-
-/// A length-prefixed byte writer used only to mint identity preimages
-/// (`mint_declaration_identity`/`mint_call_identity`, PR #262 review,
-/// finding F2). `{:?}` (`Debug`) was rejected: `Debug` is documented by
-/// `std` as not a stable serialization contract, so a field rename, an
-/// added `#[derive(Debug)]` field, or a dependency changing its own `Debug`
-/// impl would silently change every minted identity -- no compile error, no
-/// failing test. Every write below goes through [`Self::write_bytes`],
-/// which prepends the byte count before the bytes themselves, so two
-/// distinct sequences of writes can never collide into the same combined
-/// bytes -- the injectivity gap the same finding raised about
-/// `declaration.name` interpolated next to `\0` separators (a name
-/// containing `\0` used to blend into its neighbour; a length prefix makes
-/// that impossible regardless of what the string contains). Every tag
-/// written is an explicit `&'static str` literal chosen at its `match` arm,
-/// never a derived discriminant, and every `match` below (`encode_expression`,
-/// `encode_value_type`, and their small closed-enum helpers) is exhaustive:
-/// adding a variant to `Expression`, `ValueType` or any nested enum this
-/// preimage reads is a compile error here, forcing this file to pick an
-/// explicit new tag, not a silent reinterpretation of the old bytes.
+/// QSL-153's size meter over one parsed declaration: the `StageLimits`
+/// figures [`ValueFunctionFamily::check`] compares before it types the
+/// declaration (`input_bytes`, `node_count`) and the work it charges
+/// (`work_budget`). It hashes nothing and mints no identity: a checked
+/// node's identity is its FR-092/FR-093 key (`check::lowering`, QSL-156
+/// A4b), minted after typing.
 ///
-/// An exhaustive `match` only catches a *new* variant, though (PR #262
-/// review, round 2): it forces nothing about the order two existing writes
-/// happen in, or the spelling of an existing tag, and every test in this
-/// file until round 2 only ever compared two identities minted in the same
-/// process or round-tripped through `emit_v2`/`decode_v2`, so a reordered
-/// write or a renamed tag would have recompiled clean and passed every one
-/// of them while silently changing every minted identity. See
-/// `mint_declaration_identity_matches_a_checked_in_digest`
-/// (`value::expression::family`'s `tests` module) for the golden-digest test
-/// that closes that gap.
-///
-/// **`bytes`, `write_bytes` and `write_str` are `pub(super)` (PR #300 review
-/// finding 10, QSL-158 S-3b):** `check::identity` (a sibling submodule under
-/// `check`) shares this exact length-prefixed preimage writer for its own
-/// O-04 type-declaration/variant identities, instead of carrying a
-/// byte-identical copy. Both live under `check`, so `pub(super)` (visible to
-/// `check` and everything under it) is exactly the scope this sharing
-/// needs, no wider; `nodes`/`writes`/`input_bytes`/`input_bytes_limit` stay
-/// private -- `identity.rs`'s minters have no `StageLimits` budget to
-/// report against (they pass `u64::MAX`, see [`Self::new`]'s own doc) and
-/// read only the finished bytes, through [`Self::finish`].
-///
-/// **`nodes`/`writes`/`input_bytes` (QSL-153).** Running counters alongside
-/// the byte buffer, read back only by [`mint_declaration_identity`] as
-/// [`IdentityPreimageMetrics`] -- never written into the buffer itself, so
-/// they cannot change a minted digest. `nodes` counts each
-/// [`encode_expression`] call (one per visited `Expression` node); `writes`
-/// counts each base write (`write_bytes`/`write_u64`/`write_bool` --
-/// `write_str` is `write_bytes`, not counted twice), a finer-grained count
-/// than `nodes` because encoding one node writes several fields (a tag plus
-/// its operands/labels); `input_bytes` is the buffer's own logical length.
-///
-/// **`input_bytes`/`input_bytes_limit` short-circuit `bytes`' own growth
-/// (PR #302 review finding 4).** An earlier version measured the minted
-/// buffer's size only after the whole pass finished
-/// (`preimage.bytes.len()`), so an oversize declaration paid for its full,
-/// unbounded allocation before `check` ever compared anything against a
-/// limit. `input_bytes` is instead accumulated -- via
-/// [`quire_exact::length_amount`], never a bare `as` cast -- on every
-/// write, before `bytes` itself grows; once it passes `input_bytes_limit`,
-/// every write becomes a no-op against `bytes` (still counted, so
-/// `input_bytes` stays the true, uncapped total `check` refuses on) rather
-/// than extending an already-over-budget buffer further. `bytes` is safe to
-/// leave capped at that point because a capped preimage's identity is never
-/// used: `check` refuses before hashing it (`ValueFunctionFamily::check`'s
-/// own doc).
-pub(super) struct Preimage {
-    bytes: Vec<u8>,
+/// Each figure is the length-prefixed encoding this walk describes, so the
+/// limits keep the meaning QSL-153 gave them: `input_bytes` is the encoding's
+/// logical byte length (a `u64` length prefix plus the bytes of each written
+/// string, eight bytes per number, one per flag), accumulated via
+/// [`quire_exact::length_amount`], never a bare `as` cast; `nodes` counts
+/// each [`encode_expression`] visit; `writes` counts each base write.
+/// Every tag is an explicit `&'static str` chosen at its `match` arm and
+/// every `match` below is exhaustive, so a new `Expression` or `ValueType`
+/// variant does not compile until it is measured.
+pub(super) struct DeclarationMeter {
     nodes: u64,
     writes: u64,
     input_bytes: u64,
-    input_bytes_limit: u64,
 }
 
-impl Preimage {
-    /// `input_bytes_limit` bounds this preimage's own buffer growth (PR
-    /// #302 review finding 4): pass `u64::MAX` for the pre-QSL-153,
-    /// unbounded behavior every caller but `ValueFunctionFamily::check`
-    /// keeps -- that includes every `check::identity` minter (PR #300
-    /// review finding 10), which has no `StageLimits` budget of its own to
-    /// report against.
-    pub(super) fn new(input_bytes_limit: u64) -> Self {
+impl DeclarationMeter {
+    fn new() -> Self {
         Self {
-            bytes: Vec::new(),
             nodes: 0,
             writes: 0,
             input_bytes: 0,
-            input_bytes_limit,
         }
     }
 
-    /// Whether `bytes`' own growth is still within `input_bytes_limit` --
-    /// `false` once a write has already pushed `input_bytes` past it, so
-    /// every later write short-circuits rather than growing an
-    /// already-over-budget buffer.
-    fn within_bytes_limit(&self) -> bool {
-        self.input_bytes <= self.input_bytes_limit
-    }
-
-    pub(super) fn write_bytes(&mut self, bytes: &[u8]) {
+    fn write_bytes(&mut self, bytes: &[u8]) {
         self.writes += 1;
         // A `u64` length prefix, plus the bytes themselves.
         self.input_bytes = self
             .input_bytes
             .saturating_add(quire_exact::length_amount(std::mem::size_of::<u64>()))
             .saturating_add(quire_exact::length_amount(bytes.len()));
-        if !self.within_bytes_limit() {
-            return;
-        }
-        self.bytes
-            .extend_from_slice(&quire_exact::length_amount(bytes.len()).to_le_bytes());
-        self.bytes.extend_from_slice(bytes);
     }
 
-    pub(super) fn write_str(&mut self, text: &str) {
+    fn write_str(&mut self, text: &str) {
         self.write_bytes(text.as_bytes());
     }
 
-    fn write_u64(&mut self, value: u64) {
+    fn write_u64(&mut self, _value: u64) {
         self.writes += 1;
         self.input_bytes = self
             .input_bytes
             .saturating_add(quire_exact::length_amount(std::mem::size_of::<u64>()));
-        if !self.within_bytes_limit() {
-            return;
-        }
-        self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
-    fn write_bool(&mut self, value: bool) {
+    fn write_bool(&mut self, _value: bool) {
         self.writes += 1;
         self.input_bytes = self.input_bytes.saturating_add(1);
-        if !self.within_bytes_limit() {
-            return;
-        }
-        self.bytes.push(u8::from(value));
     }
 
     /// One [`encode_expression`] visit of an `Expression` node.
@@ -328,7 +232,7 @@ fn text_profile_tag(profile: TextProfile) -> &'static str {
     }
 }
 
-fn encode_quantity_unit(out: &mut Preimage, unit: UnitId) {
+fn encode_quantity_unit(out: &mut DeclarationMeter, unit: UnitId) {
     // The unit's own content-addressed identity: a declared unit's node key
     // or a compound unit's `quire.value.compound-unit/v1` digest (ADR-013
     // OQ-B), tagged by its domain -- never a re-derivation from the unit's
@@ -358,7 +262,7 @@ fn encode_quantity_unit(out: &mut Preimage, unit: UnitId) {
 // second, parallel integer serialization where one canonical, tested one
 // already exists and is already trusted for identity purposes -- so they
 // are left on `Integer::to_string()` deliberately, not as an oversight.
-fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
+fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
     match value_type {
         ValueType::Boolean => out.write_str("boolean"),
         ValueType::Integer => out.write_str("integer"),
@@ -433,7 +337,7 @@ fn encode_value_type(out: &mut Preimage, value_type: &ValueType) {
 }
 
 fn encode_field_initializer(
-    out: &mut Preimage,
+    out: &mut DeclarationMeter,
     initializer: &FieldInitializer,
     targets: &TargetTypes<'_>,
 ) -> Result<(), CheckRefusal> {
@@ -451,7 +355,7 @@ fn encode_field_initializer(
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
 fn encode_expression(
-    out: &mut Preimage,
+    out: &mut DeclarationMeter,
     expr: &Expression,
     targets: &TargetTypes<'_>,
 ) -> Result<(), CheckRefusal> {
@@ -663,124 +567,61 @@ fn encode_expression(
     Ok(())
 }
 
-/// Mint a function declaration's identity (FR-062: "content-addressed...
-/// over the node's structure and its declaring package's `name@version`"):
-/// a SHA-256 over the package identity and the declaration's own **parsed**
-/// structure -- name, parameters, result, measure and body, as authored,
-/// before any name is resolved to a `Vec` index.
+/// Measure one function declaration's parsed size (QSL-153): its name,
+/// parameters, result, measure and body, as authored, with every declared
+/// type written as its resolved `ValueType` (so two spellings of one type
+/// measure alike) and each `Convert`/`AllInstances`/`Lookup` target resolved
+/// through `targets`. A target that does not resolve is refused here with
+/// the same refusal the checker would give it.
 ///
-/// Every declared type in that structure is written as its resolved
-/// `ValueType`, never as its `TypeForm` spelling: the parameters and result
-/// come from `signature` (the declaration's own resolved signature), and
-/// each `Convert`/`AllInstances`/`Lookup` target is resolved through
-/// `targets`. ADR-013 O-04: equal ids mean structurally identical nodes, so
-/// two spellings of one type (`Text[1,100]`, `Text[1,100;unicode-scalars]`,
-/// an alias of either) mint one identity, and a declared record's content
-/// reaches every function declared over it. A target that does not resolve
-/// is refused here with the same refusal the checker would give it.
-///
-/// Hashing the parsed form, not the checked/typed tree, is what makes this
-/// identity independent of unrelated declarations' order (FR-065-AC-2): a
-/// typed body's `NodeKind::Call { function: usize, .. }` names a callee by
-/// its position in the package's function list, which shifts when unrelated
-/// declarations are reordered; the parsed `Expression::Call { name, .. }` a
-/// declaration was authored with never does, so nothing this preimage reads
-/// changes when a declaration elsewhere in the package moves.
-///
-/// This is a pragmatic content-address, not a claim of interop with the
-/// external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm`
-/// schema (`resources/complete-value/.../node-identity-preimage.schema.
-/// json`): that schema's `Operation` identity for an arbitrary applied
-/// operator has no landed implementation this ticket could follow for a
-/// user-declared function, and building one from scratch is out of this
-/// migration's scope (`crate::family`'s module doc). Structural identity
-/// within one check run -- what FR-062-AC-2 and FR-065-AC-2 actually test --
-/// holds regardless.
-///
-/// The preimage is [`Preimage`]'s explicit, length-prefixed byte encoding
-/// (PR #262 review, finding F2), not `{:?}` (`Debug`) formatting -- see
-/// [`Preimage`]'s own doc for why.
-///
-/// `input_bytes_limit` bounds `Preimage`'s own buffer growth (PR #302
-/// review finding 4): pass `u64::MAX` for the pre-QSL-153, unbounded
-/// behavior every caller but `ValueFunctionFamily::check` keeps.
-pub(crate) fn mint_declaration_identity(
-    package_identity: &str,
+/// The figures bound the work [`ValueFunctionFamily::check`] is about to do
+/// (see [`DeclarationMeter`]); the declaration's identity is its FR-092
+/// function node key, minted by `check::lowering` once every declaration is
+/// typed.
+pub(crate) fn measure_declaration(
     declaration: &FunctionDeclaration,
     signature: &Signature,
     targets: &TargetTypes<'_>,
-    input_bytes_limit: u64,
-) -> Result<(NodeKey, IdentityPreimageMetrics), CheckRefusal> {
-    let mut preimage = Preimage::new(input_bytes_limit);
-    preimage.write_str("value.function-declaration");
-    preimage.write_str(package_identity);
-    preimage.write_str(&declaration.name);
-    preimage.write_u64(signature.parameters.len() as u64);
+) -> Result<DeclarationMetrics, CheckRefusal> {
+    let mut meter = DeclarationMeter::new();
+    meter.write_str("value.function-declaration");
+    meter.write_str(&declaration.name);
+    meter.write_u64(signature.parameters.len() as u64);
     for (name, value_type) in &signature.parameters {
-        preimage.write_str(name);
-        encode_value_type(&mut preimage, value_type);
+        meter.write_str(name);
+        encode_value_type(&mut meter, value_type);
     }
-    encode_value_type(&mut preimage, &signature.result);
-    preimage.write_bool(declaration.measure.is_some());
+    encode_value_type(&mut meter, &signature.result);
+    meter.write_bool(declaration.measure.is_some());
     if let Some(measure) = &declaration.measure {
-        encode_expression(&mut preimage, measure, targets)?;
+        encode_expression(&mut meter, measure, targets)?;
     }
-    encode_expression(&mut preimage, &declaration.body, targets)?;
-    let metrics = IdentityPreimageMetrics {
-        input_bytes: preimage.input_bytes,
-        node_count: preimage.nodes,
-        work_budget: preimage.writes,
-    };
-    let identity = NodeKey::from_digest(sha256(&preimage.bytes));
-    Ok((identity, metrics))
+    encode_expression(&mut meter, &declaration.body, targets)?;
+    Ok(DeclarationMetrics {
+        input_bytes: meter.input_bytes,
+        node_count: meter.nodes,
+        work_budget: meter.writes,
+    })
 }
 
-/// [`StageLimits`](crate::family::StageLimits)'s restored real producer
-/// values (QSL-153), read back from one real `mint_declaration_identity`
-/// pass rather than a second, parallel traversal. `input_bytes` and
-/// `node_count` are `StageLimits` fields, compared by
+/// [`StageLimits`](crate::family::StageLimits)'s real producer values
+/// (QSL-153), read back from one [`measure_declaration`] pass.
+/// `input_bytes` and `node_count` are `StageLimits` fields, compared by
 /// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
 /// `work_budget` is charged against the shared kernel meter instead (PR
 /// #302 review finding 3) -- see `StageLimits`'s own doc.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IdentityPreimageMetrics {
-    /// The minted preimage's own logical byte length (`Preimage::
-    /// input_bytes`, not `bytes.len()` -- see `Preimage`'s own doc).
+pub struct DeclarationMetrics {
+    /// The measured encoding's logical byte length.
     pub(crate) input_bytes: u64,
     /// The number of `Expression` nodes [`encode_expression`] visited.
     pub(crate) node_count: u64,
-    /// The number of base preimage writes performed.
+    /// The number of base writes performed.
     pub(crate) work_budget: u64,
 }
 
-/// Mint a function-application occurrence's identity, from the call's own
-/// parsed structure -- the callee's syntactic name and its arguments' parsed
-/// form -- never from a resolved `Vec` index. See
-/// [`mint_declaration_identity`]'s doc for why an index would be unsafe
-/// here, and [`Preimage`]'s doc for why this is not `{:?}` formatting.
-pub(crate) fn mint_call_identity(
-    package_identity: &str,
-    callee_name: &str,
-    arguments: &[Expression],
-    targets: &TargetTypes<'_>,
-) -> Result<NodeKey, CheckRefusal> {
-    // Not `StageLimits`-bound (that mechanism is `check`'s own,
-    // per-declaration bound, not this call-occurrence identity mint), so
-    // `Preimage`'s own short-circuit never engages here.
-    let mut preimage = Preimage::new(u64::MAX);
-    preimage.write_str("value.function-application");
-    preimage.write_str(package_identity);
-    preimage.write_str(callee_name);
-    preimage.write_u64(arguments.len() as u64);
-    for argument in arguments {
-        encode_expression(&mut preimage, argument, targets)?;
-    }
-    Ok(NodeKey::from_digest(sha256(&preimage.bytes)))
-}
-
-/// Resolves the `Convert`/`AllInstances`/`Lookup` target type forms an
-/// identity preimage writes, against the package's [`Scope`], so the
-/// preimage carries resolved types (see [`mint_declaration_identity`]).
+/// Resolves the `Convert`/`AllInstances`/`Lookup` target type forms
+/// [`measure_declaration`] measures, against the package's [`Scope`].
 pub(crate) struct TargetTypes<'a> {
     scope: &'a Scope,
     location: &'a CheckLocation,
@@ -873,20 +714,10 @@ pub(crate) fn check_application(
             typed.push(typer.check_as(argument, parameter, &location.child(index))?);
         }
         let result = signature.result.clone();
-        // FR-062/FR-065: identity is minted from the call's *parsed*
-        // structure (`name`, `arguments` before typing), never from
-        // `function` (a position-dependent index into `typer.signatures()`
-        // that shifts when unrelated declarations reorder) -- see
-        // `mint_call_identity`'s doc.
-        let identity = mint_call_identity(
-            DEFAULT_PACKAGE_IDENTITY,
-            name,
-            arguments,
-            &TargetTypes::new(typer.scope(), location),
-        )?;
+        // FR-093: the call's identity is the key of the `expression` node
+        // `check::lowering` builds for it once its callee is keyed.
         return Ok(Node {
             kind: super::ir::NodeKind::Call {
-                identity,
                 function,
                 arguments: typed,
             },
@@ -969,6 +800,11 @@ pub(crate) struct CheckedDeclarationBody {
     /// The evaluation slot count the body's own parameter/local bindings
     /// allocated.
     pub(crate) slots: usize,
+    /// The name each body slot was bound under, indexed by slot (FR-092
+    /// parameter nodes).
+    pub(crate) slot_names: Vec<String>,
+    /// The name each measure slot was bound under, indexed by slot.
+    pub(crate) measure_slot_names: Vec<String>,
     /// Every call reachable from the body (not the measure -- unchanged
     /// from the pre-migration behavior, see the call site's own doc), for
     /// `check::mod`'s whole-package termination pass.
@@ -1072,6 +908,8 @@ pub(crate) fn check_declaration_body(
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
     let slots = typer.slots();
+    let slot_names = typer.slot_names().to_vec();
+    let mut measure_slot_names = Vec::new();
     let measure = match &form.measure {
         Some(measure) => {
             // A `decreases` measure is always checked as `ClauseKind::Body`
@@ -1088,7 +926,9 @@ pub(crate) fn check_declaration_body(
                 ClauseKind::Body,
             );
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
-            Some(measure_typer.infer(measure, None, input.measure_location)?)
+            let measure = measure_typer.infer(measure, None, input.measure_location)?;
+            measure_slot_names = measure_typer.slot_names().to_vec();
+            Some(measure)
         }
         None => None,
     };
@@ -1114,6 +954,8 @@ pub(crate) fn check_declaration_body(
         body,
         measure,
         slots,
+        slot_names,
+        measure_slot_names,
         calls: definedness.calls,
         nodes_used: nodes,
     })
@@ -1185,6 +1027,13 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
         origin
     }
 
+    /// Whether any occurrence of `identity` is recorded.
+    pub(crate) fn has(&self, identity: NodeKey) -> bool {
+        self.entries
+            .iter()
+            .any(|occurrence| occurrence.location.node() == identity)
+    }
+
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
         self.entries
@@ -1231,12 +1080,11 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 /// does not substitute for this one and does not accumulate across
 /// declarations.
 pub struct ValueDeclarations<'a> {
-    pub(crate) package_identity: &'a str,
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a [Signature],
     /// The resolved signature of the declaration being checked
     /// (`signatures[index]`). `check_declaration_body` types against it, and
-    /// its identity is minted over it.
+    /// `measure_declaration` measures it.
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
@@ -1247,22 +1095,14 @@ pub struct ValueDeclarations<'a> {
 }
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Checked`]
-/// (QSL-148; PR #303 review, finding N3): the minted identity together with
-/// the real checked body `check_declaration_body` produces, returned
-/// through `check`'s own `Ok` rather than a side channel.
-///
-/// This is distinct from layer 5's `ReferenceEvaluation::Key`, the
-/// type `evaluate` is looked up and called by at runtime: `evaluate`'s one
-/// real caller (`CheckedPackage::call`, `value::expression::mod.rs`) only
-/// ever has a bare identity, resolved out of `CheckedPackage`'s own,
-/// separately stored `CheckedFunction` list -- it never has a
-/// `CheckedDeclarationBody` at that point, only what `check` minted for
-/// it. Splitting the two associated types apart is what lets `Checked`
-/// carry the richer, check-time-only payload without breaking `evaluate`'s
-/// existing calling convention.
+/// (QSL-148; PR #303 review, finding N3): the real checked body
+/// `check_declaration_body` produces, returned through `check`'s own `Ok`
+/// rather than a side channel. The declaration's identity is not here: it is
+/// the FR-092 function node key, which hashes the keys of the functions its
+/// body calls, so `PackageDeclarations::check` mints it once every
+/// declaration is checked (`check::lowering`, QSL-156 A4b).
 #[derive(Debug)]
 pub struct CheckedDeclaration {
-    pub(crate) identity: NodeKey,
     pub(crate) body: CheckedDeclarationBody,
 }
 
@@ -1280,8 +1120,8 @@ pub struct ValueFunctionFamily;
 impl crate::family::FamilyContract for ValueFunctionFamily {
     type Form = FunctionDeclaration;
     /// See [`CheckedDeclaration`]'s own doc (PR #303 review, finding N3):
-    /// the minted identity together with the real checked body, returned
-    /// through `check`'s ordinary `Ok`, not a side channel.
+    /// the real checked body, returned through `check`'s ordinary `Ok`, not
+    /// a side channel.
     type Checked = CheckedDeclaration;
     /// The crate's own located refusal vocabulary (QSL-148): `check` can now
     /// genuinely refuse (an ill-typed or undefined body), and `CheckRefusal`
@@ -1315,32 +1155,20 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
         let declarations = cx.declarations();
-        let minted = mint_declaration_identity(
-            declarations.package_identity,
+        let measured = measure_declaration(
             form,
             declarations.own_signature,
             &TargetTypes::new(declarations.scope, declarations.location),
-            cx.limits().input_bytes,
         );
-        let (identity, metrics) = match minted {
-            Ok(minted) => minted,
+        let metrics = match measured {
+            Ok(metrics) => metrics,
             Err(refusal) => {
                 cx.scopes.leave();
                 cx.leave_nesting();
                 return Err(crate::family::StageFailure::Refused(refusal));
             }
         };
-        // PR #262 review (F7): an earlier version of this function
-        // recomputed `mint_declaration_identity` a second time here and
-        // returned `StageFailure::Fault` on a mismatch, framed as a
-        // "defensive" internal-invariant check. It was not: comparing a
-        // pure function's output against itself, called twice with the
-        // same arguments, cannot fail -- the two calls are definitionally
-        // equal, not equal because anything was verified. Deleted along
-        // with `StageFailure::Fault`/`InternalFault` themselves (see
-        // `crate::family::outcome::StageFailure`'s own doc).
-        //
-        // QSL-153: the same preimage pass's own byte length and node count
+        // QSL-153: the measured byte length and node count
         // are checked against `cx`'s restored `StageLimits` fields before
         // this declaration is admitted -- the first one exceeded refuses
         // with a `Limit` outcome naming it, matching `enter_nesting`'s own
@@ -1443,16 +1271,13 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // every return path -- success or refusal -- balances the scope
         // stack and the nesting depth identically.
         let body = checked_body.map_err(crate::family::StageFailure::Refused)?;
-        Ok(crate::family::Staged::new(CheckedDeclaration {
-            identity,
-            body,
-        }))
+        Ok(crate::family::Staged::new(CheckedDeclaration { body }))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{empty_scope, mint_resolved, root_location};
+    use super::fixtures::{empty_scope, fixture_owner, root_location};
     use super::*;
     use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
@@ -1461,17 +1286,23 @@ mod tests {
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-    fn int_0_10() -> TypeForm {
-        TypeForm::builtin(BuiltinType::Int, SPAN).with_bounds(vec!["0".to_owned(), "10".to_owned()])
-    }
-
     fn text(bounds: &[&str]) -> TypeForm {
         TypeForm::builtin(BuiltinType::Text, SPAN)
             .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
     }
 
+    /// `declaration`'s checked identity, in a package of `scope`'s types and
+    /// aliases under the fixture owner.
     fn mint(scope: &Scope, declaration: &FunctionDeclaration) -> NodeKey {
-        mint_resolved(scope, DEFAULT_PACKAGE_IDENTITY, declaration, u64::MAX).0
+        let mut package = crate::check::PackageDeclarations::new(fixture_owner());
+        package.types = scope.types.clone();
+        package.aliases = scope.aliases.clone();
+        package.functions = vec![declaration.clone()];
+        package
+            .check(CheckingLimits::default())
+            .expect("the fixture checks")
+            .function_identity(&declaration.name)
+            .expect("the fixture declares its function")
     }
 
     fn unary(parameter: TypeForm) -> FunctionDeclaration {
@@ -1484,99 +1315,10 @@ mod tests {
         )
     }
 
-    /// The preimage byte grammar is pinned: `encode_expression`/
-    /// `encode_value_type`'s exhaustive `match`es only force a compile error
-    /// for a *new* variant, while reordering two writes or renaming a tag
-    /// recompiles clean and silently changes every identity. The fixture
-    /// exercises `Let`, `If`, `Binary`, `Call`, `Collection` and `Convert` on
-    /// the `Expression` side and `Int`, `Text` and `Collection` (with a
-    /// nested `Int` element) on the resolved `ValueType` side. Identity is
-    /// minted over resolved types, so this is the same digest the
-    /// `ValueType`-typed declaration minted before type forms existed.
-    /// Regenerate it only for an intended grammar change.
-    #[test]
-    fn mint_declaration_identity_matches_a_checked_in_digest() {
-        let parameters = vec![
-            ("n".to_owned(), int_0_10()),
-            ("label".to_owned(), text(&["1", "100", "unicode-scalars"])),
-        ];
-        let result = TypeForm::collection(CollectionKind::Sequence, SPAN)
-            .with_arguments(vec![int_0_10()])
-            .with_bounds(vec!["0".to_owned(), "5".to_owned()]);
-        let body = Expression::Let {
-            name: "x".to_owned(),
-            value: Box::new(Expression::Integer(quire_exact::Integer::from(2_i64))),
-            body: Box::new(Expression::If {
-                condition: Box::new(Expression::Binary {
-                    operator: BinaryOperator::Greater,
-                    left: Box::new(Expression::Name("x".to_owned())),
-                    right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
-                }),
-                then: Box::new(Expression::Call {
-                    name: "helper".to_owned(),
-                    arguments: vec![Expression::Name("x".to_owned())],
-                }),
-                otherwise: Box::new(Expression::Convert {
-                    target: TypeForm::builtin(BuiltinType::Integer, SPAN),
-                    operand: Box::new(Expression::Collection {
-                        kind: CollectionKind::Sequence,
-                        elements: vec![Expression::Integer(quire_exact::Integer::from(0_i64))],
-                    }),
-                }),
-            }),
-        };
-        let declaration = FunctionDeclaration::new("golden", parameters, result, None, body);
-        assert_eq!(
-            mint(&empty_scope(), &declaration).to_string(),
-            "cba9d6dccdc360124ad0823ba8fd5448cb579763ef1b85f9dd0c71182497acfe",
-            "the preimage byte grammar changed -- see this test's own doc \
-             before regenerating this constant"
-        );
-    }
-
-    /// The `Reference` arm of the preimage byte grammar is pinned: a function
-    /// over `Reference<M::A>` mints this exact digest. The reference type is
-    /// written as its tag and its key's lowercase hex, so retyping the key
-    /// from `NodeKey` to `EffectiveId` (ADR-013 O-05) left the digest
-    /// unchanged: the constant was computed on main before that retype, with
-    /// `M::A` keyed by the `NodeKey` of the same 32 bytes. Regenerate it only
-    /// for an intended grammar change.
-    #[test]
-    fn mint_reference_signature_identity_matches_a_checked_in_digest() {
-        use crate::value::declaration::ObjectTypeDeclaration;
-        let mut scope = empty_scope();
-        scope.types = TypeEnvironment::new(
-            [],
-            [ObjectTypeDeclaration::new(
-                quire_exact::EffectiveId::from_digest([0x5a; 32]),
-                "M::A",
-                Vec::new(),
-            )],
-        )
-        .expect("one object type admits");
-        let reference = || {
-            TypeForm::builtin(BuiltinType::Reference, SPAN)
-                .with_arguments(vec![TypeForm::name("M::A", SPAN)])
-        };
-        let declaration = FunctionDeclaration::new(
-            "same",
-            vec![("r".to_owned(), reference())],
-            reference(),
-            None,
-            Expression::Name("r".to_owned()),
-        );
-        assert_eq!(
-            mint(&scope, &declaration).to_string(),
-            "bda707c9ead1b1e7c70b108ef4bd6ec304f51cee961a80096ff4717dc7c9e44d",
-            "the reference arm of the preimage byte grammar changed -- see \
-             this test's own doc before regenerating this constant"
-        );
-    }
-
     /// ADR-013 O-04: equal ids mean structurally identical nodes. Three
     /// spellings of one type -- defaulted profile, explicit profile, and an
-    /// alias -- mint one identity; so do two spellings of a `Convert`
-    /// target.
+    /// alias -- give one parameter type node, so the function over it has
+    /// one identity; a different profile gives another.
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn spellings_of_one_resolved_type_mint_one_identity() {
@@ -1595,37 +1337,19 @@ mod tests {
             mint(&scope, &unary(TypeForm::name("Label", SPAN)))
         );
         assert_ne!(defaulted, mint(&scope, &unary(text(&["1", "100", "nfc"]))));
-
-        let converting = |target: TypeForm| {
-            FunctionDeclaration::new(
-                "g",
-                Vec::new(),
-                TypeForm::builtin(BuiltinType::Integer, SPAN),
-                None,
-                Expression::Convert {
-                    target,
-                    operand: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
-                },
-            )
-        };
-        assert_eq!(
-            mint(&scope, &converting(text(&["1", "100"]))),
-            mint(&scope, &converting(TypeForm::name("Label", SPAN)))
-        );
     }
 
-    /// A function declared over a record carries that record's resolved
-    /// identity: a `Point` with different fields (and so a different node
-    /// key) gives `f(p: Point)` a different identity, though `Point` is
-    /// spelled the same.
+    /// A function declared over a record carries that record's node key: a
+    /// `Point` with different fields gives `f(p: Point)` a different
+    /// identity, though `Point` is spelled the same.
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn a_changed_record_changes_the_identity_of_functions_over_it() {
-        let scope_with = |label: &str, field_type: ValueType| {
+        let scope_with = |fill: u8, field_type: ValueType| {
             let mut scope = empty_scope();
             scope.types = TypeEnvironment::new(
                 [CompositeDeclaration::new(
-                    NodeKey::from_digest(sha256(label.as_bytes())),
+                    NodeKey::from_digest([fill; 32]),
                     "Point",
                     CompositeShape::Record(vec![FieldDeclaration::new(
                         "x",
@@ -1640,21 +1364,15 @@ mod tests {
         };
         let over_point = unary(TypeForm::name("Point", SPAN));
         assert_ne!(
-            mint(
-                &scope_with("Point{x: Integer}", ValueType::Integer),
-                &over_point
-            ),
-            mint(
-                &scope_with("Point{x: Boolean}", ValueType::Boolean),
-                &over_point
-            )
+            mint(&scope_with(1, ValueType::Integer), &over_point),
+            mint(&scope_with(2, ValueType::Boolean), &over_point)
         );
     }
 
-    /// A `Convert` target that does not resolve is refused while minting,
-    /// with the checker's own missing-name refusal, not hashed as spelling.
+    /// A `Convert` target that does not resolve is refused while measuring,
+    /// with the checker's own missing-name refusal, not measured as spelling.
     #[test]
-    fn an_unresolved_target_is_refused_while_minting() {
+    fn an_unresolved_target_is_refused_while_measuring() {
         let scope = empty_scope();
         let location = root_location();
         let declaration = FunctionDeclaration::new(
@@ -1673,14 +1391,9 @@ mod tests {
             result: ValueType::Integer,
             callable_by_name: true,
         };
-        let refusal = mint_declaration_identity(
-            DEFAULT_PACKAGE_IDENTITY,
-            &declaration,
-            &signature,
-            &TargetTypes::new(&scope, &location),
-            u64::MAX,
-        )
-        .unwrap_err();
+        let refusal =
+            measure_declaration(&declaration, &signature, &TargetTypes::new(&scope, &location))
+                .unwrap_err();
         assert!(matches!(refusal.cause, CheckCause::MissingName(name) if name == "Nowhere"));
     }
 }
@@ -1693,11 +1406,13 @@ mod tests {
 pub mod fixtures {
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
-    use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits, Staged};
+    use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
     use quire_exact::Meter;
 
-    /// `check`'s default declaring-package identity (`pub(crate)`).
-    pub const DEFAULT_PACKAGE_IDENTITY: &str = super::DEFAULT_PACKAGE_IDENTITY;
+    /// The source owner `(a, u)` FR-092's golden vectors are keyed under.
+    pub fn fixture_owner() -> crate::check::SourceOwner {
+        crate::check::SourceOwner::new("a", "u").expect("a nonempty fixture owner")
+    }
 
     /// `check`'s unbounded scalar limits (`pub(crate)`).
     pub const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = super::SCALAR_LIMITS_UNLIMITED;
@@ -1713,21 +1428,9 @@ pub mod fixtures {
         CheckContext::new(declarations, limits, meter, diagnostics, scopes)
     }
 
-    /// The minted identity a successful `ValueFunctionFamily::check`
-    /// staged (`Staged::value` and `CheckedDeclaration::identity` are
-    /// `pub(crate)`).
-    pub fn staged_identity(staged: &Staged<CheckedDeclaration>) -> NodeKey {
-        staged.value.identity
-    }
-
-    /// `declaration`'s identity as `ValueFunctionFamily::check` mints it:
-    /// over its signature resolved against `scope`.
-    pub fn mint_resolved(
-        scope: &Scope,
-        package_identity: &str,
-        declaration: &FunctionDeclaration,
-        input_bytes_limit: u64,
-    ) -> (NodeKey, IdentityPreimageMetrics) {
+    /// `declaration`'s [`DeclarationMetrics`] as `ValueFunctionFamily::check`
+    /// measures it: over its signature resolved against `scope`.
+    pub fn measure_resolved(scope: &Scope, declaration: &FunctionDeclaration) -> DeclarationMetrics {
         let location = root_location();
         let (parameters, result) = crate::check::resolve_signature(scope, declaration, &location)
             .expect("the fixture's signature resolves");
@@ -1737,14 +1440,8 @@ pub mod fixtures {
             result,
             callable_by_name: true,
         };
-        mint_declaration_identity(
-            package_identity,
-            declaration,
-            &signature,
-            &TargetTypes::new(scope, &location),
-            input_bytes_limit,
-        )
-        .expect("the fixture's targets resolve")
+        measure_declaration(declaration, &signature, &TargetTypes::new(scope, &location))
+            .expect("the fixture's targets resolve")
     }
     /// PR #303 review, finding N7b: shared, not private -- this is
     /// the one real definition `check::mod`'s own test-support
@@ -1796,7 +1493,6 @@ pub mod fixtures {
     /// exercises one declaration in isolation, not `check::mod`'s own
     /// running package total.
     pub fn declarations_for<'a>(
-        package_identity: &'a str,
         scope: &'a Scope,
         signatures: &'a [Signature],
         own_signature: &'a Signature,
@@ -1805,7 +1501,6 @@ pub mod fixtures {
         location: &'a CheckLocation,
     ) -> ValueDeclarations<'a> {
         ValueDeclarations {
-            package_identity,
             scope,
             signatures,
             own_signature,
@@ -1847,7 +1542,7 @@ pub(crate) mod checking_tests {
     //! code's shape or where it lives.
     use super::fixtures::{
         boolean_signature, boolean_type_form, declaration, declaration_signature, declarations_for,
-        empty_scope, limits, mint_resolved, root_location,
+        empty_scope, limits, measure_resolved, root_location,
     };
     use super::*;
     use crate::check::CheckingLimitKind;
@@ -2012,7 +1707,6 @@ pub(crate) mod checking_tests {
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
         let location = root_location();
         let input = declarations_for(
-            DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
             &signatures[1],
@@ -2053,7 +1747,6 @@ pub(crate) mod checking_tests {
             Expression::Integer(quire_exact::Integer::from(1_i64)),
         );
         let input = declarations_for(
-            DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
             &own_signature,
@@ -2102,7 +1795,6 @@ pub(crate) mod checking_tests {
             Expression::Value(Box::new(Expression::Name("o".to_owned()))),
         );
         let input = declarations_for(
-            DEFAULT_PACKAGE_IDENTITY,
             &scope,
             &signatures,
             &own_signature,
@@ -2141,12 +1833,10 @@ pub(crate) mod checking_tests {
     #[trace("TC-380", "FR-065-AC-7")]
     #[test]
     fn value_function_family_check_refuses_an_ill_typed_body() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("g");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2214,7 +1904,6 @@ pub(crate) mod checking_tests {
     /// FR-062's own amended Acceptance Criteria for AC-3's current status.
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scalar_limits = SCALAR_LIMITS_UNLIMITED;
         let form = declaration("f", Expression::Boolean(true));
         let own_signature = declaration_signature("f");
@@ -2222,7 +1911,6 @@ pub(crate) mod checking_tests {
         let scope_a = empty_scope();
         let location_a = root_location();
         let declarations_a = declarations_for(
-            &package_identity,
             &scope_a,
             &[],
             &own_signature,
@@ -2245,7 +1933,6 @@ pub(crate) mod checking_tests {
         let scope_b = empty_scope();
         let location_b = root_location();
         let declarations_b = declarations_for(
-            &package_identity,
             &scope_b,
             &[],
             &own_signature,
@@ -2280,12 +1967,10 @@ pub(crate) mod checking_tests {
     /// retagged onto this narrower charge).
     #[test]
     fn nesting_depth_limit_is_the_proximate_cause() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2328,7 +2013,7 @@ pub(crate) mod checking_tests {
     }
 
     /// QSL-153: `StageLimits`' restored `input_bytes`/`node_count` each have
-    /// a real producer (`mint_declaration_identity`'s own preimage pass) and
+    /// a real producer (`measure_declaration`'s own pass) and
     /// a real consumer (`CheckContext::check_input_bytes`/
     /// `check_node_count`, called from `ValueFunctionFamily::check`) that
     /// changes behaviour: a limit configured one below the real, measured
@@ -2342,12 +2027,10 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn stage_limits_restored_kinds_refuse_one_below_the_real_metric() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2356,7 +2039,7 @@ pub(crate) mod checking_tests {
             &location,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (_, metrics) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
+        let metrics = measure_resolved(&empty_scope(), &form);
         assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
         let base = StageLimits {
@@ -2432,12 +2115,10 @@ pub(crate) mod checking_tests {
     /// declaration against a meter with real headroom admits.
     #[test]
     fn work_budget_kind_refuses_from_a_denied_meter_charge() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2520,7 +2201,6 @@ pub(crate) mod checking_tests {
     /// rather than routed around by re-tagging this test onto AC-7.
     #[test]
     fn real_checker_depth_limit_is_the_proximate_cause() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
@@ -2531,7 +2211,6 @@ pub(crate) mod checking_tests {
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2567,7 +2246,6 @@ pub(crate) mod checking_tests {
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -2589,37 +2267,25 @@ pub(crate) mod checking_tests {
         );
     }
 
-    /// FR-062-AC-2/FR-065-AC-2: two structurally identical declarations mint
-    /// one identity; a name change mints a different one.
+    /// FR-062-AC-2/FR-065-AC-2: two structurally identical declarations,
+    /// checked in two packages of one owner, mint one identity; a name
+    /// change mints a different one.
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn identical_declarations_share_one_identity() {
-        let a = declaration("f", Expression::Boolean(true));
-        let b = declaration("f", Expression::Boolean(true));
-        let c = declaration("g", Expression::Boolean(true));
-        assert_eq!(
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &b, u64::MAX).0
-        );
-        assert_ne!(
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &a, u64::MAX).0,
-            mint_resolved(&empty_scope(), DEFAULT_PACKAGE_IDENTITY, &c, u64::MAX).0
-        );
+        let identity = |name: &str| {
+            crate::check::PackageDeclarations {
+                functions: vec![declaration(name, Expression::Boolean(true))],
+                ..crate::check::PackageDeclarations::new(super::fixtures::fixture_owner())
+            }
+            .check(CheckingLimits::default())
+            .expect("the fixture checks")
+            .function_identity(name)
+            .expect("the fixture declares its function")
+        };
+        assert_eq!(identity("f"), identity("f"));
+        assert_ne!(identity("f"), identity("g"));
     }
-
-    // `identity_ignores_unrelated_declarations` (PR #262 review, coordinator
-    // round 3) is deleted from here. It minted `DEFAULT_PACKAGE_IDENTITY`'s
-    // identity for the same `target` twice and compared the result to
-    // itself -- no second declaration was ever constructed, so FR-065-AC-2's
-    // reordering clause had nothing to be independent *of*; its own comment
-    // conceded "this is definitionally true". A real reordering test needs
-    // two actual declarations checked in two actual orders, which
-    // `mint_declaration_identity`'s single-declaration signature cannot
-    // exercise -- see
-    // `qsl-eval/tests/it/dispatch_calls.rs`'s
-    // `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`,
-    // built at the `PackageDeclarations::check` level instead, where
-    // position could actually leak.
 
     /// FR-062-AC-2: two occurrences of one identity get distinct ordinals;
     /// a different identity's occurrence does not consume an ordinal from

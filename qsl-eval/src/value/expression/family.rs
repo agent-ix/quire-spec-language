@@ -438,9 +438,8 @@ mod family_contract_tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{
-        declaration, declaration_signature, declarations_for, empty_scope, limits, mint_resolved,
-        root_location, staged_identity, CheckingLimits, PackageDeclarations,
-        DEFAULT_PACKAGE_IDENTITY, SCALAR_LIMITS_UNLIMITED,
+        declaration, declaration_signature, declarations_for, empty_scope, fixture_owner, limits,
+        root_location, CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED,
     };
     use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -468,12 +467,10 @@ mod family_contract_tests {
     #[trace("TC-380", "FR-065-AC-7")]
     #[test]
     fn value_function_family_checks_through_the_contract() {
-        let package_identity = DEFAULT_PACKAGE_IDENTITY.to_owned();
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
         let declarations = declarations_for(
-            &package_identity,
             &scope,
             &[],
             &own_signature,
@@ -492,12 +489,26 @@ mod family_contract_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let (expected, _) = mint_resolved(&empty_scope(), &package_identity, &form, u64::MAX);
-        let staged = ValueFunctionFamily::check(&form, &mut cx).unwrap();
-        assert_eq!(staged_identity(&staged), expected);
+        ValueFunctionFamily::check(&form, &mut cx).unwrap();
         assert_eq!(diagnostics.entries().len(), 1);
+        // The admitted declaration's identity is its FR-092 function node
+        // key, which `PackageDeclarations::check` mints once every
+        // declaration is typed (QSL-156 A4b): for `f() -> Boolean { true }`
+        // under owner (a, u), FR-092 vector F1.
+        let expected = PackageDeclarations {
+            functions: vec![form],
+            ..PackageDeclarations::new(fixture_owner())
+        }
+        .check(CheckingLimits::default())
+        .expect("f checks")
+        .function_identity("f")
+        .expect("f is declared");
+        assert_eq!(
+            expected.to_string(),
+            "dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79"
+        );
         let declaration_name = QualifiedName::unqualified("declaration").unwrap();
-        let v2 = emit_v2(&[(declaration_name.clone(), staged_identity(&staged))]);
+        let v2 = emit_v2(&[(declaration_name.clone(), expected)]);
         assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
     }
 
@@ -520,7 +531,7 @@ mod family_contract_tests {
     fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly");
@@ -576,7 +587,7 @@ mod family_contract_tests {
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly, never Incomplete");
@@ -654,7 +665,7 @@ mod family_contract_tests {
                 decimal_division("rounding", "nearest-even"),
                 decimal_division("exact", "exact"),
             ],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("p / q with q in [1, 9] checks cleanly");
@@ -756,7 +767,7 @@ mod family_contract_tests {
                     },
                 ),
             ],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("callee and caller both check cleanly");
@@ -793,7 +804,22 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::Expression;
-    use qsl_semantics::check::{declaration, empty_scope, mint_resolved, DEFAULT_PACKAGE_IDENTITY};
+    use qsl_semantics::check::{
+        declaration, fixture_owner, CheckingLimits, PackageDeclarations, SourceOwner,
+    };
+
+    /// `f`'s checked identity: its FR-092 function node key, declared by
+    /// `owner`'s unit.
+    fn checked_identity(owner: SourceOwner) -> NodeKey {
+        PackageDeclarations {
+            functions: vec![declaration("f", Expression::Boolean(true))],
+            ..PackageDeclarations::new(owner)
+        }
+        .check(CheckingLimits::default())
+        .expect("one boolean-literal function checks")
+        .function_identity("f")
+        .expect("f is declared")
+    }
 
     /// FR-065-AC-2: identity read after `check` survives a real v2
     /// emit/decode round trip unchanged. Does not exercise a distinct
@@ -809,13 +835,7 @@ mod tests {
     #[trace("TC-163", "FR-065-AC-2")]
     #[test]
     fn identity_survives_v2_round_trip() {
-        let declaration = declaration("f", Expression::Boolean(true));
-        let (after_check, _) = mint_resolved(
-            &empty_scope(),
-            DEFAULT_PACKAGE_IDENTITY,
-            &declaration,
-            u64::MAX,
-        );
+        let after_check = checked_identity(fixture_owner());
         let name = QualifiedName::unqualified("f").unwrap();
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
@@ -824,26 +844,15 @@ mod tests {
 
     /// ADR-013 O-11/FR-088-AC-6: a [`QualifiedName`] is a declared preimage
     /// component, never an identity in its own right. Two entries that
-    /// share an equal qualified name but were minted for different
-    /// declarations carry different node ids, and a v2 round trip keeps
-    /// both pairs distinct rather than collapsing them onto their shared
-    /// name.
+    /// share an equal qualified name but were declared by different owners
+    /// (FR-092) carry different node ids, and a v2 round trip keeps both
+    /// pairs distinct rather than collapsing them onto their shared name.
     #[trace("TC-258", "FR-088-AC-6")]
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
         let name = QualifiedName::unqualified("f").unwrap();
-        let (first, _) = mint_resolved(
-            &empty_scope(),
-            DEFAULT_PACKAGE_IDENTITY,
-            &declaration("f", Expression::Boolean(true)),
-            u64::MAX,
-        );
-        let (second, _) = mint_resolved(
-            &empty_scope(),
-            "other-package@1.0.0",
-            &declaration("f", Expression::Boolean(true)),
-            u64::MAX,
-        );
+        let first = checked_identity(fixture_owner());
+        let second = checked_identity(SourceOwner::new("a", "w").expect("a nonempty owner"));
         assert_ne!(
             first, second,
             "distinct declarations must not share a node id"

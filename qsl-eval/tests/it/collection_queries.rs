@@ -153,7 +153,7 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
         types,
         aliases: aliases(),
         functions,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -507,7 +507,7 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             None,
             reduce,
         )],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap_err();

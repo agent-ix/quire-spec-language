@@ -7,6 +7,8 @@ use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use ix_trace_rs::trace;
+
 use super::*;
 use crate::value::semantic_node::NodeIdDocument;
 
@@ -349,11 +351,7 @@ fn declaration_and_recursion_each_enter_the_key() {
 
 #[test]
 fn a_body_without_an_application_is_refused() {
-    let literal = SemanticTerm::Literal {
-        ty: NodeRef(key(3)),
-        value_kind: LiteralKind::Integer,
-        value: Some(LiteralValue::Integer(1)),
-    };
+    let literal = SemanticTerm::literal(key(3), LiteralValue::Integer(Integer::from(1_i64)));
     let bare_reference = reference(1);
     let aggregate = SemanticTerm::Aggregate {
         members: vec![literal.clone(), reference(2)],
@@ -368,43 +366,35 @@ fn a_body_without_an_application_is_refused() {
     for body in [&bare_reference, &aggregate] {
         assert_eq!(
             application_node_key(&node(body)),
-            Err(ApplicationKeyRefusal::NoApplication)
+            Err(NodeKeyRefusal::NoApplication)
         );
     }
     assert!(application_node_key(&node(&nested)).is_ok());
 }
 
+/// FR-092: an integer literal is its canonical decimal string at any
+/// magnitude, never a JSON number, so no integer is outside the preimage's
+/// range; a rational is `"n/d"`, reduced.
+#[trace("FR-092-AC-4", "TC-414")]
 #[test]
-fn a_literal_integer_outside_the_exact_range_is_refused() {
-    let safe = i64::try_from(JCS_SAFE_INTEGER).expect("2^53 - 1 fits i64");
-    let literal = |value: i64| {
-        add(vec![SemanticTerm::Literal {
-            ty: NodeRef(key(3)),
-            value_kind: LiteralKind::Integer,
-            value: Some(LiteralValue::Integer(value)),
-        }])
-    };
-    let edge = literal(safe);
-    let negative_edge = literal(-safe);
-    let beyond = literal(safe + 1);
-    let negative_beyond = literal(-safe - 1);
-
-    assert!(application_node_key(&node(&edge)).is_ok());
-    assert!(application_node_key(&node(&negative_edge)).is_ok());
-    assert_eq!(
-        application_node_key(&node(&beyond)),
-        Err(ApplicationKeyRefusal::UnsafeInteger {
-            site: IntegerSite::Literal,
-            value: JCS_SAFE_INTEGER + 1
-        })
-    );
-    assert_eq!(
-        application_node_key(&node(&negative_beyond)),
-        Err(ApplicationKeyRefusal::UnsafeInteger {
-            site: IntegerSite::Literal,
-            value: -JCS_SAFE_INTEGER - 1
-        })
-    );
+fn integer_and_rational_literals_are_spelled_as_strings() {
+    let huge: Integer = "123456789012345678901234567890".parse().expect("canonical integer");
+    let body = add(vec![
+        SemanticTerm::literal(key(4), LiteralValue::Integer(huge)),
+        SemanticTerm::literal(key(4), LiteralValue::Integer(Integer::from(-7_i64))),
+        SemanticTerm::literal(
+            key(5),
+            LiteralValue::Rational(
+                Rational::new(Integer::from(2_i64), Integer::from(-4_i64)).expect("nonzero"),
+            ),
+        ),
+    ]);
+    let preimage = preimage_json(&node(&body));
+    let arguments = &preimage["body"]["arguments"];
+    assert_eq!(arguments[0]["value"], json!("123456789012345678901234567890"));
+    assert_eq!(arguments[1]["value"], json!("-7"));
+    assert_eq!(arguments[2]["value"], json!("-1/2"));
+    assert_eq!(arguments[2]["value_kind"], json!("rational"));
 }
 
 #[test]
@@ -437,7 +427,7 @@ fn a_member_position_outside_the_exact_range_is_refused() {
     assert!(application_node_key(&node(&edge)).is_ok());
     assert_eq!(
         application_node_key(&node(&beyond)),
-        Err(ApplicationKeyRefusal::UnsafeInteger {
+        Err(NodeKeyRefusal::UnsafeInteger {
             site: IntegerSite::MemberPosition,
             value: JCS_SAFE_INTEGER + 1
         })
@@ -482,18 +472,18 @@ fn empty_names_and_forms_are_refused() {
             declaration: Some(&empty_name),
             ..node(&body)
         }),
-        Err(ApplicationKeyRefusal::EmptyQualifiedName)
+        Err(NodeKeyRefusal::EmptyQualifiedName)
     );
     assert_eq!(
         application_node_key(&ApplicationNode {
             semantic_form: "",
             ..node(&body)
         }),
-        Err(ApplicationKeyRefusal::EmptySemanticForm)
+        Err(NodeKeyRefusal::EmptySemanticForm)
     );
     assert_eq!(
         application_node_key(&node(&empty_binding)),
-        Err(ApplicationKeyRefusal::EmptyBindingName)
+        Err(NodeKeyRefusal::EmptyBindingName)
     );
 }
 
@@ -514,13 +504,13 @@ fn a_body_deeper_than_the_checking_limit_is_refused() {
     assert!(application_node_key(&node(&at_limit)).is_ok());
     assert_eq!(
         application_node_key(&node(&beyond)),
-        Err(ApplicationKeyRefusal::TooDeep {
+        Err(NodeKeyRefusal::TooDeep {
             limit: MAX_CHECKING_DEPTH
         })
     );
     assert_eq!(
         application_node_key(&node(&nested_arguments)),
-        Err(ApplicationKeyRefusal::TooDeep {
+        Err(NodeKeyRefusal::TooDeep {
             limit: MAX_CHECKING_DEPTH
         }),
         "application arguments count toward depth"
@@ -546,12 +536,7 @@ fn operation_and_literal_bytes_are_pinned() {
             digest: key(11).to_string(),
         },
     };
-    let literal =
-        |fill: u8, value_kind: LiteralKind, value: Option<LiteralValue>| SemanticTerm::Literal {
-            ty: NodeRef(key(fill)),
-            value_kind,
-            value,
-        };
+    let literal = |fill: u8, value: LiteralValue| SemanticTerm::literal(key(fill), value);
     let body = SemanticTerm::Application {
         operator: Operator::Binary,
         operation: Operation {
@@ -579,13 +564,9 @@ fn operation_and_literal_bytes_are_pinned() {
         },
         result_type: NodeRef(key(3)),
         arguments: vec![
-            literal(4, LiteralKind::Integer, Some(LiteralValue::Integer(42))),
-            literal(
-                5,
-                LiteralKind::Text,
-                Some(LiteralValue::Text("a\"b".to_owned())),
-            ),
-            literal(6, LiteralKind::None, None),
+            literal(4, LiteralValue::Integer(Integer::from(42_i64))),
+            literal(5, LiteralValue::Text("a\"b".to_owned())),
+            literal(6, LiteralValue::None),
         ],
     };
     let node_ref = |fill: u8| {
@@ -597,7 +578,7 @@ fn operation_and_literal_bytes_are_pinned() {
     let expected = format!(
         concat!(
             r#"{{"body":{{"arguments":["#,
-            r#"{{"term":"literal","type":{four},"value":42,"value_kind":"integer"}},"#,
+            r#"{{"term":"literal","type":{four},"value":"42","value_kind":"integer"}},"#,
             r#"{{"term":"literal","type":{five},"value":"a\"b","value_kind":"text"}},"#,
             r#"{{"term":"literal","type":{six},"value":null,"value_kind":"none"}}],"#,
             r#""operation":{{"identity":"quire.op.decimal.div","#,
@@ -732,4 +713,166 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
         vectors.len(),
         path.display()
     );
+}
+
+// ---------------------------------------------------------------------
+// FR-092 `quire.structural-node/v1`.
+// ---------------------------------------------------------------------
+
+fn owner() -> SourceOwner {
+    SourceOwner::new("a", "u").expect("nonempty owner")
+}
+
+fn empty_aggregate() -> SemanticTerm {
+    SemanticTerm::Aggregate {
+        members: Vec::new(),
+    }
+}
+
+fn structural<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
+    NodeInput {
+        owner: None,
+        node_tag: NodeTag::ScalarType,
+        semantic_form: "boolean",
+        semantic_type: None,
+        declaration: None,
+        recursion: None,
+        body,
+    }
+}
+
+/// FR-092 T1, byte for byte: a body with no application is keyed by
+/// `quire.structural-node/v1`, with a `null` semantic type for a self-typed
+/// node and no `owner` member for an undeclared one.
+#[trace("FR-092-AC-1", "TC-413")]
+#[test]
+fn a_structural_preimage_is_pinned() {
+    let body = empty_aggregate();
+    let keyed = node_key(&structural(&body)).expect("a builtin scalar keys");
+    let expected = r#"{"body":{"members":[],"term":"aggregate"},"declaration":null,"node_tag":"scalar_type","recursion":null,"semantic_form":"boolean","semantic_type":null,"version":"quire.structural-node/v1"}"#;
+    assert_eq!(String::from_utf8(keyed.preimage).expect("UTF-8"), expected);
+    assert_eq!(
+        keyed.key.to_string(),
+        "9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa"
+    );
+}
+
+/// FR-092: `owner` is present exactly when `declaration` is, and enters the
+/// key; an application body never carries an owner and always a type.
+#[trace("FR-092-AC-2", "TC-413")]
+#[test]
+fn an_owner_enters_a_declared_structural_key_only() {
+    let body = empty_aggregate();
+    let name = identifiers(&["Point"]);
+    let u = owner();
+    let w = SourceOwner::new("a", "w").expect("nonempty owner");
+    let declared = |owner: &SourceOwner| {
+        node_key(&NodeInput {
+            owner: Some(owner),
+            node_tag: NodeTag::CompositeType,
+            semantic_form: "record",
+            declaration: Some(&name),
+            ..structural(&body)
+        })
+        .expect("a declared record keys")
+    };
+    let under_u = declared(&u);
+    let preimage: Value = serde_json::from_slice(&under_u.preimage).expect("JSON");
+    assert_eq!(
+        preimage["owner"],
+        json!({"kind": "source", "authority": "a", "identity": "u"})
+    );
+    assert_ne!(under_u.key, declared(&w).key);
+    let bare: Value =
+        serde_json::from_slice(&node_key(&structural(&body)).expect("keys").preimage).expect("JSON");
+    assert!(bare.get("owner").is_none(), "an undeclared node has no owner member");
+
+    assert_eq!(
+        node_key(&NodeInput {
+            owner: Some(&u),
+            ..structural(&body)
+        }),
+        Err(NodeKeyRefusal::OwnerDeclarationMismatch)
+    );
+    assert_eq!(
+        node_key(&NodeInput {
+            declaration: Some(&name),
+            ..structural(&body)
+        }),
+        Err(NodeKeyRefusal::OwnerDeclarationMismatch)
+    );
+    let application = add(vec![reference(1)]);
+    assert_eq!(
+        node_key(&NodeInput {
+            owner: Some(&u),
+            declaration: Some(&name),
+            semantic_type: Some(key(3)),
+            ..structural(&application)
+        }),
+        Err(NodeKeyRefusal::OwnedApplication)
+    );
+    assert_eq!(
+        node_key(&structural(&application)),
+        Err(NodeKeyRefusal::UntypedApplication)
+    );
+}
+
+/// FR-092-AC-8: the nominal enum declaration and member are keyed by
+/// QSpec's own preimages, never `quire.structural-node/v1`: QSpec's
+/// `enum-status` and `enum-status-ready` vectors, read at run time from
+/// `$QSPEC_DIR`, recompute their recorded `sha256` through
+/// `value::enumeration`, and the member key `check` gives an enum-member
+/// literal (`mint_variant_id`) equals the member vector's. Skipped (and
+/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
+#[trace("FR-092-AC-8", "TC-413")]
+#[test]
+fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
+    use crate::value::enumeration::{mint_variant_id, EnumDeclarationPreimage, EnumMemberPreimage};
+    use crate::value::semantic_node::NodeIdentityPreimage;
+
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/node-identity-vectors.json");
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let document: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let vector = |name: &str| {
+        document["vectors"]
+            .as_array()
+            .and_then(|vectors| vectors.iter().find(|vector| vector["name"] == name))
+            .unwrap_or_else(|| panic!("{} has no `{name}` vector", path.display()))
+            .clone()
+    };
+    let declaration = vector("enum-status");
+    let member = vector("enum-status-ready");
+    assert_eq!(
+        declaration["preimage"]["version"], "quire.enum-declaration-node/v1",
+        "enum-status is a nominal declaration preimage"
+    );
+    assert_eq!(member["preimage"]["version"], "quire.enum-member-node/v1");
+
+    let declaration_key = EnumDeclarationPreimage::from_json(declaration["preimage"].clone())
+        .expect("enum-status decodes")
+        .digest()
+        .expect("enum-status digests");
+    assert_eq!(
+        Some(hex(&declaration_key).as_str()),
+        declaration["sha256"].as_str()
+    );
+    let member_key = EnumMemberPreimage::from_json(member["preimage"].clone())
+        .expect("enum-status-ready decodes")
+        .digest()
+        .expect("enum-status-ready digests");
+    assert_eq!(Some(hex(&member_key).as_str()), member["sha256"].as_str());
+    let minted = mint_variant_id(NodeKey::from_digest(declaration_key), "READY");
+    assert_eq!(minted.as_bytes(), &member_key);
+    println!("conformance: 2 nominal enum vectors match ({})", path.display());
+}
+
+fn hex(bytes: &[u8; 32]) -> String {
+    NodeKey::from_digest(*bytes).to_string()
 }

@@ -218,7 +218,7 @@ mod tests {
         };
         let graph = PackageDeclarations {
             model_correspondence: vec![(node, declaration.clone())],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("an empty package with a correspondence seed checks cleanly");

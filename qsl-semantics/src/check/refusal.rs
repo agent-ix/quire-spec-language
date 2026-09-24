@@ -276,6 +276,59 @@ pub enum CheckCause {
     /// legitimate future frame-subject entry as readily as a genuinely
     /// malformed one, since neither category is the one a real entry names.
     InvalidModelCorrespondence(InvalidModelCorrespondence),
+    /// `missing_declaration` / `missing-selection` (FR-093): a lowered
+    /// operation or leaf needs a profile law whose `DefinitionRef` the
+    /// package's lock evidence does not supply. `check` writes no law from a
+    /// constant (ADR-011 §2.4), so the node is not built.
+    MissingSelection {
+        /// The law role the lock evidence does not select.
+        role: super::node_key::LawRole,
+    },
+    /// `unknown_required_feature` / `unsupported-feature` (FR-092 "Recursion
+    /// groups", FR-092-OQ-1): the nodes of a recursion group cannot be keyed
+    /// apart from another group's, so `check` refuses the group instead of
+    /// keying it. `loci` names every in-group declaration, in declaration
+    /// order.
+    UnsupportedFeature {
+        /// Every in-group declaration's region.
+        loci: Vec<Location>,
+    },
+    /// A checked node of a kind FR-092 and FR-093 do not key yet (QSL-156
+    /// A4b: the `StateModel` family's `Reference<T>`/`Population<T>[N]`
+    /// type nodes and model node keys, a model-synthesized clause
+    /// function's owner, and quantity type nodes). Refused as
+    /// `unknown_required_feature` / `unsupported-feature` until their spec
+    /// lands.
+    UnkeyedNode(UnkeyedNode),
+    /// `invalid_package`: a node preimage that cannot be encoded (an empty
+    /// or non-identifier name, a number RFC 8785 cannot render exactly, a
+    /// body nested past the preimage depth bound).
+    NodePreimage(super::node_key::NodeKeyRefusal),
+}
+
+/// What [`CheckCause::UnkeyedNode`] could not key.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnkeyedNode {
+    /// A `Reference<T>` type node.
+    ReferenceType,
+    /// A `Population<T>[N]` type node.
+    PopulationType,
+    /// A quantity type node.
+    QuantityType,
+    /// A `deref(r).f` attribute read, which projects a model node's member.
+    Attribute,
+    /// An `allInstances<T>(p)` query, whose member names a model node.
+    AllInstances,
+    /// A `lookup<T>(p, r)` query, whose member names a model node.
+    Lookup,
+    /// A dispatched call, whose member names its declaring model node.
+    Dispatch,
+    /// A function synthesized from a model clause, whose owner is not a
+    /// source unit's.
+    ModelClauseFunction,
+    /// A literal of a value kind the `Value` family's checker never builds
+    /// as a literal.
+    LiteralKind,
 }
 
 /// [`CheckCause::InvalidModelCorrespondence`]'s own typed detail.
@@ -396,8 +449,11 @@ impl CheckCause {
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
             | Self::InvalidDispatchDeclaration(_)
-            | Self::InvalidModelCorrespondence(_) => Code::InvalidPackage,
+            | Self::InvalidModelCorrespondence(_)
+            | Self::NodePreimage(_) => Code::InvalidPackage,
             Self::UnrepresentableBound => Code::UnrepresentableConstraint,
+            Self::MissingSelection { .. } => Code::MissingDeclaration,
+            Self::UnsupportedFeature { .. } | Self::UnkeyedNode(_) => Code::UnknownRequiredFeature,
         }
     }
 
@@ -421,7 +477,11 @@ impl CheckCause {
             Self::InvalidDispatchDeclaration(_) | Self::InvalidModelCorrespondence(_) => {
                 Some("invalid-value")
             }
-            Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound => None,
+            Self::MissingSelection { .. } => Some("missing-selection"),
+            Self::UnsupportedFeature { .. } | Self::UnkeyedNode(_) => Some("unsupported-feature"),
+            Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
+                None
+            }
         }
     }
 }

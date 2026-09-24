@@ -106,9 +106,8 @@
 //! fn _use(_: AdmittedIeeeProfile) {}
 //! ```
 
-// ADR-011 §6.1 layer 3: the §6.2 `semantic_value` submodules,
-// `value::model_query` (§6.2: `model`) and `value::application_key` (§6.2:
-// `check`), with the flat re-exports of their own items. The layer-5 S6a
+// ADR-011 §6.1 layer 3: the §6.2 `semantic_value` submodules and
+// `value::model_query` (§6.2: `model`), with the flat re-exports of their own items. The layer-5 S6a
 // evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
 // module (QSL-183 X-8) and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
@@ -119,12 +118,11 @@
 // `numeric` and `text`; their former items are imported from `quire_exact`
 // directly.
 
-mod application_key;
 mod containment;
 pub mod declaration;
 pub(crate) mod definition;
 pub mod enumeration;
-mod member;
+pub(crate) mod member;
 pub mod model_query;
 pub mod quantity;
 pub(crate) mod semantic_node;

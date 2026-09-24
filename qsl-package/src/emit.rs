@@ -195,7 +195,7 @@ mod tests {
     /// dependency closure always starts empty today (S-3a review fix); M-4
     /// adds the dependency-bearing constructor when it lands.
     fn empty() -> CheckedPackage {
-        let graph = PackageDeclarations::default()
+        let graph = PackageDeclarations::new(qsl_semantics::check::fixture_owner())
             .check(CheckingLimits::default())
             .expect("an empty package always checks");
         CheckedPackage::link(graph)
@@ -219,7 +219,7 @@ mod tests {
     fn with_function(name: &str) -> CheckedPackage {
         let graph = PackageDeclarations {
             functions: vec![function(name)],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("a single nullary function always checks");

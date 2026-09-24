@@ -810,12 +810,16 @@ fn substitute_names(
 /// Types every linked candidate's effective precondition and body for one
 /// FR-151 dispatch-eligible operation, and assembles the checked-layer
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
-/// bridge's exact scope.
+/// bridge's exact scope. `owner` is the checked package's
+/// [`PackageDeclarations::owner`] input; FR-092 keys no function synthesized
+/// from a model clause yet, so `check` refuses such a function
+/// (`CheckCause::UnkeyedNode`) whatever owner it names.
 pub fn checked_dispatch_operation(
     domain_package: &DomainPackage,
     view: &EffectiveView,
     root: &DispatchRoot,
     clauses: &OperationClauses,
+    owner: crate::check::SourceOwner,
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let family_steps = meter.limits().family_steps;
@@ -1099,7 +1103,7 @@ pub fn checked_dispatch_operation(
         dispatch_operations,
         dispatch_tables: vec![checked_table],
         resolved_signatures,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(owner)
     })
 }
 
