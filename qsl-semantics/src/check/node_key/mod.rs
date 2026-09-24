@@ -613,7 +613,8 @@ pub struct OperationLeaf {
 }
 
 /// One schema `LeafSegment`: `field:<identifier>`, `position:<n>` or
-/// `inner`.
+/// `inner`, and FR-093's `recursion:<d>`, which ends a recursion leaf's path
+/// (a QSL proposal, ADR-013 QC-24).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LeafSegment {
     /// `field:<name>`.
@@ -622,6 +623,9 @@ pub enum LeafSegment {
     Position(u64),
     /// `inner`.
     Inner,
+    /// `recursion:<d>`: the path reenters the composite it entered after
+    /// `d` segments.
+    Recursion(u64),
 }
 
 impl Serialize for LeafSegment {
@@ -632,6 +636,7 @@ impl Serialize for LeafSegment {
                 serializer.collect_str(&format_args!("position:{position}"))
             }
             Self::Inner => serializer.serialize_str("inner"),
+            Self::Recursion(depth) => serializer.collect_str(&format_args!("recursion:{depth}")),
         }
     }
 }

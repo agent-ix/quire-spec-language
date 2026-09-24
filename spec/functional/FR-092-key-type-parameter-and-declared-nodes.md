@@ -975,7 +975,9 @@ handle, and the lowering's drafts, keyed in dependency order), and gives a
 declared composite's checked type node its key. TC-413 and TC-414 back AC-1
 to AC-12 and CON-2 there, and the FR-146 recursive-function tests of
 `qsl-eval/tests/it/total_functions.rs` pass. Keying a group is charged to the
-checking stage's work budget.
+checking stage's work budget. An option or collection type whose node is a
+member of a recursion group is that member wherever it is named after the
+group is keyed (FR-093's P15 and P16 are typed at G17).
 
 ## Open Questions
 

@@ -307,6 +307,12 @@ pub(crate) struct Lowering<'a> {
     drafts: BTreeMap<NodeKey, Draft>,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
+    /// The option and collection types whose node is a draft.
+    draft_types: Vec<(ValueType, NodeKey)>,
+    /// The option and collection types whose node was keyed from a draft:
+    /// such a type is that node, a member of its recursion group (G17 is
+    /// `Option<Node>`), not a node rebuilt over the group's keys.
+    settled_types: Vec<(ValueType, NodeKey)>,
     /// Each keyed recursion-group member's group digest.
     group_of: BTreeMap<NodeKey, [u8; 32]>,
     /// Each keyed group's declared members' regions, by group digest.
@@ -314,6 +320,11 @@ pub(crate) struct Lowering<'a> {
     /// The checking stage's work meter (`CheckingLimits::work_budget`):
     /// each node built and each group keyed charges it.
     meter: &'a mut Meter,
+    /// The check stage's node limit (`CheckingLimits::nodes`), and the
+    /// units typing left of it: each text or recursion leaf costs one
+    /// (FR-093 "Text leaves").
+    node_limit: u64,
+    node_budget: u64,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -411,6 +422,56 @@ enum LeafSource<'t> {
     ResultInner(&'t ValueType),
 }
 
+/// One leaf the text-leaf walk appends at its path.
+#[derive(Clone, Copy)]
+enum Leaf {
+    /// A text leaf of this profile.
+    Text(TextProfile),
+    /// A recursion leaf into the composite entered after this many segments.
+    Recursion(u64),
+}
+
+/// The state of one FR-093 text-leaf walk.
+struct LeafWalk {
+    /// The path from the compared type.
+    path: Vec<LeafSegment>,
+    /// The leaves appended so far, each at its path.
+    leaves: Vec<(Vec<LeafSegment>, Leaf)>,
+    /// The open composites, each with the path length it was entered at.
+    open: Vec<(NodeKey, u64)>,
+    /// The node-limit units left.
+    budget: u64,
+    /// The node limit, which a refusal names.
+    limit: u64,
+}
+
+impl LeafWalk {
+    /// The path length `declaration` was entered at, when it is open.
+    fn entered(&self, declaration: NodeKey) -> Option<u64> {
+        self.open
+            .iter()
+            .find(|(open, _)| *open == declaration)
+            .map(|(_, entered)| *entered)
+    }
+
+    /// Append `leaf` at the current path, charging one unit of the node
+    /// limit.
+    fn append(&mut self, leaf: Leaf, location: &Location) -> Result<(), CheckRefusal> {
+        self.budget = self.budget.checked_sub(1).ok_or_else(|| {
+            refuse(
+                location,
+                CheckCause::ResourceExhausted {
+                    stage: CheckingStage::Typing,
+                    kind: CheckingLimitKind::Nodes,
+                    limit: self.limit,
+                },
+            )
+        })?;
+        self.leaves.push((self.path.clone(), leaf));
+        Ok(())
+    }
+}
+
 impl<'a> Lowering<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -443,10 +504,22 @@ impl<'a> Lowering<'a> {
             placeholder_count: 0,
             drafts: BTreeMap::new(),
             draft_occurrences: Vec::new(),
+            draft_types: Vec::new(),
+            settled_types: Vec::new(),
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
             meter,
+            node_limit: u64::MAX,
+            node_budget: u64::MAX,
         }
+    }
+
+    /// Bound the text-leaf walks by the node limit `limit`, of which typing
+    /// used `used`.
+    pub(crate) fn with_node_limit(mut self, limit: u64, used: u64) -> Self {
+        self.node_limit = limit;
+        self.node_budget = limit.saturating_sub(used);
+        self
     }
 
     /// Charge `work` units of checking work (`declaration.check`), refusing
@@ -687,6 +760,13 @@ impl<'a> Lowering<'a> {
         depth: u64,
     ) -> Result<NodeKey, CheckRefusal> {
         self.check_depth(depth, location)?;
+        if let Some((_, key)) = self
+            .settled_types
+            .iter()
+            .find(|(settled, _)| settled == value_type)
+        {
+            return Ok(*key);
+        }
         match value_type {
             ValueType::Boolean => self.scalar("boolean", location),
             ValueType::Integer => self.scalar("integer", location),
@@ -792,7 +872,7 @@ impl<'a> Lowering<'a> {
             }
             ValueType::Option(payload) => {
                 let payload = self.type_node_at(payload, location, depth + 1)?;
-                self.insert(
+                let key = self.insert(
                     location,
                     NodeTag::CompositeType,
                     "option",
@@ -801,7 +881,9 @@ impl<'a> Lowering<'a> {
                     SemanticTerm::Aggregate {
                         members: vec![SemanticTerm::reference(payload)],
                     },
-                )
+                )?;
+                self.remember_type(value_type, key);
+                Ok(key)
             }
             ValueType::Collection(collection) => {
                 let element = self.type_node_at(collection.element(), location, depth + 1)?;
@@ -818,12 +900,14 @@ impl<'a> Lowering<'a> {
                 let bound = collection.bound();
                 let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
                 let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
-                self.bounded(
+                let key = self.bounded(
                     "collection_bounds",
                     base,
                     vec![("min", min), ("max", max)],
                     location,
-                )
+                )?;
+                self.remember_type(value_type, key);
+                Ok(key)
             }
             ValueType::Composite(declaration) => self.composite(*declaration, location, depth),
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
@@ -832,6 +916,14 @@ impl<'a> Lowering<'a> {
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
+        }
+    }
+
+    /// Remember that `value_type`'s node is the draft `key`, so that once
+    /// it is keyed the type names that node.
+    fn remember_type(&mut self, value_type: &ValueType, key: NodeKey) {
+        if self.drafts.contains_key(&key) {
+            self.draft_types.push((value_type.clone(), key));
         }
     }
 
@@ -937,64 +1029,52 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// The text leaves of `value_type`, each with its path and profile, in
-    /// declaration order. `composites` holds the composites on the path
-    /// from the compared type down to `value_type`.
-    ///
-    /// A composite reached again along its own path is recursive (FR-143).
-    /// When no text leaf is reachable from it, the recursion adds no leaf
-    /// and the walk stops there. When one is, the leaf paths through the
-    /// recursion are unbounded and FR-093 names no finite form for them:
-    /// the walk goes on and ends at the depth limit, as before
-    /// (reported on QSL-156; the spec lane decides the leaf form).
+    /// FR-093 "Text leaves": walk `value_type` at the walk's path,
+    /// appending each text leaf and recursion leaf in the order the walk
+    /// reaches it.
     fn text_leaves(
         &self,
         value_type: &ValueType,
-        path: &mut Vec<LeafSegment>,
-        leaves: &mut Vec<(Vec<LeafSegment>, TextProfile)>,
-        composites: &mut Vec<NodeKey>,
+        walk: &mut LeafWalk,
         location: &Location,
         depth: u64,
     ) -> Result<(), CheckRefusal> {
         self.check_depth(depth, location)?;
         match value_type {
-            ValueType::Text(text) => leaves.push((path.clone(), text.profile())),
+            // Rule 1.
+            ValueType::Text(text) => walk.append(Leaf::Text(text.profile()), location)?,
+            // Rule 2.
             ValueType::Option(payload) => {
-                path.push(LeafSegment::Inner);
-                self.text_leaves(payload, path, leaves, composites, location, depth + 1)?;
-                path.pop();
+                walk.path.push(LeafSegment::Inner);
+                self.text_leaves(payload, walk, location, depth + 1)?;
+                walk.path.pop();
             }
             ValueType::Collection(collection) => {
-                path.push(LeafSegment::Inner);
-                self.text_leaves(
-                    collection.element(),
-                    path,
-                    leaves,
-                    composites,
-                    location,
-                    depth + 1,
-                )?;
-                path.pop();
+                walk.path.push(LeafSegment::Inner);
+                self.text_leaves(collection.element(), walk, location, depth + 1)?;
+                walk.path.pop();
             }
             ValueType::Composite(declaration) => {
                 let Some(composite) = self.scope.types.composite(*declaration) else {
                     return Err(fault(location, KeyFault::UnknownComposite(*declaration)));
                 };
-                if composites.contains(declaration) && !self.reaches_text(value_type) {
+                // Rule 3: an open composite ends the path, with a recursion
+                // leaf when a text type is reachable from it.
+                if let Some(entered) = walk.entered(*declaration) {
+                    if self.reaches_text(value_type) {
+                        walk.append(Leaf::Recursion(entered), location)?;
+                    }
                     return Ok(());
                 }
-                composites.push(*declaration);
-                let walked = self.composite_leaves(
-                    composite.shape(),
-                    path,
-                    leaves,
-                    composites,
-                    location,
-                    depth,
-                );
-                composites.pop();
+                // Rules 4 and 5.
+                let entered = u64::try_from(walk.path.len())
+                    .map_err(|_| fault(location, KeyFault::InvalidGroup))?;
+                walk.open.push((*declaration, entered));
+                let walked = self.composite_leaves(composite.shape(), walk, location, depth);
+                walk.open.pop();
                 walked?;
             }
+            // Rule 6.
             ValueType::Boolean
             | ValueType::Integer
             | ValueType::Int(_)
@@ -1009,13 +1089,12 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
-    /// The text leaves of a composite's fields or positions.
+    /// Rules 4 and 5: a record's fields, an optional one's through `inner`,
+    /// or a tuple's positions.
     fn composite_leaves(
         &self,
         shape: &CompositeShape,
-        path: &mut Vec<LeafSegment>,
-        leaves: &mut Vec<(Vec<LeafSegment>, TextProfile)>,
-        composites: &mut Vec<NodeKey>,
+        walk: &mut LeafWalk,
         location: &Location,
         depth: u64,
     ) -> Result<(), CheckRefusal> {
@@ -1028,31 +1107,33 @@ impl<'a> Lowering<'a> {
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                         )
                     })?;
-                    path.push(LeafSegment::Field(name));
-                    self.text_leaves(
-                        field.value_type(),
-                        path,
-                        leaves,
-                        composites,
-                        location,
-                        depth + 1,
-                    )?;
-                    path.pop();
+                    walk.path.push(LeafSegment::Field(name));
+                    let optional = field.presence() == quire_exact::Presence::Optional;
+                    if optional {
+                        walk.path.push(LeafSegment::Inner);
+                    }
+                    let walked = self.text_leaves(field.value_type(), walk, location, depth + 1);
+                    if optional {
+                        walk.path.pop();
+                    }
+                    walk.path.pop();
+                    walked?;
                 }
             }
             CompositeShape::Tuple(positions) => {
                 for (position, value_type) in (0_u64..).zip(positions) {
-                    path.push(LeafSegment::Position(position));
-                    self.text_leaves(value_type, path, leaves, composites, location, depth + 1)?;
-                    path.pop();
+                    walk.path.push(LeafSegment::Position(position));
+                    let walked = self.text_leaves(value_type, walk, location, depth + 1);
+                    walk.path.pop();
+                    walked?;
                 }
             }
         }
         Ok(())
     }
 
-    /// Whether a text value is reachable inside a value of `value_type`,
-    /// each composite visited once.
+    /// Whether a text type is reachable from `value_type` (FR-093 "Text
+    /// leaves"), each composite visited once.
     fn reaches_text(&self, value_type: &ValueType) -> bool {
         let mut visited = std::collections::BTreeSet::new();
         let mut pending = vec![value_type];
@@ -1109,7 +1190,7 @@ impl<'a> Lowering<'a> {
 
     /// The `leaves` of an operation whose catalog entry names `source`.
     fn leaves(
-        &self,
+        &mut self,
         source: LeafSource<'_>,
         location: &Location,
     ) -> Result<Vec<OperationLeaf>, CheckRefusal> {
@@ -1127,22 +1208,35 @@ impl<'a> Lowering<'a> {
         let Some(compared) = compared else {
             return Ok(Vec::new());
         };
-        let mut found = Vec::new();
-        self.text_leaves(
-            compared,
-            &mut Vec::new(),
-            &mut found,
-            &mut Vec::new(),
-            location,
-            0,
-        )?;
-        found
+        // The walk completes, or refuses on the node limit, before any
+        // leaf's law is read (FR-093 "Text leaves").
+        let mut walk = LeafWalk {
+            path: Vec::new(),
+            leaves: Vec::new(),
+            open: Vec::new(),
+            budget: self.node_budget,
+            limit: self.node_limit,
+        };
+        self.text_leaves(compared, &mut walk, location, 0)?;
+        self.node_budget = walk.budget;
+        walk.leaves
             .into_iter()
-            .map(|(path, profile)| {
-                Ok(OperationLeaf {
-                    path,
-                    laws: vec![self.law(LawRole::TextProfile, location)?],
-                    mode: Some(OperationMode::TextProfile(profile)),
+            .map(|(path, leaf)| {
+                Ok(match leaf {
+                    Leaf::Text(profile) => OperationLeaf {
+                        path,
+                        laws: vec![self.law(LawRole::TextProfile, location)?],
+                        mode: Some(OperationMode::TextProfile(profile)),
+                    },
+                    Leaf::Recursion(entered) => OperationLeaf {
+                        path: {
+                            let mut path = path;
+                            path.push(LeafSegment::Recursion(entered));
+                            path
+                        },
+                        laws: Vec::new(),
+                        mode: None,
+                    },
                 })
             })
             .collect()
@@ -1242,6 +1336,7 @@ impl<'a> Lowering<'a> {
         let placeholders = std::mem::take(&mut self.placeholders);
         let drafts = std::mem::take(&mut self.drafts);
         let occurrences = std::mem::take(&mut self.draft_occurrences);
+        let draft_types = std::mem::take(&mut self.draft_types);
         self.composite_placeholders.clear();
         let mut aliases = BTreeMap::new();
         for (placeholder, built) in placeholders {
@@ -1356,6 +1451,10 @@ impl<'a> Lowering<'a> {
         for (key, role, location) in occurrences {
             let key = resolve(key).map_err(|()| unresolved(&location))?;
             self.occurrences.record(key, role, location);
+        }
+        for (value_type, key) in draft_types {
+            let key = resolve(key).map_err(|()| unresolved(&root))?;
+            self.settled_types.push((value_type, key));
         }
         Ok(())
     }

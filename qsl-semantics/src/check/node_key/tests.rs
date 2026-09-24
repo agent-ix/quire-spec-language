@@ -39,10 +39,14 @@ impl<'de> Deserialize<'de> for LeafSegment {
                 .map(Self::Field)
                 .map_err(D::Error::custom);
         }
-        text.strip_prefix("position:")
-            .filter(|digits| *digits == "0" || !digits.starts_with('0'))
-            .and_then(|digits| digits.parse().ok())
+        let number = |prefix: &str| {
+            text.strip_prefix(prefix)
+                .filter(|digits| *digits == "0" || !digits.starts_with('0'))
+                .and_then(|digits| digits.parse().ok())
+        };
+        number("position:")
             .map(Self::Position)
+            .or_else(|| number("recursion:").map(Self::Recursion))
             .ok_or_else(|| D::Error::custom(format!("not a leaf segment: {text}")))
     }
 }

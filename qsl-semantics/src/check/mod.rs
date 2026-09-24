@@ -858,7 +858,8 @@ impl PackageDeclarations {
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
-        );
+        )
+        .with_node_limit(limits.nodes(), nodes_used);
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members

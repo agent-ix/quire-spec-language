@@ -21,6 +21,7 @@ use crate::check::family::fixtures::{empty_scope, fixture_owner};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
+mod leaves;
 mod rows;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -30,8 +31,15 @@ const FR_092: &str =
 
 /// FR-092's golden vectors by name: `(key, preimage)`.
 fn vectors() -> BTreeMap<String, (String, String)> {
+    let vectors = spec_vectors(FR_092);
+    assert_eq!(vectors.len(), 50, "FR-092 publishes 50 golden vectors");
+    vectors
+}
+
+/// The golden vectors `spec` publishes by name: `(key, preimage)`.
+fn spec_vectors(spec: &str) -> BTreeMap<String, (String, String)> {
     let mut vectors = BTreeMap::new();
-    let mut lines = FR_092.lines();
+    let mut lines = spec.lines();
     while let Some(line) = lines.next() {
         let Some(rest) = line.strip_prefix("**") else {
             continue;
@@ -53,7 +61,6 @@ fn vectors() -> BTreeMap<String, (String, String)> {
             .to_owned();
         vectors.insert(name.to_owned(), (key, preimage));
     }
-    assert_eq!(vectors.len(), 50, "FR-092 publishes 50 golden vectors");
     vectors
 }
 
