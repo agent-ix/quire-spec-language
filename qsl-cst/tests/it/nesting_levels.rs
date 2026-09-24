@@ -203,15 +203,44 @@ fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused()
     });
 }
 
-// Each value in `f(f(...f(x,)...,),)` fails as a tuple and is parsed again
-// as a call argument list, so the work doubles with every level: far more
-// than the linear budget allows, and refused naming the work limit.
+// Each value in `f(f(...f(x,)...,),)` fails as a tuple and is read again as
+// a call argument list. The parser reuses the argument it already matched,
+// so the work stays linear in depth: the typo is a recoverable syntax error
+// at the default ceilings, not a work-budget refusal (QSL-213).
+#[trace("TC-012", "TC-222", "FR-302-AC-2")]
+#[test]
+fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
+    on_bounded_stack(|| {
+        for body in [
+            "f(g(f(g(x,)),))".to_owned(),
+            format!("{}x{}", "f(".repeat(6), ",)".repeat(6)),
+            format!("{}x{}", "f(".repeat(24), ",)".repeat(24)),
+        ] {
+            let text = function(&body);
+            let parsed = parse(&text).unwrap_or_else(|error| panic!("{body}: {error:?}"));
+            assert_eq!(parsed.cst().render(), text.as_bytes());
+            assert!(!parsed.is_admissible(), "{body}");
+            assert_eq!(
+                parsed.diagnostics()[0].code,
+                CompleteCode::InvalidSyntax,
+                "{body}"
+            );
+            assert!(!parsed.cst().recoveries().is_empty(), "{body}");
+        }
+    });
+}
+
+// NFR-001: a work-budget refusal names the work limit rather than nesting
+// depth. 40 unclosed `set[` stay under the nesting ceiling. No production
+// matches inside them, so nothing is memoized: every level re-reads the
+// failing levels inside it under each alternative that starts with `set`,
+// and the work grows quadratically with depth. At depth 40 it is about
+// 39,700 steps against a budget of 28,160.
 #[trace("TC-012")]
 #[test]
-fn exponential_backtracking_is_refused_naming_the_work_limit() {
+fn a_work_budget_refusal_names_the_work_limit() {
     on_bounded_stack(|| {
-        let depth = 24;
-        let body = format!("{}x{}", "f(".repeat(depth), ",)".repeat(depth));
+        let body = format!("{}x", "set[".repeat(40));
         let error = parse(&function(&body)).expect_err("the work budget is exhausted");
         assert!(
             matches!(refused_limit(&error), SyntaxLimit::Work { .. }),

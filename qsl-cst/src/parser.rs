@@ -70,9 +70,34 @@ pub(super) fn parse(
     let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits);
     let matched = if diagnostics.is_empty() {
         let mut engine = Engine::new(&grammar, &significant, limits);
-        match engine.production(Production::CompleteUnit, 0) {
-            Outcome::Match(_) => Some(engine.into_arena()),
-            Outcome::No(failure) => {
+        let matched = match engine.production(Production::CompleteUnit, 0) {
+            // A top-level match always leaves its root pending. Were that
+            // invariant broken, the unit is reported as a syntax failure
+            // with a recovery, never lowered to a silent one-node CST.
+            Outcome::Match(_) => engine.into_forest().ok_or_else(|| {
+                debug_assert!(false, "a matched unit leaves its root pending");
+                Failure::expected(0, format!("{:?}", Production::CompleteUnit))
+            }),
+            Outcome::No(failure) => Err(failure),
+            Outcome::Exhausted(refusal) => {
+                let span = significant.get(refusal.position).map_or(
+                    Span {
+                        start: source.text().len(),
+                        end: source.text().len(),
+                    },
+                    |token| token.span,
+                );
+                return Err(super::diagnostic::resource_exhausted(
+                    &source,
+                    Phase::Parse,
+                    span,
+                    refusal.limit,
+                ));
+            }
+        };
+        match matched {
+            Ok(forest) => Some(forest),
+            Err(failure) => {
                 let span = significant.get(failure.position).map_or(
                     Span {
                         start: source.text().len(),
@@ -120,28 +145,13 @@ pub(super) fn parse(
                 });
                 None
             }
-            Outcome::Exhausted(refusal) => {
-                let span = significant.get(refusal.position).map_or(
-                    Span {
-                        start: source.text().len(),
-                        end: source.text().len(),
-                    },
-                    |token| token.span,
-                );
-                return Err(super::diagnostic::resource_exhausted(
-                    &source,
-                    Phase::Parse,
-                    span,
-                    refusal.limit,
-                ));
-            }
         }
     } else {
         None
     };
 
-    let (nodes, root) = if let Some(arena) = matched {
-        lower_tree(&source, &significant, &arena)
+    let (nodes, root) = if let Some(forest) = matched {
+        lower_tree(&source, &significant, &forest)
     } else {
         (
             vec![RawNode {
@@ -183,7 +193,7 @@ fn selection_prelude_nodes(
     tokens: &[Significant],
     limits: Limits,
 ) -> Vec<RawNode> {
-    fn raw(source: &Source, tokens: &[Significant], node: Matched) -> RawNode {
+    fn raw(source: &Source, tokens: &[Significant], node: &Matched) -> RawNode {
         RawNode {
             production: node.production,
             span: token_span(source, tokens, node.start, node.end),
@@ -838,22 +848,46 @@ fn selection_code(tokens: &[Significant], position: usize) -> Option<CompleteCod
     }
 }
 
-/// One matched production in the engine's flat match arena.
+/// One matched production in the engine's append-only match store.
 ///
-/// The arena holds matches in post-order (every descendant before its
-/// ancestor, siblings left to right), which is exactly the order the CST node
-/// arena uses, so lowering is a single forward pass. A match's descendants
-/// are the contiguous run `first..own index`.
-#[derive(Clone, Copy, Debug)]
+/// A stored match is immutable once made, and names its direct children by
+/// store index. A memoized match is therefore shared, not copied, by every
+/// later attempt that reuses it.
+#[derive(Clone, Debug)]
 struct Matched {
     production: Production,
     /// First significant-token index covered.
     start: usize,
     /// One past the last significant-token index covered.
     end: usize,
-    /// Arena index of this match's first descendant; its own index when it
-    /// has none.
-    first: usize,
+    /// This match's direct children, left to right, as a range of the
+    /// store's child links.
+    children: std::ops::Range<usize>,
+    /// Matches in this subtree, itself included: the CST nodes it lowers to.
+    size: usize,
+    /// Bracket depth the production was entered at; with `production` and
+    /// `start`, the memo key.
+    depth: usize,
+    /// The match stored before this one at the same `start`: the memo is
+    /// one list per position, threaded through the store.
+    earlier: Option<usize>,
+}
+
+/// A completed match not yet adopted by the production that encloses it.
+#[derive(Clone, Copy, Debug)]
+struct Pending {
+    /// Store index of the match.
+    node: usize,
+    /// Subtree sizes of this and every earlier pending match, summed, so the
+    /// matches made since any pending length are counted in O(1).
+    total: usize,
+}
+
+/// The engine's result for a matched unit: the match store and its root.
+struct Forest {
+    matches: Vec<Matched>,
+    links: Vec<usize>,
+    root: usize,
 }
 
 /// A resource ceiling hit while matching, and the significant-token index
@@ -884,6 +918,7 @@ enum Frame<'g> {
     Production {
         production: Production,
         position: usize,
+        depth: usize,
         first: usize,
     },
     /// `rules[index]` is being matched.
@@ -938,42 +973,77 @@ enum Step<'g> {
 ///
 /// | input (function body unless noted)   | steps / token |
 /// | ------------------------------------ | ------------- |
-/// | `x = x and x = x ...`                | 75.5          |
-/// | `x + x + ...`                        | 70.8          |
-/// | 63 nested parentheses                | 69.0          |
-/// | `g(x, x) + ...`, `x * x * ...`       | 65.3          |
-/// | `x[x][x]...`                         | 63.2          |
-/// | `set[x, x] + ...`                    | 62.3          |
-/// | `if true then x else ...`            | 53.6          |
-/// | `let v = x in ...`                   | 38.3          |
-/// | `true implies true ...`              | 34.3          |
+/// | `x = x and x = x ...`                | 69.9          |
+/// | 63 nested parentheses                | 69.4          |
+/// | `x + x + ...`                        | 65.2          |
+/// | `g(x, x) + ...`                      | 61.2          |
+/// | `x * x * ...`                        | 59.8          |
+/// | `x[x][x]...`                         | 59.4          |
+/// | `set[x, x] + ...`                    | 58.7          |
+/// | `forall(v in x: v) and ...`          | 52.8          |
+/// | `if true then x else ...`            | 51.2          |
+/// | `M::T(x, x) + ...`                   | 48.0          |
+/// | `let v = x in ...`                   | 36.1          |
+/// | `true implies true ...`              | 33.8          |
+/// | `M::R { a: x, b: x } + ...`          | 33.5          |
+/// | `size<M::T>(x) + ...`                | 33.0          |
+/// | 63 nested `Option<...>` (alias)      | 7.1           |
 /// | `not not ... true`                   | 6.0           |
-/// | 63 nested `Option<...>` (alias)      | 7.0           |
 /// | `always [0,1] ...` (temporal clause) | 3.0           |
+///
+/// Measured with production memoization (QSL-213). The same inputs store
+/// 0.03 to 0.17 matches per step.
 ///
 /// An identifier operand is the costliest token: `Primary` tries every
 /// alternative before `QualifiedName`. 256 is over three times the worst
-/// measured case. Only an input that makes the grammar re-parse the same
-/// tokens under several alternatives, which can grow exponentially with
-/// bracket depth, exceeds it, and that input is refused naming the work
-/// limit.
+/// measured case.
+///
+/// Alternatives that share a prefix re-read it: a failed `TupleValue` is
+/// parsed again as a call argument list, and in `f(g(f(g(x,)),))` each
+/// level repeats the whole level inside it. The engine memoizes every
+/// production that matched, so such a re-read costs one step per production
+/// it reuses and work stays linear in bracket depth
+/// (`tests::nested_trailing_comma_work_is_linear_in_depth`).
 const WORK_PER_TOKEN: usize = 256;
 
 /// A bounded interpreter for the declarative grammar table.
 ///
-/// It runs on explicit heap stacks: `frames` holds suspended rules and
-/// `arena` holds completed matches. No Rust call recursion depends on the
-/// input, so neither a long operator/prefix/`let`/`if`/temporal chain nor a
-/// deeply bracketed unit can overflow the thread's stack (NFR-001). Every
-/// structure is flat, so discarding a failed attempt truncates a `Vec` and
-/// dropping a result never recurses.
+/// It runs on explicit heap stacks: `frames` holds suspended rules,
+/// `matches` holds every completed production match, and `pending` holds the
+/// completed matches not yet adopted by an enclosing production. No Rust call
+/// recursion depends on the input, so neither a long
+/// operator/prefix/`let`/`if`/temporal chain nor a deeply bracketed unit can
+/// overflow the thread's stack (NFR-001). Every structure is flat, so
+/// discarding a failed attempt truncates `pending` and dropping a result
+/// never recurses.
+///
+/// A production's outcome is a function of the production, position and
+/// bracket depth alone, so a match is memoized under that key and reused by
+/// reference.
+///
+/// Memory. `matches` and `links` are append-only for the engine's lifetime,
+/// so they are bounded by the work budget, not by the node ceiling: a failed
+/// attempt's matches stay stored. A new match costs at least two charged
+/// steps (its production entry and its rule entry) and takes 72 bytes; a
+/// child link costs at least one step and takes 8 bytes; `pending` holds at
+/// most the links of the productions still open. With 2 × matches + reuses
+/// ≤ steps, the store takes at most 40 bytes per step of the budget, plus 16
+/// bytes per token for the memo heads. At the default ceilings
+/// (100,000 tokens, so 25,600,256 steps) that is about 1 GiB in the worst
+/// case. The measured inputs at [`WORK_PER_TOKEN`] store at most 0.17
+/// matches and 0.17 links per step, about 14 bytes per step.
 struct Engine<'a> {
     grammar: &'a Grammar,
     reserved_words: BTreeSet<&'static str>,
     tokens: &'a [Significant],
     limits: Limits,
     frames: Vec<Frame<'a>>,
-    arena: Vec<Matched>,
+    matches: Vec<Matched>,
+    links: Vec<usize>,
+    pending: Vec<Pending>,
+    /// The latest stored match starting at each position `0..=tokens`, the
+    /// head of that position's memo list.
+    memo: Vec<Option<usize>>,
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
@@ -990,7 +1060,10 @@ impl<'a> Engine<'a> {
             tokens,
             limits,
             frames: Vec::new(),
-            arena: Vec::new(),
+            matches: Vec::new(),
+            links: Vec::new(),
+            pending: Vec::new(),
+            memo: vec![None; tokens.len().saturating_add(1)],
             steps: 0,
             maximum_steps: tokens
                 .len()
@@ -1024,17 +1097,38 @@ impl<'a> Engine<'a> {
         })
     }
 
-    /// Descendants matched since arena length `first`.
+    /// Matches, descendants included, made since pending length `first`.
     fn matched_since(&self, first: usize) -> usize {
-        self.arena.len().saturating_sub(first)
+        let total = |length: usize| {
+            length
+                .checked_sub(1)
+                .and_then(|index| self.pending.get(index))
+                .map_or(0, |pending| pending.total)
+        };
+        total(self.pending.len()).saturating_sub(total(first))
     }
 
-    /// Match `production` at `position` with an empty arena. On
-    /// [`Outcome::Match`], the production's own match is the arena's last
-    /// entry.
+    /// Queue stored match `node` for adoption by the enclosing production.
+    fn adopt_later(&mut self, node: usize) {
+        let before = self.pending.last().map_or(0, |pending| pending.total);
+        let size = self.matches.get(node).map_or(0, |matched| matched.size);
+        debug_assert!(size > 0, "pending match {node} is stored");
+        self.pending.push(Pending {
+            node,
+            total: before.saturating_add(size),
+        });
+    }
+
+    /// Match `production` at `position`. On [`Outcome::Match`], the
+    /// production's own match is the last pending match.
+    ///
+    /// The store and memo persist across calls on one engine: the tokens are
+    /// the same, so a memoized match stays valid, and every call charges the
+    /// one work budget. Clearing them per call would cost O(tokens) each time
+    /// `selection_prelude_nodes` reads one more declaration.
     fn production(&mut self, production: Production, position: usize) -> Outcome {
         self.frames.clear();
-        self.arena.clear();
+        self.pending.clear();
         let mut step = Step::Production(production, position, 0);
         loop {
             step = match step {
@@ -1051,12 +1145,19 @@ impl<'a> Engine<'a> {
     }
 
     /// The match the last successful [`Self::production`] call produced.
-    fn last_match(&self) -> Option<Matched> {
-        self.arena.last().copied()
+    fn last_match(&self) -> Option<&Matched> {
+        let pending = self.pending.last()?;
+        self.matches.get(pending.node)
     }
 
-    fn into_arena(self) -> Vec<Matched> {
-        self.arena
+    /// The store and root of the last successful [`Self::production`] call.
+    fn into_forest(self) -> Option<Forest> {
+        let root = self.pending.last()?.node;
+        Some(Forest {
+            matches: self.matches,
+            links: self.links,
+            root,
+        })
     }
 
     fn enter_production(
@@ -1068,6 +1169,25 @@ impl<'a> Engine<'a> {
         if !self.charge(position) {
             return Step::Return(self.work_exhausted());
         }
+        // Reuse, not copy: the memoized match joins this attempt by
+        // reference, one step for the whole subtree. The walk is not charged
+        // per entry. It is bounded: a (production, depth) pair is stored at
+        // most once per position, because once stored it is never matched
+        // again there, so the list holds at most one entry per production
+        // per bracket depth (`Production` count × (nesting ceiling + 1)),
+        // and in practice the few productions that can start at one token.
+        let mut cursor = self.memo.get(position).copied().flatten();
+        while let Some(node) = cursor {
+            let Some(matched) = self.matches.get(node) else {
+                break;
+            };
+            if matched.production == production && matched.depth == depth {
+                let end = matched.end;
+                self.adopt_later(node);
+                return Step::Return(Outcome::Match(end));
+            }
+            cursor = matched.earlier;
+        }
         let grammar = self.grammar;
         let Some(rule) = grammar.get(&production) else {
             return Step::Return(Outcome::No(Failure::expected(
@@ -1078,7 +1198,8 @@ impl<'a> Engine<'a> {
         self.frames.push(Frame::Production {
             production,
             position,
-            first: self.arena.len(),
+            depth,
+            first: self.pending.len(),
         });
         Step::Rule(rule, position, depth)
     }
@@ -1087,7 +1208,7 @@ impl<'a> Engine<'a> {
         if !self.charge(position) {
             return Step::Return(self.work_exhausted());
         }
-        let first = self.arena.len();
+        let first = self.pending.len();
         match rule {
             Rule::Terminal(terminal) => Step::Return(self.terminal(terminal, position, depth)),
             Rule::Production(production) => Step::Production(*production, position, depth),
@@ -1146,25 +1267,47 @@ impl<'a> Engine<'a> {
 
     /// Continue the suspended `frame` with the outcome of the sub-rule it
     /// started. Every recovery point (a later alternative, an absent option,
-    /// the end of a repetition) truncates the arena to where the failed
-    /// attempt began, discarding exactly the matches the attempt made.
+    /// the end of a repetition) truncates `pending` to where the failed
+    /// attempt began, so the attempt's matches leave the tree. They stay in
+    /// the store, where a memoized one can still be reused.
     fn resume(&mut self, frame: Frame<'a>, outcome: Outcome) -> Step<'a> {
         match frame {
             Frame::Production {
                 production,
                 position,
+                depth,
                 first,
             } => match outcome {
                 Outcome::Match(end) => {
-                    if self.matched_since(first) >= self.limits.nodes {
+                    let descendants = self.matched_since(first);
+                    if descendants >= self.limits.nodes {
                         return Step::Return(self.nodes_exhausted());
                     }
-                    self.arena.push(Matched {
+                    let links = self.links.len();
+                    debug_assert!(first <= self.pending.len(), "a frame's pending start");
+                    self.links.extend(
+                        self.pending
+                            .get(first..)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|pending| pending.node),
+                    );
+                    self.pending.truncate(first);
+                    let node = self.matches.len();
+                    let earlier = self
+                        .memo
+                        .get_mut(position)
+                        .and_then(|head| head.replace(node));
+                    self.matches.push(Matched {
                         production,
                         start: position,
                         end,
-                        first,
+                        children: links..self.links.len(),
+                        size: descendants + 1,
+                        depth,
+                        earlier,
                     });
+                    self.adopt_later(node);
                     Step::Return(Outcome::Match(end))
                 }
                 other => Step::Return(other),
@@ -1214,7 +1357,7 @@ impl<'a> Engine<'a> {
                         None => next,
                         Some(current) => current.merge(next),
                     };
-                    self.arena.truncate(first);
+                    self.pending.truncate(first);
                     let index = index + 1;
                     let Some(alternative) = rules.get(index) else {
                         return Step::Return(Outcome::No(failure));
@@ -1236,7 +1379,7 @@ impl<'a> Engine<'a> {
                     Step::Return(Outcome::No(failure))
                 }
                 Outcome::No(_) => {
-                    self.arena.truncate(first);
+                    self.pending.truncate(first);
                     Step::Return(Outcome::Match(position))
                 }
                 other => Step::Return(other),
@@ -1263,7 +1406,7 @@ impl<'a> Engine<'a> {
                             end: next,
                             count: count + 1,
                             first,
-                            iteration: self.arena.len(),
+                            iteration: self.pending.len(),
                             depth,
                         });
                         return Step::Rule(rule, next, depth);
@@ -1271,14 +1414,14 @@ impl<'a> Engine<'a> {
                     // A repetition that consumed nothing ends the loop and
                     // keeps none of its matches.
                     Outcome::Match(_) => {
-                        self.arena.truncate(iteration);
+                        self.pending.truncate(iteration);
                         None
                     }
                     Outcome::No(next) if commit_on_progress && next.position > end => {
                         return Step::Return(Outcome::No(next));
                     }
                     Outcome::No(next) => {
-                        self.arena.truncate(iteration);
+                        self.pending.truncate(iteration);
                         Some(next)
                     }
                     exhausted @ Outcome::Exhausted(_) => return Step::Return(exhausted),
@@ -1375,20 +1518,43 @@ fn token_span(source: &Source, tokens: &[Significant], start: usize, end: usize)
     }
 }
 
-/// Lower the post-order match arena into CST raw nodes, index for index. A
-/// node's direct children are found by stepping back from it over whole
-/// sibling subtrees (`first - 1`), so the pass is linear and iterative.
-fn lower_tree(source: &Source, tokens: &[Significant], arena: &[Matched]) -> (Vec<RawNode>, usize) {
-    let mut nodes = Vec::with_capacity(arena.len());
-    for (index, matched) in arena.iter().enumerate() {
-        let mut children = Vec::new();
-        let mut cursor = index;
-        while cursor > matched.first {
-            let child = cursor - 1;
-            children.push(CstElement::Node(child));
-            cursor = arena[child].first;
+/// Lower the matched tree under the forest's root into CST raw nodes in
+/// post-order (every descendant before its ancestor, siblings left to
+/// right). Each reference to a stored match lowers to its own CST node, so a
+/// memoized match reused in the tree is never a shared CST node. The walk
+/// keeps its path on a heap stack, so it is iterative and linear in the
+/// nodes it emits.
+fn lower_tree(source: &Source, tokens: &[Significant], forest: &Forest) -> (Vec<RawNode>, usize) {
+    /// A stored match being lowered: its next child link and the CST
+    /// children lowered so far.
+    struct Visit<'f> {
+        matched: &'f Matched,
+        next: usize,
+        children: Vec<CstElement>,
+    }
+
+    let visit = |node: usize| {
+        forest.matches.get(node).map(|matched| Visit {
+            matched,
+            next: matched.children.start,
+            children: Vec::new(),
+        })
+    };
+    let capacity = forest.matches.get(forest.root).map_or(0, |root| root.size);
+    let mut nodes = Vec::with_capacity(capacity);
+    let mut path: Vec<Visit<'_>> = visit(forest.root).into_iter().collect();
+    while let Some(top) = path.last_mut() {
+        if top.next < top.matched.children.end {
+            let child = forest.links.get(top.next).and_then(|&child| visit(child));
+            debug_assert!(child.is_some(), "child link {} is stored", top.next);
+            top.next += 1;
+            path.extend(child);
+            continue;
         }
-        children.reverse();
+        let Some(done) = path.pop() else {
+            break;
+        };
+        let matched = done.matched;
         let span = if matched.production == Production::CompleteUnit {
             Span {
                 start: 0,
@@ -1397,11 +1563,15 @@ fn lower_tree(source: &Source, tokens: &[Significant], arena: &[Matched]) -> (Ve
         } else {
             token_span(source, tokens, matched.start, matched.end)
         };
+        let index = nodes.len();
         nodes.push(RawNode {
             production: matched.production,
             span,
-            children,
+            children: done.children,
         });
+        if let Some(parent) = path.last_mut() {
+            parent.children.push(CstElement::Node(index));
+        }
     }
     let root = nodes.len().saturating_sub(1);
     (nodes, root)
@@ -1485,6 +1655,44 @@ mod tests {
                 &text[HEADER.len()..HEADER.len() + 80]
             );
         }
+    }
+
+    /// `f(g(f(...x,)...,),)` with `depth` calls, each with a trailing comma
+    /// the argument list does not admit.
+    fn nested_trailing_comma(depth: usize) -> String {
+        let open: String = (0..depth)
+            .map(|level| if level % 2 == 0 { "f(" } else { "g(" })
+            .collect();
+        function(&format!("{open}x{}", ",)".repeat(depth)))
+    }
+
+    // Each level fails as a tuple and is re-read as a call argument list; the
+    // memoized argument expression makes the re-read one step, not a
+    // re-parse of every level inside it. Without memoization the work
+    // doubles per level and depth 4 already exhausts the budget.
+    #[test]
+    fn nested_trailing_comma_work_is_linear_in_depth() {
+        let grammar = grammar::complete_v1();
+        let compounds = grammar::complete_compound_spellings(&grammar);
+        let steps = |depth: usize| {
+            let source = source(&nested_trailing_comma(depth));
+            let (_, significant, _, _) =
+                scan(&source, Limits::default(), &compounds).expect("scan");
+            let mut engine = Engine::new(&grammar, &significant, Limits::default());
+            let outcome = engine.production(Production::CompleteUnit, 0);
+            assert!(
+                matches!(outcome, Outcome::No(_)),
+                "depth {depth}: {outcome:?}"
+            );
+            engine.steps
+        };
+        let counts: Vec<usize> = (2..=12).map(steps).collect();
+        let increments: Vec<usize> = counts.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        // Linear: every added level costs the same number of steps.
+        assert!(
+            increments.windows(2).all(|pair| pair[0] == pair[1]),
+            "steps by depth 2..=12: {counts:?}"
+        );
     }
 
     /// Run `run` on a 512 KiB thread; overflowing it aborts the test process.
