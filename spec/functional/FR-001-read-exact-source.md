@@ -44,8 +44,8 @@ path, the bytes or another label: a path is a locator, not an identity
 its value.
 
 The source shall refuse with `invalid_source_identity` when the authority,
-identity, revision namespace, revision value or path is empty or only
-whitespace.
+identity, revision namespace or revision value is empty or only whitespace,
+or when the path is empty.
 
 ### Admission mints the source reference
 
@@ -76,8 +76,10 @@ identity gives every source-owned declaration a different key.
   source reader and to S1's `parse`.
 - The replay executor recompiles each source under the `RawSourceRef` the
   replay request's package reference names (QSpec FR-323 `package`, ADR-013
-  O-26). It passes that reference's four labels as the source identity and
-  the provided bytes as the source. It requires the recomputed
+  O-26). It passes that reference's four labels as the source identity, the
+  reference's identity as the path, and the provided bytes as the source. A
+  reference whose label is only whitespace, which QSpec's `Nonempty` admits,
+  refuses the replay with `invalid_source_identity` before recompilation. It requires the recomputed
   `quire.source.bytes/v1` digest to equal the reference's digest, as
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
@@ -93,7 +95,7 @@ identity gives every source-owned declaration a different key.
 | FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test |
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-423) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, and again when it is a single space. | Test (TC-423) |
-| FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key. | Test (TC-423) |
+| FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-423) |
 
 ## Dependencies
 

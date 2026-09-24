@@ -182,7 +182,7 @@ outcome.
 | FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and a claim form with a kind yields exactly one `Requirements` value naming that kind; calling the requirements function twice on the same checked node yields equal values. | Test (TC-160) |
 | FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts neither `check` nor `package` ever returns `Incomplete` across the same fixture set. | Test (TC-160) |
 | FR-062-AC-6 | The `Relation` family has no evaluation hook, and S6a's input type admits no `Relation` node, so a `Relation` node never reaches evaluation and yields neither a panic, a silently omitted call, nor a successful evaluated result (FR-090-AC-4). Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
-| FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-160) |
+| FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-378) |
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
@@ -301,18 +301,20 @@ they exist in the delivered code today:
   contract's `Limit` outcome. That is real, load-bearing `Typer`
   entanglement -- the same entanglement QSL-148's own ticket asked to be
   reported rather than worked around -- and it is out of scope for this PR.
-  Decided by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
-  (QSL-160): AC-7's nesting-depth limit is `Typer`'s `CheckingLimits.depth`,
-  and `ValueFunctionFamily::check` returns `Typer`'s depth refusal as
-  `StageFailure::Limit` carrying the locus of the node whose entry failed.
-  No `CheckContext` is threaded through `Typer`. The catalog requires it:
-  a stage limit is `stage_limit_exceeded`, not `resource_exhausted`. The
-  `Limit` keeps the location PR #303 required because `LimitExceeded`
-  carries a `Locus::Region`, resolved from the node's `check::Location`.
-  That region needs the unit's `RawSourceRef` (FR-001, ADR-013 §7 slice
-  S-4b) and the forms' expression spans (FR-091-AC-10, QSL-141). Once both
-  land, FR-096-AC-3's fixture (TC-426) backs AC-7 and TC-378. Owner:
-  QSL-160.
+  [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
+  (QSL-160) closes the location half: a `check::Location` resolves to a
+  `Locus::Region` through the unit's `RawSourceRef` (FR-001, ADR-013 §7
+  slice S-4b) and the forms' expression spans (FR-091-AC-10, QSL-141), so a
+  `Limit` built from `Typer`'s depth refusal no longer drops the location
+  PR #303 required. The code half needs an owner ruling. AC-7 requires a
+  `StageFailure::Limit`, which is `stage_limit_exceeded`. FR-092-AC-7 and
+  FR-093-AC-14 require the same `CheckingLimits` depth refusal to be
+  `resource_exhausted`/`insufficient-next-charge`, and FR-062-AC-11 rules
+  that the `CheckingLimits` node budget is a refusal, not a `Limit`. Once
+  the ruling picks one, either AC-7 is backed by mapping `Typer`'s depth
+  refusal to `Limit` in `ValueFunctionFamily::check`, with no
+  `CheckContext` threaded through `Typer`, or AC-7 is restated against the
+  refusal. Owner: QSL-160.
 - FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
   own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
   no cause-bearing family to probe yet. Owner: QSL-152.
@@ -339,5 +341,4 @@ AC-5, AC-11). AC-5's two tagged tests are
 (`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the
 reasons above -- not silently. AC-7 in particular stays unbacked pending a
-the `Typer` depth limit that FR-096 (QSL-160) specifies, as its row above
-describes.
+the ruling its row above describes.

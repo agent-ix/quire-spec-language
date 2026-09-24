@@ -27,7 +27,8 @@ Scope: FR-001-AC-5, FR-001-AC-6, FR-001-AC-7.
 3. Check package declarations holding record `Point` with field
    `x: Int[0, 9]` under the reference of `b` as (`a`, `u`, `git`, `1`),
    under the reference of `b'` as (`a`, `u`, `git`, `2`), and under the
-   reference of `b` as (`c`, `u`, `git`, `1`).
+   reference of `b` as (`c`, `u`, `git`, `1`), and under the reference of `b`
+   as (`a`, `v`, `git`, `1`).
 
 Tag the tests `#[trace("TC-423", "FR-001-AC-n")]` with the AC each backs.
 
@@ -37,8 +38,9 @@ Tag the tests `#[trace("TC-423", "FR-001-AC-n")]` with the AC each backs.
   `quire.source.bytes/v1` digest of `b`; the second differs only in the
   revision value.
 - Step 2: each admission refuses with `invalid_source_identity`.
-- Step 3: `Point` has the same key under the first two references and a
-  different key under the third.
+- Step 3: `Point` has the same key under the first two references, and
+  the third and fourth references each give a key different from it and
+  from each other.
 
 ## Status
 

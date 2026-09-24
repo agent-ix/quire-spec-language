@@ -22,20 +22,23 @@ Scope: FR-096-AC-1.
 ## Test Procedure
 
 1. Under unit reference `r`, check declarations whose function `0` has body
-   `if a then b else c + d` and measure `a`, each form carrying its spans.
+   `if a then b else c + d` and measure `n`, each form carrying its spans.
 2. Resolve (`Body{0}`, `[]`), (`Body{0}`, `[2]`), (`Body{0}`, `[2, 1]`) and
    (`Measure{0}`, `[]`) against the declarations and against the checked
    package.
-3. Resolve a location in an FR-151 synthesized function and a location with
+3. Embed the same unit at byte offset `k` of a document with reference
+   `d`, with no layout deletions, and resolve the four locations again.
+4. Resolve a location in an FR-151 synthesized function and a location with
    `Origin::Expression`.
 
 Tag the tests `#[trace("TC-425", "FR-096-AC-1")]`.
 
 ## Expected Results
 
-- Step 2: the spans of `if a then b else c + d`, `c + d`, `d` and `a`, each
+- Step 2: the spans of `if a then b else c + d`, `c + d`, `d` and `n`, each
   under `r`, and the same four regions from the checked package.
-- Step 3: no region for either.
+- Step 3: the same four spans shifted by `k`, each under `d`.
+- Step 4: no region for either.
 
 ## Status
 

@@ -61,9 +61,9 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 
 ### A check location resolves to a region of the unit it was read from
 
-Package declarations SHALL be checked under the `RawSourceRef` of the unit
-they were assembled from (FR-001). Their source owner is that reference's
-`SourceOwner{authority, identity}`.
+One set of package declarations holds the declarations of one source unit.
+They SHALL be checked under that unit's `RawSourceRef` (FR-001), and their
+source owner is that reference's `SourceOwner{authority, identity}`.
 
 A `check::Location` names a declaration origin and a child-index path. For a
 declaration the assembler built from the unit, it SHALL resolve to a
@@ -73,9 +73,12 @@ declaration the assembler built from the unit, it SHALL resolve to a
   `Origin::Measure{index}` at its `decreases` measure.
 - Each path step `i` moves to child `i` of the current node, numbered as
   `Expression::children` numbers them.
-- The region is the span the node reached carries (FR-091-AC-10).
+- The region is the span the node reached carries (FR-091-AC-10). When the
+  unit is a body embedded in a document, that span is mapped to the
+  document region by C-21, under the document's `RawSourceRef`.
 
-A declaration as a whole SHALL be located at its form's span (FR-091-AC-1).
+A declaration as a whole SHALL be located at its form's span (FR-091-AC-1),
+mapped the same way.
 
 A location SHALL resolve to no region in exactly two cases. In each, the
 tree holding the position was not read from the unit, so no region of the
@@ -103,25 +106,32 @@ respectively.
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
 actual counter at the failed charge, and an optional `Locus`. Its catalog
-code is its kind's. A stage limit is never reported as `resource_exhausted`,
-which the catalog keeps for the caller's work-budget meter.
+code is its kind's.
+
+This requirement covers the producers that report a stage limit as
+`LimitExceeded`: S2's nesting depth (FR-091-AC-9), a family `check`'s
+per-declaration limits (FR-062-AC-5) and the I2 reader. The check stage's
+`CheckingLimits` depth and node budget refuse with `resource_exhausted`
+(FR-062-AC-11, FR-092-AC-7, FR-093-AC-14), and S1's syntax budgets with
+`resource_exhausted` (FR-002-AC-4, FR-035-AC-5); those refusals keep their
+own locations and are not `LimitExceeded`. S4, the `replay` facade and the
+`route` module have no stage limit yet; their owners specify one with its
+locus when they add it.
 
 Each producer's locus is the position at which its charge failed:
 
 | Producer | Limits | Locus |
 | --- | --- | --- |
-| S1 (`qsl-cst`) | nesting depth; CST node and token count, both node count (a token is a CST leaf) | `Locus::Region` over the span of the token or node whose entry failed the charge, under the source's `RawSourceRef` |
-| S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound |
+| S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound, under the unit's `RawSourceRef` |
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
-| S3, `Typer` | expression nesting depth (`CheckingLimits.depth`) and the package-wide node count (`CheckingLimits.nodes`) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes` and `Work` as input bytes, nesting depth, node count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
 
-1. The position resolves to no region (the two cases above).
-2. The I2 reader's own artifact byte ceiling. It refuses before any byte is
-   read, and the only name for the artifact is a digest over the bytes the
-   ceiling refuses to read.
+1. The declaration resolves to no region (a synthesized function, above).
+2. The I2 reader's own artifact byte ceiling. The reader refuses without
+   hashing the oversized bytes, which is the ceiling's purpose, and a digest
+   over them is the only name the artifact has.
 3. An IR limit for which IR reports no pointer: IR's byte budget, which it
    charges against the whole input rather than at a value.
 
@@ -130,15 +140,26 @@ Each producer's locus is the position at which its charge failed:
 `CatalogCoded` SHALL have a second required method, `catalog_fields`. It
 returns the structured payload the catalog row requires for the cause that
 `catalog_code()` names, with the same map shape as `UndefinedRecord.fields`:
-
-- one entry for each required payload item other than a location;
-- keyed by QSL's name for that item, with the key set fixed for each cause;
-- valued by the item's rendering.
+one entry for each required payload item other than a location, valued by
+the item's rendering. A location item of a row, such as the `lookup` locus
+or the call locus, is the record's locus and not a field.
 
 A cause type SHALL carry every payload item the catalog requires for each of
 its causes in the cause's own variant. `catalog_fields` reads them from the
-variant and never from a message. A location item of a row, such as the
-`lookup` locus or the call locus, is the record's locus and not a field.
+variant and never from a message.
+
+The keys of the family causes S6a raises are these. Each key names the
+catalog payload item beside it (`quire.native.diagnostics/v1` revision
+`1-draft.6`):
+
+| Cause type | Code / cause | Key: catalog payload item |
+| --- | --- | --- |
+| `ProtocolClauseSnapshot` | `wrong_snapshot` / `wrong-anchor` | `required`: the required anchor selection; `supplied`: the supplied anchor selection |
+| `ProtocolClauseSnapshot` | `wrong_snapshot` / `forbidden-pre-read` | `read`: the exact prohibited read |
+| `ModelQueryRefusal` | `invalid_runtime_input` / `absent-key` | `binding`: the population binding; `key`: the requested key |
+
+A cause another family adds to S6a adds its row here, with the key for each
+payload item its catalog row requires.
 
 `RefusalRecord` SHALL carry the `CatalogCode`, the O-16 category, an
 optional `Locus`, and the catalog fields. It is built from a `CatalogCoded`
@@ -156,76 +177,57 @@ At S6a, a consumer SHALL build a record as follows:
 In both cases the locus is `Evaluation.location`, resolved by the checked
 package. It is absent when the location is `None` or resolves to no region.
 
-### O-22: the one QSL reader this slice covers
+### The I2 reader locates its refusals in the artifact
 
-O-22's QSL reader in S-5b SHALL be the I2 reader
-(`qsl-package`'s `read_checked_package_v2`) alone. The other versioned
-readers are outside this slice:
+IR's `read_checked_package` decides the version (ADR-013 O-22 Package
+schema). When IR refuses the version, the I2 reader SHALL return
+`StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`. Its
+fields are `actual`, the contract version IR read, and `expected`,
+`quire.checked-package/v2`. Its locus is `Locus::Artifact` with the supplied
+bytes' `raw-artifact-digest` record and the pointer `/contract_version`.
 
-- The #231 replay envelope readers (the replay request,
-  `quire.native-runtime/v1`, and the proof result,
-  `quire.backend-provider/v1`) own their version refusal under O-22's #231
-  row. Each already refuses another version as
-  `unknown_wire`/`unsupported-wire` and keeps the actual version.
-- `decode_function_package_v2` reads `quire.checked-function-package/v2`,
-  which is not a QSpec contract identifier. It is the layer-5 prototype
-  codec that stays in `qsl-eval` only until QSL-6 S3 (ADR-011 X-7, X-8).
-- The native-v1 readers are lane-private (ADR-013 §6, R-09) and gain no
-  consumer.
-
-IR's `read_checked_package` decides the version (O-22 Package schema). When
-IR refuses the version, the I2 reader SHALL return `StageFailure::Refused`
-with code `unknown_wire`/`unsupported-wire`. Its fields name the actual
-contract version IR read and the expected `quire.checked-package/v2`. Its
-locus is `Locus::Artifact` with the supplied bytes' `raw-artifact-digest`
-record and the pointer `/contract_version`. Every other IR refusal SHALL be
-located at `Locus::Artifact` with that digest and the RFC 6901 pointer IR
-reports.
-
-### What makes FR-062-AC-7 constructible
-
-FR-062-AC-7's nesting-depth limit is `Typer`'s `CheckingLimits.depth`, the
-bound that real recursive descent charges. `ValueFunctionFamily::check`
-SHALL return `Typer`'s depth refusal as `StageFailure::Limit` with kind
-nesting depth, the configured bound, the actual depth and the locus of the
-node whose entry failed. `CheckContext` is not threaded through `Typer`: the
-family maps `Typer`'s own refusal. The locus is what keeps the location that
-PR #303's review required. It needs the unit's `RawSourceRef` (FR-001,
-slice S-4b) and the forms' spans (FR-091-AC-10).
+Every other IR refusal that IR reports at a value SHALL be located at
+`Locus::Artifact` with that digest and the RFC 6901 pointer IR reports. A
+refusal IR reports at no value, such as malformed JSON, SHALL carry no
+locus: the whole-document pointer would stand in for a position it does not
+name.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `a`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of the measure. Each region is under `r`. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. The checked package of those declarations resolves the same four locations to the same four regions. | Test (TC-425) |
+| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test (TC-425) |
 | FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `nesting-depth-exceeded`, `node-count-exceeded` and `work-budget-exceeded` for its four variants, and a `LimitExceeded` gives its kind's code. | Test (TC-426) |
-| FR-096-AC-3 | A function whose body is `not not not true` (four nodes deep), checked through `ValueFunctionFamily::check` with `CheckingLimits.depth` 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4 and `Locus::Region` over the span of `true`. Its catalog code is `stage_limit_exceeded`/`nesting-depth-exceeded`, not `resource_exhausted`. With depth 4 and nothing else changed, it returns no nesting-depth limit. | Test (TC-426) |
-| FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached inside an FR-151 synthesized function carries no locus. | Test (TC-426) |
-| FR-096-AC-5 | S1 over a source nested one bracket pair past its nesting bound `N` returns a limit with kind nesting depth, bound `N`, actual `N + 1`, and `Locus::Region` over the span of the bracket that opened the pair past the bound, under the source's `RawSourceRef`. | Test (TC-426) |
-| FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-427) |
-| FR-096-AC-7 | For every cause of every `CatalogCoded` type, `catalog_fields()` holds exactly the keys fixed for that cause, and those keys name every payload item the catalog row requires for that cause except its locations. | Test (TC-427) |
+| FR-096-AC-3 | With S2 nesting-depth bound `L = 8`, S2 over a body of `not`×8 `a` returns a limit with kind nesting depth, bound 8, actual 9, and `Locus::Region` over the span of the node at depth 9, under the unit's `RawSourceRef`. | Test (TC-426) |
+| FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-426) |
+| FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test (TC-426) |
+| FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-427) |
+| FR-096-AC-7 | For each cause in the key table, `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-427) |
 | FR-096-AC-8 | A `RefusalRecord` built from an S6a `Evaluation` whose outcome is a kernel `Refused` carries the code QSL's kernel map gives that cause, category refusal, and the evaluation's resolved locus. | Test (TC-427) |
-| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, fields naming actual `quire.checked-package/v3` and expected `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. | Test (TC-428) |
+| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. | Test (TC-428) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-428) |
 
 ## Dependencies
 
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
-  T-4, T-5, O-12, O-16, O-17 and O-22; §7 slices S-4b and S-5b.
+  T-4, T-5, O-12, O-16, O-17 and O-22 (whose Implementing ticket row names
+  the I2 reader as S-5b's one QSL reader); C-21; §7 slices S-4b and S-5b;
+  §8 QC-28.
 - [FR-001](FR-001-read-exact-source.md) AC-5 to AC-7 (slice S-4b): the
   unit's `RawSourceRef`.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)
-  AC-1 and AC-10 (QSL-141): the declaration and expression spans every
-  check-stage locus resolves through. AC-1, AC-3, AC-4 and AC-6 need them.
-- [FR-062](FR-062-implement-checked-family-contract.md) AC-7: backed by
-  this requirement's AC-3 fixture.
+  AC-1, AC-9 and AC-10 (QSL-141): the declaration and expression spans every
+  check-stage locus resolves through. AC-1, AC-3 to AC-6 need them.
+- [FR-062](FR-062-implement-checked-family-contract.md) AC-5 and AC-11: the
+  per-declaration limits and the package node budget.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md):
   `CatalogCoded`, `UndefinedCoded`, `Evaluation` and `FamilyResult`.
 - IR (`agent-ix/quire-contract-ir`, `quire-contract-model`'s
   `checked_package`), conformance work with no ticket (ADR-013 §7). AC-9
   and AC-10 need all three:
-  1. `CheckedPackageRefusal.path` is an RFC 6901 JSON pointer. Today it is a
-     bare member name (`contract_version`) or `document`.
+  1. `CheckedPackageRefusal.path` is the RFC 6901 JSON pointer of the value
+     the refusal concerns, and is absent for a refusal at no value. Today it
+     is a bare member name (`contract_version`) or `document`.
   2. The `UnknownContractVersion` refusal carries the contract version it
      read.
   3. `CheckedPackageIncomplete` carries the RFC 6901 pointer of the value at
@@ -237,12 +239,14 @@ slice S-4b) and the forms' spans (FR-091-AC-10).
   `Diagnostics` limits map to?** IR's `CheckedPackageLimit` has seven
   kinds. `stage_limit_exceeded` has four causes, and none names edges,
   occurrences or diagnostics. The catalog forbids a producer from choosing
-  a broader cause to discard a distinction it knows. Until this is decided,
-  the I2 reader's conversion of those three kinds is unspecified.
+  a broader cause to discard a distinction it knows. ADR-013 QC-28 carries
+  the question, and S-5b's I2 limit conversion waits on it.
 
 ## Status
 
 Specified under QSL-160. Not implemented. `LimitExceeded`, `StageFailure`
 and `Staged` are `qsl-semantics`'s `family::outcome` types, with no locus
 and no actual counter. `RefusalRecord` and `catalog_fields` do not exist.
-`Typer`'s depth refusal surfaces as `resource_exhausted`.
+`ModelRefusalCause::AbsentKey` carries the key but not the population
+binding, and `WrongSnapshotCause::WrongAnchor` carries neither anchor
+selection, so both causes gain the payload the key table names.

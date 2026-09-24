@@ -36,7 +36,7 @@ quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <r
 The CLI reads OS arguments without assuming UTF-8. The command and the four
 labels must be UTF-8; invalid label/command encoding is a usage error
 before opening the path. An empty or whitespace-only UTF-8 label refuses as
-`invalid_source_identity` (FR-001). The file operand remains an OS path for actual I/O, including Unix
+`invalid_source_identity` (FR-001) before the file is opened. The file operand remains an OS path for actual I/O, including Unix
 non-UTF-8 paths. JSON path text is display-only and may contain replacement
 characters; it cannot serve as portable source authority. The exact source
 labels and digest remain distinct. Collect at most seven arguments so extra
@@ -73,7 +73,7 @@ a second error envelope or alter the audit target's derived errors.
 | FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
 | FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, exits 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test |
 | FR-010-AC-10 | A failure writing the command's own output exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |
-| FR-010-AC-11 | `parse agent-ix specs/a.quire git 3f2a <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and the file's `quire.source.bytes/v1` digest. `parse` with the four labels and no file, or with one extra operand, exits 20. `parse agent-ix specs/a.quire "" 3f2a <file>` exits 20 with `invalid_source_identity`. | Test (TC-424) |
+| FR-010-AC-11 | `parse agent-ix specs/a.quire git 3f2a <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and the file's `quire.source.bytes/v1` digest. `parse` with the four labels and no file, or with one extra operand, exits 20. `parse agent-ix specs/a.quire "" 3f2a <missing-file>` exits 20 with `invalid_source_identity`, not a file error. `format` takes the same four labels: `format agent-ix specs/a.quire git 3f2a <file>` over admissible complete-V1 source exits 0, and with one extra operand exits 20. | Test (TC-424) |
 
 ## Dependencies
 

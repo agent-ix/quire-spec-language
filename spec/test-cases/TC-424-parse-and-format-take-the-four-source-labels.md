@@ -23,7 +23,9 @@ Scope: FR-010-AC-11.
    file.
 2. Run `parse agent-ix specs/a.quire git 3f2a` with no file, and
    `parse agent-ix specs/a.quire git 3f2a <file> extra`.
-3. Run `parse agent-ix specs/a.quire "" 3f2a <file>`.
+3. Run `parse agent-ix specs/a.quire "" 3f2a <missing-file>`.
+4. Run `format agent-ix specs/a.quire git 3f2a <file>` over admissible
+   complete-V1 source, then again with one extra operand.
 
 Tag the tests `#[trace("TC-424", "FR-010-AC-11")]`.
 
@@ -33,7 +35,8 @@ Tag the tests `#[trace("TC-424", "FR-010-AC-11")]`.
   `specs/a.quire`, revision namespace `git`, value `3f2a` and the file's
   `quire.source.bytes/v1` digest.
 - Step 2: both exit 20.
-- Step 3: exit 20 with `invalid_source_identity`.
+- Step 3: exit 20 with `invalid_source_identity`, not a file error.
+- Step 4: exit 0, then exit 20.
 
 ## Status
 
