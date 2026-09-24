@@ -1778,7 +1778,7 @@ mod tests {
             &parameters("x"),
             &parameters("y"),
         );
-        let Expression::Collection { elements, .. } = renamed else {
+        let Expression::Collection { elements, .. } = &renamed else {
             panic!("a collection renames to a collection: {renamed:?}");
         };
         let rendered: Vec<String> = elements.iter().map(|e| format!("{e:?}")).collect();
