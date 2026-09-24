@@ -253,8 +253,8 @@ before starting and reuse existing worktree target caches. Do not start another
 phase until the previous command has completed.
 
 ```sh
-cargo run --locked --target-dir target -- parse test:parent fixture:1 tests/fixtures/parent.native
-cargo run --locked --target-dir target -- format test:value-format fixture:1 tests/fixtures/value-format.native
+cargo run --locked --target-dir target -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
+cargo run --locked --target-dir target -- format agent-ix test:value-format fixture fixture:1 tests/fixtures/value-format.native
 ```
 
 Run the full local gate with `make ci`: formatting, clippy and `cargo test`

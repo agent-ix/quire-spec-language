@@ -36,9 +36,11 @@
     "source_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["identity", "revision"],
+      "required": ["authority", "identity", "revision_namespace", "revision"],
       "properties": {
+        "authority": {"type": "string", "minLength": 1},
         "identity": {"type": "string", "minLength": 1},
+        "revision_namespace": {"type": "string", "minLength": 1},
         "revision": {"type": "string", "minLength": 1}
       }
     },

@@ -13,10 +13,8 @@ use qsl_foundation::selection::{DefinitionRef, ProfileCatalog, ProfileStatus, St
 /// Exact document/profile tuple carried by every editor request and response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DocumentBinding {
-    /// Opaque document identity.
-    pub identity: String,
-    /// Exact source revision.
-    pub revision: String,
+    /// The document's four source labels (FR-001), exactly as admitted.
+    pub source: SourceIdentity,
     /// Exact selected formatting/language profile.
     pub profile: DefinitionRef,
 }
@@ -120,23 +118,10 @@ pub fn analyze_document(
     }
     let mut diagnostics = parsed.diagnostics().to_vec();
     diagnostics.sort_by(|left, right| {
-        (left.span.start.byte, left.span.end.byte, left.code.as_str())
-            .cmp(&(
-                right.span.start.byte,
-                right.span.end.byte,
-                right.code.as_str(),
-            ))
-            .then_with(|| {
-                left.related
-                    .iter()
-                    .map(|span| (span.start.byte, span.end.byte))
-                    .cmp(
-                        right
-                            .related
-                            .iter()
-                            .map(|span| (span.start.byte, span.end.byte)),
-                    )
-            })
+        // One document: every region shares its digest, so region order is
+        // byte order.
+        (&left.region, left.code.as_str(), &left.related)
+            .cmp(&(&right.region, right.code.as_str(), &right.related))
             .then_with(|| left.message.cmp(&right.message))
     });
     let mut symbols: Vec<_> = parsed
@@ -236,8 +221,8 @@ pub fn format_document(
         .map_err(crate::format::FormatRefusal::into_diagnostic)?;
     let candidate = super::parse_with_catalog(
         SourceIdentity {
-            identity: binding.identity.clone(),
-            revision: format!("{}:format-candidate", binding.revision),
+            revision: format!("{}:format-candidate", binding.source.revision),
+            ..binding.source.clone()
         },
         parsed.source().path(),
         formatted.as_bytes(),
@@ -315,8 +300,7 @@ fn validate_binding(
     catalog: &ProfileCatalog,
 ) -> Result<(), Box<CompleteDiagnostic>> {
     validate_catalog_profiles(parsed, catalog)?;
-    let identity = parsed.source().identity();
-    if identity.identity != binding.identity || identity.revision != binding.revision {
+    if parsed.source().identity() != &binding.source {
         return Err(qsl_cst::diagnostic::error(
             parsed.source(),
             CompleteCode::InvalidSourceIdentity,

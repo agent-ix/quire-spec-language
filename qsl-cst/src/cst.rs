@@ -293,9 +293,12 @@ impl LosslessCst {
         materialize_elements(&tokens, &mut nodes);
         let mut revision_preimage = b"quire.complete.document-revision/1\0".to_vec();
         let source_digest = source.digest().to_string();
+        let labels = source.identity();
         for value in [
-            source.identity().identity.as_bytes(),
-            source.identity().revision.as_bytes(),
+            labels.authority.as_bytes(),
+            labels.identity.as_bytes(),
+            labels.revision_namespace.as_bytes(),
+            labels.revision.as_bytes(),
             source_digest.as_bytes(),
         ] {
             revision_preimage
@@ -724,7 +727,9 @@ impl LosslessCst {
         }
         let source = qsl_foundation::Source::read(
             qsl_foundation::SourceIdentity {
+                authority: "test".into(),
                 identity: "forms-fixture".into(),
+                revision_namespace: "test".into(),
                 revision: "0".into(),
             },
             "forms-fixture",
@@ -768,7 +773,9 @@ mod tests {
     fn cst(revision: &str, text: &str) -> LosslessCst {
         let parsed = parse(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:cst-unit".into(),
+                revision_namespace: "test".into(),
                 revision: revision.into(),
             },
             "unit.native",

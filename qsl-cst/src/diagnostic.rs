@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located complete-source diagnostics over the crate's existing code type.
 
+use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{LocatedSpan, Phase, Source, SourceIdentity, SyntaxLimit};
+use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
 /// authority-bound complete-V1 catalog is deliberately not selected here.
@@ -77,7 +78,8 @@ pub enum HostCause {
     SelectionVersion,
     /// `invalid_digest`: a selection digest is not canonical SHA-256.
     SelectionDigest,
-    /// `invalid_source_identity`: the identity, revision or path is empty.
+    /// `invalid_source_identity`: a source label is empty or only
+    /// whitespace, or the path is empty (FR-001).
     UnnamedSource,
     /// `invalid_source_identity`: an edit names a different predecessor.
     EditPredecessor,
@@ -187,14 +189,18 @@ pub struct CompleteDiagnostic {
     pub code: CompleteCode,
     /// Closed typed cause, admitted by the catalog for `code`.
     pub cause: CompleteCause,
-    /// Exact caller-selected source identity and revision.
+    /// The caller's four source labels, exactly as offered.
     pub source: SourceIdentity,
     /// Display path associated with the source.
     pub path: String,
-    /// Located half-open source range.
-    pub span: LocatedSpan,
-    /// Deterministically ordered secondary source ranges relevant to the refusal.
-    pub related: Vec<LocatedSpan>,
+    /// ADR-013 O-12: the refusal's region under the source's `RawSourceRef`,
+    /// which holds bytes only; a renderer derives line and column from the
+    /// source (`Source::render`, FR-001). `None` only for an S0 refusal
+    /// FR-001 locates at no region: an unnamed source or input beyond the
+    /// byte ceiling.
+    pub region: Option<SourceRegion>,
+    /// Deterministically ordered secondary source regions relevant to the refusal.
+    pub related: Vec<SourceRegion>,
     /// Human-readable detail; never used to recover the code.
     pub message: String,
     /// Set only by [`resource_exhausted`], so it never disagrees with
@@ -203,6 +209,15 @@ pub struct CompleteDiagnostic {
 }
 
 impl CompleteDiagnostic {
+    /// The byte range of the refusal's region, or `None` when it has none.
+    pub fn byte_span(&self) -> Option<qsl_foundation::Span> {
+        let region = self.region.as_ref()?;
+        Some(qsl_foundation::Span {
+            start: usize::try_from(region.start()).ok()?,
+            end: usize::try_from(region.end()).ok()?,
+        })
+    }
+
     /// The resource ceiling a `resource_exhausted` refusal names; `None`
     /// for every other diagnostic.
     pub fn limit(&self) -> Option<SyntaxLimit> {
@@ -231,35 +246,34 @@ pub fn read_source(
     Source::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| {
         let limit = (refusal.cause == SourceReadCause::ByteBudget)
             .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
-        let (code, cause, phase) = match refusal.cause {
+        let (code, cause) = match refusal.cause {
             SourceReadCause::UnnamedSource => (
                 CompleteCode::InvalidSourceIdentity,
                 CompleteCause::Host(HostCause::UnnamedSource),
-                Phase::Source,
             ),
             SourceReadCause::ByteBudget => (
                 CompleteCode::ResourceExhausted,
                 CompleteCause::InsufficientNextCharge,
-                Phase::Source,
             ),
             SourceReadCause::InvalidUtf8 => (
                 CompleteCode::InvalidUtf8,
                 CompleteCause::Host(HostCause::InvalidUtf8),
-                Phase::Source,
             ),
-            SourceReadCause::Nul => (
-                CompleteCode::InvalidSyntax,
-                CompleteCause::InvalidToken,
-                Phase::Source,
+            SourceReadCause::Bom | SourceReadCause::Nul => {
+                (CompleteCode::InvalidSyntax, CompleteCause::InvalidToken)
+            }
+            SourceReadCause::DigestMismatch => (
+                CompleteCode::SourceDigestMismatch,
+                CompleteCause::ByteDigestMismatch,
             ),
         };
         Box::new(CompleteDiagnostic {
-            phase,
+            phase: Phase::Source,
             code,
             cause,
             source: refusal.error.source,
             path: refusal.error.path,
-            span: refusal.error.span,
+            region: refusal.error.region,
             related: Vec::new(),
             message: refusal.error.message,
             limit,
@@ -285,9 +299,11 @@ pub fn error(
         cause,
         source: source.identity().clone(),
         path: source.path().into(),
-        span: source
-            .locate(qsl_foundation::Span { start, end })
-            .expect("internal offsets are UTF-8 boundaries"),
+        region: Some(
+            source
+                .region(qsl_foundation::Span { start, end })
+                .expect("internal offsets are UTF-8 boundaries"),
+        ),
         related: Vec::new(),
         message: message.into(),
         limit: None,

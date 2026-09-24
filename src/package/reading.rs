@@ -281,8 +281,18 @@ fn authority(
     let source = bindings.source.source();
     for (field, matches, code) in [
         (
+            "authority",
+            wire.source.authority.0 == source.identity().authority,
+            Code::InvalidModelBinding,
+        ),
+        (
             "identity",
             wire.source.identity.0 == source.identity().identity,
+            Code::InvalidModelBinding,
+        ),
+        (
+            "revision_namespace",
+            wire.source.revision_namespace.0 == source.identity().revision_namespace,
             Code::InvalidModelBinding,
         ),
         (

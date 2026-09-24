@@ -88,7 +88,9 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
     let bytes = serde_json::to_vec_pretty(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: "model:query-domains".into(),
+            revision_namespace: "test".into(),
             revision: "authored".into(),
         },
         "query-domains.json",

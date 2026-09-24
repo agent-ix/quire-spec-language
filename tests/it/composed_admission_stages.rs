@@ -85,7 +85,9 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     text.push_str(body);
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: id.into(),
+            revision_namespace: "test".into(),
             revision: "test:source".into(),
         },
         format!("{id}.native"),
@@ -964,7 +966,9 @@ fn the_historical_runner_refuses_a_relabelled_composed_input() {
     let relabelled = serde_json::to_vec(&envelope).unwrap();
     let expected = SnapshotRef::new(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:runtime-current".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         ByteDigest::of(&relabelled),

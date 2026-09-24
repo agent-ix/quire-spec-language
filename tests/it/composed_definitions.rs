@@ -57,7 +57,9 @@ fn profile(alias: &str, definition: R) -> String {
 fn source(name: &str, body: &str) -> Source {
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: name.into(),
+            revision_namespace: "test".into(),
             revision: "test:original".into(),
         },
         format!("{name}.native"),

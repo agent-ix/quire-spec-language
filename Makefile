@@ -122,7 +122,7 @@ ci-all-features:
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir target/clean
 	cargo run --locked --no-default-features --bin fixture-audit -- self-test
-	cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
+	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
 # enforced fully under a real `cargo doc` build -- clippy never runs

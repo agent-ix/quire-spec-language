@@ -30,7 +30,9 @@ const SOURCE: &str = concat!(
 
 fn identity(revision: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: "test:complete-cst".into(),
+        revision_namespace: "test".into(),
         revision: revision.into(),
     }
 }
@@ -308,8 +310,8 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
                 CompleteCause::Host(HostCause::EditRanges)
             )
         );
-        assert_eq!(refusal.span.start.byte, 0);
-        assert_eq!(refusal.span.end.byte, 0);
+        assert_eq!(refusal.byte_span().unwrap().start, 0);
+        assert_eq!(refusal.byte_span().unwrap().end, 0);
     }
 }
 

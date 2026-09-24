@@ -1058,7 +1058,9 @@ mod profile_tests {
         );
         let unit = parse(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "historical-profile-check".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "historical.native",

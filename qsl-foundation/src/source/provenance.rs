@@ -63,8 +63,9 @@ pub enum InvalidProvenance {
     DuplicateOccurrence(OccurrenceKey),
 }
 
-/// QSpec `Revision`: a revision value in a stable namespace.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// QSpec `Revision`: a revision value in a stable namespace. Serializes as
+/// QSpec's `Revision`, `{namespace, value}`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub struct Revision {
     namespace: String,
     value: String,
@@ -105,6 +106,22 @@ pub struct RawSourceRef {
     identity: String,
     revision: Revision,
     digest: DigestRecord,
+}
+
+/// QSpec FR-322 `RawSourceRef`, member for member: `authority`, `identity`,
+/// `revision`, `digest_domain` (always `quire.source.bytes/v1`) and the
+/// lowercase-hex `digest`.
+impl serde::Serialize for RawSourceRef {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("RawSourceRef", 5)?;
+        record.serialize_field("authority", &self.authority)?;
+        record.serialize_field("identity", &self.identity)?;
+        record.serialize_field("revision", &self.revision)?;
+        record.serialize_field("digest_domain", self.digest.domain().as_str())?;
+        record.serialize_field("digest", &self.digest.hex())?;
+        record.end()
+    }
 }
 
 impl RawSourceRef {

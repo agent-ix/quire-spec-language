@@ -83,16 +83,18 @@ impl RuntimeReference {
             Self::Snapshot(_) => 0,
             Self::Invocation(_) => 1,
         };
-        (
-            kind(self),
-            &self.identity().identity,
-            &self.identity().revision,
-        )
-            .cmp(&(
-                kind(other),
-                &other.identity().identity,
-                &other.identity().revision,
-            ))
+        let labels = |value: &Self| {
+            let identity = value.identity();
+            (
+                kind(value),
+                identity.authority.clone(),
+                identity.identity.clone(),
+                identity.revision_namespace.clone(),
+                identity.revision.clone(),
+            )
+        };
+        labels(self)
+            .cmp(&labels(other))
             .then_with(|| self.digest().to_string().cmp(&other.digest().to_string()))
     }
 }

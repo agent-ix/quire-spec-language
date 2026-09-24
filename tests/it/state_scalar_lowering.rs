@@ -43,7 +43,9 @@ fn config_case<'m>(
     let source = &request["program"]["source"];
     let unit = parse(
         SourceIdentity {
+            authority: source["authority"].as_str().unwrap().into(),
             identity: source["identity"].as_str().unwrap().into(),
+            revision_namespace: source["revision_namespace"].as_str().unwrap().into(),
             revision: source["revision"].as_str().unwrap().into(),
         },
         "program.native",

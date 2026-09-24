@@ -20,7 +20,9 @@ profile S = \"test:unresolved-profile\" version \"selected\" digest \"unresolved
 fn source(identity: &str, revision: &str, path: &str, text: &str) -> Source {
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: identity.into(),
+            revision_namespace: "test".into(),
             revision: revision.into(),
         },
         path,

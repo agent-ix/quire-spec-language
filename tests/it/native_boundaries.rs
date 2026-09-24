@@ -9,7 +9,9 @@ use quire_spec_language::{parse, Limits};
 fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnostic>> {
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:boundary".into(),
+            revision_namespace: "test".into(),
             revision: "fixture:1".into(),
         },
         "boundary.native",
@@ -21,7 +23,9 @@ fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnos
 fn parse_complete(text: &str) -> ParsedSource {
     qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:boundary".into(),
+            revision_namespace: "test".into(),
             revision: "fixture:1".into(),
         },
         "boundary.quire",
@@ -55,7 +59,7 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
         let diagnostic = refusal.diagnostic();
         assert_eq!(diagnostic.phase, Phase::Format);
         assert_eq!(&diagnostic.source, parsed.source().identity());
-        assert!(diagnostic.span.end.byte <= parsed.source().text().len());
+        assert!(diagnostic.byte_span().unwrap().end <= parsed.source().text().len());
     }
     for limit in [
         expected.len(),

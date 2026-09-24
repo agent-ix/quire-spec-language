@@ -205,7 +205,9 @@ fn tc_042_native_source_labels_and_formal_owner_participate_in_identity() {
         let mut input = parts();
         let native = Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: identity.into(),
+                revision_namespace: "test".into(),
                 revision: revision.into(),
             },
             "native-rule-model.json",

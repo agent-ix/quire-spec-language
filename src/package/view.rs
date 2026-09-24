@@ -66,7 +66,9 @@ impl<T: fmt::Display> Serialize for DisplayValue<T> {
 
 #[derive(Serialize)]
 struct Source<'a> {
+    authority: &'a str,
     identity: &'a str,
+    revision_namespace: &'a str,
     revision: &'a str,
     digest: DisplayValue<ByteDigest>,
     formal: &'a ir::SourceIdentity,
@@ -105,7 +107,9 @@ impl<'a, 'model> Manifest<'a, 'model> {
             semantics: Semantics::selected(),
             required_features: features,
             source: Source {
+                authority: &original.identity().authority,
                 identity: &original.identity().identity,
+                revision_namespace: &original.identity().revision_namespace,
                 revision: &original.identity().revision,
                 digest: DisplayValue(original.digest()),
                 formal: checked.bindings().source.identity(),

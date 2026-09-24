@@ -329,7 +329,7 @@ pub struct Diagnostic {
     pub phase: Phase,
     /// Stable machine-readable classification.
     pub code: Code,
-    /// Exact caller-selected diagnostic identity and revision labels.
+    /// The caller's four source labels (FR-001), exactly as offered.
     pub source: SourceIdentity,
     /// Display path; not a portable artifact identity or an OS path round trip.
     pub path: String,
@@ -500,7 +500,7 @@ impl crate::source::Source {
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
         Self::read_typed(identity, path, bytes, byte_limit)
-            .map_err(|refusal| Box::new(Diagnostic::from(*refusal)))
+            .map_err(|refusal| source_refusal(*refusal, bytes))
     }
 
     /// Verify an independently supplied byte digest before constructing a mapped subject.
@@ -511,40 +511,48 @@ impl crate::source::Source {
         expected: crate::ByteDigest,
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
-        let source = Self::read(identity, path, bytes, byte_limit)?;
-        if source.digest() != expected {
-            return Err(error(
-                &source,
-                Code::SourceDigestMismatch,
-                Phase::Source,
-                0,
-                0,
-                "source bytes differ from the selected digest",
-            ));
-        }
-        Ok(source)
+        Self::read_verified_typed(identity, path, bytes, expected, byte_limit)
+            .map_err(|refusal| source_refusal(*refusal, bytes))
     }
 }
 
-impl From<crate::source::SourceReadRefusal> for Diagnostic {
-    fn from(refusal: crate::source::SourceReadRefusal) -> Self {
-        use crate::source::SourceReadCause;
-        let code = match refusal.cause {
-            SourceReadCause::UnnamedSource => Code::InvalidSourceIdentity,
-            SourceReadCause::ByteBudget => Code::ResourceExhausted,
-            SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
-            SourceReadCause::Nul => Code::InvalidSyntax,
-        };
-        Diagnostic {
-            phase: Phase::Source,
-            code,
-            source: refusal.error.source,
-            path: refusal.error.path,
-            span: refusal.error.span,
-            message: refusal.error.message,
-            limit: None,
-        }
-    }
+/// The native-v1 rendering of an S0 refusal over the offered `bytes`. A
+/// refusal with a region renders it over those bytes (FR-001). One with no
+/// region renders byte 0, because this lane-private `Diagnostic` requires a
+/// span: retained native-v1 debt (ADR-013 §6, FR-001 "Where an S0 refusal
+/// is located"), not the canonical refusal's location.
+fn source_refusal(refusal: crate::source::SourceReadRefusal, bytes: &[u8]) -> Box<Diagnostic> {
+    use crate::source::SourceReadCause;
+    let code = match refusal.cause {
+        SourceReadCause::UnnamedSource => Code::InvalidSourceIdentity,
+        SourceReadCause::ByteBudget => Code::ResourceExhausted,
+        SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
+        SourceReadCause::Bom | SourceReadCause::Nul => Code::InvalidSyntax,
+        SourceReadCause::DigestMismatch => Code::SourceDigestMismatch,
+    };
+    let origin = crate::source::Position {
+        byte: 0,
+        line: 1,
+        column: 1,
+    };
+    let span = refusal
+        .error
+        .region
+        .as_ref()
+        .and_then(|region| crate::source::render_offered(bytes, region))
+        .unwrap_or(LocatedSpan {
+            start: origin,
+            end: origin,
+        });
+    Box::new(Diagnostic {
+        phase: Phase::Source,
+        code,
+        source: refusal.error.source,
+        path: refusal.error.path,
+        span,
+        message: refusal.error.message,
+        limit: None,
+    })
 }
 
 impl crate::source_map::SourceMap {

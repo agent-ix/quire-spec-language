@@ -38,7 +38,9 @@ invariant AlwaysTrue on Config::Version at current {
 fn qsl_parse_digest() -> String {
     let unit = parse(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "integration:current-head".into(),
+            revision_namespace: "integration".into(),
             revision: "1".into(),
         },
         "current-head-contract.native",

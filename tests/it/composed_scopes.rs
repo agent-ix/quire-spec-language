@@ -29,7 +29,9 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
         .map(|(index, text)| {
             Source::read(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: format!("scope:{index}"),
+                    revision_namespace: "test".into(),
                     revision: "authored".into(),
                 },
                 format!("scope-{index}.native"),

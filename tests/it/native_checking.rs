@@ -87,7 +87,9 @@ fn program<'a>(
     let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{clauses}\n", models[0].digest());
     let unit = parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:native-checking".into(),
+            revision_namespace: "test".into(),
             revision: "draft:9".into(),
         },
         "native-checking.native",

@@ -264,3 +264,58 @@ fn shared_format_catalog_preserves_existing_wire_spellings() {
         WireFormat::RuleModel.as_str()
     );
 }
+
+/// TC-430 steps 3-4 (FR-027-AC-4): a compile request's program source
+/// carries the four labels into the package `source`, which validates
+/// against the native-linked-package/1 schema; a request without
+/// `revision_namespace` refuses with `invalid-request`.
+#[test]
+#[trace("TC-430", "FR-027-AC-4")]
+fn compiled_packages_name_the_four_source_labels() {
+    let directory = tempfile::tempdir().unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
+    let path = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let source = &mut job["request"]["program"]["source"];
+    source["authority"] = json!("agent-ix");
+    source["identity"] = json!("p");
+    source["revision_namespace"] = json!("git");
+    source["revision"] = json!("1");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let package: Value = serde_json::from_slice(&output.stdout).unwrap();
+    for (label, value) in [
+        ("authority", "agent-ix"),
+        ("identity", "p"),
+        ("revision_namespace", "git"),
+        ("revision", "1"),
+    ] {
+        assert_eq!(package["source"][label], value, "{label}");
+    }
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../schemas/native-linked-package-1.schema.json"
+    ))
+    .unwrap();
+    let schema = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .compile(&schema)
+        .unwrap();
+    assert!(schema.is_valid(&package));
+
+    job["request"]["program"]["source"]
+        .as_object_mut()
+        .unwrap()
+        .remove("revision_namespace");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["code"], "invalid-request");
+}

@@ -469,7 +469,9 @@ mod profile_tests {
         let source = FormalSource::new(
             Source::read(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: "catalog-model".into(),
+                    revision_namespace: "test".into(),
                     revision: "1".into(),
                 },
                 "catalog.json",

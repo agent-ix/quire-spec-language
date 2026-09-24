@@ -181,7 +181,7 @@ fn expected_inner(
         concat!(
             "{{\"format\":\"native-linked-package/1\",\"semantics\":{SEMANTICS},",
             "\"required_features\":[\"boolean\",\"object\",\"reference\",\"text\"],",
-            "\"source\":{{\"identity\":{identity_json},\"revision\":{revision_json},\"digest\":\"{original_digest}\",\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
+            "\"source\":{{\"authority\":\"agent-ix\",\"identity\":{identity_json},\"revision_namespace\":\"draft\",\"revision\":{revision_json},\"digest\":\"{original_digest}\",\"formal\":{{\"document\":\"PackageSource\",\"revision\":{formal_revision}}}}},",
             "\"models\":[{{\"alias\":\"M\",\"owner\":{OWNER},\"digest\":\"{model_digest}\",\"artifact\":{model_string}}}],\"clauses\":["
         ),
         SEMANTICS = SEMANTICS,

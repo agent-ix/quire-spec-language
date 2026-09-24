@@ -241,7 +241,9 @@ fn foreign_clause_diagnostic_keeps_requested_artifact_after_unrelated_inventory_
     selected.clause = ir::ClauseId::new("foreign").unwrap();
     let unrelated = Snapshot::new(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:unrelated-duplicate".into(),
+            revision_namespace: "test".into(),
             revision: "2".into(),
         },
         draft(&models[0]),

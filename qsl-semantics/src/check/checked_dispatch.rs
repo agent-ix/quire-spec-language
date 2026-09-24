@@ -1217,8 +1217,8 @@ fn copy_terms(terms: &Option<Vec<Expression>>) -> Option<Vec<Expression>> {
 /// Types every linked candidate's effective precondition and body for one
 /// FR-151 dispatch-eligible operation, and assembles the checked-layer
 /// [`DispatchTable`] the evaluator needs. See the module docs for this
-/// bridge's exact scope. `owner` is the checked package's
-/// [`PackageDeclarations::owner`] input, the source unit's. Each synthesized
+/// bridge's exact scope. `source` is the checked package's
+/// [`PackageDeclarations::source`], the source unit's `RawSourceRef`. Each synthesized
 /// clause function is keyed with its own `ModelOwner` instead (FR-094): the
 /// authoring operation member for an authored precondition, the candidate
 /// for an effective precondition and a body. The returned package admits
@@ -1229,7 +1229,7 @@ pub fn checked_dispatch_operation(
     view: &EffectiveView,
     root: &DispatchRoot,
     clauses: &OperationClauses,
-    owner: crate::check::SourceOwner,
+    source: qsl_foundation::source::provenance::RawSourceRef,
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let family_steps = meter.limits().family_steps;
@@ -1540,7 +1540,7 @@ pub fn checked_dispatch_operation(
         resolved_signatures,
         models: vec![model],
         model_clauses,
-        ..PackageDeclarations::new(owner)
+        ..PackageDeclarations::new(source)
     })
 }
 

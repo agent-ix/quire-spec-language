@@ -71,7 +71,9 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
             let expected_start = source.find(&invalid_literal).unwrap();
             let parsed = parse(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: format!("test:{declaration_kind}-{invalid_component}"),
+                    revision_namespace: "test".into(),
                     revision: "r1".into(),
                 },
                 "invalid-selection.native",
@@ -91,9 +93,9 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
                     Code::InvalidIdentifier
                 }
             );
-            assert_eq!(diagnostic.span.start.byte, expected_start);
+            assert_eq!(diagnostic.byte_span().unwrap().start, expected_start);
             assert_eq!(
-                diagnostic.span.end.byte,
+                diagnostic.byte_span().unwrap().end,
                 expected_start + invalid_literal.len()
             );
             assert!(diagnostic.message.contains(invalid_component));

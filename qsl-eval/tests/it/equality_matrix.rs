@@ -1779,7 +1779,7 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
     let graph = PackageDeclarations {
         types,
         ieee_profile: ieee.then(|| profile().clone()),
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2402,7 +2402,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
             None,
             operand("n"),
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .unwrap();

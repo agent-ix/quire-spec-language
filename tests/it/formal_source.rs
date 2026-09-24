@@ -11,7 +11,9 @@ use quire_spec_language::formal_source::{FormalSource, FormalSourceError};
 fn source(text: &str) -> Source {
     Source::read_verified(
         SourceIdentity {
+            authority: "test".into(),
             identity: "ix://example/source".into(),
+            revision_namespace: "test".into(),
             revision: "draft:alpha".into(),
         },
         "native/source",

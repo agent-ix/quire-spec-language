@@ -146,7 +146,9 @@ fn check_source_compositions(
         )?;
         let original = Source::read(
             SourceIdentity {
+                authority: "agent-ix".into(),
                 identity: text(field(field(refs, source_key)?, "identity")?)?.into(),
+                revision_namespace: "fixture".into(),
                 revision: "selected-review-region".into(),
             },
             source_key,
@@ -318,7 +320,9 @@ mod tests {
     fn original_scalar_coordinates_and_mutations() {
         let source = Source::read(
             SourceIdentity {
+                authority: "agent-ix".into(),
                 identity: "test:unicode".into(),
+                revision_namespace: "fixture".into(),
                 revision: "1".into(),
             },
             "original",

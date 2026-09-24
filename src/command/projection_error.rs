@@ -63,7 +63,9 @@ mod tests {
     fn missing_and_invalid_lowering_spans_remain_distinct() {
         let source = Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:lowering".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "program.native",
@@ -101,7 +103,9 @@ mod tests {
         use crate::package::NativePackageRef;
         let source = Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:lowering".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "program.native",

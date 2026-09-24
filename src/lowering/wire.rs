@@ -274,7 +274,9 @@ mod tests {
         let source = FormalSource::new(
             Source::read(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: "test:wire".into(),
+                    revision_namespace: "test".into(),
                     revision: "1".into(),
                 },
                 "rule.native",

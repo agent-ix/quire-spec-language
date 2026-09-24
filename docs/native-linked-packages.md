@@ -90,7 +90,7 @@ this package contract does not change the native source grammar.
 | format | String native-linked-package/1 |
 | semantics | The closed semantic-selection record below |
 | required_features | The exact derived feature set, sorted by UTF-8 bytes |
-| source | `{identity, revision, digest, formal}`; identity/revision are original opaque native strings, digest is sha256 plus lowercase hex, formal is `{document, revision}` under existing IR constructors |
+| source | `{authority, identity, revision_namespace, revision, digest, formal}`; the four labels are the caller-named source labels of FR-001, exact non-empty strings, digest is sha256 plus lowercase hex, formal is `{document, revision}` under existing IR constructors |
 | models | One import record per native source import, in original import order |
 | clauses | One checked clause record per native source clause, in original clause order |
 | canonical_identity | Closed `{domain, version, algorithm, digest}` under the native static identity contract below |
@@ -269,7 +269,7 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    Existing unknown_language/unknown_edition/unknown_profile distinctions apply;
    wrong IR/definition selections are unknown_profile. No decoder fallback or
    interpretation of an unsupported version's fields occurs.
-4. Verify source identity/revision/digest/formal identity against the externally
+4. Verify the source's four labels, digest and formal identity against the externally
    selected bindings. Native byte mismatch is stale_dependency; a foreign
    native/formal identity is invalid_model_binding. Check wire authored clause
    bindings against the complete external CheckBindings before they can be used.
@@ -296,7 +296,8 @@ Earlier numbered stages take precedence when several defects coexist. Within
 recognition or closed decoding, stop at the first defect in input traversal
 order; a budget is checked before the operation it charges. Selection uses the
 fixed order above, independent of object-member order. External source checking
-compares native identity, native revision, native digest, then formal identity;
+compares the native authority, identity, revision namespace and revision, the
+native digest, then formal identity;
 wire/external authored comparisons follow wire clause order, whose source-order
 claim is independently checked during regeneration. Complete manifest
 comparison follows producer member/array order and reports the first mismatch.

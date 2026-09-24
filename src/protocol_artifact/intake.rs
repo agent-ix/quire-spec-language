@@ -295,7 +295,9 @@ pub(super) fn sources(
             return Err(Error::Invalid(Invalid::Selection));
         }
         for text in [
+            &source.native.authority,
             &source.native.identity,
+            &source.native.revision_namespace,
             &source.native.revision,
             &source.path,
             &source.formal.document,

@@ -278,7 +278,7 @@ fn one_candidate_package(
         dispatch_tables: vec![table],
         models: vec![receiver_model()],
         model_clauses,
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
 }
 
@@ -629,7 +629,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
             Expression::Boolean(true),
             DeclaredClauseKind::Body,
         )],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
@@ -696,13 +696,13 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
 
     let target_first = PackageDeclarations {
         functions: vec![target.clone(), unrelated.clone()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("two unrelated boolean-literal functions check cleanly");
     let unrelated_first = PackageDeclarations {
         functions: vec![unrelated, target],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("reordering the same two declarations checks cleanly too");
@@ -811,7 +811,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
     let refused = PackageDeclarations {
         functions: vec![declaration("f")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(tight_limits)
     .expect_err("a zero-depth limit must refuse every declaration's contract-level check");
@@ -830,7 +830,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     let admitting_limits = CheckingLimits::default();
     PackageDeclarations {
         functions: vec![declaration("f")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(admitting_limits)
     .expect("the default depth limit admits an ordinary boolean-literal function");
@@ -1110,7 +1110,7 @@ fn ab_bridge_declarations(
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .unwrap_or_else(|refusal| {
@@ -1381,7 +1381,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             (0, size_clause(DeclaredClauseKind::Body)),
             (1, size_clause(DeclaredClauseKind::Precondition)),
         ]),
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1718,7 +1718,7 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .unwrap_or_else(|refusal| {
@@ -1973,7 +1973,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .unwrap_or_else(|refusal| {
@@ -2097,7 +2097,7 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .unwrap_or_else(|refusal| {
@@ -2192,7 +2192,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .expect_err("a non-query dispatch target must refuse, not link")
@@ -2322,7 +2322,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         &view,
         &root,
         &clauses,
-        qsl_semantics::check::fixture_owner(),
+        qsl_semantics::check::fixture_source(),
         &mut meter,
     )
     .expect_err("neither candidate declares a result: the family must refuse, not link");

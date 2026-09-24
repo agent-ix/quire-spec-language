@@ -406,7 +406,9 @@ mod tests {
     fn source(text: &str) -> Source {
         Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:raised".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "raised.native",

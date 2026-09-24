@@ -147,7 +147,9 @@ fn document(imports: &str, clauses: &str) -> String {
 fn read(text: &str) -> ParsedUnit {
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:native".into(),
+            revision_namespace: "test".into(),
             revision: "opaque:rev-7".into(),
         },
         "link.native",

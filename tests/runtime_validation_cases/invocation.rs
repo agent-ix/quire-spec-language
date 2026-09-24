@@ -350,7 +350,9 @@ fn field_and_population_permissions_do_not_extend_to_other_supplied_models() {
     let text = serde_json::to_string_pretty(&data).unwrap();
     let source = qsl_foundation::Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:other-model".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "other-model.json",

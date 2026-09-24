@@ -33,7 +33,9 @@ const SOURCE: &str = concat!(
 
 fn identity(revision: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: "test:complete-cst".into(),
+        revision_namespace: "test".into(),
         revision: revision.into(),
     }
 }
@@ -192,8 +194,8 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
-    assert_eq!(refusal.span.start.byte, first_excess.start);
-    assert_eq!(refusal.span.end.byte, first_excess.end);
+    assert_eq!(refusal.byte_span().unwrap().start, first_excess.start);
+    assert_eq!(refusal.byte_span().unwrap().end, first_excess.end);
 
     for (revision, source) in [
         ("whitespace-leaf", " "),
@@ -211,8 +213,8 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         )
         .unwrap_err();
         assert_eq!(refusal.code, CompleteCode::ResourceExhausted, "{revision}");
-        assert_eq!(refusal.span.start.byte, 0, "{revision}");
-        assert_eq!(refusal.span.end.byte, source.len(), "{revision}");
+        assert_eq!(refusal.byte_span().unwrap().start, 0, "{revision}");
+        assert_eq!(refusal.byte_span().unwrap().end, source.len(), "{revision}");
     }
 }
 
@@ -231,8 +233,8 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
-    assert_eq!(refusal.span.start.byte, 9);
-    assert_eq!(refusal.span.end.byte, 10);
+    assert_eq!(refusal.byte_span().unwrap().start, 9);
+    assert_eq!(refusal.byte_span().unwrap().end, 10);
 }
 
 #[trace("TC-222", "FR-302-AC-2")]
@@ -268,7 +270,9 @@ fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
     .unwrap();
     let second = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:other-cst".into(),
+            revision_namespace: "test".into(),
             revision: "second".into(),
         },
         "second.native",
@@ -308,7 +312,9 @@ fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
 fn revision_bound_node_identity_includes_the_document_identity() {
     let first = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:first-document".into(),
+            revision_namespace: "test".into(),
             revision: "shared-revision".into(),
         },
         "first.native",
@@ -318,7 +324,9 @@ fn revision_bound_node_identity_includes_the_document_identity() {
     .unwrap();
     let second = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:second-document".into(),
+            revision_namespace: "test".into(),
             revision: "shared-revision".into(),
         },
         "second.native",
@@ -333,7 +341,9 @@ fn revision_bound_node_identity_includes_the_document_identity() {
 
     let changed = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:first-document".into(),
+            revision_namespace: "test".into(),
             revision: "shared-revision".into(),
         },
         "first.native",
@@ -357,7 +367,9 @@ fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
     let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
     let parsed = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:tc-188".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "tc-188.native",
@@ -371,5 +383,8 @@ fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
         (diagnostic.code, diagnostic.cause),
         (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken)
     );
-    assert_eq!(diagnostic.span.start.byte, text.find("variant").unwrap());
+    assert_eq!(
+        diagnostic.byte_span().unwrap().start,
+        text.find("variant").unwrap()
+    );
 }

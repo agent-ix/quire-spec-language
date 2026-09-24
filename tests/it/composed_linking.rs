@@ -17,7 +17,9 @@ profile S = "test:state-definition" version "1" digest "not-admitted";
 
 fn identity(authority: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: authority.into(),
+        revision_namespace: "test".into(),
         revision: "test:revision".into(),
     }
 }

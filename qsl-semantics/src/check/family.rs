@@ -1310,7 +1310,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{empty_scope, fixture_owner, root_location};
+    use super::fixtures::{empty_scope, fixture_source, root_location};
     use super::*;
     use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
@@ -1331,7 +1331,7 @@ mod tests {
         aliases: &[(String, ValueType)],
         declaration: &FunctionDeclaration,
     ) -> NodeKey {
-        let mut package = crate::check::PackageDeclarations::new(fixture_owner());
+        let mut package = crate::check::PackageDeclarations::new(fixture_source());
         package.types = types.clone();
         package.aliases = aliases.to_vec();
         package.functions = vec![declaration.clone()];
@@ -1445,9 +1445,26 @@ pub mod fixtures {
     use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
     use quire_exact::Meter;
 
-    /// The source owner `(a, u)` FR-092's golden vectors are keyed under.
-    pub fn fixture_owner() -> crate::check::SourceOwner {
-        crate::check::SourceOwner::new("a", "u").expect("a nonempty fixture owner")
+    /// The source reference of the empty unit admitted as (`a`, `u`,
+    /// `git`, `1`): its owner `(a, u)` is the one FR-092's golden vectors
+    /// are keyed under.
+    pub fn fixture_source() -> qsl_foundation::source::provenance::RawSourceRef {
+        admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+            b"",
+        )
+    }
+
+    /// The `RawSourceRef` S0 mints for `bytes` admitted under `labels`.
+    pub fn admitted_source(
+        labels: qsl_foundation::SourceIdentity,
+        bytes: &[u8],
+    ) -> qsl_foundation::source::provenance::RawSourceRef {
+        let path = labels.identity.clone();
+        qsl_foundation::Source::read(labels, path, bytes, bytes.len())
+            .expect("named, admissible fixture bytes")
+            .reference()
+            .clone()
     }
 
     /// `check`'s unbounded scalar limits (`pub(crate)`).
@@ -2393,7 +2410,7 @@ pub(crate) mod checking_tests {
         let identity = |name: &str| {
             crate::check::PackageDeclarations {
                 functions: vec![declaration(name, Expression::Boolean(true))],
-                ..crate::check::PackageDeclarations::new(super::fixtures::fixture_owner())
+                ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
             }
             .check(CheckingLimits::default())
             .expect("the fixture checks")
@@ -2505,7 +2522,7 @@ pub(crate) mod checking_tests {
                 .iter()
                 .map(|name| super::fixtures::declaration(name, Expression::Boolean(true)))
                 .collect(),
-            ..crate::check::PackageDeclarations::new(super::fixtures::fixture_owner())
+            ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect_err("repeated names are refused");

@@ -120,7 +120,9 @@ fn source(declarations: &str) -> String {
 fn parse(id: &str, text: &str) -> ParsedSource {
     qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: format!("test:{id}"),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         format!("{id}.native"),
@@ -254,7 +256,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
         let parsed = parse(id, &invalid);
         assert!(!parsed.is_admissible(), "{production:?} mutation admitted");
         assert_eq!(
-            parsed.diagnostics()[0].span.start.byte,
+            parsed.diagnostics()[0].byte_span().unwrap().start,
             span.start,
             "{production:?} negative vector must retain its exact locus"
         );
@@ -270,7 +272,8 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
         );
         assert!(
             parsed.diagnostics().iter().any(|diagnostic| {
-                diagnostic.span.start.byte <= boundary && boundary < diagnostic.span.end.byte
+                diagnostic.byte_span().unwrap().start <= boundary
+                    && boundary < diagnostic.byte_span().unwrap().end
             }),
             "{production:?} boundary vector must retain a diagnostic covering its locus"
         );
@@ -391,12 +394,13 @@ fn grammar_combinators_enforce_authored_boundaries_at_the_failing_token() {
         assert!(!parsed.is_admissible(), "{} negative vector", vector.name);
         let diagnostic = &parsed.diagnostics()[0];
         assert_eq!(
-            diagnostic.span.start.byte, expected_start,
+            diagnostic.byte_span().unwrap().start,
+            expected_start,
             "{} diagnostic start",
             vector.name
         );
         assert_eq!(
-            diagnostic.span.end.byte,
+            diagnostic.byte_span().unwrap().end,
             expected_start + vector.failure_token.len(),
             "{} diagnostic end",
             vector.name
@@ -413,7 +417,7 @@ fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
     let parsed = parse("relationship-model-name", &relationship);
     let at = relationship.find("Local;").unwrap() + "Local".len();
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].span.start.byte, at);
+    assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 
     let valid = corpus()
         .into_iter()
@@ -424,13 +428,13 @@ fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
     let parsed = parse("compensation-operation-name", &invalid);
     let at = invalid.find("M::Actor using").unwrap() + "M::Actor ".len();
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].span.start.byte, at);
+    assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 
     let invalid = valid.replace("attempts 2 of M::Attempt", "attempts 2 of Integer");
     let parsed = parse("compensation-attempt-type-name", &invalid);
     let at = invalid.find("attempts 2 of Integer").unwrap() + "attempts 2 of ".len();
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].span.start.byte, at);
+    assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 
     let invalid = valid.replace(
         "attempt Tried by Buyer on M::Actor::act",
@@ -439,7 +443,7 @@ fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
     let parsed = parse("attempt-operation-name", &invalid);
     let at = invalid.find("Local contracts").unwrap() + "Local ".len();
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].span.start.byte, at);
+    assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 }
 
 #[trace("TC-180", "FR-339-AC-4")]
@@ -449,7 +453,7 @@ fn undeclared_extension_refuses_at_the_extension_token() {
     let parsed = parse("unknown", &text);
     let start = text.find("widget").unwrap();
     assert!(!parsed.is_admissible());
-    assert_eq!(parsed.diagnostics()[0].span.start.byte, start);
+    assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, start);
     assert_eq!(parsed.cst().render(), text.as_bytes());
     assert_eq!(
         parsed.cst().recoveries()[0].span,
@@ -515,7 +519,9 @@ fn reserved_member_spellings_do_not_create_phantom_profile_selections() {
 
 fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
     let identity = SourceIdentity {
+        authority: "test".into(),
         identity: format!("test:{id}"),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     };
     match qsl_cst::parse(identity, format!("{id}.native"), bytes, Limits::default()) {
@@ -608,7 +614,9 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
         let observed = if id == "unnamed" {
             let refusal = qsl_cst::parse(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: String::new(),
+                    revision_namespace: "test".into(),
                     revision: "1".into(),
                 },
                 "unnamed.native",

@@ -49,7 +49,9 @@ pub(in crate::runtime) struct Identity(pub(in crate::runtime) SourceIdentity);
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Labels {
+    authority: String,
     identity: String,
+    revision_namespace: String,
     revision: String,
 }
 
@@ -58,7 +60,9 @@ impl TryFrom<Object<Labels>> for Identity {
 
     fn try_from(Object(value): Object<Labels>) -> Result<Self, Self::Error> {
         crate::runtime::construction::reference_identity(SourceIdentity {
+            authority: value.authority,
             identity: value.identity,
+            revision_namespace: value.revision_namespace,
             revision: value.revision,
         })
         .map(Self)

@@ -34,7 +34,9 @@ fn document_model(document: serde_json::Value, formal: &str, native: &str) -> Na
     let text = serde_json::to_string(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: native.into(),
+            revision_namespace: "test".into(),
             revision: "selected".into(),
         },
         format!("{native}.json"),
@@ -134,7 +136,9 @@ fn with_namespace(texts: &[String], test: impl FnOnce(&SyntaxNamespace)) {
         .map(|(index, text)| {
             Source::read(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: format!("unit-{index}"),
+                    revision_namespace: "test".into(),
                     revision: "selected".into(),
                 },
                 format!("unit-{index}.native"),

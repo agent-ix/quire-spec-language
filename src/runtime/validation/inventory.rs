@@ -8,7 +8,7 @@ use super::{
     RuntimeReference, Validator,
 };
 use crate::syntax::ClauseKind;
-use qsl_foundation::Code;
+use qsl_foundation::{Code, SourceIdentity};
 use quire_contract_ir as ir;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
@@ -48,7 +48,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
             let reference = self.reference(address);
             let identity = reference.identity();
             self.inventory
-                .entry((identity.identity.clone(), identity.revision.clone()))
+                .entry(labels(identity))
                 .or_default()
                 .push(address);
         }
@@ -63,7 +63,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
                     self.budget.issue(
                         Stage::Identity,
                         Code::InvalidRuntimeInput,
-                        "duplicate native input identity/revision in inventory",
+                        "duplicate native input source labels in inventory",
                     )?;
                 }
             }
@@ -75,10 +75,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         self.budget.location.artifact = expected.clone();
         self.budget.location.path.clear();
         self.budget.visit()?;
-        let key = (
-            expected.identity().identity.clone(),
-            expected.identity().revision.clone(),
-        );
+        let key = labels(expected.identity());
         let Some(entries) = self.inventory.get(&key) else {
             self.budget.issue(
                 Stage::Observation,
@@ -323,4 +320,18 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         }
         Ok(())
     }
+}
+
+/// A runtime artifact's four source labels (FR-018), in label order.
+pub(super) type Labels = (String, String, String, String);
+
+/// The inventory key of `identity`: all four labels, so artifacts that
+/// differ in any label never share an entry.
+fn labels(identity: &SourceIdentity) -> Labels {
+    (
+        identity.authority.clone(),
+        identity.identity.clone(),
+        identity.revision_namespace.clone(),
+        identity.revision.clone(),
+    )
 }

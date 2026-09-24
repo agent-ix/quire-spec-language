@@ -37,7 +37,9 @@ fn two_objects(owner: &str) -> NativeModel {
     let text = serde_json::to_vec_pretty(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: format!("model:{owner}"),
+            revision_namespace: "test".into(),
             revision: "authored".into(),
         },
         format!("{owner}.json"),

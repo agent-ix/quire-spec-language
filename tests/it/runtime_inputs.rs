@@ -80,10 +80,7 @@ fn invocation() -> InvocationDraft {
 }
 
 fn identity() -> SourceIdentity {
-    SourceIdentity {
-        identity: "snapshot:current".into(),
-        revision: "1".into(),
-    }
+    SourceIdentity::new("agent-ix", "snapshot:current", "git", "1")
 }
 
 fn empty() -> SnapshotDraft {
@@ -100,14 +97,14 @@ fn empty() -> SnapshotDraft {
 #[trace("TC-056", "FR-018-AC-3", "FR-018-AC-4")]
 fn empty_snapshot_has_exact_independently_authored_envelope() {
     let snapshot = Snapshot::new(identity(), empty(), ArtifactLimits::default()).unwrap();
-    let expected = br#"{"version":"native-state-input/1","kind":"snapshot","identity":{"identity":"snapshot:current","revision":"1"},"body":{"observation":"current","models":[],"populations":[],"values":[],"arena":[]}}"#;
+    let expected = br#"{"version":"native-state-input/1","kind":"snapshot","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"observation":"current","models":[],"populations":[],"values":[],"arena":[]}}"#;
     assert_eq!(snapshot.bytes(), expected);
     assert_eq!(snapshot.digest(), ByteDigest::of(expected));
     // Independently precomputed over the exact authored envelope, not through
     // the constructor or its serializer (sha256sum, retained literal oracle).
     assert_eq!(
         snapshot.digest().to_string(),
-        "sha256:5fa2010ad4d17a6e3ae25b6e2f897d539e7891e87248bfec285373d898364c1e"
+        "sha256:85d806fb536170880ba729e21c01bf27f845b30a6887d8424b52c97ba877b721"
     );
     assert_eq!(snapshot.reference().identity(), &identity());
     assert_eq!(snapshot.reference().digest(), snapshot.digest());
@@ -161,4 +158,42 @@ fn output_limit_admits_exact_bytes_and_refuses_one_below() {
     assert_eq!(error.code, Code::ResourceExhausted);
     assert!(error.is_incomplete());
     assert!(error.usage.artifact_bytes < baseline.bytes().len());
+}
+
+/// TC-431 steps 1-2 (FR-018-AC-8): a snapshot names all four labels in its
+/// bytes and reference; an empty or blank authority or revision namespace
+/// refuses as `invalid_source_identity`; the revision namespace alone
+/// changes the bytes and digest.
+#[test]
+#[trace("TC-431", "FR-018-AC-8")]
+fn snapshots_carry_the_four_labels() {
+    let snapshot =
+        |labels: SourceIdentity| Snapshot::new(labels, empty(), ArtifactLimits::default());
+    let git = snapshot(SourceIdentity::new("agent-ix", "s", "git", "1")).unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(git.bytes()).unwrap();
+    assert_eq!(
+        wire["identity"],
+        serde_json::json!({
+            "authority": "agent-ix",
+            "identity": "s",
+            "revision_namespace": "git",
+            "revision": "1",
+        })
+    );
+    assert_eq!(
+        git.reference().identity(),
+        &SourceIdentity::new("agent-ix", "s", "git", "1")
+    );
+    let semver = snapshot(SourceIdentity::new("agent-ix", "s", "semver", "1")).unwrap();
+    assert_ne!(git.bytes(), semver.bytes());
+    assert_ne!(git.digest(), semver.digest());
+
+    for labels in [
+        SourceIdentity::new("", "s", "git", "1"),
+        SourceIdentity::new("agent-ix", "s", " ", "1"),
+    ] {
+        let error = snapshot(labels.clone()).unwrap_err();
+        assert_eq!(error.code, Code::InvalidSourceIdentity, "{labels:?}");
+        assert_eq!(error.identity, labels);
+    }
 }

@@ -46,7 +46,9 @@ fn checked<'a>(
 ) -> CheckedPackage<'a> {
     let unit = parse(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: identity.into(),
+            revision_namespace: "draft".into(),
             revision: revision.into(),
         },
         path,

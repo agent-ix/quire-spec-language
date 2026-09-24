@@ -67,7 +67,9 @@ fn source(id: &str, model: &NativeModel, profiles: &[(&str, R)], body: &str) -> 
     text.push_str(body);
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: id.into(),
+            revision_namespace: "test".into(),
             revision: "test:source".into(),
         },
         format!("{id}.native"),
@@ -158,7 +160,9 @@ fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
     let formal = FormalSource::new(
         Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "large-model".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "large-model.json",

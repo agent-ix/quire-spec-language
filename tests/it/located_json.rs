@@ -20,7 +20,9 @@ struct Named {
 fn source(text: &str) -> FormalSource {
     let native = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:located-json".into(),
+            revision_namespace: "test".into(),
             revision: "draft:1".into(),
         },
         "occurrences.json",

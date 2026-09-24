@@ -330,7 +330,9 @@ fn mutate(rng: &mut Rng, text: String) -> String {
 
 fn identity() -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: "test:differential".into(),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     }
 }
@@ -350,8 +352,8 @@ fn render_complete(text: &str) -> String {
                 refusal.code,
                 refusal.cause,
                 refusal.phase,
-                refusal.span.start.byte,
-                refusal.span.end.byte,
+                refusal.byte_span().unwrap().start,
+                refusal.byte_span().unwrap().end,
                 refusal.message
             );
         }
@@ -394,7 +396,7 @@ fn render_complete(text: &str) -> String {
                 let related: Vec<_> = diagnostic
                     .related
                     .iter()
-                    .map(|span| (span.start.byte, span.end.byte))
+                    .map(|region| (region.start(), region.end()))
                     .collect();
                 let _ = write!(
                     out,
@@ -402,8 +404,8 @@ fn render_complete(text: &str) -> String {
                     diagnostic.code,
                     diagnostic.cause,
                     diagnostic.phase,
-                    diagnostic.span.start.byte,
-                    diagnostic.span.end.byte,
+                    diagnostic.byte_span().unwrap().start,
+                    diagnostic.byte_span().unwrap().end,
                     related,
                     diagnostic.message
                 );

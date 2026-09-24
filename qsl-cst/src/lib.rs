@@ -219,7 +219,7 @@ fn shifted_selections(selections: &SourceSelections, at: usize, added: usize) ->
 /// use qsl_foundation::SourceIdentity;
 /// let installed_backends = BTreeSet::from(["solver:x"]);
 /// let _ = qsl_cst::parse(
-///     SourceIdentity { identity: "doc".into(), revision: "1".into() },
+///     SourceIdentity { authority: "agent-ix".into(), identity: "doc".into(), revision_namespace: "git".into(), revision: "1".into() },
 ///     "doc.native",
 ///     b"",
 ///     Limits::default(),

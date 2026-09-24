@@ -949,7 +949,9 @@ fn composed_discharge_does_not_upgrade_the_historical_model_boundary() {
             model.environment().owner().package().as_str(), model.environment().owner().revision().get(), model.digest());
         let unit = parse(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:historical-proof-boundary".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "historical.native",

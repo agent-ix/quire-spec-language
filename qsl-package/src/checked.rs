@@ -289,7 +289,7 @@ mod tests {
                 None,
                 qsl_forms::Expression::Boolean(true),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("a function over a model reference checks");

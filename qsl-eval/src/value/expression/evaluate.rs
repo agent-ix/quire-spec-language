@@ -1594,7 +1594,7 @@ mod tests {
                     population: Box::new(Expression::Name("p".to_owned())),
                 })),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");

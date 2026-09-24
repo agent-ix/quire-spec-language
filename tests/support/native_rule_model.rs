@@ -109,7 +109,9 @@ pub fn from_source(source: FormalSource) -> Result<Parts> {
 fn bind_source(text: &str, path: &str, revision: &str) -> Result<FormalSource> {
     let native = Source::read(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "test:rule-model".into(),
+            revision_namespace: "git".into(),
             revision: revision.into(),
         },
         path,

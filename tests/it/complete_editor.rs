@@ -21,15 +21,16 @@ fn ugly(profile: &DefinitionRef) -> String {
 
 fn identity(revision: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: "test:editor".into(),
+        revision_namespace: "test".into(),
         revision: revision.into(),
     }
 }
 
 fn binding(revision: &str, profile: &DefinitionRef) -> DocumentBinding {
     DocumentBinding {
-        identity: "test:editor".into(),
-        revision: revision.into(),
+        source: identity(revision),
         profile: profile.clone(),
     }
 }
@@ -292,7 +293,7 @@ fn lowered_parse_limits_force_full_incremental_validation() {
         )
         .unwrap_err();
         assert_eq!(incremental.code, full.code);
-        assert_eq!(incremental.span, full.span);
+        assert_eq!(incremental.region, full.region);
     }
 }
 
@@ -423,8 +424,16 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
             assert_eq!(failure.code, expected_code, "{revision}");
             assert_eq!(failure.cause, expected_cause, "{revision}");
             assert_eq!(failure.source, *parsed.source().identity(), "{revision}");
-            assert_eq!(failure.span.start.byte, failing_span.start, "{revision}");
-            assert_eq!(failure.span.end.byte, failing_span.end, "{revision}");
+            assert_eq!(
+                failure.byte_span().unwrap().start,
+                failing_span.start,
+                "{revision}"
+            );
+            assert_eq!(
+                failure.byte_span().unwrap().end,
+                failing_span.end,
+                "{revision}"
+            );
         };
 
         assert_failure(
@@ -543,7 +552,15 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
                     .span()
             },
         );
-        assert_eq!(one_short.span.start.byte, expected.start, "{revision}");
-        assert_eq!(one_short.span.end.byte, expected.end, "{revision}");
+        assert_eq!(
+            one_short.byte_span().unwrap().start,
+            expected.start,
+            "{revision}"
+        );
+        assert_eq!(
+            one_short.byte_span().unwrap().end,
+            expected.end,
+            "{revision}"
+        );
     }
 }

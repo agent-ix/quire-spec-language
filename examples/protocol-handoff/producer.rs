@@ -541,7 +541,9 @@ fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
 fn model(bytes: &[u8]) -> Result<NativeModel, Error> {
     let source = Source::read(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: format!("{AUTHORITY}/examples/protocol-handoff/model"),
+            revision_namespace: "example".into(),
             revision: "1".into(),
         },
         "examples/protocol-handoff/model.json",
@@ -594,7 +596,9 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
     text.push_str(recipe.body);
     Ok(Source::read(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: recipe.identity.into(),
+            revision_namespace: "example".into(),
             revision: "1".into(),
         },
         format!("examples/protocol-handoff/{}", recipe.file),
@@ -1135,7 +1139,9 @@ fn wire_source(artifact: w::ArtifactRef, source: &FormalSource) -> w::Source {
     w::Source {
         artifact,
         native: w::NativeSource {
+            authority: source.source().identity().authority.clone(),
             identity: source.source().identity().identity.clone(),
+            revision_namespace: source.source().identity().revision_namespace.clone(),
             revision: source.source().identity().revision.clone(),
         },
         path: source.source().path().into(),

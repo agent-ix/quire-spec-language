@@ -99,7 +99,9 @@ impl<'a> SyntaxInvocation<'a> {
         let source = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"0.0.0-fixture\" digest \"unresolved-model-package\";\n{anchor} {{ {expression} }}\n");
         parse(
             SourceIdentity {
+                authority: "agent-ix".into(),
                 identity: format!("fs03:{}", self.id),
+                revision_namespace: "fixture".into(),
                 revision: "fixture:1".into(),
             },
             "selected-rule.native",

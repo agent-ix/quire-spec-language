@@ -44,7 +44,9 @@ record!(Semantics {
     rules_definition: Definition,
 });
 record!(Source {
+    authority: Text,
     identity: Text,
+    revision_namespace: Text,
     revision: Text,
     digest: Digest,
     formal: Formal

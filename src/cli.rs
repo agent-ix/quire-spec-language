@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-010/026: the binary's bounded positional command grammar.
 
+use qsl_foundation::SourceIdentity;
 use quire_spec_language::lowering::{ProjectionTarget, UnknownProjectionTarget};
 use std::ffi::OsString;
 use std::path::Path;
@@ -14,8 +15,8 @@ pub(super) enum SyntaxCommand {
 pub(super) enum Command<'a> {
     Syntax {
         kind: SyntaxCommand,
-        identity: &'a str,
-        revision: &'a str,
+        /// FR-001's four labels, exactly as given.
+        source: SourceIdentity,
         path: &'a Path,
     },
     Run {
@@ -32,7 +33,7 @@ pub(super) enum Command<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-id> <source-revision> <file> | quire-spec <run|compile|lower> <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> | quire-spec <run|compile|lower> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
@@ -57,26 +58,28 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
             .ok_or(UsageError::NonUtf8 { operand: "command" })?;
         match command {
             "parse" | "format" => {
-                let [identity, revision, path] = operands else {
+                let [authority, identity, namespace, revision, path] = operands else {
                     return Err(UsageError::Arity {
                         command,
-                        operands: "<source-id> <source-revision> <file>",
+                        operands:
+                            "<source-authority> <source-id> <revision-namespace> <revision> <file>",
                     });
                 };
-                let identity = identity.to_str().ok_or(UsageError::NonUtf8 {
-                    operand: "source identity",
-                })?;
-                let revision = revision.to_str().ok_or(UsageError::NonUtf8 {
-                    operand: "source revision",
-                })?;
+                let label = |value: &'a OsString, operand| {
+                    value.to_str().ok_or(UsageError::NonUtf8 { operand })
+                };
                 Ok(Self::Syntax {
                     kind: if command == "parse" {
                         SyntaxCommand::Parse
                     } else {
                         SyntaxCommand::Format
                     },
-                    identity,
-                    revision,
+                    source: SourceIdentity::new(
+                        label(authority, "source authority")?,
+                        label(identity, "source identity")?,
+                        label(namespace, "revision namespace")?,
+                        label(revision, "source revision")?,
+                    ),
                     path: Path::new(path),
                 })
             }
