@@ -645,9 +645,11 @@ What each figure counts:
 | probe independent 5,000 | 7.12, 6.30, 4.74, 2.10, 2.62 s | 733, 472, 379, 381, 368 ms | 4.74 s | 381 ms | 92% | 45% | improvement |
 
 **Growth per doubling on the chain.** B's probe medians grow 1.72, 2.08 and
-2.17 times from 1,000 to 8,000 (A: 3.62, 3.64 and 7.63). Taken round by round,
-B's ratios range over 1.68–2.09, 1.99–2.64 and 1.98–2.23. The 2.64 is round 1's
-2,000 to 4,000, under a load average of 13.
+2.17 times from 1,000 to 8,000 (A: 3.62, 3.64 and 7.63), so QSL-205's
+near-linear criterion (at most about 2.5 times per doubling) passes on the
+medians. Taken round by round, B's ratios range over 1.68–2.09, 1.99–2.64 and
+1.98–2.23. One round exceeds 2.5: round 2's 2,000 to 4,000 (439 ms / 166 ms =
+2.64), under a load average of 13.1. Round 1's same step was 2.32, at 10.9.
 
 Peak RSS, 5 rounds each. The RSS variance is below 0.5% on both sides.
 
@@ -666,6 +668,39 @@ A `perf record --call-graph dwarf` profile of B's `qsl-bench-probe check chain
 8000` puts 69% of samples, inclusive, in node keying (`node_key::node_key`: the
 canonical JSON preimage and its SHA-256), a fixed cost per node. The lookup
 sites are gone from the profile.
+
+### Enum member count (review follow-up)
+
+Review found one more per-function cost the benches above cannot see,
+because they declare no enums. Each `Typer` (one per function body, measure
+and standalone expression) and each evaluator `Machine` rebuilt the package's
+enum-member index, and each checked enum equality copied its enum's member
+table. With M enum members, that is O(M) per function. The fix builds the
+index and each enum's table once, in `Scope`, and shares them.
+
+`checker/enum_members/<m>` (new, `benches/checker.rs`) checks 1,000 functions
+over one ordered enum of *m* members. Each function is `fI(x) = E::c{I mod m}
+== E::c0`, so it resolves an enum member by name and checks an enum
+equality. It was measured in one interleaved A/B session on 2026-09-24, 02:57
+to 03:06 (UTC-7), 5 rounds each, with only this group per round:
+
+- A is `5c93a3a1` (origin/main) with the new bench and its generator applied
+  and not committed. B is `149a4055`. The apparatus is byte-identical on both
+  sides.
+- Load average ranged from 5.2 to 12.9.
+- Each figure is a criterion point estimate of one whole-package check. Per
+  function is that figure divided by 1,000.
+
+| Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Session MAD/median | Per function, A / B |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `checker/enum_members/10` | 103, 107, 99.1, 100, 96.8 ms | 73.9, 86.4, 71.8, 73.9, 72.7 ms | 100 ms | 73.9 ms | 26% | 3% | 100 / 74 µs |
+| `checker/enum_members/100` | 137, 138, 133, 139, 138 ms | 91.3, 83.8, 76.0, 76.5, 95.7 ms | 138 ms | 83.8 ms | 39% | 9% | 138 / 84 µs |
+| `checker/enum_members/1000` | 639, 632, 741, 603, 638 ms | 93.3, 101, 99.0, 116, 108 ms | 638 ms | 101 ms | 84% | 7% | 638 / 101 µs |
+
+From 10 to 1,000 members, A's cost per function grows 6.4 times and B's
+1.37 times. What is left is inherent to the type: `ValueType::Enum` owns its
+`EnumShape`, a vector of every variant, so each resolved member reference
+builds an O(M) value type.
 
 The session is recorded as four collections under
 `spec/evidence/measurements/`, each holding every round and the load averages:
