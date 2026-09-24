@@ -219,7 +219,8 @@ walk entered it. At a type `U` and a path `p`:
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
    at `p` + `field:f` and an optional field `f?: V`'s `V` at `p` + `field:f`
-   + `inner`; then close `C`.
+   + `inner`; then close `C`. A record or tuple `C` from which no `Text`
+   type is reachable is not entered, here or in step 5, and appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
    walk each position `n`'s type, in position order, at `p` + `position:n`;
    then close `C`.
@@ -615,15 +616,11 @@ Specified under QSL-208; the text-leaf walk and its recursion leaf
 specified under QSL-212. Implemented on the QSL-156 slice
 A4b branch, pending merge: `check` lowers each checked node in
 `qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
-backs AC-1 to AC-3, AC-5, AC-6, AC-8 and CON-1 there, and AC-4 except its
-`fm` fixture: the A4b test flat-maps a flat sequence over itself. A4b spells
-an integer literal as a decimal string and gives `quire.op.quantity.convert`
-mode `rounding` = `exact`. On that branch the text-leaf walk (`text_leaves`)
-does not yet meet the Text leaves rules: it walks an optional field without
-`inner`, and a walk that reenters an open composite from which a `Text`
-type is reachable goes on to the depth limit and refuses instead of
-appending a recursion leaf. AC-10 and AC-11 are unbacked. Remaining work:
-QSL-156 A4b. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
+backs AC-1 to AC-6, AC-8, AC-10, AC-11 and CON-1 there. The text-leaf walk
+(`text_leaves`) follows the Text leaves rules, charges each leaf to the node
+limit before any leaf's law is read, and keys the Recursive text-leaf
+vectors. A4b spells an integer literal as a decimal string and gives
+`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
 refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9
 and CON-2 (TC-416) are unbacked. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes

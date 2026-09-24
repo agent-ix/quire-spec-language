@@ -14,7 +14,9 @@
 use ix_trace_rs::trace;
 use qsl_forms::Expression;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{checked_dispatch_operation, DispatchRoot, OperationClauses};
+use qsl_semantics::check::{
+    checked_dispatch_operation, DispatchRoot, OperationClauses, SourceOwner,
+};
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
@@ -692,6 +694,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
             closure: GeneralizationClosure::Closed,
         },
         &clauses,
+        SourceOwner::new("agent-ix", "qsl-semantics").expect("a nonempty owner"),
         &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
     )
     .unwrap_or_else(|refusal| panic!("expected a checked dispatch family, got {refusal:?}"));

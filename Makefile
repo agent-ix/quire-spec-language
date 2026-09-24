@@ -134,8 +134,11 @@ ci: check-no-committed-binaries check-index-completeness ci-default-features ci-
 # the test itself skips, so this target refuses to run instead, and it fails
 # when the test did not actually check the vectors (a renamed test filters to
 # zero tests and would otherwise pass). Both tests are `qsl-semantics`'
-# (QSL-181 moved `value::application_key` and `tests/it/quantities.rs` there).
-CONFORMANCE_TEST := value::application_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
+# (QSL-181 moved them there; QSL-156 A4b moved the key into `check::node_key`).
+CONFORMANCE_TEST := check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
+# FR-092-AC-8 (TC-413 step 6): the nominal enum declaration and member keys
+# against QSpec's `enum-status` and `enum-status-ready` vectors.
+CONFORMANCE_ENUM_TEST := check::node_key::tests::conformance_fr092_nominal_enum_keys_match_qspec_vectors
 # TC-411 step 3 (FR-088-AC-12): the compound-unit `UnitId`s against QSpec's
 # `value-compound-unit-vectors.json`, guarded the same way.
 CONFORMANCE_UNIT_TEST := quantities::tc_411_compound_unit_ids_match_qspec_vectors
@@ -149,6 +152,11 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: ' || { echo "conformance: the vector check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_ENUM_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: 2 nominal enum vectors' || { echo "conformance: the nominal enum vector check did not run" >&2; exit 1; }
 	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_UNIT_TEST) --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \

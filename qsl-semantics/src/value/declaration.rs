@@ -1082,6 +1082,11 @@ impl EqualityOperand {
         }
     }
 
+    /// The `convert<target>` target, when the operand converts.
+    pub(crate) fn target(&self) -> Option<&ValueType> {
+        self.target.as_ref()
+    }
+
     /// The comparison type.
     fn comparison_type(&self) -> &ValueType {
         self.target.as_ref().unwrap_or(&self.source)

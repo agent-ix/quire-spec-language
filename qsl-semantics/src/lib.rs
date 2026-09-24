@@ -5,8 +5,7 @@
 //!
 //! - [`value`]: the §6.2 `semantic_value` modules (definitions, enumerations,
 //!   units, quantities, declarations, containment, semantic nodes), plus
-//!   `value::model_query` (§6.2 `model`) and `value::application_key` (§6.2
-//!   `check`);
+//!   `value::model_query` (§6.2 `model`);
 //! - [`model`]: domain packages, keys, normalization, dispatch, population
 //!   and conformance, with `model::intake`, the only module that names the
 //!   FCD crates;

@@ -153,7 +153,14 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
         types,
         aliases: aliases(),
         functions,
-        ..PackageDeclarations::default()
+        // FR-094: `holder_environment`'s `Reference<M::Obj>` field keys
+        // over this model's node.
+        models: vec![crate::support::model::object_model(
+            "collection-queries",
+            "M::Obj",
+            object_type("M::Obj"),
+        )],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -507,7 +514,7 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
             None,
             reduce,
         )],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap_err();

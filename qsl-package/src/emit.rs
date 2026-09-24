@@ -37,12 +37,13 @@
 //! `dependency_selections` yet, so all five are correctly, honestly empty
 //! ([`identity_preimage`]). `identity_projection` is also empty for a
 //! package with no declaration, but refuses
-//! ([`EmitRefusal::ProjectionNotYetImplemented`]) for one with any: its
-//! node bodies (ADR-011 §6.1's emission arm per family, matching
-//! `check::ir::NodeKind`) are QSL-6 slice S1b
-//! ([`identity_projection`]), and an empty projection for a non-empty
-//! graph would mint a `package_id` that ignores the package's content
-//! (prior review finding 3).
+//! ([`EmitRefusal::ProjectionNotYetImplemented`]) for one with any: `check`
+//! already lowers every node and mints its key
+//! ([`CheckedGraph::semantic_graph`], FR-092, FR-093, FR-094; ADR-011 FB-13:
+//! only `check` mints a `NodeKey`), and QSL-6 slice S1b only serializes
+//! those nodes into the projection ([`identity_projection`]). An empty
+//! projection for a non-empty graph would mint a `package_id` that ignores
+//! the package's content (prior review finding 3).
 //!
 //! `edition` is different in kind from the five above: it is FR-322's one
 //! *non-list* lock-selection member, and IR's
@@ -90,11 +91,11 @@ pub(crate) enum EmitRefusal {
     /// `CheckedArtifactRef` for the edition definition it checked against.
     #[error("no edition-selection evidence exists yet to emit a checked-package/v2 lock")]
     EditionNotYetSelected,
-    /// `identity_projection`'s own emission arm per family (ADR-011 §6.1,
-    /// QSL-6 slice S1b) does not exist yet: a package with any declaration
-    /// cannot be projected today, since an empty projection would ignore
-    /// that declaration and mint a `package_id` blind to the package's
-    /// actual content (prior review finding 3).
+    /// The serialization of `check`'s keyed nodes into
+    /// `identity_projection` (QSL-6 slice S1b) does not exist yet: a package
+    /// with any declaration cannot be projected today, since an empty
+    /// projection would ignore that declaration and mint a `package_id`
+    /// blind to the package's actual content (prior review finding 3).
     #[error("identity_projection is not implemented yet for a package with any declaration")]
     ProjectionNotYetImplemented,
     /// Defensive: `emit_package`'s own success arm (minting `package_id`
@@ -132,13 +133,13 @@ fn edition_selection(_package: &CheckedPackage) -> Option<CheckedSelection> {
     None
 }
 
-/// `identity_projection` (FR-322): one entry per family-emitted v2 node
-/// (ADR-011 §6.1's emission arm per family, matching `check::ir::NodeKind`;
-/// QSL-6 slice S1b). `CheckedGraph` exposes no such per-family dispatch
-/// yet: a graph with no declaration correctly has an empty projection, but
-/// a graph with any declaration refuses rather than silently return an
-/// empty projection that would ignore it and mint a content-blind
-/// `package_id` (prior review finding 3).
+/// `identity_projection` (FR-322): one entry per node `check` lowered and
+/// keyed ([`CheckedGraph::semantic_graph`]); QSL-6 slice S1b serializes
+/// them, and mints no key of its own. Until it does, a graph with no
+/// declaration correctly has an empty projection, but a graph with any
+/// declaration refuses rather than silently return an empty projection
+/// that would ignore it and mint a content-blind `package_id` (prior
+/// review finding 3).
 fn identity_projection(
     graph: &CheckedGraph,
 ) -> Result<Vec<quire_contract_ir::CheckedNodeProjectionV2>, EmitRefusal> {
@@ -195,7 +196,7 @@ mod tests {
     /// dependency closure always starts empty today (S-3a review fix); M-4
     /// adds the dependency-bearing constructor when it lands.
     fn empty() -> CheckedPackage {
-        let graph = PackageDeclarations::default()
+        let graph = PackageDeclarations::new(qsl_semantics::check::fixture_owner())
             .check(CheckingLimits::default())
             .expect("an empty package always checks");
         CheckedPackage::link(graph)
@@ -219,7 +220,7 @@ mod tests {
     fn with_function(name: &str) -> CheckedPackage {
         let graph = PackageDeclarations {
             functions: vec![function(name)],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("a single nullary function always checks");

@@ -248,8 +248,15 @@ impl ResolvedSignatures {
 }
 
 /// The closed declarations of one package that expressions resolve against.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PackageDeclarations {
+    /// The declaring source unit's owner (ADR-013 O-04, FR-091): a required
+    /// E3 input, carried by every declared record, tuple and function node
+    /// key (FR-092). `check` holds no constant owner.
+    pub owner: super::node_key::SourceOwner,
+    /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
+    /// a lowered operation may name (FR-093).
+    pub lock_evidence: super::lowering::LockEvidence,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Enum declarations.
@@ -271,28 +278,42 @@ pub struct PackageDeclarations {
     /// for the evaluator. Built by the same caller, with function indices
     /// already resolved against `functions`.
     pub dispatch_tables: Vec<DispatchTable>,
-    /// ADR-013 O-04 (PR #300 review finding 1): the checked-node-id ->
-    /// domain-declaration correspondence entries this package's declarations
-    /// are already known to require, in the same "built by the caller (the
-    /// `model` bridge); the checker only records/resolves against it"
-    /// division `dispatch_operations`/`dispatch_tables` above already use.
-    /// `check` records every entry here onto `CheckedGraph`'s
-    /// [`super::identity::ModelCorrespondence`] verbatim -- it never derives
-    /// or searches for one itself (R-05) -- so [`super::CheckedGraph::resolve_declaration`]
-    /// reads back exactly what a caller supplied. Always empty from every
-    /// production call site today: no #213 slice before S-3b gives `model`'s
-    /// bridge a domain-package declaration to resolve a
-    /// `crate::model::key::DeclarationKey` from in the first place
-    /// (FR-088-CON-2 leaves FR-340's frame semantics, the first real
-    /// consumer, to #210). The field exists now so that bridge has a real
-    /// place to hand its entries to, and so this crate's own tests can
-    /// exercise the recording step through a genuine `check()` run rather
-    /// than a hand-built `ModelCorrespondence` (`check/mod.rs`'s own test
-    /// module).
-    pub model_correspondence: Vec<(quire_exact::NodeKey, crate::model::key::DeclarationKey)>,
+    /// FR-094: every admitted domain package whose declarations a
+    /// `Reference<T>`, a model row's member or a clause function names.
+    /// `check` keys each such declaration's model node and records it in the
+    /// model correspondence, whose only writer it is.
+    pub models: Vec<super::lowering::AdmittedModel>,
+    /// FR-094: the owner and clause kind of each clause function, keyed by
+    /// index into [`Self::functions`]. A function with an entry is keyed
+    /// with its declaration's `ModelOwner`; every other function is a
+    /// source declaration. `check::checked_dispatch` fills it for the
+    /// clause functions it synthesizes.
+    pub model_clauses: std::collections::BTreeMap<usize, super::lowering::ModelClause>,
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
+}
+
+impl PackageDeclarations {
+    /// A package declared by `owner`'s source unit, with no declaration yet
+    /// and no lock evidence.
+    pub fn new(owner: super::node_key::SourceOwner) -> Self {
+        Self {
+            owner,
+            lock_evidence: super::lowering::LockEvidence::default(),
+            types: TypeEnvironment::default(),
+            enums: Vec::new(),
+            aliases: Vec::new(),
+            model_operations: Vec::new(),
+            functions: Vec::new(),
+            ieee_profile: None,
+            dispatch_operations: Vec::new(),
+            dispatch_tables: Vec::new(),
+            models: Vec::new(),
+            model_clauses: std::collections::BTreeMap::new(),
+            resolved_signatures: ResolvedSignatures::default(),
+        }
+    }
 }
 
 /// One FR-151 dispatch-eligible operation: a `receiver.member(args)` call
@@ -389,6 +410,9 @@ pub(crate) struct Typer<'a> {
     depth: u64,
     locals: Vec<Local>,
     slots: usize,
+    /// The name each slot was bound under, indexed by slot (FR-092: a
+    /// parameter node binds its binder's name).
+    slot_names: Vec<String>,
     /// The clause this declaration is (FR-151's dispatch-call restriction;
     /// also the only signal `pre(...)` needs: `pre(...)` is legal exactly in
     /// [`ClauseKind::Postcondition`] -- FR-153's own anchor table;
@@ -535,6 +559,7 @@ impl<'a> Typer<'a> {
             depth: 0,
             locals: Vec::new(),
             slots: 0,
+            slot_names: Vec::new(),
             clause_kind,
             units: UnitScope::new(scope.types.units()),
             enum_members: enum_member_index(scope),
@@ -544,6 +569,17 @@ impl<'a> Typer<'a> {
     /// The number of slots allocated so far.
     pub(crate) fn slots(&self) -> usize {
         self.slots
+    }
+
+    /// The name each slot was bound under, indexed by slot.
+    pub(crate) fn slot_names(&self) -> &[String] {
+        &self.slot_names
+    }
+
+    /// Every compound unit this pass formed (FR-094: kept until lowering
+    /// keys each one's type node).
+    pub(crate) fn into_formed_units(self) -> crate::value::quantity::UnitTable {
+        self.units.into_formed()
     }
 
     /// The package-level declarations this typing pass resolves names
@@ -583,6 +619,7 @@ impl<'a> Typer<'a> {
         }
         let slot = self.slots;
         self.slots = self.slots.saturating_add(1);
+        self.slot_names.push(name.to_owned());
         self.locals.push(Local {
             name: name.to_owned(),
             value_type,

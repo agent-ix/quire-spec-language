@@ -103,7 +103,7 @@ fn function_two() -> FunctionDeclaration {
 fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
 }
 

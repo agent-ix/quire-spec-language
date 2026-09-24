@@ -247,8 +247,8 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
   `qsl-eval`'s `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
   `value::enumeration`, `value::unit` and `value::node` entries, and
   QSL-131 V1 the `value::model_query` entry, by deleting their mints.
-  T12-B fails on the one `value::application_key` mint QSL-156 A4a added
-  (#356, `application_node_key`), which is on no list.
+  The node-key mints QSL-156 added are under `check` (`check::node_key`),
+  so T12-B passes.
 - T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
   outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal

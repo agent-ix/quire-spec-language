@@ -90,9 +90,9 @@ impl LimitExceeded {
 /// **No `Fault` variant either.** An earlier draft of this type also
 /// carried `Fault(InternalFault)` (ADR-013 T-4's internal-invariant
 /// category) with one real-looking construction site: `check` recomputed
-/// `mint_declaration_identity` a second time and compared it against the
+/// the declaration's identity a second time and compared it against the
 /// first, returning `Fault` on a mismatch. That comparison can never fail
-/// -- `mint_declaration_identity` is a pure function of its own arguments,
+/// -- the identity is a pure function of its own arguments,
 /// called twice with the same arguments, so the two results are equal by
 /// construction, not by anything the runtime checks. That is a fabricated
 /// reader, not a real one, so #214 review (PR #262) ruled it out along

@@ -28,9 +28,9 @@ use qsl_semantics::check::{
     OperationClauses,
 };
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits, CheckingStage,
-    DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
-    InvalidDispatchDeclaration, Location, Origin, PackageDeclarations,
+    AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckingLimitKind, CheckingLimits,
+    CheckingStage, DispatchCandidate, DispatchFunctionRole, DispatchOperation, DispatchTable,
+    InvalidDispatchDeclaration, Location, ModelClause, Origin, PackageDeclarations,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -105,6 +105,46 @@ fn ab_type(label: &str) -> EffectiveId {
 /// regardless of what `receiver_type`'s own digest happens to be.
 fn receiver_type_form() -> TypeForm {
     crate::support::type_form::named_type_form("Receiver")
+}
+
+/// FR-094: the domain package this file's hand-built fixtures dispatch
+/// over, declaring every object type they name (`Receiver`, `Super`, `Sub`,
+/// `Unrelated`) under [`object_type`]'s fixed identities. `check` keys each
+/// `Reference<T>` by `T`'s declaration in this package.
+fn receiver_model() -> AdmittedModel {
+    let labels = [
+        "model.dispatch-calls.Receiver",
+        "model.dispatch-calls.Super",
+        "model.dispatch-calls.Sub",
+        "model.dispatch-calls.Unrelated",
+    ];
+    let records = labels
+        .iter()
+        .map(|label| {
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture(*label),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            })
+        })
+        .collect();
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("dispatch-calls"), records);
+    AdmittedModel::fixture(
+        &domain_package,
+        labels
+            .iter()
+            .map(|label| (object_type(label), DeclarationKey::fixture(*label))),
+    )
+}
+
+/// FR-094: a hand-built clause function's owner, `Receiver.size`'s clause
+/// of `kind`.
+fn size_clause(kind: DeclaredClauseKind) -> ModelClause {
+    ModelClause {
+        declaration: DeclarationKey::fixture("model.dispatch-calls.Receiver.size"),
+        kind,
+    }
 }
 
 fn types(receiver_type: EffectiveId) -> TypeEnvironment {
@@ -210,6 +250,10 @@ fn one_candidate_package(
     // single-candidate fixture has no redefinition ancestry, so the set is
     // just the precondition function itself (D08's self-loop depends on this).
     let precondition_clauses = precondition_index.into_iter().collect();
+    let mut model_clauses = BTreeMap::from([(0, size_clause(DeclaredClauseKind::Body))]);
+    if let Some(index) = precondition_index {
+        model_clauses.insert(index, size_clause(DeclaredClauseKind::Precondition));
+    }
     let table = DispatchTable::new(
         vec![(
             receiver_type,
@@ -232,7 +276,9 @@ fn one_candidate_package(
             table: 0,
         }],
         dispatch_tables: vec![table],
-        ..PackageDeclarations::default()
+        models: vec![receiver_model()],
+        model_clauses,
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
 }
 
@@ -583,7 +629,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
             Expression::Boolean(true),
             DeclaredClauseKind::Body,
         )],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
@@ -620,10 +666,9 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 /// independent *of*. This version checks two packages whose two functions
 /// are declared in opposite order and compares `target`'s checked identity
 /// across both -- a real reordering, at the one level position could
-/// actually leak (`PackageDeclarations::check`; see
-/// `mint_declaration_identity`'s own doc on why a typed body's
-/// `NodeKind::Call { function: usize, .. }` index makes checked position
-/// matter even though the *parsed* preimage this identity hashes does not).
+/// actually leak (`PackageDeclarations::check`: a typed body's
+/// `NodeKind::Call { function: usize, .. }` index is a checked position,
+/// while the call node's key hashes its callee's key, not that index).
 ///
 /// Also gives a real, non-fabricated test caller to four `pub`
 /// `CheckedPackage` methods PR #262 review (coordinator round 3, finding 3)
@@ -651,13 +696,13 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
 
     let target_first = PackageDeclarations {
         functions: vec![target.clone(), unrelated.clone()],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .expect("two unrelated boolean-literal functions check cleanly");
     let unrelated_first = PackageDeclarations {
         functions: vec![unrelated, target],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .expect("reordering the same two declarations checks cleanly too");
@@ -766,7 +811,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
     let refused = PackageDeclarations {
         functions: vec![declaration("f")],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(tight_limits)
     .expect_err("a zero-depth limit must refuse every declaration's contract-level check");
@@ -785,7 +830,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     let admitting_limits = CheckingLimits::default();
     PackageDeclarations {
         functions: vec![declaration("f")],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(admitting_limits)
     .expect("the default depth limit admits an ordinary boolean-literal function");
@@ -1061,11 +1106,17 @@ fn ab_bridge_declarations(
         key: root_key,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     let types = TypeEnvironment::new(
         [],
         [
@@ -1326,7 +1377,12 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             },
         ],
         dispatch_tables: vec![table],
-        ..PackageDeclarations::default()
+        models: vec![receiver_model()],
+        model_clauses: BTreeMap::from([
+            (0, size_clause(DeclaredClauseKind::Body)),
+            (1, size_clause(DeclaredClauseKind::Precondition)),
+        ]),
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1659,11 +1715,17 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         key: b.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     declarations.types = TypeEnvironment::new(
         [],
         [
@@ -1910,11 +1972,17 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     // The bridge is pure and builds no `TypeEnvironment` of its own (see its
     // module docs): the caller declares the object types its own clauses'
     // parameter/result `ValueType`s name.
@@ -2029,11 +2097,17 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
 
     let mut receiver_types: Vec<EffectiveId> = declarations
         .dispatch_operations
@@ -2120,8 +2194,15 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    checked_dispatch_operation(domain_package, &view, &root, &clauses, &mut meter)
-        .expect_err("a non-query dispatch target must refuse, not link")
+    checked_dispatch_operation(
+        domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .expect_err("a non-query dispatch target must refuse, not link")
 }
 
 /// #174 (FR-151, `quire.model.dispatch.single/v1`): "Only query operations,
@@ -2246,8 +2327,15 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         key: a.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let refusal = checked_dispatch_operation(&domain_package, &view, &root, &clauses, &mut meter)
-        .expect_err("neither candidate declares a result: the family must refuse, not link");
+    let refusal = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .expect_err("neither candidate declares a result: the family must refuse, not link");
     match refusal {
         DispatchBridgeRefusal::NotAQuery(refusal) => {
             assert!(

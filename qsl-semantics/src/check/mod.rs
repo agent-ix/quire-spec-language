@@ -58,11 +58,10 @@
 //! **Amended, PR #282 review F4:** FR-068's move surface now names
 //! `family.rs` explicitly, alongside `check`, `evaluate`, `facts`, `ir`,
 //! `mod` itself, `refusal` and `termination` -- an omission in the
-//! requirement's original text, not a deliberate exclusion: `check.rs`'s
-//! own `Typer::call` already called `family::mint_call_identity`/
-//! `family::DEFAULT_PACKAGE_IDENTITY` directly before this move, so this
-//! module carries a `family` submodule with exactly the identity-minting
-//! content those existing calls need (see `family`'s own module doc).
+//! requirement's original text, not a deliberate exclusion: this module
+//! carries a `family` submodule with the function family's checking code
+//! (see `family`'s own module doc). Node identity is `lowering`'s and
+//! `node_key`'s (FR-092/FR-093, QSL-156 A4b).
 //! Without it, `check`'s real import graph would reach back into
 //! `value::expression::family`, which FR-068-AC-3 forbids.
 
@@ -86,6 +85,8 @@ pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
 mod ir;
+mod lowering;
+mod node_key;
 mod refusal;
 mod termination;
 mod type_form;
@@ -100,7 +101,7 @@ use check::{bind_parameters, Typer};
 pub use check::Signature;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use check::Signature;
-use facts::{CallSite, Definedness};
+use facts::Definedness;
 use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
@@ -109,9 +110,17 @@ use quire_exact::ValueType;
 
 pub use check::Scope;
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
-// Named only by `fixtures::mint_resolved`'s return type.
+// Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]
-pub use family::IdentityPreimageMetrics;
+pub use family::DeclarationMetrics;
+pub use lowering::{
+    AdmittedModel, ForeignView, LockEvidence, ModelClause, SemanticGraph, SemanticNode,
+};
+pub use node_key::{
+    IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
+    ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
+    OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
+};
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -123,15 +132,13 @@ pub use family::IdentityPreimageMetrics;
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
 //
-// QSL-181: `check_context`, `staged_identity` and the two constants are
-// test-support views of `pub(crate)` items (`CheckContext::new`,
-// `Staged::value`, `DEFAULT_PACKAGE_IDENTITY`, `SCALAR_LIMITS_UNLIMITED`),
-// so the layer-5 evaluator's tests reach them without widening the items.
+// QSL-181: `check_context` and the constant are test-support views of
+// `pub(crate)` items (`CheckContext::new`, `SCALAR_LIMITS_UNLIMITED`), so
+// the layer-5 evaluator's tests reach them without widening the items.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
-    check_context, declaration, declaration_signature, declarations_for, empty_scope, limits,
-    mint_resolved, root_location, staged_identity, DEFAULT_PACKAGE_IDENTITY,
-    SCALAR_LIMITS_UNLIMITED,
+    check_context, declaration, declaration_signature, declarations_for, empty_scope,
+    fixture_owner, limits, measure_resolved, root_location, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
@@ -164,8 +171,8 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, InvalidModelCorrespondence, Location, MeasureObligation,
-    Obligation, Origin, ProvedInterval, WrongSnapshotCause,
+    InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
+    ProvedInterval, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -181,14 +188,12 @@ pub enum CheckMode {
 /// A checked function.
 #[derive(Debug)]
 struct CheckedFunction {
-    /// FR-062/FR-065: content-addressed identity, minted once at check from
-    /// the declaration's own parsed structure (`family::
-    /// mint_declaration_identity`), independent of this function's position
-    /// in the package's function list.
+    /// FR-062/FR-065: the function node's FR-092 key, minted once at check
+    /// (`lowering`), independent of this function's position in the
+    /// package's function list.
     identity: quire_exact::NodeKey,
     signature: Signature,
     body: Node,
-    measure: Option<Node>,
     slots: usize,
 }
 
@@ -224,17 +229,9 @@ pub struct CheckedGraph {
     occurrences: family::OccurrenceMap<Location>,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
-    /// a node-id-keyed accessor, never a name-keyed one (R-06). PR #300
-    /// review finding 1: populated from `PackageDeclarations::model_correspondence`
-    /// (see that field's own doc for why the entries themselves are still
-    /// caller-supplied -- no #213 slice before S-3b gives the checker a real
-    /// domain-package intake to derive a frame/model declaration's own
-    /// `DeclarationKey` from, FR-088-CON-2 leaves FR-340's frame semantics to
-    /// #210), but the *recording* is real production code, not a test-only
-    /// stub: `check` copies every caller-supplied entry onto this field
-    /// itself, exactly the same "built by the caller, checker only
-    /// records/resolves against it" split this struct's own
-    /// `dispatch_operations`/`dispatch_tables` already use.
+    /// a node-id-keyed accessor, never a name-keyed one (R-06). FR-094:
+    /// `check` is its only writer; it holds exactly one entry per model
+    /// declaration node lowering keyed.
     model_correspondence: identity::ModelCorrespondence,
     /// ADR-013 O-14/C-26 (PR #300 review finding 1): every admitted
     /// composite and enum type declaration this package's `TypeEnvironment`
@@ -243,6 +240,9 @@ pub struct CheckedGraph {
     /// read only through [`Self::checked_type_node`], node-id-keyed like
     /// every other accessor here (R-06).
     type_nodes: BTreeMap<quire_exact::NodeKey, identity::CheckedTypeNode>,
+    /// FR-092/FR-093 (QSL-156 A4b): every lowered, keyed node of this
+    /// package's functions.
+    semantic_graph: lowering::SemanticGraph,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -564,8 +564,50 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let mut functions = Vec::with_capacity(self.functions.len());
-        let mut calls: Vec<Vec<CallSite>> = Vec::with_capacity(self.functions.len());
+        let owner = self.owner;
+        let lock_evidence = self.lock_evidence;
+        let models = self.models;
+        // FR-094 (ADR-013 O-01): a check selects one version of each domain
+        // package identity, so a model owner names one declaration.
+        let mut selected = std::collections::BTreeSet::new();
+        if let Some(model) = models
+            .iter()
+            .find(|model| !selected.insert(model.selection().identity.as_str()))
+        {
+            return Err(vec![CheckRefusal {
+                location: root(Origin::Expression),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::DuplicateModelSelection(
+                    model.selection().identity.clone(),
+                ))),
+            }]);
+        }
+        if let Some((&index, _)) = self.model_clauses.range(self.functions.len()..).next() {
+            return Err(vec![invalid_dispatch(
+                root(Origin::Expression),
+                InvalidDispatchDeclaration::ModelClauseOutOfRange { index },
+            )]);
+        }
+        let model_clauses = self.model_clauses;
+        // FR-094: the object type `T` of each `Population<T>[N]` parameter,
+        // from its resolved type form (the checked type carries only `N`).
+        let mut population_targets: Vec<Vec<Option<quire_exact::EffectiveId>>> =
+            Vec::with_capacity(self.functions.len());
+        for (index, function) in self.functions.iter().enumerate() {
+            let location = body_location(index, &function.name);
+            let mut targets = Vec::with_capacity(function.parameters.len());
+            for (_, form) in &function.parameters {
+                match type_form::population_target(&scope, form, &location) {
+                    Ok(target) => targets.push(target),
+                    Err(refusal) => refusals.push(refusal),
+                }
+            }
+            population_targets.push(targets);
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
+        let mut drafts: Vec<(Signature, family::CheckedDeclarationBody)> =
+            Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
         // success diagnostic are all produced through one call into the
         // checked-family contract's own `check` hook
@@ -578,45 +620,13 @@ impl PackageDeclarations {
         // only through it. Termination stays below, over every declaration's
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
-        let package_identity = family::DEFAULT_PACKAGE_IDENTITY.to_owned();
-        // ADR-013 O-14/C-26 (PR #300 review round 2, HIGH-1): every admitted
-        // composite and enum type declaration this package's own
-        // `TypeEnvironment`/`enums` already carry becomes a real
-        // `CheckedTypeNode`, identified by that declaration's own
-        // pre-existing key -- `composite.key()`/`EnumDeclaration::key()`,
-        // carried into this module's own checked-node space unchanged, byte
-        // for byte. Both declarations hold the kernel `quire_exact::NodeKey`,
-        // so no conversion function is needed -- never a
-        // second, parallel id minted from the declared name and shape. This
-        // is the same identity `Typer::
-        // type_named` (`check.rs`) and every field type (`family.rs`)
-        // already resolve a reference against, so a checked type node's id
-        // is exactly what those other sites already use, once carried into
-        // this module's own identity space -- FR-088-AC-7 step 4
-        // ("references resolve to the one node id the single declaration
-        // was minted with"). Round 1 minted a fresh, unused id here instead
-        // (`identity::mint_type_declaration_identity`, deleted); see
-        // `identity`'s own module doc for the full account of why that was
-        // wrong and why no third scheme is needed: package scoping (AC-7)
-        // and "not an identity in its own right" (AC-6) are already
-        // properties of these pre-existing keys, not something `check` needs
-        // to (re)establish.
-        //
-        // This also closes HIGH-2 (qualified declared names silently
-        // dropped): the prior code required a composite's or enum's own
-        // *name* to be a single valid `Identifier` before it would mint an
-        // id from it, so a package-qualified name like `"P::R"` produced no
-        // `CheckedTypeNode` at all, with no refusal or diagnostic. Reusing
-        // the declaration's own key needs no name validation in the first
-        // place -- the key is already minted (by the declaration's own
-        // producer), so every admitted composite and enum gets a checked
-        // type node, `"P::R"` included (see `composite_type_node_for_a_qualified_declared_name`
-        // below).
+        // ADR-013 O-14/C-26: every admitted enum declaration becomes a
+        // `CheckedTypeNode::Sum` identified by its `EnumDeclaration::key()`,
+        // and every admitted composite (below, once lowering has keyed it)
+        // a `CheckedTypeNode::Composite` identified by its FR-092 key.
+        // FR-092-AC-12: a declared composite's checked type node takes its
+        // FR-092 key, which `check` mints below, not the caller's handle.
         let mut type_nodes = BTreeMap::new();
-        for composite in scope.types.composites() {
-            let node = composite.key();
-            type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
-        }
         for enum_binding in &scope.enums {
             let node = enum_binding.declaration.key();
             // Every case name here was already validated as
@@ -656,27 +666,6 @@ impl PackageDeclarations {
                  this declaration ever reaches `check`",
             );
             type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
-        }
-        // ADR-013 O-04 (PR #300 review round 2, MEDIUM-3): a second entry
-        // for a node already recorded refuses rather than silently
-        // overwriting the first (R-05) -- see `CheckCause::
-        // InvalidModelCorrespondence`'s own doc for why full node-membership
-        // validation is not implemented here yet.
-        let mut model_correspondence = identity::ModelCorrespondence::default();
-        for (node, declaration) in self.model_correspondence {
-            if model_correspondence.resolve(node).is_some() {
-                refusals.push(CheckRefusal {
-                    location: root(Origin::Expression),
-                    cause: CheckCause::InvalidModelCorrespondence(
-                        InvalidModelCorrespondence::DuplicateNode { node },
-                    ),
-                });
-                continue;
-            }
-            model_correspondence.record(node, declaration);
-        }
-        if !refusals.is_empty() {
-            return Err(refusals);
         }
         // PR #262 review, finding F4: this used to hardcode
         // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
@@ -739,7 +728,6 @@ impl PackageDeclarations {
                 index,
             });
             let declarations = family::ValueDeclarations {
-                package_identity: &package_identity,
                 scope: &scope,
                 signatures: &signatures,
                 own_signature: &signatures[index],
@@ -771,15 +759,7 @@ impl PackageDeclarations {
                     // declaration's `Typer` picks up where this one left
                     // off instead of restarting at zero.
                     nodes_used = checked.body.nodes_used;
-                    functions.push(CheckedFunction {
-                        identity: checked.identity,
-                        // This declaration's resolved signature.
-                        signature: signatures[index].clone(),
-                        body: checked.body.body,
-                        measure: checked.body.measure,
-                        slots: checked.body.slots,
-                    });
-                    calls.push(checked.body.calls);
+                    drafts.push((signatures[index].clone(), checked.body));
                 }
                 Err(crate::family::StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
@@ -827,41 +807,116 @@ impl PackageDeclarations {
         // is still a whole-package call-graph analysis over every
         // declaration's own `calls` at once (see `check_declaration_body`'s
         // own doc for why it cannot move alongside typing/definedness).
-        let members: Vec<termination::Member<'_>> = functions
+        let members: Vec<termination::Member<'_>> = drafts
             .iter()
-            .zip(&calls)
-            .map(|(function, calls)| termination::Member {
-                name: &function.signature.name,
-                parameters: &function.signature.parameters,
-                measure: function.measure.as_ref(),
-                calls,
+            .map(|(signature, body)| termination::Member {
+                name: &signature.name,
+                parameters: &signature.parameters,
+                measure: body.measure.as_ref(),
+                calls: &body.calls,
             })
             .collect();
-        let refusals = termination::check(&members);
+        let mut refusals = termination::check(&members);
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        // FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map, built
-        // from each function's own minted declaration identity and every
-        // `NodeKind::Call` identity its checked body (and measure, if any)
-        // already carries -- reads locations `Typer` already recorded, mints
-        // no new identity or span here.
-        let mut occurrences = family::OccurrenceMap::default();
-        for (index, function) in functions.iter().enumerate() {
-            occurrences.record(
-                function.identity,
-                "declaration",
-                body_location(index, &function.signature.name),
-            );
-            for (identity, location) in function.body.call_occurrences() {
-                occurrences.record(identity, "reference", location);
-            }
-            if let Some(measure) = &function.measure {
-                for (identity, location) in measure.call_occurrences() {
-                    occurrences.record(identity, "reference", location);
+        // FR-092/FR-093 (QSL-156 A4b): lower every function to FR-322 nodes
+        // and key them, each callee before its callers, and record every
+        // node's source occurrences (FR-062-AC-2/FR-065-AC-3's
+        // occurrence-keyed source map). A function's identity is its
+        // function node's key; a call's is its `expression` node's key.
+        let locations: Vec<Location> = drafts
+            .iter()
+            .enumerate()
+            .map(|(index, (signature, _))| body_location(index, &signature.name))
+            .collect();
+        let callees: Vec<Vec<usize>> = drafts
+            .iter()
+            .map(|(_, body)| {
+                let mut callees = body.body.callees();
+                if let Some(measure) = &body.measure {
+                    callees.extend(measure.callees());
                 }
+                callees
+            })
+            .collect();
+        let order = lowering::lowering_order(&callees);
+        let mut occurrences = family::OccurrenceMap::default();
+        // FR-094: the package's units and every compound unit typing formed,
+        // kept until lowering has keyed each one's type node.
+        let mut units = scope.types.units().clone();
+        for (_, body) in &mut drafts {
+            units.extend(std::mem::take(&mut body.formed_units));
+        }
+        let mut lowering = lowering::Lowering::new(
+            &scope,
+            &owner,
+            &models,
+            units,
+            &lock_evidence,
+            limits.depth(),
+            drafts.len(),
+            &mut occurrences,
+            &mut contract_meter,
+        )
+        .with_node_limit(limits.nodes(), nodes_used);
+        for group in &order {
+            let inputs: Vec<lowering::FunctionInput<'_>> = group
+                .members
+                .iter()
+                .filter_map(|&index| {
+                    let (signature, body) = drafts.get(index)?;
+                    Some(lowering::FunctionInput {
+                        name: &signature.name,
+                        location: &locations[index],
+                        parameters: &signature.parameters,
+                        result: &signature.result,
+                        body: &body.body,
+                        body_slots: &body.slot_names,
+                        measure: body.measure.as_ref(),
+                        measure_slots: &body.measure_slot_names,
+                        population_targets: population_targets
+                            .get(index)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                        clause: model_clauses.get(&index),
+                    })
+                })
+                .collect();
+            refusals.extend(lowering.function_group(group, &inputs));
+        }
+        for composite in scope.types.composites() {
+            match lowering.composite_node(composite.key()) {
+                Ok(node) => {
+                    type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
+                }
+                Err(refusal) => refusals.push(refusal),
             }
         }
+        let lowered = lowering.finish(&lowering::generated_location());
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
+        let (semantic_graph, correspondence, identities) =
+            (lowered.graph, lowered.correspondence, lowered.functions);
+        // FR-094: `check` is the model correspondence's only writer; it
+        // holds exactly the model declaration nodes lowering keyed.
+        let mut model_correspondence = identity::ModelCorrespondence::default();
+        for (node, declaration) in correspondence {
+            model_correspondence.record(node, declaration);
+        }
+        let functions: Vec<CheckedFunction> = drafts
+            .into_iter()
+            .zip(identities)
+            .filter_map(|((signature, body), identity)| {
+                Some(CheckedFunction {
+                    identity: identity?,
+                    signature,
+                    body: body.body,
+                    slots: body.slots,
+                })
+            })
+            .collect();
         Ok(CheckedGraph {
             scope,
             functions,
@@ -869,11 +924,17 @@ impl PackageDeclarations {
             occurrences,
             model_correspondence,
             type_nodes,
+            semantic_graph,
         })
     }
 }
 
 impl CheckedGraph {
+    /// FR-092/FR-093: every lowered, keyed node of this package's functions.
+    pub fn semantic_graph(&self) -> &SemanticGraph {
+        &self.semantic_graph
+    }
+
     /// ADR-013 O-04: `node`'s `DeclarationKey`, read only from the model
     /// correspondence this package's own checking recorded (FR-088-AC-2).
     /// Node-id-keyed, never name-keyed (R-06/FR-088-AC-5): `CheckedGraph`
@@ -1124,40 +1185,8 @@ mod tests {
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
-    }
-
-    /// PR #300 review round 2, MEDIUM-3: a second correspondence entry for a
-    /// node an earlier entry already named refuses rather than silently
-    /// overwriting the first.
-    #[trace("TC-248", "FR-088-AC-2")]
-    #[test]
-    fn a_duplicate_correspondence_node_refuses_rather_than_overwriting() {
-        let node = quire_exact::NodeKey::from_digest([7_u8; 32]);
-        let first = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
-        };
-        let second = crate::model::key::DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.total".to_owned(),
-        };
-        let refusals = PackageDeclarations {
-            model_correspondence: vec![(node, first), (node, second)],
-            ..PackageDeclarations::default()
-        }
-        .check(CheckingLimits::default())
-        .expect_err("a duplicate correspondence node must refuse, not overwrite");
-        assert!(
-            refusals.iter().any(|refusal| matches!(
-                refusal.cause,
-                CheckCause::InvalidModelCorrespondence(
-                    InvalidModelCorrespondence::DuplicateNode { node: refused_node }
-                ) if refused_node == node
-            )),
-            "expected an InvalidModelCorrespondence::DuplicateNode refusal: {refusals:?}"
-        );
     }
 
     /// PR #300 review finding 1: a real composite declaration in
@@ -1165,12 +1194,9 @@ mod tests {
     /// convertible through C-26, not only in `identity`'s own
     /// hand-constructed unit tests.
     ///
-    /// PR #300 review round 2 (HIGH-1): the checked type node's own id is
-    /// asserted equal to the declaration's own pre-existing
-    /// `CompositeDeclaration::key()` -- the same identity `Typer::
-    /// type_named` (`check.rs`) and every field type (`family.rs`) already
-    /// resolve a reference against -- not a second, parallel id this
-    /// module used to mint from the declared name and shape.
+    /// FR-092-AC-12: the checked type node's id is the record's FR-092 node
+    /// key, the key of its semantic-graph node, not the handle the caller
+    /// passed to `CompositeDeclaration::new`.
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
@@ -1185,7 +1211,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one record declaration checks cleanly");
@@ -1193,11 +1219,17 @@ mod tests {
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared composite");
         let node = nodes[0].node();
+        assert_ne!(node, key, "the caller's handle is not a node id");
+        let declared = graph
+            .semantic_graph()
+            .node(node)
+            .expect("the checked type node's id is a graph node's key");
         assert_eq!(
-            node, key,
-            "the checked type node's id must be the declaration's own existing key"
+            declared.declaration().map(|name| name[0].as_str()),
+            Some("Flagged")
         );
-        assert_eq!(graph.checked_type_node(key), Some(nodes[0]));
+        assert_eq!(graph.checked_type_node(node), Some(nodes[0]));
+        assert!(graph.checked_type_node(key).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
             quire_exact::ValueType::Composite(node)
@@ -1211,8 +1243,8 @@ mod tests {
     /// itself a single valid `Identifier` (no refusal, no diagnostic,
     /// `check()` still returning `Ok`, review round 2's own probe: "0
     /// checked type nodes, check returns Ok, no refusal or diagnostic").
-    /// Reusing the declaration's own key (HIGH-1) needs no name validation
-    /// at all, so this can no longer happen.
+    /// The node id is the record's FR-092 key (FR-092-AC-12), whose
+    /// `declaration` carries the qualified name's segments.
     #[trace("TC-252", "FR-088-AC-9")]
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
@@ -1226,7 +1258,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("a package-qualified declared name checks cleanly");
@@ -1237,7 +1269,18 @@ mod tests {
             1,
             "a package-qualified declared name must still get a checked type node"
         );
-        assert_eq!(nodes[0].node(), key);
+        assert_ne!(nodes[0].node(), key);
+        let declared = graph
+            .semantic_graph()
+            .node(nodes[0].node())
+            .expect("the checked type node's id is a graph node's key");
+        let name: Vec<&str> = declared
+            .declaration()
+            .unwrap_or_default()
+            .iter()
+            .map(|segment| segment.as_str())
+            .collect();
+        assert_eq!(name, ["P", "R"]);
     }
 
     /// PR #300 review round 2 (HIGH-1, L10): the enum/Sum companion to
@@ -1304,7 +1347,7 @@ mod tests {
         }];
         let graph = PackageDeclarations {
             enums,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
@@ -1338,10 +1381,10 @@ mod tests {
     /// identity to the identity/occurrence-key mechanism only, not the
     /// syntax that would produce one), so the closest real,
     /// checker-produced case of "one identity, two distinct occurrences"
-    /// is two calls to the same function with the same arguments:
-    /// `family::mint_call_identity` mints one identity from the callee
-    /// name and arguments alone, never from a resolved index or the
-    /// caller's own identity, so both call sites share it -- the same
+    /// is two calls to the same function with the same arguments: the
+    /// FR-093 call node's key hashes the callee's key and the arguments
+    /// alone, never a resolved index or the caller's own identity, so both
+    /// call sites share one node -- the same
     /// "structurally identical content shares one id" premise ADR-013 O-04
     /// states for clause identity -- while `check`'s own `OccurrenceMap`
     /// still gives each call site its own (role, ordinal), exactly O-07's
@@ -1375,17 +1418,23 @@ mod tests {
 
         // Steps 2-3: both call sites mint the same identity, but distinct
         // occurrence keys.
-        let scope = family::fixtures::empty_scope();
-        let location = family::fixtures::root_location();
-        let call_identity = family::mint_call_identity(
-            family::DEFAULT_PACKAGE_IDENTITY,
-            "helper",
-            &[],
-            &family::TargetTypes::new(&scope, &location),
-        )
-        .expect("a call with no arguments has no target to resolve");
-        let first = Origin::new(Role::new("reference"), 0);
-        let second = Origin::new(Role::new("reference"), 1);
+        let call_identity = graph
+            .semantic_graph()
+            .nodes()
+            .find(|node| node.semantic_form() == "call")
+            .map(SemanticNode::key)
+            .expect("the call node was lowered");
+        assert_eq!(
+            graph
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == "call")
+                .count(),
+            1,
+            "both call sites lower to one node"
+        );
+        let first = Origin::new(Role::new("expression"), 0);
+        let second = Origin::new(Role::new("expression"), 1);
         let first_location = graph
             .occurrence(call_identity, &first)
             .expect("the first call site was recorded")
@@ -1402,7 +1451,7 @@ mod tests {
             first_location, second_location,
             "two distinct source occurrences must not collapse to one location"
         );
-        let third = Origin::new(Role::new("reference"), 2);
+        let third = Origin::new(Role::new("expression"), 2);
         assert_eq!(graph.occurrence(call_identity, &third), None);
 
         // Step 5 (adverse, R-05): renaming both callers changes their
@@ -1442,7 +1491,7 @@ mod tests {
         resolved_signatures.insert(0, (Vec::new(), ValueType::Boolean));
         let refusals = PackageDeclarations {
             resolved_signatures,
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(family::fixtures::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect_err("index 0 names no function");

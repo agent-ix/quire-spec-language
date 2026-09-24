@@ -213,8 +213,8 @@ pub(crate) const RULES: &[Rule] = &[
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
         // T12-B's allowed callers are `check` and every module under it
-        // (ADR-013 O-04), including `check::family`'s
-        // `mint_declaration_identity`/`mint_call_identity`.
+        // (ADR-013 O-04), including `check::node_key`, which mints every
+        // checked node key.
         allowed_callers: &[AllowedCaller {
             crate_src: "qsl-semantics/src",
             module_prefix: "check",
@@ -1636,7 +1636,7 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/family.rs",
-            "fn mint_declaration_identity(bytes: &[u8]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
+            "fn mint_node_key(bytes: &[u8]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n",
         );
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);

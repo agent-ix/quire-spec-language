@@ -122,6 +122,23 @@ impl UnitTable {
     }
 }
 
+impl IntoIterator for UnitTable {
+    type Item = QuantityUnit;
+    type IntoIter = std::collections::btree_map::IntoValues<UnitId, QuantityUnit>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_values()
+    }
+}
+
+impl Extend<QuantityUnit> for UnitTable {
+    fn extend<I: IntoIterator<Item = QuantityUnit>>(&mut self, units: I) {
+        for unit in units {
+            self.insert(unit);
+        }
+    }
+}
+
 impl FromIterator<QuantityUnit> for UnitTable {
     fn from_iter<I: IntoIterator<Item = QuantityUnit>>(units: I) -> Self {
         let mut table = Self::default();
@@ -162,6 +179,12 @@ impl<'a> UnitScope<'a> {
             self.formed.insert(unit);
         }
         id
+    }
+
+    /// Every unit this stage formed. FR-094: the check stage keeps them
+    /// until lowering has keyed each compound unit's type node.
+    pub fn into_formed(self) -> UnitTable {
+        self.formed
     }
 
     /// `quantity` read against the package's units, then this stage's

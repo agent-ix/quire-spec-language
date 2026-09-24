@@ -929,7 +929,6 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .ok_or(Stop::Undefined(Undefined::NoneValue))?
             }
             NodeKind::Call {
-                identity: _,
                 function,
                 arguments,
             } => {
@@ -1579,8 +1578,11 @@ mod tests {
             ],
         )
         .expect("one object type admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&domain_package, &view)
+            .expect("the view is the domain package's own");
         let graph = PackageDeclarations {
             types,
+            models: vec![model],
             functions: vec![FunctionDeclaration::new(
                 "F",
                 vec![(
@@ -1596,7 +1598,7 @@ mod tests {
                     population: Box::new(Expression::Name("p".to_owned())),
                 })),
             )],
-            ..PackageDeclarations::default()
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
         .check(CheckingLimits::default())
         .expect("F(p: Population<M::A>[3]): Integer = size(allInstances<M::A>(p)) checks cleanly");

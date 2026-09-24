@@ -7,7 +7,9 @@
 use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::{
+    CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations, SourceOwner,
+};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
@@ -25,6 +27,12 @@ pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     work_units: u64::MAX,
     result_units: u64::MAX,
 };
+
+/// The source owner every benchmark package is declared under (FR-092:
+/// a package's declared nodes carry their unit's `SourceOwner`).
+pub(crate) fn owner() -> SourceOwner {
+    SourceOwner::new("agent-ix", "qsl-bench").expect("a nonempty owner")
+}
 
 fn integer() -> TypeForm {
     TypeForm::builtin(
@@ -68,7 +76,7 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(owner())
     }
 }
 
@@ -90,7 +98,7 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(owner())
     }
 }
 

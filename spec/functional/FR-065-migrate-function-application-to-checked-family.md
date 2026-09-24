@@ -370,25 +370,26 @@ delivered code today:
   in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
   QSL-5 / #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
-- FR-065-AC-7: typing half backed (`TC-380`): since QSL-148 (PR #303) the
-  contract's `check` hook type-checks the body. The F1 identity half is
-  asserted on the QSL-156 A4b branch, pending merge.
+- FR-065-AC-7: backed (`TC-380`). Since QSL-148 (PR #303) the contract's
+  `check` hook type-checks the body, and on the QSL-156 A4b branch, pending
+  merge, `f`'s checked identity is FR-092 vector F1.
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
   `qsl-semantics/src/check/family.rs` `checking_tests`) and
-  `value_function_family_checks_through_the_contract` (admission half,
-  `qsl-eval/src/value/expression/family.rs`), are both tagged
+  `value_function_family_checks_through_the_contract` (admission half and
+  F1, `qsl-eval/src/value/expression/family.rs`) are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
-- FR-065-AC-8: unbacked. The checker mints each identity from a
-  length-prefixed preimage in `qsl-semantics/src/check/family.rs` that
-  includes the package identity. Owner: QSL-156 slice A4b, which switches it
-  to the FR-092 and FR-093 keys. The application-node half's builder,
-  `qsl-semantics/src/value/application_key.rs`, reproduces QSpec's operation
-  vectors under the opt-in `make conformance` and has no production caller.
+- FR-065-AC-8: backed on the QSL-156 A4b branch, pending merge (`TC-163`):
+  `check` keys each function by FR-092 and each call by FR-093, `both` keys
+  to F2 and `both(a, true)` to E2
+  (`qsl-semantics/src/check/lowering/tests.rs`), and the application-node
+  key builder in `qsl-semantics/src/check/node_key/` reproduces QSpec's
+  operation vectors under the opt-in `make conformance`.
 
-Two of this requirement's eight Acceptance Criteria are backed (AC-2,
-identity/provenance; AC-7, the contract `check` hook's typing verdict); AC-4
-is true by inspection but not backed by a test that could catch its own
-regression; the other five (AC-1, AC-3, AC-5, AC-6, AC-8) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
+Three of this requirement's eight Acceptance Criteria are backed (AC-2,
+identity/provenance; AC-7, the contract `check` hook's typing verdict and
+F1; AC-8, on the A4b branch); AC-4 is true by inspection but not backed by a
+test that could catch its own regression; the other four (AC-1, AC-3, AC-5,
+AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
 migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
 in the delivered code. `TC-164` keeps its own zero-test procedure (see its
 Status section); the criterion it targets, AC-5, stays unbacked (see the

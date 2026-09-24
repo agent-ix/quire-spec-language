@@ -724,7 +724,6 @@ scope keeps its formed units until lowering has keyed them. TC-417, TC-418
 and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there. ADR-012 §4.3
 places an operation's postconditions with `ProtocolClause`, so the clause functions
 this requirement keys are exactly the invariant, precondition and body
-functions `DeclaredClauseKind` names. The A4b test of
-AC-5's `2.0.0` half asserts only the owner and a key other than C1, because
-the earlier C3 held the `1.0.0` receiver P7; the corrected C3, over P9, is
-the key it reaches.
+functions `DeclaredClauseKind` names. AC-5's `2.0.0` half asserts P9 and
+the corrected C3. A check with two admitted versions of one domain package
+identity refuses as an internal fault.

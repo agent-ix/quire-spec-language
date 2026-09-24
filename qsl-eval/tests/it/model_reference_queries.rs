@@ -26,8 +26,8 @@ use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Location, Origin,
-    PackageDeclarations, WrongSnapshotCause,
+    AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits,
+    Location, Origin, PackageDeclarations, WrongSnapshotCause,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -244,6 +244,10 @@ struct Scenario {
     a: EffectiveId,
     b: EffectiveId,
     binding: PopulationBinding,
+    /// FR-094: `M`, admitted with its own effective view, whose
+    /// declarations `check` keys `Reference<M::A>` and `Population<M::A>`
+    /// by.
+    model: AdmittedModel,
 }
 
 fn scenario() -> Scenario {
@@ -253,11 +257,13 @@ fn scenario() -> Scenario {
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let model = AdmittedModel::new(&domain_package, &view).unwrap();
     Scenario {
         universe,
         a,
         b,
         binding,
+        model,
     }
 }
 
@@ -313,11 +319,13 @@ fn l07_scenario() -> Scenario {
         AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected an admitted invocation, got {other:?}"),
     };
+    let model = AdmittedModel::new(&domain_package, &view).unwrap();
     Scenario {
         universe,
         a,
         b,
         binding,
+        model,
     }
 }
 
@@ -340,7 +348,8 @@ fn types(scenario: &Scenario) -> TypeEnvironment {
 fn package(scenario: &Scenario) -> CheckedPackage {
     let graph = PackageDeclarations {
         types: types(scenario),
-        ..PackageDeclarations::default()
+        models: vec![scenario.model.clone()],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -365,17 +374,19 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
     let target = ValueType::Reference(scenario.a);
     let graph = PackageDeclarations {
         types: types(scenario),
+        models: vec![scenario.model.clone()],
         functions: vec![FunctionDeclaration::new(
             "F",
             vec![(
                 "p".to_owned(),
-                crate::support::type_form::type_form(&ValueType::Population(maximum)),
+                crate::support::type_form::type_form(&ValueType::Population(maximum))
+                    .with_arguments(vec![crate::support::type_form::named_type_form("M::A")]),
             )],
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
             Expression::Size(Box::new(all_instances(target))),
         )],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -395,6 +406,7 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
 fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
     let graph = PackageDeclarations {
         types: types(scenario),
+        models: vec![scenario.model.clone()],
         functions: vec![FunctionDeclaration::new(
             "F2",
             vec![(
@@ -407,7 +419,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
             None,
             Expression::Size(Box::new(Expression::Name("elements".to_owned()))),
         )],
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -1234,7 +1246,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     .unwrap();
     let graph = PackageDeclarations {
         types,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())
     .unwrap();
@@ -2298,6 +2310,7 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
         a,
         b,
         binding: b1_binding.clone(),
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
     };
     let environment = ObjectEnvironment::default()
         .with_population(b1_binding)
@@ -2531,6 +2544,7 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
         a,
         b,
         binding: binding.clone(),
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
     };
     let environment = ObjectEnvironment::default()
         .with_population(binding)
@@ -2605,6 +2619,7 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
         a,
         b,
         binding: binding.clone(),
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
     };
     let environment = ObjectEnvironment::default()
         .with_population(binding)
@@ -2739,6 +2754,7 @@ fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
         a,
         b,
         binding: binding.clone(),
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
     };
     let objects = ObjectEnvironment::default()
         .with_population(binding)
@@ -2801,6 +2817,7 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
         a: type_id(&view, "model.A"),
         b: type_id(&view, "model.B"),
         binding,
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
     };
     let package = package(&scenario);
 
@@ -2869,6 +2886,7 @@ fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
             a: type_id(&view, "model.A"),
             b: type_id(&view, "model.B"),
             binding,
+            model: AdmittedModel::new(&domain_package, &view).unwrap(),
         };
         let package = package_with_size_function(&scenario, 1);
         let mut meter = Meter::new(SCALAR_UNLIMITED);
