@@ -15,6 +15,8 @@
 //!   `DomainPackage::new`), then normalization and population admission.
 //! - [`recursion`]: N self-recursive functions, N recursive components.
 //! - [`rss`]: the process's peak resident set size, for the probe.
+//! - [`text_cluster`]: N mutually referencing, Text-reachable records and
+//!   one structural equality, for FR-093's text-leaf walk (QSL-215).
 //!
 //! No generator panics on a refusal from the layer it feeds: a refusal is a
 //! measured result, reported by the probe, not a harness failure.
@@ -35,3 +37,4 @@ pub mod model;
 pub mod parse;
 pub mod recursion;
 pub mod rss;
+pub mod text_cluster;

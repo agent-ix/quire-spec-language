@@ -139,7 +139,9 @@ sink and the scope stack the typing context exposes.
 
 Every stage entry (`check`, and every other stage ADR-011 §2.3 names) SHALL
 take explicit limits: input bytes, nesting depth, node count and work
-budget, as that stage needs them. A stage that is recursive (`check` is one;
+budget, as that stage needs them. The checking stage's default limits are
+finite and recorded with each checked result
+([NFR-011](../non-functional/NFR-011-bound-value-checking-work.md)). A stage that is recursive (`check` is one;
 ADR-011 §2.3 also names S1, S2 and S6a) SHALL bound its recursion depth by
 one of these explicit limits, checked before each recursive step, and SHALL
 NOT rely on the native call stack to bound recursion. A family's `check`

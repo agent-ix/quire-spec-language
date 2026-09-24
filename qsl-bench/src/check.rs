@@ -195,8 +195,7 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
     }
 }
 
-/// Check `declarations` at the default (unlimited-node, maximum-depth)
-/// checking limits.
+/// Check `declarations` at the default checking limits (NFR-011).
 pub fn check(declarations: PackageDeclarations) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     declarations.check(CheckingLimits::default())
 }

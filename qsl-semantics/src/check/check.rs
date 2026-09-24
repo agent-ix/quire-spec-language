@@ -81,24 +81,48 @@ use quire_exact::{Value, ValueType};
 /// checked tree's size rather than protecting the host stack.
 pub const MAX_CHECKING_DEPTH: u64 = 128;
 
-/// The NFR-010 node admission limits this checker declares before accepting
-/// a package.
+/// NFR-011's default checking node ceiling: twice NFR-001's default
+/// syntax-node ceiling (50,000). A package checked from one source unit
+/// types at most as many expression nodes as that unit has syntax nodes, so
+/// typing can use one half; the other half is for FR-093's text and
+/// recursion leaves, each of which costs one unit.
+pub const DEFAULT_CHECKING_NODES: u64 = 100_000;
+
+/// NFR-011's default checking work budget: ten work units per default node
+/// unit. Checking charges one unit per lowered node built, per recursion
+/// group keyed and per composite a text-leaf walk enters, plus each
+/// declaration's preimage writes; the largest recorded checker input (an
+/// 8,000-function call chain, 16,000 nodes) charges 160,000.
+pub const DEFAULT_CHECKING_WORK_BUDGET: u64 = 1_000_000;
+
+/// NFR-011's default per-declaration preimage byte ceiling: NFR-007's
+/// default package byte ceiling (16 MiB), sixteen times NFR-001's default
+/// source ceiling. A declaration's length-prefixed preimage writes each
+/// source string once, plus a tag and an eight-byte prefix per expression
+/// node, so it grows linearly with the source bytes and nodes NFR-001
+/// bounds.
+pub const DEFAULT_CHECKING_INPUT_BYTES: u64 = 16_777_216;
+
+/// The node admission limits this checker declares before accepting a
+/// package (NFR-011). Every ceiling is used as given, above or below its
+/// default: an implementation ceiling is not a domain bound (NFR-001). A
+/// checked package records the limits it was checked under
+/// ([`super::CheckedGraph::effective_limits`]).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CheckingLimits {
     nodes: u64,
     depth: u64,
     /// The checked-family contract's own preimage byte-length bound
     /// (QSL-153; `crate::family::StageLimits::input_bytes`'s one
-    /// caller-configurable knob). Unlimited (`u64::MAX`) unless
-    /// [`Self::with_input_bytes`] narrows it -- the current, unbounded
-    /// behavior every existing caller keeps by default.
+    /// caller-configurable knob). Defaults to
+    /// [`DEFAULT_CHECKING_INPUT_BYTES`]; [`Self::with_input_bytes`] sets it.
     input_bytes: u64,
-    /// The checked-family contract's own shared-meter `work_units` bound
-    /// (QSL-153; PR #302 review finding 3 -- `StageLimitKind::WorkBudget`'s
-    /// one caller-configurable knob, since that kind is produced by a
-    /// denied charge against the contract meter, not a `StageLimits`
-    /// field). Unlimited (`u64::MAX`) unless [`Self::with_work_budget`]
-    /// narrows it.
+    /// The checking stage's shared-meter `work_units` bound (QSL-153; PR
+    /// #302 review finding 3 -- `StageLimitKind::WorkBudget`'s one
+    /// caller-configurable knob, since that kind is produced by a denied
+    /// charge against the contract meter, not a `StageLimits` field).
+    /// Defaults to [`DEFAULT_CHECKING_WORK_BUDGET`]; [`Self::with_work_budget`]
+    /// sets it.
     work_budget: u64,
 }
 
@@ -111,8 +135,9 @@ pub struct DepthAboveMaximum {
 }
 
 impl CheckingLimits {
-    /// Admit at most `nodes` expression nodes per checked package or
-    /// expression, nested at most `depth` deep.
+    /// Admit at most `nodes` expression nodes and text-leaf units per
+    /// checked package or expression, nested at most `depth` deep, with the
+    /// default input-byte and work ceilings.
     pub fn new(nodes: u64, depth: u64) -> Result<Self, DepthAboveMaximum> {
         if depth > MAX_CHECKING_DEPTH {
             return Err(DepthAboveMaximum { depth });
@@ -120,8 +145,7 @@ impl CheckingLimits {
         Ok(Self {
             nodes,
             depth,
-            input_bytes: u64::MAX,
-            work_budget: u64::MAX,
+            ..Self::default()
         })
     }
 
@@ -151,17 +175,15 @@ impl CheckingLimits {
         self
     }
 
-    /// The checked-family contract's own shared-meter `work_units` bound
-    /// (QSL-153).
+    /// The checking stage's shared-meter `work_units` bound (QSL-153).
     pub fn work_budget(self) -> u64 {
         self.work_budget
     }
 
-    /// Bound the checked-family contract's own shared-meter `work_units`
-    /// spend: once every declaration checked so far has together charged
-    /// more than `work_budget` work units, the next declaration refuses
-    /// with a `Limit` outcome naming `CheckingLimitKind::WorkBudget`, before
-    /// the identity it would have minted is ever used.
+    /// Bound the checking stage's shared-meter `work_units` spend: once
+    /// checking has together charged more than `work_budget` work units,
+    /// the next charge refuses naming `CheckingLimitKind::WorkBudget` and
+    /// this bound.
     pub fn with_work_budget(mut self, work_budget: u64) -> Self {
         self.work_budget = work_budget;
         self
@@ -169,13 +191,15 @@ impl CheckingLimits {
 }
 
 impl Default for CheckingLimits {
-    /// Unlimited nodes, input bytes and work budget, at the maximum depth.
+    /// NFR-011's default ceilings: [`DEFAULT_CHECKING_NODES`] nodes,
+    /// [`MAX_CHECKING_DEPTH`] depth, [`DEFAULT_CHECKING_INPUT_BYTES`] input
+    /// bytes and a [`DEFAULT_CHECKING_WORK_BUDGET`] work budget.
     fn default() -> Self {
         Self {
-            nodes: u64::MAX,
+            nodes: DEFAULT_CHECKING_NODES,
             depth: MAX_CHECKING_DEPTH,
-            input_bytes: u64::MAX,
-            work_budget: u64::MAX,
+            input_bytes: DEFAULT_CHECKING_INPUT_BYTES,
+            work_budget: DEFAULT_CHECKING_WORK_BUDGET,
         }
     }
 }

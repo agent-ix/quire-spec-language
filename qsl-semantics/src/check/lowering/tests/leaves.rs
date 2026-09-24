@@ -531,3 +531,97 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
         .expect_err("no text-profile evidence refuses");
     assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
 }
+
+/// `n` records `R0` .. `R{n-1}`, each with a `label` text field and an
+/// optional field of every other record: every record reaches a text type,
+/// so FR-093's leaf list over `R0` holds one leaf per simple path through
+/// the cluster, on the order of `(n - 1)!` leaves.
+fn text_cluster(n: usize) -> Vec<CompositeDeclaration> {
+    (0..n)
+        .map(|at| {
+            let mut fields = vec![required("label", text(8, TextProfile::Nfc))];
+            fields.extend((0..n).filter(|other| *other != at).map(|other| {
+                optional(
+                    &format!("r{other}"),
+                    ValueType::Composite(handle(&format!("R{other}"))),
+                )
+            }));
+            record(&format!("R{at}"), fields)
+        })
+        .collect()
+}
+
+/// TC-420 steps 1 and 2 (NFR-011-M-1): at the default checking limits,
+/// structural equality over a nine-record Text-reachable cluster refuses on
+/// the node ceiling, naming the node limit kind and its default bound, and
+/// yields no node; the six-record cluster's leaves fit.
+#[trace("NFR-011-M-1", "TC-420")]
+#[test]
+fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
+    let refusals = eq_over(
+        text_cluster(9),
+        "R0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect_err("the nine-record cluster's leaves pass the default node ceiling");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::Nodes,
+            limit: crate::check::DEFAULT_CHECKING_NODES,
+        }
+    );
+    assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+    eq_over(
+        text_cluster(6),
+        "R0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect("the six-record cluster checks at the default limits");
+}
+
+/// TC-420 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
+/// checked expression each record the ceilings they were checked under --
+/// the defaults when the caller sets none, and a caller's ceilings as
+/// given, above or below the defaults.
+#[trace("NFR-011-M-1", "NFR-011-M-2", "NFR-011-M-3", "NFR-011-M-4", "TC-420")]
+#[test]
+fn a_checked_result_records_its_effective_limits() {
+    let defaults = CheckingLimits::default();
+    assert_eq!(
+        (
+            defaults.nodes(),
+            defaults.depth(),
+            defaults.input_bytes(),
+            defaults.work_budget()
+        ),
+        (100_000, 128, 16_777_216, 1_000_000)
+    );
+    let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
+    assert_eq!(checked.effective_limits(), defaults);
+
+    let raised = CheckingLimits::new(u64::MAX, 64)
+        .expect("64 is within the maximum depth")
+        .with_input_bytes(u64::MAX)
+        .with_work_budget(u64::MAX);
+    let lowered = node_limit(64)
+        .with_work_budget(5_000)
+        .with_input_bytes(4_096);
+    for limits in [raised, lowered] {
+        let checked = eq_over_node(vector_lock(), limits).expect("eq over Node checks");
+        assert_eq!(checked.effective_limits(), limits);
+        let expression = checked
+            .check_expression(
+                vec![("x".to_owned(), ValueType::Boolean)],
+                &name_expr("x"),
+                None,
+                crate::check::CheckMode::Linked,
+                limits,
+            )
+            .expect("a Boolean name checks");
+        assert_eq!(expression.effective_limits(), limits);
+    }
+}

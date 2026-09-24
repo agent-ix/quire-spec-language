@@ -14,9 +14,10 @@ architecture evaluation.
 | CST identity hashing against source bytes | `make bench-cst` | `benches/cst.rs` | `src/parse.rs` |
 | Model layer on an N-type `DomainPackage` built through FR-154 intake | `make bench-model` | `benches/model.rs` | `src/model.rs` |
 | Evaluator cost per call frame | `make bench-evaluator` | `benches/evaluator.rs` | `src/check.rs` |
+| Checker: Text-reachable recursive cluster (QSL-215) | `make bench-text_cluster` | `benches/text_cluster.rs` | `src/text_cluster.rs` |
 | Counts, refusal boundaries, one-shot large inputs and peak RSS | `make bench-probe` | `src/bin/qsl-bench-probe.rs` | all of the above |
 
-`make bench` runs all five criterion suites. Each target runs
+`make bench` runs all six criterion suites. Each target runs
 `cargo bench --locked -p qsl-bench --bench <axis>`, and criterion options go
 through `BENCH_ARGS`.
 
@@ -844,6 +845,71 @@ between A and B.
 The two sides are stored as quoin measurement collections under
 `spec/evidence/measurements/qsl202-ab-a-model-v2.json` and
 `qsl202-ab-b-model-v2.json`.
+
+## QSL-214 and QSL-215: a Text-reachable recursive cluster. The default node ceiling refuses from 9 records.
+
+`benches/text_cluster.rs` (`make bench-text_cluster`) times one check of
+`n` records. Each record has a `label: Text[0, 8; nfc]` field and an optional
+field of every other record. The package has one structural equality over
+`R0` (`src/text_cluster.rs`). FR-093's leaf list for that equality holds about
+`(n - 1)!` leaves. `qsl-bench-probe check text-cluster <n>` measures one check
+in one process, with peak RSS.
+
+- **A** is `ddc0083e` (main), whose `CheckingLimits::default()` has no node
+  or work ceiling.
+- **B** is this branch, with NFR-011's default ceilings: 100,000 nodes and
+  1,000,000 work units.
+
+The walk stays combinatorial. QSL-215's second option is taken: at the
+default limits the node ceiling refuses before memory grows with `(n - 1)!`,
+naming `ResourceExhausted{Typing, Nodes, 100000}`.
+
+The probe sessions were interleaved, A then B at each size, three rounds, on
+2026-09-24. The table gives the median of three, and memory is `VmHWM`. A was
+not run above 9 records: at 9 it already needs 3.1 GB, and each extra record
+multiplies the leaf count by about `n`.
+
+| Records | Leaf and node units (A) | A wall | A peak RSS | B outcome | B wall | B peak RSS |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3 | 14 | 0.8 ms | 4.8 MB | checked | 0.8 ms | 4.9 MB |
+| 4 | 52 | 1.2 ms | 4.9 MB | checked | 1.2 ms | 5.0 MB |
+| 5 | 264 | 2.2 ms | 5.7 MB | checked | 2.3 ms | 5.6 MB |
+| 6 | 1,634 | 9.1 ms | 9.9 MB | checked | 8.8 ms | 9.9 MB |
+| 7 | 11,746 | 62.6 ms | 42.9 MB | checked | 66.4 ms | 42.9 MB |
+| 8 | 95,904 | 564 ms | 332 MB | checked | 628 ms | 332 MB |
+| 9 | not counted | 5.63 s | 3.13 GB | refused, `Nodes`, 100000 | 94.9 ms | 73.4 MB |
+| 10 | not run | | | refused, `Nodes`, 100000 | 114 ms | 81.3 MB |
+| 11 | not run | | | refused, `Nodes`, 100000 | 108 ms | 89.0 MB |
+| 12 | not run | | | refused, `Nodes`, 100000 | 113 ms | 96.9 MB |
+
+The unit counts were read once from the lowering's node budget, with the
+limits unbounded. The eight-record cluster uses 95,904 of the 100,000
+units, so it is the largest cluster the defaults admit.
+
+The criterion session was also interleaved: A then B, five rounds each, with
+load average between 8.3 and 21.3. A ran only the sizes up to 8.
+
+| Benchmark | A median | A range | B median | B range | Larger MAD/median | Change |
+| --- | --- | --- | --- | --- | --- | --- |
+| `checker/text_cluster/checked/3` | 0.671 ms | 0.608 – 1.22 ms | 0.767 ms | 0.625 – 0.912 ms | 9% | none: within the noise of these runs |
+| `checker/text_cluster/checked/4` | 1.18 ms | 0.954 – 2.41 ms | 1.39 ms | 0.997 – 1.75 ms | 15% | none: within the noise of these runs |
+| `checker/text_cluster/checked/5` | 2.80 ms | 2.06 – 3.18 ms | 2.30 ms | 2.02 – 3.36 ms | 13% | none: within the noise of these runs |
+| `checker/text_cluster/checked/6` | 8.79 ms | 6.37 – 14.1 ms | 9.40 ms | 8.34 – 10.6 ms | 9% | none |
+| `checker/text_cluster/checked/7` | 61.5 ms | 57.9 – 102 ms | 54.8 ms | 52.5 – 81.4 ms | 6% | none claimed: B is 11% lower, but the code is the same below the ceiling and this new bench has no stated variance yet |
+| `checker/text_cluster/checked/8` | 523 ms | 410 – 759 ms | 536 ms | 478 – 630 ms | 21% | none |
+| `checker/text_cluster/refused/9` | not run (5.6 s, 3.1 GB per check) | | 82.8 ms | 58.7 – 96.5 ms | 16% | refused instead of checked |
+| `checker/text_cluster/refused/10` | not run | | 84.3 ms | 65.6 – 130 ms | 7% | refused |
+| `checker/text_cluster/refused/11` | not run | | 83.8 ms | 71.5 – 152 ms | 15% | refused |
+| `checker/text_cluster/refused/12` | not run | | 112 ms | 77.0 – 149 ms | 27% | refused |
+
+Up to 8 records the ceilings do not bind, and A and B do the same work. From
+9 records B refuses in about 0.1 s. Most of that time is the walk up to the
+ceiling. The refusal's memory grows about linearly with `n`, because each
+leaf's path gets longer: 73 MB at 9 records and 97 MB at 12. Neither the time
+nor the memory grows with `(n - 1)!`.
+
+Adding this bench changes no input of `benches/checker.rs`. The only change
+to MP-002's protected `Cargo.toml` is the new `[[bench]]` entry.
 
 ## Engineering-assurance record
 

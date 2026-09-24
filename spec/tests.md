@@ -201,6 +201,7 @@ operational validation remains outside this audit-only plan.
 | TC-420 | Occurrence keys and source regions are lexical values, and every checked node has an occurrence | Unit | P1 | FR-095-AC-1, FR-095-AC-2 | ✅ Passed locally |
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
+| TC-420 | The default checking ceilings bind a Text-reachable cluster and are recorded with the result | Unit | P1 | NFR-011-M-1, NFR-011-M-2, NFR-011-M-3, NFR-011-M-4 | ✅ Passed locally; QSL-214 |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
