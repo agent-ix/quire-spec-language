@@ -542,9 +542,11 @@ mod tests {
     use ix_trace_rs::trace;
 
     /// Workspace members `crate_roots` does not scan: `qsl-attrs` (see
-    /// `crate_roots`' own doc) and `tools/arch-lint`, which the scan has
-    /// never covered.
-    const UNSCANNED_MEMBERS: [&str; 2] = ["qsl-attrs", "tools/arch-lint"];
+    /// `crate_roots`' own doc), `tools/arch-lint`, which the scan has
+    /// never covered, and `qsl-bench` (QSL-196), the benchmark harness: no
+    /// crate depends on it, it selects no family semantics, and its only
+    /// string `match` is the probe binary's command-line dispatch.
+    const UNSCANNED_MEMBERS: [&str; 3] = ["qsl-attrs", "qsl-bench", "tools/arch-lint"];
 
     /// Every workspace member's `src/` is a scan root, except the
     /// documented [`UNSCANNED_MEMBERS`]. A crate extracted later, or a root
