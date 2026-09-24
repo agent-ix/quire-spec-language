@@ -481,6 +481,38 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     assert_ne!(vector_key("R1"), vector_key("R2"));
 }
 
+/// FR-093 `Equality` row (FR-093-AC-3): `r = s` over two
+/// `Reference<M::Order>` parameters is `quire.op.reference.eq`, with no
+/// member, mode, law or leaf.
+#[trace("FR-093-AC-3", "TC-415")]
+#[test]
+fn reference_equality_is_the_reference_eq_operation() {
+    let acme = admitted("1.0.0");
+    let checked = check(
+        &acme,
+        vec![function(
+            "same",
+            &[("r", named("M::Order")), ("s", named("M::Order"))],
+            builtin(BuiltinType::Boolean),
+            Expression::Binary {
+                operator: BinaryOperator::Equal,
+                left: Box::new(name("r")),
+                right: Box::new(name("s")),
+            },
+        )],
+    );
+    let equal = applications(checked.semantic_graph(), "quire.op.reference.eq");
+    assert_eq!(equal.len(), 1);
+    let equal = preimage(equal[0]);
+    assert_eq!(equal["body"]["operator"], "binary");
+    let operation = &equal["body"]["operation"];
+    assert_eq!(operation["member"], Json::Null);
+    assert_eq!(operation["mode"], Json::Null);
+    assert_eq!(operation["laws"], json!([]));
+    assert_eq!(operation["leaves"], json!([]));
+    assert_eq!(equal["body"]["arguments"].as_array().map(Vec::len), Some(2));
+}
+
 /// TC-417 step 3 (FR-094-AC-1): the relationship `billedTo` keys to M4.
 #[trace("FR-094-AC-1", "TC-417")]
 #[test]
@@ -1025,6 +1057,76 @@ mod quantities {
             json!(METRE)
         );
         assert_ne!(vector_key("U4"), node_key(METRE));
+    }
+
+    /// FR-093 `ConvertScalar` quantity row (FR-093-AC-3): converting a
+    /// metre quantity to kilometres is `quire.op.quantity.convert`, with
+    /// member `type_argument` of the kilometre unit's node and mode
+    /// `rounding` = `exact`.
+    #[trace("FR-093-AC-3", "TC-415")]
+    #[test]
+    fn a_quantity_conversion_is_exact() {
+        use crate::value::semantic_node::NodeIdentityPreimage;
+        let kilometre = UnitPreimage::from_json(json!({
+            "version": "quire.unit-node/v1",
+            "owner": owner_json(),
+            "qualified_declaration": ["Example", "kilometre"],
+            "dimension_node_id": node_id(LENGTH),
+            "target_unit_node_id": node_id(METRE),
+            "scale": {"numerator": "1000", "denominator": "1"},
+            "offset": {"numerator": "0", "denominator": "1"},
+        }))
+        .expect("a derived unit");
+        let km = NodeKey::from_digest(kilometre.digest().expect("the unit digests"));
+        let graph = UnitGraph::admit(
+            [
+                (dimension("Length"), node_key(LENGTH)),
+                (dimension("Time"), node_key(TIME)),
+            ],
+            [
+                (unit("metre", LENGTH), node_key(METRE)),
+                (unit("second", TIME), node_key(SECOND)),
+                (kilometre, km),
+            ],
+            &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+                authority: "agent-ix".into(),
+                identity: "example-model".into(),
+            })]),
+        )
+        .expect("metre, second and kilometre admit");
+        let km_type = ValueType::Quantity(UnitId::declared(km));
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(UnitTable::declared(&graph)),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                ("Km".to_owned(), km_type),
+            ],
+            functions: vec![function(
+                "to_km",
+                &[("a", named("Length"))],
+                named("Km"),
+                Expression::Convert {
+                    target: named("Km"),
+                    operand: Box::new(name("a")),
+                },
+            )],
+            ..PackageDeclarations::new(fixture_owner())
+        });
+        let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
+        assert_eq!(convert.len(), 1);
+        let convert = preimage(convert[0]);
+        assert_eq!(convert["body"]["operator"], "convert");
+        let operation = &convert["body"]["operation"];
+        assert_eq!(
+            operation["member"],
+            json!({"kind": "type_argument", "declaration": node_id(&km.to_string())})
+        );
+        assert_eq!(
+            operation["mode"],
+            json!({"kind": "rounding", "value": "exact"})
+        );
+        assert_eq!(operation["laws"], json!([]));
+        assert_eq!(operation["leaves"], json!([]));
     }
 
     /// TC-419 step 3 (FR-094-AC-7): a compound `UnitId` the unit scope does

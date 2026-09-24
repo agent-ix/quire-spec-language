@@ -21,6 +21,8 @@ use crate::check::family::fixtures::{empty_scope, fixture_owner};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
+mod rows;
+
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
 const FR_092: &str =
@@ -1372,7 +1374,7 @@ fn binder_levels_count_enclosing_binders() {
 /// TC-415 step 6 (FR-093-AC-6): a text equality carries the lock
 /// evidence's `text_profile` law and the operands' profile; with no such
 /// evidence it refuses `missing_declaration`/`missing-selection` naming the
-/// role, and yields no node.
+/// role and the equality node's region, and yields no node.
 #[trace("FR-093-AC-6", "TC-415")]
 #[test]
 fn a_law_comes_only_from_the_lock_evidence() {
@@ -1383,15 +1385,31 @@ fn a_law_comes_only_from_the_lock_evidence() {
             "nfc".into(),
         ])
     };
+    // The equality sits under `not`, so its region is the body's child 0.
     let te = function(
         "te",
         &[("p", text()), ("r", text())],
         boolean(),
         None,
-        binary(BinaryOperator::Equal, name_expr("p"), name_expr("r")),
+        Expression::Not(Box::new(binary(
+            BinaryOperator::Equal,
+            name_expr("p"),
+            name_expr("r"),
+        ))),
     );
     let refusals = check(vec![te.clone()]).expect_err("no text-profile evidence refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].location,
+        Location {
+            origin: Origin::Body {
+                function: "te".to_owned(),
+                index: 0,
+            },
+            path: vec![0],
+        },
+        "the refusal names the equality node's region"
+    );
     assert_eq!(
         refusals[0].cause,
         CheckCause::MissingSelection {
@@ -1771,6 +1789,18 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
         );
         assert_eq!(node["body"]["result_type"], node["semantic_type"], "{name}");
         assert_eq!(node["version"], "quire.application-node/v1", "{name}");
+        // FR-093: none of these rows names a law, a mode or a text leaf;
+        // only `size` names a member, `type_argument` of its result type.
+        let operation = &node["body"]["operation"];
+        assert_eq!(operation["laws"], json!([]), "{name}");
+        assert_eq!(operation["mode"], Json::Null, "{name}");
+        assert_eq!(operation["leaves"], json!([]), "{name}");
+        let member = if identity == "quire.op.collection.size" {
+            json!({"kind": "type_argument", "declaration": node["semantic_type"]})
+        } else {
+            Json::Null
+        };
+        assert_eq!(operation["member"], member, "{name}");
     }
 }
 
