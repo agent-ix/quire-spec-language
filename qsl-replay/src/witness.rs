@@ -745,8 +745,15 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let (backend_identity, backend_domain, backend_hex) = packet
             .backend
             .ok_or(WitnessRefusal::MissingMember("backend"))?;
-        let backend_digest = DigestRecord::from_wire(backend_domain.as_deref(), &backend_hex)
-            .map_err(|e| classify_digest_error("backend", e))?;
+        // ADR-013 C-27: the backend digest is not just any FR-201 domain
+        // (QSL-227) -- it must be `quire.tool-manifest.jcs/v1`, checked
+        // before the hex bytes are read.
+        let backend_digest = DigestRecord::from_wire_expecting(
+            DigestDomain::ToolManifestJcsV1,
+            backend_domain.as_deref(),
+            &backend_hex,
+        )
+        .map_err(|e| classify_digest_error("backend", e))?;
         let backend = Backend::new(backend_identity, backend_digest);
         let trace_position = packet
             .trace_position
@@ -1041,6 +1048,51 @@ mod envelope_tests {
         assert!(matches!(
             WitnessEnvelope::reconstruct(packet),
             Err(WitnessRefusal::MalformedDigest("source_digests", _))
+        ));
+    }
+
+    /// QSL-227 positive control: a real witness whose `backend` digest is in
+    /// the required `quire.tool-manifest.jcs/v1` domain (as `full_packet`
+    /// already builds it) reconstructs, and the resulting envelope's backend
+    /// carries that domain.
+    #[test]
+    fn backend_digest_in_the_required_domain_reconstructs() {
+        let envelope = WitnessEnvelope::reconstruct(full_packet(0)).unwrap();
+        assert_eq!(
+            envelope.backend().manifest_digest().domain(),
+            DigestDomain::ToolManifestJcsV1
+        );
+    }
+
+    /// QSL-227 (ADR-013 C-27): a `backend` digest in a recognized FR-201
+    /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
+    /// typed cause the reader already uses for a source-digest domain
+    /// mismatch (`tc_181_refuses_an_out_of_domain_digest`), and the domain is
+    /// checked before the digest bytes: pairing the wrong domain with
+    /// malformed hex still reports the domain mismatch, not a hex-encoding
+    /// problem.
+    #[test]
+    fn backend_digest_in_any_other_fr201_domain_refuses() {
+        let mut packet = full_packet(0);
+        packet.backend = Some((
+            "kani-backend-1".to_owned(),
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::SourceBytesV1, digest(7)).hex(),
+        ));
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(packet),
+            Err(WitnessRefusal::DigestDomainMismatch("backend", _))
+        ));
+
+        let mut packet_with_bad_hex = full_packet(0);
+        packet_with_bad_hex.backend = Some((
+            "kani-backend-1".to_owned(),
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            "not-hex".to_owned(),
+        ));
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(packet_with_bad_hex),
+            Err(WitnessRefusal::DigestDomainMismatch("backend", _))
         ));
     }
 
