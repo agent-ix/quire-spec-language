@@ -336,7 +336,11 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
 /// resolves a `VariantId` back to its full [`EnumValue`] through this index
 /// rather than the kernel ever holding one.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct EnumMemberIndex(BTreeMap<VariantId, EnumValue>);
+///
+/// The table is shared behind an `Arc` (QSL-205): a clone is a reference
+/// count, so every checked equality over one enum can hold that enum's
+/// table without copying it.
+pub struct EnumMemberIndex(std::sync::Arc<BTreeMap<VariantId, EnumValue>>);
 
 impl EnumMemberIndex {
     /// Record one admitted member, keyed by its own `VariantId`. The last
@@ -344,7 +348,7 @@ impl EnumMemberIndex {
     /// members (same declaration, same case) always share one `VariantId`
     /// (content-addressed, ADR-013 O-04), so recording either is equivalent.
     pub fn record(&mut self, member: EnumValue) {
-        self.0.insert(member.variant(), member);
+        std::sync::Arc::make_mut(&mut self.0).insert(member.variant(), member);
     }
 
     /// The full checked member `variant` names, or `None` when it was never

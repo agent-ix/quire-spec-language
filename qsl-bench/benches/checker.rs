@@ -8,6 +8,9 @@
 //! - `checker/independent/<n>`: `n` functions with no calls (QSL-205's
 //!   F7 shape without QSL-203's: no call edge for termination to close
 //!   over).
+//! - `checker/enum_members/<m>`: 1,000 functions over one enum of `m`
+//!   members, each resolving a member by name and checking an enum
+//!   equality (QSL-205: a per-function cost growing with `m` shows here).
 //!
 //! Building the declarations is excluded from the timing
 //! (`iter_batched`). Chains of 4,000 and 8,000 take seconds per check, too
@@ -15,11 +18,13 @@
 //! once each, with peak RSS.
 
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
-use qsl_bench::check::{call_chain, check, independent};
+use qsl_bench::check::{call_chain, check, enum_binding, enum_members, independent};
 use std::time::Duration;
 
 const CHAIN: [usize; 3] = [250, 1_000, 2_000];
 const INDEPENDENT: [usize; 2] = [1_000, 5_000];
+const ENUM_FUNCTIONS: usize = 1_000;
+const ENUM_MEMBERS: [usize; 3] = [10, 100, 1_000];
 
 fn chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("checker/chain");
@@ -61,5 +66,30 @@ fn independent_functions(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, chain, independent_functions);
+fn enum_member_counts(c: &mut Criterion) {
+    let mut group = c.benchmark_group("checker/enum_members");
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(5));
+    for members in ENUM_MEMBERS {
+        let binding = enum_binding(members);
+        assert!(
+            check(enum_members(ENUM_FUNCTIONS, &binding)).is_ok(),
+            "{members} members check, so the timing is of a completed check"
+        );
+        group.bench_with_input(
+            BenchmarkId::from_parameter(members),
+            &binding,
+            |b, binding| {
+                b.iter_batched(
+                    || enum_members(ENUM_FUNCTIONS, binding),
+                    check,
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, chain, independent_functions, enum_member_counts);
 criterion_main!(benches);

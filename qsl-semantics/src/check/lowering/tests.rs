@@ -17,7 +17,7 @@ use quire_exact::{
 use serde_json::{json, Value as Json};
 
 use super::*;
-use crate::check::family::fixtures::{empty_scope, fixture_owner};
+use crate::check::family::fixtures::{empty_scope, fixture_owner, scope_with};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
@@ -135,7 +135,7 @@ fn type_nodes(
         scope,
         owner,
         &[],
-        scope.types.units().clone(),
+        scope.types().units().clone(),
         &lock,
         crate::check::MAX_CHECKING_DEPTH,
         0,
@@ -203,39 +203,43 @@ fn rational_decimal_and_declared_composite_nodes_match_their_vectors() {
     let pair = NodeKey::from_digest([1; 32]);
     let optional = NodeKey::from_digest([2; 32]);
     let explicit = NodeKey::from_digest([3; 32]);
-    let mut scope = empty_scope();
-    scope.types = TypeEnvironment::new(
-        [
-            CompositeDeclaration::new(
-                pair,
-                "Pair",
-                CompositeShape::Tuple(vec![int(0, 9), int(0, 9)]),
-            ),
-            CompositeDeclaration::new(
-                optional,
+    let scope = scope_with(
+        TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    pair,
+                    "Pair",
+                    CompositeShape::Tuple(vec![int(0, 9), int(0, 9)]),
+                ),
+                CompositeDeclaration::new(
+                    optional,
+                    "Opt",
+                    CompositeShape::Record(vec![
+                        FieldDeclaration::new("a", int(0, 9), Presence::Required),
+                        FieldDeclaration::new("b", int(0, 9), Presence::Optional),
+                    ]),
+                ),
+            ],
+            [],
+        )
+        .unwrap(),
+        Vec::new(),
+    );
+    let explicit_scope = scope_with(
+        TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                explicit,
                 "Opt",
                 CompositeShape::Record(vec![
                     FieldDeclaration::new("a", int(0, 9), Presence::Required),
-                    FieldDeclaration::new("b", int(0, 9), Presence::Optional),
+                    FieldDeclaration::new("b", ValueType::option(int(0, 9)), Presence::Required),
                 ]),
-            ),
-        ],
-        [],
-    )
-    .unwrap();
-    let mut explicit_scope = empty_scope();
-    explicit_scope.types = TypeEnvironment::new(
-        [CompositeDeclaration::new(
-            explicit,
-            "Opt",
-            CompositeShape::Record(vec![
-                FieldDeclaration::new("a", int(0, 9), Presence::Required),
-                FieldDeclaration::new("b", ValueType::option(int(0, 9)), Presence::Required),
-            ]),
-        )],
-        [],
-    )
-    .unwrap();
+            )],
+            [],
+        )
+        .unwrap(),
+        Vec::new(),
+    );
 
     let (graph, keys) = type_nodes(
         &scope,
@@ -270,19 +274,21 @@ fn rational_decimal_and_declared_composite_nodes_match_their_vectors() {
 #[test]
 fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     let point = NodeKey::from_digest([4; 32]);
-    let mut scope = empty_scope();
-    scope.types = TypeEnvironment::new(
-        [CompositeDeclaration::new(
-            point,
-            "Point",
-            CompositeShape::Record(vec![
-                FieldDeclaration::new("x", int(0, 9), Presence::Required),
-                FieldDeclaration::new("y", int(0, 9), Presence::Required),
-            ]),
-        )],
-        [],
-    )
-    .unwrap();
+    let scope = scope_with(
+        TypeEnvironment::new(
+            [CompositeDeclaration::new(
+                point,
+                "Point",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("x", int(0, 9), Presence::Required),
+                    FieldDeclaration::new("y", int(0, 9), Presence::Required),
+                ]),
+            )],
+            [],
+        )
+        .unwrap(),
+        Vec::new(),
+    );
     let w = SourceOwner::new("a", "w").unwrap();
     let types = [ValueType::Composite(point), int(0, 9)];
     let (under_u, u_keys) = type_nodes(&scope, &fixture_owner(), &types);

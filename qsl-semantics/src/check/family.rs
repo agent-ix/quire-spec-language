@@ -48,7 +48,7 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
+use quire_exact::{CollectionKind, NodeKey, Origin, Role};
 
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -63,7 +63,7 @@ use qsl_foundation::absence::AbsenceMode;
 // are sibling submodules of `crate::check`, reached the same way this
 // module's own pre-existing `use crate::check::ValueFunctionFamily` already
 // crosses that boundary.
-use super::check::{bind_parameters, Signature, Typer};
+use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
@@ -697,12 +697,7 @@ pub(crate) fn check_application(
     arguments: &[Expression],
     location: &CheckLocation,
 ) -> Result<Node, CheckRefusal> {
-    let signatures = typer.signatures();
-    if let Some(function) = signatures
-        .iter()
-        .position(|signature| signature.name == name && signature.callable_by_name)
-    {
-        let signature = &signatures[function];
+    if let Some((function, signature)) = typer.signatures().callable(name) {
         if signature.parameters.len() != arguments.len() {
             return Err(CheckRefusal::ill_typed(
                 location,
@@ -739,7 +734,7 @@ pub(crate) fn check_application(
         Some(ValueType::Composite(key)) => {
             let Some(CompositeShape::Tuple(positions)) = typer
                 .scope()
-                .types
+                .types()
                 .composite(key)
                 .map(|declaration| declaration.shape())
             else {
@@ -771,17 +766,10 @@ pub(crate) fn check_application(
             location,
             IllTypedCause::OperatorIneligible,
         )),
-        None if typer
-            .scope()
-            .model_operations
-            .iter()
-            .any(|operation| operation == name) =>
-        {
-            Err(CheckRefusal::ill_typed(
-                location,
-                IllTypedCause::OperatorIneligible,
-            ))
-        }
+        None if typer.scope().declares_model_operation(name) => Err(CheckRefusal::ill_typed(
+            location,
+            IllTypedCause::OperatorIneligible,
+        )),
         None => Err(CheckRefusal {
             location: location.clone(),
             cause: CheckCause::MissingName(name.to_owned()),
@@ -968,9 +956,9 @@ pub(crate) fn check_declaration_body(
     })
 }
 
-/// One source occurrence of a migrated form, keyed by (identity, role,
-/// ordinal) (ADR-013 O-07) and mapped to its source span (ADR-013 O-12).
-/// QSL is the only minter (FR-062 "Provenance").
+/// Every source occurrence of a migrated form recorded so far, keyed by
+/// (identity, role, ordinal) (ADR-013 O-07) and mapped to its source span
+/// (ADR-013 O-12). QSL is the only minter (FR-062 "Provenance").
 ///
 /// `S` is the span type. Complete-V1's own function forms have no lexed
 /// byte offsets to report (there is no text parser for this API-constructed
@@ -979,75 +967,62 @@ pub(crate) fn check_declaration_body(
 /// generically with a `(u32, u32)` byte-offset stand-in is still exercising
 /// the real mechanism: ordinal assignment and lookup by (identity, role,
 /// ordinal) do not depend on what a span actually is.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Occurrence<S> {
-    pub(crate) location: Location,
-    pub(crate) span: S,
-}
-
-/// A checked node's identity together with every source occurrence recorded
-/// for it so far (its own declaration occurrence, plus one "reference"
-/// occurrence per call site that resolves to it).
+///
+/// Keyed by (identity, role) (QSL-205): the key's value holds that role's
+/// spans in ordinal order, so the next ordinal is its length and an
+/// ordinal's span is an index. Neither `record` nor `resolve` scans another
+/// entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OccurrenceMap<S> {
-    entries: Vec<Occurrence<S>>,
-    /// Each node's entries, by position in `entries`, in insertion order.
-    by_node: BTreeMap<NodeKey, Vec<usize>>,
+    spans: BTreeMap<(NodeKey, Role), Vec<S>>,
 }
 
 // A hand-written `Default`, not `#[derive(Default)]`: the derive macro adds
-// an `S: Default` bound even though `Vec::default()` needs none -- a known
-// derive-macro imprecision, not a real requirement on the span type.
+// an `S: Default` bound even though `BTreeMap::default()` needs none -- a
+// known derive-macro imprecision, not a real requirement on the span type.
 impl<S> Default for OccurrenceMap<S> {
     fn default() -> Self {
         Self {
-            entries: Vec::new(),
-            by_node: BTreeMap::new(),
+            spans: BTreeMap::new(),
         }
     }
 }
 
-impl<S: Clone + PartialEq> OccurrenceMap<S> {
+impl<S> OccurrenceMap<S> {
     /// Record one occurrence of `identity` under `role`, at `span`. Ordinals
     /// are assigned by (identity, role) insertion order (ADR-013 O-07: "an
     /// ordinal disambiguating repeated occurrences of that role on the same
     /// node") -- reordering *other* nodes' occurrences never changes this
     /// one's ordinal, only its own role's own repeat count does.
     pub(crate) fn record(&mut self, identity: NodeKey, role: &str, span: S) -> Origin {
-        // PR #262 review, finding F5: `role().as_str() == role` compared the
-        // newtype's lexical spelling as a bare string; `Role` derives
-        // `PartialEq` itself, so build it once and compare the newtype
-        // directly -- an occurrence-role key, not a `string_edge` (ADR-012
-        // §9's target is a string selecting semantics; this compares one
-        // already-typed value to another).
         let role = Role::new(role);
-        let positions = self.by_node.entry(identity).or_default();
-        let ordinal = positions
-            .iter()
-            .filter(|position| self.entries[**position].location.occurrence().role() == &role)
-            .fold(0_u64, |count, _| count.saturating_add(1));
-        positions.push(self.entries.len());
-        let origin = Origin::new(role, ordinal);
-        self.entries.push(Occurrence {
-            location: Location::new(identity, origin.clone()),
-            span,
-        });
-        origin
+        // Most (identity, role) pairs occur once; a capacity of one keeps a
+        // single occurrence from reserving a vector's default four slots.
+        let spans = self
+            .spans
+            .entry((identity, role.clone()))
+            .or_insert_with(|| Vec::with_capacity(1));
+        let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
+        spans.push(span);
+        Origin::new(role, ordinal)
     }
 
     /// Whether any occurrence of `identity` is recorded.
     pub(crate) fn has(&self, identity: NodeKey) -> bool {
-        self.by_node.contains_key(&identity)
+        // The empty role sorts first, so the first key at or after it is
+        // `identity`'s first recorded role, if it has one.
+        self.spans
+            .range((identity, Role::new(""))..)
+            .next()
+            .is_some_and(|((node, _), _)| *node == identity)
     }
 
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
-        self.by_node
-            .get(&identity)?
-            .iter()
-            .map(|position| &self.entries[*position])
-            .find(|occurrence| occurrence.location.occurrence() == origin)
-            .map(|occurrence| &occurrence.span)
+        let ordinal = usize::try_from(origin.ordinal()).ok()?;
+        self.spans
+            .get(&(identity, origin.role().clone()))?
+            .get(ordinal)
     }
 }
 
@@ -1087,7 +1062,7 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 /// declarations.
 pub struct ValueDeclarations<'a> {
     pub(crate) scope: &'a Scope,
-    pub(crate) signatures: &'a [Signature],
+    pub(crate) signatures: &'a Signatures,
     /// The resolved signature of the declaration being checked
     /// (`signatures[index]`). `check_declaration_body` types against it, and
     /// `measure_declaration` measures it.
@@ -1297,12 +1272,16 @@ mod tests {
             .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
     }
 
-    /// `declaration`'s checked identity, in a package of `scope`'s types and
-    /// aliases under the fixture owner.
-    fn mint(scope: &Scope, declaration: &FunctionDeclaration) -> NodeKey {
+    /// `declaration`'s checked identity, in a package of `types` and
+    /// `aliases` under the fixture owner.
+    fn mint(
+        types: &TypeEnvironment,
+        aliases: &[(String, ValueType)],
+        declaration: &FunctionDeclaration,
+    ) -> NodeKey {
         let mut package = crate::check::PackageDeclarations::new(fixture_owner());
-        package.types = scope.types.clone();
-        package.aliases = scope.aliases.clone();
+        package.types = types.clone();
+        package.aliases = aliases.to_vec();
         package.functions = vec![declaration.clone()];
         package
             .check(CheckingLimits::default())
@@ -1328,21 +1307,19 @@ mod tests {
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn spellings_of_one_resolved_type_mint_one_identity() {
-        let mut scope = empty_scope();
-        scope.aliases.push((
+        let types = TypeEnvironment::default();
+        let aliases = [(
             "Label".to_owned(),
             ValueType::Text(TextType::new(1, 100, TextProfile::UnicodeScalars).unwrap()),
-        ));
-        let defaulted = mint(&scope, &unary(text(&["1", "100"])));
+        )];
+        let mint = |declaration: &FunctionDeclaration| mint(&types, &aliases, declaration);
+        let defaulted = mint(&unary(text(&["1", "100"])));
         assert_eq!(
             defaulted,
-            mint(&scope, &unary(text(&["1", "100", "unicode-scalars"])))
+            mint(&unary(text(&["1", "100", "unicode-scalars"])))
         );
-        assert_eq!(
-            defaulted,
-            mint(&scope, &unary(TypeForm::name("Label", SPAN)))
-        );
-        assert_ne!(defaulted, mint(&scope, &unary(text(&["1", "100", "nfc"]))));
+        assert_eq!(defaulted, mint(&unary(TypeForm::name("Label", SPAN))));
+        assert_ne!(defaulted, mint(&unary(text(&["1", "100", "nfc"]))));
     }
 
     /// A function declared over a record carries that record's node key: a
@@ -1351,9 +1328,8 @@ mod tests {
     #[trace("TC-160", "FR-062-AC-2")]
     #[test]
     fn a_changed_record_changes_the_identity_of_functions_over_it() {
-        let scope_with = |fill: u8, field_type: ValueType| {
-            let mut scope = empty_scope();
-            scope.types = TypeEnvironment::new(
+        let types_with = |fill: u8, field_type: ValueType| {
+            TypeEnvironment::new(
                 [CompositeDeclaration::new(
                     NodeKey::from_digest([fill; 32]),
                     "Point",
@@ -1365,13 +1341,12 @@ mod tests {
                 )],
                 [],
             )
-            .unwrap();
-            scope
+            .unwrap()
         };
         let over_point = unary(TypeForm::name("Point", SPAN));
         assert_ne!(
-            mint(&scope_with(1, ValueType::Integer), &over_point),
-            mint(&scope_with(2, ValueType::Boolean), &over_point)
+            mint(&types_with(1, ValueType::Integer), &[], &over_point),
+            mint(&types_with(2, ValueType::Boolean), &[], &over_point)
         );
     }
 
@@ -1486,14 +1461,18 @@ pub mod fixtures {
     /// See [`root_location`]'s own doc (PR #303 review, finding N7b): the
     /// one real definition, re-exported rather than duplicated.
     pub fn empty_scope() -> Scope {
-        Scope {
-            types: crate::value::declaration::TypeEnvironment::default(),
-            enums: Vec::new(),
-            aliases: Vec::new(),
-            model_operations: Vec::new(),
-            ieee_profile: None,
-            dispatch_operations: Vec::new(),
-        }
+        scope_with(
+            crate::value::declaration::TypeEnvironment::default(),
+            Vec::new(),
+        )
+    }
+    /// A scope declaring only `types` and `aliases`, its by-name lookups
+    /// built over them (QSL-205: a `Scope` is built once, never mutated).
+    pub fn scope_with(
+        types: crate::value::declaration::TypeEnvironment,
+        aliases: Vec<(String, quire_exact::ValueType)>,
+    ) -> Scope {
+        Scope::new(types, Vec::new(), aliases, Vec::new(), None, Vec::new())
     }
     /// A [`ValueDeclarations`] for tests exercising `check_declaration_body`
     /// or `ValueFunctionFamily::check` directly (PR #303 review round 3,
@@ -1506,7 +1485,7 @@ pub mod fixtures {
     /// running package total.
     pub fn declarations_for<'a>(
         scope: &'a Scope,
-        signatures: &'a [Signature],
+        signatures: &'a Signatures,
         own_signature: &'a Signature,
         dispatch_tables: &'a [DispatchTable],
         checking_limits: CheckingLimits,
@@ -1582,7 +1561,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_application_accepts_a_well_typed_call() {
         let scope = empty_scope();
-        let signatures = vec![boolean_signature("f", 1)];
+        let signatures = Signatures::from(vec![boolean_signature("f", 1)]);
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
             &scope,
@@ -1609,7 +1588,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_application_refuses_wrong_arity() {
         let scope = empty_scope();
-        let signatures = vec![boolean_signature("f", 1)];
+        let signatures = Signatures::from(vec![boolean_signature("f", 1)]);
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
             &scope,
@@ -1635,7 +1614,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_application_refuses_an_unknown_name() {
         let scope = empty_scope();
-        let signatures: Vec<Signature> = Vec::new();
+        let signatures = Signatures::default();
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
             &scope,
@@ -1663,7 +1642,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_application_refuses_a_type_mismatched_argument() {
         let scope = empty_scope();
-        let signatures = vec![boolean_signature("f", 1)];
+        let signatures = Signatures::from(vec![boolean_signature("f", 1)]);
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
             &scope,
@@ -1702,7 +1681,7 @@ pub(crate) mod checking_tests {
                 arguments: vec![Expression::Boolean(true)],
             },
         );
-        let signatures = vec![
+        let signatures = Signatures::from(vec![
             Signature {
                 name: "f".to_owned(),
                 parameters: vec![("x".to_owned(), ValueType::Boolean)],
@@ -1715,13 +1694,13 @@ pub(crate) mod checking_tests {
                 result: ValueType::Boolean,
                 callable_by_name: true,
             },
-        ];
+        ]);
         let dispatch_tables: Vec<DispatchTable> = Vec::new();
         let location = root_location();
         let input = declarations_for(
             &scope,
             &signatures,
-            &signatures[1],
+            &signatures.as_slice()[1],
             &dispatch_tables,
             CheckingLimits::default(),
             &location,
@@ -1742,7 +1721,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_declaration_body_refuses_an_ill_typed_body() {
         let scope = empty_scope();
-        let signatures: Vec<Signature> = Vec::new();
+        let signatures = Signatures::default();
         let own_signature = Signature {
             name: "g".to_owned(),
             parameters: Vec::new(),
@@ -1787,7 +1766,7 @@ pub(crate) mod checking_tests {
     #[test]
     fn check_declaration_body_refuses_an_undefined_body() {
         let scope = empty_scope();
-        let signatures: Vec<Signature> = Vec::new();
+        let signatures = Signatures::default();
         let own_signature = Signature {
             name: "v".to_owned(),
             parameters: vec![("o".to_owned(), ValueType::option(ValueType::Integer))],
@@ -1848,9 +1827,10 @@ pub(crate) mod checking_tests {
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("g");
+        let signatures = Signatures::default();
         let declarations = declarations_for(
             &scope,
-            &[],
+            &signatures,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -1922,9 +1902,10 @@ pub(crate) mod checking_tests {
 
         let scope_a = empty_scope();
         let location_a = root_location();
+        let signatures_a = Signatures::default();
         let declarations_a = declarations_for(
             &scope_a,
-            &[],
+            &signatures_a,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -1944,9 +1925,10 @@ pub(crate) mod checking_tests {
 
         let scope_b = empty_scope();
         let location_b = root_location();
+        let signatures_b = Signatures::default();
         let declarations_b = declarations_for(
             &scope_b,
-            &[],
+            &signatures_b,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -1982,9 +1964,10 @@ pub(crate) mod checking_tests {
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
         let declarations = declarations_for(
             &scope,
-            &[],
+            &signatures,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -2042,9 +2025,10 @@ pub(crate) mod checking_tests {
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
         let declarations = declarations_for(
             &scope,
-            &[],
+            &signatures,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -2130,9 +2114,10 @@ pub(crate) mod checking_tests {
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
         let declarations = declarations_for(
             &scope,
-            &[],
+            &signatures,
             &own_signature,
             &[],
             CheckingLimits::default(),
@@ -2222,7 +2207,9 @@ pub(crate) mod checking_tests {
         let own_signature = declaration_signature("f");
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&scope, &[], &own_signature, &[], tight, &location);
+        let signatures = Signatures::default();
+        let declarations =
+            declarations_for(&scope, &signatures, &own_signature, &[], tight, &location);
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -2250,7 +2237,9 @@ pub(crate) mod checking_tests {
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(&scope, &[], &own_signature, &[], wide, &location);
+        let signatures = Signatures::default();
+        let declarations =
+            declarations_for(&scope, &signatures, &own_signature, &[], wide, &location);
         let mut cx = CheckContext::new(
             &declarations,
             limits(),
@@ -2303,5 +2292,116 @@ pub(crate) mod checking_tests {
         assert_eq!(map.resolve(a, &first), Some(&(0, 3)));
         assert_eq!(map.resolve(a, &second), Some(&(4, 7)));
         assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
+    }
+
+    /// FR-062-AC-2 (QSL-205): the keyed map gives every occurrence the
+    /// ordinal the pre-QSL-205 scan gave it -- the number of earlier
+    /// records with the same (identity, role) -- over an interleaved
+    /// sequence of identities and roles, and resolves each one back to its
+    /// own span.
+    #[trace("TC-160", "FR-062-AC-2")]
+    #[test]
+    fn keyed_ordinals_match_counting_earlier_records() {
+        let keys: Vec<NodeKey> = (1..=5)
+            .map(|byte| NodeKey::from_digest([byte; 32]))
+            .collect();
+        let roles = ["declaration", "reference", "generated"];
+        let mut map = OccurrenceMap::default();
+        let mut recorded: Vec<(NodeKey, &str, Origin)> = Vec::new();
+        // A fixed linear congruential sequence: deterministic, and it
+        // interleaves every (identity, role) pair many times.
+        let mut state = 7_u64;
+        for span in 0..2_000_u64 {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            let key = keys[usize::try_from(state >> 33).unwrap() % keys.len()];
+            let role = roles[usize::try_from(state >> 17).unwrap() % roles.len()];
+            let expected = recorded
+                .iter()
+                .filter(|(other, other_role, _)| *other == key && *other_role == role)
+                .count();
+            let origin = map.record(key, role, span);
+            assert_eq!(origin.ordinal(), u64::try_from(expected).unwrap());
+            assert_eq!(origin.role().as_str(), role);
+            recorded.push((key, role, origin));
+        }
+        for (span, (key, _, origin)) in (0_u64..).zip(&recorded) {
+            assert_eq!(map.resolve(*key, origin), Some(&span));
+            assert!(map.has(*key));
+        }
+        let unrecorded = NodeKey::from_digest([9; 32]);
+        assert!(!map.has(unrecorded));
+        assert_eq!(
+            map.resolve(unrecorded, &Origin::new(Role::new("reference"), 0)),
+            None
+        );
+        let past_the_end = Origin::new(Role::new("reference"), u64::MAX);
+        assert_eq!(map.resolve(keys[0], &past_the_end), None);
+    }
+
+    /// QSL-205: a name's first signature and its first callable one are
+    /// kept apart: a named call resolves to the callable one, while
+    /// `position` names the first declared.
+    #[test]
+    fn signatures_keep_first_and_first_callable_positions() {
+        let signature = |callable_by_name| Signature {
+            name: "f".to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Boolean,
+            callable_by_name,
+        };
+        let signatures = Signatures::new(vec![signature(false), signature(true), signature(true)]);
+        assert_eq!(signatures.callable("f").map(|(index, _)| index), Some(1));
+        assert_eq!(signatures.position("f"), Some(0));
+        assert!(signatures.declares("f"));
+        assert_eq!(signatures.callable("g").map(|(index, _)| index), None);
+        assert_eq!(signatures.position("g"), None);
+        let hidden = Signatures::new(vec![signature(false)]);
+        assert!(hidden.callable("f").is_none());
+        assert!(hidden.declares("f"));
+    }
+
+    /// QSL-205: grouping names in one pass refuses exactly the declarations
+    /// whose name repeats, in declaration order, each with every locus of
+    /// its name in declaration order -- the refusals the pairwise scan made.
+    #[trace("TC-191", "FR-146-AC-8")]
+    #[test]
+    fn duplicate_names_are_refused_with_every_locus_in_order() {
+        use crate::check::refusal::{Location as BodyLocation, Origin as BodyOrigin};
+        let names = ["a", "b", "a", "c", "b", "a"];
+        let refusals = crate::check::PackageDeclarations {
+            functions: names
+                .iter()
+                .map(|name| super::fixtures::declaration(name, Expression::Boolean(true)))
+                .collect(),
+            ..crate::check::PackageDeclarations::new(super::fixtures::fixture_owner())
+        }
+        .check(CheckingLimits::default())
+        .expect_err("repeated names are refused");
+        let at = |index: usize| BodyLocation {
+            origin: BodyOrigin::Body {
+                function: names[index].to_owned(),
+                index,
+            },
+            path: Vec::new(),
+        };
+        let expected: Vec<CheckRefusal> = [0, 1, 2, 4, 5]
+            .into_iter()
+            .map(|index| {
+                let loci = (0..names.len())
+                    .filter(|other| names[*other] == names[index])
+                    .map(at)
+                    .collect();
+                CheckRefusal {
+                    location: at(index),
+                    cause: CheckCause::AmbiguousName {
+                        name: names[index].to_owned(),
+                        loci,
+                    },
+                }
+            })
+            .collect();
+        assert_eq!(refusals, expected);
     }
 }

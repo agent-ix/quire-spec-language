@@ -76,6 +76,7 @@ use super::quantity::{
 use super::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
+use quire_exact::EnumShape;
 use quire_exact::NodeKey;
 use quire_exact::{compare_text, evaluate_decimal};
 use std::fmt;
@@ -1149,19 +1150,22 @@ impl TypeEnvironment {
             operator,
             left,
             right,
-            enum_members,
+            &|shape: &EnumShape| enum_members.filtered(shape.variants()),
         )
     }
 
     /// [`Self::check_equality`] against one checking stage's units, which
-    /// add the compound units its expressions formed.
+    /// add the compound units its expressions formed. `enum_members` gives
+    /// the member index of one compared enum shape: exactly its own
+    /// members (SR-511 M2). `check`'s `Scope` answers it from a table built
+    /// once per shape (QSL-205), so an equality does not copy its enum.
     pub(crate) fn check_equality_in(
         &self,
         units: &UnitScope<'_>,
         operator: EqualityOperator,
         left: EqualityOperand,
         right: EqualityOperand,
-        enum_members: &EnumMemberIndex,
+        enum_members: &dyn Fn(&EnumShape) -> EnumMemberIndex,
     ) -> Result<CheckedEquality, IllTyped> {
         let ill_typed = |cause| Err(IllTyped { cause });
         for operand in [&left, &right] {
@@ -1229,9 +1233,7 @@ impl TypeEnvironment {
         // the whole package's `enum_members` index. Computed before `left`
         // moves into the struct literal below, since `left_type` borrows it.
         let enum_members = match (schedule, left_type) {
-            (EqualitySchedule::Enum, ValueType::Enum(shape)) => {
-                enum_members.filtered(shape.variants())
-            }
+            (EqualitySchedule::Enum, ValueType::Enum(shape)) => enum_members(shape),
             _ => EnumMemberIndex::default(),
         };
         Ok(CheckedEquality {

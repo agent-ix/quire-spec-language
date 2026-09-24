@@ -8,11 +8,16 @@ use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations, SourceOwner,
+    CheckRefusal, CheckedGraph, CheckingLimits, EnumBinding, PackageDeclarations, SourceOwner,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::enumeration::{
+    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+};
+use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
 
 /// A kernel limit set no evaluation in this crate runs out of.
 pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -102,6 +107,94 @@ pub fn independent(functions: usize) -> PackageDeclarations {
     }
 }
 
+/// The name of the `index`-th case of [`enum_members`]'s enum.
+pub fn case_name(index: usize) -> String {
+    format!("c{index}")
+}
+
+/// One admitted ordered enum `E` with `members` cases `c0`, `c1`, ...
+///
+/// # Panics
+///
+/// Panics when the generated declaration or a member does not admit: a
+/// harness defect, since both are built from their own preimages' keys.
+pub fn enum_binding(members: usize) -> EnumBinding {
+    let owners = OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+        authority: "agent-ix".into(),
+        identity: "qsl-bench".into(),
+    })]);
+    let cases: Vec<String> = (0..members).map(case_name).collect();
+    let preimage = EnumDeclarationPreimage::from_json(serde_json::json!({
+        "version": "quire.enum-declaration-node/v1",
+        "owner": {"kind": "definition", "authority": "agent-ix", "identity": "qsl-bench"},
+        "qualified_declaration": ["Bench", "E"],
+        "ordered": true,
+        "members": cases,
+    }))
+    .expect("a well-formed enum declaration preimage");
+    let key = NodeKey::from_digest(preimage.digest().expect("the preimage encodes"));
+    let declaration =
+        EnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
+    let members = cases
+        .iter()
+        .map(|case| {
+            let member = EnumMemberPreimage::from_json(serde_json::json!({
+                "version": "quire.enum-member-node/v1",
+                "declaration_node_id": {
+                    "domain": NODE_KEY_DOMAIN,
+                    "digest": declaration.key().to_string(),
+                },
+                "case": case,
+            }))
+            .expect("a well-formed enum member preimage");
+            let key = NodeKey::from_digest(member.digest().expect("the preimage encodes"));
+            declaration
+                .admit_member(&member, key)
+                .expect("the member admits")
+        })
+        .collect();
+    EnumBinding {
+        name: "E".to_owned(),
+        declaration,
+        members,
+    }
+}
+
+/// N independent functions in a package declaring `binding`, each comparing
+/// two of its members: `fI(x) = E::c{I mod M} == E::c0`. Every function
+/// resolves an enum member by name and checks an enum equality, so a
+/// per-function cost that grows with the enum's member count shows here.
+pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarations {
+    let members = binding.members.len().max(1);
+    let boolean = TypeForm::builtin(
+        BuiltinType::Boolean,
+        qsl_foundation::Span { start: 0, end: 0 },
+    );
+    let declarations = (0..functions)
+        .map(|index| {
+            FunctionDeclaration::new(
+                chain_name(index),
+                vec![("x".to_owned(), integer())],
+                boolean.clone(),
+                None,
+                Expression::Binary {
+                    operator: BinaryOperator::Equal,
+                    left: Box::new(Expression::Name(format!(
+                        "E::{}",
+                        case_name(index % members)
+                    ))),
+                    right: Box::new(Expression::Name(format!("E::{}", case_name(0)))),
+                },
+            )
+        })
+        .collect();
+    PackageDeclarations {
+        functions: declarations,
+        enums: vec![binding.clone()],
+        ..PackageDeclarations::new(owner())
+    }
+}
+
 /// Check `declarations` at the default (unlimited-node, maximum-depth)
 /// checking limits.
 pub fn check(declarations: PackageDeclarations) -> Result<CheckedGraph, Vec<CheckRefusal>> {
@@ -155,6 +248,7 @@ mod tests {
     fn smallest_packages_check_and_evaluate() {
         assert!(check(call_chain(1)).is_ok());
         assert!(check(independent(1)).is_ok());
+        assert!(check(enum_members(2, &enum_binding(2))).is_ok());
         let package = linked_chain(2);
         assert!(completed_with_five(&call_head(
             &package,

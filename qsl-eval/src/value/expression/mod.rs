@@ -28,7 +28,7 @@ mod evaluate;
 mod family;
 mod s6a;
 
-use evaluate::{Callable, Machine};
+use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
@@ -209,32 +209,6 @@ fn validate(
     Ok(())
 }
 
-/// Every admitted function's own name, checked body and slot count, as
-/// [`evaluate::Callable`] -- built from `check`'s
-/// [`qsl_semantics::check::CheckedGraph::function_states`] accessor, reached
-/// through `package`'s own [`CheckedPackage::graph`] accessor (ADR-013 T-1,
-/// FR-087-AC-9/TC-256: `package` itself imports nothing from `check`
-/// beyond `CheckedGraph`; this module's own, separate,
-/// layer-5-depends-on-layer-3 edge is what reaches `check`-owned state
-/// here), since `Callable` is a layer-5 type `check` itself must never
-/// construct (that would be a `check` -> `value::expression` edge,
-/// forbidden by FR-068-AC-3).
-///
-/// A private free function, not a [`CheckedPackageEvaluation`] method: it is
-/// [`CheckedPackageEvaluation::evaluate`]'s own internal plumbing, never a
-/// caller-facing entry point.
-fn callables(package: &CheckedPackage) -> Vec<Callable<'_>> {
-    package
-        .graph()
-        .function_states()
-        .map(|state| Callable {
-            body: state.body,
-            slots: state.slots,
-            name: state.name,
-        })
-        .collect()
-}
-
 /// The ADR-011 S6a seam for a checked declaration (FR-090, ADR-012 §5.1 S1):
 /// one hand-written arm per [`S6aFamilyKind`] variant, each calling that
 /// family's `evaluate` hook, and no `_` arm. `S6aFamilyKind` has no
@@ -397,10 +371,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
         validate(expression.parameters(), &arguments, objects)?;
-        let callables = callables(self);
         Machine::new(
             self.graph().scope(),
-            &callables,
+            self.graph(),
             objects,
             meter,
             self.graph().dispatch_tables(),

@@ -1,0 +1,350 @@
+{
+  "collectionId": "qsl205-ab-a-checker-v2",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "11.08 13.36 13.18",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "10.89 12.28 12.79",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "10.66 11.98 12.64",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "13.10 12.99 12.97",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "11.64 12.51 12.80",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "12.05 12.33 12.69",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "11.57 12.37 12.68",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "8.23 10.86 12.10",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "5.60 9.53 11.55",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "7.81 9.18 11.19",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "role": "baseline (A, origin/main)",
+    "session": "qsl205-ab: A = ddc0083e, B = 61dd8188, rounds A1 B1 A2 B2 ... A5 B5",
+    "sharedLoad": "QSL-205 interleaved A/B session, A and B alternating per round; other agents' QSL builds and benches ran on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
+      "dimensions": {
+        "benchmark": "checker/chain/1000"
+      },
+      "metric": "qsl.bench.checker.wall_time",
+      "planId": "MP-002",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.1069
+    },
+    {
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
+      "dimensions": {
+        "benchmark": "checker/chain/2000"
+      },
+      "metric": "qsl.bench.checker.wall_time",
+      "planId": "MP-002",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.312
+    },
+    {
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
+      "dimensions": {
+        "benchmark": "checker/chain/250"
+      },
+      "metric": "qsl.bench.checker.wall_time",
+      "planId": "MP-002",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.02043
+    },
+    {
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
+      "dimensions": {
+        "benchmark": "checker/independent/1000"
+      },
+      "metric": "qsl.bench.checker.wall_time",
+      "planId": "MP-002",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.1258
+    },
+    {
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
+      "dimensions": {
+        "benchmark": "checker/independent/5000"
+      },
+      "metric": "qsl.bench.checker.wall_time",
+      "planId": "MP-002",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 3.685
+    }
+  ],
+  "rawEvidence": {
+    "criterionNote": "criterion point estimate (the middle value of the time line criterion reports) of one PackageDeclarations::check over the whole package, per round",
+    "criterionRounds": {
+      "checker/chain/1000": [
+        {
+          "ci_high_s": 0.099881,
+          "ci_low_s": 0.093351,
+          "estimate_s": 0.09561,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.12052,
+          "ci_low_s": 0.10282,
+          "estimate_s": 0.10856,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.11461,
+          "ci_low_s": 0.10981,
+          "estimate_s": 0.1123,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.094752,
+          "ci_low_s": 0.092192,
+          "estimate_s": 0.093432,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.12575,
+          "ci_low_s": 0.093277,
+          "estimate_s": 0.10694,
+          "round": 5
+        }
+      ],
+      "checker/chain/2000": [
+        {
+          "ci_high_s": 0.31579,
+          "ci_low_s": 0.30782,
+          "estimate_s": 0.31198000000000004,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.5822,
+          "ci_low_s": 0.44408,
+          "estimate_s": 0.5133500000000001,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.44777999999999996,
+          "ci_low_s": 0.37424,
+          "estimate_s": 0.41075,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.3054,
+          "ci_low_s": 0.28964999999999996,
+          "estimate_s": 0.29713,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.30687000000000003,
+          "ci_low_s": 0.29276,
+          "estimate_s": 0.29937,
+          "round": 5
+        }
+      ],
+      "checker/chain/250": [
+        {
+          "ci_high_s": 0.024559,
+          "ci_low_s": 0.017889,
+          "estimate_s": 0.021171,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.021969000000000002,
+          "ci_low_s": 0.019704000000000003,
+          "estimate_s": 0.020432,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.020289,
+          "ci_low_s": 0.019243,
+          "estimate_s": 0.01984,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.017741,
+          "ci_low_s": 0.015191000000000001,
+          "estimate_s": 0.015938,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.026803,
+          "ci_low_s": 0.015162000000000002,
+          "estimate_s": 0.02274,
+          "round": 5
+        }
+      ],
+      "checker/independent/1000": [
+        {
+          "ci_high_s": 0.16038999999999998,
+          "ci_low_s": 0.14145,
+          "estimate_s": 0.15463,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.16422,
+          "ci_low_s": 0.13109,
+          "estimate_s": 0.15024,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.13502,
+          "ci_low_s": 0.11431999999999999,
+          "estimate_s": 0.12585,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.11239,
+          "ci_low_s": 0.1057,
+          "estimate_s": 0.10827,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.12015,
+          "ci_low_s": 0.10412,
+          "estimate_s": 0.11393,
+          "round": 5
+        }
+      ],
+      "checker/independent/5000": [
+        {
+          "ci_high_s": 4.6313,
+          "ci_low_s": 2.8815,
+          "estimate_s": 3.6849,
+          "round": 1
+        },
+        {
+          "ci_high_s": 4.935,
+          "ci_low_s": 4.0793,
+          "estimate_s": 4.4984,
+          "round": 2
+        },
+        {
+          "ci_high_s": 5.7592,
+          "ci_low_s": 4.0513,
+          "estimate_s": 4.9274,
+          "round": 3
+        },
+        {
+          "ci_high_s": 2.9348,
+          "ci_low_s": 2.0227,
+          "estimate_s": 2.3362,
+          "round": 4
+        },
+        {
+          "ci_high_s": 4.2734,
+          "ci_low_s": 3.1921,
+          "estimate_s": 3.6575,
+          "round": 5
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "checker",
+    "benchmarks": 5,
+    "repetitions": 5
+  },
+  "sourceRevision": "ddc0083ecb494c44eb6ececbe127f6707a68874e",
+  "subject": "quire-spec-language qsl-bench checker benchmarks",
+  "timestamp": "2026-09-24T08:37:47.000Z",
+  "toolIdentity": "criterion via cargo bench -p qsl-bench",
+  "toolVersion": "criterion 0.8.2; rustc 1.94.1 (e408947bf 2026-03-25)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+      "qsl-bench/benches/checker.rs": "sha256:3aa271b2d8ac8666ed9bb16dc2c41ae8c7bdec2f1e7c4d40cde5527f14e6654b"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "criterion.wall-time"
+    ],
+    "executableDigest": "sha256:f5fafe1593486051937f3f8680141ba6f06f680d9e7a70a293f5c30edcdf92e3",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "ddc0083ecb494c44eb6ececbe127f6707a68874e",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.94.1 (e408947bf 2026-03-25)"
+    }
+  }
+}

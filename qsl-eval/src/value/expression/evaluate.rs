@@ -16,8 +16,8 @@ use super::causes::{
 };
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::check::{
-    enum_member_index, Arithmetic, Connective, DispatchTable, Location, Node, NodeKind,
-    OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
+    Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind,
+    RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -87,15 +87,6 @@ pub struct LocatedLoss {
     pub location: Location,
     /// What was discarded.
     pub loss: ValueLoss,
-}
-
-/// The body a call runs.
-pub(crate) struct Callable<'a> {
-    pub(crate) body: &'a Node,
-    pub(crate) slots: usize,
-    /// The declared name, needed for the FR-151 `precondition-false` payload
-    /// (`native-diagnostics.md`: "the selected method's effective identity").
-    pub(crate) name: &'a str,
 }
 
 fn comparison(operator: OrderingOperator) -> ComparisonOperator {
@@ -294,7 +285,11 @@ struct Iteration<'a> {
 
 pub(crate) struct Machine<'a, 'm> {
     scope: &'a Scope,
-    functions: &'a [Callable<'a>],
+    /// The checked package's functions, read by index where a call runs
+    /// one: each one's body, slot count, and declared name (the FR-151
+    /// `precondition-false` payload's selected method, per
+    /// `native-diagnostics.md`).
+    graph: &'a CheckedGraph,
     objects: &'a ObjectEnvironment,
     meter: &'m mut Meter,
     dispatch_tables: &'a [DispatchTable],
@@ -309,25 +304,26 @@ pub(crate) struct Machine<'a, 'm> {
     /// quotient formed during this evaluation.
     units: UnitScope<'a>,
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
-    /// index, built once from `scope.enums` and consulted by the `Enum`
-    /// equality schedule and `OrderedKind::Enums` -- a bare kernel
+    /// index, built once with the `Scope` (QSL-205) and borrowed here,
+    /// consulted by the `Enum` equality schedule and `OrderedKind::Enums`
+    /// -- a bare kernel
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
     /// case name of its own.
-    enum_members: EnumMemberIndex,
+    enum_members: &'a EnumMemberIndex,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
     pub(crate) fn new(
         scope: &'a Scope,
-        functions: &'a [Callable<'a>],
+        graph: &'a CheckedGraph,
         objects: &'a ObjectEnvironment,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
-        let enum_members = enum_member_index(scope);
+        let enum_members = scope.enum_member_index();
         Self {
             scope,
-            functions,
+            graph,
             objects,
             meter,
             dispatch_tables,
@@ -638,7 +634,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                         StateModelUndefined::PreconditionFalse(failure),
                     ))));
                 }
-                let callable = self.functions.get(body_function).ok_or_else(invariant)?;
+                let callable = self
+                    .graph
+                    .function_state(body_function)
+                    .ok_or_else(invariant)?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
                 frame.resize(callable.slots.max(frame.len()), None);
@@ -927,7 +926,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 function,
                 arguments,
             } => {
-                let callable = self.functions.get(*function).ok_or_else(invariant)?;
+                let callable = self.graph.function_state(*function).ok_or_else(invariant)?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
@@ -1174,12 +1173,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 match candidate.precondition {
                     Some(precondition_function) => {
                         let callable = self
-                            .functions
-                            .get(precondition_function)
+                            .graph
+                            .function_state(precondition_function)
                             .ok_or_else(invariant)?;
                         let selected = self
-                            .functions
-                            .get(candidate.body)
+                            .graph
+                            .function_state(candidate.body)
                             .ok_or_else(invariant)?
                             .name
                             .to_owned();
@@ -1201,7 +1200,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                         return Ok(());
                     }
                     None => {
-                        let callable = self.functions.get(candidate.body).ok_or_else(invariant)?;
+                        let callable = self
+                            .graph
+                            .function_state(candidate.body)
+                            .ok_or_else(invariant)?;
                         charge_call(self.meter)?;
                         let mut frame: Vec<Option<Value>> =
                             full_arguments.into_iter().map(Some).collect();

@@ -83,7 +83,7 @@ use crate::text::{Text, TextType};
 /// carries its `VariantId` and its rank"). Two shapes are the same shape
 /// exactly when they admit the same variants in the same canonical order and
 /// agree on [`Self::is_ordered`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EnumShape {
     ordered: bool,
     variants: Vec<VariantId>,

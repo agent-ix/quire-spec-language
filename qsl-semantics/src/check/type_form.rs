@@ -40,36 +40,9 @@ pub(crate) fn resolve_named_type(
     name: &str,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
-    let mut candidates: Vec<ValueType> = scope
-        .aliases
-        .iter()
-        .filter(|(alias, _)| alias == name)
-        .map(|(_, value_type)| value_type.clone())
-        .collect();
-    candidates.extend(
-        scope
-            .types
-            .composites()
-            .filter(|declaration| declaration.name() == name)
-            .map(|declaration| ValueType::Composite(declaration.key())),
-    );
-    candidates.extend(
-        scope
-            .enums
-            .iter()
-            .filter(|binding| binding.name == name)
-            .map(|binding| ValueType::Enum(binding.shape())),
-    );
-    candidates.extend(
-        scope
-            .types
-            .object_types()
-            .filter(|declaration| declaration.name() == name)
-            .map(|declaration| ValueType::Reference(declaration.key())),
-    );
-    match candidates.len() {
-        0 => Err(missing(name, location)),
-        1 => Ok(candidates.remove(0)),
+    match scope.named_types(name) {
+        [] => Err(missing(name, location)),
+        [value_type] => Ok(value_type.clone()),
         _ => Err(CheckRefusal {
             location: location.clone(),
             cause: CheckCause::AmbiguousName {
@@ -211,10 +184,8 @@ fn resolve_builtin(
                 return Err(mismatch(location));
             };
             scope
-                .types
-                .object_types()
-                .find(|declaration| declaration.name() == name)
-                .map(|declaration| ValueType::Reference(declaration.key()))
+                .object_type_named(name)
+                .map(ValueType::Reference)
                 .ok_or_else(|| missing(name, location))
         }
     }
@@ -269,7 +240,7 @@ pub(crate) fn resolve_type_form(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check::family::fixtures::{empty_scope, root_location};
+    use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
     use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
     use quire_exact::{CollectionKind, EffectiveId};
 
@@ -300,9 +271,8 @@ mod tests {
         );
     }
 
-    fn scope_with_object_type(name: &str) -> Scope {
-        let mut scope = empty_scope();
-        scope.types = TypeEnvironment::new(
+    fn object_type(name: &str) -> TypeEnvironment {
+        TypeEnvironment::new(
             [],
             [ObjectTypeDeclaration::new(
                 EffectiveId::from_digest([7; 32]),
@@ -310,8 +280,7 @@ mod tests {
                 Vec::new(),
             )],
         )
-        .expect("one object type admits");
-        scope
+        .expect("one object type admits")
     }
 
     /// Bound literals use the grammar's own spellings (`qsl-cst`
@@ -389,7 +358,7 @@ mod tests {
             TypeForm::builtin(BuiltinType::Reference, SPAN)
                 .with_arguments(vec![TypeForm::name(name, SPAN)])
         };
-        let scope = scope_with_object_type("M::A");
+        let scope = scope_with(object_type("M::A"), Vec::new());
         assert_eq!(
             resolve_in(&scope, &reference("M::A")).expect("M::A is declared"),
             ValueType::Reference(EffectiveId::from_digest([7; 32]))
@@ -402,8 +371,7 @@ mod tests {
     /// name bound by nothing is missing.
     #[test]
     fn names_resolve_uniquely_or_are_refused() {
-        let mut scope = scope_with_object_type("X");
-        scope.aliases.push(("X".to_owned(), ValueType::Boolean));
+        let scope = scope_with(object_type("X"), vec![("X".to_owned(), ValueType::Boolean)]);
         let refusal = resolve_in(&scope, &TypeForm::name("X", SPAN)).unwrap_err();
         assert!(matches!(refusal.cause, CheckCause::AmbiguousName { name, .. } if name == "X"));
         let refusal = resolve(&TypeForm::name("Y", SPAN)).unwrap_err();
@@ -414,10 +382,10 @@ mod tests {
     /// `Population` resolves as that user type, not as a population.
     #[test]
     fn a_user_type_named_population_is_not_shadowed() {
-        let mut scope = empty_scope();
-        scope
-            .aliases
-            .push(("Population".to_owned(), ValueType::Boolean));
+        let scope = scope_with(
+            TypeEnvironment::default(),
+            vec![("Population".to_owned(), ValueType::Boolean)],
+        );
         assert_eq!(
             resolve_in(&scope, &TypeForm::name("Population", SPAN)).expect("the alias resolves"),
             ValueType::Boolean
