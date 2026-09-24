@@ -253,6 +253,26 @@ pub struct Recovery {
     pub expected: String,
 }
 
+/// Byte counts of the SHA-256 preimages a [`LosslessCst`] hashed to build
+/// its revision and node identities, counted as the preimages are built.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IdentityPreimageBytes {
+    /// Every preimage byte hashed: the document-revision preimage and every
+    /// node preimage.
+    pub total: u64,
+    /// The node preimages' source-slice bytes, summed over nodes: a source
+    /// byte inside `d` nested nodes is hashed `d` times.
+    pub source_slices: u64,
+    /// The node preimages' ancestor production-name bytes, summed over nodes.
+    pub ancestor_paths: u64,
+}
+
+impl IdentityPreimageBytes {
+    fn widen(bytes: usize) -> u64 {
+        u64::try_from(bytes).unwrap_or(u64::MAX)
+    }
+}
+
 /// Exact CST plus a separate non-mutating recovery stream.
 #[derive(Clone, Debug)]
 pub struct LosslessCst {
@@ -261,6 +281,7 @@ pub struct LosslessCst {
     nodes: Vec<CstNode>,
     root: usize,
     recoveries: Vec<Recovery>,
+    identity_preimage_bytes: IdentityPreimageBytes,
 }
 
 impl LosslessCst {
@@ -284,6 +305,10 @@ impl LosslessCst {
             revision_preimage.extend_from_slice(value);
         }
         let revision_digest = ByteDigest::of(&revision_preimage);
+        let mut hashed = IdentityPreimageBytes {
+            total: IdentityPreimageBytes::widen(revision_preimage.len()),
+            ..IdentityPreimageBytes::default()
+        };
         let mut paths = vec![Vec::new(); nodes.len()];
         let mut ancestors = vec![Vec::new(); nodes.len()];
         let mut stable_occurrences = vec![0_u32; nodes.len()];
@@ -306,13 +331,19 @@ impl LosslessCst {
                 let mut stable = b"quire.complete.cst-node/1\0".to_vec();
                 stable.extend_from_slice(source.identity().identity.as_bytes());
                 stable.extend_from_slice(format!("|{:?}|", node.production).as_bytes());
-                stable.extend_from_slice(source.slice(node.span).unwrap_or_default().as_bytes());
+                let slice = source.slice(node.span).unwrap_or_default().as_bytes();
+                stable.extend_from_slice(slice);
                 stable.extend_from_slice(b"|");
+                let ancestors_start = stable.len();
                 for production in &ancestor_productions {
                     stable.extend_from_slice(format!("{production:?}/").as_bytes());
                 }
+                let ancestors = stable.len() - ancestors_start;
                 stable.extend_from_slice(b"|");
                 stable.extend_from_slice(&occurrence.to_be_bytes());
+                hashed.total += IdentityPreimageBytes::widen(stable.len());
+                hashed.source_slices += IdentityPreimageBytes::widen(slice.len());
+                hashed.ancestor_paths += IdentityPreimageBytes::widen(ancestors);
                 CstNode {
                     production: node.production,
                     span: node.span,
@@ -333,7 +364,17 @@ impl LosslessCst {
             nodes,
             root,
             recoveries,
+            identity_preimage_bytes: hashed,
         }
+    }
+
+    /// Bytes hashed to build this CST's identities, counted by the preimage
+    /// builder itself. Read by QSL-196's CST identity-hashing benchmark.
+    /// Temporary: QSL-200 removes the eager per-node digest, after which
+    /// this counts only the document-revision preimage (or goes away with
+    /// the bench's `cst` rows).
+    pub fn identity_preimage_bytes(&self) -> IdentityPreimageBytes {
+        self.identity_preimage_bytes
     }
 
     /// Immutable source backing every token and node span.

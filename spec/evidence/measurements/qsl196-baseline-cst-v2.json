@@ -1,0 +1,690 @@
+{
+  "collectionId": "qsl196-baseline-cst-v2",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "5.08 8.77 11.97",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "6.03 7.69 11.14",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "7.49 6.70 8.92",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "8.16 6.85 8.66",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "4.92 8.01 8.84",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "4.17 6.66 8.23",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "10.51 8.02 8.00",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "5.13 7.08 7.67",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "8.00 7.78 7.68",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "8.56 7.96 7.76",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "sharedLoad": "concurrent QSL builds on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-0"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0002687
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-0"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00001533
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-1"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0003772
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-1"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00003444
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-2"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0004956
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-2"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00006202
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-3"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0006224
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-3"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00008031
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-4"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0008023
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-4"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00012
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/parse/volume-1000"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.1125
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v2",
+      "dimensions": {
+        "benchmark": "cst/sha256/volume-1000"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.01287
+    }
+  ],
+  "rawEvidence": {
+    "criterionRounds": {
+      "cst/parse/nested-0": [
+        {
+          "ci_high_s": 0.00027181,
+          "ci_low_s": 0.00026398999999999997,
+          "estimate_s": 0.00026773,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00027496,
+          "ci_low_s": 0.00026308999999999995,
+          "estimate_s": 0.00026866,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00026479,
+          "ci_low_s": 0.00025649,
+          "estimate_s": 0.00026031,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00029203,
+          "ci_low_s": 0.00027888999999999995,
+          "estimate_s": 0.00028502,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00029488999999999996,
+          "ci_low_s": 0.00028376,
+          "estimate_s": 0.00028936,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-1": [
+        {
+          "ci_high_s": 0.00037925,
+          "ci_low_s": 0.00036999,
+          "estimate_s": 0.00037425999999999996,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00038522000000000003,
+          "ci_low_s": 0.00037003,
+          "estimate_s": 0.00037718999999999996,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00037795,
+          "ci_low_s": 0.00036489,
+          "estimate_s": 0.00037096,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00038514999999999996,
+          "ci_low_s": 0.00037412,
+          "estimate_s": 0.00037937999999999996,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00042991,
+          "ci_low_s": 0.00039908999999999995,
+          "estimate_s": 0.00041437,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-2": [
+        {
+          "ci_high_s": 0.00057732,
+          "ci_low_s": 0.0005386,
+          "estimate_s": 0.00055882,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00054135,
+          "ci_low_s": 0.00051642,
+          "estimate_s": 0.00052838,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00050562,
+          "ci_low_s": 0.00048682999999999995,
+          "estimate_s": 0.00049559,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00048953,
+          "ci_low_s": 0.00048224,
+          "estimate_s": 0.00048564999999999996,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0004997799999999999,
+          "ci_low_s": 0.00048285,
+          "estimate_s": 0.00049093,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-3": [
+        {
+          "ci_high_s": 0.0006182999999999999,
+          "ci_low_s": 0.00060929,
+          "estimate_s": 0.00061359,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.0006847499999999999,
+          "ci_low_s": 0.00064762,
+          "estimate_s": 0.0006651900000000001,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00060624,
+          "ci_low_s": 0.00059648,
+          "estimate_s": 0.0006004099999999999,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0006306599999999999,
+          "ci_low_s": 0.00061522,
+          "estimate_s": 0.0006224199999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00072923,
+          "ci_low_s": 0.00069408,
+          "estimate_s": 0.00071196,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-4": [
+        {
+          "ci_high_s": 0.0008215499999999999,
+          "ci_low_s": 0.00078573,
+          "estimate_s": 0.00080233,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00084296,
+          "ci_low_s": 0.00079988,
+          "estimate_s": 0.00082121,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0007458300000000001,
+          "ci_low_s": 0.00073378,
+          "estimate_s": 0.00073936,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0007950199999999999,
+          "ci_low_s": 0.0007663099999999999,
+          "estimate_s": 0.0007796699999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00094988,
+          "ci_low_s": 0.0008936399999999999,
+          "estimate_s": 0.00092383,
+          "round": 5
+        }
+      ],
+      "cst/parse/volume-1000": [
+        {
+          "ci_high_s": 0.11634,
+          "ci_low_s": 0.10889,
+          "estimate_s": 0.11247,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.12514,
+          "ci_low_s": 0.11467000000000001,
+          "estimate_s": 0.1198,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.09794499999999999,
+          "ci_low_s": 0.095515,
+          "estimate_s": 0.096676,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.09650199999999999,
+          "ci_low_s": 0.09422900000000001,
+          "estimate_s": 0.095294,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.14849,
+          "ci_low_s": 0.14389,
+          "estimate_s": 0.14619000000000001,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-0": [
+        {
+          "ci_high_s": 0.000015343,
+          "ci_low_s": 0.000014798,
+          "estimate_s": 0.000015047999999999999,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.000015066,
+          "ci_low_s": 0.000014693,
+          "estimate_s": 0.000014864999999999999,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000015609,
+          "ci_low_s": 0.000015083,
+          "estimate_s": 0.000015327,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000019239,
+          "ci_low_s": 0.000018568999999999998,
+          "estimate_s": 0.000018884,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000016536000000000002,
+          "ci_low_s": 0.000015948,
+          "estimate_s": 0.000016234,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-1": [
+        {
+          "ci_high_s": 0.00003482,
+          "ci_low_s": 0.000033801,
+          "estimate_s": 0.000034289,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.000035139000000000004,
+          "ci_low_s": 0.000033616,
+          "estimate_s": 0.000034293999999999994,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000038885,
+          "ci_low_s": 0.000036597,
+          "estimate_s": 0.000037674,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00004228499999999999,
+          "ci_low_s": 0.00003998599999999999,
+          "estimate_s": 0.000041144,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000035037,
+          "ci_low_s": 0.000033932,
+          "estimate_s": 0.000034439999999999996,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-2": [
+        {
+          "ci_high_s": 0.000062487,
+          "ci_low_s": 0.000061572,
+          "estimate_s": 0.000062009,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00007553,
+          "ci_low_s": 0.00007192799999999999,
+          "estimate_s": 0.000073671,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000063347,
+          "ci_low_s": 0.000060929999999999994,
+          "estimate_s": 0.000062021,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000063096,
+          "ci_low_s": 0.000061924,
+          "estimate_s": 0.00006246399999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000062399,
+          "ci_low_s": 0.00006128,
+          "estimate_s": 0.00006179699999999999,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-3": [
+        {
+          "ci_high_s": 0.00008081499999999999,
+          "ci_low_s": 0.00007940999999999999,
+          "estimate_s": 0.000080037,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00008143399999999999,
+          "ci_low_s": 0.00007943,
+          "estimate_s": 0.00008031499999999999,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000081116,
+          "ci_low_s": 0.000079614,
+          "estimate_s": 0.00008031,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00008769799999999999,
+          "ci_low_s": 0.00008389400000000001,
+          "estimate_s": 0.000085602,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00008299699999999999,
+          "ci_low_s": 0.000080771,
+          "estimate_s": 0.000081812,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-4": [
+        {
+          "ci_high_s": 0.00012489,
+          "ci_low_s": 0.00011672,
+          "estimate_s": 0.00012004999999999999,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00012299999999999998,
+          "ci_low_s": 0.00011937999999999999,
+          "estimate_s": 0.00012114,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0001172,
+          "ci_low_s": 0.00011472,
+          "estimate_s": 0.00011577999999999999,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00011923999999999999,
+          "ci_low_s": 0.00011523999999999999,
+          "estimate_s": 0.00011709999999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00012219,
+          "ci_low_s": 0.00011852999999999999,
+          "estimate_s": 0.00012030999999999999,
+          "round": 5
+        }
+      ],
+      "cst/sha256/volume-1000": [
+        {
+          "ci_high_s": 0.013559,
+          "ci_low_s": 0.013085000000000001,
+          "estimate_s": 0.013311,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.013048,
+          "ci_low_s": 0.012702999999999999,
+          "estimate_s": 0.012867000000000002,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.012786,
+          "ci_low_s": 0.012521000000000001,
+          "estimate_s": 0.012641,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.012958,
+          "ci_low_s": 0.012554000000000001,
+          "estimate_s": 0.012739,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.013223,
+          "ci_low_s": 0.012778000000000001,
+          "estimate_s": 0.012986000000000001,
+          "round": 5
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "cst",
+    "benchmarks": 12,
+    "repetitions": 5
+  },
+  "sourceRevision": "46113bb54e8019a016b648111ca9819b176f1f97",
+  "subject": "quire-spec-language qsl-bench cst benchmarks",
+  "timestamp": "2026-09-24T03:40:00.000Z",
+  "toolIdentity": "criterion via cargo bench -p qsl-bench",
+  "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+      "qsl-bench/benches/cst.rs": "sha256:c7d2f2d7d30411d32fbb91430bac7d3564e77e785081c91482a33fe651f72bc4"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "criterion.wall-time"
+    ],
+    "executableDigest": "sha256:8b2e1423bd0a906dc2670611cd621195534fc71d9601f223c0e2715a6d927a3c",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "46113bb54e8019a016b648111ca9819b176f1f97",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
+    }
+  }
+}

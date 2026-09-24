@@ -1,0 +1,59 @@
+[package]
+name = "qsl-bench"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "QSL-196: the committed performance benchmarks (parser, checker, CST identity hashing, model layer, evaluator) and the probe that records their baseline counts."
+
+# A benchmark-only crate: no workspace crate depends on it. It reaches the
+# layer crates through their public API only, so an internal rewrite behind
+# that API needs no bench change; a change to the API itself does (QSL-201
+# changed `intake::admit`'s return type). Every model-intake call goes
+# through `src/model.rs` so such a change is one edit there.
+[dependencies]
+qsl-cst = { path = "../qsl-cst" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-forms = { path = "../qsl-forms" }
+qsl-semantics = { path = "../qsl-semantics" }
+qsl-package = { path = "../qsl-package" }
+qsl-eval = { path = "../qsl-eval" }
+quire-exact = { path = "../quire-exact" }
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
+# FR-064: the probe's two command-line dispatch functions carry
+# `#[string_edge]`, since `xtask string-edge` scans this crate.
+qsl-attrs = { path = "../qsl-attrs" }
+
+[dev-dependencies]
+# Default features off: no rayon, no plotters. `cargo_bench_support` is the
+# one feature `cargo bench` needs.
+criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "parser"
+harness = false
+
+[[bench]]
+name = "checker"
+harness = false
+
+[[bench]]
+name = "cst"
+harness = false
+
+[[bench]]
+name = "model"
+harness = false
+
+[[bench]]
+name = "evaluator"
+harness = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

@@ -24,6 +24,18 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
+    "name": "alloca",
+    "version": "0.4.0",
+    "license": "MIT",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "anes",
+    "version": "0.1.6",
+    "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
     "name": "anstream",
     "version": "1.0.0",
     "license": "MIT OR Apache-2.0",
@@ -126,6 +138,12 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
+    "name": "cast",
+    "version": "0.3.0",
+    "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
     "name": "cc",
     "version": "1.4.5",
     "license": "MIT OR Apache-2.0",
@@ -135,6 +153,24 @@
     "name": "cfg-if",
     "version": "1.0.4",
     "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "ciborium",
+    "version": "0.2.2",
+    "license": "Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "ciborium-io",
+    "version": "0.2.2",
+    "license": "Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "ciborium-ll",
+    "version": "0.2.2",
+    "license": "Apache-2.0",
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
@@ -174,6 +210,18 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
+    "name": "criterion",
+    "version": "0.8.2",
+    "license": "Apache-2.0 OR MIT",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "criterion-plot",
+    "version": "0.8.2",
+    "license": "Apache-2.0 OR MIT",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
     "name": "crossbeam-deque",
     "version": "0.8.8",
     "license": "MIT OR Apache-2.0",
@@ -189,6 +237,12 @@
     "name": "crossbeam-utils",
     "version": "0.8.23",
     "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "crunchy",
+    "version": "0.2.4",
+    "license": "MIT",
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
@@ -336,6 +390,12 @@
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
+    "name": "half",
+    "version": "2.7.1",
+    "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
     "name": "hashbrown",
     "version": "0.17.1",
     "license": "MIT OR Apache-2.0",
@@ -423,6 +483,12 @@
     "name": "iso8601",
     "version": "0.6.5",
     "license": "MIT",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "itertools",
+    "version": "0.13.0",
+    "license": "MIT OR Apache-2.0",
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
@@ -615,6 +681,18 @@
     "name": "once_cell_polyfill",
     "version": "1.70.2",
     "license": "MIT OR Apache-2.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "oorandom",
+    "version": "11.1.5",
+    "license": "MIT",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "page_size",
+    "version": "0.6.0",
+    "license": "MIT/Apache-2.0",
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {
@@ -927,6 +1005,12 @@
     "name": "tinystr",
     "version": "0.8.4",
     "license": "Unicode-3.0",
+    "source": "registry+https://github.com/rust-lang/crates.io-index"
+  },
+  {
+    "name": "tinytemplate",
+    "version": "1.2.1",
+    "license": "Apache-2.0 OR MIT",
     "source": "registry+https://github.com/rust-lang/crates.io-index"
   },
   {

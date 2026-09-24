@@ -1,0 +1,298 @@
+{
+  "collectionId": "qsl196-baseline-evaluator-v2",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "18.29 15.36 12.22",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "18.14 15.80 12.52",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "7.12 11.10 12.40",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "7.66 10.76 12.23",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "9.76 11.00 11.21",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "11.39 11.24 11.28",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "16.89 16.46 14.16",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "25.97 19.19 15.21",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "20.17 20.06 17.94",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "23.70 20.78 18.26",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "sharedLoad": "concurrent QSL builds on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
+      "dimensions": {
+        "benchmark": "evaluator/call_chain/1"
+      },
+      "metric": "qsl.bench.evaluator.wall_time",
+      "planId": "MP-005",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 4.995e-7
+    },
+    {
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
+      "dimensions": {
+        "benchmark": "evaluator/call_chain/10"
+      },
+      "metric": "qsl.bench.evaluator.wall_time",
+      "planId": "MP-005",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.000003576
+    },
+    {
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
+      "dimensions": {
+        "benchmark": "evaluator/call_chain/100"
+      },
+      "metric": "qsl.bench.evaluator.wall_time",
+      "planId": "MP-005",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00003527
+    },
+    {
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
+      "dimensions": {
+        "benchmark": "evaluator/call_chain/1000"
+      },
+      "metric": "qsl.bench.evaluator.wall_time",
+      "planId": "MP-005",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0004388
+    }
+  ],
+  "rawEvidence": {
+    "criterionRounds": {
+      "evaluator/call_chain/1": [
+        {
+          "ci_high_s": 5.743400000000001e-7,
+          "ci_low_s": 5.5713e-7,
+          "estimate_s": 5.653600000000001e-7,
+          "round": 1
+        },
+        {
+          "ci_high_s": 3.2197000000000007e-7,
+          "ci_low_s": 3.1389999999999997e-7,
+          "estimate_s": 3.177e-7,
+          "round": 2
+        },
+        {
+          "ci_high_s": 4.3422000000000003e-7,
+          "ci_low_s": 4.0521e-7,
+          "estimate_s": 4.2046e-7,
+          "round": 3
+        },
+        {
+          "ci_high_s": 9.8811e-7,
+          "ci_low_s": 8.229500000000001e-7,
+          "estimate_s": 8.9976e-7,
+          "round": 4
+        },
+        {
+          "ci_high_s": 5.1184e-7,
+          "ci_low_s": 4.8892e-7,
+          "estimate_s": 4.9953e-7,
+          "round": 5
+        }
+      ],
+      "evaluator/call_chain/10": [
+        {
+          "ci_high_s": 0.0000039837,
+          "ci_low_s": 0.0000037829999999999996,
+          "estimate_s": 0.0000038854999999999995,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.0000025901,
+          "ci_low_s": 0.0000024583,
+          "estimate_s": 0.0000025152,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0000036584999999999998,
+          "ci_low_s": 0.0000034859,
+          "estimate_s": 0.0000035764999999999996,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000006357999999999999,
+          "ci_low_s": 0.000005308099999999999,
+          "estimate_s": 0.0000058162,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0000033285999999999998,
+          "ci_low_s": 0.0000030687999999999997,
+          "estimate_s": 0.000003195,
+          "round": 5
+        }
+      ],
+      "evaluator/call_chain/100": [
+        {
+          "ci_high_s": 0.000034868,
+          "ci_low_s": 0.000033354999999999995,
+          "estimate_s": 0.000034161,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.000037227999999999997,
+          "ci_low_s": 0.000033579,
+          "estimate_s": 0.000035269,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000025358,
+          "ci_low_s": 0.000023145,
+          "estimate_s": 0.000024166,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000044588,
+          "ci_low_s": 0.000040079999999999996,
+          "estimate_s": 0.000042148000000000004,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000047832999999999994,
+          "ci_low_s": 0.000034374,
+          "estimate_s": 0.000040972999999999995,
+          "round": 5
+        }
+      ],
+      "evaluator/call_chain/1000": [
+        {
+          "ci_high_s": 0.00046594999999999997,
+          "ci_low_s": 0.00041443999999999997,
+          "estimate_s": 0.00043877999999999994,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00024943999999999997,
+          "ci_low_s": 0.00024215,
+          "estimate_s": 0.0002456,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0005073,
+          "ci_low_s": 0.00043598,
+          "estimate_s": 0.00046947,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00030173,
+          "ci_low_s": 0.00028471,
+          "estimate_s": 0.00029288,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0011252,
+          "ci_low_s": 0.00093782,
+          "estimate_s": 0.0010274000000000001,
+          "round": 5
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "evaluator",
+    "benchmarks": 4,
+    "repetitions": 5
+  },
+  "sourceRevision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+  "subject": "quire-spec-language qsl-bench evaluator benchmarks",
+  "timestamp": "2026-09-24T01:23:09.000Z",
+  "toolIdentity": "criterion via cargo bench -p qsl-bench",
+  "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+      "qsl-bench/benches/evaluator.rs": "sha256:ca0837f85ea7a59be18947cde2715fdca824bcfa11b2e2755338f12db0a64087"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "criterion.wall-time"
+    ],
+    "executableDigest": "sha256:a1bec2a6ffc9edc17d392e5ed92e1dac59aa90285d714fc3e51434d9bfd2edf3",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
+    }
+  }
+}

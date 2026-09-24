@@ -119,6 +119,20 @@ fresh output directory and requires deliberate review/promotion. Provenance,
 fixed digests and the local command are recorded in
 tests/fixtures/native-package/README.md. This adds no non-Rust executable path.
 
+QSL-196 adds the benchmark-only workspace crate `qsl-bench` and its single
+development dependency, criterion 0.8.2, with default features disabled (no
+rayon, no plotters) and only `cargo_bench_support` enabled. No shipped crate
+depends on `qsl-bench`. The lock gains 14 packages, all recorded below:
+alloca 0.4.0, anes, cast, ciborium (with ciborium-io and ciborium-ll),
+criterion, criterion-plot, crunchy, half, itertools 0.13.0, oorandom,
+page_size and tinytemplate, under MIT, Apache-2.0 or dual MIT/Apache-2.0
+grants; none adds a copyleft term. alloca's build script compiles one
+third-party C file (`alloca.c`) with the already locked `cc`, on Unix and
+Windows targets, for criterion's stack-offset randomization: a third-party
+native build step in the development graph only, not first-party C, and
+not reached by any shipped crate. `qsl-bench` also names the already locked
+`agent-ix-semantic-ir` at the same pinned revision `qsl-semantics` uses.
+
 This is declared metadata, not a public distribution notice bundle or a
 vulnerability scan. Existing grants remain intact, including ICU Unicode-3.0
 and ar_archive_writer Apache-2.0 WITH LLVM-exception. The dependency stacker/psm
@@ -129,7 +143,9 @@ Python, JavaScript or shell qualification helper is introduced.
 | --- | --- | --- |
 | ahash | 0.8.12 | `MIT OR Apache-2.0` |
 | aho-corasick | 1.1.5 | `Unlicense OR MIT` |
+| alloca | 0.4.0 | `MIT` |
 | allocator-api2 | 0.2.21 | `MIT OR Apache-2.0` |
+| anes | 0.1.6 | `MIT OR Apache-2.0` |
 | anyhow | 1.0.104 | `MIT OR Apache-2.0` |
 | ar_archive_writer | 0.5.3 | `Apache-2.0 WITH LLVM-exception` |
 | autocfg | 1.5.1 | `Apache-2.0 OR MIT` |
@@ -145,13 +161,20 @@ Python, JavaScript or shell qualification helper is introduced.
 | bstr | 1.13.1 | `MIT OR Apache-2.0` |
 | bumpalo | 3.20.3 | `MIT OR Apache-2.0` |
 | bytecount | 0.6.9 | `Apache-2.0/MIT` |
+| cast | 0.3.0 | `MIT OR Apache-2.0` |
 | cc | 1.4.5 | `MIT OR Apache-2.0` |
 | cfg-if | 1.0.4 | `MIT OR Apache-2.0` |
 | chrono | 0.4.45 | `MIT OR Apache-2.0` |
+| ciborium | 0.2.2 | `Apache-2.0` |
+| ciborium-io | 0.2.2 | `Apache-2.0` |
+| ciborium-ll | 0.2.2 | `Apache-2.0` |
 | cpufeatures | 0.2.17 | `MIT OR Apache-2.0` |
+| criterion | 0.8.2 | `Apache-2.0 OR MIT` |
+| criterion-plot | 0.8.2 | `Apache-2.0 OR MIT` |
 | crossbeam-deque | 0.8.8 | `MIT OR Apache-2.0` |
 | crossbeam-epoch | 0.9.21 | `MIT OR Apache-2.0` |
 | crossbeam-utils | 0.8.23 | `MIT OR Apache-2.0` |
+| crunchy | 0.2.4 | `MIT` |
 | crypto-common | 0.1.7 | `MIT OR Apache-2.0` |
 | data-encoding | 2.11.1 | `MIT` |
 | deranged | 0.5.8 | `MIT OR Apache-2.0` |
@@ -183,6 +206,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | getrandom | 0.3.4 | `MIT OR Apache-2.0` |
 | getrandom | 0.4.3 | `MIT OR Apache-2.0` |
 | globset | 0.4.20 | `Unlicense OR MIT` |
+| half | 2.7.1 | `MIT OR Apache-2.0` |
 | hashbrown | 0.16.1 | `MIT OR Apache-2.0` |
 | hashbrown | 0.17.1 | `MIT OR Apache-2.0` |
 | icu_collections | 2.3.0 | `Unicode-3.0` |
@@ -197,6 +221,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | ignore | 0.4.33 | `Unlicense OR MIT` |
 | indexmap | 2.14.2 | `Apache-2.0 OR MIT` |
 | iso8601 | 0.6.5 | `MIT` |
+| itertools | 0.13.0 | `MIT OR Apache-2.0` |
 | itoa | 1.0.18 | `MIT OR Apache-2.0` |
 | ix-trace-rs | 0.1.0 | `AGPL-3.0-or-later` |
 | js-sys | 0.3.105 | `MIT OR Apache-2.0` |
@@ -231,7 +256,9 @@ Python, JavaScript or shell qualification helper is introduced.
 | num-traits | 0.2.19 | `MIT OR Apache-2.0` |
 | object | 0.39.1 | `Apache-2.0 OR MIT` |
 | once_cell | 1.21.4 | `MIT OR Apache-2.0` |
+| oorandom | 11.1.5 | `MIT` |
 | outref | 0.5.2 | `MIT` |
+| page_size | 0.6.0 | `MIT/Apache-2.0` |
 | parking_lot | 0.12.5 | `MIT OR Apache-2.0` |
 | parking_lot_core | 0.9.12 | `MIT OR Apache-2.0` |
 | percent-encoding | 2.3.2 | `MIT OR Apache-2.0` |
@@ -298,6 +325,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | time-core | 0.1.9 | `MIT OR Apache-2.0` |
 | time-macros | 0.2.32 | `MIT OR Apache-2.0` |
 | tinystr | 0.8.4 | `Unicode-3.0` |
+| tinytemplate | 1.2.1 | `Apache-2.0 OR MIT` |
 | tinyvec | 1.13.2 | `Zlib OR Apache-2.0 OR MIT` |
 | tinyvec_macros | 0.1.1 | `MIT OR Apache-2.0 OR Zlib` |
 | tracing | 0.1.44 | `MIT` |
