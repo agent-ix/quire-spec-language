@@ -717,6 +717,88 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
     );
 }
 
+/// QSL-199: `V2ReadLimits::bounded()` no longer clamps a caller-supplied
+/// `artifact_bytes` down to [`V2ReadLimits::default`] (ADR-011 §7.3; NFR-001
+/// "an implementation ceiling is not a domain bound"). The default ceiling
+/// (16 MiB) makes a genuinely oversized *valid* wire impractical to build in
+/// a unit test, so this exercises the byte-length gate directly with
+/// deliberately non-JSON filler bytes: `read_checked_package_v2` checks
+/// `bytes.len() > limits.artifact_bytes` before ever parsing, so the
+/// distinction this test names -- refused at the byte-length gate under the
+/// default, past that gate under a caller-raised ceiling -- holds regardless
+/// of the bytes' own validity. Once past the gate, the reader correctly
+/// refuses the filler as malformed JSON: a defect in the input, never
+/// conflated with a resource ceiling ([`V2ReadRefusal`]'s own doc).
+#[test]
+fn a_caller_raised_artifact_bytes_ceiling_admits_past_the_byte_length_gate() {
+    let oversized = vec![b'x'; V2ReadLimits::default().artifact_bytes + 1];
+
+    let default_outcome = read_checked_package_v2(
+        &oversized,
+        identity("pkg"),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence(None),
+        &no_pins(),
+    );
+    assert_eq!(
+        default_outcome,
+        V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
+            limit: V2ReadLimits::default().artifact_bytes,
+            actual: oversized.len(),
+        }),
+        "the default ceiling must refuse an oversized read at the byte-length gate"
+    );
+
+    let raised = V2ReadLimits {
+        artifact_bytes: oversized.len(),
+        ..V2ReadLimits::default()
+    };
+    let raised_outcome = read_checked_package_v2(
+        &oversized,
+        identity("pkg"),
+        "1".to_owned(),
+        raised,
+        &evidence(None),
+        &no_pins(),
+    );
+    assert!(
+        !matches!(
+            raised_outcome,
+            V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes { .. })
+        ),
+        "a caller-raised artifact_bytes ceiling must not refuse at the byte-length gate, got {raised_outcome:?}"
+    );
+}
+
+/// QSL-199 AC-3: reaching a *caller-raised* ceiling (not just the default)
+/// still refuses, naming the limit kind ([`V2ReadIncomplete::Bytes`]) and
+/// the caller's own configured bound.
+#[test]
+fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_bound() {
+    let raised = V2ReadLimits {
+        artifact_bytes: V2ReadLimits::default().artifact_bytes + 1_000,
+        ..V2ReadLimits::default()
+    };
+    let oversized = vec![b'x'; raised.artifact_bytes + 1];
+    let outcome = read_checked_package_v2(
+        &oversized,
+        identity("pkg"),
+        "1".to_owned(),
+        raised,
+        &evidence(None),
+        &no_pins(),
+    );
+    assert_eq!(
+        outcome,
+        V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
+            limit: raised.artifact_bytes,
+            actual: oversized.len(),
+        }),
+        "must name the raised ceiling actually in force, not the original default"
+    );
+}
+
 #[test]
 fn incomplete_when_a_depth_ceiling_is_reached() {
     let preimage = identity_preimage(vec![]);

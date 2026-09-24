@@ -561,3 +561,107 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
         }
     }
 }
+
+/// QSL-199: a linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
+/// model.A.op{depth}` (`op{i}` redefines `op{i-1}`), all owned by the single
+/// object type `model.A` so every dispatch/dominance `type_conforms` check
+/// this exercises is the trivial `s == t` case -- isolating the family-step
+/// count `build_family` itself charges from the unrelated ancestor-step
+/// count `walk_ancestors` charges. Only the last operation has a body, so
+/// linking has exactly one applicable candidate per subtype (no dominance
+/// walk needed either). `original`'s own family has `depth + 1` members.
+fn redefinition_chain(depth: usize) -> Vec<DomainPackageRecord> {
+    (0..=depth)
+        .map(|i| {
+            let redefines = if i == 0 {
+                None
+            } else {
+                Some(format!("model.A.op{}", i - 1))
+            };
+            operation(
+                &format!("model.A.op{i}"),
+                "model.A",
+                i == depth,
+                redefines.as_deref(),
+            )
+        })
+        .collect()
+}
+
+/// QSL-199 AC-5: a valid dispatch family with more than 128 redefinition
+/// steps passes at default (unlimited) limits -- the old hard-coded
+/// `MAX_DISPATCH_DEPTH` (128) refused this regardless of the caller's own
+/// configured limits (ADR-011 §7.3; NFR-001 "an implementation ceiling is
+/// not a domain bound").
+#[trace("TC-196", "FR-151-AC-5")]
+#[test]
+fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits() {
+    const DEPTH: usize = 129; // original's family has 130 members: op0..op129.
+    let mut records = vec![object_type("model.A", vec![])];
+    records.extend(redefinition_chain(DEPTH));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
+    let view = effective_view(&domain_package);
+
+    let mut meter = unlimited_meter();
+    let outcome = link_dispatch(
+        &domain_package,
+        &view,
+        &DeclarationKey::fixture("model.A.op0"),
+        GeneralizationClosure::Closed,
+        &mut meter,
+    );
+    let LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(table)) = outcome else {
+        panic!("expected a linked dispatch table under unlimited limits, got {outcome:?}");
+    };
+    assert_eq!(
+        table
+            .linked_for(&DeclarationKey::fixture("model.A"))
+            .map(|c| c.node.clone()),
+        Some(format!("model.A.op{DEPTH}")),
+        "must link to the one operation with a body, at the far end of the 130-member family"
+    );
+}
+
+/// QSL-199 AC-6: exceeding a caller-configured `family_steps` ceiling
+/// refuses, naming the limit (`ModelRefusalCause::DispatchFamilyDepth`, tag
+/// `resource_exhausted`) and the configured bound (embedded in the
+/// refusal's own detail, matching this repo's convention for these two
+/// caps -- see `build_family`'s own doc).
+#[trace("TC-196", "FR-151-AC-5")]
+#[test]
+fn exceeding_a_caller_configured_family_steps_ceiling_refuses_naming_the_kind_and_bound() {
+    const DEPTH: usize = 129;
+    let mut records = vec![object_type("model.A", vec![])];
+    records.extend(redefinition_chain(DEPTH));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
+    let view = effective_view(&domain_package);
+
+    let tight_ceiling = 50;
+    let mut meter = qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits {
+        family_steps: tight_ceiling,
+        ..ModelNormalizationLimits::UNLIMITED
+    });
+    let outcome = link_dispatch(
+        &domain_package,
+        &view,
+        &DeclarationKey::fixture("model.A.op0"),
+        GeneralizationClosure::Closed,
+        &mut meter,
+    );
+    match outcome {
+        LinkCheckOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::DispatchFamilyDepth {
+                    original: DeclarationKey::fixture("model.A.op0"),
+                }
+            );
+            assert!(
+                refusal.detail.contains(&tight_ceiling.to_string()),
+                "refusal detail must name the configured bound, got {refusal:?}"
+            );
+        }
+        other => panic!("expected Refused(DispatchFamilyDepth), got {other:?}"),
+    }
+}

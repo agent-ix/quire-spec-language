@@ -8,7 +8,9 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_cst::{parse, CompleteCause, CompleteDiagnostic, Limits, ParsedSource};
-use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
+use qsl_foundation::selection::{
+    DefinitionDigest, DefinitionRef, ProfileCatalog, MAX_SELECTED_DEFINITIONS,
+};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::complete::{
     resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole, Facet,
@@ -725,6 +727,87 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
             kind: PackageLimitKind::Definitions,
             limit: 1,
         }
+    );
+}
+
+/// QSL-199: `PackageLimits::bounded()` no longer clamps a caller-supplied
+/// `definitions` ceiling down to [`PackageLimits::default`] (ADR-011 §7.3;
+/// NFR-001 "an implementation ceiling is not a domain bound"): a catalog
+/// with more definitions than the default (`MAX_SELECTED_DEFINITIONS`, 4096)
+/// admits under a caller-raised ceiling that the default itself refuses.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
+    let over_default = MAX_SELECTED_DEFINITIONS + 1;
+    let definitions: Vec<Definition> = (0..over_default)
+        .map(|i| {
+            Definition::from_exact_bytes(
+                &READER_AUTHORITY,
+                format!("acme.bulk.{i}"),
+                "1",
+                DefinitionRole::MethodPlan,
+                BTreeSet::new(),
+                BTreeSet::new(),
+                format!("definition body {i}").as_bytes(),
+            )
+            .unwrap()
+        })
+        .collect();
+
+    assert!(
+        matches!(
+            DefinitionCatalog::with_limits(definitions.clone(), PackageLimits::default()),
+            Err(PackageError::ResourceLimit {
+                kind: PackageLimitKind::Definitions,
+                ..
+            })
+        ),
+        "the default definitions ceiling must refuse a catalog past it"
+    );
+
+    let raised = PackageLimits {
+        definitions: over_default,
+        ..PackageLimits::default()
+    };
+    assert!(
+        DefinitionCatalog::with_limits(definitions, raised).is_ok(),
+        "a caller-raised definitions ceiling must admit what the default refuses"
+    );
+}
+
+/// QSL-199 AC-3: reaching a *caller-raised* `definitions` ceiling (not just
+/// the default) still refuses, naming the limit kind
+/// ([`PackageLimitKind::Definitions`]) and the caller's own configured
+/// bound.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_bound() {
+    let raised = PackageLimits {
+        definitions: MAX_SELECTED_DEFINITIONS + 10,
+        ..PackageLimits::default()
+    };
+    let definitions: Vec<Definition> = (0..=raised.definitions)
+        .map(|i| {
+            Definition::from_exact_bytes(
+                &READER_AUTHORITY,
+                format!("acme.bulk.{i}"),
+                "1",
+                DefinitionRole::MethodPlan,
+                BTreeSet::new(),
+                BTreeSet::new(),
+                format!("definition body {i}").as_bytes(),
+            )
+            .unwrap()
+        })
+        .collect();
+
+    assert_eq!(
+        DefinitionCatalog::with_limits(definitions, raised).unwrap_err(),
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: raised.definitions,
+        },
+        "must name the raised ceiling actually in force, not the original default"
     );
 }
 

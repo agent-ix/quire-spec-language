@@ -1853,3 +1853,116 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
         other => panic!("expected Refused(field-presence), got {other:?}"),
     }
 }
+
+/// QSL-199: a linear chain `model.chain.0 -> model.chain.1 -> ... ->
+/// model.chain.{depth}`, each type's own single direct supertype the next
+/// in the chain; `model.chain.{depth}` itself has none. `model.chain.0` has
+/// exactly `depth` ancestors.
+fn ancestor_chain(depth: usize) -> Vec<DomainPackageRecord> {
+    (0..=depth)
+        .map(|i| {
+            let supertypes = if i < depth {
+                vec![DeclarationKey::fixture(format!("model.chain.{}", i + 1))]
+            } else {
+                vec![]
+            };
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture(format!("model.chain.{i}")),
+                interface_features: None,
+                abstract_type: false,
+                supertypes,
+            })
+        })
+        .collect()
+}
+
+/// QSL-199 AC-4: a valid model with more than 128 ancestors on one type
+/// passes conformance at default (unlimited) limits -- the old hard-coded
+/// `MAX_CONFORMANCE_DEPTH` (128) refused this regardless of the caller's own
+/// configured limits (ADR-011 §7.3; NFR-001 "an implementation ceiling is
+/// not a domain bound").
+#[trace("TC-196", "FR-151-AC-1")]
+#[test]
+fn a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits() {
+    const DEPTH: usize = 129; // model.chain.0 has 129 ancestors: model.chain.1..model.chain.129.
+    let mut records = ancestor_chain(DEPTH);
+    records.push(field_member(
+        "model.chain.redefining",
+        "model.chain.0",
+        "model.chain.0",
+        mult(0, Some(1)),
+    ));
+    records.push(field_member(
+        &format!("model.chain.{DEPTH}.redefined"),
+        &format!("model.chain.{DEPTH}"),
+        &format!("model.chain.{DEPTH}"),
+        mult(0, Some(1)),
+    ));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
+
+    let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let outcome = check_field_redefinition(
+        &domain_package,
+        &DeclarationKey::fixture("model.chain.redefining"),
+        &DeclarationKey::fixture(format!("model.chain.{DEPTH}.redefined")),
+        &mut meter,
+    );
+    assert_eq!(
+        outcome,
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible),
+        "a 129-ancestor conformance walk must complete under unlimited limits, got {outcome:?}"
+    );
+}
+
+/// QSL-199 AC-6: exceeding a caller-configured `ancestor_steps` ceiling
+/// refuses, naming the limit (`ModelRefusalCause::ConformanceDepth`, tag
+/// `resource_exhausted`) and the configured bound (embedded in the
+/// refusal's own detail, matching this repo's convention for these two
+/// caps -- see `walk_ancestors`'s own doc).
+#[trace("TC-196", "FR-151-AC-1")]
+#[test]
+fn exceeding_a_caller_configured_ancestor_steps_ceiling_refuses_naming_the_kind_and_bound() {
+    const DEPTH: usize = 129;
+    let mut records = ancestor_chain(DEPTH);
+    records.push(field_member(
+        "model.chain.redefining",
+        "model.chain.0",
+        "model.chain.0",
+        mult(0, Some(1)),
+    ));
+    records.push(field_member(
+        &format!("model.chain.{DEPTH}.redefined"),
+        &format!("model.chain.{DEPTH}"),
+        &format!("model.chain.{DEPTH}"),
+        mult(0, Some(1)),
+    ));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records);
+
+    let tight_ceiling = 50;
+    let mut meter = Meter::new(ModelNormalizationLimits {
+        ancestor_steps: tight_ceiling,
+        ..ModelNormalizationLimits::UNLIMITED
+    });
+    let outcome = check_field_redefinition(
+        &domain_package,
+        &DeclarationKey::fixture("model.chain.redefining"),
+        &DeclarationKey::fixture(format!("model.chain.{DEPTH}.redefined")),
+        &mut meter,
+    );
+    match outcome {
+        ConformanceCheckOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::ConformanceDepth {
+                    from: DeclarationKey::fixture("model.chain.0"),
+                }
+            );
+            assert!(
+                refusal.detail.contains(&tight_ceiling.to_string()),
+                "refusal detail must name the configured bound, got {refusal:?}"
+            );
+        }
+        other => panic!("expected Refused(ConformanceDepth), got {other:?}"),
+    }
+}

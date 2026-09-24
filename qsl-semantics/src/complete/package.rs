@@ -295,18 +295,18 @@ impl DefinitionCatalog {
         let mut bytes = 0_usize;
         let mut catalog = Self::default();
         for definition in definitions {
-            edges = edges
-                .checked_add(definition.dependencies.len())
-                .ok_or(PackageError::ResourceLimit {
+            edges = edges.checked_add(definition.dependencies.len()).ok_or(
+                PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
-                })?;
-            bytes = bytes
-                .checked_add(definition.exact_bytes.len())
-                .ok_or(PackageError::ResourceLimit {
+                },
+            )?;
+            bytes = bytes.checked_add(definition.exact_bytes.len()).ok_or(
+                PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
-                })?;
+                },
+            )?;
             if edges > limits.dependency_edges {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
@@ -374,12 +374,13 @@ impl ModelCatalog {
         let mut bytes = 0_usize;
         let mut catalog = Self::default();
         for model in models {
-            bytes = bytes
-                .checked_add(model.exact_bytes.len())
-                .ok_or(PackageError::ResourceLimit {
-                    kind: PackageLimitKind::ArtifactBytes,
-                    limit: limits.artifact_bytes,
-                })?;
+            bytes =
+                bytes
+                    .checked_add(model.exact_bytes.len())
+                    .ok_or(PackageError::ResourceLimit {
+                        kind: PackageLimitKind::ArtifactBytes,
+                        limit: limits.artifact_bytes,
+                    })?;
             if bytes > limits.artifact_bytes {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
@@ -1226,7 +1227,9 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => Tag::InsufficientNextCharge,
+        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
+            Tag::InsufficientNextCharge
+        }
         PackageError::MissingFacet(_) => Tag::FeatureSetMismatch,
     }
 }
