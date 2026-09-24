@@ -524,6 +524,47 @@ it grows about 2 times, which is linear. `qsl-bench-probe check
 self-recursive <n>` times the same shape through the whole check. There, the
 F7 lookup sites dominate, as they do on the chain.
 
+## QSL-206: one meter, a charge count and no per-task location clone. Improvement on every chain size.
+
+QSL-206 changed three things on the evaluator's per-frame path:
+
+- `quire_exact::Meter` keeps a count of admitted charges, not a `Vec` of them.
+- The evaluator's task loop borrows each task's node and clones a `Location`
+  only when a halt reports one. Before, it cloned one on every task.
+- `CheckedPackage::call` charges the top-level `function.call` to the
+  caller's meter. So B does one more charge per call than A.
+
+It was measured by the claim rule above, in one session on 2026-09-23, 23:49
+to 23:56 (UTC-7):
+
+- A is `55db8a4c` (origin/main) and B is `396f9503` (the fix). Each side has
+  its own worktree and target directory.
+- The rounds ran A1, B1, A2, B2 … A5, B5, one `make bench-evaluator` each.
+- Load average ranged from 4.3 to 10.1.
+- The apparatus is unchanged: `benches/evaluator.rs`, `src/check.rs` and
+  `Cargo.toml` are byte-identical on both sides.
+
+Each figure is a criterion point estimate of one `CheckedPackage::call` of
+`f0(5)` on an *n*-function chain. **Margin** is max(the stated variance in the
+evaluator table above, the session's MAD/median).
+
+| Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `evaluator/call_chain/1` | 333, 360, 340, 369, 320 ns | 278, 255, 264, 258, 264 ns | 340 ns | 264 ns | 22% | 16% | improvement |
+| `evaluator/call_chain/10` | 2.52, 2.46, 2.61, 2.43, 2.36 µs | 2.02, 1.52, 1.39, 1.66, 1.43 µs | 2.46 µs | 1.52 µs | 38% | 11% | improvement |
+| `evaluator/call_chain/100` | 24.1, 24.0, 23.9, 23.9, 24.5 µs | 14.2, 13.6, 13.4, 13.7, 13.4 µs | 24.0 µs | 13.6 µs | 43% | 16% | improvement |
+| `evaluator/call_chain/1000` | 300, 295, 262, 264, 324 µs | 155, 159, 187, 160, 163 µs | 295 µs | 160 µs | 46% | 33% | improvement |
+
+Cost per call frame is the slope between two sizes, computed per round. The
+variance is the MAD/median of the five per-round slopes.
+
+| Slope between | A median (MAD/median) | B median (MAD/median) |
+| --- | --- | --- |
+| 1 and 10 frames | 234 ns (3.1%) | 140 ns (11%) |
+| 10 and 100 frames | 239 ns (0.3%) | 134 ns (0.2%) |
+| 100 and 1,000 frames | 301 ns (11%) | 162 ns (2.1%) |
+| 1 and 1,000 frames | 295 ns (10%) | 160 ns (1.8%) |
+
 ## Engineering-assurance record
 
 The same benchmark set is recorded as engineering-assurance MeasurementPlans,
