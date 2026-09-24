@@ -13,9 +13,8 @@ relationships:
 Verify that the function packaging/lowering public API accepts only checked
 objects or verified checked-package bytes, that a function declaration's
 identity and a call's source occurrence survive checking, linking and v2
-emission unchanged, and that the `infer_form` function arms are reduced to
-one call each with no inline branching, and that the identities equal
-QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
+emission unchanged, and that the identities equal QSpec's vectors. Scope:
+FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
 
 ## Test Procedure
 
@@ -34,10 +33,7 @@ QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
    decoding from v2 bytes.
 5. Hand-build an alternate package whose source map region for that
    occurrence has one byte corrupted, and resolve the occurrence against it.
-6. Inspect the `infer_form` function-declaration and function-application
-   arms' source: count calls into `Value` family check code and count any
-   other conditional, lookup or loop statement present directly in the arm.
-7. Under source owner (`a`, `u`), check `both` and `nb` as FR-065-AC-8 gives
+6. Under source owner (`a`, `u`), check `both` and `nb` as FR-065-AC-8 gives
    them, and read the identity of `both` and of the call `both(a, true)`.
    Run the application-node key builder over every `operation_vectors`
    preimage of QSpec's `node-identity-vectors.json`, read at run time.
@@ -54,16 +50,13 @@ QSpec's vectors. Scope: FR-065-AC-1 through FR-065-AC-4 and FR-065-AC-8.
 - Step 5: the corrupted package's resolved span differs from step 4's,
   showing the assertion reads the actual region rather than a fixed
   constant.
-- Step 6: each arm contains exactly one call into `Value`'s family check
-  code and no other conditional, lookup or loop; a code-shape check against a
-  fixed budget fails if either arm regains inline branching.
-- Step 7: `both`'s identity is FR-092 vector F2 and the call's is E2, in
+- Step 6: `both`'s identity is FR-092 vector F2 and the call's is E2, in
   domain `quire.checked-semantic-node/v1`; each QSpec operation vector's
   recomputed key equals its recorded `sha256`.
 
 ## Status
 
-Step 7 (FR-065-AC-8) is unbacked until QSL-156 slice A4b switches the
+Step 6 (FR-065-AC-8) is unbacked until QSL-156 slice A4b switches the
 checker's minter to the FR-092 and FR-093 keys.
 
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
@@ -72,16 +65,5 @@ Steps 1-5 (FR-065-AC-1 through AC-3) are covered by
 (`qsl-eval/tests/it/dispatch_calls.rs`) -- see FR-065's own Status section for the
 current per-AC accounting; AC-1 and AC-3 remain unbacked (owner QSL-154).
 
-Step 6 (FR-065-AC-4) is not implemented by a code-shape/AST test in the
-delivered code, per the [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-(Peter, QSL-148, 2026-09-22, relayed by the QSL team lead: test what the
-family check accepts and refuses, not the arm's code shape or placement).
-The fact step 6 would verify is true of the delivered code --
-`infer_form`'s `Call` arm (`qsl-semantics/src/check/check.rs`) is exactly one call into
-`super::family::check_application` and holds no other conditional, lookup
-or loop -- but AC-4 is **true by inspection, not backed**: `TC-376`'s
-behavioral tests of `check_application` itself would keep passing even if
-a future change reintroduced a conditional directly into `infer_form`'s
-`Call` arm, since none of them examine the arm's shape. See FR-065's
-Status section, AC-4 row, for the full reasoning (PR #303 review,
-finding 3).
+FR-065-AC-4 moved to TC-376 when QSL-148's spec lane made it a
+behavioural criterion; this test case no longer carries a code-shape step.

@@ -20,15 +20,17 @@ relationships:
 
 Function declaration and application is the sole representative family this
 ticket migrates onto the checked-family contract of
-[FR-062](FR-062-implement-checked-family-contract.md). QSL SHALL make the
-`Value` family's function-declaration and function-application forms check,
-package and evaluate exclusively through that contract, delete the composed
-linker's function-declaration and function-application checking code in the
-same change (ADR-011 §7.3 M-6e), carry their identity and provenance through
-the checked-package boundary unchanged, and reach callers only through the
-checked-package producer this requirement builds, with the
-function-application arms of `infer_form` reduced to a thin dispatch seam
-(ADR-012 §4.3).
+[FR-062](FR-062-implement-checked-family-contract.md). QSL SHALL check,
+package and evaluate the `Value` family's function-declaration and
+function-application forms exclusively through that contract and `Value`'s
+own family check code (Behavior: the contract's `check` hook and `Value`'s
+application check). QSL SHALL carry their identity and provenance through the
+checked-package boundary unchanged (Behavior: identity and provenance). QSL
+SHALL reach callers only through the checked-package producer this
+requirement builds (Behavior: the public API and #240's precondition). Each
+form has one S3 checker (FR-065-CON-2), and the S3 typer's `Call` arm is a
+thin dispatch seam into `Value`'s application check (FR-065-CON-3, ADR-012
+§4.3).
 
 This requirement builds the checked-package producer for function
 declaration and application; it does not perform the CLI cutover. Spine
@@ -43,8 +45,7 @@ implementation.
 This requirement covers only function declaration and application. The
 remaining `Value` forms (literals, operators, `let`, `if`, records,
 collections) and every other family's forms are unchanged by this
-requirement and migrate under their own tickets, and the composed linker's
-checking code for those remaining forms is unchanged by this requirement.
+requirement and migrate under their own tickets.
 
 ## Inputs
 
@@ -86,21 +87,55 @@ ill-typed declaration through the contract's refusal outcome
 success diagnostic for it. It SHALL admit a well-typed declaration with the
 declaration's minted identity.
 
-### `infer_form`'s function-application arms are thin
+### `Value`'s application check decides every function application
 
-The function-application arms of `infer_form` (ADR-012 §4.3; today
-`value/expression/check.rs:683-966`) SHALL each make exactly one call into
-the `Value` family's own check code, hold no semantic logic of their own, and
-propagate the family's returned outcome without inspecting or branching on
-its content beyond wrapping it in the seam's own enum variant. Building the
-called function's argument, and propagating its result with `?`, is not
-semantic logic; a branch, a lookup or a check performed directly in the arm
-is, and SHALL NOT appear there after this migration.
+`Value`'s function-application check is `check::family::Application`
+(`qsl-semantics/src/check/family.rs`: `resolve`, `parameter`, `finish`).
+When the S3 typer checks a call `name(arguments)`:
+
+- If `name` names a declared function callable by name, `Application` SHALL
+  resolve the call to that function.
+- If the argument count differs from that function's parameter count,
+  `Application` SHALL refuse the call as `ill_typed`/`type-mismatch`.
+- `Application` SHALL supply each argument's expected type from that
+  function's declared parameter types.
+- `Application` SHALL build the call node with that function's declared
+  result type.
+- If `name` names a declared tuple type, `Application` SHALL resolve the call
+  to that type's constructor, SHALL refuse an argument count that differs
+  from the tuple's position count as `ill_typed`/`type-mismatch`, and SHALL
+  build a tuple node of that type.
+- If `name` names a declared type that is not a tuple, or a model operation,
+  `Application` SHALL refuse the call as `ill_typed`/`operator-ineligible`.
+- If `name` names no callable function, no type and no model operation,
+  `Application` SHALL refuse the call as `missing-name` naming `name`.
+
+The S3 typer (`Typer`, `qsl-semantics/src/check/check/typing.rs`) SHALL
+check every `Expression::Call` it reaches through `Application`: in a
+function declaration's body or `decreases` measure, which
+`PackageDeclarations::check` reaches through `ValueFunctionFamily::check`,
+and in a clause expression checked through
+`CheckedGraph::check_clause_expression`. `Application`'s own verdict on a
+call (its callee, its arity and its parameter types) is therefore the same
+from every entry point. The typer SHALL check each argument against the
+expected type `Application` supplies, under the entry point's clause kind,
+so an argument whose admission depends on the clause kind (a dispatch call,
+FR-151; `pre(...)`, FR-153) is admitted or refused as that clause kind
+allows.
+
+`Typer::infer_form`'s `Call` arm is a dispatch seam (ADR-012 §4.3): it makes
+one call into `Application::resolve` and holds no name, arity or
+argument-type logic of its own (FR-065-CON-3). `Expression::Call` is a
+variant of the one `Expression` enum in the `forms` core (`qsl-forms`). Its
+owning family is `Value`, because its arm calls `Value`'s application check
+(ADR-012 §4.3). A call nests inside every other `Value` form, so
+`Expression` carries the `Call` variant alongside them.
 
 Every other `infer_form` arm (the `Present` and `Value` option operations,
 the `Deref` model-element-reference read, and the operation-postcondition
-`Pre` anchor) is unchanged by this requirement; only the function-declaration
-and function-application arms move.
+`Pre` anchor) is unchanged by this requirement; only the `Call` arm is in
+scope. A function declaration is not an expression and has no `infer_form`
+arm.
 
 ### Identity and provenance survive checking and package conversion
 
@@ -132,38 +167,22 @@ equals FR-092's golden vector, and the call's equals the FR-322
 application-node key of the same node (AC-8). QSL-156 slice A4b switches the
 checker's minter to these preimages.
 
-### The composed function checker is deleted in this change
+### Each function form has one S3 checker
 
-The composed linker's (SEAM-2) checking code for function declaration and
-function application SHALL be deleted in the same change that lands this
-requirement's S3 family checker and S4 emission for those two forms (ADR-011
-§7.3 M-6e). After this requirement's implementation, no composed-checker
-code path checks a function-declaration or function-application form; the
-checked-family contract's `check`/`package` hooks
-([FR-062](FR-062-implement-checked-family-contract.md)) are the only path
-that does. The composed checker's remaining `Value` forms (literals,
-operators, `let`, `if`, records, collections) are unchanged by this
-requirement and are deleted by their own migrating tickets (#120, #164,
-#170, #175), the last of which removes the composed checker module entirely
-(ADR-011 §7.3 M-6e).
+`ValueFunctionFamily::check` makes a function declaration's typing and
+static-definedness verdict (FR-065-AC-7), and `PackageDeclarations::check`
+reaches that verdict through it. `Value`'s application check above makes a
+call's resolution and arity verdict. FR-065-CON-2 states that each is the
+one S3 code path for its form.
 
-Where the composed checker module is retained for those other forms, its
-dispatch `match` over its own input form-kind enum SHALL carry no `_` or
-catch-all arm, the same rule FR-063 applies at every S1 to S4 seam. This
-enum is the composed checker's own construct, not one of FR-063's S1-S4
-enums, so FR-063's probe does not reach it; this requirement states the
-same no-wildcard rule directly, for this one enum, so the same defect it
-prevents elsewhere cannot reopen here. Because no catch-all arm is admitted,
-deleting the function-declaration and function-application match arms is a
-compile error (`E0004`) for as long as the composed checker's input
-form-kind enum still carries a function-declaration or
-function-application variant. This requirement's implementation SHALL
-therefore also remove those two variants from that enum in the same
-change, which is what makes the arm deletion compile at all: no `_ =>
-refuse(...)` arm may be added to keep the match exhaustive instead, because
-that would be a catch-all arm and is forbidden by this same rule. A function
-form is thereafter not merely unmatched by the composed checker; it is not
-a value the composed checker's input type can hold.
+The composed checker (SEAM-2, `src/checking/composed/`) checks the composed
+grammar (ADR-010 lane B) and takes no `qsl-forms` input. Its `predicate`
+declarations and `ValueKind::Invoke` calls are composed-grammar forms.
+ADR-011 §7.3 M-6e deletes SEAM-2 one family at a time, each in the PR that
+lands that family's S3 checker and S4 emission; the `Value` tickets are
+#214, #120, #164, #170 and #175, and the last family ticket overall deletes
+the remainder. Which `Value` ticket deletes SEAM-2's `predicate` and
+`Invoke` checking is FR-065-OQ-1.
 
 ### This requirement's checked-package producer is #240's precondition
 
@@ -194,8 +213,9 @@ for the function family.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-065-CON-1 | This requirement's implementation modifies no internal representation of any family other than `Value`'s function-declaration and function-application forms, and no `infer_form` arm other than those two forms'. | Design | Inspection |
-| FR-065-CON-2 | This requirement's implementation deletes the composed linker's function-declaration and function-application checking code in the same change that lands the S3 family checker and S4 emission for those two forms; no change under this requirement leaves both the composed checker's function-form arms and the checked-family contract's function checker reachable at once. | Process | Inspection |
+| FR-065-CON-1 | This requirement's implementation modifies no internal representation of any family other than `Value`'s function-declaration and function-application forms, and no `infer_form` arm other than `Expression::Call`'s. | Design | Inspection |
+| FR-065-CON-2 | `ValueFunctionFamily::check` is the one S3 code path that types a function declaration and checks its static definedness, and `check::family::Application` is the one S3 code path that resolves a call's callee, checks its arity and supplies its argument types. Each change under this requirement leaves exactly one S3 path for each form. | Design | Inspection |
+| FR-065-CON-3 | `Typer::infer_form`'s `Call` arm makes one call into `Application::resolve` and hands the result to the typer's argument descent; it holds no branch, lookup or check of its own (ADR-012 §4.3). Building the call's argument, wrapping its result in the typer's frame and propagating an error with `?` are not semantic logic. | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -204,8 +224,8 @@ for the function family.
 | FR-065-AC-1 | Calling the function packaging/lowering public API with a checked node or verified checked-package bytes succeeds; a test that attempts to call it with a raw CST node or a raw source string fails to compile (no accepting overload or conversion exists), not merely at runtime. | Test (TC-163) |
 | FR-065-AC-2 | Given a source file declaring one function and one call to it, the function declaration's checked identity is the same value read at three points: immediately after `check`, again after S4 linking, and again after decoding the emitted v2 bytes. Reordering unrelated top-level declarations in the source leaves that identity unchanged at all three points. | Test (TC-163) |
 | FR-065-AC-3 | Given the same source file, the call's source occurrence (identity, role, ordinal) resolves to the same byte span before linking, after linking, and after decoding from v2 bytes; corrupting one byte of the occurrence's region in a hand-built alternate package makes the resolved span differ, showing the test actually reads the region rather than a constant. | Test (TC-163) |
-| FR-065-AC-4 | The `infer_form` function-declaration and function-application arms each contain exactly one call into `Value`'s family check code and no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget) fails if a future change reintroduces branching logic directly in either arm. | Test (TC-163) |
-| FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
+| FR-065-AC-4 | Given a declared function `f(x: Boolean): Boolean`, checking a call through the S3 typer admits `f(true)` as a call node of type `Boolean` whose callee is `f`; refuses `f(true, false)` (one argument too many) as `ill_typed`/`type-mismatch`; refuses `nowhere()` (a name that resolves to no function and no type) as `missing-name` naming `nowhere`; and refuses `f(1)` (an `Integer` argument against the declared `Boolean` parameter) as `ill_typed`/`type-mismatch`. | Test (TC-376) |
+| FR-065-AC-5 | Given a package that declares `f(x: Boolean): Boolean`, each of the calls `f(true)`, `f(true, false)`, `nowhere(true)` and `f(1)` receives the same verdict as the body of a parameterless `Boolean`-result declaration checked through `PackageDeclarations::check` and as a precondition clause checked through `CheckedGraph::check_clause_expression`: `f(true)` is admitted in both as a `Boolean` call to `f`; `f(true, false)` and `f(1)` are refused `ill_typed`/`type-mismatch` in both; `nowhere(true)` is refused `missing-name` naming `nowhere` in both. Written as the `decreases` measure of a declaration whose body is `true`, `f(true, false)` and `f(1)` are refused `ill_typed`/`type-mismatch` and `nowhere(true)` is refused `missing-name`. Verdicts are compared by refusal cause, not location. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 | FR-065-AC-7 | Checking the declaration `g() -> Boolean = 1` (an `Integer` body against a declared `Boolean` result) through the `Value` family's contract `check` hook returns `StageFailure::Refused` whose cause is `ill_typed` / `type-mismatch`, and the diagnostic sink holds no entry afterwards. Checking the well-typed declaration `f() -> Boolean = true` through the same hook admits it. `PackageDeclarations::check` keys `f` once every declaration is typed, and under source owner (`a`, `u`) its checked identity is FR-092 vector F1, the `quire.structural-node/v1` key of its function node. | Test (TC-380) |
 | FR-065-AC-8 | Under source owner (`a`, `u`), the checked identity of `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }` is FR-092 vector F2, a `quire.structural-node/v1` key whose preimage carries that owner, and the checked identity of the call `both(a, true)` in `function nb using v(a: Boolean): Boolean pure { both(a, true) }` is FR-092 vector E2, a `quire.application-node/v1` key whose preimage has no `owner` member. The application-node key builder reproduces every `operation_vectors` digest in QSpec's `node-identity-vectors.json`. | Test (TC-163) |
@@ -218,14 +238,15 @@ for the function family.
   §2.1 (E3/E4 admitted types and provenance), §2.3 (refusals, limits, partial
   output, and the "Only to tooling" CST-consumer row `format` falls under
   once #240 retargets it), §7.3 owns the deletion timing this requirement
-  follows: M-6e (the composed function checker, deleted by this
-  requirement) and M-6a, T-1 (the CLI producer cutover, deleted by
+  follows: M-6e (the composed checker, SEAM-2, deleted one family at a
+  time, the last family ticket deleting the remainder; FR-065-OQ-1) and M-6a, T-1 (the CLI producer cutover, deleted by
   [#240](https://github.com/agent-ix/quire-spec-language/issues/240) against
   the producer this requirement builds, after
   [#242](https://github.com/agent-ix/quire-spec-language/issues/242)'s S4
   emitter lands).
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §4.3
-  (thin dispatch seam), §8 (the replay stage hook this requirement widens
+  (thin dispatch seam; the one `Expression` enum, each variant owned by the
+  family whose check its arm calls), §8 (the replay stage hook this requirement widens
   for the function family), §9 (the replay-executor edge this requirement
   converts to a typed `QualifiedName`), §14.2 (states that only the
   function-application arms of `infer_form` are in scope for this ticket).
@@ -269,22 +290,14 @@ row, not satisfy it; #240 deletes it in the same change that lands spine
 which cannot happen before this requirement's own producer, and #242's S4
 emitter, both exist.
 
-**Scope of what #214 delivers, and what stays unbacked (PR #262 review
-headline finding; rescoping decision recorded against #262, not an
-amendment to this requirement's own target design above -- see the
-note on `infer_form`'s/`Self::call`'s doc in `check.rs`).** This requirement's own text -- "check... exclusively through
-that contract" -- is the correct target design and is not narrowed here.
-What #214 actually delivers against it: identity and provenance for both
-forms mint exclusively through the checked-family contract
-(`mint_declaration_identity`/`mint_call_identity`, reached only from
-`ValueFunctionFamily::check` for declarations and from `Self::call` for
-applications) and nowhere else -- that part is real. The checking decision
-is split. A declaration's typing and definedness verdict is made inside
-`ValueFunctionFamily::check` (QSL-148, PR #303; AC-7). A call is checked by
-`check::family::check_application`, which `infer_form`'s `Call` arm calls
-directly, not through a `FamilyContract` method. Termination is a separate
-whole-package pass (`check::termination::check`) after every declaration is
-checked.
+**What is delivered.** A declaration's and a call's identities are minted
+by `check::lowering` keying after `PackageDeclarations::check` has typed
+every declaration (FR-092, FR-093; QSL-156 A4b). A declaration's typing and
+definedness verdict is made inside `ValueFunctionFamily::check` (QSL-148,
+PR #303; AC-7). A call is checked by `check::family::Application`, which the
+typer's `Call` arm calls for every call it reaches (AC-4, AC-5). Termination
+is a separate whole-package pass (`check::termination::check`) after every
+declaration is checked.
 
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:
@@ -313,57 +326,34 @@ delivered code today:
   `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
   deleted as self-corrupting in the PR #262 review round, finding F6, and
   not replaced). Owner: QSL-154.
-- FR-065-AC-4: **true by inspection, not backed** (PR #303 review, finding
-  3). The fact AC-4 states is true of the delivered code:
-  `infer_form`'s `Call` arm is exactly one call into
-  `super::family::check_application` (`Value`'s function family's own
-  checking code, `qsl-semantics/src/check/family.rs`) and holds no other conditional,
-  lookup or loop. But AC-4 is itself a code-shape criterion ("a code-shape
-  test... fails if a future change reintroduces branching logic directly in
-  either arm"), and no test in the delivered code checks that shape:
+- FR-065-AC-4: backed by behaviour (`TC-376`); the four tests carry
+  `#[trace("TC-376")]` and the `FR-065-AC-4` tag is pending (remaining work:
+  QSL-148's implementation PR, which also updates `Typer::infer_form`'s doc
+  comment in `typing.rs` to cite FR-065-CON-3 and ADR-012 §4.3 in place of
+  the earlier AC-4 and AC-5 text). Amended by QSL-148's spec lane to a
+  behavioural criterion; the thin-arm rule it used to test by code shape is
+  FR-065-CON-3, verified by inspection, per the
+  [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+  (Peter, 2026-09-22): tests cover behaviour, never a refactor's shape).
   `check_application_accepts_a_well_typed_call`,
   `check_application_refuses_wrong_arity`,
   `check_application_refuses_an_unknown_name` and
   `check_application_refuses_a_type_mismatched_argument`
-  (`#[trace("TC-376")]`, untagged for this criterion -- PR #303 review,
-  finding N2) verify `check_application`'s own
-  accept/refuse behavior, per the testing-policy ruling recorded on
-  [QSL-148's Linear thread](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-  (Peter, 2026-09-22, relayed by the QSL team lead: test what the family
-  check accepts and refuses, not the arm's code shape) -- but a future
-  change that reintroduces a conditional directly into `infer_form`'s `Call`
-  arm, while leaving `check_application` itself unchanged, would still pass
-  every one of those tests. TC-163's step 6 (the actual code-shape/AST
-  check) is not implemented as a test either (see TC-163's own Status
-  section) -- so nothing in the delivered code would catch that regression,
-  and "backed" overstates what these tests demonstrate.
-- FR-065-AC-5: **unbacked** (PR #303 review, finding 2; reverted from an
-  earlier "backed" claim in this round). AC-5 requires that, once this
-  requirement lands, "the composed checker's input form-kind enum carries
-  neither a function-declaration nor a function-application variant," and
-  states plainly that a variant left in place "with or without an arm for
-  it, does not satisfy this criterion." `Expression::Call` is that variant,
-  and it is still present in `Expression` (`qsl-forms/src/`) -- checking moved
-  (`Typer::call` is deleted, and `check_declaration_body`/
-  `check_application`, `qsl-semantics/src/check/family.rs`, are the real entry points
-  `check::family::ValueFunctionFamily::check` now calls internally), but
-  the variant itself was never removed, and QSL-148 does not add or claim a
-  removal. `check_declaration_body_accepts_a_well_typed_declaration_and_
-  reports_its_calls`, `check_declaration_body_refuses_an_ill_typed_body` and
-  `check_declaration_body_refuses_an_undefined_body`
-  (`#[trace("TC-377")]`, untagged for this criterion -- PR #303 review,
-  finding N2) verify that entry point's real
-  accept/refuse behavior and its call-reporting, per the same
-  [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-  -- real, valuable coverage of the checking-decision half of this
-  migration -- but they verify behavior, not AC-5's own enum-shape
-  condition, and that condition is not met. See `TC-164`'s own Status
-  section. Termination checking is explicitly excluded from this move --
-  see `check_declaration_body`'s doc comment (`qsl-semantics/src/check/family.rs`) and
-  this ticket's report for why a whole-package, cross-declaration
-  call-graph analysis cannot become a per-declaration `FamilyContract`-style
-  check; `check::termination::check` remains an unchanged, separate
-  whole-package pass.
+  (`qsl-semantics/src/check/family.rs`, `checking_tests`, tagged
+  `#[trace("TC-376")]`) each check an `Expression::Call` through
+  `Typer::infer`, so each fails when `Application`'s resolution, arity check
+  or parameter typing is removed.
+- FR-065-AC-5: unbacked; a test is needed (`TC-164`). The criterion is
+  amended by QSL-148's spec lane: it requires the same call verdict from a
+  declaration body checked through `PackageDeclarations::check` and from a
+  precondition clause checked through `CheckedGraph::check_clause_expression`,
+  in place of the earlier symbol-absence and enum-variant conditions, which
+  ADR-012 §4.3 contradicts (`Expression::Call` is a `Value`-owned variant of
+  the one `Expression` enum) and the testing policy does not admit.
+  `synthesized_dispatch_candidate_is_not_callable_by_name`
+  (`qsl-eval/tests/it/dispatch_calls.rs`) shows a declaration body's
+  `missing-name` refusal through `PackageDeclarations::check`, but no test
+  compares the two positions.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
@@ -385,13 +375,21 @@ delivered code today:
   key builder in `qsl-semantics/src/check/node_key/` reproduces QSpec's
   operation vectors under the opt-in `make conformance`.
 
-Three of this requirement's eight Acceptance Criteria are backed (AC-2,
-identity/provenance; AC-7, the contract `check` hook's typing verdict and
-F1; AC-8, on the A4b branch); AC-4 is true by inspection but not backed by a
-test that could catch its own regression; the other four (AC-1, AC-3, AC-5,
-AC-6) are unbacked, for the reasons above. `TC-165` and `TC-166` -- the
-migration-recipe completeness check and FR-065-AC-6 -- have zero tests each
-in the delivered code. `TC-164` keeps its own zero-test procedure (see its
-Status section); the criterion it targets, AC-5, stays unbacked (see the
-AC-5 row above), though `TC-377`'s real accept/refuse tests are genuine
-coverage of the checking-decision half of this migration.
+Four of this requirement's eight Acceptance Criteria are backed (AC-2,
+identity/provenance; AC-4, the application check's verdicts, AC tag
+pending; AC-7, the
+contract `check` hook's typing verdict and F1; AC-8, on the A4b branch); the
+other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above.
+`TC-164`, `TC-165` and `TC-166` have zero tests each in the delivered code.
+
+## Open Questions
+
+- **FR-065-OQ-1: Which `Value` ticket deletes SEAM-2's `predicate` and
+  `Invoke` checking?** ADR-011 §7.3 M-6e deletes each composed family in the
+  PR that lands its S3 family checker and S4 emission, and lists #214 among
+  the `Value` tickets. SEAM-2's `predicate` declarations and `ValueKind::Invoke`
+  calls are composed-grammar forms that reach no S3 checker today, and ADR-011
+  §7.3's M-6a row records the 2026-09-19 owner ruling that nothing working is
+  removed early. The answer names
+  the ticket that deletes them together with the composed grammar's path to
+  S3.
