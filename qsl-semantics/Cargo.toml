@@ -58,6 +58,9 @@ proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }
+# FR-091-AC-20: the assembler's tests run S1 (`qsl_cst::parse`) and S2 to
+# build their input; its shipped code reads no CST.
+qsl-cst = { path = "../qsl-cst" }
 
 [[test]]
 name = "it"

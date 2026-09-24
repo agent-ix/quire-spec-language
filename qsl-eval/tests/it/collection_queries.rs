@@ -122,6 +122,7 @@ fn accumulate(
     identity: Option<Expression>,
 ) -> Expression {
     Expression::Accumulate {
+        accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
         form,
         accumulator_type: accumulator_type.to_owned(),
         accumulator: "acc".to_owned(),
@@ -976,6 +977,7 @@ fn q11_fold_charges_visit_step_and_one_accumulator_retain() {
 
 fn sum(result_type: &str, source: &str, summand: Expression) -> Expression {
     Expression::Sum {
+        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
         result_type: result_type.to_owned(),
         binder: "x".to_owned(),
         source: Box::new(name(source)),

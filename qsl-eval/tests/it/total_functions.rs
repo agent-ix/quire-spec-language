@@ -419,6 +419,7 @@ fn unproved(result: Result<CheckedGraph, Vec<CheckRefusal>>) -> (Obligation, &'s
 
 fn reduce_total(source: &str) -> Expression {
     Expression::Accumulate {
+        accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
         form: Accumulation::Reduce,
         accumulator_type: "Total".to_owned(),
         accumulator: "acc".to_owned(),

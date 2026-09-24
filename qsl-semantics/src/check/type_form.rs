@@ -6,27 +6,129 @@
 //!
 //! Bound literals are read in the grammar's own spellings (`qsl-cst`'s
 //! `RoundingMode` and `TextProfile` productions: `nearest-even`,
-//! `unicode-scalars`, `nfc`, ...). An unresolvable form is refused through
-//! the existing check diagnostics (`CheckCause::MissingName`/
-//! `AmbiguousName`, or `CheckCause::IllTyped(IllTypedCause::TypeMismatch)`
-//! for a malformed bound or argument), never a new catalog code.
+//! `unicode-scalars`, `nfc`, ...). Resolution reports a [`TypeFormError`]:
+//! the typed [`TypeFormFault`] and the span of the type form it concerns.
+//! The FR-091 assembler reports that as its own error; every other caller
+//! goes through [`resolve_type_form`], which refuses through the existing
+//! check diagnostics (`CheckCause::MissingName`/`AmbiguousName`, or
+//! `CheckCause::IllTyped(IllTypedCause::TypeMismatch)` for a malformed
+//! bound or argument), never a new catalog code.
+//!
+//! Names resolve through [`TypeNames`]: the package [`Scope`], or the
+//! assembler's own table of the unit's declarations while it is still
+//! building the package.
 
 use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal, Location};
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
+use qsl_foundation::Span;
 use quire_exact::{
     CardinalityBound, CollectionType, DecimalType, EffectiveId, IeeeWidth, IllTypedCause, Integer,
     IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType, ValueType,
 };
 
-fn mismatch(location: &Location) -> CheckRefusal {
-    CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch)
+/// What a qualified type name resolves against.
+pub(crate) trait TypeNames {
+    /// Every type `name` binds, in resolution order. Empty when it binds
+    /// none; more than one is ambiguous.
+    fn named_types(&self, name: &str) -> &[ValueType];
+
+    /// The object type named `name`, by its effective identity.
+    fn object_type_named(&self, name: &str) -> Option<EffectiveId>;
 }
 
-fn missing(name: &str, location: &Location) -> CheckRefusal {
-    CheckRefusal {
-        location: location.clone(),
-        cause: CheckCause::MissingName(name.to_owned()),
+impl TypeNames for Scope {
+    fn named_types(&self, name: &str) -> &[ValueType] {
+        Scope::named_types(self, name)
+    }
+
+    fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
+        Scope::object_type_named(self, name)
+    }
+}
+
+/// Why a type form did not resolve.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeFormFault {
+    /// The qualified name binds no type.
+    MissingName(String),
+    /// The qualified name binds more than one type.
+    AmbiguousName(String),
+    /// A bound is missing, is not a number or a grammar spelling, or the
+    /// form has the wrong number of type arguments.
+    Malformed,
+    /// An `Int` or `Rational` interval whose lower bound is above its
+    /// upper bound (`IntegerInterval`'s own refusal).
+    EmptyInterval,
+    /// A `Rational` denominator interval that reaches below one
+    /// (`RationalDomain`'s own refusal).
+    DenominatorBelowOne,
+    /// A `Decimal` whose bounds or scales are out of order
+    /// (`DecimalType`'s own refusal).
+    MalformedDecimal,
+    /// A `Text` minimum above its maximum (`TextType`'s own refusal).
+    EmptyTextBounds,
+    /// A collection cardinality minimum above its maximum
+    /// (`CardinalityBound`'s own refusal).
+    EmptyCardinality,
+}
+
+/// A [`TypeFormFault`] and the span of the type form it concerns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeFormError {
+    /// Why the form did not resolve.
+    pub fault: TypeFormFault,
+    /// The span of the form (or nested argument form) it concerns.
+    pub span: Span,
+}
+
+impl TypeFormError {
+    /// This error as a check refusal at `location`.
+    fn into_refusal(self, location: &Location) -> CheckRefusal {
+        let cause = match self.fault {
+            TypeFormFault::MissingName(name) => CheckCause::MissingName(name),
+            TypeFormFault::AmbiguousName(name) => CheckCause::AmbiguousName {
+                name,
+                loci: vec![location.clone()],
+            },
+            TypeFormFault::Malformed
+            | TypeFormFault::EmptyInterval
+            | TypeFormFault::DenominatorBelowOne
+            | TypeFormFault::MalformedDecimal
+            | TypeFormFault::EmptyTextBounds
+            | TypeFormFault::EmptyCardinality => {
+                return CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch)
+            }
+        };
+        CheckRefusal {
+            location: location.clone(),
+            cause,
+        }
+    }
+}
+
+fn fault(form: &TypeForm, fault: TypeFormFault) -> TypeFormError {
+    TypeFormError {
+        fault,
+        span: form.span,
+    }
+}
+
+fn malformed(form: &TypeForm) -> TypeFormError {
+    fault(form, TypeFormFault::Malformed)
+}
+
+/// Resolve a qualified type name against `names`: an alias, a record or
+/// tuple, an enum, or a model object type.
+fn named_type(
+    names: &impl TypeNames,
+    name: &str,
+    form: &TypeForm,
+) -> Result<ValueType, TypeFormError> {
+    match names.named_types(name) {
+        [] => Err(fault(form, TypeFormFault::MissingName(name.to_owned()))),
+        [value_type] => Ok(value_type.clone()),
+        _ => Err(fault(form, TypeFormFault::AmbiguousName(name.to_owned()))),
     }
 }
 
@@ -40,153 +142,115 @@ pub(crate) fn resolve_named_type(
     name: &str,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
-    match scope.named_types(name) {
-        [] => Err(missing(name, location)),
-        [value_type] => Ok(value_type.clone()),
-        _ => Err(CheckRefusal {
-            location: location.clone(),
-            cause: CheckCause::AmbiguousName {
-                name: name.to_owned(),
-                loci: vec![location.clone()],
-            },
-        }),
-    }
+    let form = TypeForm::name(name, Span { start: 0, end: 0 });
+    named_type(scope, name, &form).map_err(|error| error.into_refusal(location))
 }
 
-fn parse_integer(text: &str, location: &Location) -> Result<Integer, CheckRefusal> {
-    text.parse().map_err(|_| mismatch(location))
-}
-
-fn parse_u64(text: &str, location: &Location) -> Result<u64, CheckRefusal> {
-    text.parse().map_err(|_| mismatch(location))
-}
-
-fn bound_text<'f>(
-    form: &'f TypeForm,
-    index: usize,
-    location: &Location,
-) -> Result<&'f str, CheckRefusal> {
+fn bound_text(form: &TypeForm, index: usize) -> Result<&str, TypeFormError> {
     form.bounds
         .get(index)
         .map(String::as_str)
-        .ok_or_else(|| mismatch(location))
+        .ok_or_else(|| malformed(form))
 }
 
-fn bound_integer(
-    form: &TypeForm,
-    index: usize,
-    location: &Location,
-) -> Result<Integer, CheckRefusal> {
-    parse_integer(bound_text(form, index, location)?, location)
+fn bound_integer(form: &TypeForm, index: usize) -> Result<Integer, TypeFormError> {
+    bound_text(form, index)?
+        .parse()
+        .map_err(|_| malformed(form))
 }
 
-fn bound_u64(form: &TypeForm, index: usize, location: &Location) -> Result<u64, CheckRefusal> {
-    parse_u64(bound_text(form, index, location)?, location)
+fn bound_u64(form: &TypeForm, index: usize) -> Result<u64, TypeFormError> {
+    bound_text(form, index)?
+        .parse()
+        .map_err(|_| malformed(form))
 }
 
 /// A rounding mode as the grammar spells it (`qsl-cst` `RoundingMode`).
-fn parse_rounding_mode(text: &str, location: &Location) -> Result<RoundingMode, CheckRefusal> {
+pub(crate) fn parse_rounding_mode(text: &str) -> Option<RoundingMode> {
     match text {
-        "exact" => Ok(RoundingMode::Exact),
-        "toward-zero" => Ok(RoundingMode::TowardZero),
-        "toward-positive" => Ok(RoundingMode::TowardPositive),
-        "toward-negative" => Ok(RoundingMode::TowardNegative),
-        "nearest-even" => Ok(RoundingMode::NearestEven),
-        "nearest-away" => Ok(RoundingMode::NearestAway),
-        _ => Err(mismatch(location)),
+        "exact" => Some(RoundingMode::Exact),
+        "toward-zero" => Some(RoundingMode::TowardZero),
+        "toward-positive" => Some(RoundingMode::TowardPositive),
+        "toward-negative" => Some(RoundingMode::TowardNegative),
+        "nearest-even" => Some(RoundingMode::NearestEven),
+        "nearest-away" => Some(RoundingMode::NearestAway),
+        _ => None,
     }
 }
 
 /// A text profile as the grammar spells it (`qsl-cst` `TextProfile`).
-fn parse_text_profile(text: &str, location: &Location) -> Result<TextProfile, CheckRefusal> {
+fn parse_text_profile(text: &str) -> Option<TextProfile> {
     match text {
-        "unicode-scalars" => Ok(TextProfile::UnicodeScalars),
-        "nfc" => Ok(TextProfile::Nfc),
-        "nfd" => Ok(TextProfile::Nfd),
-        "nfkc" => Ok(TextProfile::Nfkc),
-        "nfkd" => Ok(TextProfile::Nfkd),
-        "binary-utf8" => Ok(TextProfile::BinaryUtf8),
-        _ => Err(mismatch(location)),
+        "unicode-scalars" => Some(TextProfile::UnicodeScalars),
+        "nfc" => Some(TextProfile::Nfc),
+        "nfd" => Some(TextProfile::Nfd),
+        "nfkc" => Some(TextProfile::Nfkc),
+        "nfkd" => Some(TextProfile::Nfkd),
+        "binary-utf8" => Some(TextProfile::BinaryUtf8),
+        _ => None,
     }
 }
 
-fn only_argument<'f>(
-    form: &'f TypeForm,
-    location: &Location,
-) -> Result<&'f TypeForm, CheckRefusal> {
+fn only_argument(form: &TypeForm) -> Result<&TypeForm, TypeFormError> {
     match form.arguments.as_slice() {
         [argument] => Ok(argument),
-        _ => Err(mismatch(location)),
+        _ => Err(malformed(form)),
     }
+}
+
+fn interval(form: &TypeForm, lower: usize) -> Result<IntegerInterval, TypeFormError> {
+    IntegerInterval::new(bound_integer(form, lower)?, bound_integer(form, lower + 1)?)
+        .map_err(|_| fault(form, TypeFormFault::EmptyInterval))
 }
 
 fn resolve_builtin(
-    scope: &Scope,
+    names: &impl TypeNames,
     builtin: BuiltinType,
     form: &TypeForm,
-    location: &Location,
-) -> Result<ValueType, CheckRefusal> {
+) -> Result<ValueType, TypeFormError> {
     match builtin {
         BuiltinType::Boolean => Ok(ValueType::Boolean),
         BuiltinType::Integer => Ok(ValueType::Integer),
-        BuiltinType::Int => {
-            let lower = bound_integer(form, 0, location)?;
-            let upper = bound_integer(form, 1, location)?;
-            IntegerInterval::new(lower, upper)
-                .map(ValueType::Int)
-                .map_err(|_| mismatch(location))
-        }
-        BuiltinType::Rational => {
-            let numerator = IntegerInterval::new(
-                bound_integer(form, 0, location)?,
-                bound_integer(form, 1, location)?,
-            )
-            .map_err(|_| mismatch(location))?;
-            let denominator = IntegerInterval::new(
-                bound_integer(form, 2, location)?,
-                bound_integer(form, 3, location)?,
-            )
-            .map_err(|_| mismatch(location))?;
-            RationalDomain::new(numerator, denominator)
-                .map(ValueType::Rational)
-                .map_err(|_| mismatch(location))
-        }
+        BuiltinType::Int => interval(form, 0).map(ValueType::Int),
+        BuiltinType::Rational => RationalDomain::new(interval(form, 0)?, interval(form, 2)?)
+            .map(ValueType::Rational)
+            .map_err(|_| fault(form, TypeFormFault::DenominatorBelowOne)),
         BuiltinType::Decimal => {
-            let lower = bound_integer(form, 0, location)?;
-            let upper = bound_integer(form, 1, location)?;
-            let min_scale = bound_u64(form, 2, location)?;
-            let max_scale = bound_u64(form, 3, location)?;
+            let lower = bound_integer(form, 0)?;
+            let upper = bound_integer(form, 1)?;
+            let min_scale = bound_u64(form, 2)?;
+            let max_scale = bound_u64(form, 3)?;
             let rounding = match form.bounds.get(4) {
-                Some(text) => parse_rounding_mode(text, location)?,
+                Some(text) => parse_rounding_mode(text).ok_or_else(|| malformed(form))?,
                 None => RoundingMode::default(),
             };
             DecimalType::new(lower, upper, min_scale, max_scale, rounding)
                 .map(ValueType::Decimal)
-                .map_err(|_| mismatch(location))
+                .map_err(|_| fault(form, TypeFormFault::MalformedDecimal))
         }
         BuiltinType::Float32 => Ok(ValueType::Float(IeeeWidth::Binary32)),
         BuiltinType::Float64 => Ok(ValueType::Float(IeeeWidth::Binary64)),
         BuiltinType::Text => {
-            let min = bound_u64(form, 0, location)?;
-            let max = bound_u64(form, 1, location)?;
+            let min = bound_u64(form, 0)?;
+            let max = bound_u64(form, 1)?;
             let profile = match form.bounds.get(2) {
-                Some(text) => parse_text_profile(text, location)?,
+                Some(text) => parse_text_profile(text).ok_or_else(|| malformed(form))?,
                 None => TextProfile::UnicodeScalars,
             };
             TextType::new(min, max, profile)
                 .map(ValueType::Text)
-                .map_err(|_| mismatch(location))
+                .map_err(|_| fault(form, TypeFormFault::EmptyTextBounds))
         }
-        BuiltinType::Option => resolve_type_form(scope, only_argument(form, location)?, location)
-            .map(ValueType::option),
+        BuiltinType::Option => resolve_form(names, only_argument(form)?).map(ValueType::option),
         BuiltinType::Reference => {
-            let TypeFormHead::Name(name) = &only_argument(form, location)?.head else {
-                return Err(mismatch(location));
+            let target = only_argument(form)?;
+            let TypeFormHead::Name(name) = &target.head else {
+                return Err(malformed(form));
             };
-            scope
+            names
                 .object_type_named(name)
                 .map(ValueType::Reference)
-                .ok_or_else(|| missing(name, location))
+                .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
         }
     }
 }
@@ -203,38 +267,53 @@ pub(crate) fn population_target(
     if !matches!(form.head, TypeFormHead::Population) {
         return Ok(None);
     }
-    match resolve_type_form(scope, only_argument(form, location)?, location)? {
+    let argument = only_argument(form).map_err(|error| error.into_refusal(location))?;
+    match resolve_type_form(scope, argument, location)? {
         ValueType::Reference(target) => Ok(Some(target)),
-        _ => Err(mismatch(location)),
+        _ => Err(CheckRefusal::ill_typed(
+            location,
+            IllTypedCause::TypeMismatch,
+        )),
     }
 }
 
 /// Resolve a syntactic `TypeForm` (S2) to the kernel `ValueType` (E3,
-/// ADR-013 O-14/C-26).
+/// ADR-013 O-14/C-26) against `names`, reporting the fault and the span of
+/// the form it concerns.
 ///
 /// `Population<T>[N]` (FR-153) resolves to `ValueType::Population(N)`: the
 /// kernel type carries only the declared maximum, and `allInstances<T>(p)`/
 /// `lookup<T>(p, r)` name `T` at their own call site, so `T` is carried as
 /// syntax but not resolved here.
+pub(crate) fn resolve_form(
+    names: &impl TypeNames,
+    form: &TypeForm,
+) -> Result<ValueType, TypeFormError> {
+    match &form.head {
+        TypeFormHead::Builtin(builtin) => resolve_builtin(names, *builtin, form),
+        TypeFormHead::Collection(kind) => {
+            let element = resolve_form(names, only_argument(form)?)?;
+            let minimum = bound_u64(form, 0)?;
+            let maximum = bound_u64(form, 1)?;
+            let bound = CardinalityBound::new(minimum, maximum)
+                .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?;
+            Ok(ValueType::collection(CollectionType::new(
+                *kind, element, bound,
+            )))
+        }
+        TypeFormHead::Population => Ok(ValueType::Population(bound_u64(form, 0)?)),
+        TypeFormHead::Name(name) => named_type(names, name, form),
+    }
+}
+
+/// Resolve a syntactic `TypeForm` against the package `scope`, refusing at
+/// `location` (see the module doc).
 pub(crate) fn resolve_type_form(
     scope: &Scope,
     form: &TypeForm,
     location: &Location,
 ) -> Result<ValueType, CheckRefusal> {
-    match &form.head {
-        TypeFormHead::Builtin(builtin) => resolve_builtin(scope, *builtin, form, location),
-        TypeFormHead::Collection(kind) => {
-            let element = resolve_type_form(scope, only_argument(form, location)?, location)?;
-            let minimum = bound_u64(form, 0, location)?;
-            let maximum = bound_u64(form, 1, location)?;
-            let bound = CardinalityBound::new(minimum, maximum).map_err(|_| mismatch(location))?;
-            Ok(ValueType::collection(CollectionType::new(
-                *kind, element, bound,
-            )))
-        }
-        TypeFormHead::Population => Ok(ValueType::Population(bound_u64(form, 0, location)?)),
-        TypeFormHead::Name(name) => resolve_named_type(scope, name, location),
-    }
+    resolve_form(scope, form).map_err(|error| error.into_refusal(location))
 }
 
 #[cfg(test)]

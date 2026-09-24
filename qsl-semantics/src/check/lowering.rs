@@ -3651,7 +3651,7 @@ pub(crate) fn lowering_order(callees: &[Vec<usize>]) -> Vec<FunctionGroup> {
 /// The strongly connected components of the graph `edges` (Tarjan's
 /// algorithm, with an explicit stack), each component after every
 /// component it has an edge to.
-fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
     const UNVISITED: usize = usize::MAX;
     let count = edges.len();
     let mut index = vec![UNVISITED; count];

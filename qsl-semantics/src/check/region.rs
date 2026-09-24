@@ -6,14 +6,17 @@
 //! `Origin::Measure{index}` at its `decreases` measure. Each path step `i`
 //! moves to child `i`, numbered as `Expression::children` numbers them, and
 //! the region is the span the node reached carries (FR-091-AC-10) under the
-//! unit's `RawSourceRef`. A declaration with no form spans (one built by
-//! hand, or synthesized for FR-151 dispatch), `Origin::Expression` and
-//! `Origin::TypeDeclaration` (a declared type carries no form spans) have no
-//! region: no region of the unit names a position in a tree not read from
-//! it. A `generated` occurrence (a node no source position names) is
+//! unit's `RawSourceRef`. `Origin::TypeDeclaration{name}` names the span of
+//! the declared type's name, when the FR-091 assembler read it from the
+//! unit. A declaration with no form spans (one built by hand, or
+//! synthesized for FR-151 dispatch), a type declared by hand, and
+//! `Origin::Expression` have no region: no region of the unit names a
+//! position in a tree not read from it. A `generated` occurrence (a node no source position names) is
 //! recorded at the body or measure root of the least function declaration
 //! that names its node (`lowering::enclosing_declarations`), so it resolves
 //! here like any other body location.
+
+use std::collections::BTreeMap;
 
 use qsl_forms::DeclarationSpans;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -26,12 +29,14 @@ use super::{CheckedGraph, Location, Origin, PackageDeclarations};
 fn resolve<'s>(
     source: &RawSourceRef,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
+    type_spans: &BTreeMap<String, Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
     let span = match &location.origin {
         Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
         Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
-        Origin::Expression | Origin::TypeDeclaration { .. } => return None,
+        Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
+        Origin::TypeDeclaration { .. } | Origin::Expression => return None,
     };
     region(source, span)
 }
@@ -50,6 +55,7 @@ impl PackageDeclarations {
         resolve(
             &self.source,
             |index| self.functions.get(index)?.spans(),
+            &self.declared_type_spans,
             location,
         )
     }
@@ -70,6 +76,7 @@ impl CheckedGraph {
         resolve(
             &self.source,
             |index| self.form_spans.get(index)?.as_ref(),
+            &self.type_spans,
             location,
         )
     }

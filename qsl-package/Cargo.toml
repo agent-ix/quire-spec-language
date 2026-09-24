@@ -34,6 +34,8 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # declarations are layer-2 parsed forms. Layer 2 is below this crate, so the
 # edge closes no cycle; TC-390 admits it in this table only.
 qsl-forms = { path = "../qsl-forms" }
+# The S1 -> S2 -> S3 -> S4 round trip (FR-091) parses its unit with S1.
+qsl-cst = { path = "../qsl-cst" }
 # `check::imports` (the reader's tests) is public only under `test-support`.
 # Only this dev-dependency enables it: the root crate's
 # `no_shipped_dependency_enables_test_support` refuses a normal or build

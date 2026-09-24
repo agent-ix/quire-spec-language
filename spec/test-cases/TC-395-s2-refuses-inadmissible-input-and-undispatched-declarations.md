@@ -57,4 +57,4 @@ Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Steps 1 to 4 are backed by `qsl-forms/tests/it/value_forms.rs`: `s2_refuses_inadmissible_input_and_undispatched_declarations`. Step 5's `syn` scan is not written; no module under `qsl-forms` names those productions.

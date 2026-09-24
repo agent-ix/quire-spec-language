@@ -245,7 +245,9 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
 /// (layer 3, QSL-181) names exactly `qsl-forms`, `qsl-foundation` and
-/// `quire-exact` among the workspace crates, never `qsl-cst`, and only
+/// `quire-exact` among the workspace crates in `[dependencies]`, never
+/// `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
+/// assembler's tests can run S1 (FR-091-AC-20), and only
 /// `model::intake` names its FCD dependencies. `quire-exact` names
 /// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
@@ -253,13 +255,15 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4,
 /// QSL-182) names exactly `qsl-foundation`, `qsl-semantics` and
 /// `quire-exact` among the workspace crates in `[dependencies]`; its
-/// `[dev-dependencies]` may also name the lower layer `qsl-forms`. `qsl-route` (layer R,
+/// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
+/// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R,
 /// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
 /// in `[dependencies]`, and has no `[build-dependencies]`. `qsl-eval` (layer
 /// 5, QSL-183) names exactly `qsl-attrs`, `qsl-foundation`, `qsl-package`,
 /// `qsl-semantics`, `quire-exact`, `serde`, `serde_json` and `thiserror` in
-/// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layer
-/// `qsl-forms`. Every other
+/// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layers
+/// `qsl-forms` and `qsl-cst` (FR-091-AC-13's call of a function compiled
+/// from source). Every other
 /// workspace crate, `qsl-source` and this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
 /// dev-dependency one, so the dev table is checked here.
@@ -307,12 +311,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         (
             "qsl-semantics",
             &["qsl-forms", "qsl-foundation", "quire-exact"][..],
-            &[][..],
+            &["qsl-cst"][..],
         ),
         (
             "qsl-package",
             &["qsl-foundation", "qsl-semantics", "quire-exact"][..],
-            &["qsl-forms"][..],
+            &["qsl-cst", "qsl-forms"][..],
         ),
         (
             "qsl-route",
@@ -328,7 +332,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-semantics",
                 "quire-exact",
             ][..],
-            &["qsl-forms"][..],
+            &["qsl-cst", "qsl-forms"][..],
         ),
     ] {
         let package = packages

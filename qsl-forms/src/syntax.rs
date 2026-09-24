@@ -347,6 +347,9 @@ pub enum Expression {
         form: Accumulation,
         /// The qualified name of the accumulator type `A`.
         accumulator_type: String,
+        /// The span of the accumulator type's name; empty when the form
+        /// was not read from a source unit.
+        accumulator_type_span: Span,
         /// The accumulator name.
         accumulator: String,
         /// The element binder name.
@@ -362,6 +365,9 @@ pub enum Expression {
     Count {
         /// The qualified name of the result type `N`.
         result_type: String,
+        /// The span of the result type's name; empty when the form was not
+        /// read from a source unit.
+        result_type_span: Span,
         /// The binder name.
         binder: String,
         /// The collection operand.
@@ -373,6 +379,9 @@ pub enum Expression {
     Sum {
         /// The qualified name of the result type `N`.
         result_type: String,
+        /// The span of the result type's name; empty when the form was not
+        /// read from a source unit.
+        result_type_span: Span,
         /// The binder name.
         binder: String,
         /// The collection operand.
@@ -702,6 +711,20 @@ pub struct FunctionDeclaration {
     /// The form's byte spans (FR-091-AC-10), when it was read from a source
     /// unit. A declaration built by hand or synthesized (FR-151) has none.
     spans: Option<DeclarationSpans>,
+    /// The `using` alias as written, when the declaration was read from a
+    /// source unit (FR-091-AC-2). A declaration built by hand has none.
+    using: Option<UsingAlias>,
+}
+
+/// A declaration's `using` alias as written, with the span of the alias
+/// (FR-091-AC-2). S2 resolves nothing: the assembler resolves it to one of
+/// the unit's profile selections.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UsingAlias {
+    /// The alias spelling.
+    pub alias: String,
+    /// The span of the alias.
+    pub span: Span,
 }
 
 impl FunctionDeclaration {
@@ -723,6 +746,7 @@ impl FunctionDeclaration {
             clause_kind: ClauseKind::Body,
             callable_by_name: true,
             spans: None,
+            using: None,
         }
     }
 
@@ -756,7 +780,21 @@ impl FunctionDeclaration {
             clause_kind: clause_kind.into(),
             callable_by_name: false,
             spans: None,
+            using: None,
         }
+    }
+
+    /// This declaration with its `using` alias as written (FR-091-AC-2).
+    #[must_use]
+    pub fn with_using(mut self, using: UsingAlias) -> Self {
+        self.using = Some(using);
+        self
+    }
+
+    /// The `using` alias as written, when the declaration was read from a
+    /// source unit.
+    pub fn using(&self) -> Option<&UsingAlias> {
+        self.using.as_ref()
     }
 
     /// The clause this declaration's body is checked as:
@@ -791,6 +829,68 @@ impl FunctionDeclaration {
             .as_ref()
             .filter(|spans| spans.fit(&self.body, self.measure.as_ref()).is_ok())
     }
+}
+
+/// A declared name and the span of its identifier token.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredName {
+    /// The name as written.
+    pub name: String,
+    /// The span of the name's identifier.
+    pub span: Span,
+}
+
+/// `type Name = T;` (FR-091 "Alias form").
+#[derive(Clone, Debug)]
+pub struct AliasForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The aliased type.
+    pub target: TypeForm,
+}
+
+/// One `f: T;` or `f: T?;` field of a record form.
+#[derive(Clone, Debug)]
+pub struct RecordFieldForm {
+    /// The field name.
+    pub name: String,
+    /// The field's declared type.
+    pub type_form: TypeForm,
+    /// Whether the field is written with the optional marker `?`.
+    pub optional: bool,
+}
+
+/// `record Name { f: T; ... }` (FR-091 "Record form").
+#[derive(Clone, Debug)]
+pub struct RecordForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The fields in source order.
+    pub fields: Vec<RecordFieldForm>,
+}
+
+/// `tuple Name(T, ...);` (FR-091 "Tuple form").
+#[derive(Clone, Debug)]
+pub struct TupleForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The element types in source order.
+    pub elements: Vec<TypeForm>,
+}
+
+/// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
+/// carries").
+#[derive(Clone, Debug)]
+pub enum DeclarationForm {
+    /// A `function` declaration, boxed: it is several times the size of
+    /// the other forms.
+    Function(Box<FunctionDeclaration>),
+    /// A `type` alias declaration.
+    Alias(AliasForm),
+    /// A `record` declaration.
+    Record(RecordForm),
+    /// A `tuple` declaration.
+    Tuple(TupleForm),
 }
 
 #[cfg(test)]
@@ -899,6 +999,7 @@ mod tests {
                 clause_kind: _,
                 callable_by_name: _,
                 spans: _,
+                using: _,
             } = value;
             "FunctionDeclaration"
         }
@@ -967,6 +1068,7 @@ mod tests {
                 Expression::Accumulate {
                     form: _,
                     accumulator_type: _,
+                    accumulator_type_span: _,
                     accumulator: _,
                     binder: _,
                     source: _,
@@ -975,12 +1077,14 @@ mod tests {
                 } => "Accumulate",
                 Expression::Count {
                     result_type: _,
+                    result_type_span: _,
                     binder: _,
                     source: _,
                     predicate: _,
                 } => "Count",
                 Expression::Sum {
                     result_type: _,
+                    result_type_span: _,
                     binder: _,
                     source: _,
                     summand: _,
@@ -1110,12 +1214,14 @@ mod tests {
                 },
                 3 => Expression::Count {
                     result_type: "N".to_owned(),
+                    result_type_span: Span { start: 0, end: 0 },
                     binder: "x".to_owned(),
                     source: first,
                     predicate: second,
                 },
                 4 => Expression::Sum {
                     result_type: "N".to_owned(),
+                    result_type_span: Span { start: 0, end: 0 },
                     binder: "x".to_owned(),
                     source: first,
                     summand: second,
@@ -1157,6 +1263,7 @@ mod tests {
             Expression::Accumulate {
                 form: Accumulation::Fold,
                 accumulator_type: "A".to_owned(),
+                accumulator_type_span: Span { start: 0, end: 0 },
                 accumulator: "a".to_owned(),
                 binder: "x".to_owned(),
                 source: Box::new(source),

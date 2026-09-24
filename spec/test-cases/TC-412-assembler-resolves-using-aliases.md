@@ -49,4 +49,4 @@ Tag the test `#[trace("FR-091-AC-22", "TC-412")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Steps 2 and 3 are backed by `qsl-semantics` `check::assemble` tests: `using_aliases_resolve_to_the_units_profile_selections`. Step 1 is partial: the assembler admits `f` because its alias names a profile selection, but records no resolved selection, since nothing reads one yet.

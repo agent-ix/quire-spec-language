@@ -1394,6 +1394,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "qsl-attrs",
+ "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
  "qsl-package",
@@ -1433,6 +1434,7 @@ name = "qsl-package"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
  "qsl-semantics",
@@ -1476,6 +1478,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "proc-macro2",
+ "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
  "quire-canonical",

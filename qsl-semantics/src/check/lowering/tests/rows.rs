@@ -208,6 +208,7 @@ fn rows() -> Vec<Row> {
             TypeForm::name("Total", SPAN),
             None,
             Expression::Accumulate {
+                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 form,
                 accumulator_type: "Total".to_owned(),
                 accumulator: "acc".to_owned(),
@@ -380,6 +381,7 @@ fn rows() -> Vec<Row> {
                 TypeForm::name("Small", SPAN),
                 None,
                 Expression::Count {
+                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                     result_type: "Small".to_owned(),
                     binder: "x".to_owned(),
                     source: Box::new(name_expr("s")),
@@ -398,6 +400,7 @@ fn rows() -> Vec<Row> {
                 TypeForm::name("Total", SPAN),
                 None,
                 Expression::Sum {
+                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                     result_type: "Total".to_owned(),
                     binder: "x".to_owned(),
                     source: Box::new(name_expr("s")),
