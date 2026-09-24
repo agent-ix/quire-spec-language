@@ -2,7 +2,7 @@
 //! FR-146 termination: recursive components of the reachable call graph and
 //! their lexicographic `decreases` obligations.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{Node, NodeKind, Slot};
@@ -106,27 +106,57 @@ impl Bits {
     }
 }
 
-/// One strongly connected component of the call graph: its members,
-/// ascending, and a membership set over every member index.
-struct Component {
-    members: Vec<usize>,
-    membership: Bits,
+/// The recursive components of the call graph, and the component each
+/// member is in.
+struct Components {
+    /// Each component's members, ascending; components ascending by first
+    /// member.
+    list: Vec<Vec<usize>>,
+    /// The position in `list` of each member's component, `None` for a
+    /// member in no recursive component.
+    of: Vec<Option<usize>>,
 }
 
-impl Component {
-    fn new(members: Vec<usize>, count: usize) -> Self {
-        let mut membership = Bits::new(count);
-        for &index in &members {
-            membership.insert(index);
+impl Components {
+    /// Index `list` over `count` members. Each component is sorted here,
+    /// then the list by first member, so the order holds whatever produced
+    /// `list`.
+    fn new(mut list: Vec<Vec<usize>>, count: usize) -> Self {
+        for component in &mut list {
+            component.sort_unstable();
         }
-        Self {
-            members,
-            membership,
+        list.sort_unstable_by_key(|component| component.first().copied());
+        let mut of = vec![None; count];
+        for (id, component) in list.iter().enumerate() {
+            for &member in component {
+                if let Some(slot) = of.get_mut(member) {
+                    *slot = Some(id);
+                }
+            }
         }
+        Self { list, of }
     }
 
+    fn iter(&self) -> impl Iterator<Item = Component<'_>> {
+        self.list.iter().enumerate().map(|(id, members)| Component {
+            id,
+            members,
+            of: &self.of,
+        })
+    }
+}
+
+/// One recursive component: its members, ascending, and an O(1)
+/// membership test through the shared member-to-component index.
+struct Component<'c> {
+    id: usize,
+    members: &'c [usize],
+    of: &'c [Option<usize>],
+}
+
+impl Component<'_> {
     fn contains(&self, index: usize) -> bool {
-        self.membership.contains(index)
+        self.of.get(index).copied().flatten() == Some(self.id)
     }
 }
 
@@ -246,7 +276,6 @@ impl<'m, 'a> Tarjan<'m, 'a> {
                 .is_some_and(|member| member.calls.iter().any(|call| call.callee == root))
         };
         if component.len() > 1 || calls_itself() {
-            component.sort_unstable();
             self.recursive.push(component);
         }
     }
@@ -258,33 +287,39 @@ impl<'m, 'a> Tarjan<'m, 'a> {
 /// member.
 ///
 /// Tarjan's algorithm, O(V + E), run on an explicit stack so that stack
-/// depth does not grow with the length of a call chain (NFR-001). A callee
-/// index with no member has no calls, so it lies on no cycle and is skipped.
-fn recursive_components(members: &[Member<'_>]) -> Vec<Vec<usize>> {
+/// depth does not grow with the length of a call chain: FR-146, "a host
+/// stack overflow is not a Complete-V1 outcome". A callee index with no
+/// member has no calls, so it lies on no cycle and is skipped.
+fn recursive_components(members: &[Member<'_>]) -> Components {
     let mut tarjan = Tarjan::new(members);
     for root in 0..members.len() {
         if tarjan.order_of(root).is_none() {
             tarjan.run(root);
         }
     }
-    let mut components = tarjan.recursive;
-    // Tarjan emits components in reverse topological order; refusals are
-    // reported in first-declaration order of each component.
-    components.sort_unstable_by_key(|component| component.first().copied());
-    components
+    // Tarjan emits components in reverse topological order;
+    // `Components::new` puts them in first-declaration order, the order
+    // refusals are reported in.
+    Components::new(tarjan.recursive, members.len())
 }
 
 /// Check every recursive component, in first-declaration order.
 pub(crate) fn check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
-    let count = members.len();
+    check_components(members, &recursive_components(members))
+}
+
+/// The refusals of `components`, one at most per component, in order. The
+/// refusal-cycle search shares one parent buffer across components, so the
+/// whole pass is O(V + E).
+fn check_components(members: &[Member<'_>], components: &Components) -> Vec<CheckRefusal> {
+    let mut parent: Vec<Option<usize>> = vec![None; members.len()];
     let mut refusals = Vec::new();
-    for component in recursive_components(members) {
-        let component = Component::new(component, count);
+    for component in components.iter() {
         if let Some(refusal) = dispatch_cycle_refusal(members, &component) {
             refusals.push(refusal);
             continue;
         }
-        if let Err(refusal) = check_component(members, &component) {
+        if let Err(refusal) = check_component(members, &component, &mut parent) {
             refusals.push(refusal);
         }
     }
@@ -335,9 +370,22 @@ fn dispatch_cycle_refusal(members: &[Member<'_>], component: &Component) -> Opti
 }
 
 /// The component path from `from` back to `to`, by breadth-first search.
-fn path(members: &[Member<'_>], component: &Component, from: usize, to: usize) -> Vec<usize> {
-    let mut parent: Vec<Option<usize>> = vec![None; members.len()];
-    let mut seen = BTreeSet::from([from]);
+///
+/// `parent` is a buffer over every member index, shared across components;
+/// only this component's entries are cleared and written, so one search
+/// costs O(component), not O(V).
+fn path(
+    members: &[Member<'_>],
+    component: &Component<'_>,
+    parent: &mut [Option<usize>],
+    from: usize,
+    to: usize,
+) -> Vec<usize> {
+    for &member in component.members {
+        if let Some(slot) = parent.get_mut(member) {
+            *slot = None;
+        }
+    }
     let mut pending = VecDeque::from([from]);
     while let Some(current) = pending.pop_front() {
         if current == to {
@@ -347,11 +395,13 @@ fn path(members: &[Member<'_>], component: &Component, from: usize, to: usize) -
             continue;
         };
         for call in member.calls {
-            if component.contains(call.callee) && seen.insert(call.callee) {
-                if let Some(slot) = parent.get_mut(call.callee) {
+            let callee = call.callee;
+            let unseen = callee != from && parent.get(callee).copied().flatten().is_none();
+            if component.contains(callee) && unseen {
+                if let Some(slot) = parent.get_mut(callee) {
                     *slot = Some(current);
                 }
-                pending.push_back(call.callee);
+                pending.push_back(callee);
             }
         }
     }
@@ -370,7 +420,37 @@ fn path(members: &[Member<'_>], component: &Component, from: usize, to: usize) -
     reversed
 }
 
-fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), CheckRefusal> {
+/// A failed component obligation: the caller, the call edge it is about,
+/// and the obligation.
+type Failure<'m> = (usize, &'m CallSite, MeasureObligation);
+
+fn check_component(
+    members: &[Member<'_>],
+    component: &Component<'_>,
+    parent: &mut [Option<usize>],
+) -> Result<(), CheckRefusal> {
+    let Err((caller, edge, obligation)) = component_obligations(members, component) else {
+        return Ok(());
+    };
+    let mut cycle: Vec<usize> = vec![caller];
+    cycle.extend(path(members, component, parent, edge.callee, caller));
+    Err(CheckRefusal {
+        location: edge.location.clone(),
+        cause: CheckCause::UnprovedDecrease {
+            cycle: cycle
+                .into_iter()
+                .filter_map(|index| members.get(index).map(|member| member.name.to_owned()))
+                .collect(),
+            obligation,
+        },
+    })
+}
+
+/// The first failed obligation of `component`, in FR-146 check order.
+fn component_obligations<'m>(
+    members: &'m [Member<'_>],
+    component: &Component<'_>,
+) -> Result<(), Failure<'m>> {
     let edges: Vec<(usize, &CallSite)> = component
         .members
         .iter()
@@ -386,23 +466,9 @@ fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), 
     let Some(&(first_caller, first_edge)) = edges.first() else {
         return Ok(());
     };
-    let refuse = |caller: usize, edge: &CallSite, obligation| {
-        let mut cycle: Vec<usize> = vec![caller];
-        cycle.extend(path(members, component, edge.callee, caller));
-        CheckRefusal {
-            location: edge.location.clone(),
-            cause: CheckCause::UnprovedDecrease {
-                cycle: cycle
-                    .into_iter()
-                    .filter_map(|index| members.get(index).map(|member| member.name.to_owned()))
-                    .collect(),
-                obligation,
-            },
-        }
-    };
-    let component_refusal = |obligation| refuse(first_caller, first_edge, obligation);
+    let component_refusal = |obligation| (first_caller, first_edge, obligation);
     let mut measures = Vec::with_capacity(component.members.len());
-    for &index in &component.members {
+    for &index in component.members {
         let member = members
             .get(index)
             .ok_or_else(|| component_refusal(MeasureObligation::MissingMeasure))?;
@@ -447,7 +513,8 @@ fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), 
             return Err(component_refusal(MeasureObligation::Nonnegative));
         }
     }
-    // `typed` follows `component.members`, which is ascending.
+    // `typed` follows `component.members`, which `Components::new` sorted.
+    debug_assert!(typed.windows(2).all(|pair| pair[0].0 < pair[1].0));
     let measure_of = |index: usize| {
         typed
             .binary_search_by_key(&index, |(member, _)| *member)
@@ -459,7 +526,7 @@ fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), 
         let (Some(caller_measure), Some(callee_measure)) =
             (measure_of(caller), measure_of(edge.callee))
         else {
-            return Err(refuse(caller, edge, MeasureObligation::Decrease));
+            return Err((caller, edge, MeasureObligation::Decrease));
         };
         let mut decreased = false;
         for (at_caller, at_callee) in caller_measure.iter().zip(callee_measure) {
@@ -496,7 +563,7 @@ fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), 
             }
         }
         if !decreased {
-            return Err(refuse(caller, edge, MeasureObligation::Decrease));
+            return Err((caller, edge, MeasureObligation::Decrease));
         }
     }
     Ok(())
@@ -504,7 +571,10 @@ fn check_component(members: &[Member<'_>], component: &Component) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use ix_trace_rs::trace;
+    use quire_exact::{Integer, IntegerInterval, NodeKey};
 
     use super::super::refusal::Origin;
     use super::*;
@@ -557,16 +627,10 @@ mod tests {
     /// `check` as it was before QSL-203: the oracle partition, then the
     /// same per-component obligations.
     fn closure_check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
-        let mut refusals = Vec::new();
-        for component in closure_components(members) {
-            let component = Component::new(component, members.len());
-            if let Some(refusal) = dispatch_cycle_refusal(members, &component) {
-                refusals.push(refusal);
-            } else if let Err(refusal) = check_component(members, &component) {
-                refusals.push(refusal);
-            }
-        }
-        refusals
+        check_components(
+            members,
+            &Components::new(closure_components(members), members.len()),
+        )
     }
 
     /// SplitMix64: a fixed-seed generator, so every generated graph is
@@ -615,7 +679,17 @@ mod tests {
                 EdgeKind::Ordinary
             };
             let position = calls[from].len();
-            calls[from].push(call(to, kind, position));
+            let mut site = call(to, kind, position);
+            site.arguments = (0..PARAMETERS)
+                .map(|_| match rng.below(5) {
+                    0 => ArgumentShape::Parameter(0),
+                    1 => ArgumentShape::Decremented(0),
+                    2 => ArgumentShape::Parameter(1),
+                    3 => ArgumentShape::Decremented(1),
+                    _ => ArgumentShape::Other,
+                })
+                .collect();
+            calls[from].push(site);
         };
         match seed % 4 {
             // Sparse random edges, with self-loops and repeated edges.
@@ -689,14 +763,87 @@ mod tests {
             .collect()
     }
 
+    /// Every generated member's parameters: `n: Int[0, 9]` (a nonnegative
+    /// integer element), `m: Integer` (an integer element that is not
+    /// nonnegative) and `b: Boolean` (not a measure element).
+    const PARAMETERS: usize = 3;
+
+    fn parameters() -> Vec<(String, ValueType)> {
+        let bounded = IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64)).unwrap();
+        vec![
+            ("n".to_owned(), ValueType::Int(bounded)),
+            ("m".to_owned(), ValueType::Integer),
+            ("b".to_owned(), ValueType::Boolean),
+        ]
+    }
+
+    fn local(slot: Slot) -> Node {
+        Node {
+            kind: NodeKind::Local(slot),
+            value_type: ValueType::Integer,
+            location: Location {
+                origin: Origin::Expression,
+                path: Vec::new(),
+            },
+        }
+    }
+
+    /// Per member, a measure drawn so that every obligation can fail: a
+    /// missing measure, `n` or `m` alone, the pair `(n, m)` (another
+    /// arity), or `b` (not an element). Odd seeds have no measures at all.
+    fn measures(seed: u64, count: usize) -> Vec<Option<Node>> {
+        let mut rng = SplitMix(seed ^ 0x5EED);
+        (0..count)
+            .map(|_| {
+                if seed % 2 == 1 {
+                    return None;
+                }
+                match rng.below(20) {
+                    0 => None,
+                    1..=10 => Some(local(0)),
+                    11..=13 => Some(local(1)),
+                    14..=17 => Some(Node {
+                        kind: NodeKind::Tuple {
+                            declaration: NodeKey::from_digest([3; 32]),
+                            arguments: vec![local(0), local(1)],
+                        },
+                        value_type: ValueType::Integer,
+                        location: local(0).location,
+                    }),
+                    _ => Some(local(2)),
+                }
+            })
+            .collect()
+    }
+
+    fn measured_members<'a>(
+        names: &'a [String],
+        parameters: &'a [(String, ValueType)],
+        measures: &'a [Option<Node>],
+        calls: &'a [Vec<CallSite>],
+    ) -> Vec<Member<'a>> {
+        names
+            .iter()
+            .zip(measures)
+            .zip(calls)
+            .map(|((name, measure), calls)| Member {
+                name,
+                parameters,
+                measure: measure.as_ref(),
+                calls,
+            })
+            .collect()
+    }
+
     fn names(count: usize) -> Vec<String> {
         (0..count).map(|index| format!("f{index}")).collect()
     }
 
     /// QSL-203 AC 2: on generated call graphs -- random, ringed, chained and
     /// dense, with self-loops, repeated edges, multiple components and
-    /// dispatch edges -- Tarjan's components and every termination refusal,
-    /// in order, equal the pre-QSL-203 closure-and-filter algorithm's.
+    /// dispatch edges, and with measures that fail each obligation or none --
+    /// Tarjan's components and every termination refusal, in order, equal
+    /// the pre-QSL-203 closure-and-filter algorithm's.
     #[trace("TC-191", "FR-146-AC-4")]
     #[trace("TC-191", "FR-146-AC-7")]
     #[test]
@@ -704,18 +851,39 @@ mod tests {
         let mut recursive_components_seen = 0;
         let mut multi_member_components = 0;
         let mut refusals_seen = 0;
+        let mut obligations_seen: BTreeSet<&'static str> = BTreeSet::new();
+        let parameters = parameters();
         for seed in 0..4_000 {
             let calls = graph(seed);
             let names = names(calls.len());
-            let members = members(&names, &calls);
+            let measures = measures(seed, calls.len());
+            let members = measured_members(&names, &parameters, &measures, &calls);
             let expected = closure_components(&members);
-            assert_eq!(recursive_components(&members), expected, "seed {seed}");
+            assert_eq!(recursive_components(&members).list, expected, "seed {seed}");
             let refusals = check(&members);
             assert_eq!(refusals, closure_check(&members), "seed {seed}");
             recursive_components_seen += expected.len();
             multi_member_components += expected.iter().filter(|c| c.len() > 1).count();
             refusals_seen += refusals.len();
+            for refusal in &refusals {
+                obligations_seen.insert(match &refusal.cause {
+                    CheckCause::UnprovedDecrease { obligation, .. } => obligation.as_str(),
+                    CheckCause::DefinitionCycle { .. } => "definition-cycle",
+                    other => panic!("unexpected refusal {other:?}"),
+                });
+            }
         }
+        assert_eq!(
+            obligations_seen.into_iter().collect::<Vec<_>>(),
+            [
+                "decrease",
+                "definition-cycle",
+                "measure-arity",
+                "measure-kind",
+                "missing-measure",
+                "nonnegative"
+            ]
+        );
         // The generator reaches the shapes the comparison is about.
         assert!(
             recursive_components_seen > 4_000,
@@ -741,12 +909,12 @@ mod tests {
         ];
         let names = names(calls.len());
         assert_eq!(
-            recursive_components(&members(&names, &calls)),
+            recursive_components(&members(&names, &calls)).list,
             vec![vec![1], vec![2, 4]]
         );
     }
 
-    /// NFR-001's no-stack-overflow rule, applied to the call graph: a
+    /// FR-146: "a host stack overflow is not a Complete-V1 outcome". A
     /// 200,000-member chain and a 200,000-member ring are traversed on a
     /// 512 KiB thread stack, which a recursive Tarjan would overflow.
     #[trace("TC-191", "FR-146-AC-7")]
@@ -766,16 +934,67 @@ mod tests {
                     })
                     .collect();
                 let names = names(LENGTH);
-                assert!(recursive_components(&members(&names, &chain)).is_empty());
+                assert!(recursive_components(&members(&names, &chain))
+                    .list
+                    .is_empty());
                 let ring: Vec<Vec<CallSite>> = (0..LENGTH)
                     .map(|member| vec![call((member + 1) % LENGTH, EdgeKind::Ordinary, 0)])
                     .collect();
-                let components = recursive_components(&members(&names, &ring));
+                let components = recursive_components(&members(&names, &ring)).list;
                 assert_eq!(components.len(), 1);
                 assert_eq!(components[0], (0..LENGTH).collect::<Vec<_>>());
             })
             .unwrap()
             .join()
             .unwrap();
+    }
+}
+
+/// QSL-203 review finding 2: informal timing of `check` alone on N
+/// self-recursive members, each its own refused component. Wall-clock, so
+/// `#[ignore]`d out of the default run; run with
+/// `cargo test --release -p qsl-semantics termination_scaling -- --ignored --nocapture`.
+#[cfg(test)]
+mod scaling {
+    use super::super::refusal::Origin;
+    use super::*;
+
+    #[test]
+    #[ignore = "timing lane: prints wall time, asserts only the refusal count"]
+    fn termination_scaling_over_self_recursive_members() {
+        for count in [5_000, 10_000, 20_000, 40_000] {
+            let names: Vec<String> = (0..count).map(|index| format!("f{index}")).collect();
+            let calls: Vec<Vec<CallSite>> = (0..count)
+                .map(|index| {
+                    vec![CallSite {
+                        callee: index,
+                        location: Location {
+                            origin: Origin::Expression,
+                            path: Vec::new(),
+                        },
+                        arguments: Vec::new(),
+                        kind: EdgeKind::Ordinary,
+                    }]
+                })
+                .collect();
+            let members: Vec<Member<'_>> = names
+                .iter()
+                .zip(&calls)
+                .map(|(name, calls)| Member {
+                    name,
+                    parameters: &[],
+                    measure: None,
+                    calls,
+                })
+                .collect();
+            let start = std::time::Instant::now();
+            let refusals = check(&members);
+            let elapsed = start.elapsed();
+            assert_eq!(refusals.len(), count);
+            println!(
+                "termination self-recursive members={count} wall_ms={:.1}",
+                elapsed.as_secs_f64() * 1e3
+            );
+        }
     }
 }

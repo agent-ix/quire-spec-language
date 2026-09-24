@@ -440,9 +440,7 @@ What each figure counts:
   process.
 - **Peak RSS** is `VmHWM` of the probe process, which builds and checks only
   that chain.
-- **Margin** is max(the stated variance, the session's MAD/median). The probe
-  sizes 250 to 2,000 have no stated variance of their own, so they use the
-  criterion row for the same input.
+- **Margin** is max(the stated variance, the session's MAD/median).
 
 | Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -486,11 +484,41 @@ still quadratic, but the quadratic term is no longer termination. A
 These are F7's lookup sites, which belong to QSL-205. The inclusive shares
 overlap, because `memcmp` samples unwind into more than one caller.
 
-The session is recorded as two MP-002 collections,
-`spec/evidence/measurements/qsl203-ab-a-checker-v2.json` and
-`qsl203-ab-b-checker-v2.json`. Each holds every round, the load averages and
-the probe RSS in `rawEvidence`. `quoin report --since 67f44989` compares the
-two collections.
+The session is recorded as four collections under
+`spec/evidence/measurements/`, each holding every round and the load averages:
+
+- **Criterion rows (MP-002):** `qsl203-ab-a-checker-v2.json` and
+  `qsl203-ab-b-checker-v2.json`.
+- **Probe rows (MP-006):** `qsl203-ab-a-probe-v1.json` and
+  `qsl203-ab-b-probe-v1.json`. Wall time and peak RSS are separate
+  `quantity` dimensions.
+
+`quoin report --since 67f44989` compares A with B for both plans.
+
+### Per-component cost of the termination pass
+
+A review of the first fix found that `check` still did O(V) work per
+recursive component. It allocated a V-bit membership set per component and a
+V-length parent vector per refusal. So the pass was O(V × components) when
+every function is its own recursive component. The fix records one component
+id per member and shares one parent buffer.
+
+Informal timing only: `check` in `termination.rs` alone, on N self-recursive
+members with no measure, so N refused components. The command is
+`cargo test --release -p qsl-semantics termination_scaling -- --ignored
+--nocapture`.
+
+| N | Before (1 run) | After (3 runs) |
+| --- | --- | --- |
+| 5,000 | 10.1 ms | 2.2, 2.5, 2.3 ms |
+| 10,000 | 34.2 ms | 6.7, 4.4, 4.2 ms |
+| 20,000 | 138 ms | 10.5, 9.2, 8.5 ms |
+| 40,000 | 518 ms | 28.1, 18.6, 17.9 ms |
+
+Before, the time grew 3.4 to 4.1 times per doubling, which is quadratic. After,
+it grows about 2 times, which is linear. `qsl-bench-probe check
+self-recursive <n>` times the same shape through the whole check. There, the
+F7 lookup sites dominate, as they do on the chain.
 
 ## Engineering-assurance record
 
@@ -502,6 +530,10 @@ one per axis, at definition version `-v2`:
 - `spec/assurance/MP-003-cst-wall-time.md`
 - `spec/assurance/MP-004-model-wall-time.md`
 - `spec/assurance/MP-005-evaluator-wall-time.md`
+
+QSL-203 added `spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at
+`-v1`. It covers the probe's one-shot `check` runs, with wall time and peak
+RSS per input.
 
 MP-002 and MP-004 measure QSpec requirements that live in
 `agent-ix/quire-specification`, so they target

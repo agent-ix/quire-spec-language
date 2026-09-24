@@ -8,7 +8,7 @@
 //! ```text
 //! qsl-bench-probe parse                     # nesting 0..=64, volume sizes
 //! qsl-bench-probe cst                       # hashed bytes per source byte
-//! qsl-bench-probe check <chain|independent> <N>   # one check, one process
+//! qsl-bench-probe check <chain|independent|self-recursive> <N>   # one check, one process
 //! qsl-bench-probe eval <N>                  # one f0 call on an N-chain
 //! qsl-bench-probe model <types> <depth> <members> # record counts, outcomes
 //! ```
@@ -34,7 +34,7 @@ const VOLUME_SIZES: [usize; 6] = [100, 500, 1_000, 2_000, 3_000, 4_000];
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: qsl-bench-probe parse | cst | check <chain|independent> <N> | eval <N> | model <types> <depth> <members>"
+        "usage: qsl-bench-probe parse | cst | check <chain|independent|self-recursive> <N> | eval <N> | model <types> <depth> <members>"
     );
     ExitCode::from(2)
 }
@@ -133,6 +133,7 @@ fn probe_check(shape: &str, functions: usize) -> ExitCode {
     let declarations = match shape {
         "chain" => check::call_chain(functions),
         "independent" => check::independent(functions),
+        "self-recursive" => qsl_bench::recursion::self_recursive(functions),
         _ => return usage(),
     };
     let start = Instant::now();
